@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.53.0+agent.13] - 2026-10-07
+
+### Changed
+
+`record deploy` now stamps `stages.deploy.source_build_fingerprint` with the recorded build it probed. When a later `record build` records different output, a deploy stamped with the old build becomes `required` (`required_by` build, `required_for` qa), its old probe evidence is dropped, and `next` routes back to `record deploy` before QA. A rebuild with byte-identical output keeps the deploy current. A deploy recorded before this change carries no stamp and is kept as recorded. The Assembly Report schema describes the field.
+
 ## [1.53.0+agent.9] - 2026-10-06
 
 ### Fixed

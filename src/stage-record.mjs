@@ -331,9 +331,13 @@ function composeBuild(report, { now, recordedBy, fingerprint, buildEnvironment =
   // Otherwise Polish evidence bound to this exact output stays and anything
   // else is owed again; the evidence object is kept so `polish capture` has
   // somewhere to attach page_load, and its stale identity fields are removed.
+  // A deploy that stamped the build it probed is owed again once the output
+  // differs; one with no stamp (recorded before deploy stamped it) is kept.
+  const deployOwed = deployAfterBuild(stageObject(report, "deploy"), fingerprint);
+  const deploy = deployOwed ? { deploy: deployOwed } : {};
   if (detected) {
     const cause = detected === "spec_material_changed" ? "spec" : "presentation";
-    const demoted = demoteStages({ ...report, stages: { ...report.stages, assembly } }, { causes: [cause], now, by: "record build", only: ["polish", "qa"] });
+    const demoted = demoteStages({ ...report, stages: { ...report.stages, assembly, ...deploy } }, { causes: [cause], now, by: "record build", only: ["polish", "qa"] });
     return { report: demoted.report, context: null };
   }
   const previousPolish = stageObject(report, "polish");
@@ -348,7 +352,23 @@ function composeBuild(report, { now, recordedBy, fingerprint, buildEnvironment =
         required_by: "build",
         required_for: ["qa"],
       };
-  return { report: { ...report, stages: { ...report.stages, assembly, polish } }, context: null };
+  return { report: { ...report, stages: { ...report.stages, assembly, polish, ...deploy } }, context: null };
+}
+
+// stages.deploy after a build of `fingerprint`, or null when it is kept: a
+// completed deploy whose source_build_fingerprint names other output reads
+// required (required_by "build", required_for ["qa"]), the probe of the old
+// output dropped, until record deploy probes this build.
+function deployAfterBuild(previousDeploy, fingerprint) {
+  const stamped = optionalString(previousDeploy.source_build_fingerprint);
+  if (!stamped || stamped === fingerprint || !REPLACED_COMPLETED_STATUSES.includes(previousDeploy.status)) return null;
+  return {
+    ...withoutKeys(previousDeploy, ["source_build_fingerprint", "evidence", "completed_at", "recorded_by"]),
+    stage: "deploy",
+    status: "required",
+    required_by: "build",
+    required_for: ["qa"],
+  };
 }
 
 function composePolish(report, { now, recordedBy, fingerprint, input, inputs = {} }) {
@@ -604,12 +624,16 @@ export async function probeLocalPreview({ packetPath, baseUrl, fetchImpl = globa
 }
 
 // A recorded local preview: the packet's deploy.preview_url, and stages.deploy
-// completed with the URL in outputs (what next reads) and the probe as evidence.
-function composeDeploy(report, packet, { now, recordedBy, probe }) {
+// completed with the URL in outputs (what next reads), the probe as evidence,
+// and the build it probed as source_build_fingerprint (doctorFacts has checked
+// it equals stages.assembly.build_fingerprint), so a later record build of
+// different output makes deploy required again, as it does Polish.
+function composeDeploy(report, packet, { now, recordedBy, probe, fingerprint }) {
   const deploy = {
     ...stageObject(report, "deploy"),
     stage: "deploy",
     status: "completed",
+    source_build_fingerprint: fingerprint,
     outputs: [probe.url],
     evidence: probe.routes.map((route) => `${route.url} answered HTTP ${route.status}`),
     completed_at: now,
@@ -862,6 +886,7 @@ export function recordStageCommand(args, { now = () => new Date(), beforeLock = 
     ...(facts.fingerprint ? [`build output fingerprint ${facts.fingerprint} (doctor derived.build_output_fingerprint.value)`] : []),
     ...(stage === "build" && buildEnvironment ? [`stages.assembly.evidence.build_environment = ${buildEnvironment}`] : []),
     ...(stage === "build" ? [`stages.polish.status = ${composed.report.stages.polish.status}`] : []),
+    ...(stage === "build" && composed.report.stages.deploy?.required_by === "build" ? [`stages.deploy.status = ${composed.report.stages.deploy.status} (the recorded deploy probed other output; run ${cmd("record")} deploy again)`] : []),
     ...(composed.context ? ["Build Context scaffold.required = false"] : []),
   ];
   return {
@@ -938,7 +963,7 @@ function recordUnderLock({ stage, packetPath, sidecars, lockedTarget, input, dry
         : stage === "theme"
           ? composeTheme(report, { now: timestamp, recordedBy, layer })
           : stage === "deploy"
-            ? composeDeploy(report, packet, { now: timestamp, recordedBy, probe: input })
+            ? composeDeploy(report, packet, { now: timestamp, recordedBy, probe: input, fingerprint: facts.fingerprint })
             : composePolish(report, { now: timestamp, recordedBy, fingerprint: facts.fingerprint, input, inputs: recordInputs(doctor) });
     applyDerivedAssemblyReportSummary(next.report, recordInputs(doctor));
     // The packet's one new value, deploy.preview_url, is checked by

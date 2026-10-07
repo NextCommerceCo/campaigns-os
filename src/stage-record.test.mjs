@@ -807,6 +807,105 @@ test("on the local preview, record deploy follows next past a polish it carries 
   });
 });
 
+// Build recorded on a local-serve packet with Polish carried forward, then a
+// deploy recorded over the served build: next would answer qa from here.
+async function deployedOnLocalPreview(f, site) {
+  const packet = readJson(f.packetPath);
+  packet.deploy = { ...packet.deploy, target: "local-serve" };
+  writeJson(f.packetPath, packet);
+  scaffold(f);
+  recordOk(f, "setup");
+  buildSite(f);
+  recordOk(f, "build");
+  await recordCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": site.url });
+  assert.equal(nextStage(f).stage, "qa", "control: next moves past the recorded deploy");
+  return readJson(f.reportPath).stages.assembly.build_fingerprint;
+}
+
+test("record deploy stamps the build it probed; a record build of different output makes deploy required and next names deploy", async () => {
+  await withLifecycle(async (f) => {
+    const site = await serveSite(f);
+    try {
+      const buildA = await deployedOnLocalPreview(f, site);
+      assert.match(buildA, SHA256_PATTERN);
+      assert.equal(readJson(f.reportPath).stages.deploy.source_build_fingerprint, buildA, "deploy names the build it probed");
+      buildSite(f, " (build B)");
+      const rebuilt = recordOk(f, "build");
+      const report = readJson(f.reportPath);
+      assert.notEqual(report.stages.assembly.build_fingerprint, buildA, "control: build B is different output");
+      assert.equal(report.stages.deploy.status, "required");
+      assert.equal(report.stages.deploy.required_by, "build");
+      assert.deepEqual(report.stages.deploy.required_for, ["qa"]);
+      assert.equal(Object.hasOwn(report.stages.deploy, "source_build_fingerprint"), false, "the stale binding is dropped");
+      assert.equal(Object.hasOwn(report.stages.deploy, "evidence"), false, "the probe of build A is dropped");
+      assert.ok(rebuilt.ready.some((line) => line.startsWith("stages.deploy.status = required")), rebuilt.ready.join("\n"));
+      assert.ok(validReport(report), JSON.stringify(validReport.errors));
+      assert.equal(nextStage(f).stage, "deploy", "next routes back to record deploy before QA");
+      await recordCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": site.url });
+      assert.equal(readJson(f.reportPath).stages.deploy.source_build_fingerprint, report.stages.assembly.build_fingerprint);
+      assert.equal(nextStage(f).stage, "qa", "a deploy of build B clears it");
+    } finally {
+      await site.close();
+    }
+  });
+});
+
+test("record build of different output with Polish recorded makes deploy required as well as Polish", async () => {
+  await withLifecycle(async (f) => {
+    await deployReady(f);
+    const site = await serveSite(f);
+    try {
+      await recordCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": site.url });
+    } finally {
+      await site.close();
+    }
+    buildSite(f, " (build B)");
+    recordOk(f, "build");
+    const stages = readJson(f.reportPath).stages;
+    assert.equal(stages.polish.status, "required");
+    assert.equal(stages.deploy.status, "required");
+    assert.equal(nextStage(f).stage, "polish", "the ladder reaches deploy again after Polish");
+  });
+});
+
+test("a byte-identical rebuild keeps the recorded deploy current", async () => {
+  await withLifecycle(async (f) => {
+    const site = await serveSite(f);
+    try {
+      const buildA = await deployedOnLocalPreview(f, site);
+      const deployBefore = readJson(f.reportPath).stages.deploy;
+      buildSite(f);
+      recordOk(f, "build");
+      const report = readJson(f.reportPath);
+      assert.equal(report.stages.assembly.build_fingerprint, buildA, "control: the rebuild is byte-identical");
+      assert.equal(report.stages.deploy.source_build_fingerprint, buildA, "deploy stays bound to the build it probed");
+      assert.deepEqual(report.stages.deploy, deployBefore);
+      assert.equal(nextStage(f).stage, "qa");
+    } finally {
+      await site.close();
+    }
+  });
+});
+
+test("a deploy recorded without a stamped build fingerprint (an older report) is kept across a rebuild, as before", async () => {
+  await withLifecycle(async (f) => {
+    const site = await serveSite(f);
+    try {
+      const buildA = await deployedOnLocalPreview(f, site);
+      mutateJson(f.reportPath, (report) => { delete report.stages.deploy.source_build_fingerprint; });
+      const deployBefore = readJson(f.reportPath).stages.deploy;
+      buildSite(f, " (build B)");
+      recordOk(f, "build");
+      const report = readJson(f.reportPath);
+      assert.notEqual(report.stages.assembly.build_fingerprint, buildA, "control: build B is different output");
+      assert.deepEqual(report.stages.deploy, deployBefore, "no false stale on an unstamped deploy");
+      assert.equal(nextStage(f).stage, "qa");
+    } finally {
+      await site.close();
+    }
+  });
+});
+
 test("doctor and next name a CampaignSpec edited materially after prepare-build, as QA would refuse it", () => {
   withLifecycle((f) => {
     scaffold(f);

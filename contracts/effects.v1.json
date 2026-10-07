@@ -5996,7 +5996,7 @@
       "sends": [],
       "effect_test": "effects: record build",
       "test_scope": "full",
-      "notes": "Destructive: it replaces stages.assembly (the replaced record is kept in its history) and, when the output changed, resets stages.polish to required. When it detects a brief or CampaignSpec change since the replaced record, it writes input_change and also makes Polish and QA required. Re-recording output identical to the build an input change superseded keeps the build owed unless --deviation-reason records the operator's reason. The fingerprint is doctor's, never typed. Refused, writing nothing but the lifecycle entry, when next answers prepare-build, when doctor cannot compute the fingerprint (no built output), when setup is still required or stages.setup is not terminal, or when the report would fail its schema. The Build Context is read, not written."
+      "notes": "Destructive: it replaces stages.assembly (the replaced record is kept in its history) and, when the output changed, resets stages.polish to required, and a completed stages.deploy stamped with other output to required (a deploy with no stamped build is kept). When it detects a brief or CampaignSpec change since the replaced record, it writes input_change and also makes Polish and QA required. Re-recording output identical to the build an input change superseded keeps the build owed unless --deviation-reason records the operator's reason. The fingerprint is doctor's, never typed. Refused, writing nothing but the lifecycle entry, when next answers prepare-build, when doctor cannot compute the fingerprint (no built output), when setup is still required or stages.setup is not terminal, or when the report would fail its schema. The Build Context is read, not written."
     },
     {
       "command": "record",
@@ -6222,7 +6222,7 @@
       ],
       "effect_test": "effects: record deploy",
       "test_scope": "full",
-      "notes": "Destructive: it replaces stages.deploy and the packet's deploy.preview_url. The requests stay on this machine: --base-url must be a loopback origin. Refused, writing nothing but the lifecycle entry, when the packet is not local-serve, the URL is not loopback or not the campaign's route root, a built page does not answer 2xx, polish is not recorded, build or Polish is owed again after a brief or CampaignSpec change or its record does not say which content it was made against, the built output changed since build was recorded, or the theme gate is blocked. The Build Context is read, not written."
+      "notes": "Destructive: it replaces stages.deploy, stamped with the build fingerprint it probed, and the packet's deploy.preview_url. The requests stay on this machine: --base-url must be a loopback origin. Refused, writing nothing but the lifecycle entry, when the packet is not local-serve, the URL is not loopback or not the campaign's route root, a built page does not answer 2xx, polish is not recorded, build or Polish is owed again after a brief or CampaignSpec change or its record does not say which content it was made against, the built output changed since build was recorded, or the theme gate is blocked. The Build Context is read, not written."
     },
     {
       "command": "record",

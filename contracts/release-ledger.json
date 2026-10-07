@@ -6332,6 +6332,51 @@
         }
       ],
       "entry_sha256": "82debb74a4998923dd9cfb3bea6ed486ba408860001fe79c6dc2460de026bb4a"
+    },
+    {
+      "id": "RL-0244",
+      "sequence": 233,
+      "date": "2026-10-07",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.53.0+agent.13",
+      "changelog_sha256": "e6591f202e9b0063498fe9cca132f964c5730ea81bd84e5033d424bc4b84c2ad",
+      "agent_impact": "record deploy now binds stages.deploy to the build it probed (source_build_fingerprint). After a record build of different output, a stamped deploy reads required and next names deploy before QA: serve the new build and run record deploy again. A byte-identical rebuild keeps the deploy current, and a deploy recorded before this change, with no stamp, is kept as recorded.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "schema",
+          "path": "schemas/campaign-runtime-assembly-report.v0.schema.json",
+          "surface_entry": "schemas/campaign-runtime-assembly-report.v0.schema.json",
+          "summary": "Describe source_build_fingerprint on a stage, which stages.deploy now carries: the build fingerprint record deploy probed."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/effects.v1.json",
+          "surface_entry": "contracts/effects.v1.json",
+          "summary": "State that record deploy stamps the build fingerprint it probed, and that record build makes a completed deploy stamped with other output required."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "record",
+          "summary": "The record deploy usage line says the deploy stage carries the build fingerprint it probed and is required again after a record build of other output."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "The record build and record deploy rows say deploy is stamped with the build it probed and reset to required by a record build of other output; an unstamped deploy is kept."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "The local proof steps say record deploy is bound to the build it probed and is owed again after a record build of other output."
+        }
+      ],
+      "entry_sha256": "f54194aacf50b80d42a3eac6ba9b41eefcfec52390ed449f581757bd93e85841"
     }
   ]
 }
