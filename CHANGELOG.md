@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.54.0+agent.9] - 2026-10-07
+
+### Fixed
+
+Generated brand themes now keep sale and rating colours out of primary and CTA roles when the design provides a main brand colour or a real button background. When a design has no CTA token or button background, the existing CTA fallback warning calls out that its accent colour may be decorative and asks for confirmation.
+
 ## [1.54.0] - 2026-10-07
 
 Ships the same-surface changes 1.53.0+agent.1 through +agent.11 (+agent.6 and +agent.8 were never used), including the `qa run --test-order` fix for Campaign Cart SDK 0.4.41 card fields (+agent.5) and the starter catalog, SDK attribute index and support policy at 0.4.41 (+agent.10, +agent.11).

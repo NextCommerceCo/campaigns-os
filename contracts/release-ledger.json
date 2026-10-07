@@ -6530,6 +6530,27 @@
         }
       ],
       "entry_sha256": "5ab33ca302fa671ac78c3e9b752ed7b251e756b05256f97ff75acd08c58ad5ba"
+    },
+    {
+      "id": "RL-0253",
+      "sequence": 235,
+      "date": "2026-10-07",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.54.0+agent.9",
+      "changelog_sha256": "2027d6b5d32da4c170cf5b5f1a5545856bf746a1d694185b719435d7e1279a40",
+      "agent_impact": "Theme inspection now excludes decorative sale and rating colours from primary and CTA selection when main brand and button evidence exists. An accent-only CTA fallback explicitly asks the operator to confirm its colour.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/brand-theme-bridge.md",
+          "surface_entry": "docs/brand-theme-bridge.md",
+          "summary": "Explain primary and CTA colour ranking and the accent-only fallback warning."
+        }
+      ],
+      "entry_sha256": "11f525c8ddc4b6fd04feeb4c968a2cb2effedb5846149b450b5b1e7440c6ee26"
     }
   ]
 }

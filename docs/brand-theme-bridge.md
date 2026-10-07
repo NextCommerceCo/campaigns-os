@@ -22,6 +22,12 @@ It compares source tokens against known `figma-sections-export` scaffold
 defaults, maps real brand values onto a local versioned next-core target-token
 contract, and writes evidence into a theme report.
 
+Sale, badge and rating colours do not supply primary or CTA roles merely
+because their selectors mention a cart, order or hero. Button backgrounds can
+supply the CTA; primary still needs a brand token or a main brand area such as
+a header or hero. If no CTA token or button background exists, the CTA uses
+the accent fallback and the warning asks the operator to confirm it.
+
 `campaigns-os theme generate` writes:
 
 ```text
