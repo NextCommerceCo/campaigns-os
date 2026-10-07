@@ -297,8 +297,9 @@ computing `source_hash`; the "Selecting the wrapper policy at intake" section of
 > also makes saved-Map `qa run` default to a local-only verdict unless the campaign is
 > portal-managed or `--post-verdict` is passed; `--no-remit` does not — it
 > skips this command's remit only, and the verdict still publishes. Whatever
-> the consent, a run whose base URL is a local address (`localhost`, any
-> `127.x.x.x`, `[::1]`) keeps its verdict local by default; pass
+> the consent, a run whose base URL is a local address (`localhost` or any
+> `*.localhost` name, any `127.x.x.x`, `0.0.0.0`, `[::1]` or an IPv4-mapped
+> loopback) keeps its verdict local by default; pass
 > `--post-verdict`, or run `qa publish` afterwards, to send it. To keep
 > one saved-Map verdict local, pass `--no-post-verdict` (or `--local-only`) to `qa run`.
 > A `local_spec_id` packet always keeps its QA verdict and progress local,

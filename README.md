@@ -13,7 +13,7 @@ This toolkit gives campaign developers and AI coding tools a clear path for asse
 7. Hand off to `next-campaigns-build`.
 8. Run build/lint and record the build with `campaigns-os record build`, then install the Campaigns OS Playwright browser once with `campaigns-os qa install-browser`.
 9. Run `next-campaigns-polish`, serve the current build, run the mandatory `campaigns-os polish capture` producer, then record Polish with `campaigns-os record polish --evidence <file>`.
-10. Deploy a preview. For a local preview (`--deploy-target local-serve`), serve the current build and record it with `campaigns-os record deploy --base-url <loopback route root>`; a later `record build` of different output makes the deploy owed again.
+10. Deploy a preview. For a local preview (`--deploy-target local-serve`), serve the current build and record it with `campaigns-os record deploy --base-url <loopback route root>`; a later `record build` of different output makes the deploy owed again. `record deploy` takes only a loopback route root; for a hosted preview, deploy through your host and follow `next` for what to record.
 11. Run `next-campaigns-qa` against the tested URL.
 12. Record launch blockers and follow-up work.
 

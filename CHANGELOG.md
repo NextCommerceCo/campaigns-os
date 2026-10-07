@@ -6,7 +6,7 @@ Notable supported-surface changes are recorded here.
 
 ### Changed
 
-- When `start`, `prepare-build` or `build` refuses to overwrite a report that already carries stage evidence, the message now names `record brief` and `record spec` as the way to bind a changed brief or CampaignSpec while keeping that evidence. Before, it offered only `--force`, which resets the recorded stages.
+- When `start`, `prepare-build` or `build` refuses to overwrite a report that already carries stage evidence, the message now says that, if the brief or CampaignSpec changed, `record brief` or `record spec` binds it while keeping that evidence. Before, it offered only `--force`, which resets the recorded stages.
 - README: the build steps and the `record` command list now include `record theme`, `record deploy` (bound to the build it probed), `record brief` and `record spec`. The SDK examples take `--target-sdk <x.y.z>` instead of 0.4.38. The `tooling status` note no longer says npm has no dist-tag, the Node floor reads 20.19.0 as in `engines`, and `--force` is described as moving completed records to stage history.
 - `docs/quickstart.md`: a QA run against a local-address base URL keeps its verdict local by default, whatever the telemetry consent.
 
