@@ -334,6 +334,9 @@ export function validateRunRecordLifecycle(lc) {
   if (lc.duration_ms != null && typeof lc.duration_ms !== "number") add("record.lifecycle.duration_ms", "duration_ms must be a number or null.");
   if (lc.wall_clock_duration_ms != null && typeof lc.wall_clock_duration_ms !== "number") add("record.lifecycle.wall_clock_duration_ms", "wall_clock_duration_ms must be a number or null.");
   if (lc.repair_loop_count != null && !Number.isInteger(lc.repair_loop_count)) add("record.lifecycle.repair_loop_count", "repair_loop_count must be an integer or null.");
+  for (const field of ["needs_input_count", "failure_count"]) {
+    if (lc[field] !== undefined && (!Number.isInteger(lc[field]) || lc[field] < 0)) add(`record.lifecycle.${field}`, `${field} must be a non-negative integer.`);
+  }
   if (lc.stages != null) {
     if (!Array.isArray(lc.stages)) {
       add("record.lifecycle.stages", "stages must be an array when present.");
@@ -344,6 +347,8 @@ export function validateRunRecordLifecycle(lc) {
         } else {
           if (stage.duration_ms != null && typeof stage.duration_ms !== "number") add(`record.lifecycle.stages[${index}].duration_ms`, "stage duration_ms must be a number or null.");
           if (stage.exit_status != null && !Number.isInteger(stage.exit_status)) add(`record.lifecycle.stages[${index}].exit_status`, "stage exit_status must be an integer or null.");
+          if (stage.wait_ms != null && (!Number.isInteger(stage.wait_ms) || stage.wait_ms < 0)) add(`record.lifecycle.stages[${index}].wait_ms`, "stage wait_ms must be a non-negative integer or null.");
+          if (stage.finding_codes !== undefined && (!isStringArray(stage.finding_codes) || stage.finding_codes.length > 5 || new Set(stage.finding_codes).size !== stage.finding_codes.length || !Number.isInteger(stage.exit_status) || stage.exit_status === 0)) add(`record.lifecycle.stages[${index}].finding_codes`, "finding_codes must have at most five distinct strings and require a non-zero exit_status.");
         }
       });
     }

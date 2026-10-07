@@ -28,9 +28,10 @@ import {
   selectRunFindingIds,
   validateQaVerdictPublish,
   validateRunRecord,
+  validateRunRecordLifecycle,
   writeRunRecord,
 } from "./run-record.mjs";
-import { readLifecycleJournal } from "./lifecycle.mjs";
+import { readLifecycleJournal, validateLifecycle } from "./lifecycle.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CLI = resolve(ROOT, "bin/campaigns-os.mjs");
@@ -938,6 +939,42 @@ test("validateRunRecord rejects lifecycle fields that the published JSON schema 
   assert.equal(validateRunRecord(minimalRecord({ lifecycle: { command: "x", argv_shape: [], run_id: 7 } })).ok, false);
   // a well-formed stage still passes
   assert.equal(validateRunRecord(minimalRecord({ lifecycle: { command: "x", argv_shape: [], stages: [{ name: "build", duration_ms: 5 }] } })).ok, true);
+  for (const stage of [
+    { name: "doctor", wait_ms: -1 },
+    { name: "doctor", exit_status: 2, finding_codes: ["a", "b", "c", "d", "e", "f"] },
+    { name: "doctor", exit_status: 2, finding_codes: ["a", 3] },
+    { name: "doctor", exit_status: 0, finding_codes: ["a"] },
+  ]) assert.equal(validateRunRecord(minimalRecord({ lifecycle: { stages: [stage] } })).ok, false);
+});
+
+test("schema and both lifecycle validators agree on wait, finding codes, and run counts", () => {
+  const schema = JSON.parse(readFileSync(resolve(ROOT, "schemas/campaigns-os-run-record.v0.schema.json"), "utf8"));
+  const validateSchema = new Ajv2020({ strict: true, validateFormats: false }).compile(schema);
+  const agrees = (stage, expected, exitStatus = 2) => {
+    const journal = {
+      command: "start", argv_shape: [], exit_status: exitStatus, stages: [stage],
+      ...(Object.hasOwn(stage, "wait_ms") ? { wait_ms: stage.wait_ms } : {}),
+      ...(Object.hasOwn(stage, "finding_codes") ? { finding_codes: stage.finding_codes } : {}),
+    };
+    const lifecycle = { stages: [{ ...stage, exit_status: exitStatus }] };
+    assert.equal(validateLifecycle(journal).ok, expected, `journal: ${JSON.stringify(stage)}`);
+    assert.equal(validateRunRecordLifecycle(lifecycle).length === 0, expected, `Run Record validator: ${JSON.stringify(stage)}`);
+    assert.equal(validateSchema(minimalRecord({ lifecycle })), expected, `schema: ${JSON.stringify(stage)} ${JSON.stringify(validateSchema.errors)}`);
+  };
+  for (const [value, expected] of [[undefined, true], [null, true], [0, true], [4, true], [-1, false], [1.5, false], ["4", false]]) {
+    agrees({ name: "prepare-build", ...(value === undefined ? {} : { wait_ms: value }) }, expected);
+  }
+  for (const [value, expected] of [[undefined, true], [[], true], [["a", "b"], true], [["a", "a"], false], [null, false], [["a", 3], false], [["a", "b", "c", "d", "e", "f"], false]]) {
+    agrees({ name: "prepare-build", ...(value === undefined ? {} : { finding_codes: value }) }, expected);
+  }
+  agrees({ name: "prepare-build", finding_codes: ["a"] }, false, 0);
+  for (const field of ["needs_input_count", "failure_count"]) {
+    for (const [value, expected] of [[undefined, true], [0, true], [2, true], [null, false], [-1, false], [1.5, false], ["2", false]]) {
+      const lifecycle = { stages: [], ...(value === undefined ? {} : { [field]: value }) };
+      assert.equal(validateRunRecordLifecycle(lifecycle).length === 0, expected, `${field}: ${String(value)}`);
+      assert.equal(validateSchema(minimalRecord({ lifecycle })), expected, `${field}: ${String(value)} ${JSON.stringify(validateSchema.errors)}`);
+    }
+  }
 });
 
 test("CLI: an unreadable/directory lifecycle-journal path never breaks run-record (best-effort)", () => {
@@ -1102,7 +1139,10 @@ test("CLI: a lifecycle journal entry is captured then embedded into the Run Reco
     };
 
     // 1) A command runs with opt-in lifecycle persistence, stamped with run_id.
-    run(["doctor", "--write", "--packet", packetPath, "--run-id", "run_lc", "--lifecycle-journal", lcJournal, "--json"]);
+    const doctor = JSON.parse(run(["doctor", "--write", "--packet", packetPath, "--run-id", "run_lc", "--lifecycle-journal", lcJournal, "--json"]));
+    const doctorEntry = readLifecycleJournal(lcJournal).entries.find((entry) => entry.command === "doctor");
+    assert.equal(doctorEntry.wait_ms, 0);
+    assert.deepEqual(doctorEntry.finding_codes, [...new Set(doctor.errors.map((issue) => issue.code))].slice(0, 5));
 
     // 2) run-record embeds the matching lifecycle entry.
     const out = JSON.parse(execFileSync("node", [
@@ -1115,6 +1155,10 @@ test("CLI: a lifecycle journal entry is captured then embedded into the Run Reco
     assert.equal(out.record.lifecycle.run_id, "run_lc");
     assert.equal(out.record.lifecycle.exit_status, 2); // doctor flagged the synthetic packet
     assert.ok(typeof out.record.lifecycle.duration_ms === "number");
+    assert.equal(out.record.lifecycle.stages[0].wait_ms, 0);
+    assert.deepEqual(out.record.lifecycle.stages[0].finding_codes, doctorEntry.finding_codes);
+    assert.equal(out.record.lifecycle.needs_input_count, 1);
+    assert.equal(out.record.lifecycle.failure_count, 0);
     assert.equal(validateRunRecord(out.record).ok, true);
   });
 });

@@ -326,17 +326,23 @@
             "type": "object",
             "additionalProperties": false,
             "required": ["name"],
+            "if": { "required": ["finding_codes"], "properties": { "finding_codes": {} } },
+            "then": { "required": ["exit_status"], "properties": { "exit_status": { "type": "integer", "not": { "const": 0 } } } },
             "properties": {
               "name": { "type": "string" },
               "duration_ms": { "type": ["number", "null"] },
-              "exit_status": { "type": ["integer", "null"] }
+              "exit_status": { "type": ["integer", "null"] },
+              "wait_ms": { "type": ["integer", "null"], "minimum": 0, "description": "Whole milliseconds blocked on operator input. Absent or null means unknown for legacy entries; duration_ms includes it." },
+              "finding_codes": { "type": "array", "maxItems": 5, "uniqueItems": true, "items": { "type": "string" }, "description": "First five distinct doctor or QA finding codes, only on a non-zero exit." }
             }
           }
         },
         "repair_loop_count": {
           "type": ["integer", "null"],
           "description": "Re-runs of any command within the run (a re-run is a repair loop: doctor -> fix -> doctor). 0 when each command ran once."
-        }
+        },
+        "needs_input_count": { "type": "integer", "minimum": 0, "description": "Number of command invocations with exit_status 2." },
+        "failure_count": { "type": "integer", "minimum": 0, "description": "Number of command invocations with a non-zero exit_status other than 2." }
       }
     }
   }

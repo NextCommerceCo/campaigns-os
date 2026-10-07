@@ -11,7 +11,9 @@ import {
   readLifecycleJournal,
   validateLifecycle,
   withCommandLifecycle,
+  timeOperatorWait,
 } from "./lifecycle.mjs";
+import { promptAndPersistConsent } from "./consent.mjs";
 
 function withTempDir(run) {
   const dir = mkdtempSync(join(tmpdir(), "campaigns-os-lifecycle-"));
@@ -46,6 +48,93 @@ test("withCommandLifecycle captures command, argv_shape, exit_status, and timing
   assert.equal(lifecycle.started_at, "2026-06-07T00:00:00.000Z");
   assert.deepEqual(lifecycle.stages, []);
   assert.equal(lifecycle.repair_loop_count, 0);
+  assert.equal(lifecycle.wait_ms, 0);
+});
+
+test("consent prompt wait is measured once with a controlled clock; no prompt records zero", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-lifecycle-consent-"));
+  try {
+    let tick = 0;
+    const clock = { now: () => new Date("2026-06-07T00:00:00.000Z"), monotonic: () => tick };
+    const options = { configPath: join(dir, "consent.json"), env: {}, proxyBase: "https://example.test", isTTY: true };
+    const prompted = await withCommandLifecycle({ command: "run-record", clock, readExitStatus: () => 0 }, async () => {
+      await promptAndPersistConsent({ ...options, ask: async () => {
+        tick += 37;
+        return "n";
+      } });
+    });
+    assert.equal(prompted.lifecycle.wait_ms, 37);
+    assert.equal(prompted.lifecycle.duration_ms, 37);
+    const unprompted = await withCommandLifecycle({ command: "run-record", clock, readExitStatus: () => 0 }, async () => {
+      await promptAndPersistConsent({ ...options, ask: async () => { throw new Error("unexpected prompt"); } });
+    });
+    assert.equal(unprompted.lifecycle.wait_ms, 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("sub-millisecond waits are summed before rounding, so wait never exceeds duration", async () => {
+  let tick = 0;
+  const clock = { now: () => new Date("2026-06-07T00:00:00.000Z"), monotonic: () => tick };
+  const { lifecycle } = await withCommandLifecycle({ command: "start", clock, readExitStatus: () => 0 }, async (recorder) => {
+    await recorder.time("resolve-spec", async () => {
+      await timeOperatorWait(async () => { tick += 0.6; });
+      await timeOperatorWait(async () => { tick += 0.6; });
+    });
+  });
+  assert.equal(lifecycle.duration_ms, 1);
+  assert.equal(lifecycle.wait_ms, 1);
+  assert.equal(lifecycle.stages[0].wait_ms, 1);
+  assert.ok(lifecycle.wait_ms <= lifecycle.duration_ms);
+});
+
+test("nested prompt hooks count one interval and attribute it to the active sub-stage", async () => {
+  let tick = 0;
+  const clock = { now: () => new Date("2026-06-07T00:00:00.000Z"), monotonic: () => tick };
+  const { lifecycle } = await withCommandLifecycle({ command: "start", clock, readExitStatus: () => 0 }, async (recorder) => {
+    await recorder.time("resolve-spec", () => timeOperatorWait(async () => {
+      tick += 2;
+      await timeOperatorWait(async () => { tick += 3; });
+      tick += 4;
+    }));
+  });
+  assert.equal(lifecycle.wait_ms, 9);
+  assert.equal(lifecycle.stages[0].wait_ms, 9);
+});
+
+test("doctor failure journals the first five distinct codes; success has none", async () => {
+  const codes = ["a", "b", "a", "c", "d", "e", "f", "g"];
+  const failed = await withCommandLifecycle({ command: "doctor", clock: fakeClock(), readExitStatus: () => 2 }, async (recorder) => recorder.recordFindingCodes(codes));
+  assert.deepEqual(failed.lifecycle.finding_codes, ["a", "b", "c", "d", "e"]);
+  const passed = await withCommandLifecycle({ command: "doctor", clock: fakeClock(), readExitStatus: () => 0 }, async (recorder) => recorder.recordFindingCodes(codes));
+  assert.equal(Object.hasOwn(passed.lifecycle, "finding_codes"), false);
+});
+
+test("Tier-2 start attributes doctor codes only to prepare-build", async () => {
+  const { lifecycle } = await withCommandLifecycle({ command: "start", runId: "R", clock: fakeClock(), readExitStatus: () => 2 }, async (recorder) => {
+    await recorder.time("resolve-spec", async () => {});
+    await recorder.time("prepare-build", async () => {});
+    recorder.recordFindingCodes(["doctor.blocked", "doctor.blocked", "doctor.missing"]);
+  });
+  assert.deepEqual(lifecycle.stages.map((stage) => stage.name), ["resolve-spec", "prepare-build"]);
+  assert.equal(Object.hasOwn(lifecycle.stages[0], "finding_codes"), false);
+  assert.deepEqual(lifecycle.stages[1].finding_codes, ["doctor.blocked", "doctor.missing"]);
+  const stages = aggregateLifecycleForRun({ entries: [lifecycle] }, "R").stages;
+  assert.equal(Object.hasOwn(stages[0], "finding_codes"), false);
+  assert.deepEqual(stages[1].finding_codes, ["doctor.blocked", "doctor.missing"]);
+  const legacy = { ...lifecycle, stages: lifecycle.stages.map(({ finding_codes, ...stage }) => stage) };
+  const legacyStages = aggregateLifecycleForRun({ entries: [legacy] }, "R").stages;
+  assert.equal(Object.hasOwn(legacyStages[0], "finding_codes"), false);
+  assert.deepEqual(legacyStages[1].finding_codes, ["doctor.blocked", "doctor.missing"]);
+});
+
+test("finding codes recorded inside a phase stay with that phase", async () => {
+  const { lifecycle } = await withCommandLifecycle({ command: "start", runId: "R", clock: fakeClock(), readExitStatus: () => 2 }, async (recorder) => {
+    await recorder.time("resolve-spec", async () => recorder.recordFindingCodes(["spec.bad"]));
+    await recorder.time("prepare-build", async () => recorder.recordFindingCodes(["doctor.blocked"]));
+  });
+  assert.deepEqual(aggregateLifecycleForRun({ entries: [lifecycle] }, "R").stages.map((stage) => stage.finding_codes), [["spec.bad"], ["doctor.blocked"]]);
 });
 
 test("withCommandLifecycle reads a non-zero exit status from the command", async () => {
@@ -175,6 +264,11 @@ test("validateLifecycle accepts a valid entry and rejects bad shapes", () => {
   assert.equal(validateLifecycle({ command: "x", argv_shape: "nope" }).ok, false); // argv_shape not array
   assert.equal(validateLifecycle({ command: "x", argv_shape: [], exit_status: "2" }).ok, false); // non-integer status
   assert.equal(validateLifecycle({ command: "x", argv_shape: [], stages: [{ duration_ms: 1 }] }).ok, false); // stage missing name
+  assert.equal(validateLifecycle({ ...good, wait_ms: -1 }).ok, false);
+  assert.equal(validateLifecycle({ ...good, exit_status: 2, finding_codes: ["a", "b", "c", "d", "e", "f"] }).ok, false);
+  assert.equal(validateLifecycle({ ...good, exit_status: 2, finding_codes: ["a", 2] }).ok, false);
+  assert.equal(validateLifecycle({ ...good, exit_status: 2, stages: [{ name: "doctor", wait_ms: -1 }] }).ok, false);
+  assert.equal(validateLifecycle({ ...good, exit_status: 2, stages: [{ name: "doctor", finding_codes: ["a", "b", "c", "d", "e", "f"] }] }).ok, false);
 });
 
 test("appendLifecycleEntry + readLifecycleJournal round-trip; malformed lines preserved", () => {
@@ -219,6 +313,15 @@ test("aggregateLifecycleForRun: one stage per command, repair_loop_count counts 
   // without corrupting active command duration.
   assert.equal(agg.wall_clock_duration_ms, 2008);
   assert.equal(agg.stages[0].exit_status, 2); // per-command exit preserved
+  assert.equal(Object.hasOwn(agg.stages[0], "wait_ms"), false); // legacy journal
+});
+
+test("aggregation separates needs-input from failures per invocation", () => {
+  const journal = { entries: [0, 2, 1, 2, 4].map((exit_status, index) => ({ command: `command-${index}`, run_id: "R", exit_status, duration_ms: 10, wait_ms: index })) };
+  const agg = aggregateLifecycleForRun(journal, "R");
+  assert.equal(agg.needs_input_count, 2);
+  assert.equal(agg.failure_count, 2);
+  assert.deepEqual(agg.stages.map((stage) => stage.wait_ms), [0, 1, 2, 3, 4]);
 });
 
 test("aggregateLifecycleForRun: a run that is one command repeated keeps that command at top level", () => {

@@ -96,6 +96,7 @@ import {
   refused,
   refusing,
   runWithRefusalScope,
+  timeOperatorWait,
 } from "./lifecycle.mjs";
 import { commandNames, optsOutOfRunSession, runInvocation } from "./invocation.mjs";
 import {
@@ -1023,6 +1024,7 @@ async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = nul
     // the mode runs doctor (#312): threaded from here, not re-read from argv.
     const result = await recorder.time("prepare-build", () => prepareBuild(args, { ...mode, command, specInput, publishSpec, sourceKind, wrapperPolicyFlag, orderPathDepthFlag }));
     result.spec_source = resolved;
+    if (result.doctor && !result.doctor.ok) recorder.recordFindingCodes(result.doctor.errors?.map((issue) => issue.code));
     autoStartRunSession(result, args, ambient, sessionHolder);
     printPrepareResult(result, args);
     return;
@@ -1033,6 +1035,7 @@ async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = nul
     // synchronous inspection; see readDoctorLiveCampaign.
     const liveCampaign = await readDoctorLiveCampaign(args);
     const result = doctorCommand(args, { liveCampaign, qcStandIns });
+    if (!result.ok) recorder.recordFindingCodes(result.errors?.map((issue) => issue.code));
     writeResult(result, args, result.ok ? 0 : 2);
     printDoctorTinyPrompt(result, args);
     return;
@@ -1226,6 +1229,10 @@ async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = nul
     // command a QA run prints has to agree with the run_id this session will
     // later close and remit under.
     const result = await runQaCli(args, { ambient });
+    if (result?.verdict?.disposition === "blocked") {
+      recorder.recordFindingCodes(result.verdict.assertions?.filter((item) => item.status === "fail" || item.severity === "blocker")
+        .map((item) => item.evidence?.code || item.id));
+    }
     // nextStage requires a packet. Guard its optional, swallowed progress
     // probe explicitly so it cannot construct a refusal in that try block.
     if (args._[1] === "run" && result?.verdict && isNonEmptyString(args.packet) && recordQaStageOutcome(args, result)) {
@@ -6622,10 +6629,10 @@ async function promptForFinding(current) {
   const { createInterface } = await import("node:readline/promises");
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   try {
-    const stage = current.stage || (await rl.question(`Stage (${FINDING_STAGES.join("/")}): `)).trim();
-    const kind = current.kind || (await rl.question(`Kind (${FINDING_KINDS.join("/")}): `)).trim();
-    const summary = current.summary || (await rl.question("Summary: ")).trim();
-    const details = current.details || (await rl.question("Details (optional): ")).trim() || null;
+    const stage = current.stage || (await timeOperatorWait(() => rl.question(`Stage (${FINDING_STAGES.join("/")}): `))).trim();
+    const kind = current.kind || (await timeOperatorWait(() => rl.question(`Kind (${FINDING_KINDS.join("/")}): `))).trim();
+    const summary = current.summary || (await timeOperatorWait(() => rl.question("Summary: "))).trim();
+    const details = current.details || (await timeOperatorWait(() => rl.question("Details (optional): "))).trim() || null;
     return { stage, kind, summary, details };
   } finally {
     rl.close();

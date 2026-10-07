@@ -88,6 +88,45 @@ Stage timings and repair-loop count are captured from the command lifecycle
 journal when a run session or explicit lifecycle journal is active. They remain
 best-effort signal: telemetry records the commands Campaigns OS can observe, not
 every thought, browser click, or external editor action in an agent session.
+Each new journal entry records `wait_ms` as non-negative whole milliseconds
+blocked on terminal input; an invocation without a prompt records 0. Legacy
+entries may omit it or hold null, and Run Record stages preserve unknown wait
+as absent or null rather than inventing 0. `duration_ms` still includes prompt
+wait, so observed command work is `duration_ms - wait_ms` when wait is known. Tier-2 phases carry their
+own measured wait when the prompt occurs while that phase is active; the journal
+also retains the invocation total. Nested prompt hooks count their outer wait
+interval once. Authentication prompts are outside lifecycle capture by policy.
+
+On a non-zero doctor or QA exit, optional `finding_codes` is an array of at most
+five distinct string codes in first-seen order; null is invalid. Codes belong
+to the phase where they were recorded. When a legacy Tier-2 entry has only
+invocation-level codes and their phase is unknown, aggregation assigns them to
+the last phase. A successful stage has no finding codes. The optional run-level
+`needs_input_count` and `failure_count` are non-negative integer counts; null is
+invalid and absence means a legacy record did not report the count.
+`needs_input_count` counts journal entries with exit 2 and `failure_count`
+counts entries with any other non-zero exit. Current command
+paths use 0 for success, 1 for operational errors, 2 for missing or blocked
+inputs, and 4 for blocked QA; the other-non-zero rule also covers a future
+status without reclassifying exit 2. Both counts are per command invocation,
+including a command that emits multiple Tier-2 stages. `repair_loop_count`
+continues to count repeated commands plus explicit repair-loop hooks.
+
+| Terminal input site | Wait hook | Capture context |
+|---|---|---|
+| Consent question (`src/consent.mjs`) | Around the injectable `ask` call | Active command, including `run-record` |
+| Store question (`src/login.mjs`) | Around readline `question` | Authentication runs outside lifecycle capture |
+| Finding stage, kind, summary, details (`src/cli.mjs`) | Around each readline `question` | Active `findings add` command; omitted fields do not prompt |
+
+| Non-zero finding source | Codes recorded |
+|---|---|
+| `doctor` | `result.errors[].code` before rendering and exit 2 |
+| `start` and `build` | Their embedded doctor `errors[].code` before the prepare result sets exit 2 |
+| `qa run` and `qa parity` | Blocked verdict assertions: `evidence.code`, or assertion `id` when no code is present, before returning from QA dispatch with exit 4 |
+
+Spec resolution exceptions and prepare-build without a doctor result do not
+expose doctor or QA codes. They keep their existing exit and timing evidence,
+with no invented finding code.
 
 ### Validation
 

@@ -6820,8 +6820,8 @@
       "kind": "release",
       "surface_version": "1.55.0",
       "changelog_section": "1.55.0",
-      "changelog_sha256": "1afae41737c66ed1f8753358adc241da2f1c4502f5fa024f95ba497e27eab177",
-      "agent_impact": "Run Records carry the QA publish decision reason, closing path, and QA verdict/build binding. Read observations.qa.verdict_run_id for the disposition source, build_fingerprint for its recorded build, and stale for comparison with the current recorded build; null means comparison was unavailable. The unused agent usage input is gone; a legacy record with agent_usage can still be inspected as JSON but fails validation on re-write.",
+      "changelog_sha256": "4bc3bad217397260c540ac1df4adf3b36d7743aa8f59620a072cfa6f1e65bf92",
+      "agent_impact": "Run Records carry QA publish reason, closing path, QA verdict/build binding, prompt wait, bounded doctor/QA codes, and separate needs-input/failure invocation counts. Legacy journal entries keep wait unknown. The unused agent usage input is gone; a legacy record with agent_usage can still be inspected as JSON but fails validation on re-write.",
       "compatibility": "breaking",
       "migration": "Stop passing agent usage flags. Preserve old local records as read-only history; remove agent_usage from a copy before writing it under the current schema.",
       "changes": [
@@ -6829,7 +6829,7 @@
           "class": "compatibility_policy",
           "path": "contracts/supported-surface.json",
           "surface_entry": "contracts/supported-surface.json",
-          "summary": "Advance surface_version to 1.55.0 and record the Run Record schema hash."
+          "summary": "Advance surface_version to 1.55.0 and record the Run Record schema hash, including lifecycle telemetry fields."
         },
         {
           "class": "named_surface",
@@ -6853,7 +6853,7 @@
           "class": "named_surface",
           "path": "docs/workflow-findings-sidecar.md",
           "surface_entry": "docs/workflow-findings-sidecar.md",
-          "summary": "Document the publish reason, closing path, and QA verdict/build binding."
+          "summary": "Document the publish reason, closing path, QA verdict/build binding, prompt wait, code sources, and exit buckets."
         },
         {
           "class": "generated_runtime",
@@ -6871,16 +6871,16 @@
           "class": "schema",
           "path": "schemas/campaigns-os-run-record.v0.schema.json",
           "surface_entry": "schemas/campaigns-os-run-record.v0.schema.json",
-          "summary": "Add optional qa_verdict_publish.reason, closed_by, and QA verdict/build currency fields, and remove agent_usage."
+          "summary": "Add optional QA publish, closeout, and currency fields plus lifecycle wait, finding codes, and exit buckets; remove agent_usage."
         },
         {
           "class": "cli_surface",
           "path": "src/cli.mjs",
           "surface_entry": "run-record",
-          "summary": "Pass each closer through internal options and remove agent usage parsing and help flags."
+          "summary": "Pass each closer through internal options, route prompt wait and finding codes to lifecycle capture, and remove agent usage flags."
         }
       ],
-      "entry_sha256": "b18044cc93ac8affd5584ff3d3bb5e6357d085e39a5a712a53812880d8d25ea6"
+      "entry_sha256": "a4ef7fa0c3a1a5ee1111e85f360b6919e6f3d626df14a92e78b48f375a04ab47"
     }
   ]
 }
