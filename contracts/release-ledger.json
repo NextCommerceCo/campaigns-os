@@ -6565,8 +6565,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.54.0+agent.8",
-      "changelog_sha256": "ee319e13f8c17369e390868027ec0e79ac02e1787cb0db60cfe606edf0b3766c",
-      "agent_impact": "Next now returns to Polish after a local preview theme waiver, accepts a recorded loopback preview URL without a separate deploy record, and re-owes QA when its recorded build fingerprint differs. Help invocations never journal, later start is valid re-intake, and a current readability-only capture clears the impossible page-load demand on all-template campaigns. Follow next's current stage before recording downstream work.",
+      "changelog_sha256": "57049338b1514529ff826c0477082d1f9e31de77f0a1308473ab0d7cafb8c01b",
+      "agent_impact": "Next asks for Polish when a local preview theme waiver or changed build leaves it owed, and asks for QA again when the last recorded QA build differs from the current output. A packet preview URL does not replace record deploy. Help invocations never journal, and later start is valid re-intake. Follow next before recording downstream work.",
       "compatibility": "compatible",
       "migration": "none",
       "changes": [
@@ -6574,22 +6574,22 @@
           "class": "cli_surface",
           "path": "src/doctor/next-step.mjs",
           "surface_entry": "next",
-          "summary": "Pick Polish after a local theme waiver, accept a recorded local preview URL, and re-owe QA for a different build."
+          "summary": "Pick Polish after a local theme waiver or rebuild, and re-owe QA for a different build while still requiring recorded deploy."
         },
         {
           "class": "cli_surface",
           "path": "src/cli.mjs",
           "surface_entry": "next",
-          "summary": "Allow Polish capture under a QA recommendation only while local preview Polish is carried forward."
+          "summary": "Keep the existing QA recommendation command set while next routes owed Polish and QA stages."
         },
         {
           "class": "named_surface",
           "path": "docs/build-packet.md",
           "surface_entry": "docs/build-packet.md",
-          "summary": "Explain what next owes after a changed build when the local preview URL and older QA record remain."
+          "summary": "Explain the deploy record and QA order after a changed build."
         }
       ],
-      "entry_sha256": "33f09d18237d66cda6a642cd3ad8be009ce854ad014140d46f8849672c280d0a"
+      "entry_sha256": "587866a9149e7df9a71a8af832e5dd8d0ba56721a86e1ad984d7413710edadc8"
     }
   ]
 }

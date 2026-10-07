@@ -16,8 +16,6 @@
 // strict gates; `record deploy` follows next past a carried-forward polish.
 import { isLocalServePacket } from "./local-proof.mjs";
 import { isLoopbackHostname } from "./remit.mjs";
-import { READABILITY_PRODUCER, READABILITY_ROUTE_SOURCE, READABILITY_SCHEMA } from "./polish-readability.mjs";
-import { polishRecordIntegrity } from "./qc-results.mjs";
 
 export const LOCAL_PREVIEW_POLICY = "local_preview";
 export const CARRIED_FORWARD = "carried_forward";
@@ -27,7 +25,7 @@ export const CARRIED_FORWARD = "carried_forward";
 // - polish was never recorded for this build;
 // - no page-load capture exists, either because polish capture never ran or
 //   because every mapped page is template stock and there is no design route
-//   to capture (a current readability-only capture clears this demand).
+//   to capture.
 const CARRIED_POLISH_CODES = Object.freeze(new Set([
   "polish.report_missing",
   "polish.evidence_missing",
@@ -55,26 +53,6 @@ export function isLocalPreview(packet, { baseUrl = null } = {}) {
     && loopbackOrAbsent(baseUrl);
 }
 
-export function localPreviewUrlRecorded(packet, report) {
-  return Boolean(packet?.deploy?.preview_url)
-    && report?.stages?.deploy?.status !== "blocked"
-    && isLocalPreview(packet);
-}
-
-function currentReadabilityOnlyCapture(report, packet) {
-  const record = report?.stages?.polish?.evidence?.visual_review?.readability;
-  return record?.schema_version === READABILITY_SCHEMA
-    && record.performed_by === READABILITY_PRODUCER
-    && record.subject?.route_source === READABILITY_ROUTE_SOURCE
-    && record.subject?.campaign_slug === packet?.campaign?.public_route_slug
-    && Boolean(report?.stages?.assembly?.build_fingerprint)
-    && record.subject.build_fingerprint === report.stages.assembly.build_fingerprint
-    && record.integrity === polishRecordIntegrity(record)
-    && Array.isArray(record.cells)
-    && Array.isArray(record.subject.routes)
-    && record.cells.every((cell) => cell?.cell_status === "measured");
-}
-
 function pageLoadRecorded(report) {
   return report?.stages?.polish?.evidence?.visual_review?.page_load != null;
 }
@@ -89,12 +67,6 @@ function carried(gate) {
 
 // The hidden eager-media checkpoint, evaluated on its own.
 export function applyLocalPreviewToCheckpoint(gate, { packet, report, baseUrl = null } = {}) {
-  if (gate?.code === NO_CAPTURABLE_ROUTES_CODE && report?.stages?.polish?.evidence?.visual_review?.readability != null) {
-    if (currentReadabilityOnlyCapture(report, packet)) {
-      return { ...gate, status: "pass", code: "polish.hidden_eager_media.pass", reason: "The current build has a recorded readability-only capture; no design route can produce page-load evidence.", required_actions: [] };
-    }
-    return gate;
-  }
   if (gate?.status !== "blocked" || !isLocalPreview(packet, { baseUrl })) return gate;
   const missing = gate.code === NO_CAPTURABLE_ROUTES_CODE
     || (gate.code === MISSING_CAPTURE_CODE && !pageLoadRecorded(report));
@@ -106,8 +78,7 @@ export function applyLocalPreviewToCheckpoint(gate, { packet, report, baseUrl = 
 export function polishCarriedForwardForLadder(report, gate) {
   return gate?.status === CARRIED_FORWARD
     && !report?.theme?.waiver
-    && !report?.stages?.polish?.evidence?.visual_review?.page_load
-    && !report?.stages?.polish?.evidence?.visual_review?.readability;
+    && !report?.stages?.polish?.evidence?.visual_review?.page_load;
 }
 
 export function applyLocalPreviewToPolishGate(gate, { packet, checkpointGate = null, baseUrl = null } = {}) {

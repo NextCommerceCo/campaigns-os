@@ -14,9 +14,7 @@ import Ajv2020 from "ajv/dist/2020.js";
 
 import { parseArgs, polishCaptureCommand } from "./cli.mjs";
 import { resolveInvocationPolicy } from "./invocation.mjs";
-import { buildRecommendation, detectDeviation, expectedCommandsForStage } from "./deviation.mjs";
-import { buildRunSession, writeRunSession } from "./run-session.mjs";
-import { buildReadabilityCell, buildReadabilityRecord } from "./polish-readability.mjs";
+import { buildReadabilityRecord } from "./polish-readability.mjs";
 import { recordCommand, recordStageCommand } from "./stage-record.mjs";
 import { withTargetLockSync } from "./target-lock.mjs";
 import { readdirSync } from "node:fs";
@@ -133,18 +131,6 @@ function nextStage(f) {
   const { json } = runJson(["next", "--packet", f.packetPath, "--no-write"], f.dir);
   return { stage: json.stage === "doctor-blocked" ? `doctor-blocked: ${json.errors.map((issue) => `${issue.code} ${issue.message}`).join(" | ")}` : json.stage };
 }
-function assertRecommendationLeavesNoDeviation(f, stage, { deviationExpected = false } = {}) {
-  const journal = join(f.target, ".campaign-runtime/agent-deviations.jsonl");
-  const lifecycle = join(f.target, ".campaign-runtime/command-lifecycle.jsonl");
-  writeRunSession(f.target, buildRunSession({ runId: "run_stage_order", lifecycleJournal: lifecycle }));
-  const next = runJson(["next", "--packet", f.packetPath], f.dir);
-  assert.equal(next.status, 0, next.stderr);
-  assert.equal(next.json.stage, stage);
-  const attempt = runCli(["polish", "capture", "--packet", f.packetPath, "--base-url", "bad-url", "--json"], f.dir);
-  assert.notEqual(attempt.status, 0, "invalid URL should stop before browser capture");
-  assert.equal(existsSync(lifecycle), true, "the attempt reached lifecycle capture");
-  assert.equal(existsSync(journal), deviationExpected, "deviation tracking must follow next's recommendation");
-}
 const doctor = (f) => runJson(["doctor", "--packet", f.packetPath], f.dir).json;
 const record = (f, stage, extra = []) => runCli(["record", stage, "--packet", f.packetPath, ...extra], f.dir);
 
@@ -234,7 +220,7 @@ test("record build stamps exactly doctor's output fingerprint and next advances 
   });
 });
 
-test("local theme waiver leaves Polish owed, and next's Polish command is not a deviation", () => {
+test("local theme waiver leaves Polish owed before deploy", () => {
   withLifecycle((f) => {
     mutateJson(f.packetPath, (packet) => { packet.deploy.target = "local-serve"; });
     scaffold(f);
@@ -245,25 +231,43 @@ test("local theme waiver leaves Polish owed, and next's Polish command is not a 
     assert.equal(waiver.status, 0, waiver.stderr);
     const stage = nextStage(f).stage;
     assert.equal(stage, "polish");
-    const rec = buildRecommendation({ stage, status: "ready", expectedCommands: expectedCommandsForStage(stage) });
-    assert.equal(detectDeviation({ lastRecommendation: rec, command: "polish", subcommand: "capture" }), null);
-    assertRecommendationLeavesNoDeviation(f, stage);
   });
 });
 
-test("local preview URL advances past deploy; recorded Polish capture is a QA detour", async () => {
+test("a packet preview URL without record deploy still leaves deploy next", async () => {
   await withLifecycle(async (f) => {
     await deployReady(f);
     mutateJson(f.packetPath, (packet) => { packet.deploy.preview_url = `http://127.0.0.1:4173/${f.slug}/`; });
     assert.equal(readJson(f.reportPath).stages.deploy.status, "pending");
-    const stage = nextStage(f).stage;
-    assert.equal(stage, "qa");
-    const rec = buildRecommendation({ stage, status: "ready", expectedCommands: expectedCommandsForStage(stage) });
-    for (const [command, subcommand] of [["theme", "inspect"], ["qa", "run"]]) {
-      assert.equal(detectDeviation({ lastRecommendation: rec, command, subcommand }), null, command);
+    assert.equal(nextStage(f).stage, "deploy");
+  });
+});
+
+test("an all-template zero-cell capture keeps the local deploy path open", async () => {
+  await withLifecycle(async (f) => {
+    mutateJson(f.packetPath, (packet) => {
+      packet.deploy.target = "local-serve";
+      packet.source_html.pages = packet.source_html.pages.map((page) => ({ page_id: page.page_id, skip_reason: "template stock" }));
+    });
+    recordThroughBuild(f);
+    mutateJson(f.reportPath, (report) => {
+      report.stages.polish.evidence = { visual_review: {
+        readability: buildReadabilityRecord({ buildFingerprint: report.stages.assembly.build_fingerprint, slug: f.slug, routes: [`/${f.slug}/`], cells: [] }),
+      } };
+    });
+    assert.equal(nextStage(f).stage, "deploy");
+    const polish = record(f, "polish", ["--evidence", POLISH_EVIDENCE]);
+    assert.notEqual(polish.status, 0);
+    assert.match(polish.stderr, /polish\.hidden_eager_media\.no_capturable_routes/);
+    assert.equal(nextStage(f).stage, "deploy");
+    const site = await serveSite(f);
+    try {
+      await recordCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": site.url });
+      assert.equal(readJson(f.reportPath).stages.deploy.status, "completed");
+      assert.equal(nextStage(f).stage, "qa");
+    } finally {
+      await site.close();
     }
-    assert.equal(detectDeviation({ lastRecommendation: rec, command: "polish", subcommand: "capture" })?.actual_command, "polish");
-    assertRecommendationLeavesNoDeviation(f, stage, { deviationExpected: true });
   });
 });
 
@@ -849,66 +853,9 @@ test("on the local preview, record deploy follows next past a polish it carries 
       const result = await recordCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": site.url });
       assert.equal(readJson(f.reportPath).stages.deploy.status, "completed", JSON.stringify(result));
       assert.equal(readJson(f.reportPath).stages.polish.status, "required", "polish stays owed; nothing recorded it");
-      assertRecommendationLeavesNoDeviation(f, "qa");
     } finally {
       await site.close();
     }
-  });
-});
-
-test("a changed build with only an earlier readability capture keeps Polish owed in next and record", () => {
-  withLifecycle((f) => {
-    mutateJson(f.packetPath, (packet) => { packet.deploy.target = "local-serve"; });
-    recordThroughBuild(f);
-    mutateJson(f.reportPath, (report) => {
-      report.stages.polish.evidence = { visual_review: {
-        readability: buildReadabilityRecord({ buildFingerprint: report.stages.assembly.build_fingerprint, slug: f.slug, routes: [`/${f.slug}/`], cells: [] }),
-      } };
-    });
-    buildSite(f, " (changed build)");
-    recordOk(f, "build");
-    assert.equal(readJson(f.reportPath).stages.polish.status, "required");
-    assert.equal(nextStage(f).stage, "polish");
-    assert.throws(() => recordStageCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": `http://127.0.0.1:4173/${f.slug}/`, "dry-run": true }, { probe: {} }), /stages\.polish\.status/);
-  });
-});
-
-test("a changed build with earlier page-load and readability captures keeps Polish owed in next and record", async () => {
-  await withLifecycle(async (f) => {
-    mutateJson(f.packetPath, (packet) => { packet.deploy.target = "local-serve"; });
-    recordThroughBuild(f);
-    await capture(f);
-    mutateJson(f.reportPath, (report) => {
-      report.stages.polish.evidence.visual_review.readability = buildReadabilityRecord({
-        buildFingerprint: report.stages.assembly.build_fingerprint, slug: f.slug, routes: [`/${f.slug}/`], cells: [],
-      });
-    });
-    buildSite(f, " (changed build)");
-    recordOk(f, "build");
-    assert.equal(nextStage(f).stage, "polish");
-    assert.throws(() => recordStageCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": `http://127.0.0.1:4173/${f.slug}/`, "dry-run": true }, { probe: {} }), /Polish gate is blocked|stages\.polish\.status/);
-  });
-});
-
-test("an errored readability capture blocks next and downstream record despite completed Polish status", async () => {
-  await withLifecycle(async (f) => {
-    await recordThroughPolish(f);
-    mutateJson(f.packetPath, (packet) => {
-      packet.deploy.target = "local-serve";
-      packet.source_html.pages = packet.source_html.pages.map((page) => ({ page_id: page.page_id, skip_reason: "template stock" }));
-    });
-    mutateJson(f.reportPath, (report) => {
-      report.stages.polish.evidence.visual_review.readability = buildReadabilityRecord({
-        buildFingerprint: report.stages.assembly.build_fingerprint,
-        slug: f.slug,
-        routes: [`/${f.slug}/`],
-        cells: [buildReadabilityCell({ route: `/${f.slug}/`, viewport: "desktop", status: "navigation_failed" })],
-      });
-    });
-    assert.equal(doctor(f).derived.polish_gate.status, "blocked");
-    assert.equal(nextStage(f).stage, "polish");
-    const url = `http://127.0.0.1:4173/${f.slug}/`;
-    assert.throws(() => recordStageCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": url, "dry-run": true }, { probe: { url, routes: [] } }), /Polish gate is blocked/);
   });
 });
 
@@ -927,7 +874,7 @@ async function deployedOnLocalPreview(f, site) {
   return readJson(f.reportPath).stages.assembly.build_fingerprint;
 }
 
-test("record deploy stamps the build it probed; a changed build leaves deploy required while a local preview URL lets next name QA", async () => {
+test("record deploy stamps the build it probed; a record build of different output makes deploy required and next names deploy", async () => {
   await withLifecycle(async (f) => {
     const site = await serveSite(f);
     try {
@@ -960,7 +907,7 @@ test("record deploy stamps the build it probed; a changed build leaves deploy re
       assert.deepEqual(archived[0].evidence, deployA.evidence);
       assert.ok(rebuilt.ready.some((line) => line.startsWith("stages.deploy.status = required")), rebuilt.ready.join("\n"));
       assert.ok(validReport(report), JSON.stringify(validReport.errors));
-      assert.equal(nextStage(f).stage, "qa", "the recorded local preview URL lets next proceed to QA");
+      assert.equal(nextStage(f).stage, "deploy", "next routes back to record deploy before QA");
       await recordCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": site.url });
       const deployB = readJson(f.reportPath).stages.deploy;
       assert.equal(deployB.source_build_fingerprint, report.stages.assembly.build_fingerprint);

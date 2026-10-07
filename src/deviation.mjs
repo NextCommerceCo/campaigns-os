@@ -9,7 +9,6 @@
 // intentional detour is distinguishable from drift.
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { isLocalPreview, polishCarriedForwardForLadder } from "./local-preview-policy.mjs";
 
 export const DEVIATION_SCHEMA = "campaigns-os-agent-deviation/v0";
 export const DEVIATION_JOURNAL_REL_PATH = ".campaign-runtime/agent-deviations.jsonl";
@@ -54,15 +53,14 @@ export function commandWord(command) {
   return stripped.match(/^campaigns-os\s+([a-z-]+)/)?.[1] || null;
 }
 
-export function expectedCommandsForStage(stage, requiredActions = [], { packet = null, report = null, polishGate = null } = {}) {
+export function expectedCommandsForStage(stage, requiredActions = []) {
   const base = EXPECTED_COMMANDS_BY_STAGE[stage] || [];
-  const carriedPolish = stage === "qa" && isLocalPreview(packet) && polishCarriedForwardForLadder(report, polishGate);
   // Gate required_actions name exact commands ("campaigns-os theme generate
   // ..."); their command words are expected too.
   const fromActions = requiredActions
     .map((action) => commandWord(action?.command))
-    .filter((command) => command && (stage !== "qa" || command !== "polish" || carriedPolish));
-  return [...new Set([...base, ...fromActions, ...(carriedPolish ? ["polish"] : [])])];
+    .filter(Boolean);
+  return [...new Set([...base, ...fromActions])];
 }
 
 export function buildRecommendation({ stage, status, expectedCommands, now = new Date() }) {

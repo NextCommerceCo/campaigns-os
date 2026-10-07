@@ -36,25 +36,6 @@ test("polish capture is a registered stage command for recommendation and deviat
   assert.equal(detectDeviation({ lastRecommendation: rec, command: "polish" })?.actual_command, "polish");
 });
 
-test("hosted QA keeps polish capture as a deviation", () => {
-  const expectedCommands = expectedCommandsForStage("qa", [], {
-    packet: { deploy: { target: "hosted" } }, report: {}, polishGate: { status: "carried_forward" },
-  });
-  const rec = buildRecommendation({ stage: "qa", status: "ready", expectedCommands });
-  assert.deepEqual(expectedCommands, ["qa", "theme"]);
-  assert.equal(detectDeviation({ lastRecommendation: rec, command: "polish", subcommand: "capture" })?.actual_command, "polish");
-});
-
-test("local-serve carried-forward QA allows polish capture without a deviation", () => {
-  const expectedCommands = expectedCommandsForStage("qa", [], {
-    packet: { deploy: { target: "local-serve" } }, report: { stages: { polish: { status: "required" } } },
-    polishGate: { status: "carried_forward" },
-  });
-  const rec = buildRecommendation({ stage: "qa", status: "ready", expectedCommands });
-  assert.deepEqual(expectedCommands, ["qa", "theme", "polish"]);
-  assert.equal(detectDeviation({ lastRecommendation: rec, command: "polish", subcommand: "capture" }), null);
-});
-
 test("detectDeviation flags a tracked command outside the recommendation", () => {
   const rec = buildRecommendation({ stage: "polish", status: "ready", expectedCommands: ["theme"], now: new Date("2026-06-11T00:00:00Z") });
   const entry = detectDeviation({

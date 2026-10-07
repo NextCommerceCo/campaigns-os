@@ -1,6 +1,6 @@
 // The next step doctor recommends, and the gate issues `next` reads from doctor.
 import { campaignIdentitiesMatch } from "../spec-source-identity.mjs";
-import { localPreviewUrlRecorded, polishCarriedForwardForLadder } from "../local-preview-policy.mjs";
+import { polishCarriedForwardForLadder } from "../local-preview-policy.mjs";
 import { resolve } from "node:path";
 import { orderPathDepthDriftText } from "../proof-policy.mjs";
 import { anyAssemblyReportStageBlocked, qaRecordedBuildFingerprint, qaRecordedForCurrentBuild } from "../stage-ledger.mjs";
@@ -412,7 +412,7 @@ export function assessPurchaseProofCoverage({ packet = null, report = null } = {
   };
 }
 
-function pickNextStage(report, { errors = [], derived = null }, prepareBuildGate, purchaseProof = null, packet = null) {
+function pickNextStage(report, { errors = [], derived = null }, prepareBuildGate, purchaseProof = null) {
   const polishGate = derived?.polish_gate || evaluatePolishGate({ report });
   const polishCheckpointGate = derived?.polish_checkpoint_gate || null;
   // prepare-build is the earliest lifecycle prerequisite. Surface its
@@ -476,7 +476,6 @@ function pickNextStage(report, { errors = [], derived = null }, prepareBuildGate
     // A first local preview may carry missing Polish forward. A theme waiver
     // or prior capture makes the recorded Polish stage owed again.
     if (cliStage === "polish" && polishCarriedForwardForLadder(report, polishGate)) continue;
-    if (cliStage === "deploy" && localPreviewUrlRecorded(packet, report)) continue;
     const reportKey = reportKeyForCliStage(cliStage);
     const stage = report.stages[reportKey];
     if (!stage) {
@@ -501,7 +500,7 @@ function pickNextStage(report, { errors = [], derived = null }, prepareBuildGate
         reason: `Stage "${reportKey}" has status "${status || "(unset)"}"; run "${cliStage}" next.`,
       };
     }
-    if (cliStage === "qa" && qaRecordedBuildFingerprint(report)
+    if (cliStage === "qa" && qaRecordedBuildFingerprint(report) && currentBuildFingerprint(report)
       && !qaRecordedForCurrentBuild(report, currentBuildFingerprint(report))) {
       return { stage: "qa", reason: "QA was recorded for a different build; run QA against the current build." };
     }
@@ -657,7 +656,7 @@ function buildNextStep(errors, warnings, derived, report = null, packet = null, 
     && (polishGate.status === "blocked" || polishCheckpointGate?.status === "blocked");
   const codes = new Set([...errors, ...warnings].map((issue) => issue.code));
   const purchaseProof = report ? assessPurchaseProofCoverage({ packet, report }) : null;
-  const picked = pickNextStage(report, { errors, derived }, prepareBuildGate, purchaseProof, packet);
+  const picked = pickNextStage(report, { errors, derived }, prepareBuildGate, purchaseProof);
   // The picker's vocabulary and this table must not drift apart: a stage the
   // table does not know would otherwise be relabelled as an operator step and
   // sliced into the whole ladder. Fail loudly instead.

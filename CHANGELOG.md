@@ -6,10 +6,9 @@ Notable supported-surface changes are recorded here.
 
 ### Changed
 
-- `next` asks for Polish after a local preview theme waiver. A local preview URL already on the packet lets `next` advance to QA without repeatedly asking for deploy; `record` accepts the same stage order.
+- `next` asks for Polish when a theme waiver or changed build leaves it owed on a local preview. It asks for deploy until that stage is recorded, even if the Build Packet already has a preview URL.
 - After a changed build, `next` asks for QA again when the last QA verdict names the old build, even if its recorded stage still says completed.
-- `--help` commands leave lifecycle and deviation journals untouched. Re-running `start` later in a campaign is treated as re-intake rather than a deviation. Polish capture while missing Polish is carried forward on a local preview creates no out-of-turn warning; hosted QA still treats it as a detour.
-- On a campaign with only template pages, a current readability-only Polish capture clears the page-load evidence demand when its capture completes without errors. Failed captures leave Polish open.
+- `--help` commands leave lifecycle and deviation journals untouched. Re-running `start` later in a campaign is treated as re-intake rather than a deviation.
 
 ## [1.54.0+agent.2] - 2026-10-07
 
