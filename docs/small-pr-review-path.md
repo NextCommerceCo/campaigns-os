@@ -25,12 +25,29 @@ Escalate to the normal branch + draft PR workflow when the fix changes:
 - package exports or install behavior;
 - deploy/launch readiness policy.
 
+## The fast gates, before every push
+
+`npm run check:fast` runs, in under a minute, everything CI's types and
+contracts lanes run plus the three PR-only gates below against a freshly
+fetched `origin/main`. Those are the checks pull requests fail most often
+(changelog structure, the release ledger, skill versions, surface hashes,
+generated docs), and in CI each failure costs a ten-minute run. The unit and
+browser lanes still run only in CI.
+
+`npm run hooks:install` makes it a pre-push hook for the clone and all of its
+worktrees: every push of a branch runs the gates on the commit being pushed
+(in a temporary worktree when the checkout has other changes) and is refused
+when one fails. `git push --no-verify`, or `CAMPAIGNS_OS_PREPUSH=skip`, skips
+it for one push; CI runs the same gates regardless. When a pre-push hook that
+runs `pre-push.local` is already installed, the gate installs as
+`pre-push.local` beside it.
+
 ## The PR-only gates, run locally
 
 `npm run check` is the structural half of CI. Three gates need a comparison
 point and run in CI only on pull requests, against the PR's base commit; a
-green `npm run check` says nothing about them. Before opening or updating a
-PR, run the same three against the branch you will merge into:
+green `npm run check` says nothing about them. `npm run check:fast` runs them;
+to run them alone, against the branch you will merge into:
 
 ```bash
 node ./scripts/check-skill-versions.mjs --base origin/main    # changed skill packages advance their version

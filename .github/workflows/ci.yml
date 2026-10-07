@@ -8,15 +8,36 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same pull request cancels the older run, which no longer
+# describes the branch. Pushes to main each keep their own group and always
+# finish, so every main commit gets a complete verdict.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   validate:
-    name: ${{ matrix.lane }}
+    name: ${{ matrix.shard && format('{0} {1}', matrix.lane, matrix.shard) || matrix.lane }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        lane: [types, unit, contracts, browser]
+        # unit and browser are the long lanes (about 10 minutes each on one
+        # runner), so each runs as two shards on separate runners.
+        # scripts/check-tests.mjs deals the sorted test files round-robin, and
+        # check-workflow-contracts requires every shard 1/N..N/N of a lane.
+        include:
+          - lane: types
+          - lane: unit
+            shard: 1/2
+          - lane: unit
+            shard: 2/2
+          - lane: contracts
+          - lane: browser
+            shard: 1/2
+          - lane: browser
+            shard: 2/2
     defaults:
       run:
         working-directory: campaigns-os
@@ -77,7 +98,7 @@ jobs:
         run: npm run check:pack -- --skip-prepare
       - name: Unit tests
         if: matrix.lane == 'unit'
-        run: npm run check:tests
+        run: npm run check:tests -- --shard ${{ matrix.shard }}
       - name: Contracts and generated artifacts
         if: matrix.lane == 'contracts'
         run: npm run check:contracts
@@ -94,7 +115,9 @@ jobs:
         run: ./node_modules/.bin/playwright install --with-deps chromium
       - name: Required browser proof
         if: matrix.lane == 'browser'
-        run: npm run check:browser
+        run: npm run check:browser -- --shard ${{ matrix.shard }}
+      # Runs on both browser shards: it is not sharded, takes under a minute
+      # beside the longer browser proof, and adds no wall time.
       - name: Consumer installation and browser resolution
         if: matrix.lane == 'browser'
         run: npm run check:consumer

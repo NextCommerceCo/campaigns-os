@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
-import { discoverTests, runTests } from "./check-tests.mjs";
+import { discoverTests, parseShard, runTests, selectShard, shardFromArgv } from "./check-tests.mjs";
 
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), "campaigns-test-discovery-"));
@@ -47,4 +47,40 @@ test("signal termination is reported and remains a failing result", (t) => {
   const messages = [];
   assert.equal(runTests(root, { spawn: () => ({ status: null, signal: "SIGKILL" }), report: (message) => messages.push(message) }), 1);
   assert.deepEqual(messages, ["Test process terminated by SIGKILL"]);
+});
+
+test("shards split a lane into disjoint slices that together run every file", () => {
+  const files = Array.from({ length: 7 }, (_, i) => `src/f${i}.test.mjs`);
+  for (const total of [1, 2, 3, 7, 8]) {
+    const slices = Array.from({ length: total }, (_, i) => selectShard(files, { index: i + 1, total }));
+    assert.deepEqual(slices.flat().sort(), files, `total ${total}`);
+    assert.equal(new Set(slices.flat()).size, files.length, `total ${total}: a file ran twice`);
+  }
+  assert.deepEqual(selectShard(files, { index: 2, total: 3 }), ["src/f1.test.mjs", "src/f4.test.mjs"]);
+  assert.equal(selectShard(files, undefined), files);
+});
+
+test("a malformed or out-of-range shard is refused rather than running a partial lane", () => {
+  assert.deepEqual(parseShard("2/2"), { index: 2, total: 2 });
+  for (const value of ["0/2", "3/2", "1/0", "2", "1/2/3", "a/b", " 1/2", "", undefined]) {
+    assert.throws(() => parseShard(value), /--shard takes <index>\/<total>/, String(value));
+  }
+  assert.deepEqual(shardFromArgv(["--browser", "--shard", "1/2"]), { index: 1, total: 2 });
+  assert.deepEqual(shardFromArgv(["--shard=2/2"]), { index: 2, total: 2 });
+  assert.equal(shardFromArgv(["--browser"]), undefined);
+  // CI interpolates the matrix value; an empty one must fail, not run nothing.
+  assert.throws(() => shardFromArgv(["--shard"]), /--shard takes/);
+  assert.throws(() => shardFromArgv(["--shard", ""]), /--shard takes/);
+});
+
+test("a shard runs only its slice, and an empty slice fails the lane", (t) => {
+  const root = fixture(t);
+  for (const name of ["a", "b", "c"]) writeFileSync(join(root, `src/${name}.test.mjs`), "");
+  const runs = [];
+  const spawn = (_command, args) => { runs.push(args.slice(1)); return { status: 0 }; };
+  const report = () => {};
+  assert.equal(runTests(root, { shard: { index: 1, total: 2 }, spawn, report }), 0);
+  assert.equal(runTests(root, { shard: { index: 2, total: 2 }, spawn, report }), 0);
+  assert.deepEqual(runs, [["src/a.test.mjs", "src/c.test.mjs"], ["src/b.test.mjs"]]);
+  assert.throws(() => runTests(root, { shard: { index: 4, total: 4 }, spawn, report }), /Shard 4\/4 of the unit lane is empty/);
 });

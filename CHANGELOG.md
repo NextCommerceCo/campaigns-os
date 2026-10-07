@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.54.0+agent.2] - 2026-10-07
+
+### Changed
+
+Repository CI and contributor tooling only; the published package is unchanged. CI runs the unit and browser lanes as two shards each on separate runners, and a newer push to a pull request cancels that pull request's older run; pushes to `main` always finish. `npm run check:fast` runs the checks of CI's types and contracts lanes and the three PR-only release gates against `origin/main` in under a minute, and `npm run hooks:install` installs it as a pre-push hook for the clone and its worktrees (`docs/small-pr-review-path.md`).
+
 ## [1.54.0] - 2026-10-07
 
 Ships the same-surface changes 1.53.0+agent.1 through +agent.11 (+agent.6 and +agent.8 were never used), including the `qa run --test-order` fix for Campaign Cart SDK 0.4.41 card fields (+agent.5) and the starter catalog, SDK attribute index and support policy at 0.4.41 (+agent.10, +agent.11).
