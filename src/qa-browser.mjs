@@ -3949,12 +3949,13 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
     // The requested package was selected on the entry page, where the cards
     // live; checkout renders none, so re-running strict selection here would
     // fail for the wrong reason.
+    const selectedCards = [];
     const strictSelection = enteredViaLanding && selectedPackages.length
       ? `selected on entry page: ${entry.package_id || "(no package id on control)"}`
-      : await selectRequestedPackages(page, selectedPackages);
-    await selectRequestedCart(page, args);
+      : await selectRequestedPackages(page, selectedPackages, selectedCards);
+    const unappliedCart = await selectRequestedCart(page, args, { selectedPackages, selectedCards });
     await advanceToCheckoutForm(page);
-    if (strictSelection) return `selected requested package card(s): ${strictSelection}`;
+    if (strictSelection) return `selected requested package card(s): ${[strictSelection, ...unappliedCart].join("; ")}`;
     return parseCart(args.cart).length ? `requested cart ${args.cart}` : "default bundle selection";
   }, { timeoutMs: budget() });
   await ladder.run("bump_state", async () => {
@@ -4033,6 +4034,7 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
     display: checkoutDisplay,
     events,
     selected_packages: selectedPackages,
+    requested_cart: parseCart(args.cart),
   });
   order.verification.total_parity = assessOrderTotalParity({
     display: checkoutDisplay,
@@ -4593,14 +4595,116 @@ async function gotoAndSettle(page, url, args, tracking = null) {
   await page.waitForTimeout(750);
 }
 
-async function selectRequestedCart(page, args) {
+// Returns one note per --cart ref left unapplied beside a --select-package
+// selection; the selected_bundle step reports them.
+async function selectRequestedCart(page, args, { selectedPackages = [], selectedCards = [] } = {}) {
   const cart = parseCart(args.cart);
+  if (!cart.length) return [];
+  if (selectedPackages.length) return applyCartBesideSelection(page, cart, { selectedPackages, selectedCards });
+  // A package a bundle card declares, asked for at an explicit quantity, is
+  // chosen by the card whose items carry it at that quantity. The first
+  // [data-next-package-id] for that package is usually the one-unit card's
+  // inner node, so the plain click below would reset a multi-unit selection.
+  // A bare ref names no quantity and clicks that first node, as it always has.
+  // The cards are read again for each ref: a click may re-render the selector.
   for (const item of cart) {
+    const ref = String(item.packageId);
+    const bundleCards = (await renderedPackageCardCandidates(page))
+      .filter((candidate) => candidate.bundle_id && Array.isArray(candidate.items));
+    if (item.quantityExplicit && bundleCards.some((card) => card.items.some((entry) => entry.package_id === ref))) {
+      await selectCartBundleCard(page, bundleCards, item);
+      continue;
+    }
     const target = page.locator(packageCardClickSelector({ package_id: item.packageId })).first();
     if (await target.count().catch(() => 0)) {
       const perpetual = await scrollControlIntoView(target);
       await clickControl(target, { timeout: 5000, forceFallback: false, perpetual }).catch(() => {});
     }
+  }
+  return [];
+}
+
+function cardCarriesPackage(candidate, ref) {
+  return String(candidate?.package_id || "") === ref
+    || String(candidate?.bundle_id || "") === ref
+    || (Array.isArray(candidate?.items) && candidate.items.some((entry) => String(entry?.package_id || "") === ref));
+}
+
+// --cart beside --select-package: the card --select-package chose stays
+// selected. A --cart ref that card carries is already applied. Any other ref
+// is applied through its own control (an order bump toggle, or a card in a
+// selector group --select-package did not choose in), never by clicking
+// another card in the chosen card's group. A ref only such a click could
+// satisfy is left unapplied and named, so the order and its reconciliation
+// stay those of the card actually selected.
+async function applyCartBesideSelection(page, cart, { selectedPackages, selectedCards }) {
+  const chosenIdentities = new Set(selectedCards.map(packageCardIdentity));
+  const strictRefs = selectedPackages.map((item) => String(item.packageId));
+  const unapplied = [];
+  for (const item of cart) {
+    const ref = String(item.packageId);
+    const label = `--cart ${ref}:${item.quantity}`;
+    const candidates = await renderedPackageCardCandidates(page, { placement: true });
+    // Cards chosen on this page, or (when the choice was made on an entry
+    // page) the selected cards that carry a --select-package ref.
+    const chosen = candidates.filter((candidate) => !candidate.toggle && (
+      chosenIdentities.has(packageCardIdentity(candidate))
+      || (candidate.selected && strictRefs.some((strictRef) => cardCarriesPackage(candidate, strictRef)))
+    ));
+    const carrying = chosen.find((candidate) => cardCarriesPackage(candidate, ref));
+    if (carrying) {
+      const declared = carrying.items?.find((entry) => entry.package_id === ref)?.quantity;
+      if (item.quantityExplicit && declared != null && declared !== item.quantity) {
+        unapplied.push(`${label} not applied: the card --select-package chose declares ${ref}:${declared}`);
+      }
+      continue;
+    }
+    // A card in no recognised selector container may share the chosen card's
+    // selection, so it is locked like a card in the chosen card's group.
+    const lockedGroups = new Set(chosen.map((candidate) => candidate.group));
+    const reachable = candidates.filter((candidate) => (
+      cardCarriesPackage(candidate, ref)
+      && (candidate.toggle || (candidate.group != null && !lockedGroups.has(candidate.group)))
+    ));
+    if (!reachable.length) {
+      unapplied.push(candidates.some((candidate) => cardCarriesPackage(candidate, ref))
+        ? `${label} not applied: only another card in the selector --select-package chose carries it`
+        : `${label} not applied: no rendered card or control carries it`);
+      continue;
+    }
+    let target = reachable.find((candidate) => candidate.toggle);
+    if (!target) {
+      const declaringCards = reachable.filter((candidate) => candidate.items?.some((entry) => entry.package_id === ref));
+      try {
+        target = declaringCards.length ? resolvePackageCardCandidate(declaringCards, item) : reachable[0];
+      } catch (error) {
+        unapplied.push(`${label} not applied: ${error.message}`);
+        continue;
+      }
+    }
+    const control = page.locator(PACKAGE_CARD_QUERY).nth(target.element_index);
+    const perpetual = await scrollControlIntoView(control);
+    await clickControl(control, { timeout: 5000, forceFallback: false, perpetual }).catch(() => {});
+  }
+  return unapplied;
+}
+
+// Best-effort, like the rest of --cart: a ref no card satisfies leaves the
+// selection alone, and reconciliation reports the quantity the order carried.
+async function selectCartBundleCard(page, bundleCards, item) {
+  const ref = String(item.packageId);
+  const { selected_bundle_items: selected = [] } = await checkoutDisplayEvidence(page);
+  if (selected.some((card) => card.items?.some((entry) => entry.package_id === ref && entry.quantity === item.quantity))) return;
+  let candidate;
+  try {
+    candidate = resolvePackageCardCandidate(bundleCards, item);
+  } catch {
+    return;
+  }
+  const target = page.locator(packageCardClickSelector(candidate)).first();
+  if (await target.count().catch(() => 0)) {
+    const perpetual = await scrollControlIntoView(target);
+    await clickControl(target, { timeout: 5000, forceFallback: false, perpetual }).catch(() => {});
   }
 }
 
@@ -4611,16 +4715,17 @@ async function selectRequestedCart(page, args) {
 // strict variant: the requested card must exist, be clickable, and an explicit
 // quantity must visibly enter the selected state — otherwise the
 // selected_bundle step fails instead of driving the wrong tier.
-async function selectRequestedPackages(page, requested) {
+// `cards` collects the card each item selected, for --cart to leave alone.
+async function selectRequestedPackages(page, requested, cards = []) {
   if (!requested.length) return null;
   const details = [];
   for (const item of requested) {
-    details.push(await selectPackageCard(page, item));
+    details.push(await selectPackageCard(page, item, cards));
   }
   return details.join("; ");
 }
 
-async function selectPackageCard(page, item) {
+async function selectPackageCard(page, item, cards = []) {
   const candidate = resolvePackageCardCandidate(await renderedPackageCardCandidates(page), item);
   const selector = packageCardClickSelector(candidate);
   const target = page.locator(selector).first();
@@ -4642,14 +4747,36 @@ async function selectPackageCard(page, item) {
   if (packageCardProofIdentity(selected) !== packageCardProofIdentity(candidate)) {
     throw new Error(`--select-package ${item.packageId}: rendered card composition changed after click`);
   }
+  cards.push(selected);
   const quantity = item.quantity || 1;
   return `${item.packageId}:${quantity} via ${selector}${state === "unknown" ? " (card exposes no selected-state marker; composition verified)" : ""}`;
 }
 
-async function renderedPackageCardCandidates(page) {
-  return page.locator("[data-next-bundle-card], [data-next-selector-card], [data-next-package-id], [data-next-bundle-id]").evaluateAll((elements) => {
+const PACKAGE_CARD_QUERY = "[data-next-bundle-card], [data-next-selector-card], [data-next-package-id], [data-next-bundle-id]";
+
+// `placement` adds where each card sits: its selector group (an index valid
+// for this read only, null for a card in no recognised selector container,
+// whose own wrapper says nothing about which cards it swaps with), whether it
+// is selected, whether it is an order-bump
+// style toggle rather than a selector card, and the index of its element in
+// PACKAGE_CARD_QUERY so that one exact element can be clicked.
+async function renderedPackageCardCandidates(page, { placement = false } = {}) {
+  return page.locator(PACKAGE_CARD_QUERY).evaluateAll((elements, withPlacement) => {
     const cards = [];
     const seen = new Set();
+    const groups = new Map();
+    const groupOf = (card) => {
+      const container = card.closest("[data-next-bundle-selector], [data-next-selector-id], [data-next-cart-selector]");
+      if (!container) return null;
+      if (!groups.has(container)) groups.set(container, groups.size);
+      return groups.get(container);
+    };
+    const isSelected = (card) => (
+      card.classList.contains("next-selected")
+      || card.getAttribute("data-next-selected") === "true"
+      || card.getAttribute("aria-checked") === "true"
+      || card.querySelector('input[type="radio"], input[type="checkbox"]')?.checked === true
+    );
     const parseItems = (value) => {
       if (!value) return null;
       try {
@@ -4663,7 +4790,7 @@ async function renderedPackageCardCandidates(page) {
         return null;
       }
     };
-    for (const element of elements) {
+    for (const [index, element] of elements.entries()) {
       const card = element.closest("[data-next-bundle-card], [data-next-selector-card]") || element;
       if (seen.has(card)) continue;
       seen.add(card);
@@ -4680,10 +4807,19 @@ async function renderedPackageCardCandidates(page) {
       if (!items && packageId && Number.isFinite(declaredQuantity) && declaredQuantity > 0) {
         items = [{ package_id: packageId, quantity: declaredQuantity }];
       }
-      cards.push({ bundle_id: bundleId, package_id: packageId, items });
+      const candidate = { bundle_id: bundleId, package_id: packageId, items };
+      if (withPlacement) {
+        Object.assign(candidate, {
+          group: groupOf(card),
+          selected: isSelected(card),
+          toggle: Boolean(element.closest("[data-next-package-toggle], [data-next-toggle-card], [data-next-bump]")),
+          element_index: index,
+        });
+      }
+      cards.push(candidate);
     }
     return cards;
-  }).catch(() => []);
+  }, placement).catch(() => []);
 }
 
 function packageCardIdentity(candidate) {
@@ -4715,8 +4851,14 @@ function packageCardClickSelector(candidate) {
 function resolvePackageCardCandidate(candidates, item) {
   const ref = String(item?.packageId || "");
   const quantity = Number(item?.quantity || 1);
-  const matchingRef = (candidates || []).filter((candidate) => (
+  const identityMatches = (candidates || []).filter((candidate) => (
     String(candidate?.bundle_id || "") === ref || String(candidate?.package_id || "") === ref
+  ));
+  // A bundle card's package identity is also the package its
+  // data-next-bundle-items declares, whether or not an inner node repeats it.
+  const matchingRef = (candidates || []).filter((candidate) => (
+    identityMatches.includes(candidate)
+    || (Array.isArray(candidate?.items) && candidate.items.some((entry) => String(entry?.package_id || "") === ref))
   ));
   if (!matchingRef.length) {
     throw new Error(`--select-package ${ref}: no rendered card exposes that package or bundle identity`);
@@ -4728,18 +4870,22 @@ function resolvePackageCardCandidate(candidates, item) {
     throw new Error(`--select-package ${ref}: rendered bundle identity is ambiguous across ${exactBundle.length} cards`);
   }
 
-  const exactComposition = matchingRef.filter((candidate) => (
+  // A card matches when one of its declared items is the package at that
+  // quantity, however many items it declares. A card declaring that item
+  // alone is preferred over one declaring it among others (a 2x tier over a
+  // 2x-plus-accessory kit); the kit stays reachable by its bundle id.
+  const declaringItem = matchingRef.filter((candidate) => (
     Array.isArray(candidate?.items)
-    && candidate.items.length === 1
-    && String(candidate.items[0]?.package_id || "") === ref
-    && Number(candidate.items[0]?.quantity) === quantity
+    && candidate.items.some((entry) => String(entry?.package_id || "") === ref && Number(entry?.quantity) === quantity)
   ));
+  const declaringOnlyItem = declaringItem.filter((candidate) => candidate.items.length === 1);
+  const exactComposition = declaringOnlyItem.length ? declaringOnlyItem : declaringItem;
   if (exactComposition.length === 1) return exactComposition[0];
   if (exactComposition.length > 1) {
     throw new Error(`--select-package ${ref}:${quantity}: rendered package composition is ambiguous across ${exactComposition.length} cards`);
   }
-  const unknownComposition = matchingRef.filter((candidate) => !Array.isArray(candidate?.items));
-  if (quantity === 1 && matchingRef.length === 1 && unknownComposition.length === 1) return unknownComposition[0];
+  const unknownComposition = identityMatches.filter((candidate) => !Array.isArray(candidate?.items));
+  if (quantity === 1 && identityMatches.length === 1 && unknownComposition.length === 1) return unknownComposition[0];
   throw new Error(`--select-package ${ref}:${quantity}: no rendered card has exactly package ${ref} at quantity ${quantity}`);
 }
 
@@ -5707,14 +5853,37 @@ async function checkoutDisplayEvidence(browserPage) {
       text: clean(row.textContent).slice(0, 160),
     }));
 
-    const selectedBundles = Array.from(document.querySelectorAll("[data-next-bundle-card]"))
+    // A bundle card's packages are the ones its data-next-bundle-items
+    // declares, at the per-package quantity the SDK puts in the cart. Its
+    // data-next-bundle-id names the tier, not a package an order line can
+    // carry, so it stands in only for a card that declares no items.
+    const declaredItems = (card) => {
+      try {
+        const parsed = JSON.parse(card.getAttribute("data-next-bundle-items") || "null");
+        if (!Array.isArray(parsed)) return null;
+        const items = parsed.map((entry) => ({
+          package_id: String(entry?.packageId ?? entry?.package_id ?? ""),
+          quantity: Number(entry?.quantity ?? 1),
+        })).filter((entry) => entry.package_id && Number.isFinite(entry.quantity) && entry.quantity > 0);
+        return items.length ? items : null;
+      } catch {
+        return null;
+      }
+    };
+    const selectedBundleCards = Array.from(document.querySelectorAll("[data-next-bundle-card]"))
       .filter((card) => (
         card.classList.contains("next-selected")
         || card.getAttribute("data-next-selected") === "true"
         || card.getAttribute("aria-checked") === "true"
         || card.querySelector('input[type="radio"], input[type="checkbox"]')?.checked === true
-      ))
-      .map(idOf)
+      ));
+    // A card whose data-next-bundle-items is malformed or empty is kept with
+    // items: null, so reconciliation knows a selected card declared nothing.
+    const selectedBundleItems = selectedBundleCards
+      .filter((card) => card.hasAttribute("data-next-bundle-items"))
+      .map((card) => ({ bundle_id: card.getAttribute("data-next-bundle-id") || null, items: declaredItems(card) }));
+    const selectedBundles = selectedBundleCards
+      .flatMap((card) => declaredItems(card)?.map((item) => item.package_id) || [idOf(card)])
       .filter(Boolean);
 
     const activeToggles = Array.from(document.querySelectorAll("[data-next-package-toggle], [data-next-toggle-card], [data-next-bump]"))
@@ -5742,6 +5911,9 @@ async function checkoutDisplayEvidence(browserPage) {
       summary_present: summaries.length > 0,
       summary_rows: summaryRows.slice(0, 40),
       selected_bundle_package_ids: [...new Set(selectedBundles)],
+      // Uncapped, like selected_bundle_package_ids: every selected card's
+      // items are reconciled.
+      selected_bundle_items: selectedBundleItems,
       active_toggle_package_ids: [...new Set(activeToggles)],
       discount_rows: discountRows.slice(0, 20),
       total_text: totalNode ? clean(totalNode.textContent) : null,
@@ -5750,6 +5922,7 @@ async function checkoutDisplayEvidence(browserPage) {
     summary_present: false,
     summary_rows: [],
     selected_bundle_package_ids: [],
+    selected_bundle_items: [],
     active_toggle_package_ids: [],
     discount_rows: [],
     total_text: null,
@@ -5792,7 +5965,29 @@ function displayedPackageIds(display) {
   };
 }
 
-function reconcileOrderAgainstDisplay({ lines = [], display = null, events = null, selected_packages = [] } = {}) {
+// The packages and per-package quantities the selected bundle card(s)
+// declare. A package two selected cards declare at different quantities is
+// left out of `quantities`: the display itself does not say which one holds.
+// A card whose items are malformed or empty declares nothing.
+function selectedBundleDeclarations(display) {
+  const declared = new Map();
+  for (const card of display?.selected_bundle_items || []) {
+    for (const item of card?.items || []) {
+      const ref = String(item?.package_id ?? "");
+      const quantity = Number(item?.quantity);
+      if (!ref || !Number.isFinite(quantity) || quantity <= 0) continue;
+      declared.set(ref, [...new Set([...(declared.get(ref) || []), quantity])]);
+    }
+  }
+  return {
+    refs: new Set(declared.keys()),
+    quantities: [...declared]
+      .filter(([, quantities]) => quantities.length === 1)
+      .map(([packageId, [quantity]]) => ({ packageId, quantity })),
+  };
+}
+
+function reconcileOrderAgainstDisplay({ lines = [], display = null, events = null, selected_packages = [], requested_cart = [] } = {}) {
   if (!display) {
     return { comparable: false, reason: "checkout display evidence was not captured for this order" };
   }
@@ -5814,9 +6009,37 @@ function reconcileOrderAgainstDisplay({ lines = [], display = null, events = nul
   }
 
   const nonUpsellLines = (lines || []).filter((line) => !line?.is_upsell);
+  // A two-unit bundle card puts its package in the cart at quantity two, so a
+  // line resolves at the quantity the selected card declares; --select-package
+  // still wins for the packages it names.
+  const declarations = selectedBundleDeclarations(display);
+  const strictRefs = new Set((selected_packages || []).map((item) => String(item.packageId)));
+  const resolutionPackages = [
+    ...(selected_packages || []),
+    ...declarations.quantities.filter((item) => !strictRefs.has(item.packageId)),
+  ];
+  // Without --select-package, every explicit --cart <pkg>:<qty> is judged on
+  // its own: the order must carry that package at that quantity, whichever
+  // card, if any, declares it. Beside --select-package the order is judged
+  // against the card that flag chose; a --cart ref it left unapplied is named
+  // by selected_bundle.
+  const requestedCart = (selected_packages || []).length ? [] : (requested_cart || [])
+    .filter((item) => item?.quantityExplicit);
+  const requestedCartByRef = new Map(requestedCart.map((item) => [String(item.packageId), Number(item.quantity || 1)]));
   const displayed = new Set(resolved.displayed_package_ids);
   const summaryIds = new Set(resolved.summary_package_ids);
   const matchedSummaryIds = new Set();
+  // Refs a non-upsell line resolved to. A line resolves to a package only at
+  // the quantity --select-package names or the selected card declares, so
+  // for a declared item this proves the quantity too.
+  const chargedRefs = new Set();
+  // --cart refs a line resolved to, or whose quantity mismatch is named.
+  const answeredCartRefs = new Set();
+  const unresolvedLines = [];
+  const extra = [];
+  const unresolved = [];
+  const matchedQuantities = [];
+  const quantityMismatches = [];
   // A checkout order bump persists with is_upsell: true (the platform's
   // reporting tag), yet the checkout summary displays it. Such a line charges
   // a displayed row; an is_upsell line the summary does not show is a
@@ -5824,23 +6047,24 @@ function reconcileOrderAgainstDisplay({ lines = [], display = null, events = nul
   let bumpLineCount = 0;
   for (const line of (lines || []).filter((entry) => entry?.is_upsell)) {
     const resolution = events ? campaignPackageResolutionForLine(events, line, {
-      selected_packages,
+      selected_packages: resolutionPackages,
       preferred_refs: resolved.summary_package_ids,
     }) : null;
     const ref = resolution?.pkg?.ref_id == null ? null : String(resolution.pkg.ref_id);
     if (ref && summaryIds.has(ref)) {
       matchedSummaryIds.add(ref);
       bumpLineCount += 1;
+      if (requestedCartByRef.has(ref)) {
+        answeredCartRefs.add(ref);
+        const mismatch = packageQuantityMismatch(ref, Number(resolution.pkg.qty ?? resolution.pkg.quantity), requestedCartByRef.get(ref), Number(line.quantity));
+        if (mismatch) quantityMismatches.push(mismatch);
+      }
     }
   }
-  const extra = [];
-  const unresolved = [];
-  const matchedQuantities = [];
-  const quantityMismatches = [];
 
   for (const line of nonUpsellLines) {
     const resolution = events ? campaignPackageResolutionForLine(events, line, {
-      selected_packages,
+      selected_packages: resolutionPackages,
       preferred_refs: resolved.displayed_package_ids,
     }) : null;
     const meta = resolution?.pkg || null;
@@ -5850,10 +6074,15 @@ function reconcileOrderAgainstDisplay({ lines = [], display = null, events = nul
       // same tolerance linePriceDeltaEvidence applies). An unresolvable line
       // cannot prove a stray charge, so it is reported, never counted as one.
       unresolved.push({ title: line.title, quantity: line.quantity });
-      const mismatch = requestedPackageQuantityMismatch(events, line, selected_packages);
-      if (mismatch) quantityMismatches.push(mismatch);
+      unresolvedLines.push(line);
+      const mismatch = requestedPackageQuantityMismatch(events, line, [...selected_packages, ...requestedCart]);
+      if (mismatch) {
+        quantityMismatches.push(mismatch);
+        answeredCartRefs.add(mismatch.package_ref_id);
+      }
       continue;
     }
+    chargedRefs.add(ref);
     const unitQuantity = Number(meta.qty ?? meta.quantity);
     matchedQuantities.push({
       package_ref_id: ref,
@@ -5861,6 +6090,13 @@ function reconcileOrderAgainstDisplay({ lines = [], display = null, events = nul
       purchase_multiplier: resolution.purchaseMultiplier,
       persisted_quantity: Number(line.quantity),
     });
+    // The line resolved at the quantity the page selected; --cart asked for
+    // another, so the order is not the one requested.
+    if (requestedCartByRef.has(ref)) {
+      answeredCartRefs.add(ref);
+      const mismatch = packageQuantityMismatch(ref, unitQuantity, requestedCartByRef.get(ref), Number(line.quantity));
+      if (mismatch) quantityMismatches.push(mismatch);
+    }
     if (displayed.has(ref)) {
       if (summaryIds.has(ref)) matchedSummaryIds.add(ref);
       continue;
@@ -5872,8 +6108,26 @@ function reconcileOrderAgainstDisplay({ lines = [], display = null, events = nul
       price: line.price,
     });
   }
+  // An explicit --cart ref the order carries no line for is not the order
+  // requested either, as when a swap-mode selector kept only the last --cart
+  // ref's card. An unresolved line that is that package at that quantity
+  // still answers it.
+  const packages = latestEventPackages(events);
+  if (packages) {
+    for (const [ref, purchaseMultiplier] of requestedCartByRef) {
+      if (answeredCartRefs.has(ref)) continue;
+      const pkg = packages.find((candidate) => String(candidate?.ref_id ?? candidate?.package_id ?? candidate?.id ?? "") === ref);
+      if (pkg && unresolvedLines.some((line) => packageMatchesLine(pkg, line, { purchaseMultiplier }))) continue;
+      quantityMismatches.push(absentPackageMismatch(ref, Number(pkg?.qty ?? pkg?.quantity), purchaseMultiplier));
+    }
+  }
 
-  const missing = [...summaryIds].filter((id) => !matchedSummaryIds.has(id));
+  // Every item a selected bundle card declares must be charged, whether or not
+  // the summary renders a row for it.
+  const missing = [
+    ...[...summaryIds].filter((id) => !matchedSummaryIds.has(id)),
+    ...[...declarations.refs].filter((id) => !summaryIds.has(id) && !chargedRefs.has(id)),
+  ];
   return {
     comparable: true,
     ok: extra.length === 0 && missing.length === 0 && quantityMismatches.length === 0,
@@ -5899,21 +6153,45 @@ function requestedPackageQuantityMismatch(events, line, selectedPackages) {
       const ref = String(selected.packageId);
       const pkg = packages.find((candidate) => String(candidate?.ref_id ?? candidate?.package_id ?? candidate?.id ?? "") === ref);
       if (!pkg || !packageIdentityMatchesLine(pkg, line)) continue;
-      const unitQuantity = Number(pkg.qty ?? pkg.quantity);
-      const purchaseMultiplier = Number(selected.quantity || 1);
-      const requestedQuantity = unitQuantity * purchaseMultiplier;
-      const persistedQuantity = Number(line?.quantity || 0);
-      if (Number.isFinite(requestedQuantity) && requestedQuantity !== persistedQuantity) {
-        return {
-          package_ref_id: ref,
-          unit_quantity: unitQuantity,
-          purchase_multiplier: purchaseMultiplier,
-          requested_quantity: requestedQuantity,
-          persisted_quantity: persistedQuantity,
-          reason: `package ${ref} requested ${requestedQuantity} unit(s) (${unitQuantity} per package × ${purchaseMultiplier}) but persisted ${persistedQuantity}`,
-        };
-      }
+      const mismatch = packageQuantityMismatch(ref, Number(pkg.qty ?? pkg.quantity), Number(selected.quantity || 1), Number(line?.quantity || 0));
+      if (mismatch) return mismatch;
     }
+  }
+  return null;
+}
+
+function packageQuantityMismatch(ref, unitQuantity, purchaseMultiplier, persistedQuantity) {
+  const requestedQuantity = unitQuantity * purchaseMultiplier;
+  if (!Number.isFinite(requestedQuantity) || requestedQuantity === persistedQuantity) return null;
+  return {
+    package_ref_id: ref,
+    unit_quantity: unitQuantity,
+    purchase_multiplier: purchaseMultiplier,
+    requested_quantity: requestedQuantity,
+    persisted_quantity: persistedQuantity,
+    reason: `package ${ref} requested ${requestedQuantity} unit(s) (${unitQuantity} per package × ${purchaseMultiplier}) but persisted ${persistedQuantity}`,
+  };
+}
+
+function absentPackageMismatch(ref, unitQuantity, purchaseMultiplier) {
+  const known = Number.isFinite(unitQuantity);
+  return {
+    package_ref_id: ref,
+    unit_quantity: known ? unitQuantity : null,
+    purchase_multiplier: purchaseMultiplier,
+    requested_quantity: known ? unitQuantity * purchaseMultiplier : null,
+    persisted_quantity: 0,
+    reason: known
+      ? `package ${ref} requested ${unitQuantity * purchaseMultiplier} unit(s) (${unitQuantity} per package × ${purchaseMultiplier}) but the order carries no line for it`
+      : `package ${ref} requested at quantity ${purchaseMultiplier} but the order carries no line for it`,
+  };
+}
+
+function latestEventPackages(events) {
+  const responses = events?.responses || [];
+  for (let index = responses.length - 1; index >= 0; index -= 1) {
+    const packages = responses[index]?.body?.packages;
+    if (Array.isArray(packages)) return packages;
   }
   return null;
 }
@@ -5960,6 +6238,9 @@ function orderDisplayParityAssertion(page, planIdentifier, order) {
   }
   if (reconciliation.missing.length) {
     parts.push(`displayed but never charged: ${reconciliation.missing.join(", ")}`);
+  }
+  if (reconciliation.quantity_mismatches?.length) {
+    parts.push(`ordered quantity differs from the request: ${reconciliation.quantity_mismatches.map((entry) => entry.reason).join("; ")}`);
   }
   return assertion({
     ...base,
