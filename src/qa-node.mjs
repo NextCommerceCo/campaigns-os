@@ -169,7 +169,7 @@ Options:
   --post-verdict                  (default) Publish the verdict to the QA portal at
                                   <proxy-base>/api/qa/verdicts and print the QA portal link.
                                   Publishing is automatic, except for a run whose base URL is a local
-                                  address (localhost, *.localhost, 127.x.x.x, 0.0.0.0, [::1]): that verdict stays local unless
+                                  address (localhost, *.localhost, 127.x.x.x, 0.0.0.0, [::1], an IPv4-mapped loopback): that verdict stays local unless
                                   this flag is passed.
   --no-post-verdict, --local-only Skip publishing; write only the local verdict copy (offline / dev / CI).
                                   Publish it later, without a re-run, with qa publish.

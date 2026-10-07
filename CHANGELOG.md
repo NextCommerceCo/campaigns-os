@@ -2,6 +2,20 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.54.0] - 2026-10-07
+
+Ships the same-surface changes 1.53.0+agent.1 through +agent.11 (+agent.6 and +agent.8 were never used), including the `qa run --test-order` fix for Campaign Cart SDK 0.4.41 card fields (+agent.5) and the starter catalog, SDK attribute index and support policy at 0.4.41 (+agent.10, +agent.11).
+
+### Added
+
+`campaigns-os sdk repin --target <repo> [--target-sdk <x.y.z>] [--apply] [--json]` updates the Campaign Cart SDK pins written into a static campaign repo's HTML, the `loader.js` and `campaign-cart.css` URLs that `standardize` already lists with path and line. It rewrites only a semver pin (`@vX.Y.Z` or `@X.Y.Z`) below the target version, and only the version part of the URL. `@latest`, `@main`, commit and prerelease refs, and pins already at or above the target, are listed and left alone. Without `--target-sdk` the target is the SDK support policy's `preferred_minimum`. By default it only previews, printing each path and line with the old and new URL. `--apply` writes the files and a change record at `.campaign-runtime/sdk-repin.json` with the files touched, the reference count and the from and to versions, which a Run Record can cite. A second run finds nothing to change and writes nothing. A repo with `_data/campaigns.json` is refused with exit 2, because page-kit owns that pin; use `page-kit sync` there. This replaces the hand-run `sed` step in the SDK bump for static repos.
+
+### Changed
+
+`qa run` no longer publishes a verdict to the QA portal by default when the base URL is a local address (`localhost` or any `*.localhost` name, any `127.x.x.x` address, `0.0.0.0`, `[::1]` or an IPv4-mapped loopback), whether the spec came from a saved Map or a local file. The verdict stays local, and the output names the destination plus `qa publish` and `--post-verdict`. Pass `--post-verdict` to publish a local-address run. `publish_decision.reason` reads `loopback_base_url` when this default applied. Runs against a remote base URL publish exactly as before. The `--post-verdict` help line now names the IPv4-mapped loopback too.
+
+The effects contract declares the `sdk repin` and `sdk repin --apply` rows. On the eight `qa run` rows, the verdict send to `{proxy-base}/api/qa/verdicts` now names the local-address default in its condition, and the offline fixture no longer observes it because it serves the campaign from 127.0.0.1; `qa publish` proves that send.
+
 ## [1.53.0+agent.11] - 2026-10-07
 
 ### Changed

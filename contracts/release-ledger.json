@@ -6353,6 +6353,171 @@
         }
       ],
       "entry_sha256": "41994901ffbce1dbdf74e020465ba9622ed062cb310b6021265fe848ae12a559"
+    },
+    {
+      "id": "RL-0245",
+      "sequence": 234,
+      "date": "2026-10-07",
+      "kind": "release",
+      "surface_version": "1.54.0",
+      "changelog_section": "1.54.0",
+      "changelog_sha256": "d1ceb594d3d7405d25e6ff285e412c0b0ed83dc16c7049bea8f2fafed5dae643",
+      "agent_impact": "Surface 1.54.0. Ships 1.53.0+agent.1 through +agent.11, including qa run --test-order typing card fields on Campaign Cart SDK 0.4.41 and the starter catalog, SDK attribute index and support policy at 0.4.41. New subcommand sdk repin --target <static-repo> [--target-sdk <x.y.z>] [--apply] [--json] replaces the hand-run sed step when bumping the Campaign Cart SDK in a static campaign repo (no _data/campaigns.json). It rewrites only the version segment of semver-pinned (@vX.Y.Z or @X.Y.Z) loader.js and campaign-cart.css URLs below the target, the same references standardize lists under sdk_loader.references; @latest, @main, commit and prerelease refs and pins at or above the target are reported in left_alone and never rewritten. The target defaults to the SDK support policy's preferred_minimum. Preview is the default and writes nothing; --apply writes the files and the change record .campaign-runtime/sdk-repin.json (schema campaigns-os-sdk-repin/v0: files_touched, reference_count, from_versions, to_version, rewrites, left_alone), whose path and sha256 the --json result gives for a Run Record to cite. A second run reports nothing_to_change and writes nothing. A page-kit repo is refused with exit 2 (status refused_page_kit); use page-kit sync there. After --apply, run browser QA against the new pin: repin does not prove the SDK works. qa run keeps the verdict local by default when the base URL (from --base-url or the packet's deploy.preview_url) is a local address (localhost or *.localhost, any 127.x.x.x, 0.0.0.0, [::1] or an IPv4-mapped loopback), for saved-Map and local-spec runs alike; publish_decision.reason reads loopback_base_url and the output names qa publish and --post-verdict. An agent that wants a local-address verdict on the Map's QA tab passes --post-verdict or runs qa publish afterwards. Remote base URLs publish as before.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "compatibility.json",
+          "surface_entry": null,
+          "summary": "Advance the declared version to 1.54.0."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/effects.v1.json",
+          "surface_entry": "contracts/effects.v1.json",
+          "summary": "Declare sdk repin (tier none) and sdk repin --apply (tier B: the rewritten files, the change record and the lifecycle journal), and add --apply to the effect-changing flags; on the eight qa run rows, name the local-address default in the verdict send's condition and record it unobserved under the 127.0.0.1 offline fixture (#486), with qa publish as the proof of that send."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Advance surface_version to 1.54.0 and record the effects contract hash."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "sdk",
+          "summary": "Add the sdk repin subcommand and its usage line: rewrite semver-pinned Campaign Cart loader and stylesheet URLs below the target in a static repo, preview by default, --apply writes the files and the campaigns-os-sdk-repin/v0 change record, --target-sdk overrides the policy target, a page-kit repo is refused with exit 2."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "Add the sdk repin row."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/sdk-storage-compatibility.md",
+          "surface_entry": "docs/sdk-storage-compatibility.md",
+          "summary": "Document sdk repin as the pin-rewrite step after the storage check for static repos: which references it rewrites and leaves alone, the preview and --apply modes, the change record, and the page-kit refusal."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/effects.md",
+          "surface_entry": "docs/effects.md",
+          "summary": "List the sdk repin preview among the read-only invocations and --apply among the effect-changing flags."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/campaign-standardization-report.md",
+          "surface_entry": "docs/campaign-standardization-report.md",
+          "summary": "Point from sdk_loader.references to sdk repin for static repos."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Describe the local-address default and how to publish such a verdict."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Pin the 1.54.0 package in the local setup install command."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Use the current 1.54.0+skills.1 bundle in executable examples."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Advance the package version to 1.54.0."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance the bundled skill revision to 1.54.0+skills.1 and each skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.54.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.54.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.54.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.54.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.54.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.54.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.54.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.54.0+skills.1 bundle revision."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Publish the 1.54.0+skills.1 bundle revision."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerate at surface 1.54.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerate at surface 1.54.0."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Advance the package version to 1.54.0."
+        }
+      ],
+      "entry_sha256": "7599a4d00072f263ee8da0f243e29b5a59777cc69d89f5f6387898a645391b93"
     }
   ]
 }
