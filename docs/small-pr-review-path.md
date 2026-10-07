@@ -42,6 +42,13 @@ it for one push; CI runs the same gates regardless. When a pre-push hook that
 runs `pre-push.local` is already installed, the gate installs as
 `pre-push.local` beside it.
 
+CI splits the unit and browser lanes into two shards each, balanced by the
+per-file durations in `scripts/test-durations.json`. When one shard's job
+starts taking clearly longer than the other's, refresh them with
+`npm run check:tests -- --record-durations` and
+`npm run check:browser -- --record-durations` and commit the file. A stale
+entry only unbalances the shards; every test still runs.
+
 ## The PR-only gates, run locally
 
 `npm run check` is the structural half of CI. Three gates need a comparison

@@ -25,8 +25,9 @@ jobs:
       matrix:
         # unit and browser are the long lanes (about 10 minutes each on one
         # runner), so each runs as two shards on separate runners.
-        # scripts/check-tests.mjs deals the sorted test files round-robin, and
-        # check-workflow-contracts requires every shard 1/N..N/N of a lane.
+        # scripts/check-tests.mjs splits a lane into shards of equal measured
+        # duration (scripts/test-durations.json), and check-workflow-contracts
+        # requires every shard 1/N..N/N of a lane.
         include:
           - lane: types
           - lane: unit
