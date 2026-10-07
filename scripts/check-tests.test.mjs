@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
-import { DURATIONS_PATH, discoverTests, mergeDurations, parseShard, readDurations, runTests, selectShard, shardFromArgv, weightsFor } from "./check-tests.mjs";
+import { DURATIONS_PATH, discoverTests, heaviestFirst, mergeDurations, parseShard, readDurations, runTests, selectShard, shardFromArgv, weightsFor } from "./check-tests.mjs";
 
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), "campaigns-test-discovery-"));
@@ -24,8 +24,10 @@ test("nested failures in either source or scripts fail the unit lane; browser fi
   const root = fixture(t);
   writeFileSync(join(root, "src/existing.test.mjs"), "import test from 'node:test'; test('existing', () => {});");
   for (const path of ["src/nested/feature.test.mjs", "scripts/nested/check.test.mjs"]) {
-    writeFileSync(join(root, path), "throw new Error('nested regression');");
-    assert.notEqual(runTests(root, { spawn: quietSpawn }), 0, path);
+    for (const regression of ["throw new Error('nested regression');", "import test from 'node:test'; test('fails', () => { throw new Error('nested regression'); });"]) {
+      writeFileSync(join(root, path), regression);
+      assert.notEqual(runTests(root, { spawn: quietSpawn }), 0, `${path}: ${regression}`);
+    }
     writeFileSync(join(root, path), "import test from 'node:test'; test('passes', () => {});");
   }
   writeFileSync(join(root, "src/nested/proof.browser.test.mjs"), "throw new Error('browser only');");
@@ -109,6 +111,51 @@ test("runTests splits by the recorded durations, and an unrecorded file weighs t
   assert.equal(weightsFor({ "src/a.test.mjs": 3, "src/b.test.mjs": 9 })("src/x.test.mjs"), 3);
 });
 
+test("a lane or shard starts its slowest files first, whatever their paths", (t) => {
+  const root = fixture(t);
+  for (const name of ["a", "b", "c", "d"]) writeFileSync(join(root, `src/${name}.test.mjs`), "");
+  writeFileSync(join(root, DURATIONS_PATH), JSON.stringify({ unit: { "src/a.test.mjs": 1, "src/b.test.mjs": 30, "src/c.test.mjs": 5 } }));
+  const runs = [];
+  const spawn = (_command, args) => { runs.push(args.slice(1)); return { status: 0 }; };
+  runTests(root, { spawn, report: () => {} });
+  runTests(root, { shard: { index: 2, total: 2 }, spawn, report: () => {} });
+  // d is unrecorded and weighs the median (5), so it follows c by path; b alone fills shard 1.
+  assert.deepEqual(runs, [
+    ["src/b.test.mjs", "src/c.test.mjs", "src/d.test.mjs", "src/a.test.mjs"],
+    ["src/c.test.mjs", "src/d.test.mjs", "src/a.test.mjs"],
+  ]);
+  assert.deepEqual(heaviestFirst(["src/b.test.mjs", "src/a.test.mjs"]), ["src/a.test.mjs", "src/b.test.mjs"]);
+});
+
+test("the lane runner starts files in the order it is given, where node --test sorts them by path", (t) => {
+  const root = fixture(t);
+  for (const name of ["a", "b", "c"]) writeFileSync(join(root, `src/${name}.test.mjs`), `import test from 'node:test'; test('${name} ran', () => {});`);
+  writeFileSync(join(root, DURATIONS_PATH), JSON.stringify({ unit: { "src/a.test.mjs": 1, "src/b.test.mjs": 3, "src/c.test.mjs": 2 } }));
+  let output = "";
+  const spawn = (command, args, options) => {
+    const result = quietSpawn(command, args, options);
+    output = String(result.stdout);
+    return result;
+  };
+  assert.equal(runTests(root, { spawn, report: () => {} }), 0);
+  // Files report in the order they were handed to the runner, which is the order they start in.
+  assert.deepEqual(output.match(/\b[abc] ran\b/g), ["b ran", "c ran", "a ran"]);
+  const cli = quietSpawn(process.execPath, ["--test", "--test-reporter=spec", "src/b.test.mjs", "src/c.test.mjs", "src/a.test.mjs"], { cwd: root, env: process.env });
+  assert.deepEqual(String(cli.stdout).match(/\b[abc] ran\b/g), ["a ran", "b ran", "c ran"]);
+});
+
+test("a recorded duration is the file's whole run, imports included, not the sum of its tests", (t) => {
+  const root = fixture(t);
+  // Half a second of module setup and one instant test: its tests sum to about 0s.
+  writeFileSync(join(root, "src/slow-setup.test.mjs"), "import test from 'node:test'; await new Promise((done) => setTimeout(done, 500)); test('quick', () => {});");
+  writeFileSync(join(root, "src/quick.test.mjs"), "import test from 'node:test'; test('quick', () => {});");
+  assert.equal(runTests(root, { record: true, spawn: quietSpawn, report: () => {} }), 0);
+  const recorded = readDurations(root, "unit");
+  assert.deepEqual(Object.keys(recorded).sort(), ["src/quick.test.mjs", "src/slow-setup.test.mjs"]);
+  assert.ok(recorded["src/slow-setup.test.mjs"] >= 0.5, JSON.stringify(recorded));
+  assert.ok(recorded["src/slow-setup.test.mjs"] > recorded["src/quick.test.mjs"], JSON.stringify(recorded));
+});
+
 test("a missing durations file means equal weights; a malformed one fails loudly", (t) => {
   const root = fixture(t);
   assert.deepEqual(readDurations(root, "unit"), {});
@@ -123,18 +170,25 @@ test("recording keeps unmeasured files, drops files that left the lane, and roun
   );
 });
 
-test("--record-durations writes a passing run's timings and leaves them alone after a failure", (t) => {
+test("--record-durations writes a passing run's timings, and leaves them alone after a failure or a file with no run time", (t) => {
   const root = fixture(t);
   for (const name of ["a", "b"]) writeFileSync(join(root, `src/${name}.test.mjs`), "");
   writeFileSync(join(root, DURATIONS_PATH), JSON.stringify({ browser: { "src/x.browser.test.mjs": 5 }, unit: { "src/a.test.mjs": 1 } }));
-  const spawnWriting = (status) => (_command, args) => {
-    const destination = args.filter((arg) => arg.startsWith("--test-reporter-destination=")).at(-1).split("=")[1];
-    writeFileSync(destination, JSON.stringify({ [join(root, "src/b.test.mjs")]: 2500 }));
+  const spawnWriting = (status, milliseconds) => (_command, args) => {
+    const destination = args.find((arg) => arg.startsWith("--durations=")).slice("--durations=".length);
+    // The runner reports real paths, and the fixture root may sit behind a symlink (macOS /var).
+    writeFileSync(destination, JSON.stringify(Object.fromEntries(Object.entries(milliseconds).map(([file, ms]) => [join(realpathSync(root), file), ms]))));
     return { status };
   };
-  assert.equal(runTests(root, { record: true, spawn: spawnWriting(1), report: () => {} }), 1);
+  const both = { "src/a.test.mjs": 1500, "src/b.test.mjs": 2500 };
+  const messages = [];
+  const report = (message) => messages.push(message);
+  assert.equal(runTests(root, { record: true, spawn: spawnWriting(1, both), report }), 1);
   assert.deepEqual(readDurations(root, "unit"), { "src/a.test.mjs": 1 });
-  assert.equal(runTests(root, { record: true, spawn: spawnWriting(0), report: () => {} }), 0);
-  assert.deepEqual(readDurations(root, "unit"), { "src/a.test.mjs": 1, "src/b.test.mjs": 2.5 });
+  assert.equal(runTests(root, { record: true, spawn: spawnWriting(0, { "src/b.test.mjs": 2500 }), report }), 1);
+  assert.deepEqual(readDurations(root, "unit"), { "src/a.test.mjs": 1 });
+  assert.equal(messages.at(-1), "durations not recorded: no run time reported for 1 of 2 unit files (src/a.test.mjs)");
+  assert.equal(runTests(root, { record: true, spawn: spawnWriting(0, both), report }), 0);
+  assert.deepEqual(readDurations(root, "unit"), { "src/a.test.mjs": 1.5, "src/b.test.mjs": 2.5 });
   assert.deepEqual(readDurations(root, "browser"), { "src/x.browser.test.mjs": 5 }, "recording one lane leaves the other");
 });
