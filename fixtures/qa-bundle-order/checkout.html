@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Checkout (bundle cards)</title>
+<style>body{font-family:sans-serif;margin:24px} .os-card{border:1px solid #ccc;padding:12px;margin:8px 0;cursor:pointer} .os-card.next-selected{border-color:#000} .bump.next-in-cart{border-color:#000} iframe{width:200px;height:32px;border:1px solid #ccc}</style>
+</head>
+<body>
+<!--
+  A checkout shaped like the starter bundle-selector partial: each tier is a
+  [data-next-bundle-card] whose package and per-package quantity live only in
+  data-next-bundle-items, with the package id repeated on an inner content
+  node. The inline script below stands in for the campaign-cart SDK; it is
+  NOT the SDK. It reproduces only what the typed-card runner reads:
+
+    1. A bundle card click swaps the cart's main lines for the card's
+       data-next-bundle-items and moves data-next-selected / next-selected to
+       that card, as the SDK's swap-mode selector does.
+    2. The order bump toggle adds or removes its package and carries
+       next-in-cart while it is in the cart.
+    3. [data-next-cart-summary] [data-summary-lines] renders one row per cart
+       line, stamped data-package-id, and the summary total.
+    4. The campaign's packages are read from the Campaigns API host on load,
+       the submit posts the cart to /api/v1/orders/, and the receipt reads the
+       order back by ref_id.
+
+  Served by src/qa-bundle-order.browser.test.mjs, which rewrites the page for
+  its variants: inner package ids stripped (cards whose package identity is
+  data-next-bundle-items alone), the two-unit card removed, a card for
+  another package added, a card declaring two items added, a selector that
+  re-renders its cards after a click, and plain
+  [data-next-selector-card][data-next-package-id] cards in place of bundle
+  cards, either in a [data-next-cart-selector] (the non-bundle control) or
+  each in its own wrapper with no selector container.
+-->
+<main>
+  <h1>Checkout</h1>
+  <div data-next-bundle-selector data-next-selector-id="main" data-next-selection-mode="swap" data-next-include-shipping="true" class="os-option">
+    <div class="os-cards__vertical">
+      <div data-next-bundle-card data-next-bundle-id="bundle-1x" data-next-bundle-items='[{"packageId":1,"quantity":1}]' data-next-selected="true" role="button" class="os-card">
+        <div class="os-card__content" data-next-package-id="1"><div class="os-card__title">1x Demo Purifier</div></div>
+      </div>
+      <div data-next-bundle-card data-next-bundle-id="bundle-2x" data-next-bundle-items='[{"packageId":1,"quantity":2}]' role="button" class="os-card">
+        <div class="os-card__content" data-next-package-id="1"><div class="os-card__title">2x Demo Purifier</div></div>
+      </div>
+      <div data-next-bundle-card data-next-bundle-id="bundle-3x" data-next-bundle-items='[{"packageId":1,"quantity":3}]' role="button" class="os-card">
+        <div class="os-card__content" data-next-package-id="1"><div class="os-card__title">3x Demo Purifier</div></div>
+      </div>
+    </div>
+  </div>
+  <aside data-next-cart-summary>
+    <h2>Your order</h2>
+    <div data-summary-lines><template><div data-package-id=""></div></template></div>
+    <p>Total <span data-next-display="cart.total"></span></p>
+    <div data-next-toggle-card data-next-package-id="2" class="bump os-card">Add a spare filter (package 2)</div>
+  </aside>
+  <form data-fixture-checkout>
+    <input data-next-checkout-field="fname" placeholder="First name">
+    <input data-next-checkout-field="lname" placeholder="Last name">
+    <input data-next-checkout-field="email" type="email" placeholder="Email">
+    <input data-next-checkout-field="phone" placeholder="Phone">
+    <select data-next-checkout-field="country"><option value="US">United States</option><option value="CA">Canada</option></select>
+    <input data-next-checkout-field="address1" placeholder="Address">
+    <input data-next-checkout-field="city" placeholder="City">
+    <select data-next-checkout-field="province"><option value="CA">California</option><option value="NY">New York</option></select>
+    <input data-next-checkout-field="postal" placeholder="Postal">
+    <fieldset>
+      <input type="radio" id="combo_mode_credit" name="payment_method" value="credit" checked>
+      <iframe id="spreedly-number-frame-1" title="Card number" srcdoc="&lt;input aria-label=&quot;Card number&quot;&gt;"></iframe>
+      <iframe id="spreedly-cvv-frame-1" title="CVV" srcdoc="&lt;input aria-label=&quot;CVV&quot;&gt;"></iframe>
+      <select data-next-checkout-field="exp-month"><option value="">Month</option><option value="12">12</option></select>
+      <select data-next-checkout-field="exp-year"><option value="">Year</option><option value="2030">2030</option></select>
+    </fieldset>
+    <button type="submit">Complete order</button>
+  </form>
+</main>
+<script>
+(function () {
+  var UNIT_PRICE = { "1": 20, "2": 5, "3": 38, "4": 7 };
+  var cart = [];
+  // Read on each use: a variant may re-render the selector's cards.
+  function allCards() {
+    return Array.prototype.slice.call(document.querySelectorAll("[data-next-bundle-card], [data-next-selector-card]"));
+  }
+  var bump = document.querySelector("[data-next-toggle-card]");
+  // A plain package card carries one unit of its own package.
+  function cardItems(card) {
+    var declared = card.getAttribute("data-next-bundle-items");
+    return declared ? JSON.parse(declared) : [{ packageId: card.getAttribute("data-next-package-id"), quantity: 1 }];
+  }
+
+  function render() {
+    var lines = document.querySelector("[data-summary-lines]");
+    Array.prototype.slice.call(lines.children).forEach(function (child) {
+      if (child.tagName.toLowerCase() !== "template") lines.removeChild(child);
+    });
+    var total = 0;
+    cart.forEach(function (item) {
+      var row = document.createElement("div");
+      row.setAttribute("data-package-id", item.packageId);
+      row.textContent = item.quantity + "x package " + item.packageId;
+      lines.appendChild(row);
+      total += UNIT_PRICE[item.packageId] * item.quantity;
+    });
+    document.querySelector('[data-next-display="cart.total"]').textContent = "$" + total.toFixed(2);
+  }
+
+  function select(card) {
+    allCards().forEach(function (other) {
+      other.setAttribute("data-next-selected", other === card ? "true" : "false");
+      other.classList.toggle("next-selected", other === card);
+    });
+    var items = cardItems(card);
+    cart = cart.filter(function (item) { return item.bump; });
+    items.forEach(function (item) { cart.unshift({ packageId: String(item.packageId), quantity: item.quantity }); });
+    render();
+  }
+
+  document.addEventListener("click", function (event) {
+    var card = event.target.closest("[data-next-bundle-card], [data-next-selector-card]");
+    if (card) select(card);
+  });
+  bump.addEventListener("click", function () {
+    var inCart = cart.some(function (item) { return item.bump; });
+    cart = inCart
+      ? cart.filter(function (item) { return !item.bump; })
+      : cart.concat([{ packageId: bump.getAttribute("data-next-package-id"), quantity: 1, bump: true }]);
+    bump.classList.toggle("next-in-cart", !inCart);
+    render();
+  });
+  var cards = allCards();
+  var preselected = cards.filter(function (card) { return card.getAttribute("data-next-selected") === "true"; })[0] || cards[0];
+  if (preselected) select(preselected);
+
+  window.next = {
+    getCartCount: function () { return cart.reduce(function (sum, item) { return sum + item.quantity; }, 0); },
+  };
+  window.nextDebug = { stores: { cart: { getState: function () {
+    return { items: cart.map(function (item) { return { packageId: item.packageId, quantity: item.quantity }; }) };
+  } } } };
+
+  fetch(location.protocol + "//campaigns.apps.localhost:" + location.port + "/api/v1/campaigns/");
+
+  document.querySelector("form[data-fixture-checkout]").addEventListener("submit", function (event) {
+    event.preventDefault();
+    if (!cart.length) return;
+    fetch("/api/v1/orders/", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ lines: cart.map(function (item) { return { packageId: item.packageId, quantity: item.quantity }; }) }),
+    }).then(function (response) { return response.json(); }).then(function (order) {
+      location.href = "/x/receipt/?ref_id=" + encodeURIComponent(order.ref_id);
+    });
+  });
+})();
+</script>
+</body>
+</html>

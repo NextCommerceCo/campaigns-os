@@ -80,7 +80,7 @@ for (const stage of ["build", "polish", "deploy", "qa"]) {
     assert.match(advisory.description, /theme_gate\.nothing_generatable/);
     assert.match(advisory.description, /template-residue/);
     // The waive lane must be named as an exact command, not as prose.
-    assert.match(advisory.description, /campaigns-os theme waive --packet \/campaigns\/demo\/campaign-runtime\.build\.json --reason/);
+    assert.match(advisory.description, /campaigns-os theme waive --packet \/campaigns\/demo\/campaign-runtime\.build\.json --reason "<why the starter palette is acceptable>" --waived-by "<named human>"/);
     // …and so must the alternative the docs already describe.
     assert.match(advisory.description, /brand-theme\.css/);
     assert.match(advisory.description, /after next-core\.css/);

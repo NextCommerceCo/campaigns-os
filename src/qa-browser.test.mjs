@@ -1129,6 +1129,20 @@ test("strict package selection resolves the rendered card by requested purchase 
   assert.throws(() => packageCardClickSelector({ bundle_id: null, package_id: null, items: null }), /no package or bundle identity/);
 });
 
+test("a card matches <pkg>:<qty> by any one of its declared items, preferring a card that declares it alone", () => {
+  const { resolvePackageCardCandidate } = __qaBrowserTestHooks;
+  const kit = { bundle_id: "bundle-kit", package_id: "1", items: [{ package_id: "1", quantity: 2 }, { package_id: "4", quantity: 1 }] };
+  const twoUnit = { bundle_id: "bundle-2x", package_id: "1", items: [{ package_id: "1", quantity: 2 }] };
+
+  assert.equal(resolvePackageCardCandidate([kit], { packageId: "4", quantity: 1, quantityExplicit: true }).bundle_id, "bundle-kit");
+  assert.equal(resolvePackageCardCandidate([kit], { packageId: "1", quantity: 2, quantityExplicit: true }).bundle_id, "bundle-kit");
+  assert.equal(resolvePackageCardCandidate([kit, twoUnit], { packageId: "1", quantity: 2, quantityExplicit: true }).bundle_id, "bundle-2x");
+  assert.throws(
+    () => resolvePackageCardCandidate([kit], { packageId: "4", quantity: 2, quantityExplicit: true }),
+    /quantity 2/,
+  );
+});
+
 test("strict package selection reads bundle composition from rendered card markup", async () => {
   const { renderedPackageCardCandidates } = __qaBrowserTestHooks;
   const node = (attrs, children = {}) => ({

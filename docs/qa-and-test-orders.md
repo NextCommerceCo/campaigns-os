@@ -1183,8 +1183,8 @@ Fixture essentials:
 
 Test Orders use **global test cards** that work on any live store and integration.
 They **bypass the payment gateway and create no transactions** (and no fulfillment),
-so they are safe to run any time and need **no permission flags, packet policy,
-merchant sandbox routing, or test-order approval** — you just pick a mode. They leave a small,
+but each creates a real order record on the store. Unless the operator has already said test orders are fine for this campaign, ask once, up front, before placing test orders; then proceed. No permission flag,
+packet policy, or merchant sandbox routing is required. They leave a small,
 easy-to-clean footprint: Test orders are deletable in bulk, and the resulting
 Customer record is reused (see the test email note below) rather than multiplied.
 
@@ -1566,17 +1566,43 @@ Two flags target funnels the default-tier drive cannot prove:
 
 - `--select-package <ref[:qty],...>` — **strict** package/bundle card selection.
   Each ref is matched against rendered selector/bundle cards
-  (`[data-next-package-id]`, `[data-next-bundle-card][data-next-bundle-id]`) and
-  clicked. An explicit quantity requires one unambiguous rendered card whose
+  (`[data-next-package-id]`, `[data-next-bundle-card][data-next-bundle-id]`, and
+  the package a bundle card's `data-next-bundle-items` declares, so
+  `--select-package 1:2` finds the card declaring
+  `[{"packageId":1,"quantity":2}]` whether or not an inner node repeats the
+  package id) and clicked. An explicit quantity requires one unambiguous rendered card whose
   `data-next-bundle-items` composition contains exactly that package and
-  quantity; package identity alone is not enough. The card must then expose a
+  quantity; package identity alone is not enough. A card declaring several
+  items matches by any one of them (`4:1` finds a kit declaring
+  `[{"packageId":1,"quantity":2},{"packageId":4,"quantity":1}]`); a card
+  declaring the item alone is preferred over one declaring it among others. The card must then expose a
   selected-state marker (`data-next-selected="true"` / `.next-selected`) after
   the click. A missing card, ambiguous composition, wrong quantity, or
   unverifiable/refused selection **fails the `selected_bundle` step** instead
   of silently driving the pre-selected default tier. A bundle ref remains an
   authoritative identity when exactly one rendered card declares it. Use this
   flag to traverse non-default tiers of a multi-tier selector. `--cart` remains
-  the best-effort variant.
+  the best-effort variant. For a package that bundle cards declare, `--cart
+  <ref:qty>` clicks the card whose items carry that package at that quantity,
+  and clicks nothing when the selected card already does; refs no bundle card
+  declares (an order bump) are clicked as before. The cards are read again
+  before each ref, so a selector that re-renders after a click is clicked as
+  it now stands. Beside `--select-package`,
+  `--cart` never clicks another card in the chosen card's selector group, and
+  a card in no recognised selector container
+  (`[data-next-bundle-selector]`, `[data-next-selector-id]`,
+  `[data-next-cart-selector]`) counts as in that group: a
+  ref the chosen card carries is left as it is, a ref an order bump or a card
+  in another selector group carries is applied through that control, and any
+  other ref is left unapplied and named in the `selected_bundle` detail
+  (`--cart 3:1 not applied: ...`). The display-parity row reconciles the order
+  against the packages and quantities every selected bundle card declares, not
+  its `data-next-bundle-id`. Without `--select-package` it also fails when an
+  explicit `--cart <ref:qty>` is not in the order at that quantity: a
+  different quantity (`--cart 1:2` that ordered one unit) or no line for the
+  package at all (`--cart 1:2,3:1` on a swap-mode selector that kept only the
+  `3:1` card); beside `--select-package` it judges the order against the card
+  that flag chose.
 - `--apply-coupon <code>` — types the code into the rendered coupon/promo input
   (the SDK's `[data-next-checkout-field="coupon"]` or
   `input[data-next-coupon="input"]`, then hand-rolled `coupon`/`voucher`/`promo`
@@ -1709,7 +1735,7 @@ browser launch, prints the planned count, lists the planned paths (up to 40 ids;
 past that the remainder is counted, never cut silently, and `--select-package
 <ref[:qty]>` lists one tier's paths), and names the exact `--max-test-orders <count>` raise. For example, a linear three-offer graph has
 eight terminal paths plus the checkout baseline, so it requires
-`--max-test-orders 9`. No approval step is involved.
+`--max-test-orders 9`. Unless the operator has already said test orders are fine for this campaign, ask once, up front, before placing these real store order records; then proceed. The command has no permission flag.
 
 `--max-test-orders` bounds **planned paths**, which is not the same as real
 purchases. `--max-order-creations` bounds **actual order creations**, defaults to
@@ -1849,7 +1875,7 @@ and hardcoded phone numbers that differ from CampaignSpec `campaign.store_phone`
 If a static claim is intentionally preserved, wrap it in an element with
 `data-skip-market-lint="true"` and record why in the assembly report.
 
-Test orders themselves need no allowlist or approval. A separate concern is the
+Test orders need no allowlist and no permission flag; unless the operator has already said test orders are fine for this campaign, ask once, up front, before the first one (each is a real order record). A separate concern is the
 **SDK origin allowlist**: the Campaign Cart SDK must be allowed to load on the
 tested origin for the campaign API key, or runtime checks (and the live page
 itself) may not initialize. Localhost on any port is globally available as a
@@ -1864,8 +1890,8 @@ npm run campaigns-os -- qa policy set \
   --allowed-domains-confirmed true
 ```
 
-There is no permission flag for test orders — they run from `--test-order
-<mode>` alone. The former `--test-orders-allowed` /
+There is no permission flag for test orders; unless the operator has already said test orders are fine for this campaign, ask once, up front, before placing these real store order records, then run `--test-order
+<mode>`. The former `--test-orders-allowed` /
 `--sandbox-test-card-confirmed` flags and the `qa.test_orders_allowed` /
 `qa.sandbox_test_card_confirmed` packet fields they set were removed in
 supported surface 1.28.0: nothing had read their values since the gate itself

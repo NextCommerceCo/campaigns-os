@@ -12,6 +12,74 @@ const { resolvePayload } = __qaNodeTestHooks;
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CLI = join(ROOT, "bin/campaigns-os.mjs");
 
+test("ready_with_exceptions text identifies passing proof and every exception by id, page and severity", () => {
+  const lines = [];
+  const originalLog = console.log;
+  console.log = (line) => lines.push(String(line));
+  try {
+    __qaNodeTestHooks.output({
+      verdict: {
+        disposition: "ready_with_exceptions",
+        cause_summary: { total: 2, counts: { unknown: 2 }, comparison: "no_prior_run", surface: "qa" },
+        exceptions: [
+          { id: "contrast:checkout", page: "checkout", status: "warn", severity: "warn" },
+          { id: "review:receipt", page: "receipt", status: "manual_review" },
+        ],
+      },
+      counts: { warn: 1, manual_review: 1 },
+      run_id: "qa-example",
+      local_spec_id: "example",
+      local_path: "/tmp/qa-example.json",
+    }, {});
+  } finally {
+    console.log = originalLog;
+  }
+  const report = lines.join("\n");
+  assert.match(report, /Disposition: ready_with_exceptions\nThis is a passing proof/);
+  assert.match(report, /id: contrast:checkout; page: checkout.*severity: warn/);
+  assert.match(report, /id: review:receipt; page: receipt \(manual_review\)/);
+  assert.doesNotMatch(report, /severity: unknown/);
+  assert.doesNotMatch(report, /Causes: 2 findings/);
+  assert.equal((report.match(/contrast:checkout/g) || []).length, 1);
+  assert.equal((report.match(/review:receipt/g) || []).length, 1);
+  assert.match(report, /Report these exceptions to the operator/);
+});
+
+test("ready and blocked QA text retain their original finding format", () => {
+  for (const disposition of ["ready", "blocked"]) {
+    const lines = [];
+    const originalLog = console.log;
+    console.log = (line) => lines.push(String(line));
+    try {
+      __qaNodeTestHooks.output({
+        verdict: {
+          disposition,
+          exceptions: [{ id: "contrast:checkout", page: "checkout", status: "fail", severity: "blocker" }],
+        },
+        counts: { fail: 1 },
+        run_id: "qa-example",
+        local_spec_id: "example",
+        local_path: "/tmp/qa-example.json",
+      }, {});
+    } finally {
+      console.log = originalLog;
+    }
+    assert.equal(lines.join("\n"), [
+      "QA run complete.",
+      "Local spec ID: example",
+      "Base URL: (missing)",
+      "Run ID: qa-example",
+      `Disposition: ${disposition}`,
+      "Counts: 1 fail",
+      "Findings:",
+      "- contrast:checkout @ checkout (fail)",
+      "Local copy: /tmp/qa-example.json",
+      "QA portal: publish failed; local verdict kept at /tmp/qa-example.json. Re-run with network access, or pass --no-post-verdict to silence.",
+      'Workflow finding? campaigns-os findings add --stage qa --kind missing_prompt --summary "..." --qa-run-id qa-example',
+    ].join("\n"));
+  }
+});
+
 // The checkpoint and theme-gate blocks of the `qa resolve` text report, as
 // lines: assertable without a subprocess, and rendered by the one action rule
 // doctor uses.
@@ -66,13 +134,13 @@ test("themeGateLines prints the actions and the ephemeral-waiver hint only for a
     "Required actions:",
     "  - campaigns-os theme generate --packet /w/p.json",
     "  - Apply the brand tokens by hand.",
-    'Or rerun with --theme-waive "<reason>" to record an ephemeral waiver for this run.',
+    'Or rerun once with --theme-waive "<reason>"; this waiver applies only to that run. A recorded theme waive requires --waived-by "<named human>".',
   ]);
   // The gate bakes the packet in when it is evaluated; the same rule applied
   // here changes nothing for such a command, with or without a packet.
-  const baked = { ...blocked, required_actions: [{ id: "waive", kind: "command", command: "campaigns-os theme waive --packet /w/p.json --reason \"<why>\"", description: "Waive." }] };
-  assert.equal(themeGateLines(baked, "/w/p.json")[2], "  - campaigns-os theme waive --packet /w/p.json --reason \"<why>\"");
-  assert.equal(themeGateLines(baked)[2], "  - campaigns-os theme waive --packet /w/p.json --reason \"<why>\"");
+  const baked = { ...blocked, required_actions: [{ id: "waive", kind: "command", command: "campaigns-os theme waive --packet /w/p.json --reason \"<why>\" --waived-by \"<named human>\"", description: "Waive." }] };
+  assert.equal(themeGateLines(baked, "/w/p.json")[2], "  - campaigns-os theme waive --packet /w/p.json --reason \"<why>\" --waived-by \"<named human>\"");
+  assert.equal(themeGateLines(baked)[2], "  - campaigns-os theme waive --packet /w/p.json --reason \"<why>\" --waived-by \"<named human>\"");
   assert.deepEqual(themeGateLines({ status: "pass", code: "theme_gate.pass", reason: "Brand theme applied." }), [
     "Theme gate: pass (theme_gate.pass) — Brand theme applied.",
   ]);
@@ -112,10 +180,10 @@ test("the gate lines carry a non-default report into packet-scoped commands, lik
     status: "blocked",
     code: "theme_gate.starter_palette",
     reason: "The starter palette is still applied.",
-    required_actions: [{ id: "waive", kind: "command", command: "campaigns-os theme waive --packet /w/p.json --reason \"<why>\"", description: "Waive." }],
+    required_actions: [{ id: "waive", kind: "command", command: "campaigns-os theme waive --packet /w/p.json --reason \"<why>\" --waived-by \"<named human>\"", description: "Waive." }],
   };
-  assert.equal(themeGateLines(blocked, "/w/p.json", reportPath)[2], "  - campaigns-os theme waive --packet /w/p.json --reason \"<why>\" --report '/w/reports/custom report.json'");
-  assert.equal(themeGateLines(blocked, "/w/p.json")[2], "  - campaigns-os theme waive --packet /w/p.json --reason \"<why>\"");
+  assert.equal(themeGateLines(blocked, "/w/p.json", reportPath)[2], "  - campaigns-os theme waive --packet /w/p.json --reason \"<why>\" --waived-by \"<named human>\" --report '/w/reports/custom report.json'");
+  assert.equal(themeGateLines(blocked, "/w/p.json")[2], "  - campaigns-os theme waive --packet /w/p.json --reason \"<why>\" --waived-by \"<named human>\"");
 });
 
 // The resolve payload names the report only when it is not the target repo's

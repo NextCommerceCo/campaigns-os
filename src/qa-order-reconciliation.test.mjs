@@ -93,6 +93,125 @@ test("a selected unit package bought twice reconciles only to a persisted quanti
   assert.match(wrong.quantity_mismatches[0].reason, /requested 2.*persisted 1/);
 });
 
+test("a selected two-unit bundle card reconciles by the packages its items declare, not by its bundle id", () => {
+  const { reconcileOrderAgainstDisplay } = __qaBrowserTestHooks;
+  const events = { responses: [{ body: { packages: [
+    { ref_id: 1, qty: 1, product_sku: "DEMO-PURIFIER", product_id: 101 },
+    { ref_id: 2, qty: 1, product_sku: "DEMO-FILTER", product_id: 102 },
+  ] } }] };
+  // What the collector reads off a starter bundle selector with bundle-2x
+  // ([{"packageId":1,"quantity":2}]) selected and the filter bump active. No
+  // --select-package names the quantity; only the card declares it.
+  const display = {
+    summary_present: true,
+    summary_rows: [{ package_id: "1", text: "2x Demo Purifier" }, { package_id: "2", text: "1x Demo Filter" }],
+    selected_bundle_package_ids: ["1"],
+    selected_bundle_items: [{ bundle_id: "bundle-2x", items: [{ package_id: "1", quantity: 2 }] }],
+    active_toggle_package_ids: ["2"],
+  };
+  const lines = [
+    { title: "Demo Purifier", quantity: 2, sku: "DEMO-PURIFIER", product_id: 101 },
+    { title: "Demo Filter", quantity: 1, sku: "DEMO-FILTER", product_id: 102, is_upsell: true },
+  ];
+
+  const reconciliation = reconcileOrderAgainstDisplay({ lines, display, events, requested_cart: [{ packageId: "2", quantity: 1, quantityExplicit: true }] });
+  assert.equal(reconciliation.ok, true, JSON.stringify(reconciliation));
+  assert.deepEqual(reconciliation.displayed_package_ids, ["1", "2"]);
+  assert.deepEqual(reconciliation.missing, []);
+  assert.equal(reconciliation.unresolved_lines, undefined);
+  assert.deepEqual(reconciliation.matched_quantities, [{ package_ref_id: "1", unit_quantity: 1, purchase_multiplier: 2, persisted_quantity: 2 }]);
+});
+
+test("every item a selected multi-item card declares must be in the order, even one the summary does not show", () => {
+  const { reconcileOrderAgainstDisplay, orderDisplayParityAssertion } = __qaBrowserTestHooks;
+  const events = { responses: [{ body: { packages: [
+    { ref_id: 1, qty: 1, product_sku: "DEMO-PURIFIER", product_id: 101 },
+    { ref_id: 4, qty: 1, product_sku: "DEMO-STAND", product_id: 104 },
+  ] } }] };
+  // A kit card declaring two purifiers and the stand, chosen by
+  // --select-package 4:1, while the summary renders only the purifiers.
+  const display = {
+    summary_present: true,
+    summary_rows: [{ package_id: "1", text: "2x Demo Purifier" }],
+    selected_bundle_package_ids: ["1", "4"],
+    selected_bundle_items: [{ bundle_id: "bundle-kit", items: [{ package_id: "1", quantity: 2 }, { package_id: "4", quantity: 1 }] }],
+    active_toggle_package_ids: [],
+  };
+  const purifiers = { title: "Demo Purifier", quantity: 2, sku: "DEMO-PURIFIER", product_id: 101 };
+  const stand = { title: "Demo Stand", quantity: 1, sku: "DEMO-STAND", product_id: 104 };
+  const parity = (lines) => orderDisplayParityAssertion(page, "checkout", { verification: {
+    display_reconciliation: reconcileOrderAgainstDisplay({ lines, display, events, selected_packages: [{ packageId: "4", quantity: 1, quantityExplicit: true }] }),
+  } });
+
+  const short = parity([purifiers]);
+  assert.equal(short.status, "fail");
+  assert.deepEqual(short.evidence.missing, ["4"]);
+  assert.match(short.actual, /displayed but never charged: 4/);
+
+  const full = parity([purifiers, stand]);
+  assert.equal(full.status, "pass", full.actual);
+  assert.deepEqual(full.evidence.missing, []);
+});
+
+test("a selected card with malformed data-next-bundle-items still has an explicit --cart quantity compared with the order", () => {
+  const { reconcileOrderAgainstDisplay } = __qaBrowserTestHooks;
+  const events = { responses: [{ body: { packages: [
+    { ref_id: 1, qty: 1, product_sku: "DEMO-PURIFIER", product_id: 101 },
+  ] } }] };
+  // The card's items attribute does not parse, so the card stands as its
+  // bundle id, as on base; nothing it declares can judge the quantity.
+  const display = {
+    summary_present: true,
+    summary_rows: [{ package_id: "1", text: "1x Demo Purifier" }],
+    selected_bundle_package_ids: ["bundle-2x"],
+    selected_bundle_items: [{ bundle_id: "bundle-2x", items: null }],
+    active_toggle_package_ids: [],
+  };
+  const lines = [{ title: "Demo Purifier", quantity: 1, sku: "DEMO-PURIFIER", product_id: 101 }];
+
+  const reconciliation = reconcileOrderAgainstDisplay({ lines, display, events, requested_cart: [{ packageId: "1", quantity: 2, quantityExplicit: true }] });
+  assert.equal(reconciliation.ok, false, JSON.stringify(reconciliation));
+  assert.deepEqual(reconciliation.missing, []);
+  assert.deepEqual(reconciliation.quantity_mismatches.map((entry) => entry.reason), ["package 1 requested 2 unit(s) (1 per package × 2) but persisted 1"]);
+});
+
+test("a malformed selected card does not change how --cart refs are judged beside a well-formed selected card", () => {
+  const { reconcileOrderAgainstDisplay } = __qaBrowserTestHooks;
+  const events = { responses: [{ body: { packages: [
+    { ref_id: 1, qty: 1, product_sku: "DEMO-PURIFIER", product_id: 101 },
+    { ref_id: 4, qty: 1, product_sku: "DEMO-STAND", product_id: 104 },
+  ] } }] };
+  // bundle-2x declares [{"packageId":1,"quantity":2}]; the stand comes from a
+  // plain card no selected bundle card declares.
+  const wellFormed = { bundle_id: "bundle-2x", items: [{ package_id: "1", quantity: 2 }] };
+  const malformed = { bundle_id: "bundle-gift", items: null };
+  const display = (cards) => ({
+    summary_present: true,
+    summary_rows: [{ package_id: "1", text: "2x Demo Purifier" }, { package_id: "4", text: "1x Demo Stand" }],
+    selected_bundle_package_ids: ["1"],
+    selected_bundle_items: cards,
+    active_toggle_package_ids: [],
+  });
+  const lines = [
+    { title: "Demo Purifier", quantity: 2, sku: "DEMO-PURIFIER", product_id: 101 },
+    { title: "Demo Stand", quantity: 1, sku: "DEMO-STAND", product_id: 104 },
+  ];
+  const judge = (cards, cart) => reconcileOrderAgainstDisplay({ lines, display: display(cards), events, requested_cart: cart });
+  const asked = (refs) => refs.map(([packageId, quantity]) => ({ packageId, quantity, quantityExplicit: true }));
+
+  for (const cart of [asked([["1", 2], ["4", 1]]), asked([["1", 2], ["4", 2]]), asked([["1", 3]])]) {
+    const alone = judge([wellFormed], cart);
+    const beside = judge([wellFormed, malformed], cart);
+    assert.equal(beside.ok, alone.ok, JSON.stringify(cart));
+    assert.deepEqual(beside.quantity_mismatches, alone.quantity_mismatches, JSON.stringify(cart));
+  }
+  assert.equal(judge([wellFormed], asked([["1", 2], ["4", 1]])).ok, true);
+  assert.deepEqual(
+    judge([wellFormed], asked([["1", 2], ["4", 2]])).quantity_mismatches.map((entry) => entry.reason),
+    ["package 4 requested 2 unit(s) (1 per package × 2) but persisted 1"],
+  );
+});
+
 test("a displayed package that was never charged is a blocker too", () => {
   const { reconcileOrderAgainstDisplay } = __qaBrowserTestHooks;
   const display = {

@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-qa
-version: 1.3.34
+version: 1.3.35
 description: Run spec-aware QA from a saved Map or local-spec Build Packet and tested campaign URL after build, polish, and deploy/local evidence exist, including Playwright typed-card test-order proof.
 ---
 
-Bundle revision: 1.54.0+skills.1
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.54.0+skills.1`
+Bundle revision: 1.54.0+skills.2
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.54.0+skills.2`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -80,7 +80,7 @@ Rules:
 - Parity capture blocking proof is the voucher-adjusted persisted line from typed-card order readback. Browser totals and client state do not replace the persisted-line voucher guard.
 - Read client purchase values per event. A whole-cart `dl_purchase` must not mask or supply an offer-level upsell purchase expectation.
 - Live `qa parity` runs publish to the QA portal by default like other QA runs. Pass `--no-post-verdict` for dev, replay, negative-control, and other local proof runs.
-- Theme gate: `qa run` refuses to run when a generatable brand theme is not applied to commerce pages and no waiver exists. Apply the brand layer or record a waiver (`campaigns-os theme waive`, tier `C`: it overwrites the assembly report and doctor output / `qa run --theme-waive "<reason>"`); do not bypass the gate another way. A waived run still reports template-residue findings at warn severity.
+- Theme gate: `qa run` refuses to run when a generatable brand theme is not applied to commerce pages and no waiver exists. Apply the brand layer or use the recorded waiver `campaigns-os theme waive --packet <p> --reason "<why>" --waived-by "<named human>"` (tier `C`: it overwrites the assembly report and doctor output). `qa run --theme-waive "<reason>"` is the one-run ephemeral form. Do not bypass the gate another way. A waived run still reports template-residue findings at warn severity.
 - Template residue is a QA dimension, not advice: promoted starter families must have a brand/residue/pricing contract (`contracts/template-brand-contract.<family>.v0.json`). Browser QA inspects computed styles on commerce surfaces and fails pages that still render starter defaults (`#3c7dff`/`#0a265c`, starter `next-logo.png`, paypal/klarna chrome absent from the spec).
 - Pricing visibility is a blocker: an upsell/downsell offer with zero visible price rows fails QA. Pricing surfaces render via template pricing modes (`full_price`, `compare_at_current`, `unit_price_plus_total`, `savings_badge_amount`, `code_discounted_post_checkout`), never via campaign CSS `display:none` on price wrappers.
 - The upsell and checkout bundle price checks count the SDK's `data-next-bundle-display` price as a price row when it is visible and not empty.
