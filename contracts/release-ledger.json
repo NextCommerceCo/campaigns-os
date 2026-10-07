@@ -6532,13 +6532,40 @@
       "entry_sha256": "5ab33ca302fa671ac78c3e9b752ed7b251e756b05256f97ff75acd08c58ad5ba"
     },
     {
-      "id": "RL-0251",
+      "id": "RL-0246",
       "sequence": 235,
       "date": "2026-10-07",
       "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.54.0+agent.7",
-      "changelog_sha256": "11e997aefcbf48887e3d53205231750a607180d4cacdc64db7487fb0a95be33e",
+      "changelog_section": "1.54.0+agent.2",
+      "changelog_sha256": "55155add247bb47b07b43252e374b504ac85aef51f6b3315b8b21e85c615df15",
+      "agent_impact": "None for package consumers: this changes repository CI and contributor scripts only. A contributor can run npm run check:fast before pushing, or install it as a pre-push hook with npm run hooks:install; CI runs the same gates on every pull request.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "workflow",
+          "path": ".github/workflows/ci.yml",
+          "surface_entry": null,
+          "summary": "Run the unit and browser lanes as two shards each on separate runners, and cancel a pull request's older run when a newer push arrives; pushes to main are never cancelled."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Add the contributor scripts check:fast and hooks:install; exports, bin, files and dependencies are unchanged."
+        }
+      ],
+      "entry_sha256": "ea7360b560411019e58bf65a1b389cbed5ec9589b7da6f09b7cee1b08b46aed8"
+    },
+    {
+      "id": "RL-0251",
+      "sequence": 236,
+      "date": "2026-10-07",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.54.0+agent.8",
+      "changelog_sha256": "ee319e13f8c17369e390868027ec0e79ac02e1787cb0db60cfe606edf0b3766c",
       "agent_impact": "Next now returns to Polish after a local preview theme waiver, accepts a recorded loopback preview URL without a separate deploy record, and re-owes QA when its recorded build fingerprint differs. Help invocations never journal, later start is valid re-intake, and a current readability-only capture clears the impossible page-load demand on all-template campaigns. Follow next's current stage before recording downstream work.",
       "compatibility": "compatible",
       "migration": "none",
@@ -6562,7 +6589,7 @@
           "summary": "Explain what next owes after a changed build when the local preview URL and older QA record remain."
         }
       ],
-      "entry_sha256": "584c64c0dae041d9afe67f4839d26f0827bdbf90103eaf488255f7cfc72e848e"
+      "entry_sha256": "33f09d18237d66cda6a642cd3ad8be009ce854ad014140d46f8849672c280d0a"
     }
   ]
 }

@@ -137,6 +137,9 @@ function topologies(base, steps) {
   return [{ funnel_id: "default", funnel_name: "Default", pages }];
 }
 
+// --analytics-settle 250: the fixtures fire no analytics tag and push no
+// dl_purchase, so the 5 s default would wait after the receipt, and again
+// for a purchase event, for nothing these cases read.
 async function runFixture({ steps, receiptReadBack, stepTimeoutMs }) {
   const server = await serveFixture({ steps, receiptReadBack });
   const path = steps.map(() => "accept").join("-");
@@ -146,6 +149,7 @@ async function runFixture({ steps, receiptReadBack, stepTimeoutMs }) {
       "step-timeout-ms": stepTimeoutMs,
       "order-timeout-ms": 150000,
       "browser-timeout": 10000,
+      "analytics-settle": 250,
     }, `qa-upsell-correlation-${path}`);
     const assertion = result.assertions.find((entry) => entry.id === `browser-test-order:${path}`);
     return { result, order: result.orders[0], assertion, server };
@@ -363,9 +367,12 @@ browserTest("a redirected mutation's late body is captured even when the relay U
   }, { relay: "/relay/final/" });
 });
 
+// No hop of the chain is ever the answer, so the watch waits out its whole
+// bound: the 10 s click and 20 s mutation timeouts in production, 2 s each
+// here. The 307 lands within milliseconds of the click, well inside either.
 browserTest("a redirected mutation with no final response is not taken as answered", { timeout: 90000 }, async () => {
   await withRedirectPage("drop", async ({ page, server }) => {
-    const step = await hooks.clickUpsellPath(page, "accept");
+    const step = await hooks.clickUpsellPath(page, "accept", { clickTimeoutMs: 2000, mutationTimeoutMs: 2000 });
 
     // Chromium may retry the reset relay post; no attempt answers it.
     assert.equal(server.hops[0], "upsells");

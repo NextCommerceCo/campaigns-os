@@ -669,6 +669,7 @@ async function runPolishCapture({
   captureCellDeadlineMs,
   adapterCloseDeadlineMs,
   probeClock = null,
+  mediaProbeRunBudgetMs,
   targetRepo = null,
   now = new Date(),
 } = {}) {
@@ -687,6 +688,10 @@ async function runPolishCapture({
     adapterCloseDeadlineMs,
     POLISH_CAPTURE_CLOSE_DEADLINE_MS,
   );
+  // The 1.3 image probe's run budget. Like the deadlines it can only shorten:
+  // the CLI never passes it, and a test that spends the budget passes a
+  // smaller one so that fewer slow cells spend it.
+  const probeRunBudgetMs = boundedPolishDeadline(mediaProbeRunBudgetMs, MEDIA_PROBE_LIMITS.runBudgetMs);
 
   let adapter = null;
   // Failure is tracked apart from its reason: a rejection may carry any value,
@@ -806,7 +811,7 @@ async function runPolishCapture({
           const abortController = new AbortController();
           const imageProbe = {
             ...(isProbeClock(probeClock) ? { clock: probeClock } : {}),
-            remainingMs: MEDIA_PROBE_LIMITS.runBudgetMs - probeSpentMs,
+            remainingMs: probeRunBudgetMs - probeSpentMs,
             cellBoundMs: MEDIA_PROBE_LIMITS.cellBoundMs,
             imageCap: MEDIA_PROBE_LIMITS.imageCap,
           };

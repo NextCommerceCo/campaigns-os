@@ -675,11 +675,16 @@ export function stubTopologies(stub, scenario = {}) {
   return [{ funnel_id: "default", funnel_name: "Default", pages }];
 }
 
+// --analytics-settle is the qa run option: the stub fires no analytics tag
+// and pushes no dl_purchase, so at its 5 s default an attempt would wait 5 s
+// after the receipt for tags and up to 5 s more for a purchase event that
+// never comes. These rows read tracking, not analytics.
 export const BASE_ARGS = Object.freeze({
   "test-order": "checkout",
   "step-timeout-ms": 20000,
   "order-timeout-ms": 90000,
   "browser-timeout": 10000,
+  "analytics-settle": 250,
 });
 
 // API assumption (every QB row): runBrowserTestOrders(topologies, args, runId,

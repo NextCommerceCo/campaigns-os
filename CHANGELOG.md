@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.54.0+agent.7] - 2026-10-07
+## [1.54.0+agent.8] - 2026-10-07
 
 ### Changed
 
@@ -10,6 +10,20 @@ Notable supported-surface changes are recorded here.
 - After a changed build, `next` asks for QA again when the last QA verdict names the old build, even if its recorded stage still says completed.
 - `--help` commands leave lifecycle and deviation journals untouched. Re-running `start` later in a campaign is treated as re-intake rather than a deviation. Polish capture while missing Polish is carried forward on a local preview creates no out-of-turn warning; hosted QA still treats it as a detour.
 - On a campaign with only template pages, a current readability-only Polish capture clears the page-load evidence demand when its capture completes without errors. Failed captures leave Polish open.
+
+## [1.54.0+agent.2] - 2026-10-07
+
+### Changed
+
+Repository CI and contributor tooling only; the published package is unchanged. CI runs the unit and browser lanes as two shards each on separate runners, and a newer push to a pull request cancels that pull request's older run; pushes to `main` always finish. `npm run check:fast` runs the checks of CI's types and contracts lanes and the three PR-only release gates against `origin/main` in under a minute, and `npm run hooks:install` installs it as a pre-push hook for the clone and its worktrees (`docs/small-pr-review-path.md`).
+
+## [1.54.0+agent.1] - 2026-10-07
+
+### Changed
+
+- When `start`, `prepare-build` or `build` refuses to overwrite a report that already carries stage evidence, the message now says that, if the brief or CampaignSpec changed, `record brief` or `record spec` binds it while keeping that evidence. Before, it offered only `--force`, which resets the recorded stages.
+- README: the build steps and the `record` command list now include `record theme`, `record deploy` (bound to the build it probed), `record brief` and `record spec`. The SDK examples take `--target-sdk <x.y.z>` instead of 0.4.38. The `tooling status` note no longer says npm has no dist-tag, the Node floor reads 20.19.0 as in `engines`, and `--force` is described as moving completed records to stage history.
+- `docs/quickstart.md`: a QA run against a local-address base URL keeps its verdict local by default, whatever the telemetry consent.
 
 ## [1.54.0] - 2026-10-07
 
