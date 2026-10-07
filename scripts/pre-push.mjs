@@ -79,7 +79,7 @@ function main() {
         console.error(`pre-push: ${short} predates scripts/check-fast.mjs, so it is not checked`);
         continue;
       }
-      console.error(`pre-push: fast gates on ${short}, in a temporary worktree (this checkout has other changes)`);
+      console.error(`pre-push: fast gates on ${short}, in a temporary worktree (this checkout is not a clean copy of it)`);
       const installed = run("npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund", "--prefer-offline", "--loglevel=error"], tree);
       failed = installed.status !== 0 || run(process.execPath, ["scripts/check-fast.mjs", "--no-fetch"], tree).status !== 0 || failed;
     } finally {
