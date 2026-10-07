@@ -209,9 +209,7 @@ template family is certified, and whether a named brief can be read, depend on
 file content: those checks still run in the handler and are journaled.
 The operator-facing `run-record` and `run end` commands refuse bare, empty, or
 whitespace-only values for every value-taking inherited run-record flag before
-packet work. The five agent
-token and elapsed-time flags retain their non-negative-integer diagnostics;
-`--surfaces` rejects unknown values, and `--dry-run` rejects a value. The
+packet work. `--surfaces` rejects unknown values, and `--dry-run` rejects a value. The
 inherited boolean flags (`--no-remit`, `--no-write`, `--dry-run`, and `--json`)
 retain their bare-flag behavior. `run end` also rejects `--new-run` and
 `--run-id` because the saved session fixes its run ID. `run-record` also
@@ -225,8 +223,7 @@ literal relative path, so the default context file is not read. Bare or empty
 `--context` or `--report` still makes QA auto-end fail and leaves the session
 open; bare or empty `--qa-verdict` fails a Run Record closeout when inherited,
 though QA auto-end supplies its own verdict path. The underlying run-record
-handler still rejects invalid agent
-integers, unknown `--surfaces`, and any valued `--dry-run` that reaches it. QA
+handler still rejects unknown `--surfaces` and any valued `--dry-run` that reaches it. QA
 auto-end drops `--dry-run` from inherited flags; if another inherited value
 fails in the handler, auto-end is skipped and the session stays open. QA's own
 journal entry is unaffected because auto-end runs after QA persistence. A named

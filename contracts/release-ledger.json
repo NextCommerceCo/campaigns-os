@@ -6812,6 +6812,75 @@
         }
       ],
       "entry_sha256": "446b7cc41c5af2352fecedebc543e9bb38a31b025afe2b60848d912e615f902b"
+    },
+    {
+      "id": "RL-0254",
+      "sequence": 243,
+      "date": "2026-10-07",
+      "kind": "release",
+      "surface_version": "1.55.0",
+      "changelog_section": "1.55.0",
+      "changelog_sha256": "0c491d1bc459d59743721c3bdbedd619c519225cac54ecbb088c3aa622a34202",
+      "agent_impact": "Run Records carry the QA publish decision reason and their closing path. Read closed_by to distinguish direct capture, run end, QA auto-end and stale sweep. The unused agent usage input is gone; a legacy record with agent_usage can still be inspected as JSON but fails validation on re-write.",
+      "compatibility": "breaking",
+      "migration": "Stop passing agent usage flags. Preserve old local records as read-only history; remove agent_usage from a copy before writing it under the current schema.",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Advance surface_version to 1.55.0 and record the Run Record schema hash."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/effects.md",
+          "surface_entry": "docs/effects.md",
+          "summary": "Remove the obsolete agent usage flag validation description."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Name the nullable QA publish decision reason in the Run Record."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "Record the Run Record field change on the supported surface."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/workflow-findings-sidecar.md",
+          "surface_entry": "docs/workflow-findings-sidecar.md",
+          "summary": "Document the publish reason and closing path."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Advance the package version to 1.55.0."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Advance the package version to 1.55.0 with exports unchanged."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-run-record.v0.schema.json",
+          "surface_entry": "schemas/campaigns-os-run-record.v0.schema.json",
+          "summary": "Add optional qa_verdict_publish.reason and closed_by, and remove agent_usage."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "run-record",
+          "summary": "Pass each closer through internal options and remove agent usage parsing and help flags."
+        }
+      ],
+      "entry_sha256": "9d4df621ec30981e42c506f11268482e2adba1b6ec8ffafb0821db229fc98275"
     }
   ]
 }

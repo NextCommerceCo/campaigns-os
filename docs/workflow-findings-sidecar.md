@@ -51,7 +51,8 @@ own schemas and evolve independently). Instead it carries:
 
 - **Stable envelope** — `schema_version` (`campaigns-os-run-record/v0`),
   `run_id`, package version, the command that ran, an `argv` *shape* (flag names
-  present, not raw values), `created_at`, consent state, and remit status.
+  present, not raw values), `created_at`, consent state, remit status, and
+  optional `closed_by` (`run_end`, `qa_auto_end`, `stale_sweep`, or `manual`).
 - **Run identity** — `map_id`, `campaign_slug`, `template_family`,
   `entry_point_shape`. (Best-effort; missing identity never blocks capture.)
 - **Source artifact refs** — for the Build Packet, Build Context, Assembly
@@ -246,7 +247,11 @@ remit(path, payload, proxyBase)   // mirrors qa-node.mjs postVerdict
   for a later post of the stored verdict), `attempted` / `ok` / `error` /
   `endpoint` (`/api/qa/verdicts`), a `state` (`skipped` when the run's
   publish was off, `ok`, `failed`), the `result` in the same vocabulary as
-  `remit_result`, the `base_kind`, and `published_at`. `qa run` hands the
+  `remit_result`, the `base_kind`, `published_at`, and optional `reason`.
+  The reason records the actual QA publish decision: `loopback_base_url`,
+  `portal_managed_default`, `consent_off`, `flag_opt_out`, `flag_opt_in`,
+  `default`, or `local_spec`. A later `qa publish` has no QA run decision and
+  records a null reason. `qa run` hands the
   block to the session through its QA attempt, so `run end` and the auto-end
   stamp it; `qa publish` stamps the record whose `qa_verdict` artifact
   references the verdict, reads `state: "ok"` as already published, and

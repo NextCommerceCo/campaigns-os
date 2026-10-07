@@ -128,6 +128,7 @@ test("qa publish posts the full verdict the sidecar names, stamps the Run Record
       error: null,
       endpoint: "/api/qa/verdicts",
       state: "ok",
+      reason: null,
       result: "stored",
       base_kind: "canonical",
       published_at: "2026-09-17T09:00:00.000Z",

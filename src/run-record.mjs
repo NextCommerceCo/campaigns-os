@@ -60,6 +60,14 @@ export const RUN_RECORD_REMIT_BASE_KINDS = ["canonical", "loopback", "proxy"];
 // to refuse re-posting a verdict the portal already holds.
 export const RUN_RECORD_QA_VERDICT_PUBLISH_STATES = ["skipped", "ok", "failed"];
 export const RUN_RECORD_QA_VERDICT_PUBLISHERS = ["qa run", "qa publish"];
+export const RUN_RECORD_QA_VERDICT_PUBLISH_REASONS = ["loopback_base_url", "portal_managed_default", "consent_off", "flag_opt_out", "flag_opt_in", "default", "local_spec"];
+export const RUN_RECORD_CLOSERS = ["run_end", "qa_auto_end", "stale_sweep", "manual"];
+const RUN_RECORD_FIELDS = new Set([
+  "schema_version", "run_id", "package_version", "surface_version", "toolkit_commit", "command", "argv_shape", "created_at",
+  "consent_state", "consent_source", "remit_attempted", "remit_ok", "remit_error", "remit_endpoint", "remit_state",
+  "remit_result", "remit_base_kind", "qa_verdict_publish", "closed_by", "identity", "artifacts", "observations",
+  "surfaces", "primary_surface", "surface_confidence", "lifecycle",
+]);
 
 // Required core. Strict here; permissive about optional sub-structures (the
 // validator checks shapes, not nested artifact bodies — those are referenced
@@ -104,6 +112,12 @@ export function validateRunRecord(record) {
 
   if (record.schema_version != null && record.schema_version !== RUN_RECORD_SCHEMA) {
     add("record.schema_version", `Expected schema_version "${RUN_RECORD_SCHEMA}".`);
+  }
+  for (const key of Object.keys(record)) {
+    if (!RUN_RECORD_FIELDS.has(key)) add(`record.${key}`, `unknown Run Record field "${key}".`);
+  }
+  if (record.closed_by !== undefined && !RUN_RECORD_CLOSERS.includes(record.closed_by)) {
+    add("record.closed_by", `closed_by must be one of: ${RUN_RECORD_CLOSERS.join(", ")}.`);
   }
 
   if (record.argv_shape == null || !isStringArray(record.argv_shape)) {
@@ -222,21 +236,6 @@ export function validateRunRecord(record) {
     }
   }
 
-  if (record.agent_usage != null) {
-    const usage = record.agent_usage;
-    if (typeof usage !== "object" || Array.isArray(usage)) {
-      add("record.agent_usage", "agent_usage must be an object when present.");
-    } else {
-      for (const field of ["input_tokens", "output_tokens", "tool_output_tokens", "total_tokens", "elapsed_ms"]) {
-        if (usage[field] != null && (!Number.isInteger(usage[field]) || usage[field] < 0)) {
-          add(`record.agent_usage.${field}`, `${field} must be a non-negative integer when present.`);
-        }
-      }
-      if (usage.model != null && typeof usage.model !== "string") add("record.agent_usage.model", "model must be a string when present.");
-      if (usage.source != null && typeof usage.source !== "string") add("record.agent_usage.source", "source must be a string when present.");
-    }
-  }
-
   if (record.surfaces != null) {
     if (!Array.isArray(record.surfaces)) {
       add("record.surfaces", "surfaces must be an array when present.");
@@ -301,7 +300,10 @@ export function validateQaVerdictPublish(block) {
   if (block.published_at != null && !isNonEmptyString(block.published_at)) {
     add("record.qa_verdict_publish.published_at", "published_at must be a non-empty string or null.");
   }
-  const allowed = new Set(["verdict_run_id", "publisher", "attempted", "ok", "error", "endpoint", "state", "result", "base_kind", "published_at"]);
+  if (block.reason != null && !RUN_RECORD_QA_VERDICT_PUBLISH_REASONS.includes(block.reason)) {
+    add("record.qa_verdict_publish.reason", `reason must be one of: ${RUN_RECORD_QA_VERDICT_PUBLISH_REASONS.join(", ")} (or null).`);
+  }
+  const allowed = new Set(["verdict_run_id", "publisher", "attempted", "ok", "error", "endpoint", "state", "result", "base_kind", "published_at", "reason"]);
   for (const key of Object.keys(block)) {
     if (!allowed.has(key)) add(`record.qa_verdict_publish.${key}`, `unknown qa_verdict_publish field "${key}".`);
   }
@@ -463,17 +465,6 @@ function normalizeRemitState(remit) {
   if (RUN_RECORD_REMIT_STATES.includes(remit?.state)) return remit.state;
   if (remit?.attempted) return remit.ok === true ? "ok" : "failed";
   return "skipped";
-}
-
-function normalizeAgentUsage(usage) {
-  if (!usage || typeof usage !== "object" || Array.isArray(usage)) return null;
-  const out = {};
-  for (const field of ["input_tokens", "output_tokens", "tool_output_tokens", "total_tokens", "elapsed_ms"]) {
-    if (Number.isInteger(usage[field]) && usage[field] >= 0) out[field] = usage[field];
-  }
-  if (isNonEmptyString(usage.model)) out.model = usage.model.trim();
-  if (isNonEmptyString(usage.source)) out.source = usage.source.trim();
-  return Object.keys(out).length ? out : null;
 }
 
 const PRIMARY_SURFACE_PRIORITY = ["platform", "template", "design-source", "spec-rule", "cli", "skill", "docs"];
@@ -667,7 +658,7 @@ export function assembleRunRecord({
   primarySurface = null,
   surfaceConfidence = null,
   lifecycle = null,
-  agentUsage = null,
+  closedBy = null,
   qaVerdictPublish = null,
   now = new Date(),
 } = {}) {
@@ -732,8 +723,7 @@ export function assembleRunRecord({
   }
   if (surfaceConfidence) record.surface_confidence = surfaceConfidence;
   if (lifecycle && typeof lifecycle === "object" && !Array.isArray(lifecycle)) record.lifecycle = lifecycle;
-  const normalizedUsage = normalizeAgentUsage(agentUsage);
-  if (normalizedUsage) record.agent_usage = normalizedUsage;
+  if (RUN_RECORD_CLOSERS.includes(closedBy)) record.closed_by = closedBy;
   // Present only when a publish outcome is known: an absent block reads as
   // "nothing recorded", which is what every record before this field says.
   if (qaVerdictPublish && typeof qaVerdictPublish === "object" && !Array.isArray(qaVerdictPublish)) record.qa_verdict_publish = qaVerdictPublish;

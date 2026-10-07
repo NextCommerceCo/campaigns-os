@@ -368,6 +368,7 @@ test("CLI: run start --packet from an unrelated directory roots the session in t
     const end = JSON.parse(runIn(unrelated, ["run", "end", "--packet", packetPath, "--no-remit", "--no-write", "--json"]));
     assert.equal(end.action, "run-record");
     assert.equal(end.record.run_id, start.session.run_id);
+    assert.equal(end.record.closed_by, "run_end");
     assert.equal(findRunSession(target), null, "run end --packet from elsewhere cleared the target session");
     assert.equal(existsSync(join(unrelated, ".campaign-runtime")), false);
 
@@ -823,6 +824,7 @@ test("runSessionEndArgs: the closing argv carries the session's identity and onl
     json: true,
     report: "/p/report.json",
     "qa-verdict": "/p/qa-output/verdict.json",
+    "agent-total-tokens": "42",
   };
   assert.deepEqual(runSessionEndArgs(session, "/p/campaign-runtime.build.json", qaRunArgs), {
     _: ["run-record"],
@@ -952,12 +954,56 @@ test("CLI: an auto-ended Run Record's argv_shape is run-record's, not qa run's",
   const start = JSON.parse(await run(["run", "start", "--packet", packetPath, "--json"]));
   // A refused loopback proxy keeps QA's proxy reads (the live campaign read,
   // #533, and price preview) on this machine.
-  const qa = JSON.parse(await run(["qa", "run", "--packet", packetPath, "--base-url", baseUrl, "--proxy-base", "http://127.0.0.1:1", "--no-post-verdict", "--no-remit", "--json"]));
+  const qa = JSON.parse(await run(["qa", "run", "--packet", packetPath, "--base-url", baseUrl, "--proxy-base", "http://127.0.0.1:1", "--no-remit", "--json"]));
   assert.ok(SESSION_ENDING_DISPOSITIONS.has(qa.verdict.disposition), `the fixture must end the session: ${qa.verdict.disposition}`);
   assert.equal(findRunSession(dir), null, "a session-ending verdict closes the session");
 
   const record = JSON.parse(readFileSync(resolveRunRecordPath(start.session.run_id, dir), "utf8"));
   assert.equal(record.command, "run-record");
+  assert.equal(record.closed_by, "qa_auto_end");
+  assert.equal(record.qa_verdict_publish.state, "skipped");
+  assert.equal(record.qa_verdict_publish.reason, "loopback_base_url");
   assert.deepEqual(record.argv_shape, ["--json", "--lifecycle-journal", "--packet", "--qa-verdict", "--run-id"]);
   assert.ok(record.artifacts.some((artifact) => artifact.kind === "qa_verdict"));
+});
+
+test("CLI: loopback QA followed by run end keeps the publish decision reason", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-run-session-loopback-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  cpSync(resolve(ROOT, "examples/target-page-kit"), dir, { recursive: true });
+  const packetPath = join(dir, "campaign-runtime.build.json");
+  copyPacket(packetPath);
+  const packet = JSON.parse(readFileSync(packetPath, "utf8"));
+  packet.assembly.target_repo = ".";
+  writeFileSync(packetPath, `${JSON.stringify(packet)}\n`);
+  cpSync(resolve(ROOT, "examples/campaignspec.v42.basic.json"), join(dir, "campaignspec.v42.basic.json"));
+  mkdirSync(join(dir, ".campaign-runtime"), { recursive: true });
+  cpSync(resolve(ROOT, "contracts/fixtures/sidecar-bundle/production-shaped/.campaign-runtime/assembly-report.json"), join(dir, ".campaign-runtime/assembly-report.json"));
+  const server = createServer((_request, response) => {
+    response.writeHead(404, { "content-type": "text/plain" });
+    response.end("fixture unavailable");
+  });
+  await new Promise((done) => server.listen(0, "127.0.0.1", done));
+  t.after(() => new Promise((done) => server.close(done)));
+  const run = async (argv) => {
+    try {
+      return (await promisify(execFile)(process.execPath, [CLI, ...argv], {
+        cwd: dir,
+        encoding: "utf8",
+        env: { ...process.env, CAMPAIGNS_OS_TELEMETRY: "off", CAMPAIGNS_OS_LIFECYCLE_LOG: "" },
+      })).stdout;
+    } catch (error) {
+      return error.stdout || "";
+    }
+  };
+  const start = JSON.parse(await run(["run", "start", "--packet", packetPath, "--json"]));
+  const baseUrl = `http://127.0.0.1:${server.address().port}/runtime-packet-demo/`;
+  const qa = JSON.parse(await run(["qa", "run", "--packet", packetPath, "--base-url", baseUrl, "--proxy-base", "http://127.0.0.1:1", "--no-remit", "--json"]));
+  assert.equal(qa.status, "blocked");
+  assert.ok(findRunSession(dir), "blocked QA leaves the session for run end");
+  const ended = JSON.parse(await run(["run", "end", "--packet", packetPath, "--no-remit", "--json"]));
+  assert.equal(ended.record.run_id, start.session.run_id);
+  assert.equal(ended.record.closed_by, "run_end");
+  assert.equal(ended.record.qa_verdict_publish.state, "skipped");
+  assert.equal(ended.record.qa_verdict_publish.reason, "loopback_base_url");
 });

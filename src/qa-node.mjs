@@ -2750,7 +2750,7 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
     // The classified outcome (attempted, ok, error, endpoint, result,
     // http_status, base_kind) and the Run Record block derived from it.
     publish: { ...publishOutcome, response: undefined },
-    qa_verdict_publish: qaVerdictPublishBlock(publishOutcome, { verdictRunId: verdict.run_id, publisher: QA_VERDICT_PUBLISHERS.run, publishedAt: new Date().toISOString() }),
+    qa_verdict_publish: qaVerdictPublishBlock(publishOutcome, { verdictRunId: verdict.run_id, publisher: QA_VERDICT_PUBLISHERS.run, publishedAt: new Date().toISOString(), reason: publishDecision.reason }),
     publish_decision: { ...publishDecision, destination: publishDestination, consent_state: consent?.state ?? null },
     counts: countAssertions(verdict.assertions),
     theme_gate: themeGateSummary(resolved.themeGate),

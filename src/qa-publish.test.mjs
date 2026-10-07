@@ -1,6 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { decidePublishVerdict, qaResolveNextProofLines } from "./qa-node.mjs";
+import { qaVerdictPublishBlock, skippedQaVerdictPublish } from "./qa-verdict-publish.mjs";
+
+test("QA publish block carries the decision reason, including a skipped local spec", () => {
+  const skipped = skippedQaVerdictPublish();
+  const block = qaVerdictPublishBlock(skipped, { verdictRunId: "qa_test", publisher: "qa run", reason: "loopback_base_url" });
+  assert.equal(block.state, "skipped");
+  assert.equal(block.reason, "loopback_base_url");
+  assert.equal(qaVerdictPublishBlock({ ...skipped, reason: "local_spec" }, { verdictRunId: "qa_local", publisher: "qa run" }).reason, "local_spec");
+});
 
 test("qa resolve names the next proof command when a base URL is known", () => {
   const lines = qaResolveNextProofLines({

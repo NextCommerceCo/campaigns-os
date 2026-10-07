@@ -429,8 +429,6 @@ const REFUSED_INVOCATIONS = [
   { argv: ["prepare-build", ...FETCH_INTAKE_ARGV, "--theme-policy", "bogus"], fixture: "intake", expect: /Unsupported --theme-policy "bogus"\. Accepted values: inspect_only, auto, off\./ },
   { argv: ["start", ...CACHED_INTAKE_ARGV, "--brief"], fixture: "cached-intake", expect: /--brief needs a value/ },
   { argv: ["run-record", "--packet", "%DIR%/p.json", "--new-run", "--run-id", "one"], fixture: "packet", expect: /--new-run and --run-id are exclusive/ },
-  { argv: ["run-record", "--packet", "%DIR%/p.json", "--agent-input-tokens"], fixture: "packet", expect: /--agent-input-tokens requires a non-negative integer/ },
-  { argv: ["run-record", "--packet", "%DIR%/p.json", "--agent-output-tokens", "bogus"], fixture: "packet", expect: /--agent-output-tokens must be a non-negative integer/ },
   ...["run", "resolve"].flatMap((subcommand) => ["site", "built"].flatMap((selector) => [
     { argv: ["qa", subcommand, `--${selector}`, "%DIR%/site"], fixture: "site", expect: /requires --base-url/ },
     { argv: ["qa", subcommand, `--${selector}`, "%DIR%/site", "--base-url", "http://127.0.0.1:1/"], fixture: "site", expect: /requires --family/ },
@@ -686,14 +684,6 @@ const RUN_END_ARGV_REFUSALS = [
   ...["bogus", "", "   "].map((value) => ({ flag: "surfaces", value, expect: /Unknown --surfaces|Missing required --surfaces/ })),
   { flag: "surfaces", value: null, expect: /Missing required --surfaces/ },
   ...["yes", "   "].map((value) => ({ flag: "dry-run", value, expect: /--dry-run takes no value/ })),
-  ...["agent-input-tokens", "agent-output-tokens", "agent-tool-output-tokens", "agent-total-tokens", "agent-elapsed-ms"].flatMap((flag) => [
-    { flag, value: null, expect: /requires a non-negative integer/ },
-    { flag, value: "", expect: /requires a non-negative integer/ },
-    { flag, value: "   ", expect: /requires a non-negative integer/ },
-    { flag, value: "bogus", expect: /must be a non-negative integer/ },
-    { flag, value: "-1", expect: /must be a non-negative integer/ },
-  ]),
-  ...["agent-model", "agent-usage-source"].flatMap((flag) => [null, "", "   "].map((value) => ({ flag, value, expect: new RegExp(`Missing required --${flag}`) }))),
 ];
 
 // Keep this expectation independent of the implementation's flag classes.
@@ -701,7 +691,7 @@ const RUN_END_ARGV_REFUSALS = [
 // a new inherited flag that has not been classified here.
 const RUN_RECORD_VALUE_FLAGS = [
   "context", "report", "qa-verdict", "journal", "surfaces", "primary-surface", "surface-confidence",
-  "agent-input-tokens", "agent-output-tokens", "agent-tool-output-tokens", "agent-total-tokens", "agent-elapsed-ms", "agent-model", "agent-usage-source", "proxy-base",
+  "proxy-base",
 ];
 const RUN_RECORD_BOOLEAN_FLAGS = ["no-remit", "no-write", "dry-run", "json"];
 test("(i') inherited run-record flag classes cover every forwarded flag", () => {
@@ -909,11 +899,11 @@ test("(i') QA auto-end preserves a prior handler failure and closes on blank inh
   // A refused loopback proxy keeps QA's proxy reads (the live campaign read,
   // #533, and price preview) on this machine.
   const proxyBase = "http://127.0.0.1:1";
-  const { stderr } = await execFileAsync(process.execPath, [CLI, "qa", "run", "--packet", packetPath, "--base-url", baseUrl, "--proxy-base", proxyBase, "--no-post-verdict", "--no-remit", "--agent-input-tokens", "bogus", "--json"], {
+  const { stderr } = await execFileAsync(process.execPath, [CLI, "qa", "run", "--packet", packetPath, "--base-url", baseUrl, "--proxy-base", proxyBase, "--no-post-verdict", "--no-remit", "--primary-surface", "bogus", "--json"], {
     cwd: dir,
     env: childEnv(),
   });
-  assert.match(stderr, /run session auto-end skipped after QA: --agent-input-tokens must be a non-negative integer/);
+  assert.match(stderr, /run session auto-end skipped after QA: unknown primary_surface/);
   const entries = readJournalEntries(session.lifecycle_journal);
   assert.equal(entries.length, before + 1, "QA appends exactly one entry before its auto-end");
   assert.equal(entries.at(-1).command, "qa");
@@ -1004,7 +994,7 @@ const HANDLER_FAILURES = [
     command: "prepare-build",
     expect: /missing-brief\.yaml/,
   },
-  { argv: ["run-record", "--packet", "%DIR%/p.json", "--new-run", "--agent-input-tokens", "1"], files: { "p.json": "{ invalid" }, command: "run-record", expect: /not valid JSON|Unexpected token|Expected property name/ },
+  { argv: ["run-record", "--packet", "%DIR%/p.json", "--new-run"], files: { "p.json": "{ invalid" }, command: "run-record", expect: /not valid JSON|Unexpected token|Expected property name/ },
   { argv: ["qa", "run", "--site", "%DIR%/missing-site", "--base-url", "http://127.0.0.1:1/", "--family", "demo"], command: "qa", expect: /Built campaign directory does not exist/ },
   ...["run", "resolve"].map((subcommand) => ({
     argv: ["qa", subcommand, "--packet", "%DIR%/p.json"],
@@ -1192,6 +1182,7 @@ test("(m) the same refused `start` WITHOUT --no-write performs the closeout and 
     // The declared effect of `start`: the stale session is closed out into its
     // Run Record and cleared, and the operator is told on stderr.
     assert.deepEqual(readdirSync(recordsDir), [`${session.run_id}.json`]);
+    assert.equal(JSON.parse(readFileSync(join(recordsDir, `${session.run_id}.json`), "utf8")).closed_by, "stale_sweep");
     assert.match(refusedStart.stderr, new RegExp(`Stale run session ${session.run_id} .* closed out`));
     assert.equal(existsSync(sessionPath), false, "the stale session file must be cleared by the closeout");
 

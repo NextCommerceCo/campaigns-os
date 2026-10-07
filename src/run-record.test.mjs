@@ -14,10 +14,13 @@ import {
 import {
   assembleRunRecord,
   mintRunId,
+  readRunRecordsForTarget,
   resolveRunRecordPath,
   RUN_RECORD_COMMIT_PATTERN,
   RUN_RECORD_QA_VERDICT_PUBLISH_STATES,
   RUN_RECORD_QA_VERDICT_PUBLISHERS,
+  RUN_RECORD_QA_VERDICT_PUBLISH_REASONS,
+  RUN_RECORD_CLOSERS,
   RUN_RECORD_REMIT_BASE_KINDS,
   RUN_RECORD_REMIT_RESULTS,
   RUN_RECORD_SCHEMA,
@@ -138,12 +141,7 @@ test("validator accepts a fully-populated record", () => {
     surfaces: ["template", "cli"],
     primary_surface: "template",
     surface_confidence: "low",
-    agent_usage: {
-      total_tokens: 1234,
-      elapsed_ms: 5000,
-      model: "test-model",
-      source: "fixture",
-    },
+    closed_by: "manual",
   });
   const result = validateRunRecord(record);
   assert.equal(result.ok, true, JSON.stringify(result.errors));
@@ -209,13 +207,28 @@ test("validator rejects malformed observation arrays", () => {
   assert.equal(validateRunRecord(minimalRecord({ observations: { findings_journal: { malformed_lines: ["1"] } } })).ok, false);
 });
 
-test("validator rejects malformed agent usage fields", () => {
-  assert.equal(validateRunRecord(minimalRecord({ agent_usage: "nope" })).ok, false);
-  assert.equal(validateRunRecord(minimalRecord({ agent_usage: { total_tokens: -1 } })).ok, false);
-  assert.equal(validateRunRecord(minimalRecord({ agent_usage: { elapsed_ms: 1.5 } })).ok, false);
-  assert.equal(validateRunRecord(minimalRecord({ agent_usage: { model: 7 } })).ok, false);
-  assert.equal(validateRunRecord(minimalRecord({ agent_usage: { total_tokens: 12, elapsed_ms: 50 } })).ok, true);
+test("closed_by is optional, constrained to the closer enum, and legacy agent_usage is unknown", () => {
+  const schema = JSON.parse(readFileSync(resolve(ROOT, "schemas/campaigns-os-run-record.v0.schema.json"), "utf8"));
+  const validateSchema = new Ajv2020({ strict: true, validateFormats: false }).compile(schema);
+  assert.deepEqual(schema.properties.closed_by.enum, RUN_RECORD_CLOSERS);
+  for (const record of [minimalRecord(), ...RUN_RECORD_CLOSERS.map((closed_by) => minimalRecord({ closed_by }))]) {
+    assert.equal(validateRunRecord(record).ok, true);
+    assert.equal(validateSchema(record), true);
+  }
+  for (const record of [minimalRecord({ closed_by: "other" }), minimalRecord({ agent_usage: { total_tokens: 12 } })]) {
+    assert.equal(validateRunRecord(record).ok, false);
+    assert.equal(validateSchema(record), false);
+  }
 });
+
+test("a legacy local record remains readable but cannot be written under the current contract", () => withTempDir((dir) => {
+  const legacy = minimalRecord({ agent_usage: { total_tokens: 12 } });
+  const path = resolveRunRecordPath(legacy.run_id, dir);
+  mkdirSync(resolve(path, ".."), { recursive: true });
+  writeFileSync(path, `${JSON.stringify(legacy)}\n`);
+  assert.deepEqual(readRunRecordsForTarget(dir)[0].record, legacy);
+  assert.throws(() => writeRunRecord(legacy, { baseDir: dir }), /record.agent_usage/);
+}));
 
 test("validator rejects invalid remit status fields", () => {
   assert.equal(validateRunRecord(minimalRecord({ remit_state: "maybe" })).ok, false);
@@ -234,6 +247,7 @@ test("qa_verdict_publish: the validator and the JSON Schema agree, and malformed
     result: "stored",
     base_kind: "loopback",
     published_at: "2026-09-17T09:00:00.000Z",
+    reason: "flag_opt_in",
   };
   assert.equal(validateRunRecord(minimalRecord({ qa_verdict_publish: ok })).ok, true);
   assert.equal(validateRunRecord(minimalRecord({ qa_verdict_publish: null })).ok, true);
@@ -245,6 +259,11 @@ test("qa_verdict_publish: the validator and the JSON Schema agree, and malformed
   assert.deepEqual(codes({ ...ok, result: "maybe" }), ["record.qa_verdict_publish.result"]);
   assert.deepEqual(codes({ ...ok, base_kind: "internet" }), ["record.qa_verdict_publish.base_kind"]);
   assert.deepEqual(codes({ ...ok, endpoint: "api/qa/verdicts" }), ["record.qa_verdict_publish.endpoint"]);
+  assert.deepEqual(codes({ ...ok, reason: "unknown" }), ["record.qa_verdict_publish.reason"]);
+  assert.deepEqual(codes({ ...ok, reason: null }), []);
+  const withoutReason = { ...ok };
+  delete withoutReason.reason;
+  assert.deepEqual(codes(withoutReason), []);
   assert.deepEqual(codes({ ...ok, extra: 1 }), ["record.qa_verdict_publish.extra"]);
   assert.deepEqual(codes([]), ["record.qa_verdict_publish"]);
   assert.equal(validateRunRecord(minimalRecord({ qa_verdict_publish: { ...ok, state: "pending" } })).ok, false);
@@ -256,6 +275,8 @@ test("qa_verdict_publish: the validator and the JSON Schema agree, and malformed
   assert.deepEqual(published.properties.publisher.enum, RUN_RECORD_QA_VERDICT_PUBLISHERS);
   assert.deepEqual(published.properties.result.enum, [...RUN_RECORD_REMIT_RESULTS, null]);
   assert.deepEqual(published.properties.base_kind.enum, [...RUN_RECORD_REMIT_BASE_KINDS, null]);
+  assert.deepEqual(published.properties.reason.enum, [...RUN_RECORD_QA_VERDICT_PUBLISH_REASONS, null]);
+  assert.equal(validateRunRecord(minimalRecord({ qa_verdict_publish: { ...ok, reason: "unknown" } })).ok, false);
   assert.deepEqual(Object.keys(published.properties).sort(), Object.keys(ok).sort(), "the validator's allowed field set is the schema's");
   assert.deepEqual(published.required, ["verdict_run_id", "publisher", "attempted", "state"]);
 });
@@ -582,7 +603,7 @@ test("CLI: run-record assembles a valid record from a real packet (argv shape, n
   assert.equal(record.consent_state, "on");
 });
 
-test("CLI: run-record infers the latest local QA verdict and records optional agent usage", () => {
+test("CLI: run-record infers the latest local QA verdict and ignores removed usage flags", () => {
   withTempDir((dir) => {
     const packetPath = join(dir, "campaign-runtime.build.json");
     cpSync(resolve(ROOT, "examples/build-packet.basic.json"), packetPath);
@@ -608,6 +629,7 @@ test("CLI: run-record infers the latest local QA verdict and records optional ag
       "--agent-elapsed-ms", "123456",
       "--agent-model", "gpt-test",
       "--agent-usage-source", "fixture",
+      "--closed-by", "qa_auto_end",
       "--no-write", "--json",
     ], { encoding: "utf8" }));
 
@@ -617,12 +639,8 @@ test("CLI: run-record infers the latest local QA verdict and records optional ag
     assert.equal(out.record.observations.qa.disposition, "ready_with_exceptions");
     assert.deepEqual(out.record.observations.qa.gap_classes, ["browser-runtime"]);
     assert.ok(out.record.surfaces.includes("platform"), JSON.stringify(out.record.surfaces));
-    assert.deepEqual(out.record.agent_usage, {
-      total_tokens: 9876,
-      elapsed_ms: 123456,
-      model: "gpt-test",
-      source: "fixture",
-    });
+    assert.equal(out.record.closed_by, "manual");
+    assert.equal(Object.hasOwn(out.record, "agent_usage"), false);
   });
 });
 

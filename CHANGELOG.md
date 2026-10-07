@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.55.0] - 2026-10-07
+
+### Changed
+
+Run Records now carry the optional `qa_verdict_publish.reason` from the QA publish decision and `closed_by` from the command path that closed the record. The reason distinguishes loopback, portal managed, consent, flag, default, and local spec decisions; the closer distinguishes `run end`, QA auto-end, stale sweep, and direct `run-record`. The unused `agent_usage` field and its `--agent-*` input flags are removed. Older records with `agent_usage` remain readable as local JSON, but fail current Run Record validation if re-written.
+
 ## [1.54.0+agent.10] - 2026-10-07
 
 ### Fixed

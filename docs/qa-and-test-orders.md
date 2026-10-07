@@ -822,7 +822,7 @@ prints the portal link.
 The outcome lands on the run's Run Record as the `qa_verdict_publish` block —
 `verdict_run_id`, `publisher` (`qa run` or `qa publish`), `state`
 (`skipped` / `ok` / `failed`), `result` in the remit vocabulary, `base_kind`,
-`published_at` — on the record whose `qa_verdict` artifact references the
+`published_at`, and the nullable publish decision `reason` — on the record whose `qa_verdict` artifact references the
 verdict under the packet's campaign. `qa run` records its own publish (or
 its `--no-post-verdict` skip) the same way when the run session closes, which
 is what `already_published` reads. A stored `ok` is never downgraded: a
