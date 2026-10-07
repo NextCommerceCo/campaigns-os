@@ -63,14 +63,20 @@ test("the coupon locators are the SDK's declared coupon activations, nothing spe
 
 const ROUTE_RULE = { cartEntrySelector: CART_ENTRY_CONTROL_SELECTOR, cartEntryRouteAttribute: CART_ENTRY_ROUTE_ATTRIBUTE, origin: "https://campaign.example", baseHref: "https://campaign.example/lp/nested/index.html" };
 
-function element({ tag = "button", attrs = {}, href, form = null } = {}) {
+// `type` is the element's reflected type (a <button> with no type attribute
+// reflects "submit"); `selectors` are further selectors the element matches;
+// `checkoutForm` puts the wrapping form under the SDK checkout-form selector.
+const CHECKOUT_FORM = 'form[data-next-checkout="form"]';
+
+function element({ tag = "button", attrs = {}, href, form = null, type, selectors = [], checkoutForm = false } = {}) {
   const sdkControl = attrs["data-next-action"] === "add-to-cart";
   return {
     tagName: tag.toUpperCase(),
     href,
+    type,
     getAttribute: (name) => (Object.hasOwn(attrs, name) ? attrs[name] : null),
-    matches: (selector) => selector === CART_ENTRY_CONTROL_SELECTOR && sdkControl,
-    closest: (selector) => (selector === "form" ? form : null),
+    matches: (selector) => (selector === CART_ENTRY_CONTROL_SELECTOR && sdkControl) || selectors.includes(selector),
+    closest: (selector) => (selector === "form" || (checkoutForm && selector === CHECKOUT_FORM) ? form : null),
   };
 }
 
@@ -97,11 +103,87 @@ test("cartEntryHrefFor: href-shaped attributes and a wrapping form's action reso
   assert.equal(cartEntryHrefFor(element({ attrs: { "data-href": "/checkout/?forcePackageId=1" } }), ROUTE_RULE), "https://campaign.example/checkout/?forcePackageId=1");
   assert.equal(cartEntryHrefFor(element({ attrs: { href: "checkout/" } }), ROUTE_RULE), "https://campaign.example/lp/nested/checkout/");
   const form = { getAttribute: (name) => (name === "action" ? "/checkout/" : null) };
-  assert.equal(cartEntryHrefFor(element({ attrs: {}, form }), ROUTE_RULE), "https://campaign.example/checkout/");
+  assert.equal(cartEntryHrefFor(element({ attrs: {}, type: "submit", form }), ROUTE_RULE), "https://campaign.example/checkout/");
   assert.equal(cartEntryHrefFor(element({ attrs: { "data-next-href": "/checkout/" } }), ROUTE_RULE), null, "data-next-href is not an SDK attribute and not a route");
   assert.equal(cartEntryHrefFor(element({ attrs: { href: "http://[bad" } }), ROUTE_RULE), null, "an unparseable href is not a route, on either branch");
   assert.equal(cartEntryHrefFor(element(), ROUTE_RULE), null);
   assert.equal(cartEntryHrefFor(null, ROUTE_RULE), null);
+});
+
+// A form action is where submitting that form goes, so it is the route of the
+// form's submit button and of nothing else inside the form; and the SDK
+// checkout form is submitted by the SDK, so its action is no route at all.
+test("cartEntryHrefFor: a wrapping form's action routes only that form's submit button, and nothing inside the SDK checkout form", () => {
+  const form = { getAttribute: (name) => (name === "action" ? "/checkout/" : null) };
+  const rule = { ...ROUTE_RULE, checkoutFormSelector: CHECKOUT_FORM };
+  assert.equal(cartEntryHrefFor(element({ type: "submit", form }), rule), "https://campaign.example/checkout/", "a submit button (typed or typeless) takes its form's action");
+  assert.equal(cartEntryHrefFor(element({ type: "button", form }), rule), null, "a type=\"button\" control does not submit the form");
+  assert.equal(cartEntryHrefFor(element({ tag: "div", attrs: { role: "button" }, form }), rule), null, "a role=\"button\" card does not submit the form");
+  assert.equal(cartEntryHrefFor(element({ type: "submit", form, checkoutForm: true }), rule), null, "inside the SDK checkout form the action is not a route");
+  assert.equal(cartEntryHrefFor(element({ type: "button", attrs: { "data-href": "/upsell/" }, form, checkoutForm: true }), rule), "https://campaign.example/upsell/", "a control's own route attribute still counts inside the checkout form");
+});
+
+// The SDK checkout form's submit button and an upsell's accept / decline
+// actions go where the page declares, not where the element points: the SDK
+// handles the submission or the click itself.
+test("cartEntryHrefFor: a control matching a page-declared route goes to that route, never to its own href or its form's action", () => {
+  const submit = `${CHECKOUT_FORM} button[type="submit"]`;
+  const rule = {
+    ...ROUTE_RULE,
+    checkoutFormSelector: CHECKOUT_FORM,
+    declaredRoutes: [
+      { selector: submit, url: "https://campaign.example/upsell/" },
+      { selector: '[data-next-upsell-action="add"]', url: "/receipt/" },
+    ],
+  };
+  const form = { getAttribute: (name) => (name === "action" ? "/elsewhere/" : null) };
+  assert.equal(cartEntryHrefFor(element({ type: "submit", form, checkoutForm: true, selectors: [submit] }), rule), "https://campaign.example/upsell/");
+  const accept = element({ tag: "a", attrs: { href: "#", "data-next-upsell-action": "add" }, href: "https://campaign.example/upsell/#", selectors: ['[data-next-upsell-action="add"]'] });
+  assert.equal(cartEntryHrefFor(accept, rule), "https://campaign.example/receipt/", "the href=\"#\" never navigates");
+  const decline = element({ tag: "a", attrs: { href: "#", "data-next-upsell-action": "skip" }, href: "https://campaign.example/upsell/#", selectors: ['[data-next-upsell-action="skip"]'] });
+  assert.equal(cartEntryHrefFor(decline, rule), "https://campaign.example/upsell/#", "a control with no declared route reads as any other element");
+  assert.equal(cartEntryHrefFor(accept, { ...rule, declaredRoutes: [{ selector: '[data-next-upsell-action="add"]', url: "http://[bad" }] }), null, "an unparseable declared route is no route");
+});
+
+// Which routes a page declares for its SDK controls: the checkout's success
+// route on a checkout page, the accept / decline routes on an upsell or
+// downsell page, each read from the topology field the static route-link rows
+// read; nothing on any other page.
+test("primaryCtaDeclaredRoutes: checkout submit -> expected_next_url; upsell / downsell add -> expected_accept_url, skip -> expected_decline_url; nothing elsewhere", () => {
+  const { primaryCtaDeclaredRoutes } = __qaBrowserTestHooks;
+  const urls = { expected_next_url: `${BASE}/next/`, expected_accept_url: `${BASE}/accept/`, expected_decline_url: `${BASE}/decline/` };
+  assert.deepEqual(primaryCtaDeclaredRoutes({ page_type: "checkout", ...urls }), [{ selector: `${CHECKOUT_FORM} button[type="submit"]`, url: `${BASE}/next/` }]);
+  for (const pageType of ["upsell", "downsell", "Upsell"]) {
+    assert.deepEqual(primaryCtaDeclaredRoutes({ page_type: pageType, ...urls }), [
+      { selector: '[data-next-upsell-action="add"]', url: `${BASE}/accept/` },
+      { selector: '[data-next-upsell-action="skip"]', url: `${BASE}/decline/` },
+    ], pageType);
+  }
+  assert.deepEqual(primaryCtaDeclaredRoutes({ page_type: "upsell", expected_next_url: `${BASE}/next/`, expected_decline_url: `${BASE}/decline/` }), [
+    { selector: '[data-next-upsell-action="skip"]', url: `${BASE}/decline/` },
+  ], "an undeclared accept route lists no accept control");
+  for (const pageType of ["landing", "select", "receipt", "thankyou"]) assert.deepEqual(primaryCtaDeclaredRoutes({ page_type: pageType, ...urls }), [], pageType);
+});
+
+// Which forms' actions route nothing on this page, handed to the route rule
+// as its checkout-form selector: on a checkout, upsell or downsell every form,
+// since there the only form-borne route is the one the page declares for its
+// SDK control; elsewhere only the SDK checkout form.
+test("primaryCtaRoutelessForms: every form on a checkout, upsell or downsell; only the SDK checkout form elsewhere", () => {
+  const { primaryCtaRoutelessForms } = __qaBrowserTestHooks;
+  for (const pageType of ["checkout", "upsell", "downsell", "Checkout"]) assert.equal(primaryCtaRoutelessForms({ page_type: pageType }), "form", pageType);
+  for (const pageType of ["landing", "presell", "select", "product", "receipt", "thankyou", ""]) assert.equal(primaryCtaRoutelessForms({ page_type: pageType }), CHECKOUT_FORM, pageType);
+  assert.equal(primaryCtaRoutelessForms(null), CHECKOUT_FORM);
+});
+
+test("cartEntryHrefFor: with every form routeless, an unrelated form's submit button takes no route from its action; a declared route and the control's own href still count", () => {
+  const form = { getAttribute: (name) => (name === "action" ? "/upsell/" : null) };
+  const submit = `${CHECKOUT_FORM} button[type="submit"]`;
+  const rule = { ...ROUTE_RULE, checkoutFormSelector: "form", declaredRoutes: [{ selector: submit, url: "/upsell/" }] };
+  const closestAny = (el) => ({ ...el, closest: (selector) => (selector === "form" || selector === CHECKOUT_FORM ? form : null) });
+  assert.equal(cartEntryHrefFor(element({ type: "submit", form }), rule), null, "a newsletter form's submit button is not a route");
+  assert.equal(cartEntryHrefFor(closestAny(element({ type: "submit", form, selectors: [submit] })), rule), "https://campaign.example/upsell/", "the SDK checkout submit goes to the declared route");
+  assert.equal(cartEntryHrefFor(element({ tag: "a", attrs: { href: "/upsell/" }, href: "https://campaign.example/upsell/", form }), rule), "https://campaign.example/upsell/", "a link inside a form keeps its own href");
 });
 
 // The primary-CTA inspection is serialised into the page as source text:
@@ -236,6 +318,22 @@ test("primary-CTA inspection script is self-contained: it evaluates in a fresh c
   assert.equal(sdkControl.elements.length, 1, "the route candidate's label is measured through the shared helper");
   assert.deepEqual(Object.keys(sdkControl.elements[0]).sort(), ["contrast_ratio_exact", "required_ratio", "selector_path", "size_class", "review_reason"].sort());
   assert.equal(anchor.elements, null, "a candidate off the route is not measured");
+});
+
+test("primary-CTA inspection script carries the page's declared routes: an upsell's href=\"#\" accept action is the route candidate", () => {
+  const script = primaryCtaInspectionScript("https://campaign.example/receipt/", [{ selector: '[data-next-upsell-action="add"]', url: "https://campaign.example/receipt/" }]);
+  const context = pageContext({
+    base: "https://campaign.example/upsell/",
+    elements: [
+      { tag: "a", attrs: { href: "#", "data-next-upsell-action": "add" }, text: "Yes, add to my order", href: "https://campaign.example/upsell/#" },
+      { tag: "a", attrs: { href: "#", "data-next-upsell-action": "skip" }, text: "No thanks", href: "https://campaign.example/upsell/#" },
+    ],
+  });
+  const evidence = evaluateInPage(script, context);
+  assert.equal(evidence.reason, "ok");
+  const [accept, decline] = evidence.candidates;
+  assert.deepEqual([accept.href, accept.route_matches], ["https://campaign.example/receipt/", true]);
+  assert.deepEqual([decline.href, decline.route_matches], ["https://campaign.example/upsell/#", false]);
 });
 
 test("a page whose only route-shaped spelling is undeclared reads as a vocabulary gap in the verdict, not as a removed CTA", () => {

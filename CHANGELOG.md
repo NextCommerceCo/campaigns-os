@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.54.0+agent.2] - 2026-10-07
+
+### Fixed
+
+The `qa run --browser` primary-CTA row (`browser-primary-cta:<page>`) no longer fails `missing_route_cta` on checkout and upsell pages that Campaign Cart routes. Since 1.53.0 those pages are checked, but the check found a route only through a control's own link, and these pages have none: a checkout advances through the submit button of its `<form data-next-checkout="form">`, and an upsell through its `data-next-upsell-action="add"` and `"skip"` controls, which are `href="#"` links. So every SDK-routed checkout and upsell failed, the starter templates' own pages included, while the `route-link:*` rows and test orders passed on the same pages. QA now takes the route a page declares for these controls, from the same page fields the `route-link:*` rows read. On a checkout, the checkout form's `button[type="submit"]` leads to the page's next route. On an upsell or downsell, the add control leads to the page's accept route and the skip control to its decline route. The control is checked as the primary CTA when that route is the page's next route, and its contrast, size and text are measured as before. On checkout, upsell and downsell pages these declared controls are the only controls a form can route. Any other form's `action`, for example a newsletter sign-up beside the checkout form, routes nothing there, even when it is the next route. So a page whose only route to the next page is such a form still fails `missing_route_cta`. On every other page a form's `action` is now the route of that form's own submit button only, and never inside the checkout form, which Campaign Cart submits itself. So bundle cards, wallet buttons and other controls inside a form no longer become CTA candidates because the form has an action; before, they did, and the row turned to `manual_review`. A page with no control leading to its next route still fails `missing_route_cta`.
+
 ## [1.54.0] - 2026-10-07
 
 Ships the same-surface changes 1.53.0+agent.1 through +agent.11 (+agent.6 and +agent.8 were never used), including the `qa run --test-order` fix for Campaign Cart SDK 0.4.41 card fields (+agent.5) and the starter catalog, SDK attribute index and support policy at 0.4.41 (+agent.10, +agent.11).
