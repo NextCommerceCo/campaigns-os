@@ -88,6 +88,38 @@ function withPreparedBuild(run) {
   }
 }
 
+test("doctor scans mapped wrappers using the effective recorded conversion status", () => {
+  for (const source of ["report", "context", "packet"]) {
+    withPreparedBuild(({ packetPath, contextPath, reportPath }) => {
+      const packet = readJson(packetPath);
+      writeFileSync(resolve(dirname(packetPath), packet.source_html.root, "landing.html"), "<!doctype html><html><head></head><body>Landing</body></html>");
+      const context = readJson(contextPath);
+      const report = readJson(reportPath);
+      packet.source_html.adapter_contract.raw_html_conversion_status = source === "packet" ? "completed" : "pending";
+      context.adapter_decisions.raw_html_conversion_status = source === "context" ? "not_required" : "pending";
+      if (source === "packet") delete context.adapter_decisions;
+      report.adapter_decisions.raw_html_conversion_status = "pending";
+      if (source === "report") report.adapter_decisions.raw_html_conversion_status = "completed";
+      else delete report.adapter_decisions;
+      writeJson(packetPath, packet);
+      writeJson(contextPath, context);
+      writeJson(reportPath, report);
+      const doctor = runCliJson(["doctor", "--packet", packetPath, "--context", contextPath, "--report", reportPath, "--json"]);
+      assert.equal(doctor.warnings.some((issue) => issue.code === "source_html.raw_html_wrappers"), true, source);
+    });
+  }
+});
+
+test("doctor adapter warnings name the record build command", () => {
+  withPreparedBuild(({ packetPath, contextPath, reportPath }) => {
+    markAssemblyCompleted(reportPath);
+    const doctor = runCliJson(["doctor", "--packet", packetPath, "--context", contextPath, "--report", reportPath, "--json"]);
+    const warning = doctor.warnings.find((issue) => issue.code === "adapter.raw_html_conversion_status");
+    assert.ok(warning);
+    assert.match(warning.message, /record build --adapter-decision raw_html_conversion_status=<value>/);
+  });
+});
+
 function markAssemblyCompleted(reportPath, mutate = (report) => report) {
   const report = readJson(reportPath);
   report.stages.prepare_build.status = "completed";

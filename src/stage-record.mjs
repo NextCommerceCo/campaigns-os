@@ -26,6 +26,7 @@ import { fileURLToPath } from "node:url";
 import Ajv2020 from "ajv/dist/2020.js";
 
 import { BRAND_LAYER_FILENAMES } from "./brand-theme.mjs";
+import { ADAPTER_DECISION_SCALAR_VALUES } from "./adapter-decision-contract.mjs";
 import { computeBuildFingerprint, resolveBuiltSiteScope } from "./built-site-scope.mjs";
 import { resolveCampaignWorkspace, targetRepoFor } from "./campaign-workspace.mjs";
 import { isObject, optionalString, readJsonIfExists, requireArg } from "./cli-helpers.mjs";
@@ -60,7 +61,7 @@ export const RECORD_STAGES = Object.freeze(["setup", "build", "polish", "theme",
 const RECORD_FLAGS = Object.freeze(["packet", "context", "report", "dry-run", "json", "run-id", "lifecycle-journal", "deviation-reason"]);
 const POLISH_RECORD_FLAGS = Object.freeze(["evidence"]);
 const DEPLOY_RECORD_FLAGS = Object.freeze(["base-url"]);
-const BUILD_RECORD_FLAGS = Object.freeze(["build-environment"]);
+const BUILD_RECORD_FLAGS = Object.freeze(["build-environment", "adapter-decision"]);
 // `record brief` saves a brief file: --brief names it (otherwise intake's
 // discovery finds it).
 const BRIEF_RECORD_FLAGS = Object.freeze(["brief"]);
@@ -130,10 +131,43 @@ export function refuseRecord(stage, problems) {
   return new Error(`record ${stage} refused; nothing was written:\n${problems.map((problem) => `- ${problem}`).join("\n")}`);
 }
 
+function parseAdapterDecisions(value) {
+  const allowedKeys = Object.keys(ADAPTER_DECISION_SCALAR_VALUES).join(", ");
+  const reject = (reason, key = null) => {
+    const allowedValues = key && Object.hasOwn(ADAPTER_DECISION_SCALAR_VALUES, key)
+      ? ` Allowed values for ${key}: ${ADAPTER_DECISION_SCALAR_VALUES[key].join(", ")}.`
+      : "";
+    throw refused(`${reason} Allowed keys: ${allowedKeys}.${allowedValues}`);
+  };
+  if (typeof value !== "string" || !value) reject("--adapter-decision requires a comma-separated list of key=value pairs.");
+  const decisions = {};
+  for (const pair of value.split(",")) {
+    if (!pair) reject("--adapter-decision has an empty pair; use key=value pairs separated by commas.");
+    const equal = pair.indexOf("=");
+    if (equal < 0) reject(`--adapter-decision pair ${JSON.stringify(pair)} must be key=value.`);
+    const key = pair.slice(0, equal);
+    const choice = pair.slice(equal + 1);
+    if (!key || /\s/.test(key)) reject(`--adapter-decision key ${JSON.stringify(key)} must be a nonempty key without whitespace.`);
+    if (key === "wrapper_policy") reject("wrapper_policy is selected at intake with prepare-build --wrapper-policy or the source-html manifest's wrapper_policy option; record build cannot change it.");
+    if (!Object.hasOwn(ADAPTER_DECISION_SCALAR_VALUES, key)) reject(`Unknown --adapter-decision key ${JSON.stringify(key)}.`);
+    if (Object.hasOwn(decisions, key)) reject(`Duplicate --adapter-decision key ${JSON.stringify(key)} in one list.`);
+    const allowed = ADAPTER_DECISION_SCALAR_VALUES[key];
+    if (!choice || /\s/.test(choice) || choice.includes("=") || !allowed.includes(choice)) {
+      reject(`--adapter-decision ${key} must be one of: ${allowed.join(", ")} (got ${JSON.stringify(choice)}).`, key);
+    }
+    decisions[key] = choice;
+  }
+  return decisions;
+}
+
 export function parseRecordArgs(args) {
   const stage = args._[1];
+  // The shared argv parser leaves an explicit empty value in positional args.
+  if (stage === "build" && args["adapter-decision"] === true && args._.length === 3 && args._[2] === "") {
+    parseAdapterDecisions("");
+  }
   if (!RECORD_SUBCOMMANDS.includes(stage) || args._.length !== 2) {
-    throw refused(`Use: ${cmd("record")} <${RECORD_SUBCOMMANDS.join("|")}> --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--dry-run] [--json]; record polish also takes --evidence <polish-evidence.json>, record deploy --base-url <served url>, record build [--build-environment <${BUILD_ENVIRONMENTS.join("|")}>], and record brief [--brief <yaml|json>].`);
+    throw refused(`Use: ${cmd("record")} <${RECORD_SUBCOMMANDS.join("|")}> --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--dry-run] [--json]; record polish also takes --evidence <polish-evidence.json>, record deploy --base-url <served url>, record build [--build-environment <${BUILD_ENVIRONMENTS.join("|")}>] [--adapter-decision <key=value[,key=value...]>], and record brief [--brief <yaml|json>].`);
   }
   const known = new Set([...RECORD_FLAGS, ...(stage === "polish" ? POLISH_RECORD_FLAGS : []), ...(stage === "deploy" ? DEPLOY_RECORD_FLAGS : []), ...(stage === "build" ? BUILD_RECORD_FLAGS : []), ...(stage === "brief" ? BRIEF_RECORD_FLAGS : [])]);
   const unknown = Object.keys(args).filter((key) => key !== "_" && !known.has(key));
@@ -151,6 +185,7 @@ export function parseRecordArgs(args) {
   if (buildEnvironment !== null && !BUILD_ENVIRONMENTS.includes(buildEnvironment)) {
     throw refused(`--build-environment must be one of: ${BUILD_ENVIRONMENTS.join(", ")} (got ${JSON.stringify(buildEnvironment)}).`);
   }
+  const adapterDecisions = Object.hasOwn(args, "adapter-decision") ? parseAdapterDecisions(args["adapter-decision"]) : null;
   return {
     stage,
     packetPath: resolve(requireArg(args, "packet")),
@@ -158,6 +193,7 @@ export function parseRecordArgs(args) {
     baseUrl: stage === "deploy" ? requireArg(args, "base-url") : null,
     dryRun: args["dry-run"] === true,
     buildEnvironment,
+    adapterDecisions,
     briefPath: stage === "brief" && Object.hasOwn(args, "brief") ? resolve(args.brief) : null,
     deviationReason: optionalString(args["deviation-reason"]),
   };
@@ -291,7 +327,8 @@ function currentStamps(inputs) {
   return Object.fromEntries(Object.entries(stamps).filter(([, value]) => value !== null));
 }
 
-function composeBuild(report, { now, recordedBy, fingerprint, buildEnvironment = null, inputs = {}, deviationReason = null }) {
+function composeBuild(report, { now, recordedBy, fingerprint, buildEnvironment = null, adapterDecisions = null, fallbackAdapterDecisions = null, inputs = {}, deviationReason = null }) {
+  const nextReport = adapterDecisions ? { ...report, adapter_decisions: { ...(report.adapter_decisions || fallbackAdapterDecisions || {}), ...adapterDecisions } } : report;
   const sourcePackageFingerprint = currentSourcePackageMaterialFingerprint(report);
   const previousAssembly = stageObject(report, "assembly");
   const stamps = currentStamps(inputs);
@@ -337,7 +374,7 @@ function composeBuild(report, { now, recordedBy, fingerprint, buildEnvironment =
   const deploy = deployOwed ? { deploy: deployOwed } : {};
   if (detected) {
     const cause = detected === "spec_material_changed" ? "spec" : "presentation";
-    const demoted = demoteStages({ ...report, stages: { ...report.stages, assembly, ...deploy } }, { causes: [cause], now, by: "record build", only: ["polish", "qa"] });
+    const demoted = demoteStages({ ...nextReport, stages: { ...nextReport.stages, assembly, ...deploy } }, { causes: [cause], now, by: "record build", only: ["polish", "qa"] });
     return { report: demoted.report, context: null };
   }
   const previousPolish = stageObject(report, "polish");
@@ -352,7 +389,7 @@ function composeBuild(report, { now, recordedBy, fingerprint, buildEnvironment =
         required_by: "build",
         required_for: ["qa"],
       };
-  return { report: { ...report, stages: { ...report.stages, assembly, polish, ...deploy } }, context: null };
+  return { report: { ...nextReport, stages: { ...nextReport.stages, assembly, polish, ...deploy } }, context: null };
 }
 
 // stages.deploy after a build of `fingerprint`, or null when it is kept: a
@@ -851,7 +888,7 @@ function readPacketFile(stage, packetPath) {
  * composed or written.
  */
 export function recordStageCommand(args, { now = () => new Date(), beforeLock = null, afterDoctorRead = null, probe = null } = {}) {
-  const { stage, packetPath, evidencePath, dryRun, buildEnvironment, deviationReason } = parseRecordArgs(args);
+  const { stage, packetPath, evidencePath, dryRun, buildEnvironment, adapterDecisions, deviationReason } = parseRecordArgs(args);
   if (!existsSync(packetPath)) throw new Error(`record ${stage}: Build Packet not found at ${packetPath}; run ${cmd("start")} or ${cmd("prepare-build")} first.`);
   if (stage === "deploy" && !probe) throw new Error("record deploy needs the served-route probe; run it through recordCommand.");
   // Operator input, not target state: no campaigns-os writer produces it.
@@ -872,7 +909,7 @@ export function recordStageCommand(args, { now = () => new Date(), beforeLock = 
   // A dry run writes nothing, so it takes no lock and creates no lock files
   // (the commitAssemblyReport preview convention); it reads in the same order.
   const run = () => recordUnderLock({
-    stage, packetPath, sidecars, lockedTarget, input, dryRun, timestamp, recordedBy, afterDoctorRead, buildEnvironment, deviationReason,
+    stage, packetPath, sidecars, lockedTarget, input, dryRun, timestamp, recordedBy, afterDoctorRead, buildEnvironment, adapterDecisions, deviationReason,
   });
   const recorded = dryRun ? run() : withTargetLockSync(lockedTarget, run, { command: `record ${stage}` });
   const { composed, facts, layer, reportPath, contextPath, after } = recorded;
@@ -890,6 +927,7 @@ export function recordStageCommand(args, { now = () => new Date(), beforeLock = 
     `stages.${stageKey}.status = ${composed.report.stages[stageKey].status}`,
     ...(facts.fingerprint ? [`build output fingerprint ${facts.fingerprint} (doctor derived.build_output_fingerprint.value)`] : []),
     ...(stage === "build" && buildEnvironment ? [`stages.assembly.evidence.build_environment = ${buildEnvironment}`] : []),
+    ...(stage === "build" && adapterDecisions ? Object.entries(adapterDecisions).map(([key, value]) => `report.adapter_decisions.${key} = ${value}`) : []),
     ...(stage === "build" ? [`stages.polish.status = ${composed.report.stages.polish.status}`] : []),
     ...(stage === "build" && composed.report.stages.deploy?.required_by === "build" ? [`stages.deploy.status = ${composed.report.stages.deploy.status} (the recorded deploy probed other output; run ${cmd("record")} deploy again)`] : []),
     ...(composed.context ? ["Build Context scaffold.required = false"] : []),
@@ -929,7 +967,7 @@ function recordInputs(doctor) {
   return { briefMaterial: currency?.brief?.current ?? null, specMaterial: currency?.spec?.current ?? null };
 }
 
-function recordUnderLock({ stage, packetPath, sidecars, lockedTarget, input, dryRun, timestamp, recordedBy, afterDoctorRead, buildEnvironment = null, deviationReason = null }) {
+function recordUnderLock({ stage, packetPath, sidecars, lockedTarget, input, dryRun, timestamp, recordedBy, afterDoctorRead, buildEnvironment = null, adapterDecisions = null, deviationReason = null }) {
   // The same workspace `next` resolves, so the record lands in the report
   // `next` reads now, not the one it read before the lock was free.
   const workspace = resolveCampaignWorkspace(packetPath, { ...sidecars, followContextPointer: true });
@@ -964,7 +1002,7 @@ function recordUnderLock({ stage, packetPath, sidecars, lockedTarget, input, dry
     const next = stage === "setup"
       ? composeSetup(report, context, { now: timestamp, recordedBy })
       : stage === "build"
-        ? composeBuild(report, { now: timestamp, recordedBy, fingerprint: facts.fingerprint, buildEnvironment, inputs: recordInputs(doctor), deviationReason })
+        ? composeBuild(report, { now: timestamp, recordedBy, fingerprint: facts.fingerprint, buildEnvironment, adapterDecisions, fallbackAdapterDecisions: adapterDecisions && !report.adapter_decisions ? readJsonIfExists(contextPath)?.adapter_decisions || packet.source_html?.adapter_contract : null, inputs: recordInputs(doctor), deviationReason })
         : stage === "theme"
           ? composeTheme(report, { now: timestamp, recordedBy, layer })
           : stage === "deploy"

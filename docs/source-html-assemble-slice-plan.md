@@ -30,7 +30,7 @@ The first slice should own only deterministic, schema-backed work:
    - rewrite local page links/CTAs to `page_kit.public_route` values.
 3. Verify or record the selected starter family slice for commerce pages without editing SDK-owned checkout/payment/totals/submit regions.
 4. Copy an existing generated brand theme artifact into `src/<slug>/assets/css/brand-theme.css` and append it to commerce page `styles` after `next-core.css` when `report.theme.status` is ready to apply.
-5. Update `packet.source_html.adapter_contract`, `context.adapter_decisions`, and `report.adapter_decisions` from `pending` to completed/not-required for the operations actually performed.
+5. Record the true scalar adapter decisions for the operations performed with `campaigns-os record build --adapter-decision <key>=<value>[,<key>=<value>...]`; put all pairs in one flag, since a repeated flag keeps only the last list. The command writes `report.adapter_decisions` only. Select `wrapper_policy` at intake with `prepare-build --wrapper-policy` or the source-html manifest option.
 6. Record `stages.assembly.source_build_fingerprint` and `stages.assembly.source_package_material_fingerprint` when the Design Source Package fields are present.
 
 ## Deferred
@@ -49,7 +49,7 @@ Do not initially own these campaign-specific decisions:
 - Assert dry-run lists every target write and adapter decision transition.
 - Assert assemble writes `src/<slug>/landing.html` with frontmatter and no document wrappers.
 - Assert copied assets resolve under `src/<slug>/assets/*`.
-- Assert report/context/packet carry consistent adapter decision completion and assembly fingerprints.
+- Assert `record build --adapter-decision` records scalar decisions in the report while packet and context remain unchanged, and assembly fingerprints stay coherent.
 - Assert commerce pages are not modified unless the operation is theme-style insertion after `next-core.css`.
 
 This slice would remove the source page projection and artifact-recording parts of the Roadside adapter. Roadside-specific package, shipping, product copy, payment-provider cleanup, and matrix variant orchestration would still remain local or agent-owned until separate CampaignSpec/template contracts cover them.
