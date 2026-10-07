@@ -828,7 +828,8 @@ test("record deploy stamps the build it probed; a record build of different outp
     try {
       const buildA = await deployedOnLocalPreview(f, site);
       assert.match(buildA, SHA256_PATTERN);
-      assert.equal(readJson(f.reportPath).stages.deploy.source_build_fingerprint, buildA, "deploy names the build it probed");
+      const deployA = readJson(f.reportPath).stages.deploy;
+      assert.equal(deployA.source_build_fingerprint, buildA, "deploy names the build it probed");
       buildSite(f, " (build B)");
       const rebuilt = recordOk(f, "build");
       const report = readJson(f.reportPath);
@@ -838,11 +839,28 @@ test("record deploy stamps the build it probed; a record build of different outp
       assert.deepEqual(report.stages.deploy.required_for, ["qa"]);
       assert.equal(Object.hasOwn(report.stages.deploy, "source_build_fingerprint"), false, "the stale binding is dropped");
       assert.equal(Object.hasOwn(report.stages.deploy, "evidence"), false, "the probe of build A is dropped");
+      assert.equal(Object.hasOwn(report.stages.deploy, "outputs"), false, "the preview URL probed against build A is dropped");
+      assert.equal(Object.hasOwn(report.stages.deploy, "completed_at"), false);
+      assert.equal(Object.hasOwn(report.stages.deploy, "recorded_by"), false);
+      const archived = report.stages.deploy.history;
+      assert.equal(archived?.length, 1, "the demoted deploy record is kept in history");
+      assert.equal(archived[0].archived_by, "record build");
+      assert.equal(archived[0].reason_code, "build_output_changed");
+      assert.match(archived[0].archived_at, /^\d{4}-\d{2}-\d{2}T/);
+      assert.equal(archived[0].status, deployA.status);
+      assert.equal(archived[0].completed_at, deployA.completed_at);
+      assert.equal(archived[0].recorded_by, deployA.recorded_by);
+      assert.equal(archived[0].source_build_fingerprint, buildA, "history names the build the archived deploy probed");
+      assert.deepEqual(archived[0].outputs, deployA.outputs);
+      assert.deepEqual(archived[0].evidence, deployA.evidence);
       assert.ok(rebuilt.ready.some((line) => line.startsWith("stages.deploy.status = required")), rebuilt.ready.join("\n"));
       assert.ok(validReport(report), JSON.stringify(validReport.errors));
       assert.equal(nextStage(f).stage, "deploy", "next routes back to record deploy before QA");
       await recordCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": site.url });
-      assert.equal(readJson(f.reportPath).stages.deploy.source_build_fingerprint, report.stages.assembly.build_fingerprint);
+      const deployB = readJson(f.reportPath).stages.deploy;
+      assert.equal(deployB.source_build_fingerprint, report.stages.assembly.build_fingerprint);
+      assert.deepEqual(deployB.outputs, [site.url]);
+      assert.deepEqual(deployB.history, archived, "the re-recorded deploy keeps the archived record");
       assert.equal(nextStage(f).stage, "qa", "a deploy of build B clears it");
     } finally {
       await site.close();
@@ -859,11 +877,18 @@ test("record build of different output with Polish recorded makes deploy require
     } finally {
       await site.close();
     }
+    const deployA = readJson(f.reportPath).stages.deploy;
     buildSite(f, " (build B)");
     recordOk(f, "build");
     const stages = readJson(f.reportPath).stages;
     assert.equal(stages.polish.status, "required");
     assert.equal(stages.deploy.status, "required");
+    assert.equal(Object.hasOwn(stages.deploy, "outputs"), false, "the stale preview URL is not on the live stage");
+    assert.equal(Object.hasOwn(stages.deploy, "evidence"), false);
+    assert.equal(stages.deploy.history?.length, 1, "the demoted deploy record is kept in history");
+    assert.equal(stages.deploy.history[0].completed_at, deployA.completed_at);
+    assert.deepEqual(stages.deploy.history[0].outputs, deployA.outputs);
+    assert.deepEqual(stages.deploy.history[0].evidence, deployA.evidence);
     assert.equal(nextStage(f).stage, "polish", "the ladder reaches deploy again after Polish");
   });
 });
@@ -880,6 +905,7 @@ test("a byte-identical rebuild keeps the recorded deploy current", async () => {
       assert.equal(report.stages.assembly.build_fingerprint, buildA, "control: the rebuild is byte-identical");
       assert.equal(report.stages.deploy.source_build_fingerprint, buildA, "deploy stays bound to the build it probed");
       assert.deepEqual(report.stages.deploy, deployBefore);
+      assert.equal(Object.hasOwn(report.stages.deploy, "history"), false, "a kept deploy archives nothing");
       assert.equal(nextStage(f).stage, "qa");
     } finally {
       await site.close();
@@ -899,6 +925,7 @@ test("a deploy recorded without a stamped build fingerprint (an older report) is
       const report = readJson(f.reportPath);
       assert.notEqual(report.stages.assembly.build_fingerprint, buildA, "control: build B is different output");
       assert.deepEqual(report.stages.deploy, deployBefore, "no false stale on an unstamped deploy");
+      assert.equal(Object.hasOwn(report.stages.deploy, "history"), false, "a kept deploy archives nothing");
       assert.equal(nextStage(f).stage, "qa");
     } finally {
       await site.close();

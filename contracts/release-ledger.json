@@ -6340,7 +6340,7 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.53.0+agent.13",
-      "changelog_sha256": "e6591f202e9b0063498fe9cca132f964c5730ea81bd84e5033d424bc4b84c2ad",
+      "changelog_sha256": "5d663ad8326b3c29318b2289c37fdac41dd25850026d06447d6c97fb058960fa",
       "agent_impact": "record deploy now binds stages.deploy to the build it probed (source_build_fingerprint). After a record build of different output, a stamped deploy reads required and next names deploy before QA: serve the new build and run record deploy again. A byte-identical rebuild keeps the deploy current, and a deploy recorded before this change, with no stamp, is kept as recorded.",
       "compatibility": "compatible",
       "migration": "none",
@@ -6376,7 +6376,7 @@
           "summary": "The local proof steps say record deploy is bound to the build it probed and is owed again after a record build of other output."
         }
       ],
-      "entry_sha256": "f54194aacf50b80d42a3eac6ba9b41eefcfec52390ed449f581757bd93e85841"
+      "entry_sha256": "afa94ff7cc2b9f7d1d7b537bac7fbbe1247837862fdd5afb7cf8237988e4b975"
     }
   ]
 }

@@ -115,7 +115,7 @@ const HISTORY_IDENTITY_FIELDS = Object.freeze([
   "source_brief_material", "source_spec_material_hash", "verdict_run_id", "purchase_proof", "outputs", "evidence",
 ]);
 export const HISTORY_ARCHIVED_BY = Object.freeze(["record brief", "record spec", "record build", "record polish", "qa run", "prepare-build --force"]);
-export const HISTORY_REASON_CODES = Object.freeze(["brief_presentation_changed", "brief_qa_policy_changed", "spec_material_changed", "rerecorded", "force_reset"]);
+export const HISTORY_REASON_CODES = Object.freeze(["brief_presentation_changed", "brief_qa_policy_changed", "spec_material_changed", "rerecorded", "force_reset", "build_output_changed"]);
 const ARCHIVED_STAGE_KEYS = Object.freeze(["assembly", "polish", "qa"]);
 
 const isCompletedStatus = (status) => typeof status === "string" && status.startsWith("completed");

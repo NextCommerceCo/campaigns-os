@@ -61,7 +61,7 @@ the toolkit runs that loop in a fixed order:
    against it. Once polish is recorded, `record deploy --packet <p> --base-url
    <url>` records the URL on `deploy.preview_url` and the deploy stage, bound
    to the build it probed (a `record build` of different output makes it owed
-   again); then run `qa run --browser` and the typed-card order paths against
+   again and keeps the old record in the deploy stage's history); then run `qa run --browser` and the typed-card order paths against
    it.
 3. **Prove the pin on the production output.** Before committing, run
 

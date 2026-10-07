@@ -48,7 +48,7 @@ import {
 import { evaluateRecordedHiddenEagerMediaCheckpoint } from "./polish-node.mjs";
 import { effectiveStageStatus, effectiveStatusIsTerminal, inputStamps, stageWriteInputs } from "./input-currency.mjs";
 import { demoteStages, recordBrief, recordSpec } from "./input-refresh.mjs";
-import { applyDerivedAssemblyReportSummary, archiveStageRecord, assemblyReportMatchesPacket, commitAssemblyReport, inputChangeFor } from "./stage-ledger.mjs";
+import { applyDerivedAssemblyReportSummary, archiveStageRecord, archiveSupersededRecord, assemblyReportMatchesPacket, commitAssemblyReport, inputChangeFor } from "./stage-ledger.mjs";
 import { withTargetLockSync } from "./target-lock.mjs";
 import { commerceScopeFromScope } from "./theme-gate.mjs";
 
@@ -333,7 +333,7 @@ function composeBuild(report, { now, recordedBy, fingerprint, buildEnvironment =
   // somewhere to attach page_load, and its stale identity fields are removed.
   // A deploy that stamped the build it probed is owed again once the output
   // differs; one with no stamp (recorded before deploy stamped it) is kept.
-  const deployOwed = deployAfterBuild(stageObject(report, "deploy"), fingerprint);
+  const deployOwed = deployAfterBuild(stageObject(report, "deploy"), fingerprint, now);
   const deploy = deployOwed ? { deploy: deployOwed } : {};
   if (detected) {
     const cause = detected === "spec_material_changed" ? "spec" : "presentation";
@@ -356,19 +356,25 @@ function composeBuild(report, { now, recordedBy, fingerprint, buildEnvironment =
 }
 
 // stages.deploy after a build of `fingerprint`, or null when it is kept: a
-// completed deploy whose source_build_fingerprint names other output reads
-// required (required_by "build", required_for ["qa"]), the probe of the old
-// output dropped, until record deploy probes this build.
-function deployAfterBuild(previousDeploy, fingerprint) {
+// completed deploy whose source_build_fingerprint names other output goes
+// whole into history (archived_by "record build", reason_code
+// "build_output_changed") and reads required (required_by "build",
+// required_for ["qa"]) until record deploy probes this build. As a demotion
+// does, the live record loses what was written by the completion (completed_at,
+// recorded_by, performed_by) and what describes the old output's probe
+// (source_build_fingerprint, evidence, outputs); blockers, warnings, inputs
+// and commands are kept.
+function deployAfterBuild(previousDeploy, fingerprint, now) {
   const stamped = optionalString(previousDeploy.source_build_fingerprint);
   if (!stamped || stamped === fingerprint || !REPLACED_COMPLETED_STATUSES.includes(previousDeploy.status)) return null;
-  return {
-    ...withoutKeys(previousDeploy, ["source_build_fingerprint", "evidence", "completed_at", "recorded_by"]),
+  const demoted = {
+    ...withoutKeys(previousDeploy, ["source_build_fingerprint", "evidence", "outputs", "completed_at", "recorded_by", "performed_by"]),
     stage: "deploy",
     status: "required",
     required_by: "build",
     required_for: ["qa"],
   };
+  return archiveSupersededRecord(demoted, previousDeploy, { by: "record build", reason: "build_output_changed", at: now });
 }
 
 function composePolish(report, { now, recordedBy, fingerprint, input, inputs = {} }) {
