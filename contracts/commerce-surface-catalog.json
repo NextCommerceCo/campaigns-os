@@ -848,9 +848,9 @@
         }
       },
       "verification": {
-        "sdk_version": "0.4.40",
-        "verified_at": "2026-10-04T02:15:52Z",
-        "evidence": "sdk-0.4.40-2026-10-04",
+        "sdk_version": "0.4.41",
+        "verified_at": "2026-10-06T23:03:41Z",
+        "evidence": "sdk-0.4.41-2026-10-06.5",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -861,7 +861,7 @@
         "id": "template-reference-apollo",
         "family": "apollo",
         "version": "sdk-0.4.38-composable-upsells-2026-09-25",
-        "source_commit": "80f0e30f873b5a13a5232ffd76b20da53480ae57",
+        "source_commit": "1a3bf7218e7f10ef5733ceba84d2856eeca2cfbd",
         "provenance_url": "https://raw.githubusercontent.com/NextCommerceCo/campaign-cart-starter-templates/main/docs/template-references/apollo/README.md",
         "contract_path": "contracts/commerce-surface-catalog.json",
         "standard_viewport_refs": [
@@ -1272,9 +1272,9 @@
         }
       },
       "verification": {
-        "sdk_version": "0.4.40",
-        "verified_at": "2026-10-04T02:15:52Z",
-        "evidence": "sdk-0.4.40-2026-10-04",
+        "sdk_version": "0.4.41",
+        "verified_at": "2026-10-06T23:03:41Z",
+        "evidence": "sdk-0.4.41-2026-10-06.5",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -1583,9 +1583,9 @@
         }
       },
       "verification": {
-        "sdk_version": "0.4.40",
-        "verified_at": "2026-10-04T02:15:52Z",
-        "evidence": "sdk-0.4.40-2026-10-04",
+        "sdk_version": "0.4.41",
+        "verified_at": "2026-10-06T23:03:41Z",
+        "evidence": "sdk-0.4.41-2026-10-06.5",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -1886,9 +1886,9 @@
         }
       },
       "verification": {
-        "sdk_version": "0.4.40",
-        "verified_at": "2026-10-04T02:15:52Z",
-        "evidence": "sdk-0.4.40-2026-10-04",
+        "sdk_version": "0.4.41",
+        "verified_at": "2026-10-06T23:03:41Z",
+        "evidence": "sdk-0.4.41-2026-10-06.5",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -2227,9 +2227,9 @@
         }
       },
       "verification": {
-        "sdk_version": "0.4.40",
-        "verified_at": "2026-10-04T02:15:52Z",
-        "evidence": "sdk-0.4.40-2026-10-04",
+        "sdk_version": "0.4.41",
+        "verified_at": "2026-10-06T23:03:41Z",
+        "evidence": "sdk-0.4.41-2026-10-06.5",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -2666,9 +2666,9 @@
         }
       },
       "verification": {
-        "sdk_version": "0.4.40",
-        "verified_at": "2026-10-04T02:15:52Z",
-        "evidence": "sdk-0.4.40-2026-10-04",
+        "sdk_version": "0.4.41",
+        "verified_at": "2026-10-06T23:03:41Z",
+        "evidence": "sdk-0.4.41-2026-10-06.5",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -3023,9 +3023,9 @@
         }
       },
       "verification": {
-        "sdk_version": "0.4.40",
-        "verified_at": "2026-10-04T02:15:52Z",
-        "evidence": "sdk-0.4.40-2026-10-04",
+        "sdk_version": "0.4.41",
+        "verified_at": "2026-10-06T23:03:41Z",
+        "evidence": "sdk-0.4.41-2026-10-06.5",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -3313,9 +3313,9 @@
         }
       },
       "verification": {
-        "sdk_version": "0.4.40",
-        "verified_at": "2026-10-04T02:15:52Z",
-        "evidence": "sdk-0.4.40-2026-10-04",
+        "sdk_version": "0.4.41",
+        "verified_at": "2026-10-06T23:03:41Z",
+        "evidence": "sdk-0.4.41-2026-10-06.5",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -3504,6 +3504,6 @@
     }
   },
   "_synced_from_repo": "NextCommerceCo/campaign-cart-starter-templates",
-  "_synced_from_ref": "2c618942391ae398fb4812f36fc93e6632054874",
-  "_synced_from_sha": "2c618942391ae398fb4812f36fc93e6632054874"
+  "_synced_from_ref": "783329017c6994a94d11e46580c33bd052aabdb0",
+  "_synced_from_sha": "783329017c6994a94d11e46580c33bd052aabdb0"
 }

@@ -1,32 +1,43 @@
 // The Campaign Cart SDK attribute index, vendored for the static SDK markup
 // checks (#303).
 //
-// Source: docs/attribute-index.md in NextCommerceCo/campaign-cart at tag
-// v0.4.38 (the SDK pin every certified starter family ships today), which is
-// generated from the feature manifests. Only the data-next-* names are kept:
-// the checks that read this list ask "does the SDK read this data-next-*
-// attribute at all", and the SDK's other attribute families (data-item-*,
-// data-package-*, plain data-*) are not what an agent kit misspells.
+// Source: the SDK's own source in NextCommerceCo/campaign-cart at tag
+// v0.4.41 (the SDK pin every certified starter family ships today): every
+// data-next-* name the SDK's non-test TypeScript names as a string, plus every
+// `dataset.next*` property it reads or writes, turned back into its
+// attribute. Only the data-next-* names are kept: the checks that read this
+// list ask "does the SDK read this data-next-* attribute at all", and the
+// SDK's other attribute families (data-item-*, data-package-*, plain data-*)
+// are not what an agent kit misspells.
 //
 // This is a hardcoded copy and says so, rather than restating the SDK in
 // prose that then drifts (the partner kit's mistake): the list is regenerated
-// whole from the index at a named tag, never edited by hand.
+// whole from the source at a named tag, never edited by hand.
 //
-//   git -C ../campaign-cart show v0.4.38:docs/attribute-index.md \
-//     | grep -oE '`data-[a-z0-9-]+(\s*/\s*data-[a-z0-9-]+)*`' \
-//     | tr -d '`' | tr '/' '\n' | tr -d ' ' | grep '^data-next-' | sort -u
+//   paths=('src/**/*.ts' ':!src/**/*.test.ts' ':!src/**/tests/**' ':!src/docs/**')
+//   { git -C ../campaign-cart grep -h -oP 'data-next-[a-z0-9]+(?:-[a-z0-9]+)*-?' v0.4.41 -- "${paths[@]}"
+//     git -C ../campaign-cart grep -h -oP 'dataset\.next[A-Z][A-Za-z0-9]*' v0.4.41 -- "${paths[@]}" \
+//       | sed 's/^dataset\.//' | perl -pe 's/([A-Z])/-\L$1/g; s/^/data-/'
+//   } | sort -u
 //
-// The recipe works up to v0.4.40 only. v0.4.41 deleted docs/attribute-index.md;
-// its attributes are now split between docs/sdk-attributes.md (the SDK's own)
-// and docs/guides/reference/data-attributes.md (each feature's). Moving this
-// pin past v0.4.40 means rewriting the recipe against those two files.
+// Up to v0.4.40 the list came from docs/attribute-index.md, which the SDK
+// generated from its feature manifests. v0.4.41 removed the manifests and the
+// index (campaign-cart 5d81b4eb), and its hand-written attribute docs
+// (docs/sdk-attributes.md, docs/guides/reference/data-attributes.md, each
+// feature's guide/) leave out names the source still reads, such as
+// data-next-package-selector and data-next-remove-item. Run at v0.4.40, the
+// source recipe returns every name the v0.4.40 index listed, plus names the
+// manifests never did (the address block's, data-next-i18n,
+// data-next-bump-section, data-next-button-text, the variant option state).
+// At v0.4.41 it returns every name of the v0.4.38 list this replaces, plus
+// those and data-next-phone-e164 / data-next-phone-country.
 //
 // A name ending in "-" (data-next-class-) is a prefix the SDK reads with any
 // suffix.
 
 import { RELEASED_SDK_VERSION_PATTERN } from "../campaign-spec/dist/index.js";
 
-export const SDK_ATTRIBUTE_INDEX_VERSION = "0.4.38";
+export const SDK_ATTRIBUTE_INDEX_VERSION = "0.4.41";
 
 export const SDK_DATA_NEXT_ATTRIBUTES = Object.freeze([
   "data-next-accordion",
@@ -35,8 +46,15 @@ export const SDK_DATA_NEXT_ATTRIBUTES = Object.freeze([
   "data-next-accordion-trigger",
   "data-next-action",
   "data-next-active",
+  "data-next-address",
+  "data-next-address-api",
+  "data-next-address-field",
+  "data-next-address-lang",
+  "data-next-address-row",
+  "data-next-address-state",
   "data-next-await",
   "data-next-bump",
+  "data-next-bump-section",
   "data-next-bundle-card",
   "data-next-bundle-display",
   "data-next-bundle-id",
@@ -54,6 +72,7 @@ export const SDK_DATA_NEXT_ATTRIBUTES = Object.freeze([
   "data-next-bundle-template-id",
   "data-next-bundle-vouchers",
   "data-next-bundles",
+  "data-next-button-text",
   "data-next-cart-item-id",
   "data-next-cart-items",
   "data-next-cart-selector",
@@ -81,6 +100,7 @@ export const SDK_DATA_NEXT_ATTRIBUTES = Object.freeze([
   "data-next-fallback",
   "data-next-format",
   "data-next-hide",
+  "data-next-i18n",
   "data-next-id",
   "data-next-in-cart",
   "data-next-include-shipping",
@@ -105,6 +125,8 @@ export const SDK_DATA_NEXT_ATTRIBUTES = Object.freeze([
   "data-next-payment-form",
   "data-next-payment-method",
   "data-next-payment-state",
+  "data-next-phone-country",
+  "data-next-phone-e164",
   "data-next-product-sync",
   "data-next-property",
   "data-next-property-container",
@@ -145,6 +167,7 @@ export const SDK_DATA_NEXT_ATTRIBUTES = Object.freeze([
   "data-next-tooltip-offset",
   "data-next-tooltip-placement",
   "data-next-tracking-tag",
+  "data-next-unavailable",
   "data-next-upsell",
   "data-next-upsell-action",
   "data-next-upsell-action-for",
@@ -159,17 +182,21 @@ export const SDK_DATA_NEXT_ATTRIBUTES = Object.freeze([
   "data-next-url",
   "data-next-validate",
   "data-next-variant-code",
+  "data-next-variant-name",
   "data-next-variant-option",
   "data-next-variant-option-template-id",
   "data-next-variant-options",
   "data-next-variant-selector-template-id",
   "data-next-variant-selectors",
+  "data-next-variant-value",
 ]);
 
-// The fixed data-next-checkout-field names, from the same tag. The SDK maps a
-// field to the order by this value, so an unlisted name is a silent no-op: the
-// input renders, the shopper fills it, nothing reaches the order. Sources at
-// v0.4.38: src/features/checkout/README.md ("Standard field names"), the
+// The fixed data-next-checkout-field names. The SDK maps a field to the order
+// by this value, so an unlisted name is a silent no-op: the input renders, the
+// shopper fills it, nothing reaches the order. Taken at v0.4.38 and unchanged
+// through v0.4.41 (the README's "Standard field names" line is the same; the
+// names v0.4.39 and v0.4.41 added are the version-gated aliases below).
+// Sources: src/features/checkout/README.md ("Standard field names"), the
 // checkout-form enhancer and its validation/persistence tables, the hosted
 // payment field slots (cc-number, cvv, cc-month/cc-year and their exp-*
 // spellings), payment-method, and accepts_marketing. Billing fields are the
@@ -195,7 +222,7 @@ export const SDK_CHECKOUT_FIELD_NAMES = Object.freeze([
   "exp-month",
   "exp-year",
   "cvv",
-  // Legacy spellings the README at v0.4.38 still lists.
+  // Legacy spellings the README still lists at v0.4.41.
   "card-number",
   "card-expiry",
   "card-cvv",
@@ -272,7 +299,7 @@ export function isKnownCheckoutFieldName(value, sdkVersion = null) {
 
 // The Campaign Cart template placeholders, for the raw cart placeholder check
 // (built_output.cart_placeholders). Generated from the SDK renderers at the
-// same tag as the attribute index above, v0.4.38:
+// v0.4.38 (line numbers are at that tag):
 //
 //   src/features/cart/cart-summary/cart-summary.renderer.ts:46-83 (bare vars)
 //   src/features/cart/cart-summary/cart-summary.line-renderer.ts:150-173,
@@ -337,6 +364,8 @@ export const SDK_TEMPLATE_PLACEHOLDERS = Object.freeze({
 });
 
 // The SDK versions whose renderer files above were verified unchanged from
-// v0.4.38 (git blob ids equal at v0.4.38, v0.4.39 and v0.4.40). A page whose
-// loader pins another version cannot pass the placeholder check.
-export const SDK_TEMPLATE_PLACEHOLDERS_VERIFIED_PINS = Object.freeze(["0.4.38", "0.4.39", "0.4.40"]);
+// v0.4.38 (git blob ids equal at v0.4.38, v0.4.39, v0.4.40 and v0.4.41, for
+// the eight renderer files cited above plus cart-item-list.enhancer.ts and
+// order-item-list.enhancer.ts). A page whose loader pins another version
+// cannot pass the placeholder check.
+export const SDK_TEMPLATE_PLACEHOLDERS_VERIFIED_PINS = Object.freeze(["0.4.38", "0.4.39", "0.4.40", "0.4.41"]);

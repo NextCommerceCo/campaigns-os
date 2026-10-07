@@ -2,6 +2,20 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.53.0+agent.11] - 2026-10-07
+
+### Changed
+
+The bundled Campaign Cart SDK support policy records 0.4.41 as the latest known release (`provenance.latest_known_release`, was 0.4.38). With the starter catalog verified against 0.4.41 (1.53.0+agent.10), template freshness already took 0.4.41 as the current SDK, so no family's freshness changes; the policy now agrees with the catalog instead of naming a release three behind it, and "current SDK" is reported from the policy. `minimum_supported` (0.4.20) and `preferred_minimum` (0.4.30) are unchanged.
+
+## [1.53.0+agent.10] - 2026-10-07
+
+### Changed
+
+- The vendored starter-template catalog is re-synced to campaign-cart-starter-templates `7833290` (was `2c61894`). Every certified family now records Campaign Cart SDK 0.4.41 verification evidence (`sdk-0.4.41-2026-10-06.5`, a `lint-sdk` pass), and the eight agent CampaignSpec fixtures pin `sdk_version` 0.4.41. Doctor's missing-SDK-pin message therefore names 0.4.41 as the version a family was verified against. The certified-family render fixtures are regenerated at the new pin: the loader moves to 0.4.41, and the checkout and receipt pages pick up the starters' SDK address blocks (`data-next-address`) and the savings badge drawn from the summary token. The payment-chrome `asset_pin` moves to the same commit; the five hashed assets are byte-identical there.
+- The SDK attribute index (`src/sdk-attribute-index.mjs`) moves from v0.4.38 to v0.4.41. v0.4.41 removed the generated `docs/attribute-index.md` the old recipe read, and the SDK's hand-written attribute docs leave out names its source still reads. The list is now regenerated from the SDK source at the tag (every `data-next-*` string and `dataset.next*` property in non-test TypeScript), and that recipe is in the file. It keeps all 135 names of the v0.4.38 list and adds 14: the address block (`data-next-address`, `-lang`, `-api`, `-field`, `-row`, `-state`), `data-next-i18n`, `data-next-phone-e164`, `data-next-phone-country`, `data-next-bump-section`, `data-next-button-text`, and the variant option state (`data-next-variant-name`, `-value`, `data-next-unavailable`). `built_output.sdk_markup` no longer reports these as unknown, and its findings now name `sdk_attribute_index_version` 0.4.41. The checkout field names are unchanged at v0.4.41.
+- The raw cart placeholder check (`built_output.cart_placeholders`) accepts pages pinned to 0.4.41: all ten renderer files it was generated from have the same git blob ids at v0.4.38 and v0.4.41. Before, every 0.4.41 page reported `unexercised` (`sdk_pin_unverified`).
+
 ## [1.53.0+agent.9] - 2026-10-06
 
 ### Fixed
