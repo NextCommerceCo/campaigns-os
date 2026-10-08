@@ -3048,7 +3048,7 @@ function entrySourcePermalink(targetOutputDir, publicRouteSlug, page, mapping) {
     .map((path) => extractFrontmatterValue(readFileSync(path, "utf8"), "permalink"))
     .filter(isNonEmptyString)
     .map((value) => stripPublicRoutePrefix(normalizePageKitRoute(value), publicRouteSlug));
-  return routes.length === 1 ? routes[0] : null;
+  return routes[0] ?? null;
 }
 
 // Page Kit serves a page file without a permalink at its basename route.
@@ -3074,7 +3074,7 @@ export function entryPageKitFileRoute(targetRepo, publicRouteSlug, page, { targe
       const built = join(targetRepo, "_site", publicRouteSlug, route, "index.html");
       return existsSync(built) && statSync(built).isFile();
     });
-  return routes.length === 1 ? routes[0] : null;
+  return routes[0] ?? null;
 }
 
 function sourcePermalinkForPage(targetOutputDir, publicRouteSlug, page) {

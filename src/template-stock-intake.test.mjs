@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { entryPageKitFileRoute, entryPageKitServingRoute } from "./doctor/checks.mjs";
 import { deriveAssemblyReportSummary } from "./stage-ledger.mjs";
 
 // Template-stock intake on a family without published Template Reference
@@ -45,7 +46,7 @@ function readJson(path) {
 // and mobile captures; `select` is the template-stock page under test. The
 // manifest is written either at the default in-tree path or to a directory
 // beside the source root (`external`), which then has no `.campaigns-os/`.
-function withFixture(run, { external = false, hint = null, declareSelect = true, stockPageIds = ["select"], selectLast = false, buildScope = null, entrySelect = false } = {}) {
+function withFixture(run, { external = false, hint = null, declareSelect = true, stockPageIds = ["select"], selectLast = false, buildScope = null, entrySelect = false, entryPageUrl = "" } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "campaigns-os-template-stock-"));
   try {
     const source = join(dir, "source");
@@ -59,7 +60,7 @@ function withFixture(run, { external = false, hint = null, declareSelect = true,
     if (entrySelect) {
       const select = spec.funnels[0].pages.find((page) => page.id === "select");
       select.is_entry = true;
-      select.page_url = "";
+      select.page_url = entryPageUrl;
     }
     // With a CampaignSpec build_scope the stock pages are declared by the
     // spec, not by manifest skip entries.
@@ -435,7 +436,7 @@ test("entry stock built at its Page Kit file route stays built and QA uses the s
   assert.deepEqual(qaWithRoot.json.entry_urls.map((entry) => entry.url), [`https://preview.example.test/${slug}/`]);
 }, { entrySelect: true }));
 
-test("root-served entry reports and tests the Page Kit file route without a slug prefix", () => withFixture((fixture) => {
+test("root-served entry reports the public route and tests its Page Kit file route under the QA base", () => withFixture((fixture) => {
   assert.equal(runPrepare(fixture).status, 0);
   const packetPath = join(fixture.target, "campaign-runtime.build.json");
   const packet = readJson(packetPath);
@@ -463,7 +464,7 @@ test("root-served entry reports and tests the Page Kit file route without a slug
   const qa = runCli(["qa", "resolve", "--packet", packetPath,
     "--base-url", "https://preview.example.test/", "--no-probe"], fixture.dir);
   assert.ok(qa.json, qa.stderr);
-  assert.deepEqual(qa.json.entry_urls.map((entry) => entry.url), ["https://preview.example.test/select/"]);
+  assert.deepEqual(qa.json.entry_urls.map((entry) => entry.url), [`https://preview.example.test/${slug}/select/`]);
   writeFileSync(join(fixture.target, "_site", slug, "index.html"), "<main>root select</main>\n");
   const withRoot = runCli(["doctor", "--packet", packetPath], fixture.dir).json;
   assert.ok(withRoot.derived.scope.built_pages.some((page) => page.page_id === "select" && page.route === ""));
@@ -472,8 +473,39 @@ test("root-served entry reports and tests the Page Kit file route without a slug
   assert.ok(!withRoot.warnings.some((issue) => issue.code === "entry_route.unserved"));
   const qaWithRoot = runCli(["qa", "resolve", "--packet", packetPath,
     "--base-url", "https://preview.example.test/", "--no-probe"], fixture.dir);
-  assert.deepEqual(qaWithRoot.json.entry_urls.map((entry) => entry.url), ["https://preview.example.test/"]);
+  assert.deepEqual(qaWithRoot.json.entry_urls.map((entry) => entry.url), [`https://preview.example.test/${slug}/`]);
 }, { entrySelect: true }));
+
+test("QA keeps the preview subpath for every page and resolves both root entry spellings to the emitted route", () => {
+  for (const routeRoot of ["root", "slug"]) {
+    for (const entryPageUrl of ["", "/"]) {
+      withFixture((fixture) => {
+        assert.equal(runPrepare(fixture).status, 0);
+        const packetPath = join(fixture.target, "campaign-runtime.build.json");
+        const packet = readJson(packetPath);
+        const slug = packet.campaign.public_route_slug;
+        if (routeRoot === "root") packet.campaign.route_root = "/";
+        writeJson(packetPath, packet);
+        const source = join(fixture.target, "src", slug, "select.html");
+        const emitted = join(fixture.target, "_site", slug, "select", "index.html");
+        mkdirSync(dirname(source), { recursive: true });
+        mkdirSync(dirname(emitted), { recursive: true });
+        writeFileSync(source, "---\npage_type: checkout\n---\n<main>select</main>\n");
+        writeFileSync(emitted, "<main>select</main>\n");
+
+        const qa = runCli(["qa", "resolve", "--packet", packetPath,
+          "--base-url", "https://preview.example.test/deploy-7/", "--no-probe"], fixture.dir);
+        assert.ok(qa.json, qa.stderr);
+        const baseUrl = `https://preview.example.test/deploy-7/${slug}/`;
+        assert.equal(qa.json.base_url, baseUrl, `${routeRoot} entry ${JSON.stringify(entryPageUrl)} base_url`);
+        assert.equal(qa.json.page_urls.find((page) => page.page_id === "checkout")?.url,
+          `${baseUrl}checkout/`, `${routeRoot} entry ${JSON.stringify(entryPageUrl)} checkout URL`);
+        assert.deepEqual(qa.json.entry_urls.map((entry) => entry.url), [`${baseUrl}select/`],
+          `${routeRoot} entry ${JSON.stringify(entryPageUrl)} emitted URL`);
+      }, { entrySelect: true, entryPageUrl });
+    }
+  }
+});
 
 test("entry source permalink outranks stale Page Kit file-route output", () => withFixture((fixture) => {
   assert.equal(runPrepare(fixture).status, 0);
@@ -507,6 +539,35 @@ test("entry source permalink outranks stale Page Kit file-route output", () => w
   assert.ok(doctor().derived.scope.built_pages.some((page) => page.page_id === "select" && page.route === "offer/"));
   assert.deepEqual(qa().entry_urls.map((entry) => entry.url), [`https://preview.example.test/${slug}/offer/`]);
 }, { entrySelect: true }));
+
+test("entry source and file routes prefer the page id, then its type", () => withFixture((fixture) => {
+  const slug = "runtime-packet-demo";
+  const output = join(fixture.target, "src", slug);
+  const page = { id: "select-step", type: "select", is_entry: true, page_url: "" };
+  const idSource = join(output, "select-step.html");
+  const typeSource = join(output, "select.html");
+  const idBuilt = join(fixture.target, "_site", slug, "select-step", "index.html");
+  const typeBuilt = join(fixture.target, "_site", slug, "select", "index.html");
+  mkdirSync(dirname(idSource), { recursive: true });
+  mkdirSync(dirname(idBuilt), { recursive: true });
+  mkdirSync(dirname(typeBuilt), { recursive: true });
+  writeFileSync(idBuilt, "<main>id route</main>\n");
+  writeFileSync(typeBuilt, "<main>type route</main>\n");
+
+  writeFileSync(idSource, `---\npermalink: /${slug}/primary/\n---\n<main>id</main>\n`);
+  writeFileSync(typeSource, `---\npermalink: /${slug}/secondary/\n---\n<main>type</main>\n`);
+  assert.deepEqual(entryPageKitServingRoute(fixture.target, slug, page, { targetOutputDir: output }),
+    { route: "primary/", source: "permalink" });
+
+  writeFileSync(idSource, "<main>id without permalink</main>\n");
+  assert.deepEqual(entryPageKitServingRoute(fixture.target, slug, page, { targetOutputDir: output }),
+    { route: "secondary/", source: "permalink" });
+
+  writeFileSync(typeSource, "<main>type without permalink</main>\n");
+  assert.equal(entryPageKitFileRoute(fixture.target, slug, page, { targetOutputDir: output }), "select-step");
+  rmSync(idBuilt);
+  assert.equal(entryPageKitFileRoute(fixture.target, slug, page, { targetOutputDir: output }), "select");
+}));
 
 test("mapped entry uses its recorded Page Kit target when root output is absent", () => withFixture((fixture) => {
   assert.equal(runPrepare(fixture).status, 0);

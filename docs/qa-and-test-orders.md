@@ -179,8 +179,9 @@ line and the printed per-URL rows say which URLs those were rather than leaving
 an operator to infer it from `counts.unreachable`. It is `null` only when every
 probed URL resolved, or when nothing was probed at all.
 
-Resolve appends `campaign.public_route_slug` unconditionally — the packet is
-the authority on where a campaign is served, and no flag overrides it. When
+Resolve appends `campaign.public_route_slug` to the preview base for `base_url`
+and page URLs, including when `campaign.route_root` is `/`. A subpath on
+`--base-url` stays ahead of the slug. When
 every derived route is dead, one extra probe of the host without that slug
 separates the two causes and says which it found:
 `route_probe.route_root_mismatch` (the host serves the campaign under a
@@ -308,16 +309,17 @@ for that entry URL. If Entry URLs are empty, still point at a deleted preview, o
 fail their own HTTP assertion, fix `--base-url` or the packet deploy URL before
 continuing.
 
-For an `is_entry` page with an empty `page_url`, `qa resolve` uses that page's
+For an `is_entry` page with `page_url` empty or `/`, `qa resolve` uses that page's
 explicit Page Kit permalink first, then the campaign root when
 `_site/<slug>/index.html` exists. If neither applies and Page Kit emitted the
 entry at its recorded page-file route, the printed Entry URL uses that locally
 emitted route. Doctor warns that the Map still points at the unserved root;
 add a redirect from the root or a root permalink on that page. The default
-probe checks the printed URL on the host. For `campaign.route_root: "/"`, that
-file route is `/<file-route>/`; the slug remains the `_site/<slug>/` build
-directory name, not a prefix in the Entry URL. With the default route root,
-the Entry URL uses `/<slug>/<file-route>/`.
+probe checks the printed URL on the host. For either `campaign.route_root: "/"`
+or the default route root, the file route is joined under `base_url` as
+`/<slug>/<file-route>/` (after any preview subpath). The root output, when
+present, uses `base_url` itself. The route-root declaration still determines
+the public route named in doctor's unserved-root warning.
 
 `--base-url` can be either the deploy host or the campaign root. If the Build Packet says `campaign.public_route_slug = "roadside-ready"`, both of these resolve pages under `/roadside-ready/`:
 

@@ -87,6 +87,7 @@ import { campaignSidecarPaths, explicitReportPath, resolveCampaignWorkspace, tar
 import { loadParityFixture } from "./qa-parity-fixture.mjs";
 import { assessParityCapture, resolveParityScenario, runParityCapture } from "./qa-parity-capture.mjs";
 import { loadPageKitCampaignEntry, PAGE_KIT_CAMPAIGNS_REL_PATH } from "./page-kit-campaign-config.mjs";
+import { publicRouteForPage } from "./source-html-intake.mjs";
 import {
   evaluatePageKitStoreProfile,
   PAGE_KIT_STORE_PROFILE_FIELDS,
@@ -476,7 +477,7 @@ async function resolveQaInputs(args, {
     routeRoot: resolveCampaignRouteRoot({ packet, spec: normalized, rawSpec, publicRouteSlug, notes: routeRootNotes }),
     routeRootNote: routeRootNotes[0] || null,
   });
-  const baseUrl = analyticsCaptureTarget.url;
+  const baseUrl = normalizeQaBaseUrl(inputBaseUrl, publicRouteSlug);
   const specHash = computeSpecHash(rawSpec);
   // The brief material this run is judged against, bound at run start beside
   // the spec hash: the QA stage write stamps it, not the material at write time.
@@ -3410,10 +3411,10 @@ function extractTopologies(spec, { baseUrl = null, publicRouteSlug = null, templ
 function resolvePageUrl(page, baseUrl, publicRouteSlug = null, entryServingRoute = null) {
   if (typeof page.url === "string" && page.url.trim()) return page.url.trim();
   if (!baseUrl) return null;
-  const route = typeof page.page_url === "string" && page.page_url.trim()
-    ? runtimeRelativeRouteForSpecValue(page.page_url, publicRouteSlug)
-    : page.is_entry
-      ? entryServingRoute?.route || ""
+  const route = page.is_entry && publicRouteForPage(page) === ""
+    ? entryServingRoute?.route || ""
+    : typeof page.page_url === "string" && page.page_url.trim()
+      ? runtimeRelativeRouteForSpecValue(page.page_url, publicRouteSlug)
       : defaultRouteForType(page.type);
   if (isAbsoluteHttpUrl(route)) return route;
   try {

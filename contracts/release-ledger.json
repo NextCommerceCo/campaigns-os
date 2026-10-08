@@ -7342,7 +7342,7 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.56.0+agent.3",
-      "changelog_sha256": "e6268e271d942822a74251d0f98443ff979c669d805e651988ac7258da53131a",
+      "changelog_sha256": "f00c17b12aa33a6b79b9d1af6afe0ad58fa91ff65587a8f4ca6df19d6de7a39b",
       "agent_impact": "For an entry routed to the campaign root, inspect doctor's unserved-root warning and use the serving Entry URL printed by qa resolve. Repair the root with a redirect or root permalink before relying on the Map route.",
       "compatibility": "compatible",
       "migration": "none",
@@ -7351,7 +7351,7 @@
           "class": "cli_surface",
           "path": "src/doctor/checks.mjs",
           "surface_entry": "doctor",
-          "summary": "Recognize a root-routed entry at its Page Kit file route and warn when the root is unserved."
+          "summary": "Recognize a root-routed entry at its Page Kit file route, prefer its page ID source over its page type source, and warn when the root is unserved."
         },
         {
           "class": "named_surface",
@@ -7366,7 +7366,7 @@
           "summary": "Document when qa resolve prints a serving file route for an entry."
         }
       ],
-      "entry_sha256": "9541a05a463ade76cc428370b782f92e795aac5a4372057a96bfbf5fe1eab921"
+      "entry_sha256": "92a70b04140f7dee0e8523def6fa149f8ac3f18e8d3330bc04a9965e085e5933"
     }
   ]
 }
