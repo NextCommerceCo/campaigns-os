@@ -24,7 +24,7 @@ import { declaredOrderBumps, declaredSelectorTiers } from "./commercial-journey.
 import { checkoutPathFrom, entryPages, isCheckoutFlowPage, paymentPageForFunnel, upgradeCampaignSpec } from "../campaign-spec/dist/index.js";
 import { diagnosticExport, diagnosticTextLines } from "./diagnostic.mjs";
 import { observeProgress, PROGRESS_OBSERVATION } from "./progress-node.mjs";
-import { HIDDEN_EAGER_MEDIA_ACTIONS, requiredActionText, substitutePacket } from "./gate-actions.mjs";
+import { HIDDEN_EAGER_MEDIA_ACTIONS, qaRunCommand, requiredActionText, substitutePacket } from "./gate-actions.mjs";
 import { orderPathDepthDriftText, orderPathDepthReconcileAction, orderPathDepthsDisagree, parseOrderPathDepthFlag } from "./proof-policy.mjs";
 import { specMaterialHash, specHashesMatch } from "./spec-identity.mjs";
 // The same predicate stage-ledger.mjs judges a mutator's result with, imported
@@ -253,6 +253,7 @@ import {
   readStoreProfile,
 } from "./spec-derive-store.mjs";
 import { ROOT, cmd, asInvocation } from "./install-invocation.mjs";
+import { hostedTemplateNeedsPreviewUrl, hostedTemplateNeedsUsablePreview } from "./local-preview-policy.mjs";
 import {
   requireArg,
   isObject,
@@ -4326,7 +4327,10 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
   // participate in divergence detection or override prepare-only recovery.
   const divergences = prepareBuildGate?.binding_failure
     ? []
-    : detectLedgerDivergence(report, packet, targetRepo);
+    : detectLedgerDivergence(report, packet, targetRepo, {
+      allowUnrecordedHostedPreview: polishCheckpointGate?.carried_forward?.policy === "hosted_template_preview"
+        || hostedTemplateNeedsPreviewUrl(packet, polishCheckpointGate),
+    });
   // Every return path runs through this finalizer so the machine-readable
   // contract is uniform: `gates` (pass/blocked/waived/not_applicable per
   // gate) and `next_actions` (exact commands — not prose) are always present,
@@ -4460,7 +4464,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
         errors,
         warnings,
         ready,
-        prompt: `Pipeline complete. All stages in the assembly report are in a terminal status. To repeat build work, do the work and run \`${cmd("record")} build --packet <path>\`; this makes downstream stages owed as needed. Run \`${cmd("qa")} run\` for QA. For a hosted deploy, record the URL and stage outcome as the deploy prompt describes. Then call \`${cmd("next")}\` again. If a run session is active, finish it with \`${cmd("run")} end\` so the Run Record is assembled and the session closes.${report?.stages?.qa?.status === "completed_with_warnings" ? " QA passed with exceptions; report them to the operator without clearing or waiving them or changing markup just to make them pass." : ""}`,
+        prompt: `${picked.outcome === "hosted_preview_satisfies_deploy" ? picked.reason : "Pipeline complete. All stages in the assembly report are in a terminal status."} To repeat build work, do the work and run \`${cmd("record")} build --packet <path>\`; this makes downstream stages owed as needed. Run \`${cmd("qa")} run\` for QA.${picked.outcome === "hosted_preview_satisfies_deploy" ? "" : " For a hosted deploy, record the URL and stage outcome as the deploy prompt describes."} Then call \`${cmd("next")}\` again. If a run session is active, finish it with \`${cmd("run")} end\` so the Run Record is assembled and the session closes.${report?.stages?.qa?.status === "completed_with_warnings" ? " QA passed with exceptions; report them to the operator without clearing or waiving them or changing markup just to make them pass." : ""}`,
       });
     }
     stage = picked.stage;
@@ -4483,7 +4487,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
     if (!assemblyStatus.startsWith("completed")) addIssue(errors, "next.polish.assembly", `Assembly status is "${assemblyStatus || "missing"}"; polish expects completed assembly or an explicit blocked/skipped handoff.`);
     if (polishGateRequiresBuild(polishGate)) addPolishGateErrors(errors, polishGate, "polish");
     addThemeGateErrors(errors, themeGate, "polish");
-    prompt = polishPrompt(packetPath, reportPath, packet, intentSummary);
+    prompt = polishPrompt(packetPath, reportPath, packet, intentSummary, polishCheckpointGate);
   } else if (stage === "deploy") {
     addPrepareBuildGateErrors(errors, report);
     // Slice 3 Phase 2: deploy is an out-of-band step (Netlify / CF Pages /
@@ -4493,7 +4497,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
     addPolishGateErrors(errors, polishGate, "deploy");
     addPolishCheckpointGateErrors(errors, polishCheckpointGate, "deploy");
     addThemeGateErrors(errors, themeGate, "deploy");
-    prompt = deployPrompt(packetPath, reportPath, packet);
+    prompt = deployPrompt(packetPath, reportPath, packet, polishGate, polishCheckpointGate);
   } else if (stage === "qa") {
     addPrepareBuildGateErrors(errors, report);
     if (!report) addIssue(errors, "next.qa.report", "Assembly report is required before QA.");
@@ -4502,7 +4506,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
     addPolishGateErrors(errors, polishGate, "qa");
     addPolishCheckpointGateErrors(errors, polishCheckpointGate, "qa");
     addThemeGateErrors(errors, themeGate, "qa");
-    prompt = qaPrompt(packetPath, reportPath, packet, spec, intentSummary);
+    prompt = qaPrompt(packetPath, reportPath, packet, spec, intentSummary, polishCheckpointGate);
   }
   const status = errors.length
     ? "blocked"
@@ -4751,18 +4755,18 @@ function quoteDivergences(divergences) {
     .join(" ");
 }
 
-function divergenceInspectAction(divergences, packetPath) {
+function divergenceInspectAction(divergences, packetPath, { packet = null, polishCheckpointGate = null } = {}) {
   const divergedStages = divergences.map((divergence) => divergence.stage);
   const forwardHint = divergedStages.includes("qa")
     ? "The artifacts include a QA verdict for this campaign, so the campaign may already be built, deployed, and QA'd — verify the artifacts before redoing any stage."
     : divergedStages.includes("deploy")
-      ? `If the recorded deploy URL is real and current, the forward path is QA (${cmd("next")} qa --packet ${packetPath}), not re-running earlier stages.`
+      ? `If the recorded deploy URL is real and current, the forward path is QA (${cmd("next")} qa --packet ${shellToken(packetPath)}), not re-running earlier stages.`
       : "If the built output is real and current, the forward path is polish/deploy/QA, not re-running setup or build.";
   return {
     id: "divergence_inspect",
     kind: "manual",
     command: null,
-    description: `Ledger and artifacts disagree — ${divergences.length} divergence(s): ${quoteDivergences(divergences)} The same entries are the divergences[] field of \`${cmd("next")} --json\` output; they are not written to any file. This is the ONLY next action: stage actions are suppressed while the disagreement stands, because every one of them would be derived from the same contradictory evidence. Inspect both sides and decide which is right; update the assembly report only after inspection. Do not rerun start/prepare-build or redo completed-looking work on the strength of the ledger alone, and do not treat artifact presence as proof a stage is complete. ${forwardHint} Re-run \`${cmd("next")} --packet ${packetPath} --json\` once the report matches the artifacts to get the normal action list.`,
+    description: `Ledger and artifacts disagree — ${divergences.length} divergence(s): ${quoteDivergences(divergences)} The same entries are the divergences[] field of \`${cmd("next")} --json\` output; they are not written to any file. This is the ONLY next action: stage actions are suppressed while the disagreement stands, because every one of them would be derived from the same contradictory evidence. Inspect both sides and decide which is right; update the assembly report only after inspection. Do not rerun start/prepare-build or redo completed-looking work on the strength of the ledger alone, and do not treat artifact presence as proof a stage is complete. ${forwardHint}${hostedTemplateNeedsUsablePreview(packet, polishCheckpointGate) ? ` After reconciliation, set a hosted preview URL that differs from the production URL with \`${cmd("qa")} policy set --packet ${shellToken(packetPath)} --preview-url <url>\`.` : ""} Re-run \`${cmd("next")} --packet ${shellToken(packetPath)} --json\` once the report matches the artifacts to get the normal action list.`,
     required: true,
   };
 }
@@ -4793,7 +4797,7 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
     // of the stale ledger. Suppressing branch-by-branch would leave the next
     // branch someone adds unguarded; returning here cannot rot that way.
     // The operator reconciles, then re-runs `next` for the normal list.
-    const inspect = divergenceInspectAction(divergences, packetPath);
+    const inspect = divergenceInspectAction(divergences, packetPath, { packet, polishCheckpointGate });
     push(inspect.id, inspect.kind, asInvocation(inspect.command), inspect.description, { required: inspect.required });
     return actions;
   }
@@ -4819,7 +4823,7 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
         );
       }
     }
-    push("doctor_recheck", "command", `${cmd("doctor")} --packet ${packetPath} --write --json`, "Record a fresh doctor result after resolving the listed errors.");
+    push("doctor_recheck", "command", `${cmd("doctor")} --packet ${shellToken(packetPath)} --write --json`, "Record a fresh doctor result after resolving the listed errors.");
     return actions;
   }
   if (result.stage === "prepare-build") {
@@ -4853,15 +4857,29 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
     for (const action of themeGate.required_actions) {
       push(`theme_gate.${action.id}`, action.kind, asInvocation(action.command), action.description);
     }
-    push("recheck", "command", `${cmd("next")} --packet ${packetPath} --json`, "Re-run next after resolving the theme gate to advance.");
+    push("recheck", "command", `${cmd("next")} --packet ${shellToken(packetPath)} --json`, "Re-run next after resolving the theme gate to advance.");
     return actions;
   }
   if (polishGateRequiresBuild(polishGate) && ["build", "polish", "deploy", "qa"].includes(result.stage)) {
     for (const action of polishGate?.required_actions || []) {
       push(`polish_gate.${action.id}`, action.kind, asInvocation(action.command), action.description);
     }
-    push("recheck", "command", `${cmd("next")} --packet ${packetPath} --json`, "Re-run next after rebuilding against the current Design Source Package.");
+    push("recheck", "command", `${cmd("next")} --packet ${shellToken(packetPath)} --json`, "Re-run next after rebuilding against the current Design Source Package.");
     return actions;
+  }
+  const hostedTemplate = packet?.deploy?.target && packet.deploy.target !== LOCAL_SERVE_DEPLOY_TARGET
+    && polishCheckpointGate?.code === "polish.hidden_eager_media.no_capturable_routes";
+  if (hostedTemplate && ["polish", "deploy", "qa"].includes(result.stage)) {
+    if (hostedTemplateNeedsUsablePreview(packet, polishCheckpointGate)) {
+      pushPolishCheckpointActions();
+      push("recheck", "command", `${cmd("next")} --packet ${shellToken(packetPath)} --json`, "Re-run next after recording a hosted preview URL that differs from the production URL.");
+      return actions;
+    }
+    if (result.stage === "polish" && polishGate?.carried_forward?.policy === "hosted_template_preview") {
+      push("next_qa", "command", `${cmd("next")} qa --packet ${shellToken(packetPath)}`, "Inspect QA for the hosted preview; missing Polish evidence remains a warning.");
+      push("qa_run", "command", qaRunCommand(packetPath, packet.deploy.preview_url), "Run browser and typed-card QA against the hosted preview URL.");
+      return actions;
+    }
   }
   if ((polishGate?.status === "blocked" || polishCheckpointGate?.status === "blocked")
     && ["deploy", "qa"].includes(result.stage)) {
@@ -4875,7 +4893,7 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
       push(`polish_gate.${action.id}`, action.kind, asInvocation(action.command), action.description);
     }
     pushPolishCheckpointActions();
-    push("recheck", "command", `${cmd("next")} --packet ${packetPath} --json`, "Re-run next after recording valid Polish evidence.");
+    push("recheck", "command", `${cmd("next")} --packet ${shellToken(packetPath)} --json`, "Re-run next after recording valid Polish evidence.");
     return actions;
   }
   // Ahead of every stage that still has QA in front of it, say what QA will do
@@ -4896,9 +4914,9 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
     }
   }
   if (result.stage === "setup") {
-    push("setup_skill", "skill", "next-campaigns-os-setup", `Prepare the target page-kit structure and agent context, then record setup with ${cmd("record")} setup --packet ${packetPath}.`);
+    push("setup_skill", "skill", "next-campaigns-os-setup", `Prepare the target page-kit structure and agent context, then record setup with ${cmd("record")} setup --packet ${shellToken(packetPath)}.`);
   } else if (result.stage === "build") {
-    const recordBuild = `${cmd("record")} build --packet ${packetPath}${isLocalServePacket(packet) ? ` --build-environment ${LOCAL_PROOF_BUILD_ENVIRONMENT}` : ""}`;
+    const recordBuild = `${cmd("record")} build --packet ${shellToken(packetPath)}${isLocalServePacket(packet) ? ` --build-environment ${LOCAL_PROOF_BUILD_ENVIRONMENT}` : ""}`;
     push("build_skill", "skill", "next-campaigns-build", `Assemble the campaign per the build prompt, run the page-kit build, then record build with ${recordBuild}.`);
     if (isLocalServePacket(packet)) {
       push("build_local_proof", "command", LOCAL_PROOF_BUILD_COMMAND, `Local proof mode (deploy.target is local-serve): build page-kit in the ${LOCAL_PROOF_BUILD_ENVIRONMENT} environment into _site/, then record it with ${recordBuild}, which sets ${LOCAL_PROOF_BUILD_ENVIRONMENT_FIELD} to "${LOCAL_PROOF_BUILD_ENVIRONMENT}" (never hand-edit it). Vendor loaders are environment-gated out of this render (their protocol-relative //host/... URLs fail over a plain-HTTP local serve); SDK dl_* events still fire. ${LOCAL_PROOF_NEVER_EDIT_RULE}`);
@@ -4910,16 +4928,25 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
       }
     }
   } else if (result.stage === "polish") {
-    push("polish_skill", "skill", "next-campaigns-polish", `Run the visual polish pass and ${cmd("polish")} capture, then record polish with ${cmd("record")} polish --packet ${packetPath} --evidence <polish-evidence.json>.`);
+    push("polish_skill", "skill", "next-campaigns-polish", polishCheckpointGate?.code === "polish.hidden_eager_media.no_capturable_routes"
+      ? "Every mapped page is template stock, so there is no design route to capture. Follow the preview guidance for missing Polish evidence."
+      : `Run the visual polish pass and ${cmd("polish")} capture, then record polish with ${cmd("record")} polish --packet ${shellToken(packetPath)} --evidence <polish-evidence.json>.`);
     if (polishCheckpointGate?.status === "blocked") pushPolishCheckpointActions();
   } else if (result.stage === "deploy") {
-    if (packet.deploy?.target === LOCAL_SERVE_DEPLOY_TARGET) {
+    if (polishGate?.carried_forward?.policy === "hosted_template_preview" && packet.deploy?.preview_url) {
+      push("next_qa", "command", `${cmd("next")} qa --packet ${shellToken(packetPath)}`, "Inspect the QA stage for this hosted preview without recording a hosted deploy.");
+      push("qa_run", "command", qaRunCommand(packetPath, packet.deploy.preview_url), "Run browser and typed-card QA against the hosted preview; its missing Polish evidence remains a warning.");
+    } else if (packet.deploy?.target === LOCAL_SERVE_DEPLOY_TARGET) {
       const plan = localServePlan(packet);
-      push("deploy", "manual", null, `Serve the built ${plan.dir} output locally as the origin root (deploy.target is local-serve)${plan.rewrite ? ` — ${plan.rewrite}` : ""}, then run ${cmd("record")} deploy --packet ${packetPath} --base-url <served url>: it checks every built page answers and records deploy.preview_url and stages.deploy. Localhost on any port is a Development domain: SDK allowed, analytics suppressed.`);
+      push("deploy", "manual", null, `Serve the built ${plan.dir} output locally as the origin root (deploy.target is local-serve)${plan.rewrite ? ` — ${plan.rewrite}` : ""}, then run ${cmd("record")} deploy --packet ${shellToken(packetPath)} --base-url <served url>: it checks every built page answers and records deploy.preview_url and stages.deploy. Localhost on any port is a Development domain: SDK allowed, analytics suppressed.`);
     } else {
       push("deploy", "manual", null, `Deploy _site/ output to ${packet.deploy?.target || "the deploy target"}, then record deploy.preview_url (or production_url) on the packet and stages.deploy in the assembly report.`);
     }
-    push("advance", "command", `${cmd("next")} --packet ${packetPath} --json`, "Advance to QA once the deploy URL is recorded.");
+    if (polishGate?.carried_forward?.policy === "hosted_template_preview" && packet.deploy?.preview_url) {
+      push("advance", "command", `${cmd("next")} qa --packet ${shellToken(packetPath)}`, "Inspect QA for the hosted preview without a deploy record.");
+    } else {
+      push("advance", "command", `${cmd("next")} --packet ${shellToken(packetPath)} --json`, "Advance to QA once the deploy URL is recorded.");
+    }
   } else if (result.stage === "qa") {
     const url = packet.deploy?.preview_url || packet.deploy?.production_url || "<preview-url>";
     push("install_browser", "command", `${cmd("qa")} install-browser`, "Install the Playwright browser once after install/update (npm run qa:install-browser from a checkout).");
@@ -5152,8 +5179,22 @@ When copying a starter template family, copy the family as an atomic page-kit sl
 Do not wire checkout, upsell, receipt, payment, package, voucher, or shipping behavior during setup.`;
 }
 
-function polishPrompt(packetPath, reportPath, packet, intent) {
+function polishPrompt(packetPath, reportPath, packet, intent, polishCheckpointGate = null) {
   const briefPath = packet.build_brief?.normalized_path || "(missing)";
+  if (polishCheckpointGate?.code === "polish.hidden_eager_media.no_capturable_routes") {
+    if (packet.deploy?.target === LOCAL_SERVE_DEPLOY_TARGET && polishCheckpointGate?.status !== "carried_forward") {
+      return `Every mapped page is template stock, so there is no design route to capture. Missing Polish evidence is carried forward only on the local preview served from a loopback host (localhost, 127.0.0.1 or [::1]); this packet's deploy.preview_url is not one. Serve the build locally and record it with \`${cmd("record")} deploy --packet ${shellToken(packetPath)} --base-url <served url>\`, then run \`${cmd("next")} --packet ${shellToken(packetPath)}\`.`;
+    }
+    if (packet.deploy?.target === LOCAL_SERVE_DEPLOY_TARGET) {
+      return `Every mapped page is template stock, so there is no design route to capture. On the local loopback preview, missing Polish evidence is carried forward as a warning. Run \`${cmd("next")} --packet ${shellToken(packetPath)}\` to continue to deploy and QA. Production QA still requires the evidence.`;
+    }
+    if (polishCheckpointGate?.status !== "carried_forward" && packet.deploy?.preview_url) {
+      return `Every mapped page is template stock, so there is no design route to capture. Missing Polish evidence is carried forward only on a hosted preview whose deploy.preview_url is a non-loopback http(s) URL different from deploy.production_url; this packet's is not. Set one with \`${cmd("qa")} policy set --packet ${shellToken(packetPath)} --preview-url <url>\`, then \`${cmd("next")} --packet ${shellToken(packetPath)}\`.`;
+    }
+    return packet.deploy?.preview_url
+      ? `Every mapped page is template stock, so there is no design route to capture. Missing Polish evidence is carried forward on the hosted preview. Run \`${cmd("next")} qa --packet ${shellToken(packetPath)}\`, then \`${qaRunCommand(packetPath, packet.deploy.preview_url)}\`. Production QA remains blocked without the evidence.`
+      : `Every mapped page is template stock, so there is no design route to capture. Run \`${cmd("qa")} policy set --packet ${shellToken(packetPath)} --preview-url <url>\` to record the hosted preview URL, then \`${cmd("next")} --packet ${shellToken(packetPath)}\`.`;
+  }
   return `${campaignIntentPromptHeader(intent)}Use next-campaigns-polish for this built campaign.
 
 Read first:
@@ -5212,7 +5253,12 @@ function localServePlan(packet) {
   };
 }
 
-function deployPrompt(packetPath, reportPath, packet) {
+function deployPrompt(packetPath, reportPath, packet, polishGate = null, polishCheckpointGate = null) {
+  if (packet.deploy?.target !== LOCAL_SERVE_DEPLOY_TARGET
+    && polishCheckpointGate?.code === "polish.hidden_eager_media.no_capturable_routes"
+    && !packet.deploy?.preview_url) {
+    return `Every mapped page is template stock, and the hosted preview URL is not recorded. Run \`${cmd("qa")} policy set --packet ${shellToken(packetPath)} --preview-url <url>\` after the preview is deployed, then \`${cmd("next")} --packet ${shellToken(packetPath)}\`. There is no hosted record deploy command.`;
+  }
   const target = packet.deploy?.target || "unknown";
   const liveUrlPath = packet.deploy?.live_url_path || packet.campaign?.live_url_path || campaignRouteRoot(packet) || "/<slug>/";
   if (target === LOCAL_SERVE_DEPLOY_TARGET) {
@@ -5233,6 +5279,9 @@ Once the server is up:
 2. Run \`${cmd("next")} --packet ${packetPath}\` to advance to QA.
 
 If the served build cannot be reached, set stages.deploy.status to "blocked" with a clear reason in outputs so the orchestration loop surfaces it rather than skipping past.`;
+  }
+  if (polishGate?.carried_forward?.policy === "hosted_template_preview" && packet.deploy?.preview_url) {
+    return `The hosted preview URL is recorded at deploy.preview_url. Every mapped page is template stock, so missing Polish evidence is carried forward as a warning for this preview. Run \`${cmd("next")} qa --packet ${shellToken(packetPath)}\` to inspect the QA stage, then \`${qaRunCommand(packetPath, packet.deploy.preview_url)}\` to test the preview. The recorded hosted preview satisfies this deploy handoff; after QA records its verdict, run \`${cmd("next")} --packet ${shellToken(packetPath)}\` for closeout. Production QA remains strict.`;
   }
   return `Deploy the built campaign to ${target}.
 
@@ -5256,10 +5305,6 @@ If the deploy is blocked (non-localhost allowed-domain not yet added, CI permiss
 // The QA command the QA stage hands over. Given a bump cart it is the
 // order-bump run: the same command with --cart selecting the base tier and
 // toggling each declared bump.
-function qaRunCommand(packetPath, url, bumpCart = null) {
-  return `${cmd("qa")} run --packet ${packetPath} --base-url ${url} --browser --test-order common${bumpCart ? ` --cart ${shellToken(bumpCart.cart)}` : ""}`;
-}
-
 // `qa run --test-order common` never puts a checkout order bump in a test
 // order: the tier planner skips bump rows by design and bump coverage comes
 // from --cart. So when the spec declares one, `next` names a second run with
@@ -5305,7 +5350,12 @@ function orderBumpRunReason(bumpCart) {
   return `The checkout declares order bump ${bumpCart.bumps.join(", ")} (is_order_bump or is_upsell), and the default run never puts it in a test order. This run repeats QA with ${cart} in the cart.`;
 }
 
-function qaPrompt(packetPath, reportPath, packet, spec = null, intent) {
+function qaPrompt(packetPath, reportPath, packet, spec = null, intent, polishCheckpointGate = null) {
+  if (packet.deploy?.target !== LOCAL_SERVE_DEPLOY_TARGET
+    && polishCheckpointGate?.code === "polish.hidden_eager_media.no_capturable_routes"
+    && !packet.deploy?.preview_url) {
+    return `Every mapped page is template stock, and QA needs the hosted preview URL. Run \`${cmd("qa")} policy set --packet ${shellToken(packetPath)} --preview-url <url>\`, then \`${cmd("next")} qa --packet ${shellToken(packetPath)}\`.`;
+  }
   const url = packet.deploy?.preview_url || packet.deploy?.production_url || "<preview-url>";
   const briefPath = packet.build_brief?.normalized_path || "(missing)";
   const bumpCart = checkoutOrderBumpCart(spec);
@@ -5373,7 +5423,7 @@ function qaVerdictArtifactsForCampaign(packet, targetRepo) {
 // Presence-based only: a stale built output still diverges from a pending
 // ledger, and the entry says the two disagree — it never asserts the stage
 // is complete or the artifact current. This function writes nothing.
-export function detectLedgerDivergence(report, packet, targetRepo) {
+export function detectLedgerDivergence(report, packet, targetRepo, { allowUnrecordedHostedPreview = false } = {}) {
   const divergences = [];
   const stages = report?.stages;
   if (!isObject(stages) || !isNonEmptyString(targetRepo)) return divergences;
@@ -5406,7 +5456,7 @@ export function detectLedgerDivergence(report, packet, targetRepo) {
     const packetPreviewUrl = optionalString(packet?.deploy?.preview_url);
     const packetProductionUrl = optionalString(packet?.deploy?.production_url);
     const url = reportUrl || packetPreviewUrl || packetProductionUrl;
-    if (url) {
+    if (url && !(allowUnrecordedHostedPreview && !reportUrl)) {
       const source = reportUrl
         ? "report.stages.deploy.outputs"
         : packetPreviewUrl

@@ -1,5 +1,5 @@
 import { campaignSpecIdentity, resolveCampaignIdentity, campaignIdentitiesMatch } from "./spec-source-identity.mjs";
-import { applyLocalPreviewToCheckpoint, applyLocalPreviewToPolishGate, carriedForwardMessage, CARRIED_FORWARD, starterResidueIsExpected } from "./local-preview-policy.mjs";
+import { applyLocalPreviewToCheckpoint, applyLocalPreviewToPolishGate, carriedForwardMessage, CARRIED_FORWARD, ensureUrlTrailingSlash, normalizeQaBaseUrl, starterResidueIsExpected } from "./local-preview-policy.mjs";
 import { expectedBinding, createBindingScriptLoader, observeBinding, bindingAssertion, scriptParseAssertion } from './qa-binding-evidence.mjs';
 import { shellToken } from "./shell-token.mjs";
 import { currentBriefMaterial } from "./input-currency.mjs";
@@ -3950,21 +3950,6 @@ function normalizeBaseUrl(value) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-function normalizeQaBaseUrl(value, publicRouteSlug) {
-  const baseUrl = normalizeBaseUrl(value);
-  if (!baseUrl) return null;
-  const slug = normalizePublicRouteSlug(publicRouteSlug);
-  if (!slug) return ensureUrlTrailingSlash(baseUrl);
-  try {
-    const url = new URL(ensureUrlTrailingSlash(baseUrl));
-    const segments = url.pathname.split("/").filter(Boolean);
-    if (segments.at(-1) === slug) return ensureUrlTrailingSlash(url.toString());
-    return new URL(`${slug}/`, url).toString();
-  } catch {
-    return ensureUrlTrailingSlash(baseUrl);
-  }
-}
-
 // The campaign's served route root — "/", "/<slug>/", or null — read by the
 // one rule every stage shares (route-identity.mjs): the packet under its exact
 // canonical form, the spec under prepare-build's intake form. A declaration
@@ -4070,10 +4055,6 @@ function resolvePublicRouteSlug({ packet, spec, rawSpec }) {
     || stringArg(spec?.campaign?.slug)
     || stringArg(rawSpec?.campaign?.slug)
     || null;
-}
-
-function ensureUrlTrailingSlash(value) {
-  return value.endsWith("/") ? value : `${value}/`;
 }
 
 function stripOrigin(value) {
