@@ -18,6 +18,7 @@
 import { isLocalServePacket } from "./local-proof.mjs";
 import { isLoopbackHostname } from "./remit.mjs";
 import { hostedTemplateQaAction, HOSTED_TEMPLATE_PREVIEW_URL_ACTION } from "./gate-actions.mjs";
+import { normalizePublicRouteSlug } from "./route-identity.mjs";
 
 export const LOCAL_PREVIEW_POLICY = "local_preview";
 export const HOSTED_TEMPLATE_PREVIEW_POLICY = "hosted_template_preview";
@@ -33,6 +34,9 @@ const CARRIED_POLISH_CODES = Object.freeze(new Set([
   "polish.report_missing",
   "polish.evidence_missing",
 ]));
+export function polishGateCanCarryPreview(gate) {
+  return Boolean(gate?.owned_checkpoint_only || CARRIED_POLISH_CODES.has(gate?.code));
+}
 export const NO_CAPTURABLE_ROUTES_CODE = "polish.hidden_eager_media.no_capturable_routes";
 const MISSING_CAPTURE_CODE = "polish.hidden_eager_media.capture_malformed";
 
@@ -66,13 +70,51 @@ function comparableUrl(value) {
   }
 }
 
+export function ensureUrlTrailingSlash(value) {
+  try {
+    const url = new URL(value);
+    if (!url.pathname.endsWith("/")) url.pathname += "/";
+    return url.toString();
+  } catch {
+    return value.endsWith("/") ? value : `${value}/`;
+  }
+}
+
+// QA composes a campaign slug onto a site root before testing it. Preview
+// policy compares those same targets, ignoring only query and fragment.
+export function normalizeQaBaseUrl(value, publicRouteSlug) {
+  const baseUrl = typeof value === "string" && value.trim() ? value.trim() : null;
+  if (!baseUrl) return null;
+  const slug = normalizePublicRouteSlug(publicRouteSlug);
+  if (!slug) return ensureUrlTrailingSlash(baseUrl);
+  try {
+    const url = new URL(ensureUrlTrailingSlash(baseUrl));
+    const segments = url.pathname.split("/").filter(Boolean);
+    if (segments.at(-1) === slug) return ensureUrlTrailingSlash(url.toString());
+    return new URL(`${slug}/`, url).toString();
+  } catch {
+    return ensureUrlTrailingSlash(baseUrl);
+  }
+}
+
+function comparableQaTarget(value, packet) {
+  const slug = packet?.campaign?.public_route_slug || packet?.deploy?.live_url_path;
+  return comparableUrl(normalizeQaBaseUrl(value, slug));
+}
+
 function isHostedTemplatePreview(packet, { baseUrl = null } = {}) {
-  const preview = comparableUrl(packet?.deploy?.preview_url);
-  const production = comparableUrl(packet?.deploy?.production_url);
-  const tested = baseUrl == null ? preview : comparableUrl(baseUrl);
+  const preview = comparableQaTarget(packet?.deploy?.preview_url, packet);
+  const production = comparableQaTarget(packet?.deploy?.production_url, packet);
+  const tested = baseUrl == null ? preview : comparableQaTarget(baseUrl, packet);
   return Boolean(packet?.deploy?.target && packet.deploy.target !== "local-serve"
     && preview && tested === preview && preview !== production
     && !isLoopbackHostname(new URL(preview).hostname));
+}
+
+export function hostedTemplateNeedsUsablePreview(packet, gate) {
+  return gate?.code === NO_CAPTURABLE_ROUTES_CODE
+    && packet?.deploy?.target && packet.deploy.target !== "local-serve"
+    && !isHostedTemplatePreview(packet);
 }
 
 export function hostedTemplateNeedsPreviewUrl(packet, gate) {
@@ -101,7 +143,7 @@ export function carried(gate, policy = LOCAL_PREVIEW_POLICY, packet = null) {
 // The hidden eager-media checkpoint, evaluated on its own.
 export function applyLocalPreviewToCheckpoint(gate, { packet, report, baseUrl = null } = {}) {
   if (gate?.status !== "blocked") return gate;
-  if (hostedTemplateNeedsPreviewUrl(packet, gate)) {
+  if (hostedTemplateNeedsUsablePreview(packet, gate)) {
     return { ...gate, required_actions: [HOSTED_TEMPLATE_PREVIEW_URL_ACTION] };
   }
   if (gate.code === NO_CAPTURABLE_ROUTES_CODE && isHostedTemplatePreview(packet, { baseUrl })) {
@@ -128,7 +170,7 @@ export function applyLocalPreviewToPolishGate(gate, { packet, checkpointGate = n
   const actionableGate = checkpointGate?.code === NO_CAPTURABLE_ROUTES_CODE
     ? { ...gate, required_actions: (gate.required_actions || []).filter((action) => action.id !== "polish.hidden_eager_media.capture") }
     : gate;
-  if (hostedTemplateNeedsPreviewUrl(packet, checkpointGate)) {
+  if (polishGateCanCarryPreview(gate) && hostedTemplateNeedsUsablePreview(packet, checkpointGate)) {
     return { ...actionableGate, required_actions: [HOSTED_TEMPLATE_PREVIEW_URL_ACTION] };
   }
   const hostedTemplate = checkpointGate?.code === NO_CAPTURABLE_ROUTES_CODE

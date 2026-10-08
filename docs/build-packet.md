@@ -1767,7 +1767,7 @@ a hosted preview, doctor carries the same missing-evidence shape forward.
 `record deploy` remains local-only: record an unset hosted preview URL with
 `campaigns-os qa policy set --packet <p> --preview-url <url>`, then run
 `campaigns-os next --packet <p>`. The hosted preview must be a non-loopback
-HTTP(S) URL with a different origin and route path from `deploy.production_url`;
+HTTP(S) URL whose origin or QA-resolved campaign route path differs from `deploy.production_url`;
 query and fragment text does not make the production page a preview. With
 `deploy.preview_url` recorded, run `campaigns-os next qa --packet <p>` and
 `campaigns-os qa run --packet <p> --base-url <preview-url> --browser

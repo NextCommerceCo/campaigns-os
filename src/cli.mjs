@@ -253,7 +253,7 @@ import {
   readStoreProfile,
 } from "./spec-derive-store.mjs";
 import { ROOT, cmd, asInvocation } from "./install-invocation.mjs";
-import { hostedTemplateNeedsPreviewUrl } from "./local-preview-policy.mjs";
+import { hostedTemplateNeedsPreviewUrl, hostedTemplateNeedsUsablePreview } from "./local-preview-policy.mjs";
 import {
   requireArg,
   isObject,
@@ -4457,7 +4457,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
         errors,
         warnings,
         ready,
-        prompt: `${picked.reason?.startsWith("The recorded hosted preview") ? picked.reason : "Pipeline complete. All stages in the assembly report are in a terminal status."} To repeat build work, do the work and run \`${cmd("record")} build --packet <path>\`; this makes downstream stages owed as needed. Run \`${cmd("qa")} run\` for QA. ${polishGate?.carried_forward?.policy === "hosted_template_preview" ? "The recorded hosted preview satisfies this deploy handoff." : "For a hosted deploy, record the URL and stage outcome as the deploy prompt describes."} Then call \`${cmd("next")}\` again. If a run session is active, finish it with \`${cmd("run")} end\` so the Run Record is assembled and the session closes.${report?.stages?.qa?.status === "completed_with_warnings" ? " QA passed with exceptions; report them to the operator without clearing or waiving them or changing markup just to make them pass." : ""}`,
+        prompt: `${picked.outcome === "hosted_preview_satisfies_deploy" ? picked.reason : "Pipeline complete. All stages in the assembly report are in a terminal status."} To repeat build work, do the work and run \`${cmd("record")} build --packet <path>\`; this makes downstream stages owed as needed. Run \`${cmd("qa")} run\` for QA.${picked.outcome === "hosted_preview_satisfies_deploy" ? "" : " For a hosted deploy, record the URL and stage outcome as the deploy prompt describes."} Then call \`${cmd("next")}\` again. If a run session is active, finish it with \`${cmd("run")} end\` so the Run Record is assembled and the session closes.${report?.stages?.qa?.status === "completed_with_warnings" ? " QA passed with exceptions; report them to the operator without clearing or waiving them or changing markup just to make them pass." : ""}`,
       });
     }
     stage = picked.stage;
@@ -4748,7 +4748,7 @@ function quoteDivergences(divergences) {
     .join(" ");
 }
 
-function divergenceInspectAction(divergences, packetPath) {
+function divergenceInspectAction(divergences, packetPath, { packet = null, polishCheckpointGate = null } = {}) {
   const divergedStages = divergences.map((divergence) => divergence.stage);
   const forwardHint = divergedStages.includes("qa")
     ? "The artifacts include a QA verdict for this campaign, so the campaign may already be built, deployed, and QA'd — verify the artifacts before redoing any stage."
@@ -4759,7 +4759,7 @@ function divergenceInspectAction(divergences, packetPath) {
     id: "divergence_inspect",
     kind: "manual",
     command: null,
-    description: `Ledger and artifacts disagree — ${divergences.length} divergence(s): ${quoteDivergences(divergences)} The same entries are the divergences[] field of \`${cmd("next")} --json\` output; they are not written to any file. This is the ONLY next action: stage actions are suppressed while the disagreement stands, because every one of them would be derived from the same contradictory evidence. Inspect both sides and decide which is right; update the assembly report only after inspection. Do not rerun start/prepare-build or redo completed-looking work on the strength of the ledger alone, and do not treat artifact presence as proof a stage is complete. ${forwardHint} Re-run \`${cmd("next")} --packet ${shellToken(packetPath)} --json\` once the report matches the artifacts to get the normal action list.`,
+    description: `Ledger and artifacts disagree — ${divergences.length} divergence(s): ${quoteDivergences(divergences)} The same entries are the divergences[] field of \`${cmd("next")} --json\` output; they are not written to any file. This is the ONLY next action: stage actions are suppressed while the disagreement stands, because every one of them would be derived from the same contradictory evidence. Inspect both sides and decide which is right; update the assembly report only after inspection. Do not rerun start/prepare-build or redo completed-looking work on the strength of the ledger alone, and do not treat artifact presence as proof a stage is complete. ${forwardHint}${hostedTemplateNeedsUsablePreview(packet, polishCheckpointGate) ? ` After reconciliation, set a hosted preview URL that differs from the production URL with \`${cmd("qa")} policy set --packet ${shellToken(packetPath)} --preview-url <url>\`.` : ""} Re-run \`${cmd("next")} --packet ${shellToken(packetPath)} --json\` once the report matches the artifacts to get the normal action list.`,
     required: true,
   };
 }
@@ -4790,7 +4790,7 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
     // of the stale ledger. Suppressing branch-by-branch would leave the next
     // branch someone adds unguarded; returning here cannot rot that way.
     // The operator reconciles, then re-runs `next` for the normal list.
-    const inspect = divergenceInspectAction(divergences, packetPath);
+    const inspect = divergenceInspectAction(divergences, packetPath, { packet, polishCheckpointGate });
     push(inspect.id, inspect.kind, asInvocation(inspect.command), inspect.description, { required: inspect.required });
     return actions;
   }
@@ -4863,9 +4863,9 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
   const hostedTemplate = packet?.deploy?.target && packet.deploy.target !== LOCAL_SERVE_DEPLOY_TARGET
     && polishCheckpointGate?.code === "polish.hidden_eager_media.no_capturable_routes";
   if (hostedTemplate && ["polish", "deploy", "qa"].includes(result.stage)) {
-    if (!packet.deploy.preview_url) {
+    if (hostedTemplateNeedsUsablePreview(packet, polishCheckpointGate)) {
       pushPolishCheckpointActions();
-      push("recheck", "command", `${cmd("next")} --packet ${shellToken(packetPath)} --json`, "Re-run next after recording the hosted preview URL.");
+      push("recheck", "command", `${cmd("next")} --packet ${shellToken(packetPath)} --json`, "Re-run next after recording a hosted preview URL that differs from the production URL.");
       return actions;
     }
     if (result.stage === "polish" && polishGate?.carried_forward?.policy === "hosted_template_preview") {

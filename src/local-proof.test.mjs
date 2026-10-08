@@ -15,7 +15,7 @@ import { promisify } from "node:util";
 
 import { buildNextActions, nextStage, pageKitParityCommand } from "./cli.mjs";
 import { doctorPacket } from "./doctor/inspect.mjs";
-import { HIDDEN_EAGER_MEDIA_ACTIONS } from "./gate-actions.mjs";
+import { HIDDEN_EAGER_MEDIA_ACTIONS, qaRunCommand } from "./gate-actions.mjs";
 import { currentPacketInputs, inputStamps } from "./input-currency.mjs";
 import {
   compareRenderedOutputs,
@@ -24,7 +24,7 @@ import {
   renderedPagePin,
 } from "./local-proof.mjs";
 import { plainHttpDependencyFailures } from "./polish-capture.mjs";
-import { carried, HOSTED_TEMPLATE_PREVIEW_POLICY } from "./local-preview-policy.mjs";
+import { applyLocalPreviewToPolishGate, carried, HOSTED_TEMPLATE_PREVIEW_POLICY } from "./local-preview-policy.mjs";
 import { shellToken } from "./shell-token.mjs";
 import {
   capturePolishPageLoad,
@@ -582,9 +582,11 @@ test("a template-stock build carries missing polish forward on local and hosted 
   const cases = [
     { name: "local preview", deploy: { target: "local-serve", preview_url: "http://localhost:8080/runtime-packet-demo/" }, carried: true },
     { name: "hosted preview", deploy: { target: "netlify", preview_url: "https://preview.example.test/runtime-packet-demo/", production_url: "https://www.example.test/runtime-packet-demo/" }, carried: true },
+    { name: "hosted preview on another origin from production site root", deploy: { target: "netlify", preview_url: "https://preview.example.test/runtime-packet-demo/", production_url: "https://www.example.test/" }, carried: true },
     { name: "hosted preview without production URL", deploy: { target: "netlify", preview_url: "https://preview.example.test/runtime-packet-demo/", production_url: undefined }, carried: true },
     { name: "hosted preview equal to production", deploy: { target: "netlify", preview_url: "https://preview.example.test/runtime-packet-demo/", production_url: "https://preview.example.test/runtime-packet-demo/" }, carried: false },
     { name: "hosted preview equal to production after URL normalization", deploy: { target: "netlify", preview_url: "https://preview.example.test/runtime-packet-demo/", production_url: "https://preview.example.test/runtime-packet-demo" }, carried: false },
+    { name: "hosted preview equal to production after slug composition", deploy: { target: "netlify", preview_url: "https://www.example.test/runtime-packet-demo/", production_url: "https://www.example.test/" }, carried: false },
     { name: "hosted production URL with a preview query", deploy: { target: "netlify", preview_url: "https://www.example.test/runtime-packet-demo/?preview=1", production_url: "https://www.example.test/runtime-packet-demo/" }, carried: false },
     { name: "local-serve on a non-loopback host", deploy: { target: "local-serve", preview_url: "http://192.0.2.10:8080/runtime-packet-demo/" }, carried: false },
   ];
@@ -607,7 +609,9 @@ test("a template-stock build carries missing polish forward on local and hosted 
       assert.equal((doctor.next?.blocked_stages || []).includes("qa"), false, name);
     } else {
       assert.equal(checkpoint.status, "blocked", name);
-      assert.deepEqual(checkpoint.required_actions.map((action) => action.id), ["polish.hidden_eager_media.map_design_route"], name);
+      assert.deepEqual(checkpoint.required_actions.map((action) => action.id), [name.startsWith("hosted")
+        ? "polish.hidden_eager_media.set_hosted_preview_url"
+        : "polish.hidden_eager_media.map_design_route"], name);
       assert.ok(polishErrors.length >= 1, `${name}: ${JSON.stringify(doctor.errors)}`);
       assert.deepEqual(polishWarnings, [], name);
       assert.doesNotMatch(JSON.stringify(doctor.next?.actions || []), /polish capture|checkpoint waive/, `${name}: no design route can be captured or waived`);
@@ -730,6 +734,9 @@ test("a hosted all-template preview prints a runnable QA handoff without a deplo
   writeFileSync(reportPath, `${JSON.stringify(recorded, null, 2)}\n`);
   const afterQa = nextStage(null, { packet: packetPath, "no-write": true });
   assert.equal(afterQa.stage, "done", "hosted preview with current-build QA must leave the deploy stage behind");
+  assert.match(afterQa.prompt, /^The recorded hosted preview satisfies deploy/, "the closeout names the hosted preview outcome");
+  assert.equal(afterQa.prompt.match(/recorded hosted preview satisfies/g)?.length, 1, "the hosted preview outcome is stated once");
+  assert.doesNotMatch(afterQa.prompt, /For a hosted deploy, record the URL/, "no hosted-deploy recording advice once the preview satisfies deploy");
 });
 
 test("hosted template stock with only a production URL still offers the preview policy command", (t) => {
@@ -754,6 +761,47 @@ test("template-stock Polish guidance never recommends a capture on local or stri
     const { packetPath } = templateStockFixture(t, deploy);
     const polish = nextStage("polish", { packet: packetPath, "no-write": true });
     assert.doesNotMatch(JSON.stringify(polish), /polish capture/, JSON.stringify(deploy));
+  }
+});
+
+test("a stale Polish package retains its rebuild action when the hosted preview is missing or set", () => {
+  const gate = {
+    status: "blocked", code: "polish.assembly_source_package_stale", reason: "Rebuild against the current Design Source Package.",
+    required_actions: [{ id: "rerun_build", kind: "command", command: "campaigns-os next build --packet <packet>" }],
+  };
+  const checkpointGate = { status: "blocked", code: "polish.hidden_eager_media.no_capturable_routes" };
+  for (const previewUrl of [null, "https://preview.example.test/runtime-packet-demo/"]) {
+    const packet = { campaign: { public_route_slug: "runtime-packet-demo" }, deploy: { target: "netlify", preview_url: previewUrl } };
+    const result = applyLocalPreviewToPolishGate(gate, { packet, checkpointGate });
+    assert.equal(result.reason, gate.reason);
+    assert.deepEqual(result.required_actions, gate.required_actions);
+    const nextActions = buildNextActions({ result: { stage: "polish" }, packetPath: "/tmp/p.json", packet, polishGate: result, polishCheckpointGate: checkpointGate });
+    assert.ok(nextActions.some((action) => action.id === "polish_gate.rerun_build"), JSON.stringify(nextActions));
+    assert.equal(nextActions.some((action) => action.id === "checkpoint.polish.hidden_eager_media.set_hosted_preview_url"), false);
+  }
+});
+
+test("QA commands leave the placeholder bare and quote a recorded preview URL", () => {
+  assert.equal(qaRunCommand("/tmp/p.json", "<preview-url>"), "campaigns-os qa run --packet /tmp/p.json --base-url <preview-url> --browser --test-order common");
+  assert.equal(qaRunCommand("/tmp/p.json", "https://preview.example.test/runtime-packet-demo/?v=1&mode=qa"), "campaigns-os qa run --packet /tmp/p.json --base-url 'https://preview.example.test/runtime-packet-demo/?v=1&mode=qa' --browser --test-order common");
+});
+
+test("strict hosted template stock names a distinct preview URL in doctor and next actions", (t) => {
+  for (const previewUrl of ["https://www.example.test/runtime-packet-demo/", "http://localhost:8080/runtime-packet-demo/"]) {
+    const { packetPath } = templateStockFixture(t, {
+      target: "netlify", production_url: "https://www.example.test/", preview_url: previewUrl,
+    });
+    const doctor = doctorPacket(packetPath, { write: false });
+    assert.equal(doctor.derived.polish_checkpoint_gate.status, "blocked");
+    const doctorGuidance = JSON.stringify([doctor.derived.polish_checkpoint_gate.required_actions, doctor.next?.actions]);
+    assert.match(doctorGuidance, /qa policy set --packet .* --preview-url <url>/);
+    assert.match(doctorGuidance, /differ.*production URL/i);
+    for (const stage of [null, "polish", "deploy", "qa"]) {
+      const result = nextStage(stage, { packet: packetPath, "no-write": true });
+      const guidance = JSON.stringify(result.next_actions);
+      assert.match(guidance, /qa policy set --packet .* --preview-url <url>/, `${previewUrl}: ${stage}: ${guidance}`);
+      assert.match(guidance, /differ.*production URL/i, `${previewUrl}: ${stage}: ${guidance}`);
+    }
   }
 });
 

@@ -1,6 +1,6 @@
 // The next step doctor recommends, and the gate issues `next` reads from doctor.
 import { campaignIdentitiesMatch } from "../spec-source-identity.mjs";
-import { NO_CAPTURABLE_ROUTES_CODE, hostedTemplateNeedsPreviewUrl, polishCarriedForwardForLadder } from "../local-preview-policy.mjs";
+import { NO_CAPTURABLE_ROUTES_CODE, hostedTemplateNeedsUsablePreview, polishCarriedForwardForLadder, polishGateCanCarryPreview } from "../local-preview-policy.mjs";
 import { resolve } from "node:path";
 import { orderPathDepthDriftText } from "../proof-policy.mjs";
 import { anyAssemblyReportStageBlocked, qaRecordedBuildFingerprint, qaRecordedForCurrentBuild } from "../stage-ledger.mjs";
@@ -524,9 +524,11 @@ function pickNextStage(report, { errors = [], derived = null }, prepareBuildGate
     }
   }
 
+  const hostedPreview = Boolean(packet?.deploy?.preview_url && polishGate?.carried_forward?.policy === "hosted_template_preview");
   return {
     stage: "done",
-    reason: packet?.deploy?.preview_url && polishGate?.carried_forward?.policy === "hosted_template_preview"
+    outcome: hostedPreview ? "hosted_preview_satisfies_deploy" : "standard_closeout",
+    reason: hostedPreview
       ? "The recorded hosted preview satisfies deploy, and QA is terminal for the current build. Pipeline is complete."
       : "All stages are in a terminal status (completed / completed_with_warnings / skipped). Pipeline is complete.",
   };
@@ -642,10 +644,11 @@ function doctorNextActions(errors, warnings, derived, { polishBlocked, polishGat
     actions.push(`Target campaign output directory is missing; run ${cmd("next")} setup --packet ${packetRef} before build.`);
   }
   if (polishBlocked) {
-    const needsHostedPreview = hostedTemplateNeedsPreviewUrl(packet, polishCheckpointGate);
+    const needsHostedPreview = hostedTemplateNeedsUsablePreview(packet, polishCheckpointGate);
     if (needsHostedPreview) {
-      actions.push(`Every mapped page is template stock and the hosted preview URL is missing. Run ${cmd("qa")} policy set --packet ${packetRef} --preview-url <url>, then run ${cmd("next")} --packet ${packetRef}.`);
-    } else if (polishGate.status === "blocked") {
+      actions.push(`Every mapped page is template stock and needs a hosted preview URL that differs from the production URL. Run ${cmd("qa")} policy set --packet ${packetRef} --preview-url <url>, then run ${cmd("next")} --packet ${packetRef}.`);
+    }
+    if (polishGate.status === "blocked" && (!needsHostedPreview || !polishGateCanCarryPreview(polishGate))) {
       actions.push(`${polishGate.reason} Run next-campaigns-polish and record structured evidence before deploy/QA handoff.`);
     }
     if (polishCheckpointGate?.status === "blocked" && !needsHostedPreview) {
@@ -727,7 +730,7 @@ function buildNextStep(errors, warnings, derived, report = null, packet = null, 
       ? `${cmd("next")} --packet ${packetRef}`
       : `${cmd("next")} ${picked.stage} --packet ${packetRef}`;
   const fallbackAction = picked.stage === "done"
-    ? (picked.reason?.startsWith("The recorded hosted preview")
+    ? (picked.outcome === "hosted_preview_satisfies_deploy"
       ? `${picked.reason} Run ${cmd("next")} to confirm the closeout actions.`
       : `All stages are recorded as terminal; run ${cmd("next")} to confirm the closeout actions.`)
     : `Run ${command}.`;
@@ -749,6 +752,7 @@ function buildNextStep(errors, warnings, derived, report = null, packet = null, 
     default_skill: owners.default_skill,
     command,
     reason: picked.reason,
+    ...(picked.outcome ? { outcome: picked.outcome } : {}),
     actions: actions.length ? actions : [fallbackAction],
     // Gate-blocked stages stay listed even when the recommended stage is
     // runnable (a Design Source Package change after assembly names build,

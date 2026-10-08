@@ -73,7 +73,7 @@ export const HIDDEN_EAGER_MEDIA_ACTIONS = Object.freeze({
 });
 
 export function qaRunCommand(packetPath, url, bumpCart = null) {
-  return `${invocationPrefixFor(PACKAGE_ROOT)} qa run --packet ${packetPath ? shellToken(packetPath) : "<packet>"} --base-url ${shellToken(url)} --browser --test-order common${bumpCart ? ` --cart ${shellToken(bumpCart.cart)}` : ""}`;
+  return `${invocationPrefixFor(PACKAGE_ROOT)} qa run --packet ${packetPath ? shellToken(packetPath) : "<packet>"} --base-url ${url === "<preview-url>" ? url : shellToken(url)} --browser --test-order common${bumpCart ? ` --cart ${shellToken(bumpCart.cart)}` : ""}`;
 }
 
 export function hostedTemplateQaAction(previewUrl) {
@@ -89,7 +89,7 @@ export const HOSTED_TEMPLATE_PREVIEW_URL_ACTION = Object.freeze({
   id: "polish.hidden_eager_media.set_hosted_preview_url",
   kind: "command",
   command: "campaigns-os qa policy set --packet <packet> --preview-url <url>",
-  description: "Record the hosted preview URL with qa policy set, then run next again; missing Polish evidence can be carried forward on that preview.",
+  description: "Record a hosted preview URL that differs from the production URL with qa policy set, then run next again; missing Polish evidence can be carried forward on that preview.",
 });
 
 const PACKET_PLACEHOLDER = "--packet <packet>";

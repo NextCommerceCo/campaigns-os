@@ -7342,10 +7342,10 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.56.0+agent.2",
-      "changelog_sha256": "68dd2c18553c3b6dcca6c936e013daf7d30410dcbd06b9ecf693b12b2affeb2d",
-      "agent_impact": "An all-template hosted preview distinct from production by origin and route path can carry missing Polish and page-load evidence as warnings. With no preview URL, use qa policy set --preview-url; with one, use browser and typed-card QA. The recorded preview satisfies deploy, and next reaches closeout after current-build QA. Production QA and hosted design-route capture failures remain blocked. Refresh bundled skills to 1.56.0+skills.2.",
+      "changelog_sha256": "5ae05e852378438784c651aace551c3ec25285fcb7ce03e85409a96aa944a5b9",
+      "agent_impact": "An all-template hosted preview distinct from production by origin or QA-resolved campaign route path can carry missing Polish and page-load evidence as warnings. With an unset, loopback or production-equivalent preview URL, use qa policy set --preview-url; with a valid preview, use browser and typed-card QA. The recorded preview satisfies deploy, and next reaches closeout after current-build QA. Production QA and hosted design-route capture failures remain blocked. Refresh bundled skills to 1.56.0+skills.2.",
       "compatibility": "additive",
-      "migration": "Use campaigns-os qa policy set --packet <packet> --preview-url <url> if the hosted preview URL is unset, then campaigns-os next qa --packet <packet> and campaigns-os qa run --packet <packet> --base-url <preview-url> --browser --test-order common. Run next after QA for closeout. Refresh bundled skills.",
+      "migration": "Use campaigns-os qa policy set --packet <packet> --preview-url <url> if the hosted preview URL is unset, loopback or production-equivalent, then campaigns-os next qa --packet <packet> and campaigns-os qa run --packet <packet> --base-url <preview-url> --browser --test-order common. Run next after QA for closeout. Refresh bundled skills.",
       "changes": [
         {
           "class": "named_surface",
@@ -7438,7 +7438,7 @@
           "summary": "Advance the skill version and stamp bundle 1.56.0+skills.2."
         }
       ],
-      "entry_sha256": "07819e8619f82eb235f0291fead587b56149b1dcc624d58abc2dc1363d73c4c1"
+      "entry_sha256": "4d77458560d4df57f155a95027a3b168682caad58cbb9281753d29a1c4b92f27"
     }
   ]
 }

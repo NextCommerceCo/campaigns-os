@@ -113,7 +113,7 @@ checks are carried forward:
 | Check | Local loopback preview | Hosted preview |
 | --- | --- | --- |
 | `polish.evidence_missing`, `polish.report_missing` | Carried when Polish was never recorded. | Carried only with the all-template `no_capturable_routes` checkpoint. |
-| `polish.hidden_eager_media.no_capturable_routes` | Carried when every mapped page is template stock (`skip_reason`). | Carried when every mapped page is template stock and QA uses the packet's non-loopback `deploy.preview_url`, distinct from `deploy.production_url` by origin and route path. |
+| `polish.hidden_eager_media.no_capturable_routes` | Carried when every mapped page is template stock (`skip_reason`). | Carried when every mapped page is template stock and QA uses the packet's non-loopback `deploy.preview_url`, distinct from `deploy.production_url` by origin or QA-resolved campaign route path. |
 | `polish.hidden_eager_media.capture_malformed` | Carried only when no page-load capture was recorded at all. | Blocked. |
 | Template-residue severity | With `theme_gate.nothing_generatable`, residue findings warn. | Unchanged. |
 
