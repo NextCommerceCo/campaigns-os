@@ -1468,6 +1468,20 @@ Fresh `prepare-build` output also writes `source_html.pages[].page_kit` for mapp
 - `frontmatter` names the Page Kit frontmatter fields the build should write or preserve. Beside `page_type`, `permalink`, `next_url` and `decline_url`, two keys wire multi-step checkout paths: `success_url`, on every page that leads into a Checkout (a `select` page, a `checkout_step`, or a landing page whose forward links reach one), is that Checkout's post-payment destination and feeds the page's `next-success-url` meta tag, which the SDK reads for express orders; `step_number`, on a `checkout_step` only, is its position on its path from 1, for the step form's `data-next-step-number`. The step form's `data-next-checkout-step` is the page's `next_url`.
 - `permalink_required` is true when Page Kit's filename-derived route would not match `public_route`.
 
+An entry page (`is_entry: true`, empty `page_url`) declares the campaign root.
+If Page Kit emits its mapped target file, or a materialised template-stock
+family page, at that file's route without a root output, doctor recognizes the
+built page and warns that the root is unserved. The warning names both routes:
+add a redirect from the root or give the Page Kit page a root permalink.
+It uses `campaign.route_root`: a root-served campaign names `/` and
+`/<file-route>/`; a slug-served campaign names `/<slug>/` and
+`/<slug>/<file-route>/`. The built files stay under `_site/<slug>/` in both cases.
+`qa resolve --packet campaign-runtime.build.json --base-url <preview-url>` then
+prints the locally emitted entry route. An explicit permalink on that entry's
+Page Kit source file takes precedence, even if stale output remains at the
+file route; next comes a root `index.html`, then the recorded file route.
+Another page's `index.html` cannot stand in for the entry.
+
 The Design Source Package should reference this projection without confusing it
 with Surface Identity. Surface Identity is the campaign-facing join key; Page Kit
 `page_type`, public routes, output paths, CampaignSpec/Map Builder page IDs,

@@ -308,6 +308,17 @@ for that entry URL. If Entry URLs are empty, still point at a deleted preview, o
 fail their own HTTP assertion, fix `--base-url` or the packet deploy URL before
 continuing.
 
+For an `is_entry` page with an empty `page_url`, `qa resolve` uses that page's
+explicit Page Kit permalink first, then the campaign root when
+`_site/<slug>/index.html` exists. If neither applies and Page Kit emitted the
+entry at its recorded page-file route, the printed Entry URL uses that locally
+emitted route. Doctor warns that the Map still points at the unserved root;
+add a redirect from the root or a root permalink on that page. The default
+probe checks the printed URL on the host. For `campaign.route_root: "/"`, that
+file route is `/<file-route>/`; the slug remains the `_site/<slug>/` build
+directory name, not a prefix in the Entry URL. With the default route root,
+the Entry URL uses `/<slug>/<file-route>/`.
+
 `--base-url` can be either the deploy host or the campaign root. If the Build Packet says `campaign.public_route_slug = "roadside-ready"`, both of these resolve pages under `/roadside-ready/`:
 
 ```bash

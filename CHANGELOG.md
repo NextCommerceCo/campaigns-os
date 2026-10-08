@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.56.0+agent.3] - 2026-10-08
+
+### Fixed
+
+Doctor recognizes an entry page declared at the campaign root when Page Kit emitted its recorded page file at a different route and the root output is absent. A template-stock entry counts as built instead of "not built yet"; one warning names the unserved root, the emitted route, and the redirect or root-permalink repair. The warning uses the public route (`/` or `/<slug>/`), while built-page and previewable routes retain their relative Page Kit format. `qa resolve` prints the locally emitted entry URL under the public route. An explicit permalink on the entry source wins over a root output or stale file-route output; without one, a present root output keeps the root URL and suppresses the warning. Neither doctor nor QA substitutes an unrelated built page.
+
 ## [1.56.0] - 2026-10-08
 
 ### Added

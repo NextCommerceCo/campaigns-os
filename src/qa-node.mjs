@@ -117,7 +117,7 @@ import {
   liveRefsNotRunMessage,
   readLiveCampaignForPacket,
 } from "./live-campaign-refs.mjs";
-import { specPackageRefs, specShippingRefs } from "./doctor/checks.mjs";
+import { entryPageKitServingRoute, specPackageRefs, specShippingRefs } from "./doctor/checks.mjs";
 
 // The producing runtime identity on every verdict. Read from package.json so
 // a verdict names the release that made it; a literal here outlived three
@@ -466,7 +466,6 @@ async function resolveQaInputs(args, {
   }
   const normalized = normalizeSpec(rawSpec);
   const publicRouteSlug = resolvePublicRouteSlug({ packet, spec: normalized, rawSpec });
-  const baseUrl = normalizeQaBaseUrl(inputBaseUrl, publicRouteSlug);
   // Packet 01: the analytics legs capture ONE URL derived from resolved
   // identity (public_route_slug + route_root), composed here where the raw
   // operator/deploy base is still in hand.
@@ -477,6 +476,7 @@ async function resolveQaInputs(args, {
     routeRoot: resolveCampaignRouteRoot({ packet, spec: normalized, rawSpec, publicRouteSlug, notes: routeRootNotes }),
     routeRootNote: routeRootNotes[0] || null,
   });
+  const baseUrl = analyticsCaptureTarget.url;
   const specHash = computeSpecHash(rawSpec);
   // The brief material this run is judged against, bound at run start beside
   // the spec hash: the QA stage write stamps it, not the material at write time.
@@ -486,7 +486,16 @@ async function resolveQaInputs(args, {
     || stringArg(normalized?.campaign?.preferred_template_family)
     || null;
   const commerceStructureContract = loadCommerceStructureContract({ packet, packetPath, templateFamily });
-  const topologies = extractTopologies(normalized, { baseUrl, publicRouteSlug, templateFamily, commerceStructureContract });
+  const targetRepo = checkpointPreflight?.targetRepo || (packetPath && packet ? targetRepoFor(packetPath, packet) : null);
+  const targetOutputDir = targetRepo && packet?.assembly?.output_dir ? resolve(targetRepo, packet.assembly.output_dir) : null;
+  const mappingById = new Map((packet?.source_html?.pages || []).map((page) => [page.page_id, page]));
+  const topologies = extractTopologies(normalized, {
+    baseUrl, publicRouteSlug, templateFamily, commerceStructureContract,
+    entryServingRoute: (page) => entryPageKitServingRoute(targetRepo, publicRouteSlug, page, {
+      targetOutputDir,
+      mapping: mappingById.get(page.id),
+    }),
+  });
   const themeGate = resolveThemeGate({
     packetPath,
     topologies,
@@ -3336,14 +3345,14 @@ function normalizeSpec(raw) {
   return { ...raw, funnels: [] };
 }
 
-function extractTopologies(spec, { baseUrl = null, publicRouteSlug = null, templateFamily = null, commerceStructureContract = null } = {}) {
+function extractTopologies(spec, { baseUrl = null, publicRouteSlug = null, templateFamily = null, commerceStructureContract = null, entryServingRoute = null } = {}) {
   const pageById = new Map();
   for (const funnel of spec.funnels || []) {
     for (const page of funnel.pages || []) pageById.set(page.id, page);
   }
   const urlById = new Map();
   for (const [id, page] of pageById) {
-    urlById.set(id, resolvePageUrl(page, baseUrl, publicRouteSlug));
+    urlById.set(id, resolvePageUrl(page, baseUrl, publicRouteSlug, entryServingRoute?.(page)));
   }
   return (spec.funnels || []).map((funnel) => ({
     funnel_id: funnel.id || "default",
@@ -3398,13 +3407,13 @@ function extractTopologies(spec, { baseUrl = null, publicRouteSlug = null, templ
   }));
 }
 
-function resolvePageUrl(page, baseUrl, publicRouteSlug = null) {
+function resolvePageUrl(page, baseUrl, publicRouteSlug = null, entryServingRoute = null) {
   if (typeof page.url === "string" && page.url.trim()) return page.url.trim();
   if (!baseUrl) return null;
   const route = typeof page.page_url === "string" && page.page_url.trim()
     ? runtimeRelativeRouteForSpecValue(page.page_url, publicRouteSlug)
     : page.is_entry
-      ? ""
+      ? entryServingRoute?.route || ""
       : defaultRouteForType(page.type);
   if (isAbsoluteHttpUrl(route)) return route;
   try {
