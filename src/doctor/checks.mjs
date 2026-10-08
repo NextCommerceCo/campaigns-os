@@ -93,6 +93,7 @@ import { FIGMA_EXPORT_FILE_CODES, SOURCE_PROVENANCE_SCOPE, evaluateSourceProvena
 import { validateCampaignBuildBriefArtifact } from "../build-brief.mjs";
 import { briefFileUnusable, deriveInputCurrency, wellFormedBriefMaterial } from "../input-currency.mjs";
 import { ASSEMBLY_REPORT_STAGE_KEYS, stageIsTerminal } from "../orchestration-stage-contract.mjs";
+import { assemblyReportStagesWithEvidence } from "../design-source-publication.mjs";
 import {
   assemblySourcePackageFingerprintMissing,
   assessAssemblySourcePackageFreshnessWaivers,
@@ -108,7 +109,7 @@ import { evaluatePageKitSdkVersion, PAGE_KIT_SDK_VERSION_SCOPE } from "../page-k
 // `npm run build:spec` (tsc -> campaign-spec/dist) so the package runs on the
 // node engine in package.json without type-stripping. build runs on `prepare`,
 // so a fresh install (including the git-ref consumer) always has dist.
-import { CHECKOUT_FLOW_PAGE_TYPES, isReleasedSdkVersion, normalize as normalizeCampaignSpec, runRules, specOnlyRules, upgradeCampaignSpec } from "../../campaign-spec/dist/index.js";
+import { CHECKOUT_FLOW_PAGE_TYPES, checkoutPathFrom, isReleasedSdkVersion, normalize as normalizeCampaignSpec, runRules, specOnlyRules, upgradeCampaignSpec } from "../../campaign-spec/dist/index.js";
 import { cmd, asInvocation } from "../install-invocation.mjs";
 import { specHashesMatch, specMaterialHash } from "../spec-identity.mjs";
 import {
@@ -546,6 +547,11 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
     addIssue(errors, "packet.type", "Build Packet must be a JSON object.");
     return;
   }
+  Object.defineProperty(derived, "page_kit_entry_mappings", {
+    value: Object.fromEntries((packet.source_html?.pages || [])
+      .filter((page) => page?.page_kit?.target_path).map((page) => [page.page_id, page])),
+    configurable: true,
+  });
   const synthesizedBuiltSite = isSynthesizedBuiltSitePacket(packet);
   if (packet.schema_version !== PACKET_SCHEMA) addIssue(errors, "schema_version", `Expected ${PACKET_SCHEMA}.`);
   else ready.push(`Build Packet schema ${PACKET_SCHEMA}`);
@@ -3007,11 +3013,73 @@ function validateBuiltCommerceRefs(content, builtPath, targetRepo, page, spec, i
 
 function builtHtmlPathForPage(targetRepo, publicRouteSlug, page, derived = {}) {
   if (!targetRepo || !publicRouteSlug) return null;
+  const entryRoute = entryPageKitServingRoute(targetRepo, publicRouteSlug, page, {
+    targetOutputDir: derived?.target_output_dir,
+    mapping: derived?.page_kit_entry_mappings?.[page?.id],
+  });
+  if (entryRoute) return join(targetRepo, "_site", publicRouteSlug, ...(entryRoute.route ? [entryRoute.route] : []), "index.html");
   const sourcePermalink = sourcePermalinkForPage(derived?.target_output_dir, publicRouteSlug, page);
   const route = sourcePermalink || runtimeRelativeRouteForSpecValue(publicRouteForPage(page), publicRouteSlug);
   if (!route) return join(targetRepo, "_site", publicRouteSlug, "index.html");
   const clean = route.replace(/^\/+|\/+$/g, "");
   return clean ? join(targetRepo, "_site", publicRouteSlug, clean, "index.html") : join(targetRepo, "_site", publicRouteSlug, "index.html");
+}
+
+export function isRootRoutedEntryPage(page, publicRouteSlug) {
+  return Boolean(page?.is_entry) && runtimeRelativeRouteForSpecValue(publicRouteForPage(page), publicRouteSlug) === "";
+}
+
+// An explicit permalink belongs to this entry's Page Kit source file. It wins
+// even when an older build left output at the filename-derived route.
+export function entryPageKitServingRoute(targetRepo, publicRouteSlug, page, { targetOutputDir = null, mapping = null } = {}) {
+  if (!targetRepo || !publicRouteSlug || !isRootRoutedEntryPage(page, publicRouteSlug)) return null;
+  const permalink = entrySourcePermalink(targetOutputDir, publicRouteSlug, page, mapping);
+  if (permalink !== null) return { route: permalink, source: "permalink" };
+  const root = join(targetRepo, "_site", publicRouteSlug, "index.html");
+  if (existsSync(root) && statSync(root).isFile()) return { route: "", source: "root" };
+  const fileRoute = entryPageKitFileRoute(targetRepo, publicRouteSlug, page, { targetOutputDir, mapping });
+  return fileRoute ? { route: `${fileRoute}/`, source: "file" } : { route: "", source: "declared" };
+}
+
+function entrySourcePermalink(targetOutputDir, publicRouteSlug, page, mapping) {
+  if (!targetOutputDir || !existsSync(targetOutputDir) || !statSync(targetOutputDir).isDirectory()) return null;
+  const names = mapping?.page_kit?.target_path
+    ? [mapping.page_kit.target_path]
+    : [...new Set([page.id, page.type].filter(isNonEmptyString).map((name) => `${name}.html`))];
+  const routes = names
+    .filter((name) => /^[a-zA-Z0-9][a-zA-Z0-9_-]*\.html$/.test(name))
+    .map((name) => join(targetOutputDir, name))
+    .filter((path) => existsSync(path) && statSync(path).isFile())
+    .map((path) => extractFrontmatterValue(readFileSync(path, "utf8"), "permalink"))
+    .filter(isNonEmptyString)
+    .map((value) => stripPublicRoutePrefix(normalizePageKitRoute(value), publicRouteSlug));
+  return routes[0] ?? null;
+}
+
+// Page Kit serves a page file without a permalink at its basename route.
+// Only the recorded target file (or the family's own materialised stock file)
+// may identify an entry fallback; an unrelated built index is not evidence.
+export function entryPageKitFileRoute(targetRepo, publicRouteSlug, page, { targetOutputDir = null, mapping = null } = {}) {
+  if (!targetRepo || !publicRouteSlug || !isRootRoutedEntryPage(page, publicRouteSlug)) return null;
+  if (entrySourcePermalink(targetOutputDir, publicRouteSlug, page, mapping) !== null) return null;
+  const root = join(targetRepo, "_site", publicRouteSlug, "index.html");
+  if (existsSync(root) && statSync(root).isFile()) return null;
+  let names;
+  if (mapping?.page_kit?.target_path) {
+    names = [mapping.page_kit.target_path];
+  } else {
+    if (!targetOutputDir) return null;
+    names = [...new Set([page.id, page.type].filter(isNonEmptyString).map((name) => `${name}.html`))];
+  }
+  const routes = names
+    .filter((name) => /^[a-zA-Z0-9][a-zA-Z0-9_-]*\.html$/.test(name) && name !== "index.html")
+    .filter((name) => mapping?.page_kit || (existsSync(join(targetOutputDir, name)) && statSync(join(targetOutputDir, name)).isFile()))
+    .map((name) => name.slice(0, -".html".length))
+    .filter((route) => {
+      const built = join(targetRepo, "_site", publicRouteSlug, route, "index.html");
+      return existsSync(built) && statSync(built).isFile();
+    });
+  return routes[0] ?? null;
 }
 
 function sourcePermalinkForPage(targetOutputDir, publicRouteSlug, page) {
@@ -3557,6 +3625,7 @@ function templateStockDecision(buildState, pageId) {
 function validateSourceCoverage(packet, packetPath, spec, errors, warnings, ready, derived = {}, buildState = {}) {
   const pages = packet.source_html?.pages || [];
   const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  const routeRoot = campaignRouteRoot(packet);
   const materialisedTemplateStock = [];
   const sourceRoot = resolveFromFile(packetPath, packet.source_html?.root);
   validateSourceHtmlManifestAtRoot(sourceRoot, {
@@ -3584,6 +3653,20 @@ function validateSourceCoverage(packet, packetPath, spec, errors, warnings, read
     }
     mappedIds.add(page.page_id);
     const specPage = activeById.get(page.page_id);
+    const entryRoute = specPage
+      ? entryPageKitServingRoute(derived.target_repo, publicRouteSlug, specPage, {
+        targetOutputDir: derived.target_output_dir,
+        mapping: page,
+      })
+      : null;
+    const builtRoute = entryRoute ? entryRoute.route : specPage ? publicRouteForPage(specPage) : null;
+    const rootOutput = entryRoute?.route ? join(derived.target_repo, "_site", publicRouteSlug, "index.html") : null;
+    if (rootOutput && (entryRoute.source === "file" || entryRoute.source === "permalink")
+      && !(existsSync(rootOutput) && statSync(rootOutput).isFile())) {
+      const emittedRoute = `${routeRoot}${entryRoute.route}`;
+      const pageKitRoot = `/${normalizePublicRouteSlug(publicRouteSlug)}/`;
+      addIssue(warnings, "entry_route.unserved", `CampaignSpec entry page "${specPage.id}" is routed to ${routeRoot}, but Page Kit emitted it at ${emittedRoute} and nothing serves ${routeRoot}. Add a redirect from ${routeRoot} to ${emittedRoute}, or set \`permalink: ${pageKitRoot}\` (the campaign root as Page Kit emits it) on the entry page.`, { page_id: specPage.id, root_route: routeRoot, emitted_route: emittedRoute });
+    }
     if (!activeIds.has(page.page_id)) {
       addIssue(warnings, "source_html.pages.extra", `Source mapping "${page.page_id}" is not an active CampaignSpec page.`);
     }
@@ -3618,7 +3701,7 @@ function validateSourceCoverage(packet, packetPath, spec, errors, warnings, read
             page_id: specPage.id,
             type: specPage.type || "page",
             role: pageRole(specPage.type),
-            route: publicRouteForPage(specPage),
+            route: builtRoute,
             source_path: page.path,
           });
         }
@@ -3634,7 +3717,7 @@ function validateSourceCoverage(packet, packetPath, spec, errors, warnings, read
           page_id: specPage.id,
           type: specPage.type || "page",
           role: pageRole(specPage.type),
-          route: publicRouteForPage(specPage),
+          route: builtRoute,
           source_path: null,
           template_stock: true,
           template_family: family,
@@ -3963,6 +4046,98 @@ function packageRefsFromEntries(entries) {
     .filter((value) => value !== undefined && value !== null && String(value).trim().length > 0)
     .map((value) => String(value));
 }
+
+function supportsCheckoutVariantSlots(agentContract) {
+  const required = frontmatterList(agentContract, "requiredWhenCloning");
+  return required.includes("variant_slots[].id") && required.includes("variant_slots[].quantity");
+}
+
+function selectableVariantMatrixCount(packages) {
+  const selectable = Array.isArray(packages)
+    ? packages.filter((pkg) => pkg && pkg.is_order_bump !== true && pkg.is_upsell !== true)
+    : [];
+  const quantityRows = selectable.filter((pkg) => String(pkg.qty ?? "").trim());
+  if (quantityRows.length <= 1) return 0;
+  const attributeIdentity = (pkg) => {
+    if (!Array.isArray(pkg.variant_attributes) || pkg.variant_attributes.length === 0) return null;
+    const attributes = pkg.variant_attributes.map((attribute) => {
+      const value = String(attribute?.value ?? "").trim();
+      if (!value) return null;
+      return [String(attribute?.code || attribute?.name || "").trim(), value];
+    });
+    return attributes.every(Boolean) ? JSON.stringify(attributes.sort(([a], [b]) => a.localeCompare(b))) : null;
+  };
+  const textIdentity = (key) => (pkg) => {
+    const value = pkg[key];
+    return typeof value === "string" && value.trim() ? value.trim() : null;
+  };
+  for (const identity of [attributeIdentity, textIdentity("product_variant_name")]) {
+    const values = quantityRows.map(identity);
+    if (!values.every(Boolean)) continue;
+    const quantitiesByVariant = new Map();
+    for (const [index, value] of values.entries()) {
+      const qty = String(quantityRows[index].qty).trim();
+      if (!quantitiesByVariant.has(value)) quantitiesByVariant.set(value, new Set());
+      quantitiesByVariant.get(value).add(qty);
+    }
+    return quantitiesByVariant.size > 1 && [...quantitiesByVariant.values()].some((quantities) => quantities.size > 1)
+      ? quantitiesByVariant.size
+      : 0;
+  }
+  return 0;
+}
+
+function warnCheckoutPackageFamilyFit(specPages, family, catalog, warnings, report) {
+  const selectedContract = catalog.families?.[family]?.agentContract;
+  if (
+    !selectedContract ||
+    !isCertifiedTemplateFamily(family, catalog) ||
+    !frontmatterList(selectedContract, "requiredWhenCloning").includes("packages.main_package") ||
+    supportsCheckoutVariantSlots(selectedContract)
+  ) return;
+  const fittingFamilies = [...certifiedTemplateFamilies(catalog)]
+    .filter((candidate) => supportsCheckoutVariantSlots(catalog.families[candidate]?.agentContract))
+    .sort();
+  const checkoutPages = specPages.filter((page) => CHECKOUT_FLOW_PAGE_TYPES.includes(page.type));
+  const byFunnel = new Map();
+  for (const page of checkoutPages) {
+    if (!byFunnel.has(page.funnel_id)) byFunnel.set(page.funnel_id, []);
+    byFunnel.get(page.funnel_id).push(page);
+  }
+  const paths = new Map();
+  for (const page of checkoutPages) {
+    const pages = byFunnel.get(page.funnel_id);
+    const path = checkoutPathFrom(pages, page) || [page];
+    const end = path[path.length - 1];
+    const key = `${page.funnel_id}:${end.id}`;
+    if (!paths.has(key)) paths.set(key, []);
+    const pathPages = paths.get(key);
+    for (const candidate of path) {
+      if (!pathPages.includes(candidate)) pathPages.push(candidate);
+    }
+  }
+  const hasStageEvidence = assemblyReportStagesWithEvidence(report).length > 0;
+  const multiStep = [...paths.values()].some((pathPages) =>
+    pathPages.some((candidate) => candidate.type === "checkout_step" || candidate.type === "select"));
+  for (const pathPages of paths.values()) {
+    const page = pathPages.find((candidate) => selectableVariantMatrixCount(candidate.packages) > 1);
+    if (!page) continue;
+    const variantCount = selectableVariantMatrixCount(page.packages);
+    const shapeMatches = fittingFamilies.filter((candidate) => Boolean(catalog.families[candidate]?.canonicalSurfaces?.selectStep) === multiStep);
+    // The catalog has no base-family field; its family-name prefix is the shared-base convention.
+    const baseMatches = shapeMatches.filter((candidate) => candidate.startsWith(`${family}-`));
+    const ranked = [...baseMatches, ...shapeMatches.filter((candidate) => !baseMatches.includes(candidate))];
+    const action = hasStageEvidence
+      ? "The template family is a build-time decision; changing it requires re-running intake with --force (destructive; clears recorded stage evidence)."
+      : "The family is chosen at intake with --template-family.";
+    addIssue(
+      warnings,
+      "template_contract.checkout_package_fit",
+      `Checkout path through page "${page.id}" has ${variantCount} variants, some offered at several quantities, but template family "${family}" has no configurable variant_slots[] checkout surface. ${ranked.length ? `Families that can present it: ${ranked.join(", ")}.` : "No certified family has a matching configurable variant-slot checkout surface."} ${action}`,
+      { page_id: page.id, funnel_id: page.funnel_id, template_family: family, distinct_product_variants: variantCount, fitting_families: ranked },
+    );
+  }
+}
 function offerRefsFromEntries(entries) {
   if (!Array.isArray(entries)) return [];
   return entries
@@ -4147,6 +4322,7 @@ export function validateCommerceCatalog(packet, packetPath, spec, errors, warnin
 
     // ADR-003 step 2: template-contract checks ported from the private doctor.
     const specPages = activeSpecPages(spec);
+    warnCheckoutPackageFamilyFit(specPages, family, catalog, warnings, buildState.report);
 
     const mismatchedFamilies = specPages.filter(
       (page) => isNonEmptyString(page.sdk_hints?.template_family) && page.sdk_hints.template_family !== family

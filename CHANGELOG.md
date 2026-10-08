@@ -8,6 +8,18 @@ Notable supported-surface changes are recorded here.
 
 Committed Build Packet and `.campaign-runtime/` handoff artifacts now retain filesystem paths in relative form after `doctor --write`, `next`, and stage updates. Packet input fields resolve from the packet file's directory, output paths from the target repository, source page paths from the source root, package references from their context or report file, and normalized brief input paths from the brief file. Other committed sidecar paths and stored commands resolve from the target repository root. Outside inputs use ordinary relative paths from those bases, including source manifest paths in decision evidence. Machine-local ignored run state keeps its existing path behavior. `doctor --strip-paths` remains available for older packets. QA verdict discovery resolves recorded outputs from the target root.
 
+## [1.56.0+agent.5] - 2026-10-08
+
+### Fixed
+
+Doctor warns once per checkout path when selectable packages form a variant and quantity matrix but the selected certified template family declares one main package and no configurable variant-slot checkout surface. The matrix requires at least two variants, with at least one offered at multiple quantities. Variant identity comes from attributes shared by every selectable row carrying a quantity, or from variant names shared by those rows; rows with missing or blank quantities are ignored when detecting the matrix. SKUs, order bumps, upsells, pack-size rows, and quantity tiers of one variant do not trigger the warning. Paths follow CampaignSpec route targets, including `.html` and `page_url` routes. If any checkout path has a `select` or `checkout_step` page, every warning ranks multi-step families first. Each warning names the matching certified variant-slot families in ranked order, preferring the selected family's base. It says the family is chosen at intake with `--template-family`; after stage evidence is recorded, it explains that changing the family requires destructive intake with `--force`. The warning does not block intake or change the selected family.
+
+## [1.56.0+agent.3] - 2026-10-08
+
+### Fixed
+
+Doctor recognizes an entry page declared at the campaign root when Page Kit emitted its recorded page file at a different route and the root output is absent. Root declarations include `page_url` empty, `/`, `/<slug>/`, and `<slug>`. A template-stock entry counts as built instead of "not built yet"; one warning names the unserved root, the emitted route, and the concrete redirect or `permalink: /<slug>/` repair. The warning uses the public route (`/` or `/<slug>/`), while built-page and previewable routes retain their relative Page Kit format. `qa resolve` prints the locally emitted entry URL under its existing slug-prefixed `base_url`; `base_url` and non-entry page URLs keep their previous resolution, including a `--base-url` subpath. An explicit non-root permalink on the entry source wins over a root output or stale file-route output for QA, and doctor warns if the root output is absent. When files named for both the page ID and page type exist, doctor and QA prefer the page ID file's permalink or built file route, then the page type file's. Without a permalink, a present root output keeps the entry at `base_url` and suppresses the warning. Neither doctor nor QA substitutes an unrelated built page.
+
 ## [1.56.0+agent.2] - 2026-10-08
 
 ### Changed

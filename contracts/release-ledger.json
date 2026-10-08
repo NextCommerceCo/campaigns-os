@@ -7468,8 +7468,62 @@
       "entry_sha256": "24dbf5e7dc455f8f7bcdc444105ed43d0b353f2ffce5d89033a0fb03e54b02ea"
     },
     {
-      "id": "RL-0259",
+      "id": "RL-0258",
       "sequence": 247,
+      "date": "2026-10-08",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.56.0+agent.3",
+      "changelog_sha256": "9eb8d0c67d414b8cea957cc5dbb83e3993564f822408c581538eccdfba575860",
+      "agent_impact": "For an entry routed to the campaign root by any supported spelling, inspect doctor's unserved-root warning and use the serving Entry URL printed by qa resolve. Repair the root with a redirect or permalink: /<slug>/ before relying on the Map route.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "Recognize all root-routed entry spellings, prefer the entry source permalink or page ID file route, and warn when a non-root route leaves the root unserved."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Document all root entry spellings, the entry file-route fallback, and the concrete root permalink repair."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Document all root entry spellings and when qa resolve prints a serving entry route."
+        }
+      ],
+      "entry_sha256": "ad7106aff83139e4b650285eb8db79fb96ac672f6d3a898efef5d9df7ea30014"
+    },
+    {
+      "id": "RL-0260",
+      "sequence": 248,
+      "date": "2026-10-08",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.56.0+agent.5",
+      "changelog_sha256": "c1d3429f82de8fe191d63f6a32fb21a05a10664b9a17357d00622de74926f521",
+      "agent_impact": "Doctor follows CampaignSpec route targets and warns once per checkout path when a variant and quantity matrix does not fit the selected family's checkout surface. If any checkout path has steps, every warning ranks multi-step families first. The warning lists matching families in ranked order and says to choose with --template-family at intake; after stage evidence, changing the family requires destructive intake with --force.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "Warn once per CampaignSpec checkout path about a variant and quantity matrix that needs variant slots, rank matching families by campaign-wide step shape, and name the intake family decision and --force requirement after stage evidence."
+        }
+      ],
+      "entry_sha256": "afef05c6ecc77f432e4c7393cee7e1e7233ebf58a5fc68e94b442b167f869552"
+    },
+    {
+      "id": "RL-0259",
+      "sequence": 249,
       "date": "2026-10-08",
       "kind": "release",
       "surface_version": null,
@@ -7498,7 +7552,7 @@
           "summary": "Record the doctor stage output path relative to the target repository."
         }
       ],
-      "entry_sha256": "18614110fcc2d64e2025b0df0abe49b2a8dd349d54c1a28a2d9f6ed8334935cb"
+      "entry_sha256": "9ba0cf4d150d77e7d50f2e47e7b0ed23d1e63c513833484e4bf03d08f57cfceb"
     }
   ]
 }
