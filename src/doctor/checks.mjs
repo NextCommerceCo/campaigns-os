@@ -3024,10 +3024,14 @@ function builtHtmlPathForPage(targetRepo, publicRouteSlug, page, derived = {}) {
   return clean ? join(targetRepo, "_site", publicRouteSlug, clean, "index.html") : join(targetRepo, "_site", publicRouteSlug, "index.html");
 }
 
+export function isRootRoutedEntryPage(page, publicRouteSlug) {
+  return Boolean(page?.is_entry) && runtimeRelativeRouteForSpecValue(publicRouteForPage(page), publicRouteSlug) === "";
+}
+
 // An explicit permalink belongs to this entry's Page Kit source file. It wins
 // even when an older build left output at the filename-derived route.
 export function entryPageKitServingRoute(targetRepo, publicRouteSlug, page, { targetOutputDir = null, mapping = null } = {}) {
-  if (!targetRepo || !publicRouteSlug || !page?.is_entry || publicRouteForPage(page) !== "") return null;
+  if (!targetRepo || !publicRouteSlug || !isRootRoutedEntryPage(page, publicRouteSlug)) return null;
   const permalink = entrySourcePermalink(targetOutputDir, publicRouteSlug, page, mapping);
   if (permalink !== null) return { route: permalink, source: "permalink" };
   const root = join(targetRepo, "_site", publicRouteSlug, "index.html");
@@ -3055,7 +3059,7 @@ function entrySourcePermalink(targetOutputDir, publicRouteSlug, page, mapping) {
 // Only the recorded target file (or the family's own materialised stock file)
 // may identify an entry fallback; an unrelated built index is not evidence.
 export function entryPageKitFileRoute(targetRepo, publicRouteSlug, page, { targetOutputDir = null, mapping = null } = {}) {
-  if (!targetRepo || !publicRouteSlug || !page?.is_entry || publicRouteForPage(page) !== "") return null;
+  if (!targetRepo || !publicRouteSlug || !isRootRoutedEntryPage(page, publicRouteSlug)) return null;
   if (entrySourcePermalink(targetOutputDir, publicRouteSlug, page, mapping) !== null) return null;
   const root = join(targetRepo, "_site", publicRouteSlug, "index.html");
   if (existsSync(root) && statSync(root).isFile()) return null;
@@ -3655,9 +3659,12 @@ function validateSourceCoverage(packet, packetPath, spec, errors, warnings, read
       })
       : null;
     const builtRoute = entryRoute ? entryRoute.route : specPage ? publicRouteForPage(specPage) : null;
-    if (entryRoute?.source === "file") {
+    const rootOutput = entryRoute?.route ? join(derived.target_repo, "_site", publicRouteSlug, "index.html") : null;
+    if (rootOutput && (entryRoute.source === "file" || entryRoute.source === "permalink")
+      && !(existsSync(rootOutput) && statSync(rootOutput).isFile())) {
       const emittedRoute = `${routeRoot}${entryRoute.route}`;
-      addIssue(warnings, "entry_route.unserved", `CampaignSpec entry page "${specPage.id}" is routed to ${routeRoot}, but Page Kit emitted it at ${emittedRoute} and nothing serves ${routeRoot}. Add a redirect from ${routeRoot} to ${emittedRoute} or a root permalink on the Page Kit page.`, { page_id: specPage.id, root_route: routeRoot, emitted_route: emittedRoute });
+      const pageKitRoot = `/${normalizePublicRouteSlug(publicRouteSlug)}/`;
+      addIssue(warnings, "entry_route.unserved", `CampaignSpec entry page "${specPage.id}" is routed to ${routeRoot}, but Page Kit emitted it at ${emittedRoute} and nothing serves ${routeRoot}. Add a redirect from ${routeRoot} to ${emittedRoute}, or set \`permalink: ${pageKitRoot}\` (the campaign root as Page Kit emits it) on the entry page.`, { page_id: specPage.id, root_route: routeRoot, emitted_route: emittedRoute });
     }
     if (!activeIds.has(page.page_id)) {
       addIssue(warnings, "source_html.pages.extra", `Source mapping "${page.page_id}" is not an active CampaignSpec page.`);

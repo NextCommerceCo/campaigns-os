@@ -421,7 +421,7 @@ test("entry stock built at its Page Kit file route stays built and QA uses the s
   assert.deepEqual(routeWarnings[0].detail, { page_id: "select", root_route: `/${slug}/`, emitted_route: `/${slug}/select/` });
   assert.match(routeWarnings[0].message, new RegExp(`/${slug}/`));
   assert.match(routeWarnings[0].message, new RegExp(`/${slug}/select/`));
-  assert.match(routeWarnings[0].message, /redirect.*root|root permalink/i);
+  assert.ok(routeWarnings[0].message.includes(`Add a redirect from /${slug}/ to /${slug}/select/, or set \`permalink: /${slug}/\``));
   const qaAfter = resolveQa();
   assert.ok(qaAfter.json, qaAfter.stderr);
   assert.deepEqual(qaAfter.json.entry_urls.map((entry) => entry.url), [`https://preview.example.test/${slug}/select/`]);
@@ -455,6 +455,7 @@ test("root-served entry reports the public route and tests its Page Kit file rou
   const warning = doctor.json.warnings.find((issue) => issue.code === "entry_route.unserved");
   assert.deepEqual(warning?.detail, { page_id: "select", root_route: "/", emitted_route: "/select/" });
   assert.match(warning.message, /routed to \/, but Page Kit emitted it at \/select\/ and nothing serves \/\./);
+  assert.ok(warning.message.includes(`Add a redirect from / to /select/, or set \`permalink: /${slug}/\``));
   for (const field of ["built_pages", "previewable_routes"]) {
     const routes = doctor.json.derived.scope[field];
     assert.equal(routes.find((page) => page.page_id === "select")?.route, "select/");
@@ -476,9 +477,10 @@ test("root-served entry reports the public route and tests its Page Kit file rou
   assert.deepEqual(qaWithRoot.json.entry_urls.map((entry) => entry.url), [`https://preview.example.test/${slug}/`]);
 }, { entrySelect: true }));
 
-test("QA keeps the preview subpath for every page and resolves both root entry spellings to the emitted route", () => {
+test("QA keeps the preview subpath for every page and resolves all root entry spellings to the emitted route", () => {
+  const specSlug = readJson(FIXTURE_SPEC).campaign.slug;
   for (const routeRoot of ["root", "slug"]) {
-    for (const entryPageUrl of ["", "/"]) {
+    for (const entryPageUrl of ["", "/", `/${specSlug}/`, specSlug]) {
       withFixture((fixture) => {
         assert.equal(runPrepare(fixture).status, 0);
         const packetPath = join(fixture.target, "campaign-runtime.build.json");
@@ -492,6 +494,13 @@ test("QA keeps the preview subpath for every page and resolves both root entry s
         mkdirSync(dirname(emitted), { recursive: true });
         writeFileSync(source, "---\npage_type: checkout\n---\n<main>select</main>\n");
         writeFileSync(emitted, "<main>select</main>\n");
+
+        const doctor = runCli(["doctor", "--packet", packetPath], fixture.dir);
+        assert.ok(doctor.json, doctor.stderr);
+        const expectedRoot = routeRoot === "root" ? "/" : `/${slug}/`;
+        assert.deepEqual(doctor.json.warnings.find((issue) => issue.code === "entry_route.unserved")?.detail,
+          { page_id: "select", root_route: expectedRoot, emitted_route: `${expectedRoot}select/` },
+          `${routeRoot} entry ${JSON.stringify(entryPageUrl)} unserved root`);
 
         const qa = runCli(["qa", "resolve", "--packet", packetPath,
           "--base-url", "https://preview.example.test/deploy-7/", "--no-probe"], fixture.dir);
@@ -533,10 +542,12 @@ test("entry source permalink outranks stale Page Kit file-route output", () => w
   writeFileSync(served, "<main>select at offer</main>\n");
   const offerPermalink = doctor();
   assert.ok(offerPermalink.derived.scope.built_pages.some((page) => page.page_id === "select" && page.route === "offer/"));
-  assert.ok(!offerPermalink.warnings.some((issue) => issue.code === "entry_route.unserved"));
+  assert.deepEqual(offerPermalink.warnings.find((issue) => issue.code === "entry_route.unserved")?.detail,
+    { page_id: "select", root_route: `/${slug}/`, emitted_route: `/${slug}/offer/` });
   assert.deepEqual(qa().entry_urls.map((entry) => entry.url), [`https://preview.example.test/${slug}/offer/`]);
   writeFileSync(join(fixture.target, "_site", slug, "index.html"), "<main>old root</main>\n");
   assert.ok(doctor().derived.scope.built_pages.some((page) => page.page_id === "select" && page.route === "offer/"));
+  assert.ok(!doctor().warnings.some((issue) => issue.code === "entry_route.unserved"));
   assert.deepEqual(qa().entry_urls.map((entry) => entry.url), [`https://preview.example.test/${slug}/offer/`]);
 }, { entrySelect: true }));
 

@@ -118,7 +118,7 @@ import {
   liveRefsNotRunMessage,
   readLiveCampaignForPacket,
 } from "./live-campaign-refs.mjs";
-import { entryPageKitServingRoute, specPackageRefs, specShippingRefs } from "./doctor/checks.mjs";
+import { entryPageKitServingRoute, isRootRoutedEntryPage, specPackageRefs, specShippingRefs } from "./doctor/checks.mjs";
 
 // The producing runtime identity on every verdict. Read from package.json so
 // a verdict names the release that made it; a literal here outlived three
@@ -3411,7 +3411,7 @@ function extractTopologies(spec, { baseUrl = null, publicRouteSlug = null, templ
 function resolvePageUrl(page, baseUrl, publicRouteSlug = null, entryServingRoute = null) {
   if (typeof page.url === "string" && page.url.trim()) return page.url.trim();
   if (!baseUrl) return null;
-  const route = page.is_entry && publicRouteForPage(page) === ""
+  const route = isRootRoutedEntryPage(page, publicRouteSlug)
     ? entryServingRoute?.route || ""
     : typeof page.page_url === "string" && page.page_url.trim()
       ? runtimeRelativeRouteForSpecValue(page.page_url, publicRouteSlug)

@@ -7342,8 +7342,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.56.0+agent.3",
-      "changelog_sha256": "f00c17b12aa33a6b79b9d1af6afe0ad58fa91ff65587a8f4ca6df19d6de7a39b",
-      "agent_impact": "For an entry routed to the campaign root, inspect doctor's unserved-root warning and use the serving Entry URL printed by qa resolve. Repair the root with a redirect or root permalink before relying on the Map route.",
+      "changelog_sha256": "9eb8d0c67d414b8cea957cc5dbb83e3993564f822408c581538eccdfba575860",
+      "agent_impact": "For an entry routed to the campaign root by any supported spelling, inspect doctor's unserved-root warning and use the serving Entry URL printed by qa resolve. Repair the root with a redirect or permalink: /<slug>/ before relying on the Map route.",
       "compatibility": "compatible",
       "migration": "none",
       "changes": [
@@ -7351,22 +7351,22 @@
           "class": "cli_surface",
           "path": "src/doctor/checks.mjs",
           "surface_entry": "doctor",
-          "summary": "Recognize a root-routed entry at its Page Kit file route, prefer its page ID source over its page type source, and warn when the root is unserved."
+          "summary": "Recognize all root-routed entry spellings, prefer the entry source permalink or page ID file route, and warn when a non-root route leaves the root unserved."
         },
         {
           "class": "named_surface",
           "path": "docs/build-packet.md",
           "surface_entry": "docs/build-packet.md",
-          "summary": "Document the entry file-route fallback and root repair."
+          "summary": "Document all root entry spellings, the entry file-route fallback, and the concrete root permalink repair."
         },
         {
           "class": "named_surface",
           "path": "docs/qa-and-test-orders.md",
           "surface_entry": "docs/qa-and-test-orders.md",
-          "summary": "Document when qa resolve prints a serving file route for an entry."
+          "summary": "Document all root entry spellings and when qa resolve prints a serving entry route."
         }
       ],
-      "entry_sha256": "92a70b04140f7dee0e8523def6fa149f8ac3f18e8d3330bc04a9965e085e5933"
+      "entry_sha256": "045673184525610302bdb9af6e55a4acea20cfba1b5f67fe0d0f6de106ca6092"
     }
   ]
 }
