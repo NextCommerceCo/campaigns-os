@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.56.0+agent.4] - 2026-10-08
+## [1.56.0+agent.6] - 2026-10-08
 
 ### Fixed
 

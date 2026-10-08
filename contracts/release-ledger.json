@@ -7527,8 +7527,8 @@
       "date": "2026-10-08",
       "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.56.0+agent.4",
-      "changelog_sha256": "c2fd419e4f6391d0cccc083bd8525cab23d6782e18d3821943bc0ff9e2f9e319",
+      "changelog_section": "1.56.0+agent.6",
+      "changelog_sha256": "ba8ba08f8e62f4145c69e2d9fa3dc13b8bcaf060e3aca27de09eb229692479de",
       "agent_impact": "Resolve Build Packet input fields from the packet directory, output fields from the target repository, source page fields from the source root, Page Kit target_path from the Page Kit output directory, Design Source Package references in context and report from each artifact's directory, and normalized brief _meta.input_path from the brief directory. Resolve other committed sidecar paths and run retained commands from the target repository root. Keep outside inputs at their recorded relative locations.",
       "compatibility": "compatible",
       "migration": "none",
@@ -7552,7 +7552,7 @@
           "summary": "Record the doctor stage output path relative to the target repository."
         }
       ],
-      "entry_sha256": "9ba0cf4d150d77e7d50f2e47e7b0ed23d1e63c513833484e4bf03d08f57cfceb"
+      "entry_sha256": "e7ae9649535a08f6ecde1bd8b6f9939b3c2fb328b1731dd8ee4702a56437d837"
     }
   ]
 }
