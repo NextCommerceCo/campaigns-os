@@ -7336,8 +7336,35 @@
       "entry_sha256": "1e056ff9b882639e2a41e83a093c0b6782ad73f4b26d3b56a880b6ece242cc3b"
     },
     {
-      "id": "RL-0260",
+      "id": "RL-0256",
       "sequence": 245,
+      "date": "2026-10-08",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.56.0+agent.1",
+      "changelog_sha256": "0036ff20d1b11d5a03950a9d4b7025cde2790346066ea021150b3b5223b0357b",
+      "agent_impact": "Use campaigns-os --version or campaigns-os -v to read the installed package version without campaign runtime writes. Progress snapshots and remit records under .campaign-runtime/progress/ are ignored by Git in new and existing managed blocks.",
+      "compatibility": "additive",
+      "migration": "In an older target, run one of campaigns-os start, prepare-build, install-agent-context or run start to add the progress ignore rule. Snapshots already committed stay tracked until removed with git rm -r --cached .campaign-runtime/progress/.",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "List .campaign-runtime/progress/ among the ignored runtime paths and say an existing managed block gains the required entries."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "Add global --version and -v flags that print the package version before invocation policy can read or write campaign state."
+        }
+      ],
+      "entry_sha256": "71db6099ccea2fd9ca9d0368ac0287982a60e6bc18524d8e0aca759bf4a28e5f"
+    },
+    {
+      "id": "RL-0260",
+      "sequence": 246,
       "date": "2026-10-08",
       "kind": "release",
       "surface_version": null,
@@ -7354,7 +7381,7 @@
           "summary": "Warn once per CampaignSpec checkout path about a variant and quantity matrix that needs variant slots, rank matching families by campaign-wide step shape, and name the intake family decision and --force requirement after stage evidence."
         }
       ],
-      "entry_sha256": "80f31df4f93e58aa26fbcc9ec25df26dd38769b82d99e058137fd4e8cf1bd8fc"
+      "entry_sha256": "788a72e2e5b3a488b3ab0783560da2b9cdf7147aba39225e92136646751ff575"
     }
   ]
 }
