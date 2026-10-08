@@ -1,0 +1,67 @@
+{
+  "schema_version": "5.0",
+  "spec_identity": {
+    "map_id": "fixture-checkout-forwards-to-checkout"
+  },
+  "campaign": {
+    "ref_id": 1,
+    "slug": "checkout-forwards-to-checkout",
+    "payment_env_key": "test_key"
+  },
+  "runtime": {
+    "sdk_version": "0.4.0"
+  },
+  "shipping_methods": [
+    {
+      "ref_id": "ship-standard"
+    }
+  ],
+  "funnels": [
+    {
+      "id": "f1",
+      "name": "Primary",
+      "hypothesis": "A v5 spec that chains one checkout into another, so the path takes payment twice.",
+      "weight": 100,
+      "pages": [
+        {
+          "id": "landing-1",
+          "type": "landing",
+          "label": "Landing",
+          "next_page": "checkout-1"
+        },
+        {
+          "id": "checkout-1",
+          "type": "checkout",
+          "label": "Information",
+          "next_page": "checkout-2"
+        },
+        {
+          "id": "checkout-2",
+          "type": "checkout",
+          "label": "Billing",
+          "success_url": "upsell-1"
+        },
+        {
+          "id": "upsell-1",
+          "type": "upsell",
+          "label": "Upsell",
+          "on_accept": "thankyou-1",
+          "on_decline": "thankyou-1",
+          "packages": [
+            {
+              "ref_id": 1,
+              "name": "Bump",
+              "price": 19,
+              "price_retail": 29
+            }
+          ]
+        },
+        {
+          "id": "thankyou-1",
+          "type": "thankyou",
+          "label": "Thank You"
+        }
+      ]
+    }
+  ]
+}

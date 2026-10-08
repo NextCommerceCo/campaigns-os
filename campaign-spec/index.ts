@@ -70,11 +70,37 @@ export {
   outgoingEdgeIds,
 } from './routing.ts'
 export type { ForwardFieldApplicability } from './routing.ts'
+
+// Which page takes payment, and the pages leading to it (campaigns-os#641).
+// Every "the Checkout on this path" lookup asks here; upgradeCampaignSpec is
+// the v4 → v5 read-time upgrade normalize() applies.
+export {
+  CURRENT_SCHEMA_VERSION,
+  PAYMENT_PAGE_TYPE,
+  CHECKOUT_STEP_PAGE_TYPE,
+  PRE_PAYMENT_PAGE_TYPES,
+  CHECKOUT_FLOW_PAGE_TYPES,
+  POST_PAYMENT_PAGE_TYPES,
+  POST_PURCHASE_OFFER_PAGE_TYPES,
+  isPaymentPage,
+  isCheckoutStepPage,
+  isPrePaymentPage,
+  isCheckoutFlowPage,
+  resolveRouteTargetPage,
+  forwardTargetPage,
+  checkoutPathFrom,
+  paymentPageFrom,
+  entryPages,
+  paymentPageForFunnel,
+  paymentPagesForFunnel,
+  upgradeCampaignSpec,
+} from './checkout-flow.ts'
 export { allRules, fastRules, specOnlyRules } from './rules/index.ts'
 
 // Supported schema_version matrix — single source for the SchemaVersion rule
 // and any consumer that needs to present or gate on the supported lineages.
-// A sync test pins it to the schemas/campaign-spec.v4.schema.json enum.
+// A sync test pins it to the schema_version enums of
+// schemas/campaign-spec.v4.schema.json and schemas/campaign-spec.v5.schema.json.
 export { SUPPORTED_SCHEMA_VERSIONS } from './rules/schema-version.ts'
 
 // Strict released-SDK-version parser — shared with the downstream Page Kit

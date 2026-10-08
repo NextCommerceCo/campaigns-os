@@ -1,6 +1,8 @@
 /**
- * Schema conformance: every fixture in BOTH corpora must validate against
- * schemas/campaign-spec.v4.schema.json.
+ * Schema conformance: every fixture in BOTH corpora must validate against the
+ * schema for its lineage — schemas/campaign-spec.v5.schema.json for 5.0,
+ * schemas/campaign-spec.v4.schema.json for 4.2/4.3 (and for a fixture with no
+ * usable schema_version, which v4 rejects on purpose).
  *
  *   - contracts/fixtures/campaign-specs/*.json — the public agent-contract
  *     fixtures, re-authored to the real-export dialect. Zero exceptions.
@@ -24,11 +26,18 @@ import { describe, expect, test } from './harness.ts'
 import type { PageType } from '../types.ts'
 
 const root = resolve(fileURLToPath(new URL('../..', import.meta.url)))
-const schemaPath = join(root, 'schemas', 'campaign-spec.v4.schema.json')
-const schema = JSON.parse(readFileSync(schemaPath, 'utf8'))
+const schema = JSON.parse(readFileSync(join(root, 'schemas', 'campaign-spec.v4.schema.json'), 'utf8'))
+const schemaV5 = JSON.parse(readFileSync(join(root, 'schemas', 'campaign-spec.v5.schema.json'), 'utf8'))
 
 const ajv = new Ajv2020({ allErrors: true, allowUnionTypes: true })
-const validate = ajv.compile(schema)
+const validateV4 = ajv.compile(schema)
+const validateV5 = ajv.compile(schemaV5)
+let lastValidator = validateV4
+
+function validate(spec: { schema_version?: unknown }): boolean {
+  lastValidator = String(spec?.schema_version ?? '').startsWith('5.') ? validateV5 : validateV4
+  return lastValidator(spec) as boolean
+}
 
 /**
  * Internal corpus fixtures that are deliberately malformed in ways that are
@@ -59,7 +68,7 @@ function jsonFixtures(dir: string): string[] {
 }
 
 function formatErrors(): string {
-  return (validate.errors ?? [])
+  return (lastValidator.errors ?? [])
     .map((e) => `${e.instancePath || '/'} ${e.message}`)
     .join('; ')
 }
@@ -121,12 +130,38 @@ describe('campaign-spec.v4 schema conformance', () => {
       'presell',
       'landing',
       'select',
+      'checkout_step',
       'checkout',
       'upsell',
       'downsell',
       'thankyou',
     ]
-    expect(schema.$defs.page.properties.type.enum).toEqual(PAGE_TYPES)
+    expect(schemaV5.$defs.page.properties.type.enum).toEqual(PAGE_TYPES)
+    // v4 is the same vocabulary without checkout_step, which v5 introduced.
+    expect(schema.$defs.page.properties.type.enum).toEqual(PAGE_TYPES.filter((type) => type !== 'checkout_step'))
+  })
+
+  test('v5 schema is v4 with only the version enum, page type and descriptions moved', () => {
+    const strip = (value: unknown): unknown => {
+      if (Array.isArray(value)) return value.map(strip)
+      if (value && typeof value === 'object') {
+        const out: Record<string, unknown> = {}
+        for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
+          if (key === 'description' || key === '$id' || key === 'title') continue
+          out[key] = strip(val)
+        }
+        return out
+      }
+      return value
+    }
+    // Fresh reads: an earlier test sorts schema.required in place.
+    const read = (name: string) => JSON.parse(readFileSync(join(root, 'schemas', name), 'utf8'))
+    const v4 = strip(read('campaign-spec.v4.schema.json')) as any
+    const v5 = strip(read('campaign-spec.v5.schema.json')) as any
+    expect(v5.properties.schema_version.enum).toEqual(['5.0'])
+    v4.properties.schema_version.enum = ['5.0']
+    v4.$defs.page.properties.type.enum = schemaV5.$defs.page.properties.type.enum
+    expect(v5).toEqual(v4)
   })
 
   test("'receipt' is a projection, never an authoring page type", () => {

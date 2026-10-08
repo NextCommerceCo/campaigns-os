@@ -1,9 +1,9 @@
 {
   "schema_version": "5.0",
   "campaign": {
-    "id": "fixture-shop-three-step",
-    "name": "Fixture Shop Three Step Dynamic Shipping",
-    "slug": "fixture-shop-three",
+    "id": "fixture-two-path-split-checkout",
+    "name": "Fixture Two Path Split Checkout",
+    "slug": "fixture-two-path",
     "currency": "USD",
     "language": "en",
     "payment_env_key": "fixture_payment_env_key",
@@ -29,13 +29,13 @@
     ],
     "seo": {
       "required": false,
-      "title": "Fixture Shop Three Step Dynamic Shipping",
+      "title": "Fixture Two Path Split Checkout",
       "description": "Agent contract fixture. Replace with campaign-specific metadata when required."
     }
   },
   "spec_identity": {
-    "map_id": "fixture-shop-three-step-map",
-    "source": "campaign-cart-starter-templates agent fixture"
+    "map_id": "fixture-two-path-split-checkout-map",
+    "source": "campaigns-os agent fixture"
   },
   "global_config": {
     "sdk_version": "0.4.41"
@@ -44,74 +44,100 @@
     {
       "id": "default",
       "name": "Default",
-      "hypothesis": "Fixture only: demonstrate the template family contract for agent builds.",
       "weight": 100,
+      "hypothesis": "Fixture only: two entry paths in one campaign, each reaching its own Checkout, sharing the upsell and receipt.",
       "pages": [
         {
-          "id": "information",
-          "type": "checkout_step",
+          "id": "select",
+          "type": "select",
           "order": 1,
-          "label": "Information",
-          "template": "src/shop-three-step/information.html",
-          "page_url": "/information/",
-          "next_page": "shipping.html",
+          "label": "Path A: select bundle",
+          "template": "src/olympus-mv-two-step/select.html",
+          "page_url": "/select/",
+          "next_page": "checkout",
           "packages": [
             {
               "ref_id": 10,
               "qty": 1
+            },
+            {
+              "ref_id": 10,
+              "qty": 2
+            },
+            {
+              "ref_id": 10,
+              "qty": 3
             }
           ],
           "sdk_hints": {
             "sdk_page_type": "checkout",
-            "template_family": "shop-three-step",
-            "frontmatter": {
-              "next_url": "shipping.html"
-            }
+            "template_family": "olympus-mv-two-step"
+          },
+          "is_entry": true
+        },
+        {
+          "id": "checkout",
+          "type": "checkout",
+          "order": 2,
+          "label": "Path A: checkout (takes payment)",
+          "template": "src/olympus-mv-two-step/checkout.html",
+          "page_url": "/checkout/",
+          "success_url": "upsell",
+          "sdk_hints": {
+            "sdk_page_type": "checkout",
+            "template_family": "olympus-mv-two-step"
+          }
+        },
+        {
+          "id": "information",
+          "type": "checkout_step",
+          "is_entry": true,
+          "order": 3,
+          "label": "Path B: information",
+          "template": "src/shop-three-step/information.html",
+          "page_url": "/information/",
+          "next_page": "shipping",
+          "sdk_hints": {
+            "sdk_page_type": "checkout",
+            "template_family": "shop-three-step"
           }
         },
         {
           "id": "shipping",
           "type": "checkout_step",
-          "order": 2,
-          "label": "Shipping",
+          "order": 4,
+          "label": "Path B: shipping",
           "template": "src/shop-three-step/shipping.html",
           "page_url": "/shipping/",
-          "next_page": "billing.html",
+          "next_page": "billing",
           "sdk_hints": {
             "sdk_page_type": "checkout",
-            "template_family": "shop-three-step",
-            "frontmatter": {
-              "next_url": "billing.html",
-              "runtime_shipping_source": "window.next.getShippingMethods()"
-            }
+            "template_family": "shop-three-step"
           }
         },
         {
           "id": "billing",
           "type": "checkout",
-          "order": 3,
-          "label": "Billing",
+          "order": 5,
+          "label": "Path B: billing (takes payment)",
           "template": "src/shop-three-step/billing.html",
           "page_url": "/billing/",
-          "next_page": "upsell-stepper.html",
+          "success_url": "upsell",
           "sdk_hints": {
             "sdk_page_type": "checkout",
-            "template_family": "shop-three-step",
-            "frontmatter": {
-              "next_url": "upsell-stepper.html"
-            }
+            "template_family": "shop-three-step"
           }
         },
         {
-          "id": "upsell-stepper",
+          "id": "upsell",
           "type": "upsell",
-          "order": 4,
-          "label": "Post-purchase upsell",
+          "order": 6,
+          "label": "Shared post-purchase upsell",
           "template": "src/shop-three-step/upsell-bundle-stepper.html",
-          "page_url": "/upsell-stepper/",
-          "next_page": "receipt.html",
-          "on_accept": "receipt.html",
-          "on_decline": "receipt.html",
+          "page_url": "/upsell/",
+          "next_page": "receipt",
+          "on_accept": "receipt",
+          "on_decline": "receipt",
           "packages": [
             {
               "ref_id": 30,
@@ -138,7 +164,7 @@
         {
           "id": "receipt",
           "type": "thankyou",
-          "order": 5,
+          "order": 7,
           "label": "Receipt",
           "template": "src/shop-three-step/receipt.html",
           "page_url": "/receipt/",

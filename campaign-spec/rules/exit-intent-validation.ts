@@ -21,6 +21,7 @@
  */
 
 import type { CampaignSpec, Offer, Rule, Violation } from '../types.ts'
+import { isCheckoutFlowPage } from '../checkout-flow.ts'
 
 function isTruthyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
@@ -68,7 +69,7 @@ export const ExitIntentValidation: Rule = {
         const codeOffer = code ? index.byCode.get(String(code).toUpperCase()) : null
 
         // 1. Placement
-        if (page.type !== 'checkout') {
+        if (!isCheckoutFlowPage(page)) {
           violations.push({
             ruleId: 'ExitIntentValidation',
             severity: 'warning',

@@ -2,8 +2,9 @@
  * Type surface for the CampaignSpec contract layer.
  *
  * The CampaignSpec is the central authoring contract of this repo (see
- * ../CONTEXT.md). v4.3 is the authoring shape; v4.2 funnels[] is the canonical
- * internal shape that rules operate on (after normalize()).
+ * ../CONTEXT.md). v5.0 is the authoring shape; funnels[] is the canonical
+ * internal shape that rules operate on (after normalize(), which upgrades a
+ * v4.2/v4.3 spec to the v5 page vocabulary — see checkout-flow.ts).
  *
  * Types here are intentionally permissive on optional fields — the rule
  * registry catches missing/malformed fields, rather than the type system
@@ -94,6 +95,21 @@ export type PageType =
    * contracts use for this page and which is a separate namespace.
    */
   | 'select'
+  /**
+   * A page with a checkout form that collects details and moves on without
+   * placing an order: the information and shipping steps of a split checkout
+   * (campaigns-os#641). Routes forward through `next_page`; it takes no
+   * payment, so `success_url` and `on_accept` are ignored here as on `select`.
+   * Renders as SDK page type `checkout`; its form carries
+   * `data-next-checkout-step` and `data-next-step-number`.
+   */
+  | 'checkout_step'
+  /**
+   * The page that takes payment. Exactly one on every path from an entry page
+   * to an upsell. Routes forward through `success_url` (or `next_page`) to an
+   * upsell, downsell or thank-you page. A campaign may hold several, one per
+   * path.
+   */
   | 'checkout'
   | 'upsell'
   | 'downsell'

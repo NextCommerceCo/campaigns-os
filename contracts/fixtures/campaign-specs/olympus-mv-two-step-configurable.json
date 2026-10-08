@@ -1,5 +1,5 @@
 {
-  "schema_version": "4.3",
+  "schema_version": "5.0",
   "campaign": {
     "id": "fixture-olympus-mv-two",
     "name": "Fixture Olympus MV Two Step Configurable",

@@ -1,0 +1,13 @@
+{
+  "violations": [
+    {
+      "ruleId": "CheckoutStepReachesCheckout",
+      "severity": "error",
+      "message": "Checkout step \"information-1\" is not on a path to a Checkout. Follow its next_page links to the page that takes payment (type \"checkout\").",
+      "path": "/funnels/0/pages/4",
+      "data": {
+        "pageId": "information-1"
+      }
+    }
+  ]
+}

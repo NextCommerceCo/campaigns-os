@@ -106,6 +106,21 @@ import analyticsContractDeclaredExpected from './expected/analytics-contract-dec
 import successUrlOffCheckout from './success-url-off-checkout.json' with { type: 'json' }
 import successUrlOffCheckoutExpected from './expected/success-url-off-checkout.expected.json' with { type: 'json' }
 
+import checkoutForwardsToCheckout from './checkout-forwards-to-checkout.json' with { type: 'json' }
+import checkoutForwardsToCheckoutExpected from './expected/checkout-forwards-to-checkout.expected.json' with { type: 'json' }
+
+import prePaymentSkipsCheckout from './pre-payment-skips-checkout.json' with { type: 'json' }
+import prePaymentSkipsCheckoutExpected from './expected/pre-payment-skips-checkout.expected.json' with { type: 'json' }
+
+import checkoutStepDeadEnd from './checkout-step-dead-end.json' with { type: 'json' }
+import checkoutStepDeadEndExpected from './expected/checkout-step-dead-end.expected.json' with { type: 'json' }
+
+import checkoutStepRouteFields from './checkout-step-route-fields.json' with { type: 'json' }
+import checkoutStepRouteFieldsExpected from './expected/checkout-step-route-fields.expected.json' with { type: 'json' }
+
+import v4CheckoutChainUpgraded from './v4-checkout-chain-upgraded.json' with { type: 'json' }
+import v4CheckoutChainUpgradedExpected from './expected/v4-checkout-chain-upgraded.expected.json' with { type: 'json' }
+
 import onAcceptOffOfferPage from './on-accept-off-offer-page.json' with { type: 'json' }
 import onAcceptOffOfferPageExpected from './expected/on-accept-off-offer-page.expected.json' with { type: 'json' }
 
@@ -157,6 +172,11 @@ export const corpus: NamedFixture[] = [
   build('analytics-contract-malformed', analyticsContractMalformed, analyticsContractMalformedExpected),
   build('analytics-contract-declared', analyticsContractDeclared, analyticsContractDeclaredExpected),
   build('success-url-off-checkout', successUrlOffCheckout, successUrlOffCheckoutExpected),
+  build('checkout-forwards-to-checkout', checkoutForwardsToCheckout, checkoutForwardsToCheckoutExpected),
+  build('pre-payment-skips-checkout', prePaymentSkipsCheckout, prePaymentSkipsCheckoutExpected),
+  build('checkout-step-dead-end', checkoutStepDeadEnd, checkoutStepDeadEndExpected),
+  build('checkout-step-route-fields', checkoutStepRouteFields, checkoutStepRouteFieldsExpected),
+  build('v4-checkout-chain-upgraded', v4CheckoutChainUpgraded, v4CheckoutChainUpgradedExpected),
   build('on-accept-off-offer-page', onAcceptOffOfferPage, onAcceptOffOfferPageExpected),
 ]
 

@@ -9,17 +9,22 @@
  * lineage errors here at authoring/export time instead of surfacing as
  * downstream shape drift.
  *
- * SUPPORTED_SCHEMA_VERSIONS must stay identical to the schema_version enum in
- * schemas/campaign-spec.v4.schema.json (and compatibility.json's campaign_spec
- * range). The rule stays pure (no filesystem), so the constant duplicates the
+ * SUPPORTED_SCHEMA_VERSIONS must stay identical to the schema_version enums of
+ * schemas/campaign-spec.v4.schema.json and schemas/campaign-spec.v5.schema.json,
+ * concatenated (and compatibility.json's campaign_spec range). The rule stays pure (no filesystem), so the constant duplicates the
  * schema enum — the sync test in ../test/rules/schema-version.test.ts is the
  * drift gate, following the UnknownTopLevelFields pattern.
  */
 
 import type { CampaignSpec, Rule, Violation } from '../types.ts'
 
-/** Supported CampaignSpec lineage versions — keep in sync with the v4 JSON Schema enum. */
-export const SUPPORTED_SCHEMA_VERSIONS: readonly string[] = Object.freeze(['4.2', '4.3'])
+/**
+ * Supported CampaignSpec lineage versions — the v4 JSON Schema enum followed by
+ * the v5 one, in that order. A 4.2/4.3 spec is upgraded to v5 on read
+ * (checkout-flow.ts), so this rule sees `5.0` for it after normalize(); the v4
+ * entries stay so a caller running the rule on an un-normalized spec agrees.
+ */
+export const SUPPORTED_SCHEMA_VERSIONS: readonly string[] = Object.freeze(['4.2', '4.3', '5.0'])
 
 export const SchemaVersion: Rule = {
   id: 'SchemaVersion',
