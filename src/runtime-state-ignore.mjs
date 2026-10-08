@@ -29,6 +29,7 @@ export const RUNTIME_STATE_IGNORED_PATHS = [
   ".campaign-runtime/workflow-findings.jsonl",
   ".campaign-runtime/run-records/",
   ".campaign-runtime/fetched-specs/",
+  ".campaign-runtime/progress/",
   ".campaign-runtime/polish-evidence/",
   ".campaign-runtime/evidence/",
   // Full QA verdicts carry live storefront URLs and order references; the
@@ -41,11 +42,12 @@ export const RUNTIME_STATE_IGNORED_PATHS = [
 
 // Entries the toolkit adds to an existing managed block when they are
 // missing from the file. The block is otherwise the operator's to edit, but
-// these name directories the toolkit itself fills with live URLs and order
-// references, so a target set up before the entry existed must gain it on the
-// next setup command rather than on the next accidental commit. An entry an
+// these name directories the toolkit itself fills with campaign observations,
+// live URLs, or order references. A target set up before the entry existed
+// must gain it on the next setup command rather than on the next accidental
+// commit. An entry an
 // operator has placed anywhere else in the file counts as present.
-export const RUNTIME_STATE_REQUIRED_IGNORED_PATHS = ["qa-output/"];
+export const RUNTIME_STATE_REQUIRED_IGNORED_PATHS = ["qa-output/", ".campaign-runtime/progress/"];
 
 export const RUNTIME_STATE_IGNORE_BLOCK = [
   RUNTIME_STATE_IGNORE_MARKER,
