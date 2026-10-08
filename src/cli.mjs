@@ -303,6 +303,7 @@ const HELP = `Campaigns OS toolkit
 
 Usage:
   campaigns-os help
+  campaigns-os --version   # print the installed package version; -v is equivalent
   campaigns-os demo --target <new-directory>   # offline inert sample; open landing/index.html; no campaign evidence
   campaigns-os start (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
                      [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
@@ -477,6 +478,12 @@ function closestCommand(input) {
 // (src/qc-test-factories.mjs). The bin entry point never passes it, and no
 // flag, environment variable or file can supply one.
 export async function main(argv, { authentication, qcStandIns } = {}) {
+  // Global version flags bypass invocation policy, including session reads and
+  // lifecycle capture, just as help bypasses campaign effects.
+  if (argv[0] === "--version" || argv[0] === "-v") {
+    console.log(packageVersion());
+    return;
+  }
   return runInvocation(parseArgs(argv), {
     dispatch: (command, args, context) => dispatch(command, args, { ...context, argv, authentication, qcStandIns }),
     closeOutStaleRunSessions,

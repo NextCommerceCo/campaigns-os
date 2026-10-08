@@ -7336,8 +7336,35 @@
       "entry_sha256": "1e056ff9b882639e2a41e83a093c0b6782ad73f4b26d3b56a880b6ece242cc3b"
     },
     {
-      "id": "RL-0258",
+      "id": "RL-0256",
       "sequence": 245,
+      "date": "2026-10-08",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.56.0+agent.1",
+      "changelog_sha256": "0036ff20d1b11d5a03950a9d4b7025cde2790346066ea021150b3b5223b0357b",
+      "agent_impact": "Use campaigns-os --version or campaigns-os -v to read the installed package version without campaign runtime writes. Progress snapshots and remit records under .campaign-runtime/progress/ are ignored by Git in new and existing managed blocks.",
+      "compatibility": "additive",
+      "migration": "In an older target, run one of campaigns-os start, prepare-build, install-agent-context or run start to add the progress ignore rule. Snapshots already committed stay tracked until removed with git rm -r --cached .campaign-runtime/progress/.",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "List .campaign-runtime/progress/ among the ignored runtime paths and say an existing managed block gains the required entries."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "Add global --version and -v flags that print the package version before invocation policy can read or write campaign state."
+        }
+      ],
+      "entry_sha256": "71db6099ccea2fd9ca9d0368ac0287982a60e6bc18524d8e0aca759bf4a28e5f"
+    },
+    {
+      "id": "RL-0258",
+      "sequence": 246,
       "date": "2026-10-08",
       "kind": "release",
       "surface_version": null,
@@ -7366,7 +7393,7 @@
           "summary": "Document all root entry spellings and when qa resolve prints a serving entry route."
         }
       ],
-      "entry_sha256": "045673184525610302bdb9af6e55a4acea20cfba1b5f67fe0d0f6de106ca6092"
+      "entry_sha256": "0db66e337d87770c3de2fdf62bab553efeb76c139b7607dfeec7f3149fac087b"
     }
   ]
 }

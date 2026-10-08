@@ -34,6 +34,7 @@ test("the ignore list names the machine-local set and never the readback bundle"
     ".campaign-runtime/agent-deviations.jsonl",
     ".campaign-runtime/run-records/",
     ".campaign-runtime/fetched-specs/",
+    ".campaign-runtime/progress/",
     "qa-output/",
   ]) {
     assert.ok(RUNTIME_STATE_IGNORED_PATHS.includes(ignored), ignored);
@@ -51,6 +52,7 @@ test("ensureRuntimeStateIgnored creates .gitignore, is idempotent on the marker,
     const text = readFileSync(join(dir, ".gitignore"), "utf8");
     assert.ok(text.startsWith(RUNTIME_STATE_IGNORE_MARKER));
     assert.ok(text.includes("run-records/"));
+    assert.ok(text.split("\n").includes(".campaign-runtime/progress/"), "fresh managed block includes progress");
     assert.equal(ensureRuntimeStateIgnored(dir).action, "present");
     assert.equal(readFileSync(join(dir, ".gitignore"), "utf8"), text, "a second call writes nothing");
   });
@@ -64,6 +66,19 @@ test("ensureRuntimeStateIgnored creates .gitignore, is idempotent on the marker,
     writeFileSync(join(dir, ".gitignore"), text.replace(".campaign-runtime/workflow-findings.jsonl\n", ""));
     assert.equal(ensureRuntimeStateIgnored(dir).action, "present");
     assert.ok(!readFileSync(join(dir, ".gitignore"), "utf8").includes("workflow-findings.jsonl"));
+  });
+});
+
+test("an older managed block gains the progress ignore rule on the next write", () => {
+  withTempDir((dir) => {
+    const stale = `${RUNTIME_STATE_IGNORE_MARKER}\nqa-output/\n`;
+    assert.ok(!stale.includes(".campaign-runtime/progress/"));
+    writeFileSync(join(dir, ".gitignore"), stale);
+    const result = ensureRuntimeStateIgnored(dir);
+    assert.equal(result.action, "updated");
+    assert.deepEqual(result.added_entries, [".campaign-runtime/progress/"]);
+    assert.ok(readFileSync(join(dir, ".gitignore"), "utf8").split("\n").includes(".campaign-runtime/progress/"));
+    assert.equal(ensureRuntimeStateIgnored(dir).action, "present");
   });
 });
 
