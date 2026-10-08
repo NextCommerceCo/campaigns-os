@@ -7676,6 +7676,27 @@
         }
       ],
       "entry_sha256": "00e7dc8146ae7c1e860f2496ade44d5f4e98f3f25120d1a313021e5ff5d28e7c"
+    },
+    {
+      "id": "RL-0262",
+      "sequence": 251,
+      "date": "2026-10-08",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.57.0+agent.1",
+      "changelog_sha256": "b6aff356276059f9f4447507b1e179895c45019b53fd9b4c5d0b57adbe6d79f0",
+      "agent_impact": "Reading a 4.2/4.3 spec now carries a retyped checkout_step's forward link onto next_page, so a v4 checkout chain linked through success_url upgrades into a valid v5 path instead of failing CheckoutStepReachesCheckout.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/checkout-flow.ts",
+          "surface_entry": null,
+          "summary": "upgradeCampaignSpec writes a retyped page's resolved forward target to next_page and drops its success_url."
+        }
+      ],
+      "entry_sha256": "6ff873f77bcaa4d939ab8693932adf69a450c37d202a86414a201ace8d4787ef"
     }
   ]
 }

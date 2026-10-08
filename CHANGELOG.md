@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.57.0+agent.1] - 2026-10-08
+
+### Fixed
+
+Reading a 4.2 or 4.3 spec no longer turns a `checkout → checkout` chain linked through `success_url` into Checkout Steps with no way forward. A page retyped `checkout_step` keeps the link it followed as a checkout: the resolved forward target is written to `next_page` and `success_url` is dropped, because routing ignores `success_url` on a step. Before this, the upgraded spec failed `CheckoutStepReachesCheckout` and warned `RouteFieldIgnoredForPageType` on every step. A `next_page` the checkout never took (shadowed by `success_url`) is replaced by the followed link. Chains already linked through `next_page`, and 5.x specs, read as before.
+
 ## [1.57.0] - 2026-10-08
 
 ### Changed
