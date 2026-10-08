@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-os
-version: 1.0.54
+version: 1.0.55
 description: Coordinate Campaigns OS lifecycle workflows from CampaignSpec, Build Packet, starter-template contracts, stage reports, deploy evidence, and QA proof depth.
 ---
 
-Bundle revision: 1.56.0+skills.2
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.56.0+skills.2`
+Bundle revision: 1.57.0+skills.1
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.57.0+skills.1`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
