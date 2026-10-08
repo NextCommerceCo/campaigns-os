@@ -7553,6 +7553,129 @@
         }
       ],
       "entry_sha256": "e7ae9649535a08f6ecde1bd8b6f9939b3c2fb328b1731dd8ee4702a56437d837"
+    },
+    {
+      "id": "RL-0261",
+      "sequence": 250,
+      "date": "2026-10-08",
+      "kind": "release",
+      "surface_version": "1.57.0",
+      "changelog_section": "1.57.0",
+      "changelog_sha256": "709a7bf801ee49cb105fb989e1ac01fb0be4177d7c959752386a98651d1d5457",
+      "agent_impact": "The 1.57.0 package publishes the untagged 1.56.0 CampaignSpec 5.0 release and its five same-surface follow-ups. Consumers gain checkout-step build and QA contracts, hosted-preview evidence carry-forward, entry-route resolution, variant-family warnings, and repository-relative committed paths; refresh the bundled skills to 1.57.0+skills.1.",
+      "compatibility": "breaking",
+      "migration": "From the last published 1.55.0, validate 5.0 specs with schemas/campaign-spec.v5.schema.json (4.2/4.3 keep the v4 schema), accept success_url and step_number in page_kit.frontmatter, find the payment Checkout on each path, and repair specs rejected by the four new rules. Update the pinned package and bundled skills together.",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "compatibility.json",
+          "surface_entry": "compatibility.json",
+          "summary": "Name 1.57.0 as the published package version."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Advance surface_version to 1.57.0 for the package release."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Pin the documented toolkit install to 1.57.0."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerate the orientation reference at surface 1.57.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerate runtime readiness at surface 1.57.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Show the current 1.57.0+skills.1 bundle identity in preflight examples."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Advance both package version stamps to 1.57.0."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Advance the package version to 1.57.0."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance the bundle to 1.57.0+skills.1 and each bundled skill by one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.57.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.57.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.57.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.57.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.57.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.57.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.57.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.57.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.57.0+skills.1."
+        }
+      ],
+      "entry_sha256": "00e7dc8146ae7c1e860f2496ade44d5f4e98f3f25120d1a313021e5ff5d28e7c"
     }
   ]
 }

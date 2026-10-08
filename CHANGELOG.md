@@ -2,6 +2,17 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.57.0] - 2026-10-08
+
+### Changed
+
+- Publishes the untagged `1.56.0` changes: CampaignSpec 5.0, checkout steps, and the updated build and QA contracts.
+- Publishes `1.56.0+agent.1`: `--version` and `-v`, and the Git ignore entry for runtime progress records.
+- Publishes `1.56.0+agent.2`: hosted all-template previews carry missing Polish and page-load evidence forward as warnings.
+- Publishes `1.56.0+agent.3`: doctor and QA find an entry page at Page Kit's emitted route when the declared root is absent.
+- Publishes `1.56.0+agent.5`: doctor warns when a variant and quantity checkout does not fit the selected template family.
+- Publishes `1.56.0+agent.6`: committed handoff artifacts retain repository-relative paths.
+
 ## [1.56.0+agent.6] - 2026-10-08
 
 ### Fixed
