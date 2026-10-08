@@ -116,3 +116,18 @@ test("a checkout row marked is_order_bump alone is a bump, not part of the repre
     assert.deepEqual(byRole("bump-with"), [[{ package_id: 1, quantity: 1 }, { package_id: 2, quantity: 1, is_upsell: true }]], flag);
   }
 });
+
+// Multi-step checkout (campaigns-os#641): on a three-step path the cart is
+// declared on the first step and the Checkout (billing) carries no packages,
+// so it is never planned. The summary prices the step that carries the cart.
+test("a three-step path's checkout total comes from the step that declares the cart", async () => {
+  const { readFileSync } = await import("node:fs");
+  const spec = JSON.parse(readFileSync(new URL("../contracts/fixtures/campaign-specs/shop-three-step-dynamic-shipping.json", import.meta.url), "utf8"));
+  const pages = spec.funnels[0].pages;
+  assert.deepEqual(pages.filter((page) => planScenarios(page, spec).length).map((page) => page.id), ["information", "upsell-stepper"]);
+  const plan = pages.flatMap((page) => planScenarios(page, spec));
+  const responses = plan.map((descriptor) => calculateEnvelope(descriptor));
+  const journey = normalizeJourney(plan, responses, spec, {});
+  assert.deepEqual(journey.pages.map((page) => [page.page_id, page.page_type]), [["information", "checkout_step"], ["upsell-stepper", "upsell"]]);
+  assert.notEqual(journey.summary.representative_checkout_total.state, PricingState.Unresolved);
+});
