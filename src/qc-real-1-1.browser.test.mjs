@@ -19,6 +19,7 @@
 // order row).
 import assert from "node:assert/strict";
 import { rmSync } from "node:fs";
+import { resolve } from "node:path";
 import test, { after, afterEach } from "node:test";
 
 // The shared test factory (no-network guard for node) before any module under test.
@@ -200,7 +201,7 @@ browserTest("F1.0-W2 [real: 1.1] doctor (1.5 stand-in) and real QA tracking.url 
   assertAcceptedListed(afterHandoff, qaRef);
   const doctorResults = doctorOf(f.packetPath, { qcStandIns }).derived.qc_results;
   const report = readJson(f.reportPath);
-  const qaResults = await readReal({ rows: report.stages.qa.evidence.qc_results, assertions: parts.assertions, measuredAt: parts.measuredAt, verdict: readJson(report.stages.qa.outputs[0]) });
+  const qaResults = await readReal({ rows: report.stages.qa.evidence.qc_results, assertions: parts.assertions, measuredAt: parts.measuredAt, verdict: readJson(resolve(f.targetRepo, report.stages.qa.outputs[0])) });
   const assessed = assessQcAccepts(records, [...doctorResults, ...qaResults], { now: new Date().toISOString() });
   assert.deepEqual(assessed.map((entry) => entry.status), ["active", "active"]);
 });

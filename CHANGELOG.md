@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.56.0+agent.6] - 2026-10-08
+
+### Fixed
+
+Committed Build Packet and `.campaign-runtime/` handoff artifacts now retain filesystem paths in relative form after `doctor --write`, `next`, and stage updates. Packet input fields resolve from the packet file's directory, output paths from the target repository, source page paths from the source root, package references from their context or report file, and normalized brief input paths from the brief file. Other committed sidecar paths and stored commands resolve from the target repository root. Outside inputs use ordinary relative paths from those bases, including source manifest paths in decision evidence. Machine-local ignored run state keeps its existing path behavior. `doctor --strip-paths` remains available for older packets. QA verdict discovery resolves recorded outputs from the target root.
+
 ## [1.56.0+agent.5] - 2026-10-08
 
 ### Fixed

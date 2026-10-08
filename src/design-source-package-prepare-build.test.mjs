@@ -11,12 +11,13 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
+  renameSync,
   statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { createServer } from "node:http";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -27,6 +28,7 @@ import {
   evaluateDesignSourcePackageReadiness,
   generateDesignSourcePackageReadback,
 } from "./design-source-package.mjs";
+import { portableArtifactPaths } from "./cli-helpers.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CLI = resolve(ROOT, "bin/campaigns-os.mjs");
@@ -144,6 +146,7 @@ function withFixture(run) {
 function runPrepare({ dir, source, target, specPath }, {
   templateFamily = "olympus",
   extraArgs = [],
+  env = {},
 } = {}) {
   const result = spawnSync("node", [
     CLI,
@@ -155,7 +158,7 @@ function runPrepare({ dir, source, target, specPath }, {
     "--no-run-session",
     ...extraArgs,
     "--json",
-  ], { cwd: dir, encoding: "utf8" });
+  ], { cwd: dir, encoding: "utf8", env: { ...process.env, ...env } });
   return {
     status: result.status,
     stdout: String(result.stdout || ""),
@@ -251,6 +254,254 @@ function targetArtifactPaths(target) {
     join(target, ".campaign-runtime/theme/brand-theme.css"),
   ];
 }
+
+test("default persisted handoff paths remain portable after doctor and next refresh", () => {
+  withFixture((fixture) => {
+    const prepared = runPrepare(fixture);
+    assert.equal(prepared.status, 0, prepared.stderr);
+    for (const path of targetArtifactPaths(fixture.target)) {
+      if (!existsSync(path)) continue;
+      const content = readFileSync(path, "utf8");
+      assert.ok(!content.includes(fixture.target), `${path} retained the absolute target path after prepare-build`);
+      assert.ok(!content.includes(homedir()), `${path} retained the home directory after prepare-build`);
+    }
+    const packetPath = join(fixture.target, "campaign-runtime.build.json");
+    const inspected = runCli(["doctor", "--packet", packetPath, "--write", "--no-live-refs"], fixture.dir);
+    assert.ok(inspected.json, inspected.stderr);
+    const stripped = runCli(["doctor", "--packet", packetPath, "--strip-paths", "--no-live-refs"], fixture.dir);
+    assert.ok(stripped.json, stripped.stderr);
+    assert.ok(!JSON.stringify(stripped.json).includes(fixture.target));
+    const advanced = runCli(["next", "--packet", packetPath], fixture.dir);
+    assert.ok(advanced.json, advanced.stderr);
+    const reportPath = join(fixture.target, ".campaign-runtime/assembly-report.json");
+    const report = readJson(reportPath);
+    Object.assign(report.stages.prepare_build, { status: "completed", blockers: [] });
+    report.blockers = [];
+    report.status = "prepared";
+    writeJson(reportPath, report);
+    const contextPath = join(fixture.target, ".campaign-runtime/build-context.json");
+    const context = readJson(contextPath);
+    context.source.root = fixture.source;
+    writeJson(contextPath, context);
+    mkdirSync(join(fixture.target, "src", "dsp-fixture"), { recursive: true });
+    const setup = runCli(["record", "setup", "--packet", packetPath], fixture.dir);
+    assert.equal(setup.status, 0, setup.stdout || setup.stderr);
+
+    const paths = [packetPath];
+    const collect = (dir) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const path = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (!["run-records", "fetched-specs", "polish-evidence", "evidence"].includes(entry.name)) collect(path);
+        } else if (!["run-session.json", "command-lifecycle.jsonl", "agent-deviations.jsonl", "workflow-findings.jsonl"].includes(entry.name)
+          && !/\.(?:log|tmp)$/.test(entry.name)) paths.push(path);
+      }
+    };
+    collect(join(fixture.target, ".campaign-runtime"));
+    for (const path of paths) {
+      const content = readFileSync(path, "utf8");
+      assert.ok(!content.includes(fixture.target), `${path} retained the absolute target path`);
+      assert.ok(!content.includes(homedir()), `${path} retained the home directory`);
+    }
+    const sidecar = readJson(join(fixture.target, ".campaign-runtime/doctor-output.json"));
+    const command = sidecar.next.command;
+    assert.match(command, /--packet (?:\.\/)?campaign-runtime\.build\.json/);
+    const packetArg = command.match(/--packet (\S+)/)?.[1];
+    const runnable = runCli(["next", "--packet", packetArg, "--no-write"], fixture.target);
+    assert.ok(runnable.json, runnable.stderr);
+  });
+});
+
+test("prepare-build keeps manifest evidence portable when HOME contains target and source", () => {
+  for (const sourceInsideTarget of [false, true]) {
+    withFixture((fixture) => {
+      if (sourceInsideTarget) {
+        const moved = join(fixture.target, "design-export");
+        renameSync(fixture.source, moved);
+        fixture.source = moved;
+      }
+      const prepared = runPrepare(fixture, { env: { HOME: fixture.dir } });
+      assert.equal(prepared.status, 0, prepared.stderr);
+      for (const path of [
+        join(fixture.target, ".campaign-runtime/build-context.json"),
+        join(fixture.target, ".campaign-runtime/assembly-report.json"),
+      ]) {
+        const content = readFileSync(path, "utf8");
+        assert.ok(!content.includes(fixture.dir), `${path} retained HOME in decisions[].evidence`);
+        const artifact = JSON.parse(content);
+        const evidence = artifact.decisions.find((decision) => decision.id === "dec_page_map_landing")?.evidence[0];
+        const manifest = sourceInsideTarget
+          ? "./design-export/.campaigns-os/source-html-manifest.json"
+          : "../source/.campaigns-os/source-html-manifest.json";
+        assert.ok(evidence?.includes(`from ${manifest}`), `${path} did not retain the relative source manifest path`);
+      }
+    });
+  }
+});
+
+test("record brief preserves an older absolute target in a packet under config", () => {
+  withFixture((fixture) => {
+    const packetPath = join(fixture.target, "config/campaign-runtime.build.json");
+    const prepared = runPrepare(fixture, { extraArgs: ["--out", packetPath] });
+    assert.equal(prepared.status, 0, prepared.stderr);
+    const packet = readJson(packetPath);
+    packet.assembly.target_repo = fixture.target;
+    writeJson(packetPath, packet);
+    const briefPath = join(fixture.target, "campaign-build-brief.json");
+    writeJson(briefPath, readJson(join(fixture.target, ".campaign-runtime/input/campaign-build-brief.normalized.json")));
+    const recorded = runCli(["record", "brief", "--packet", packetPath, "--brief", briefPath], fixture.dir);
+    assert.equal(recorded.status, 0, recorded.stderr || recorded.stdout);
+    const after = readJson(packetPath);
+    assert.equal(resolve(dirname(packetPath), after.assembly.target_repo), fixture.target);
+  });
+});
+
+test("root-served prepare-build preserves routes and page output paths", () => {
+  withFixture((fixture) => {
+    const prepared = runPrepare(fixture, { extraArgs: ["--live-url-path", "/"] });
+    assert.equal(prepared.status, 0, prepared.stderr);
+    const packet = readJson(join(fixture.target, "campaign-runtime.build.json"));
+    const context = readJson(join(fixture.target, ".campaign-runtime/build-context.json"));
+    assert.equal(packet.campaign.live_url_path, "/");
+    assert.equal(packet.deploy.live_url_path, "/");
+    assert.deepEqual(packet.source_html.pages.map((page) => page.page_kit.output_path), [
+      "src/dsp-fixture/landing.html", "src/dsp-fixture/checkout.html",
+    ]);
+    assert.deepEqual(packet.source_html.pages.map((page) => page.page_kit.public_route), [
+      "/dsp-fixture/landing/", "/dsp-fixture/checkout/",
+    ]);
+    assert.deepEqual(context.page_map.map((page) => page.page_kit.public_route), [
+      "/dsp-fixture/landing/", "/dsp-fixture/checkout/",
+    ]);
+    assert.equal(context.page_map[0].page_kit.frontmatter.next_url, "/dsp-fixture/checkout/");
+  });
+});
+
+test("declared route root survives prepare-build", () => {
+  withFixture((fixture) => {
+    const spec = readJson(fixture.specPath);
+    spec.campaign.route_root = "/dsp-fixture/";
+    writeJson(fixture.specPath, spec);
+    const prepared = runPrepare(fixture);
+    assert.equal(prepared.status, 0, prepared.stderr);
+    const packetPath = join(fixture.target, "campaign-runtime.build.json");
+    const packetBefore = readJson(packetPath);
+    assert.equal(packetBefore.campaign.route_root, "/dsp-fixture/");
+    assert.equal(packetBefore.campaign.live_url_path, "/dsp-fixture/");
+    assert.equal(packetBefore.source_html.pages[0].page_kit.public_route, "/dsp-fixture/landing/");
+  });
+});
+
+test("an existing correct route root survives record setup, next, and doctor write", () => {
+  withFixture((fixture) => {
+    const prepared = runPrepare(fixture);
+    assert.equal(prepared.status, 0, prepared.stderr);
+    const packetPath = join(fixture.target, "campaign-runtime.build.json");
+    const packetBefore = readJson(packetPath);
+    packetBefore.campaign.route_root = "/dsp-fixture/";
+    writeJson(packetPath, packetBefore);
+    const reportPath = join(fixture.target, ".campaign-runtime/assembly-report.json");
+    const report = readJson(reportPath);
+    const reportRoute = report.identity.live_url_path;
+    const contextPath = join(fixture.target, ".campaign-runtime/build-context.json");
+    const contextRoutes = readJson(contextPath).page_map.map((page) => page.page_kit.public_route);
+    Object.assign(report.stages.prepare_build, { status: "completed", blockers: [] });
+    report.blockers = [];
+    report.status = "prepared";
+    writeJson(reportPath, report);
+    mkdirSync(join(fixture.target, "src", "dsp-fixture"), { recursive: true });
+    const setup = runCli(["record", "setup", "--packet", packetPath], fixture.dir);
+    assert.equal(setup.status, 0, setup.stdout || setup.stderr);
+    const next = runCli(["next", "--packet", packetPath], fixture.dir);
+    assert.ok(next.json, next.stderr);
+    const doctor = runCli(["doctor", "--packet", packetPath, "--write", "--no-live-refs"], fixture.dir);
+    assert.ok(doctor.json, doctor.stderr);
+    const packetAfter = readJson(packetPath);
+    assert.equal(packetAfter.campaign.route_root, packetBefore.campaign.route_root);
+    assert.equal(packetAfter.campaign.live_url_path, packetBefore.campaign.live_url_path);
+    assert.equal(packetAfter.source_html.pages[0].page_kit.public_route, packetBefore.source_html.pages[0].page_kit.public_route);
+    assert.equal(readJson(reportPath).identity.live_url_path, reportRoute);
+    assert.deepEqual(readJson(contextPath).page_map.map((page) => page.page_kit.public_route), contextRoutes);
+  });
+});
+
+test("portable paths leave sibling names and file URLs intact", () => {
+  withFixture((fixture) => {
+    const sibling = `${fixture.target}-other/a.json`;
+    const url = `file://${fixture.target}/index.html`;
+    const actual = portableArtifactPaths({ message: `read ${sibling}; open ${url}`, route: "/" }, fixture.target);
+    assert.equal(actual.message, `read ${sibling}; open ${url}`);
+    assert.equal(actual.route, "/");
+    const sidecar = portableArtifactPaths({
+      schema_version: "campaigns-os-doctor-output/v0",
+      next: { command: `read ${sibling}; open ${url}; campaigns-os next --packet ${fixture.target}/campaign-runtime.build.json` },
+    }, fixture.target);
+    assert.equal(sidecar.next.command,
+      `read ${sibling}; open ${url}; campaigns-os next --packet ./campaign-runtime.build.json`);
+    const delimited = portableArtifactPaths({
+      schema_version: "campaigns-os-doctor-output/v0",
+      next: { command: `cd ${fixture.target}; inspect ${fixture.target},${fixture.target}/a.json` },
+    }, fixture.target);
+    assert.equal(delimited.next.command, "cd .; inspect .,./a.json");
+  });
+});
+
+test("portable whole-token paths accept backticks, colon, period, brackets and angle brackets", () => {
+  withFixture((fixture) => {
+    const root = fixture.target;
+    const command = `\`${root}/a.json\` ${root}. ${root}:12 [${root}/b] <${root}/c> <<${root}/d>`;
+    const actual = portableArtifactPaths({ schema_version: "campaigns-os-doctor-output/v0", next: { command } }, root);
+    assert.equal(actual.next.command, "`./a.json` .. .:12 [./b] <./c> <<./d>");
+  });
+});
+
+test("portable fields use the directories their readers use", () => {
+  withFixture((fixture) => {
+    const packetPath = join(fixture.target, "config/campaign-runtime.build.json");
+    const contextPath = join(fixture.target, ".campaign-runtime/build-context.json");
+    const briefPath = join(fixture.target, ".campaign-runtime/input/campaign-build-brief.normalized.json");
+    const manifestPage = join(fixture.source, "landing.html");
+    const packagePath = join(fixture.target, DSP_REL_PATH);
+    const packet = portableArtifactPaths({
+      schema_version: "campaign-runtime-build-packet/v0",
+      spec: { local_path: fixture.specPath },
+      assembly: { target_repo: fixture.target, output_dir: join(fixture.target, "src/dsp-fixture") },
+      source_html: { root: fixture.source, pages: [{ path: manifestPage }] },
+    }, fixture.target, { artifactPath: packetPath });
+    assert.equal(resolve(dirname(packetPath), packet.spec.local_path), fixture.specPath);
+    assert.equal(resolve(dirname(packetPath), packet.assembly.target_repo), fixture.target);
+    assert.equal(resolve(fixture.target, packet.assembly.output_dir), join(fixture.target, "src/dsp-fixture"));
+    assert.equal(resolve(fixture.source, packet.source_html.pages[0].path), manifestPage);
+    const context = portableArtifactPaths({
+      schema_version: "campaign-runtime-build-context/v0",
+      source: { root: fixture.source },
+      page_map: [{ source_path: manifestPage }],
+      design_source_package: { path: packagePath },
+    }, fixture.target, { artifactPath: contextPath });
+    assert.equal(resolve(fixture.source, context.page_map[0].source_path), manifestPage);
+    assert.equal(resolve(dirname(contextPath), context.design_source_package.path), packagePath);
+    const brief = portableArtifactPaths({
+      schema_version: "campaigns-os-build-brief/v1",
+      _meta: { input_path: fixture.specPath },
+    }, fixture.target, { artifactPath: briefPath });
+    assert.equal(resolve(dirname(briefPath), brief._meta.input_path), fixture.specPath);
+    assert.equal(portableArtifactPaths({ schema_version: "campaign-runtime-build-packet/v0", assembly: { target_repo: fixture.target } }, fixture.target).assembly.target_repo, fixture.target);
+  });
+});
+
+test("source intake free text removes absolute manifest paths from saved mappings", () => {
+  withFixture((fixture) => {
+    const manifestPath = join(fixture.source, ".campaigns-os/source-html-manifest.json");
+    const packet = portableArtifactPaths({
+      schema_version: "campaign-runtime-build-packet/v0",
+      source_html: {
+        root: fixture.source,
+        pages: [{ page_id: "landing", skip_reason: `No entry in source-html manifest at ${manifestPath}; add this page.` }],
+      },
+    }, fixture.target, { artifactPath: join(fixture.target, "config/campaign-runtime.build.json") });
+    assert.ok(!packet.source_html.pages[0].skip_reason.includes(fixture.dir));
+  });
+});
 
 function snapshotArtifacts(paths) {
   return new Map(paths.map((path) => [path, existsSync(path) ? readFileSync(path) : null]));

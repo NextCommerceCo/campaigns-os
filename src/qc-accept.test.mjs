@@ -11,6 +11,7 @@
 // returns one assessment per record, in input order, each { status, why }.
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import test, { after, afterEach } from "node:test";
 
 import {
@@ -166,7 +167,7 @@ test("F1.0-W2 [stand-in: 1.5 live_token + QA policy.availability] doctor and QA 
   const qaResults = resultsOf(readQaResults({
     stageEvidence: report.stages.qa.evidence,
     stage: report.stages.qa,
-    fullVerdict: readJson(report.stages.qa.outputs[0]),
+    fullVerdict: readJson(resolve(f.targetRepo, report.stages.qa.outputs[0])),
     currentBuild: BUILD_FP,
     qcStandIns,
   }));

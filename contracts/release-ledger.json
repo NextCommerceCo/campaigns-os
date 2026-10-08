@@ -7520,6 +7520,39 @@
         }
       ],
       "entry_sha256": "afef05c6ecc77f432e4c7393cee7e1e7233ebf58a5fc68e94b442b167f869552"
+    },
+    {
+      "id": "RL-0259",
+      "sequence": 249,
+      "date": "2026-10-08",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.56.0+agent.6",
+      "changelog_sha256": "ba8ba08f8e62f4145c69e2d9fa3dc13b8bcaf060e3aca27de09eb229692479de",
+      "agent_impact": "Resolve Build Packet input fields from the packet directory, output fields from the target repository, source page fields from the source root, Page Kit target_path from the Page Kit output directory, Design Source Package references in context and report from each artifact's directory, and normalized brief _meta.input_path from the brief directory. Resolve other committed sidecar paths and run retained commands from the target repository root. Keep outside inputs at their recorded relative locations.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Document each handoff path's reader base, ordinary relative outside inputs, and the working directory for retained commands."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "Persist QA stage output paths relative to the target, pass the target root to doctor sidecar writes, and resolve report-linked QA verdicts from that root."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/inspect.mjs",
+          "surface_entry": "doctor",
+          "summary": "Record the doctor stage output path relative to the target repository."
+        }
+      ],
+      "entry_sha256": "e7ae9649535a08f6ecde1bd8b6f9939b3c2fb328b1731dd8ee4702a56437d837"
     }
   ]
 }

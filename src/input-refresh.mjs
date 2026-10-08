@@ -26,7 +26,7 @@ import {
   loadCampaignBuildBriefFile,
 } from "./build-brief.mjs";
 import { resolveCampaignWorkspace, targetRepoFor } from "./campaign-workspace.mjs";
-import { isObject, optionalString, relFromDir, resolveFromFile } from "./cli-helpers.mjs";
+import { isObject, optionalString, portableArtifactPaths, relFromDir, resolveFromFile } from "./cli-helpers.mjs";
 import { writeJsonAtomic } from "./doctor-sidecar.mjs";
 import { activeSpecPages, specIdentityMismatch } from "./doctor/checks.mjs";
 import {
@@ -475,9 +475,9 @@ function saveBriefUnderLock({ packetPath, explicitBrief, sidecars, lockedTarget,
     if (!dryRun) {
       // Intake's publication order, the report last: a failure between files
       // leaves the report bound to the old material, which reads as owed.
-      writeJsonAtomic(packetPath, nextPacket);
-      writeJsonAtomic(normalizedPath, buildBrief.artifact);
-      writeJsonAtomic(contextPath, saved.nextContext);
+      writeJsonAtomic(packetPath, portableArtifactPaths(nextPacket, targetRepo, { artifactPath: packetPath }));
+      writeJsonAtomic(normalizedPath, portableArtifactPaths(buildBrief.artifact, targetRepo, { artifactPath: normalizedPath }));
+      writeJsonAtomic(contextPath, portableArtifactPaths(saved.nextContext, targetRepo, { artifactPath: contextPath }));
       commitAssemblyReport(workspace, () => nextReport, {
         command: "record brief",
         staleReason: "The Campaign Build Brief was saved after this doctor snapshot. Re-run doctor (or next) for current state.",
@@ -674,8 +674,8 @@ function refreshSpecUnderLock({ packetPath, sidecars, lockedTarget, dryRun, time
     if (!dryRun) {
       // Intake's publication order, the report last: a failure between files
       // leaves the report bound to the old spec material, which reads as owed.
-      if (briefWritten) writeJsonAtomic(normalizedPath, brief.buildBrief.artifact);
-      writeJsonAtomic(contextPath, nextContext);
+      if (briefWritten) writeJsonAtomic(normalizedPath, portableArtifactPaths(brief.buildBrief.artifact, targetRepo, { artifactPath: normalizedPath }));
+      writeJsonAtomic(contextPath, portableArtifactPaths(nextContext, targetRepo, { artifactPath: contextPath }));
       commitAssemblyReport(workspace, () => nextReport, {
         command: "record spec",
         staleReason: "The CampaignSpec was bound with record spec after this doctor snapshot. Re-run doctor (or next) for current state.",

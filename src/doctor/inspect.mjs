@@ -34,6 +34,7 @@ import {
   readJsonIfExists,
   relFromDir,
   isLocalAbsolutePath,
+  portableArtifactPaths,
   addIssue,
 } from "../cli-helpers.mjs";
 import {
@@ -187,18 +188,19 @@ export function doctorCommand(args, { runDoctor = doctorPacket, liveCampaign = u
     commitAssemblyReport(workspace, (report) => recordDoctorStageOutcome(report, result, {
       command: `campaigns-os ${DOCTOR_PRODUCER}`,
       doctorOutPath: workspace.doctorOutPath,
+      targetRepo: workspace.targetRepo,
     }), { stage: "doctor", command: DOCTOR_PRODUCER, refreshDoctor: () => result });
   }
   return result;
 }
 
-function recordDoctorStageOutcome(report, result, { command, doctorOutPath }) {
+function recordDoctorStageOutcome(report, result, { command, doctorOutPath, targetRepo }) {
   return recordProducerStageOutcome(report, {
     stage: "doctor",
     disposition: result.ok ? (result.warnings?.length ? "ready_with_warnings" : "ready") : "blocked",
     timestamp: result.generated_at,
     command,
-    outputs: [doctorOutPath],
+    outputs: portableArtifactPaths([doctorOutPath], targetRepo),
     blockers: (result.errors || []).map((issue) => issue?.message).filter(isNonEmptyString),
     warnings: (result.warnings || []).map((issue) => issue?.message).filter(isNonEmptyString),
   });

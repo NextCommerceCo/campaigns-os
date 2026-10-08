@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { portableArtifactPaths } from "./cli-helpers.mjs";
 
 export const DOCTOR_SIDECAR_REL_PATH = ".campaign-runtime/doctor-output.json";
 export const DOCTOR_SIDECAR_SCHEMA = "campaigns-os-doctor-output/v0";
@@ -61,8 +62,9 @@ export function stampDoctorProducer(doctor, command) {
 // through this (or through `stampDoctorProducer` when its own transactional
 // writer must do the rename), so `generated_by` cannot be skipped by one of
 // them the way #327's cause labels once were.
-export function writeDoctorSidecar(path, doctor, { command } = {}) {
-  writeJsonAtomic(path, stampDoctorProducer(doctor, command));
+export function writeDoctorSidecar(path, doctor, { command, targetRepo = null } = {}) {
+  const stamped = stampDoctorProducer(doctor, command);
+  writeJsonAtomic(path, targetRepo ? portableArtifactPaths(stamped, targetRepo) : stamped);
   return path;
 }
 
@@ -89,7 +91,7 @@ export function markDoctorSidecarStale(targetBaseDir, { command = null, reason =
     stale_reason: reason
       || "A later command changed doctor inputs after this snapshot was written. Re-run campaigns-os doctor (or campaigns-os next) for current state.",
   };
-  writeJsonAtomic(path, stamped);
+  writeJsonAtomic(path, portableArtifactPaths(stamped, targetBaseDir));
   return path;
 }
 

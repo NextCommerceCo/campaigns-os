@@ -6,14 +6,16 @@ import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import Ajv2020 from "ajv/dist/2020.js";
 
 import { ADAPTER_DECISION_SCALAR_VALUES } from "./adapter-decision-contract.mjs";
-import { parseArgs, polishCaptureCommand } from "./cli.mjs";
+import { parseArgs, polishCaptureCommand, recordQaStageOutcome } from "./cli.mjs";
+import { currentPacketInputs } from "./input-currency.mjs";
+import { evaluateRecordedHiddenEagerMediaCheckpoint } from "./polish-node.mjs";
 import { resolveInvocationPolicy } from "./invocation.mjs";
 import { buildReadabilityRecord } from "./polish-readability.mjs";
 import { recordCommand, recordStageCommand } from "./stage-record.mjs";
@@ -406,6 +408,78 @@ test("record deploy records the served local preview on the packet and stages.de
       assert.equal(deploy.evidence.length, f.spec.funnels.flatMap((funnel) => funnel.pages).length);
       assert.ok(validReport(readJson(f.reportPath)), JSON.stringify(validReport.errors));
       assert.equal(nextStage(f).stage, "qa");
+    } finally {
+      await site.close();
+    }
+  });
+});
+
+test("persisted paths remain private through polish, deploy and QA, and next finds the current verdict from another cwd", async () => {
+  await withLifecycle(async (f) => {
+    const externalBrief = join(f.dir, "brief.json");
+    writeJson(externalBrief, answeredDraft(f));
+    const briefSaved = runJson(["record", "brief", "--packet", f.packetPath, "--brief", externalBrief], f.dir);
+    assert.equal(briefSaved.status, 0, briefSaved.stderr);
+    assert.equal(readJson(f.packetPath).build_brief.input_path, "../brief.json");
+    assert.equal(readJson(f.contextPath).intake.brief_path, "../brief.json");
+    const deployPacket = readJson(f.packetPath);
+    deployPacket.deploy = { ...deployPacket.deploy, target: "local-serve" };
+    writeJson(f.packetPath, deployPacket);
+    scaffold(f);
+    recordOk(f, "setup");
+    buildSite(f);
+    recordOk(f, "build");
+    await capture(f);
+    const capturedReport = readJson(f.reportPath);
+    const checkpoint = evaluateRecordedHiddenEagerMediaCheckpoint({ packet: readJson(f.packetPath), report: capturedReport });
+    assert.equal(checkpoint.code, "polish.hidden_eager_media.pass", JSON.stringify({ expected: checkpoint.subject, actual: capturedReport.stages.polish.evidence.visual_review.page_load.subject }));
+    recordOk(f, "polish", ["--evidence", POLISH_EVIDENCE]);
+    const site = await serveSite(f);
+    try {
+      await recordCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": site.url });
+      const packet = readJson(f.packetPath);
+      const inputs = currentPacketInputs({ packet, packetPath: f.packetPath });
+      const verdict = {
+        schema_version: "1.0",
+        run_id: "qa_portable_0001",
+        campaign_slug: packet.spec.map_id,
+        public_route_slug: packet.campaign.public_route_slug,
+        started_at: "2026-10-08T00:00:00.000Z",
+        completed_at: "2026-10-08T00:01:00.000Z",
+        disposition: "ready",
+        spec_hash: inputs.specMaterial,
+        source_brief_material: inputs.briefMaterial,
+        assertions: [],
+        exceptions: [],
+        test_orders: [],
+      };
+      const verdictPath = join(f.target, "qa-output", packet.spec.map_id, "qa_portable_0001.json");
+      writeJson(verdictPath, verdict);
+      assert.equal(recordQaStageOutcome({ packet: f.packetPath, _: [] }, { verdict, local_path: verdictPath }), true);
+      const report = readJson(f.reportPath);
+      assert.deepEqual(report.stages.qa.outputs.map((path) => path.replace(/^\.\//, "")), ["qa-output/" + packet.spec.map_id + "/qa_portable_0001.json"]);
+      const recorded = runJson(["run-record", "--packet", f.packetPath, "--journal", join(f.target, ".campaign-runtime/workflow-findings.jsonl"), "--run-id", "run_portable_0001", "--no-remit"], f.dir);
+      assert.equal(recorded.status, 0, recorded.stderr);
+      const next = runJson(["next", "--packet", f.packetPath, "--no-write"], f.dir);
+      assert.equal(next.status, 0, next.stderr);
+      assert.ok(!JSON.stringify(next.json).includes("outdated_artifacts"), JSON.stringify(next.json));
+
+      const committed = [f.packetPath];
+      const walk = (dir) => {
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+          const path = join(dir, entry.name);
+          if (entry.isDirectory()) {
+            if (!["run-records", "fetched-specs", "polish-evidence", "evidence"].includes(entry.name)) walk(path);
+          } else if (!entry.isSymbolicLink() && !["run-session.json", "command-lifecycle.jsonl", "agent-deviations.jsonl", "workflow-findings.jsonl"].includes(entry.name)
+            && !/\.(?:log|tmp)$/.test(entry.name)) committed.push(path);
+        }
+      };
+      walk(join(f.target, ".campaign-runtime"));
+      for (const path of committed) {
+        const content = readFileSync(path, "utf8");
+        assert.ok(!content.includes(f.target), `${path} retained the absolute target path`);
+        assert.ok(!content.includes(homedir()), `${path} retained the home path`);
+      }
     } finally {
       await site.close();
     }
@@ -2566,7 +2640,7 @@ test("F2.2-B8: with assembly, polish and qa required and each history[-1] a comp
       qa.evidence = { ...qa.evidence, source_build_fingerprint: report.stages.assembly.build_fingerprint, gates: { [QA_GATE_PLACEHOLDER_TEXT_RESIDUE]: { status: "pass" } } };
     });
     const completed = readJson(f.reportPath);
-    const fullVerdict = readJson(completed.stages.qa.outputs[0]);
+    const fullVerdict = readJson(resolve(f.target, completed.stages.qa.outputs[0]));
 
     // Control: in place, the completed records read current in every reader.
     const control = await effectiveStatusReadings(f, { qaCurrency: "current", fullVerdict });
@@ -2610,7 +2684,7 @@ test("F2.2-B9: with QA stamps current and the QA stage naming the Assembly Repor
     ];
     await recordQa(f, { qcResults: rows, selfReferential: true });
     const report = readJson(f.reportPath);
-    assert.equal(report.stages.qa.outputs[0], f.reportPath, "setup: the QA stage names the Assembly Report as its full verdict");
+    assert.equal(report.stages.qa.outputs[0], ".campaign-runtime/assembly-report.json", "setup: the QA stage stores the target-relative Assembly Report path");
     const { results } = readCurrentQcResults({ report, doctor: { derived: { qc_results: [] } }, targetRepo: f.target, packetPath: f.packetPath, reportPath: f.reportPath });
     const qaRows = results.filter((row) => row.leg === "qa");
     assert.equal(qaRows.length, 2, "setup: both QA rows are read");

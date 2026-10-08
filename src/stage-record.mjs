@@ -29,7 +29,7 @@ import { BRAND_LAYER_FILENAMES } from "./brand-theme.mjs";
 import { ADAPTER_DECISION_SCALAR_VALUES } from "./adapter-decision-contract.mjs";
 import { computeBuildFingerprint, resolveBuiltSiteScope } from "./built-site-scope.mjs";
 import { resolveCampaignWorkspace, targetRepoFor } from "./campaign-workspace.mjs";
-import { isObject, optionalString, readJsonIfExists, requireArg } from "./cli-helpers.mjs";
+import { isObject, optionalString, portableArtifactPaths, readJsonIfExists, requireArg } from "./cli-helpers.mjs";
 import { LOCAL_PROOF_BUILD_ENVIRONMENT, LOCAL_PROOF_PRODUCTION_ENVIRONMENT, isLocalServePacket } from "./local-proof.mjs";
 import { polishCarriedForwardForLadder } from "./local-preview-policy.mjs";
 import { isLoopbackHostname } from "./remit.mjs";
@@ -1017,8 +1017,8 @@ function recordUnderLock({ stage, packetPath, sidecars, lockedTarget, input, dry
     if (dryRun) return null;
     // Written inside the report's critical section, after every check and
     // before the report itself, so the files move together.
-    if (next.context) writeJsonAtomic(contextPath, next.context);
-    if (next.packet) writeJsonAtomic(packetPath, next.packet);
+    if (next.context) writeJsonAtomic(contextPath, portableArtifactPaths(next.context, workspace.targetRepo, { artifactPath: contextPath }));
+    if (next.packet) writeJsonAtomic(packetPath, portableArtifactPaths(next.packet, workspace.targetRepo, { artifactPath: packetPath }));
     return next.report;
   };
   // Already inside the target lock, which commitAssemblyReport re-enters.

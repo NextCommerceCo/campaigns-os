@@ -13,7 +13,7 @@ import { resolveCampaignIdentity, localQaIdentifier } from "./spec-source-identi
 
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { QA_OUTPUT_REL_PATH } from "./campaign-workspace.mjs";
 import { absentOrMalformed } from "./fs-identity.mjs";
 import { isPlainObject as isObject, normalizeString as optionalString } from "./repo-scan.mjs";
@@ -53,7 +53,8 @@ export function qaVerdictDir(root, identifier) {
 
 // The verdict paths the Assembly Report's qa stage records (any `*.json`
 // string under a path/file/verdict/output-named key, or inside outputs[] /
-// artifacts[] / qa), relative to the report unless absolute.
+// artifacts[] / qa), relative to the target root unless absolute. Older
+// report-relative hints remain readable.
 export function qaVerdictPathHints(report) {
   const paths = [];
   const visit = (value) => {
@@ -90,7 +91,8 @@ function sha256File(path) {
 }
 
 // Every verdict candidate for a campaign: the files the report records
-// (source "assembly_report", resolved against the report) and every `*.json`
+// (source "assembly_report", resolved against the report first, then the target)
+// and every `*.json`
 // under `qa-output/<identifier>/` beneath each root (source "qa_output").
 //   { path, repoRelPath, source, verdict, sha256, mtimeMs, identityMatch, trusted }
 // `verdict` is null for a recorded path that exists but is not a JSON object
@@ -141,8 +143,14 @@ export function* iterateQaVerdicts({ packet = null, report = null, reportPath = 
   };
 
   const reportBase = reportPath ? dirname(resolve(reportPath)) : null;
+  const targetRoot = uniqueTargetRoot(roots, reportBase);
   for (const hint of qaVerdictPathHints(report)) {
-    const found = candidate(reportBase ? resolve(reportBase, hint) : hint, "assembly_report", null);
+    const reportRelative = (isAbsolute(hint) || reportBase)
+      ? candidate(isAbsolute(hint) ? hint : resolve(reportBase, hint), "assembly_report", null)
+      : null;
+    const found = reportRelative || (!isAbsolute(hint) && targetRoot
+      ? candidate(resolve(targetRoot, hint), "assembly_report", null)
+      : null);
     if (found) yield found;
   }
 
@@ -170,6 +178,15 @@ export function* iterateQaVerdicts({ packet = null, report = null, reportPath = 
       }
     }
   }
+}
+
+function uniqueTargetRoot(roots, reportBase) {
+  for (let directory = reportBase; directory; directory = dirname(directory)) {
+    if (basename(directory) === ".campaign-runtime") return dirname(directory);
+    if (dirname(directory) === directory) break;
+  }
+  const candidates = [...new Set(roots.filter((root) => typeof root === "string" && root).map((root) => resolve(root)))];
+  return candidates.length === 1 ? candidates[0] : null;
 }
 
 export function discoverQaVerdicts(options = {}) {
