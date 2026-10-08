@@ -93,6 +93,7 @@ import { FIGMA_EXPORT_FILE_CODES, SOURCE_PROVENANCE_SCOPE, evaluateSourceProvena
 import { validateCampaignBuildBriefArtifact } from "../build-brief.mjs";
 import { briefFileUnusable, deriveInputCurrency, wellFormedBriefMaterial } from "../input-currency.mjs";
 import { ASSEMBLY_REPORT_STAGE_KEYS, stageIsTerminal } from "../orchestration-stage-contract.mjs";
+import { assemblyReportStagesWithEvidence } from "../design-source-publication.mjs";
 import {
   assemblySourcePackageFingerprintMissing,
   assessAssemblySourcePackageFreshnessWaivers,
@@ -108,7 +109,7 @@ import { evaluatePageKitSdkVersion, PAGE_KIT_SDK_VERSION_SCOPE } from "../page-k
 // `npm run build:spec` (tsc -> campaign-spec/dist) so the package runs on the
 // node engine in package.json without type-stripping. build runs on `prepare`,
 // so a fresh install (including the git-ref consumer) always has dist.
-import { CHECKOUT_FLOW_PAGE_TYPES, isReleasedSdkVersion, normalize as normalizeCampaignSpec, runRules, specOnlyRules, upgradeCampaignSpec } from "../../campaign-spec/dist/index.js";
+import { CHECKOUT_FLOW_PAGE_TYPES, checkoutPathFrom, isReleasedSdkVersion, normalize as normalizeCampaignSpec, runRules, specOnlyRules, upgradeCampaignSpec } from "../../campaign-spec/dist/index.js";
 import { cmd, asInvocation } from "../install-invocation.mjs";
 import { specHashesMatch, specMaterialHash } from "../spec-identity.mjs";
 import {
@@ -4018,51 +4019,39 @@ function warnCheckoutPackageFamilyFit(specPages, family, catalog, warnings, repo
   const checkoutPages = specPages.filter((page) => CHECKOUT_FLOW_PAGE_TYPES.includes(page.type));
   const byFunnel = new Map();
   for (const page of checkoutPages) {
-    if (!byFunnel.has(page.funnel_id)) byFunnel.set(page.funnel_id, new Map());
-    byFunnel.get(page.funnel_id).set(page.id, page);
+    if (!byFunnel.has(page.funnel_id)) byFunnel.set(page.funnel_id, []);
+    byFunnel.get(page.funnel_id).push(page);
   }
   const paths = new Map();
   for (const page of checkoutPages) {
     const pages = byFunnel.get(page.funnel_id);
-    let end = page;
-    const visited = new Set([page.id]);
-    while (typeof end.next_page === "string" && pages.has(end.next_page) && !visited.has(end.next_page)) {
-      visited.add(end.next_page);
-      end = pages.get(end.next_page);
-    }
+    const path = checkoutPathFrom(pages, page) || [page];
+    const end = path[path.length - 1];
     const key = `${page.funnel_id}:${end.id}`;
     if (!paths.has(key)) paths.set(key, []);
-    paths.get(key).push(page);
+    const pathPages = paths.get(key);
+    for (const candidate of path) {
+      if (!pathPages.includes(candidate)) pathPages.push(candidate);
+    }
   }
-  const hasStageEvidence = ASSEMBLY_REPORT_STAGE_KEYS.some((key) => {
-    if (key === "prepare_build") return false;
-    const stage = report?.stages?.[key];
-    if (!isObject(stage)) return false;
-    const seedStatuses = key === "setup" ? ["pending", "skipped"] : ["pending"];
-    return !seedStatuses.includes(optionalString(stage.status, "pending"))
-      || ["inputs", "outputs", "commands", "blockers", "warnings", "evidence"].some((field) => Array.isArray(stage[field]) && stage[field].length > 0)
-      || (isObject(stage.evidence) && Object.keys(stage.evidence).length > 0);
-  });
+  const hasStageEvidence = assemblyReportStagesWithEvidence(report).length > 0;
+  const multiStep = [...paths.values()].some((pathPages) =>
+    pathPages.some((candidate) => candidate.type === "checkout_step" || candidate.type === "select"));
   for (const pathPages of paths.values()) {
     const page = pathPages.find((candidate) => selectableVariantMatrixCount(candidate.packages) > 1);
     if (!page) continue;
     const variantCount = selectableVariantMatrixCount(page.packages);
-    const multiStep = pathPages.some((candidate) => candidate.type === "checkout_step" || candidate.type === "select");
     const shapeMatches = fittingFamilies.filter((candidate) => Boolean(catalog.families[candidate]?.canonicalSurfaces?.selectStep) === multiStep);
     // The catalog has no base-family field; its family-name prefix is the shared-base convention.
     const baseMatches = shapeMatches.filter((candidate) => candidate.startsWith(`${family}-`));
     const ranked = [...baseMatches, ...shapeMatches.filter((candidate) => !baseMatches.includes(candidate))];
-    const choice = ranked[0];
-    const otherCandidates = baseMatches.length === 1 ? [] : ranked.slice(1);
     const action = hasStageEvidence
-      ? "The template family is a build-time decision. Changing it requires rerunning intake with --force (destructive; clears recorded stage evidence)."
-      : ranked.length
-        ? `At intake, rerun \`npx --no-install campaigns-os start --spec <json> --source <html-dir> --target <page-kit-dir> --template-family ${choice}\` if this configurable checkout surface is intended.${otherCandidates.length ? ` Other matching ${otherCandidates.length === 1 ? "family" : "families"}: ${otherCandidates.join(", ")}.` : ""}`
-        : "Choose a certified family with a configurable variant-slot checkout surface that matches this checkout path when one is available.";
+      ? "The template family is a build-time decision; changing it requires re-running intake with --force (destructive; clears recorded stage evidence)."
+      : "The family is chosen at intake with --template-family.";
     addIssue(
       warnings,
       "template_contract.checkout_package_fit",
-      `Checkout path through page "${page.id}" has ${variantCount} variants, some offered at several quantities, but template family "${family}" has no configurable variant_slots[] checkout surface. Certified families with variant slots: ${fittingFamilies.join(", ") || "none"}. ${action}`,
+      `Checkout path through page "${page.id}" has ${variantCount} variants, some offered at several quantities, but template family "${family}" has no configurable variant_slots[] checkout surface. ${ranked.length ? `Families that can present it: ${ranked.join(", ")}.` : "No certified family has a matching configurable variant-slot checkout surface."} ${action}`,
       { page_id: page.id, funnel_id: page.funnel_id, template_family: family, distinct_product_variants: variantCount, fitting_families: ranked },
     );
   }

@@ -7342,8 +7342,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.56.0+agent.5",
-      "changelog_sha256": "c03b8d2173b76cd603b1f163e9bf5e37e8273919109a57031562aa596193cf6f",
-      "agent_impact": "Doctor warns once per checkout path when a variant and quantity matrix does not fit the selected family's checkout surface; at intake use the concrete certified family in the start command and consider separately listed tied alternatives, while a later family change requires destructive intake with --force.",
+      "changelog_sha256": "c1d3429f82de8fe191d63f6a32fb21a05a10664b9a17357d00622de74926f521",
+      "agent_impact": "Doctor follows CampaignSpec route targets and warns once per checkout path when a variant and quantity matrix does not fit the selected family's checkout surface. If any checkout path has steps, every warning ranks multi-step families first. The warning lists matching families in ranked order and says to choose with --template-family at intake; after stage evidence, changing the family requires destructive intake with --force.",
       "compatibility": "additive",
       "migration": "none",
       "changes": [
@@ -7351,10 +7351,10 @@
           "class": "cli_surface",
           "path": "src/doctor/checks.mjs",
           "surface_entry": "doctor",
-          "summary": "Warn once per checkout path about a variant and quantity matrix that needs variant slots, put one ranked family in the start command, list tied alternatives separately, and avoid ordinary start advice after stage evidence."
+          "summary": "Warn once per CampaignSpec checkout path about a variant and quantity matrix that needs variant slots, rank matching families by campaign-wide step shape, and name the intake family decision and --force requirement after stage evidence."
         }
       ],
-      "entry_sha256": "81c064bc6920d633ed23d04085e79daf530c80be9a603219e5a4905456bba1bb"
+      "entry_sha256": "80f31df4f93e58aa26fbcc9ec25df26dd38769b82d99e058137fd4e8cf1bd8fc"
     }
   ]
 }
