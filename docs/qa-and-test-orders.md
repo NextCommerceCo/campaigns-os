@@ -101,7 +101,7 @@ recapture. A hosted target (`netlify`, `cloudflare-pages`, …) is unaffected:
 its build stage renders production as before and `page-kit parity` refuses the
 packet (`local_proof.parity.not_local_serve`).
 
-### Missing evidence carried forward on the local preview
+### Missing evidence carried forward on previews
 
 On a `local-serve` packet served from a loopback host (`localhost`,
 `127.0.0.1`, `[::1]`, for both `deploy.preview_url` and `--base-url`), some
@@ -110,20 +110,28 @@ loop. The campaign must still prove its commerce there: store and campaign
 binding, routes, SDK loading, prices and a typed-card order. Only these
 checks are carried forward:
 
-| Check | When |
-| --- | --- |
-| `polish.evidence_missing`, `polish.report_missing` | Polish was never recorded for this build. |
-| `polish.hidden_eager_media.no_capturable_routes` | Every mapped page is template stock (`skip_reason`), so polish capture has no design route to capture. |
-| `polish.hidden_eager_media.capture_malformed` | Only when no page-load capture was recorded at all. |
-| Template-residue severity | With `theme_gate.nothing_generatable`, the starter template is the design, so residue findings are warnings rather than blockers. |
+| Check | Local loopback preview | Hosted preview |
+| --- | --- | --- |
+| `polish.evidence_missing`, `polish.report_missing` | Carried when Polish was never recorded. | Carried only with the all-template `no_capturable_routes` checkpoint. |
+| `polish.hidden_eager_media.no_capturable_routes` | Carried when every mapped page is template stock (`skip_reason`). | Carried when every mapped page is template stock and QA uses the packet's non-loopback `deploy.preview_url`, distinct from `deploy.production_url` by origin or QA-resolved campaign route path. |
+| `polish.hidden_eager_media.capture_malformed` | Carried only when no page-load capture was recorded at all. | Blocked. |
+| Template-residue severity | With `theme_gate.nothing_generatable`, residue findings warn. | Unchanged. |
 
 A carried-forward gate has status `carried_forward`. Doctor reports it as a
-warning starting "Carried forward on the local preview"; `next` moves past
-polish to deploy and QA; QA records it as a `warn` row, so the verdict is at
+warning starting "Carried forward on the local preview" or "Carried forward on the hosted preview"; `next` moves past
+polish to deploy and QA, and the recorded all-template hosted preview satisfies deploy without a deploy record; QA records it as a `warn` row, so the verdict is at
 best `ready_with_exceptions`. The evidence is reported as missing, never as
-passed. Any other check keeps its meaning. A hosted preview or production
-packet, and a `local-serve` packet served from any other host, gets the strict
-gates. `record polish` and the waiver commands also keep them strict. Progress
+passed. On a hosted all-template preview, first record an unset preview URL
+with `campaigns-os qa policy set --packet <packet> --preview-url <url>`, then
+run `campaigns-os next --packet <packet>`. Run `campaigns-os next qa --packet <packet>`
+then `campaigns-os qa run --packet <packet> --base-url <preview-url> --browser --test-order common` directly. After QA records the current-build verdict, run `campaigns-os next --packet <packet>` for closeout;
+`record deploy` only accepts loopback local-serve URLs; a pending hosted deploy
+record does not suppress these QA actions when the all-template checkpoint is
+carried forward. The hosted exception
+requires a distinct packet `deploy.preview_url`; a query or fragment on the production page does not count as distinct. QA with `--base-url` equal to
+the packet's `deploy.production_url` stays blocked. A `local-serve` packet
+served from any other host also gets strict gates. `record polish` and the
+waiver commands keep them strict. Progress
 snapshots record a carried-forward gate as `not_applicable`, because their
 schema has no carried-forward state.
 

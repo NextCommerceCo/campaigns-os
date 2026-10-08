@@ -8,6 +8,12 @@ Notable supported-surface changes are recorded here.
 
 Doctor warns once per checkout path when selectable packages form a variant and quantity matrix but the selected certified template family declares one main package and no configurable variant-slot checkout surface. The matrix requires at least two variants, with at least one offered at multiple quantities. Variant identity comes from attributes shared by every selectable row carrying a quantity, or from variant names shared by those rows; rows with missing or blank quantities are ignored when detecting the matrix. SKUs, order bumps, upsells, pack-size rows, and quantity tiers of one variant do not trigger the warning. Paths follow CampaignSpec route targets, including `.html` and `page_url` routes. If any checkout path has a `select` or `checkout_step` page, every warning ranks multi-step families first. Each warning names the matching certified variant-slot families in ranked order, preferring the selected family's base. It says the family is chosen at intake with `--template-family`; after stage evidence is recorded, it explains that changing the family requires destructive intake with `--force`. The warning does not block intake or change the selected family.
 
+## [1.56.0+agent.2] - 2026-10-08
+
+### Changed
+
+When every mapped page is template stock, a non-loopback hosted preview at `deploy.preview_url` carries missing Polish and hidden eager-media page-load evidence forward as warnings if its origin or campaign route path differs from `deploy.production_url` after QA composes the campaign slug onto each URL; a query or fragment alone does not qualify. Doctor and `next` move past Polish, and QA records warning rows with a verdict no better than `ready_with_exceptions`. QA against the production campaign page and hosted campaigns with a capturable design route retain strict evidence gates. If the preview URL is missing or resolves to the production campaign page, `next` names `qa policy set --packet <packet> --preview-url <url>` even when a production URL is set. Once recorded, `next` names browser and typed-card QA with `qa run --packet <packet> --base-url <preview-url> --browser --test-order common`. The hosted preview satisfies the deploy handoff without a deploy record; after a current-build QA verdict, `next` reaches closeout. `record deploy` remains local-only. The Polish prompt and actions do not suggest a capture when no design route exists. Bundled skills advance to `1.56.0+skills.2`.
+
 ## [1.56.0+agent.1] - 2026-10-08
 
 ### Fixed

@@ -1762,7 +1762,19 @@ prepare-build gate is set (`next` answers prepare-build) or while an earlier
 stage in the order below is not terminal. The exception is the one `next`
 makes: on the local preview, a polish doctor carries forward (never recorded
 for this build) does not hold `record deploy` back, as it does not hold `next`;
-polish stays owed and QA reports it.
+polish stays owed and QA reports it. If every mapped page is template stock on
+a hosted preview, doctor carries the same missing-evidence shape forward.
+`record deploy` remains local-only: record an unset hosted preview URL with
+`campaigns-os qa policy set --packet <p> --preview-url <url>`, then run
+`campaigns-os next --packet <p>`. The hosted preview must be a non-loopback
+HTTP(S) URL whose origin or QA-resolved campaign route path differs from `deploy.production_url`;
+query and fragment text does not make the production page a preview. With
+`deploy.preview_url` recorded, run `campaigns-os next qa --packet <p>` and
+`campaigns-os qa run --packet <p> --base-url <preview-url> --browser
+--test-order common`. The recorded hosted preview satisfies the deploy step
+for this all-template shape. After QA records a verdict for the current build,
+`campaigns-os next --packet <p>` reaches closeout without a hosted deploy
+record. QA against the packet's production URL retains the strict gate.
 
 Each command reads the same packet, Build Context and Assembly Report `next`
 reads (`--context` / `--report` override them the same way), validates what it
@@ -1792,7 +1804,7 @@ build` after every page-kit build; a rebuild that changes the output needs
 rebuilt output, `next` asks for QA again if the last QA record names the
 previous build fingerprint, even while its stage status still says completed.
 
-Stage order: `setup → build → polish → deploy → qa`. The picker walks this list and returns the first stage whose recorded status isn't terminal (`completed`, `completed_with_warnings`, `skipped`). During Polish, install the package-owned browser first, then run `campaigns-os polish capture` against the served current build before recording a terminal `stages.polish.status` or proceeding to deploy/QA; the producer attaches package-owned `visual_review.page_load` evidence and never marks the stage complete itself.
+Stage order: `setup → build → polish → deploy → qa`. The picker walks this list and returns the first stage whose recorded status isn't terminal (`completed`, `completed_with_warnings`, `skipped`), except that a carried-forward all-template hosted preview with a recorded `deploy.preview_url` satisfies deploy without a report record. During Polish, when a design route exists, install the package-owned browser first, then run `campaigns-os polish capture` against the served current build before recording a terminal `stages.polish.status` or proceeding to deploy/QA; the producer attaches package-owned `visual_review.page_load` evidence and never marks the stage complete itself. Template-stock campaigns with no design route have no capture to run and follow the preview policy above.
 
 | Stage | Report key | Owner |
 |---|---|---|
@@ -1825,7 +1837,7 @@ Result shape (with `--json`):
 Terminal states:
 
 - **`stage: "doctor-blocked"`** — doctor returned errors. Resolve the blockers and re-run `campaigns-os doctor` to confirm before calling `next` again.
-- **`stage: "done"`** — every stage is in a terminal status. Pipeline is complete. To repeat build work, do the work and use `record build`; it makes downstream stages owed as needed. Use `record setup` or `record polish` after repeating those stages, and `qa run` for QA. `record deploy` records a local-serve target; for a hosted deploy, record the URL and stage outcome as the deploy prompt describes. Then call `next` again.
+- **`stage: "done"`** — every stage is terminal, or a carried-forward all-template hosted preview satisfies deploy with a recorded `deploy.preview_url` and current-build QA verdict. Pipeline is complete. To repeat build work, do the work and use `record build`; it makes downstream stages owed as needed. Use `record setup` or `record polish` after repeating those stages, and `qa run` for QA. `record deploy` records a local-serve target; other hosted deploys record the URL and stage outcome as the deploy prompt describes. Then call `next` again.
 - **`stage_blocked: true`** — the picker returned a stage whose recorded status is `blocked`. Don't run the prompt as-is; clear the blocker first.
 
 The legacy form `campaigns-os next <stage>` (e.g. `next build`) still works and is the way to force a specific stage when you want to override the picker.
