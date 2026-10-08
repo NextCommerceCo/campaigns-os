@@ -1,0 +1,317 @@
+{
+  "schema_version": "5.0",
+  "shipping_methods": [],
+  "funnels": [
+    {
+      "id": "default",
+      "pages": [
+        {
+          "id": "checkout",
+          "type": "checkout",
+          "packages": [
+            {
+              "ref_id": "variant-01-qty-1",
+              "qty": 1,
+              "product_variant_name": "Colour A / Size 1"
+            },
+            {
+              "ref_id": "variant-01-qty-2",
+              "qty": 2,
+              "product_variant_name": "Colour A / Size 1"
+            },
+            {
+              "ref_id": "variant-01-qty-3",
+              "qty": 3,
+              "product_variant_name": "Colour A / Size 1"
+            },
+            {
+              "ref_id": "variant-02-qty-1",
+              "qty": 1,
+              "product_variant_name": "Colour A / Size 2"
+            },
+            {
+              "ref_id": "variant-02-qty-2",
+              "qty": 2,
+              "product_variant_name": "Colour A / Size 2"
+            },
+            {
+              "ref_id": "variant-02-qty-3",
+              "qty": 3,
+              "product_variant_name": "Colour A / Size 2"
+            },
+            {
+              "ref_id": "variant-03-qty-1",
+              "qty": 1,
+              "product_variant_name": "Colour A / Size 3"
+            },
+            {
+              "ref_id": "variant-03-qty-2",
+              "qty": 2,
+              "product_variant_name": "Colour A / Size 3"
+            },
+            {
+              "ref_id": "variant-03-qty-3",
+              "qty": 3,
+              "product_variant_name": "Colour A / Size 3"
+            },
+            {
+              "ref_id": "variant-04-qty-1",
+              "qty": 1,
+              "product_variant_name": "Colour A / Size 4"
+            },
+            {
+              "ref_id": "variant-04-qty-2",
+              "qty": 2,
+              "product_variant_name": "Colour A / Size 4"
+            },
+            {
+              "ref_id": "variant-04-qty-3",
+              "qty": 3,
+              "product_variant_name": "Colour A / Size 4"
+            },
+            {
+              "ref_id": "variant-05-qty-1",
+              "qty": 1,
+              "product_variant_name": "Colour B / Size 1"
+            },
+            {
+              "ref_id": "variant-05-qty-2",
+              "qty": 2,
+              "product_variant_name": "Colour B / Size 1"
+            },
+            {
+              "ref_id": "variant-05-qty-3",
+              "qty": 3,
+              "product_variant_name": "Colour B / Size 1"
+            },
+            {
+              "ref_id": "variant-06-qty-1",
+              "qty": 1,
+              "product_variant_name": "Colour B / Size 2"
+            },
+            {
+              "ref_id": "variant-06-qty-2",
+              "qty": 2,
+              "product_variant_name": "Colour B / Size 2"
+            },
+            {
+              "ref_id": "variant-06-qty-3",
+              "qty": 3,
+              "product_variant_name": "Colour B / Size 2"
+            },
+            {
+              "ref_id": "variant-07-qty-1",
+              "qty": 1,
+              "product_variant_name": "Colour B / Size 3"
+            },
+            {
+              "ref_id": "variant-07-qty-2",
+              "qty": 2,
+              "product_variant_name": "Colour B / Size 3"
+            },
+            {
+              "ref_id": "variant-07-qty-3",
+              "qty": 3,
+              "product_variant_name": "Colour B / Size 3"
+            },
+            {
+              "ref_id": "variant-08-qty-1",
+              "qty": 1,
+              "product_variant_name": "Colour B / Size 4"
+            },
+            {
+              "ref_id": "variant-08-qty-2",
+              "qty": 2,
+              "product_variant_name": "Colour B / Size 4"
+            },
+            {
+              "ref_id": "variant-08-qty-3",
+              "qty": 3,
+              "product_variant_name": "Colour B / Size 4"
+            },
+            {
+              "ref_id": "variant-09-qty-1",
+              "qty": 1,
+              "product_variant_name": "Colour C / Size 1"
+            },
+            {
+              "ref_id": "variant-09-qty-2",
+              "qty": 2,
+              "product_variant_name": "Colour C / Size 1"
+            },
+            {
+              "ref_id": "variant-09-qty-3",
+              "qty": 3,
+              "product_variant_name": "Colour C / Size 1"
+            },
+            {
+              "ref_id": "variant-10-qty-1",
+              "qty": 1,
+              "product_variant_name": "Colour C / Size 2"
+            },
+            {
+              "ref_id": "variant-10-qty-2",
+              "qty": 2,
+              "product_variant_name": "Colour C / Size 2"
+            },
+            {
+              "ref_id": "variant-10-qty-3",
+              "qty": 3,
+              "product_variant_name": "Colour C / Size 2"
+            },
+            {
+              "ref_id": "variant-11-qty-1",
+              "qty": 1,
+              "product_variant_name": "Colour C / Size 3"
+            },
+            {
+              "ref_id": "variant-11-qty-2",
+              "qty": 2,
+              "product_variant_name": "Colour C / Size 3"
+            },
+            {
+              "ref_id": "variant-11-qty-3",
+              "qty": 3,
+              "product_variant_name": "Colour C / Size 3"
+            },
+            {
+              "ref_id": "variant-12-qty-1",
+              "qty": 1,
+              "product_variant_name": "Colour C / Size 4"
+            },
+            {
+              "ref_id": "variant-12-qty-2",
+              "qty": 2,
+              "product_variant_name": "Colour C / Size 4"
+            },
+            {
+              "ref_id": "variant-12-qty-3",
+              "qty": 3,
+              "product_variant_name": "Colour C / Size 4"
+            },
+            {
+              "ref_id": "variant-13-qty-1",
+              "qty": 1,
+              "product_variant_name": "Colour D / Size 1"
+            },
+            {
+              "ref_id": "variant-13-qty-2",
+              "qty": 2,
+              "product_variant_name": "Colour D / Size 1"
+            },
+            {
+              "ref_id": "variant-13-qty-3",
+              "qty": 3,
+              "product_variant_name": "Colour D / Size 1"
+            },
+            {
+              "ref_id": "variant-14-qty-1",
+              "qty": 1,
+              "product_variant_name": "Colour D / Size 2"
+            },
+            {
+              "ref_id": "variant-14-qty-2",
+              "qty": 2,
+              "product_variant_name": "Colour D / Size 2"
+            },
+            {
+              "ref_id": "variant-14-qty-3",
+              "qty": 3,
+              "product_variant_name": "Colour D / Size 2"
+            },
+            {
+              "ref_id": "variant-15-qty-1",
+              "qty": 1,
+              "product_variant_name": "Colour D / Size 3"
+            },
+            {
+              "ref_id": "variant-15-qty-2",
+              "qty": 2,
+              "product_variant_name": "Colour D / Size 3"
+            },
+            {
+              "ref_id": "variant-15-qty-3",
+              "qty": 3,
+              "product_variant_name": "Colour D / Size 3"
+            },
+            {
+              "ref_id": "variant-16-qty-1",
+              "qty": 1,
+              "product_variant_name": "Colour D / Size 4"
+            },
+            {
+              "ref_id": "variant-16-qty-2",
+              "qty": 2,
+              "product_variant_name": "Colour D / Size 4"
+            },
+            {
+              "ref_id": "variant-16-qty-3",
+              "qty": 3,
+              "product_variant_name": "Colour D / Size 4"
+            },
+            {
+              "ref_id": "variant-17-qty-1",
+              "qty": 1,
+              "product_variant_name": "Colour E / Size 1"
+            },
+            {
+              "ref_id": "variant-17-qty-2",
+              "qty": 2,
+              "product_variant_name": "Colour E / Size 1"
+            },
+            {
+              "ref_id": "variant-17-qty-3",
+              "qty": 3,
+              "product_variant_name": "Colour E / Size 1"
+            },
+            {
+              "ref_id": "variant-18-qty-1",
+              "qty": 1,
+              "product_variant_name": "Colour E / Size 2"
+            },
+            {
+              "ref_id": "variant-18-qty-2",
+              "qty": 2,
+              "product_variant_name": "Colour E / Size 2"
+            },
+            {
+              "ref_id": "variant-18-qty-3",
+              "qty": 3,
+              "product_variant_name": "Colour E / Size 2"
+            },
+            {
+              "ref_id": "variant-19-qty-1",
+              "qty": 1,
+              "product_variant_name": "Colour E / Size 3"
+            },
+            {
+              "ref_id": "variant-19-qty-2",
+              "qty": 2,
+              "product_variant_name": "Colour E / Size 3"
+            },
+            {
+              "ref_id": "variant-19-qty-3",
+              "qty": 3,
+              "product_variant_name": "Colour E / Size 3"
+            },
+            {
+              "ref_id": "variant-20-qty-1",
+              "qty": 1,
+              "product_variant_name": "Colour E / Size 4"
+            },
+            {
+              "ref_id": "variant-20-qty-2",
+              "qty": 2,
+              "product_variant_name": "Colour E / Size 4"
+            },
+            {
+              "ref_id": "variant-20-qty-3",
+              "qty": 3,
+              "product_variant_name": "Colour E / Size 4"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

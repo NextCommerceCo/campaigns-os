@@ -7499,6 +7499,27 @@
         }
       ],
       "entry_sha256": "ad7106aff83139e4b650285eb8db79fb96ac672f6d3a898efef5d9df7ea30014"
+    },
+    {
+      "id": "RL-0260",
+      "sequence": 248,
+      "date": "2026-10-08",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.56.0+agent.5",
+      "changelog_sha256": "c1d3429f82de8fe191d63f6a32fb21a05a10664b9a17357d00622de74926f521",
+      "agent_impact": "Doctor follows CampaignSpec route targets and warns once per checkout path when a variant and quantity matrix does not fit the selected family's checkout surface. If any checkout path has steps, every warning ranks multi-step families first. The warning lists matching families in ranked order and says to choose with --template-family at intake; after stage evidence, changing the family requires destructive intake with --force.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "Warn once per CampaignSpec checkout path about a variant and quantity matrix that needs variant slots, rank matching families by campaign-wide step shape, and name the intake family decision and --force requirement after stage evidence."
+        }
+      ],
+      "entry_sha256": "afef05c6ecc77f432e4c7393cee7e1e7233ebf58a5fc68e94b442b167f869552"
     }
   ]
 }

@@ -21,7 +21,7 @@ import { resolveTemplateFamilyDesignSource } from "./template-reference.mjs";
 // states never count as accumulated agent evidence. setup's seed state may
 // legitimately be "skipped" (scaffold already present); every other stage is
 // seeded "pending" with empty ledger arrays.
-function assemblyReportStagesWithEvidence(existingReport) {
+export function assemblyReportStagesWithEvidence(existingReport) {
   const stages = existingReport?.stages;
   if (!isObject(stages)) return [];
   const withEvidence = [];

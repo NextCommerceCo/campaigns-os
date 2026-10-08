@@ -93,6 +93,7 @@ import { FIGMA_EXPORT_FILE_CODES, SOURCE_PROVENANCE_SCOPE, evaluateSourceProvena
 import { validateCampaignBuildBriefArtifact } from "../build-brief.mjs";
 import { briefFileUnusable, deriveInputCurrency, wellFormedBriefMaterial } from "../input-currency.mjs";
 import { ASSEMBLY_REPORT_STAGE_KEYS, stageIsTerminal } from "../orchestration-stage-contract.mjs";
+import { assemblyReportStagesWithEvidence } from "../design-source-publication.mjs";
 import {
   assemblySourcePackageFingerprintMissing,
   assessAssemblySourcePackageFreshnessWaivers,
@@ -108,7 +109,7 @@ import { evaluatePageKitSdkVersion, PAGE_KIT_SDK_VERSION_SCOPE } from "../page-k
 // `npm run build:spec` (tsc -> campaign-spec/dist) so the package runs on the
 // node engine in package.json without type-stripping. build runs on `prepare`,
 // so a fresh install (including the git-ref consumer) always has dist.
-import { CHECKOUT_FLOW_PAGE_TYPES, isReleasedSdkVersion, normalize as normalizeCampaignSpec, runRules, specOnlyRules, upgradeCampaignSpec } from "../../campaign-spec/dist/index.js";
+import { CHECKOUT_FLOW_PAGE_TYPES, checkoutPathFrom, isReleasedSdkVersion, normalize as normalizeCampaignSpec, runRules, specOnlyRules, upgradeCampaignSpec } from "../../campaign-spec/dist/index.js";
 import { cmd, asInvocation } from "../install-invocation.mjs";
 import { specHashesMatch, specMaterialHash } from "../spec-identity.mjs";
 import {
@@ -4045,6 +4046,98 @@ function packageRefsFromEntries(entries) {
     .filter((value) => value !== undefined && value !== null && String(value).trim().length > 0)
     .map((value) => String(value));
 }
+
+function supportsCheckoutVariantSlots(agentContract) {
+  const required = frontmatterList(agentContract, "requiredWhenCloning");
+  return required.includes("variant_slots[].id") && required.includes("variant_slots[].quantity");
+}
+
+function selectableVariantMatrixCount(packages) {
+  const selectable = Array.isArray(packages)
+    ? packages.filter((pkg) => pkg && pkg.is_order_bump !== true && pkg.is_upsell !== true)
+    : [];
+  const quantityRows = selectable.filter((pkg) => String(pkg.qty ?? "").trim());
+  if (quantityRows.length <= 1) return 0;
+  const attributeIdentity = (pkg) => {
+    if (!Array.isArray(pkg.variant_attributes) || pkg.variant_attributes.length === 0) return null;
+    const attributes = pkg.variant_attributes.map((attribute) => {
+      const value = String(attribute?.value ?? "").trim();
+      if (!value) return null;
+      return [String(attribute?.code || attribute?.name || "").trim(), value];
+    });
+    return attributes.every(Boolean) ? JSON.stringify(attributes.sort(([a], [b]) => a.localeCompare(b))) : null;
+  };
+  const textIdentity = (key) => (pkg) => {
+    const value = pkg[key];
+    return typeof value === "string" && value.trim() ? value.trim() : null;
+  };
+  for (const identity of [attributeIdentity, textIdentity("product_variant_name")]) {
+    const values = quantityRows.map(identity);
+    if (!values.every(Boolean)) continue;
+    const quantitiesByVariant = new Map();
+    for (const [index, value] of values.entries()) {
+      const qty = String(quantityRows[index].qty).trim();
+      if (!quantitiesByVariant.has(value)) quantitiesByVariant.set(value, new Set());
+      quantitiesByVariant.get(value).add(qty);
+    }
+    return quantitiesByVariant.size > 1 && [...quantitiesByVariant.values()].some((quantities) => quantities.size > 1)
+      ? quantitiesByVariant.size
+      : 0;
+  }
+  return 0;
+}
+
+function warnCheckoutPackageFamilyFit(specPages, family, catalog, warnings, report) {
+  const selectedContract = catalog.families?.[family]?.agentContract;
+  if (
+    !selectedContract ||
+    !isCertifiedTemplateFamily(family, catalog) ||
+    !frontmatterList(selectedContract, "requiredWhenCloning").includes("packages.main_package") ||
+    supportsCheckoutVariantSlots(selectedContract)
+  ) return;
+  const fittingFamilies = [...certifiedTemplateFamilies(catalog)]
+    .filter((candidate) => supportsCheckoutVariantSlots(catalog.families[candidate]?.agentContract))
+    .sort();
+  const checkoutPages = specPages.filter((page) => CHECKOUT_FLOW_PAGE_TYPES.includes(page.type));
+  const byFunnel = new Map();
+  for (const page of checkoutPages) {
+    if (!byFunnel.has(page.funnel_id)) byFunnel.set(page.funnel_id, []);
+    byFunnel.get(page.funnel_id).push(page);
+  }
+  const paths = new Map();
+  for (const page of checkoutPages) {
+    const pages = byFunnel.get(page.funnel_id);
+    const path = checkoutPathFrom(pages, page) || [page];
+    const end = path[path.length - 1];
+    const key = `${page.funnel_id}:${end.id}`;
+    if (!paths.has(key)) paths.set(key, []);
+    const pathPages = paths.get(key);
+    for (const candidate of path) {
+      if (!pathPages.includes(candidate)) pathPages.push(candidate);
+    }
+  }
+  const hasStageEvidence = assemblyReportStagesWithEvidence(report).length > 0;
+  const multiStep = [...paths.values()].some((pathPages) =>
+    pathPages.some((candidate) => candidate.type === "checkout_step" || candidate.type === "select"));
+  for (const pathPages of paths.values()) {
+    const page = pathPages.find((candidate) => selectableVariantMatrixCount(candidate.packages) > 1);
+    if (!page) continue;
+    const variantCount = selectableVariantMatrixCount(page.packages);
+    const shapeMatches = fittingFamilies.filter((candidate) => Boolean(catalog.families[candidate]?.canonicalSurfaces?.selectStep) === multiStep);
+    // The catalog has no base-family field; its family-name prefix is the shared-base convention.
+    const baseMatches = shapeMatches.filter((candidate) => candidate.startsWith(`${family}-`));
+    const ranked = [...baseMatches, ...shapeMatches.filter((candidate) => !baseMatches.includes(candidate))];
+    const action = hasStageEvidence
+      ? "The template family is a build-time decision; changing it requires re-running intake with --force (destructive; clears recorded stage evidence)."
+      : "The family is chosen at intake with --template-family.";
+    addIssue(
+      warnings,
+      "template_contract.checkout_package_fit",
+      `Checkout path through page "${page.id}" has ${variantCount} variants, some offered at several quantities, but template family "${family}" has no configurable variant_slots[] checkout surface. ${ranked.length ? `Families that can present it: ${ranked.join(", ")}.` : "No certified family has a matching configurable variant-slot checkout surface."} ${action}`,
+      { page_id: page.id, funnel_id: page.funnel_id, template_family: family, distinct_product_variants: variantCount, fitting_families: ranked },
+    );
+  }
+}
 function offerRefsFromEntries(entries) {
   if (!Array.isArray(entries)) return [];
   return entries
@@ -4229,6 +4322,7 @@ export function validateCommerceCatalog(packet, packetPath, spec, errors, warnin
 
     // ADR-003 step 2: template-contract checks ported from the private doctor.
     const specPages = activeSpecPages(spec);
+    warnCheckoutPackageFamilyFit(specPages, family, catalog, warnings, buildState.report);
 
     const mismatchedFamilies = specPages.filter(
       (page) => isNonEmptyString(page.sdk_hints?.template_family) && page.sdk_hints.template_family !== family
