@@ -65,6 +65,22 @@ test("repo-relative QA output hint resolves from the target root outside its cwd
   assert.equal(legacy[0]?.path, verdictPath);
 }));
 
+test("nested report resolves a target-relative QA hint with multiple roots", () => withDir((dir) => {
+  const targetRepo = join(dir, "repo");
+  const reportBase = join(targetRepo, ".campaign-runtime/nested");
+  const verdictPath = join(targetRepo, "qa-output/demo/run_1.json");
+  writeJson(verdictPath, { campaign_slug: "demo", disposition: "ready" });
+  const report = { stages: { qa: { outputs: ["qa-output/demo/run_1.json"] } } };
+
+  const found = discoverQaVerdicts({
+    report,
+    reportPath: join(reportBase, "assembly-report.json"),
+    roots: [targetRepo, reportBase],
+  });
+  assert.deepEqual(found.map((candidate) => candidate.path), [verdictPath]);
+  assert.equal(found[0].source, "assembly_report");
+}));
+
 test("report-relative QA hint wins when a target-root sibling has the same name", () => withDir((dir) => {
   const repo = join(dir, "repo");
   const hint = "qa-output/demo/run_1.json";

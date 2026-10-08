@@ -13,7 +13,7 @@ import { resolveCampaignIdentity, localQaIdentifier } from "./spec-source-identi
 
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { QA_OUTPUT_REL_PATH } from "./campaign-workspace.mjs";
 import { absentOrMalformed } from "./fs-identity.mjs";
 import { isPlainObject as isObject, normalizeString as optionalString } from "./repo-scan.mjs";
@@ -181,8 +181,12 @@ export function* iterateQaVerdicts({ packet = null, report = null, reportPath = 
 }
 
 function uniqueTargetRoot(roots, reportBase) {
+  for (let directory = reportBase; directory; directory = dirname(directory)) {
+    if (basename(directory) === ".campaign-runtime") return dirname(directory);
+    if (dirname(directory) === directory) break;
+  }
   const candidates = [...new Set(roots.filter((root) => typeof root === "string" && root).map((root) => resolve(root)))];
-  return candidates.length === 1 ? candidates[0] : reportBase && reportBase.endsWith(".campaign-runtime") ? dirname(reportBase) : null;
+  return candidates.length === 1 ? candidates[0] : null;
 }
 
 export function discoverQaVerdicts(options = {}) {

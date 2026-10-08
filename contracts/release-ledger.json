@@ -7357,16 +7357,16 @@
           "class": "cli_surface",
           "path": "src/cli.mjs",
           "surface_entry": null,
-          "summary": "Persist doctor and QA output paths relative to the target and keep external prepare-build inputs in ordinary relative form."
+          "summary": "Persist QA stage output paths relative to the target, pass the target root to doctor sidecar writes, and resolve report-linked QA verdicts from that root."
         },
         {
           "class": "cli_surface",
           "path": "src/doctor/inspect.mjs",
           "surface_entry": "doctor",
-          "summary": "Use the shared target-relative path conversion for strip-paths output."
+          "summary": "Record the doctor stage output path relative to the target repository."
         }
       ],
-      "entry_sha256": "cfb0dbd2a96afa777f750fee6b671b509d9cc53c532a28df14d3816046d5794f"
+      "entry_sha256": "e0bb5b6c8cb41e1fe7bdd6cae979e6168301aaa613539d9b580055860eda4a56"
     }
   ]
 }

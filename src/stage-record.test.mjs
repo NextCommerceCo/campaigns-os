@@ -74,7 +74,6 @@ function withLifecycle(run, { mutateSpec = null } = {}) {
     const source = join(dir, "source");
     const target = join(dir, "target");
     const specPath = join(dir, "campaignspec.json");
-    mkdirSync(dirname(source), { recursive: true });
     cpSync(join(ROOT, "examples/source-html"), source, { recursive: true });
     const spec = readJson(join(ROOT, "examples/campaignspec.v42.basic.json"));
     for (const funnel of spec.funnels || []) for (const page of funnel.pages || []) delete page.sdk_hints;

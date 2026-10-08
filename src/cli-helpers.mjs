@@ -1,7 +1,7 @@
 // Small general helpers the CLI and the doctor modules share.
 import { htmlScanDigest } from "./html-scan.mjs";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { canonicalPath } from "./fs-identity.mjs";
 import { refused } from "./lifecycle.mjs";
 import { isAbsoluteHttpUrl } from "./route-identity.mjs";
@@ -79,43 +79,94 @@ function isLocalAbsolutePath(value) {
   return isNonEmptyString(value) && !isAbsoluteHttpUrl(value) && isAbsolute(value);
 }
 
-// Commit-ready JSON may contain paths as fields or inside instructions.
-// Root replacements also catch a path embedded only in a message or command.
+// Commit-ready JSON has a finite set of filesystem fields. Route roots and URL
+// paths are deliberately absent: a leading slash does not make one a file.
 function portableArtifactPath(targetRepo, path, { baseDir = targetRepo } = {}) {
   const rel = relative(resolve(baseDir), resolve(path));
   return !rel ? "." : rel.startsWith(".") ? rel : `./${rel}`;
 }
 
-function portableArtifactPaths(value, targetRepo) {
-  const roots = [...new Set([resolve(targetRepo), canonicalPath(targetRepo)])];
-  const filesystemRoots = [...new Set([...roots, "/tmp", "/var", "/private", "/home", "/Users", "/Volumes", "/mnt", "/srv"])];
-  const paths = new Set(roots);
-  const pathField = (key) => !/(?:^|_)(?:url|route)_path$/.test(key || "")
-    && (/(?:^|_)(?:path|root|dir|directory|file)$/.test(key || "") || key === "target_repo");
-  const isFilesystemPath = (entry, key = null) => isLocalAbsolutePath(entry)
-    && (key === null || pathField(key) || filesystemRoots.some((root) => entry === root || entry.startsWith(`${root}${sep}`)) || existsSync(entry));
-  function collect(entry, key = null) {
-    if (Array.isArray(entry)) return entry.forEach((item) => collect(item, key));
-    if (isObject(entry)) return Object.entries(entry).forEach(([field, item]) => collect(item, field));
-    if (isFilesystemPath(entry, key)) paths.add(entry);
-    if (typeof entry === "string" && !isAbsoluteHttpUrl(entry) && !isAbsolute(entry)) {
-      for (const match of entry.matchAll(/(?:^|[\s"'(=])(\/[^\s"'()[\]{},;]+)/g)) {
-        if (isFilesystemPath(match[1], "message")) paths.add(match[1]);
-      }
-    }
+const ARTIFACT_PATH_FIELDS = Object.freeze({
+  "campaign-runtime-build-packet/v0": [
+    "spec.local_path", "design_source_package.path", "source_html.root",
+    "source_html.pages.*.path", "source_html.pages.*.page_kit.target_path",
+    "source_html.pages.*.page_kit.output_path", "build_brief.input_path",
+    "build_brief.normalized_path", "assembly.target_repo", "assembly.output_dir",
+    "assembly.commerce_catalog.path",
+  ],
+  "campaign-runtime-build-context/v0": [
+    "packet_path", "report_path", "intake.spec_path", "intake.source_root",
+    "intake.target_repo", "intake.brief_path", "intake.design_manifest_path",
+    "intake.packet_path", "design_source_package.path", "spec.path", "source.root",
+    "build_brief.input_path", "build_brief.normalized_path",
+    "page_map.*.source_path", "page_map.*.output_path",
+    "page_map.*.page_kit.target_path", "page_map.*.page_kit.output_path",
+    "scaffold.target_repo", "scaffold.output_dir", "scaffold.handoff_artifact",
+    "theme.source_files.*.path", "theme.generated.css_path", "theme.generated.report_path",
+  ],
+  "campaign-runtime-assembly-report/v0": [
+    "inputs.packet_path", "inputs.context_path", "inputs.build_brief_path",
+    "inputs.spec_path", "inputs.source.root", "inputs.target_repo",
+    "design_source_package.path", "build_brief.input_path", "build_brief.normalized_path",
+    // `**` also reaches each stage's archived entries.
+    "theme.css_path", "stages.**.inputs.*", "stages.**.outputs.*",
+  ],
+  "campaigns-os-doctor-output/v0": [
+    "packet_path", "assembly_report_path", "spec_path", "emitted_packet_path",
+    "derived.packet_path", "derived.assembly_report_path", "derived.spec_path",
+    "derived.target_repo", "derived.source_root", "derived.output_dir", "derived.target_output_dir",
+    "errors.*.detail.spec_path", "errors.*.detail.input_path",
+    "warnings.*.detail.spec_path", "warnings.*.detail.input_path",
+  ],
+  "campaigns-os-build-brief/v1": ["_meta.input_path"],
+});
+
+const ARTIFACT_COMMAND_FIELDS = Object.freeze({
+  "campaign-runtime-assembly-report/v0": [
+    "next.command", "stages.**.commands.*",
+    "**.message", "**.blockers.*", "**.warnings.*",
+  ],
+  "campaigns-os-doctor-output/v0": [
+    "next.command", "next.actions.*", "next_actions.*.command", "**.message", "**.blockers.*", "**.warnings.*",
+  ],
+});
+
+function fieldMatches(pattern, segments) {
+  const parts = pattern.split(".");
+  function matches(at, index) {
+    if (at === parts.length) return index === segments.length;
+    if (parts[at] === "**") return matches(at + 1, index) || (index < segments.length && matches(at, index + 1));
+    return index < segments.length && (parts[at] === "*" || parts[at] === segments[index]) && matches(at + 1, index + 1);
   }
-  collect(value);
-  const replacements = [...paths]
-    .sort((left, right) => right.length - left.length)
-    .map((path) => [path, portableArtifactPath(targetRepo, path)]);
-  function visit(entry, key = null) {
-    if (Array.isArray(entry)) return entry.map((item) => visit(item, key));
-    if (isObject(entry)) return Object.fromEntries(Object.entries(entry).map(([field, item]) => [field, visit(item, field)]));
-    if (typeof entry !== "string" || isAbsoluteHttpUrl(entry)) return entry;
-    if (isFilesystemPath(entry, key)) return portableArtifactPath(targetRepo, entry);
-    let output = entry;
-    for (const [path, replacement] of replacements) output = output.split(path).join(replacement);
+  return matches(0, 0);
+}
+
+function portableArtifactPaths(value, targetRepo) {
+  const schema = isObject(value) ? value.schema_version : null;
+  const pathFields = ARTIFACT_PATH_FIELDS[schema] || [];
+  const commandFields = ARTIFACT_COMMAND_FIELDS[schema] || [];
+  const roots = [...new Set([resolve(targetRepo), canonicalPath(targetRepo)])]
+    .filter((root) => root !== "/")
+    .sort((left, right) => right.length - left.length);
+  function portableCommand(command) {
+    let output = command;
+    for (const root of roots) {
+      const escaped = root.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      output = output.replace(new RegExp(`(^|[\\s"'(=,;])${escaped}(?=$|[/\\s"',;)])`, "g"),
+        (_match, prefix) => `${prefix}.`);
+    }
     return output;
+  }
+  function visit(entry, segments = []) {
+    if (Array.isArray(entry)) return entry.map((item) => visit(item, [...segments, "*"]));
+    if (isObject(entry)) return Object.fromEntries(Object.entries(entry).map(([field, item]) => [field, visit(item, [...segments, field])]));
+    if (typeof entry !== "string") return entry;
+    if (Array.isArray(value) && segments.length === 1 && isLocalAbsolutePath(entry)) return portableArtifactPath(targetRepo, entry);
+    if (pathFields.some((pattern) => fieldMatches(pattern, segments)) && isLocalAbsolutePath(entry)) {
+      return portableArtifactPath(targetRepo, entry);
+    }
+    if (commandFields.some((pattern) => fieldMatches(pattern, segments))) return portableCommand(entry);
+    return entry;
   }
   return visit(value);
 }
