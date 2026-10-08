@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-polish
-version: 1.1.37
+version: 1.1.38
 description: Run the visual/runtime polish pass after build and before QA for a Campaigns OS campaign.
 ---
 
-Bundle revision: 1.56.0+skills.1
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.56.0+skills.1`
+Bundle revision: 1.56.0+skills.2
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.56.0+skills.2`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -79,6 +79,15 @@ Responsibilities:
   The package captures every mapped route at fixed desktop/mobile viewports and
   attaches `stages.polish.evidence.visual_review.page_load`. Never hand-author,
   copy, or repair that object directly.
+- If every mapped page is template stock (`skip_reason`), there is no design
+  route for that capture. On a local loopback preview or a hosted preview at
+  the packet's `deploy.preview_url`, doctor carries the missing evidence
+  forward as a warning. If the hosted preview URL is not yet recorded, run
+  `campaigns-os qa policy set --packet <packet> --preview-url <url>` first,
+  then `campaigns-os next --packet <packet>`. Run
+  `campaigns-os next qa --packet <packet>`, then
+  `campaigns-os qa run --packet <packet> --base-url <preview-url>`. QA against
+  the packet's production URL keeps the checkpoint blocked.
 - When a readability warning appears, report it with its colours, ratio, requirement and pages. Offer the operator options inside the brand palette (a darker or lighter shade of the same hue, the palette's text colour, or a larger, bold label where the design allows). Do not recolour the merchant's design until the operator chooses. Accept a warning only with the refs, reason and name the operator gives you at the QC handoff.
 - Record Polish as `completed`, `skipped`, or `blocked` with
   `campaigns-os record polish --packet <packet> --evidence <polish-evidence.json>`

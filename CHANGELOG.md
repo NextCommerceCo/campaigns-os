@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.56.0+agent.2] - 2026-10-08
+
+### Changed
+
+When every mapped page is template stock, a hosted preview at the packet's distinct `deploy.preview_url` carries missing Polish and hidden eager-media page-load evidence forward as warnings. Doctor and `next` move past Polish, and QA records warning rows with a verdict no better than `ready_with_exceptions`. QA against `deploy.production_url` and hosted campaigns with a capturable design route retain strict evidence gates. If the preview URL is missing, the handoff names `qa policy set --packet <packet> --preview-url <url>`; once set it names `next qa` and direct `qa run --base-url <preview-url>`. A pending hosted deploy record does not suppress these QA actions for this one carried-forward shape; `record deploy` remains local-only. The Polish prompt does not suggest a capture when no design route exists. Bundled skills advance to `1.56.0+skills.2`.
+
 ## [1.56.0] - 2026-10-08
 
 ### Added

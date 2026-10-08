@@ -1,6 +1,7 @@
 // The next step doctor recommends, and the gate issues `next` reads from doctor.
 import { campaignIdentitiesMatch } from "../spec-source-identity.mjs";
-import { polishCarriedForwardForLadder } from "../local-preview-policy.mjs";
+import { NO_CAPTURABLE_ROUTES_CODE, hostedTemplateNeedsPreviewUrl, polishCarriedForwardForLadder } from "../local-preview-policy.mjs";
+import { substitutePacket } from "../gate-actions.mjs";
 import { resolve } from "node:path";
 import { orderPathDepthDriftText } from "../proof-policy.mjs";
 import { anyAssemblyReportStageBlocked, qaRecordedBuildFingerprint, qaRecordedForCurrentBuild } from "../stage-ledger.mjs";
@@ -19,6 +20,7 @@ import {
 import { currentBuildFingerprint, evaluatePolishGate } from "../polish-gate.mjs";
 import { effectiveStageStatus, effectiveStatusIsTerminal } from "../input-currency.mjs";
 import { cmd } from "../install-invocation.mjs";
+import { shellToken } from "../shell-token.mjs";
 import { isObject, isNonEmptyString, optionalString, resolveFromFile, addIssue, filesystemPathsMatch } from "../cli-helpers.mjs";
 import { orderPathDepthDrift } from "./checks.mjs";
 
@@ -577,7 +579,7 @@ export const DOCTOR_NEXT_STAGE_OWNERS = NEXT_STAGE_OWNERS;
 // The code -> action strings doctor prints under `Next:`. They describe the
 // repairs the findings ask for and are independent of which stage the picker
 // names, so they survive the picker consolidation unchanged.
-function doctorNextActions(errors, warnings, derived, { polishBlocked, polishGate, polishCheckpointGate, packetRef = derived.packet_path || "<packet>" }) {
+function doctorNextActions(errors, warnings, derived, { polishBlocked, polishGate, polishCheckpointGate, packet = null, packetRef = derived.packet_path || "<packet>" }) {
   const codes = new Set([...errors, ...warnings].map((issue) => issue.code));
   const onlyPolishErrors = doctorErrorsAreOnlyPolishGate(errors);
   const actions = [];
@@ -633,11 +635,16 @@ function doctorNextActions(errors, warnings, derived, { polishBlocked, polishGat
     actions.push(`Target campaign output directory is missing; run ${cmd("next")} setup --packet ${packetRef} before build.`);
   }
   if (polishBlocked) {
-    if (polishGate.status === "blocked") {
+    const needsHostedPreview = hostedTemplateNeedsPreviewUrl(packet, polishCheckpointGate);
+    if (needsHostedPreview) {
+      actions.push(`Every mapped page is template stock and the hosted preview URL is missing. Run ${substitutePacket(polishCheckpointGate.required_actions[0].command, derived.packet_path || "<packet>")}, then run ${cmd("next")} --packet ${packetRef}.`);
+    } else if (polishGate.status === "blocked") {
       actions.push(`${polishGate.reason} Run next-campaigns-polish and record structured evidence before deploy/QA handoff.`);
     }
-    if (polishCheckpointGate?.status === "blocked") {
-      actions.push(`${polishCheckpointGate.reason} Run ${cmd("polish")} capture before marking Polish complete.`);
+    if (polishCheckpointGate?.status === "blocked" && !needsHostedPreview) {
+      actions.push(polishCheckpointGate.code === NO_CAPTURABLE_ROUTES_CODE
+        ? `${polishCheckpointGate.reason} ${polishCheckpointGate.required_actions?.[0]?.description || "Map a design route and rerun intake before QA."}`
+        : `${polishCheckpointGate.reason} Run ${cmd("polish")} capture before marking Polish complete.`);
     }
   }
   return actions;
@@ -665,8 +672,8 @@ function buildNextStep(errors, warnings, derived, report = null, packet = null, 
   }
   // An explicit --context / --report is carried into every recommended
   // command, so a recovery reads the same artifacts the recommendation did.
-  const packetRef = `${derived.packet_path || "<packet>"}${sidecarArgs}`;
-  const actions = doctorNextActions(errors, warnings, derived, { polishBlocked, polishGate, polishCheckpointGate, packetRef });
+  const packetRef = `${derived.packet_path ? shellToken(derived.packet_path) : "<packet>"}${sidecarArgs}`;
+  const actions = doctorNextActions(errors, warnings, derived, { polishBlocked, polishGate, polishCheckpointGate, packet, packetRef });
   const deployStatus = String(report?.stages?.deploy?.status || "");
   const deploySatisfied = ["completed", "completed_with_warnings", "ready_with_exceptions"].some((prefix) => deployStatus.startsWith(prefix))
     || Boolean(deployUrlFromReportOutputs(report));

@@ -1,5 +1,5 @@
-// The local preview policy: one place that decides which missing evidence a
-// localhost preview carries forward as a warning instead of a blocker.
+// Preview policy: one place that decides which missing evidence a preview
+// carries forward as a warning instead of a blocker.
 //
 // The local preview is a packet whose deploy target is `local-serve`, served
 // from a loopback host. There a campaign must still prove its commerce (store
@@ -8,16 +8,19 @@
 // evidence is reported as missing, never as passed: a carried-forward gate is
 // a warning in doctor, `next` does not stop on it, and QA records it as a
 // `warn` row, so the verdict is at best `ready_with_exceptions`. A hosted
-// preview or production packet never takes this path, and every check not
-// named below keeps its meaning on every path.
+// preview carries forward only the all-template no-capturable-routes
+// shape and the missing Polish report/evidence it owns. QA against the
+// packet's production URL stays strict. Every other check keeps its meaning.
 //
 // Doctor and QA apply this to the gates they evaluate; `next` reads doctor's
 // gates. Recording a stage (`record polish`) and the waiver commands keep the
 // strict gates; `record deploy` follows next past a carried-forward polish.
 import { isLocalServePacket } from "./local-proof.mjs";
 import { isLoopbackHostname } from "./remit.mjs";
+import { hostedTemplateQaAction, HOSTED_TEMPLATE_PREVIEW_URL_ACTION } from "./gate-actions.mjs";
 
 export const LOCAL_PREVIEW_POLICY = "local_preview";
+export const HOSTED_TEMPLATE_PREVIEW_POLICY = "hosted_template_preview";
 export const CARRIED_FORWARD = "carried_forward";
 
 // The checks carried forward, one by one. Each is evidence the campaign does
@@ -53,21 +56,56 @@ export function isLocalPreview(packet, { baseUrl = null } = {}) {
     && loopbackOrAbsent(baseUrl);
 }
 
+function comparableUrl(value) {
+  try {
+    const url = new URL(String(value));
+    if (!/^https?:$/.test(url.protocol)) return null;
+    return `${url.origin}${url.pathname.replace(/\/+$/, "") || "/"}${url.search}`;
+  } catch {
+    return null;
+  }
+}
+
+function isHostedTemplatePreview(packet, { baseUrl = null } = {}) {
+  const preview = comparableUrl(packet?.deploy?.preview_url);
+  const production = comparableUrl(packet?.deploy?.production_url);
+  const tested = baseUrl == null ? preview : comparableUrl(baseUrl);
+  return Boolean(packet?.deploy?.target && packet.deploy.target !== "local-serve"
+    && preview && tested === preview && preview !== production
+    && !isLoopbackHostname(new URL(preview).hostname));
+}
+
+export function hostedTemplateNeedsPreviewUrl(packet, gate) {
+  return gate?.code === NO_CAPTURABLE_ROUTES_CODE
+    && packet?.deploy?.target && packet.deploy.target !== "local-serve"
+    && !packet.deploy.preview_url;
+}
+
 function pageLoadRecorded(report) {
   return report?.stages?.polish?.evidence?.visual_review?.page_load != null;
 }
 
-function carried(gate) {
+function carried(gate, policy = LOCAL_PREVIEW_POLICY, packet = null) {
   return {
     ...gate,
     status: CARRIED_FORWARD,
-    carried_forward: { policy: LOCAL_PREVIEW_POLICY, from_status: gate.status, evidence: "missing" },
+    ...(policy === HOSTED_TEMPLATE_PREVIEW_POLICY
+      ? { required_actions: [hostedTemplateQaAction(packet.deploy.preview_url)] }
+      : {}),
+    carried_forward: { policy, from_status: gate.status, evidence: "missing" },
   };
 }
 
 // The hidden eager-media checkpoint, evaluated on its own.
 export function applyLocalPreviewToCheckpoint(gate, { packet, report, baseUrl = null } = {}) {
-  if (gate?.status !== "blocked" || !isLocalPreview(packet, { baseUrl })) return gate;
+  if (gate?.status !== "blocked") return gate;
+  if (hostedTemplateNeedsPreviewUrl(packet, gate)) {
+    return { ...gate, required_actions: [HOSTED_TEMPLATE_PREVIEW_URL_ACTION] };
+  }
+  if (gate.code === NO_CAPTURABLE_ROUTES_CODE && isHostedTemplatePreview(packet, { baseUrl })) {
+    return carried(gate, HOSTED_TEMPLATE_PREVIEW_POLICY, packet);
+  }
+  if (!isLocalPreview(packet, { baseUrl })) return gate;
   const missing = gate.code === NO_CAPTURABLE_ROUTES_CODE
     || (gate.code === MISSING_CAPTURE_CODE && !pageLoadRecorded(report));
   return missing ? carried(gate) : gate;
@@ -82,11 +120,19 @@ export function polishCarriedForwardForLadder(report, gate) {
 }
 
 export function applyLocalPreviewToPolishGate(gate, { packet, checkpointGate = null, baseUrl = null } = {}) {
-  if (gate?.status !== "blocked" || !isLocalPreview(packet, { baseUrl })) return gate;
+  if (gate?.status !== "blocked") return gate;
+  if (hostedTemplateNeedsPreviewUrl(packet, checkpointGate)) {
+    return { ...gate, required_actions: [HOSTED_TEMPLATE_PREVIEW_URL_ACTION] };
+  }
+  const hostedTemplate = checkpointGate?.code === NO_CAPTURABLE_ROUTES_CODE
+    && checkpointGate?.carried_forward?.policy === HOSTED_TEMPLATE_PREVIEW_POLICY
+    && isHostedTemplatePreview(packet, { baseUrl });
+  if (!hostedTemplate && !isLocalPreview(packet, { baseUrl })) return gate;
   const checkpointCarried = checkpointGate?.status === CARRIED_FORWARD;
   if (gate.owned_checkpoint_status === "blocked" && !checkpointCarried) return gate;
-  if (gate.owned_checkpoint_only) return checkpointCarried ? carried(gate) : gate;
-  return CARRIED_POLISH_CODES.has(gate.code) ? carried(gate) : gate;
+  const policy = hostedTemplate ? HOSTED_TEMPLATE_PREVIEW_POLICY : LOCAL_PREVIEW_POLICY;
+  if (gate.owned_checkpoint_only) return checkpointCarried ? carried(gate, policy, packet) : gate;
+  return CARRIED_POLISH_CODES.has(gate.code) ? carried(gate, policy, packet) : gate;
 }
 
 export function starterResidueIsExpected(themeGate, { packet, baseUrl = null } = {}) {
@@ -94,5 +140,8 @@ export function starterResidueIsExpected(themeGate, { packet, baseUrl = null } =
 }
 
 export function carriedForwardMessage(gate) {
-  return `Carried forward on the local preview: ${gate.reason} This evidence is missing, not passed; a hosted preview or production run requires it.`;
+  if (gate?.carried_forward?.policy === HOSTED_TEMPLATE_PREVIEW_POLICY) {
+    return `Carried forward on the hosted preview: ${gate.reason} This evidence is missing, not passed; run campaigns-os qa run --packet <packet> --base-url <preview-url> to test the hosted preview. Production QA still requires the evidence.`;
+  }
+  return `Carried forward on the local preview: ${gate.reason} This evidence is missing, not passed; production QA still requires it.`;
 }

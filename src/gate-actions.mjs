@@ -68,8 +68,24 @@ export const HIDDEN_EAGER_MEDIA_ACTIONS = Object.freeze({
     id: "polish.hidden_eager_media.map_design_route",
     kind: "manual",
     command: null,
-    description: "Every mapped page is template stock, so polish capture has nothing to measure. Map at least one page to its design source HTML (source_html.pages[].path) and rerun intake, or prove the campaign on the local preview (deploy.target local-serve served from localhost), where this missing evidence is carried forward as a warning.",
+    description: "Every mapped page is template stock, so there is no design route to measure. Map at least one page to its design source HTML (source_html.pages[].path) and rerun intake, or use a local or hosted preview for QA with the missing evidence carried forward as a warning.",
   }),
+});
+
+export function hostedTemplateQaAction(previewUrl) {
+  return {
+    id: "polish.hidden_eager_media.hosted_preview_qa",
+    kind: "command",
+    command: `campaigns-os qa run --packet <packet> --base-url ${shellToken(previewUrl)}`,
+    description: "Run QA against the packet's hosted preview URL; missing Polish evidence remains a warning.",
+  };
+}
+
+export const HOSTED_TEMPLATE_PREVIEW_URL_ACTION = Object.freeze({
+  id: "polish.hidden_eager_media.set_hosted_preview_url",
+  kind: "command",
+  command: "campaigns-os qa policy set --packet <packet> --preview-url <url>",
+  description: "Record the hosted preview URL with qa policy set, then run next again; missing Polish evidence can be carried forward on that preview.",
 });
 
 const PACKET_PLACEHOLDER = "--packet <packet>";

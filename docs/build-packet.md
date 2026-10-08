@@ -1762,7 +1762,14 @@ prepare-build gate is set (`next` answers prepare-build) or while an earlier
 stage in the order below is not terminal. The exception is the one `next`
 makes: on the local preview, a polish doctor carries forward (never recorded
 for this build) does not hold `record deploy` back, as it does not hold `next`;
-polish stays owed and QA reports it.
+polish stays owed and QA reports it. If every mapped page is template stock on
+a hosted preview, doctor carries the same missing-evidence shape forward.
+`record deploy` remains local-only: record an unset hosted preview URL with
+`campaigns-os qa policy set --packet <p> --preview-url <url>`, then run
+`campaigns-os next --packet <p>`. With `deploy.preview_url` recorded, run
+`campaigns-os next qa --packet <p>` and `campaigns-os qa run --packet <p>
+--base-url <preview-url>` directly. QA against the packet's production URL
+retains the strict gate.
 
 Each command reads the same packet, Build Context and Assembly Report `next`
 reads (`--context` / `--report` override them the same way), validates what it
