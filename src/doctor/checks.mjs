@@ -547,6 +547,11 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
     addIssue(errors, "packet.type", "Build Packet must be a JSON object.");
     return;
   }
+  Object.defineProperty(derived, "page_kit_entry_mappings", {
+    value: Object.fromEntries((packet.source_html?.pages || [])
+      .filter((page) => page?.page_kit?.target_path).map((page) => [page.page_id, page])),
+    configurable: true,
+  });
   const synthesizedBuiltSite = isSynthesizedBuiltSitePacket(packet);
   if (packet.schema_version !== PACKET_SCHEMA) addIssue(errors, "schema_version", `Expected ${PACKET_SCHEMA}.`);
   else ready.push(`Build Packet schema ${PACKET_SCHEMA}`);
@@ -3008,11 +3013,73 @@ function validateBuiltCommerceRefs(content, builtPath, targetRepo, page, spec, i
 
 function builtHtmlPathForPage(targetRepo, publicRouteSlug, page, derived = {}) {
   if (!targetRepo || !publicRouteSlug) return null;
+  const entryRoute = entryPageKitServingRoute(targetRepo, publicRouteSlug, page, {
+    targetOutputDir: derived?.target_output_dir,
+    mapping: derived?.page_kit_entry_mappings?.[page?.id],
+  });
+  if (entryRoute) return join(targetRepo, "_site", publicRouteSlug, ...(entryRoute.route ? [entryRoute.route] : []), "index.html");
   const sourcePermalink = sourcePermalinkForPage(derived?.target_output_dir, publicRouteSlug, page);
   const route = sourcePermalink || runtimeRelativeRouteForSpecValue(publicRouteForPage(page), publicRouteSlug);
   if (!route) return join(targetRepo, "_site", publicRouteSlug, "index.html");
   const clean = route.replace(/^\/+|\/+$/g, "");
   return clean ? join(targetRepo, "_site", publicRouteSlug, clean, "index.html") : join(targetRepo, "_site", publicRouteSlug, "index.html");
+}
+
+export function isRootRoutedEntryPage(page, publicRouteSlug) {
+  return Boolean(page?.is_entry) && runtimeRelativeRouteForSpecValue(publicRouteForPage(page), publicRouteSlug) === "";
+}
+
+// An explicit permalink belongs to this entry's Page Kit source file. It wins
+// even when an older build left output at the filename-derived route.
+export function entryPageKitServingRoute(targetRepo, publicRouteSlug, page, { targetOutputDir = null, mapping = null } = {}) {
+  if (!targetRepo || !publicRouteSlug || !isRootRoutedEntryPage(page, publicRouteSlug)) return null;
+  const permalink = entrySourcePermalink(targetOutputDir, publicRouteSlug, page, mapping);
+  if (permalink !== null) return { route: permalink, source: "permalink" };
+  const root = join(targetRepo, "_site", publicRouteSlug, "index.html");
+  if (existsSync(root) && statSync(root).isFile()) return { route: "", source: "root" };
+  const fileRoute = entryPageKitFileRoute(targetRepo, publicRouteSlug, page, { targetOutputDir, mapping });
+  return fileRoute ? { route: `${fileRoute}/`, source: "file" } : { route: "", source: "declared" };
+}
+
+function entrySourcePermalink(targetOutputDir, publicRouteSlug, page, mapping) {
+  if (!targetOutputDir || !existsSync(targetOutputDir) || !statSync(targetOutputDir).isDirectory()) return null;
+  const names = mapping?.page_kit?.target_path
+    ? [mapping.page_kit.target_path]
+    : [...new Set([page.id, page.type].filter(isNonEmptyString).map((name) => `${name}.html`))];
+  const routes = names
+    .filter((name) => /^[a-zA-Z0-9][a-zA-Z0-9_-]*\.html$/.test(name))
+    .map((name) => join(targetOutputDir, name))
+    .filter((path) => existsSync(path) && statSync(path).isFile())
+    .map((path) => extractFrontmatterValue(readFileSync(path, "utf8"), "permalink"))
+    .filter(isNonEmptyString)
+    .map((value) => stripPublicRoutePrefix(normalizePageKitRoute(value), publicRouteSlug));
+  return routes[0] ?? null;
+}
+
+// Page Kit serves a page file without a permalink at its basename route.
+// Only the recorded target file (or the family's own materialised stock file)
+// may identify an entry fallback; an unrelated built index is not evidence.
+export function entryPageKitFileRoute(targetRepo, publicRouteSlug, page, { targetOutputDir = null, mapping = null } = {}) {
+  if (!targetRepo || !publicRouteSlug || !isRootRoutedEntryPage(page, publicRouteSlug)) return null;
+  if (entrySourcePermalink(targetOutputDir, publicRouteSlug, page, mapping) !== null) return null;
+  const root = join(targetRepo, "_site", publicRouteSlug, "index.html");
+  if (existsSync(root) && statSync(root).isFile()) return null;
+  let names;
+  if (mapping?.page_kit?.target_path) {
+    names = [mapping.page_kit.target_path];
+  } else {
+    if (!targetOutputDir) return null;
+    names = [...new Set([page.id, page.type].filter(isNonEmptyString).map((name) => `${name}.html`))];
+  }
+  const routes = names
+    .filter((name) => /^[a-zA-Z0-9][a-zA-Z0-9_-]*\.html$/.test(name) && name !== "index.html")
+    .filter((name) => mapping?.page_kit || (existsSync(join(targetOutputDir, name)) && statSync(join(targetOutputDir, name)).isFile()))
+    .map((name) => name.slice(0, -".html".length))
+    .filter((route) => {
+      const built = join(targetRepo, "_site", publicRouteSlug, route, "index.html");
+      return existsSync(built) && statSync(built).isFile();
+    });
+  return routes[0] ?? null;
 }
 
 function sourcePermalinkForPage(targetOutputDir, publicRouteSlug, page) {
@@ -3558,6 +3625,7 @@ function templateStockDecision(buildState, pageId) {
 function validateSourceCoverage(packet, packetPath, spec, errors, warnings, ready, derived = {}, buildState = {}) {
   const pages = packet.source_html?.pages || [];
   const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  const routeRoot = campaignRouteRoot(packet);
   const materialisedTemplateStock = [];
   const sourceRoot = resolveFromFile(packetPath, packet.source_html?.root);
   validateSourceHtmlManifestAtRoot(sourceRoot, {
@@ -3585,6 +3653,20 @@ function validateSourceCoverage(packet, packetPath, spec, errors, warnings, read
     }
     mappedIds.add(page.page_id);
     const specPage = activeById.get(page.page_id);
+    const entryRoute = specPage
+      ? entryPageKitServingRoute(derived.target_repo, publicRouteSlug, specPage, {
+        targetOutputDir: derived.target_output_dir,
+        mapping: page,
+      })
+      : null;
+    const builtRoute = entryRoute ? entryRoute.route : specPage ? publicRouteForPage(specPage) : null;
+    const rootOutput = entryRoute?.route ? join(derived.target_repo, "_site", publicRouteSlug, "index.html") : null;
+    if (rootOutput && (entryRoute.source === "file" || entryRoute.source === "permalink")
+      && !(existsSync(rootOutput) && statSync(rootOutput).isFile())) {
+      const emittedRoute = `${routeRoot}${entryRoute.route}`;
+      const pageKitRoot = `/${normalizePublicRouteSlug(publicRouteSlug)}/`;
+      addIssue(warnings, "entry_route.unserved", `CampaignSpec entry page "${specPage.id}" is routed to ${routeRoot}, but Page Kit emitted it at ${emittedRoute} and nothing serves ${routeRoot}. Add a redirect from ${routeRoot} to ${emittedRoute}, or set \`permalink: ${pageKitRoot}\` (the campaign root as Page Kit emits it) on the entry page.`, { page_id: specPage.id, root_route: routeRoot, emitted_route: emittedRoute });
+    }
     if (!activeIds.has(page.page_id)) {
       addIssue(warnings, "source_html.pages.extra", `Source mapping "${page.page_id}" is not an active CampaignSpec page.`);
     }
@@ -3619,7 +3701,7 @@ function validateSourceCoverage(packet, packetPath, spec, errors, warnings, read
             page_id: specPage.id,
             type: specPage.type || "page",
             role: pageRole(specPage.type),
-            route: publicRouteForPage(specPage),
+            route: builtRoute,
             source_path: page.path,
           });
         }
@@ -3635,7 +3717,7 @@ function validateSourceCoverage(packet, packetPath, spec, errors, warnings, read
           page_id: specPage.id,
           type: specPage.type || "page",
           role: pageRole(specPage.type),
-          route: publicRouteForPage(specPage),
+          route: builtRoute,
           source_path: null,
           template_stock: true,
           template_family: family,
