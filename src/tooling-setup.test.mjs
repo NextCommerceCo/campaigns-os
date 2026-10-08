@@ -31,7 +31,8 @@ test("the published compatibility statement names the package version", () => {
   // a contract bump that skips this statement fails here too.
   const read = (path) => JSON.parse(readFileSync(join(ROOT, path), "utf8"));
   const schemaVersion = (name) => read(`schemas/${name}.v0.schema.json`).properties.schema_version.const;
-  const specVersions = read("schemas/campaign-spec.v4.schema.json").properties.schema_version.enum;
+  // The range runs from the oldest lineage still read (v4) to the current one (v5).
+  const specVersions = ["v4", "v5"].flatMap((major) => read(`schemas/campaign-spec.${major}.schema.json`).properties.schema_version.enum);
   const catalog = read("contracts/commerce-surface-catalog.json");
   assert.deepEqual(statement.contracts, {
     campaign_spec: `${specVersions[0]}-${specVersions.at(-1)}`,

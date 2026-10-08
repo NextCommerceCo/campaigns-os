@@ -1,9 +1,9 @@
 {
   "package": "@nextcommerce/campaigns-os",
-  "version": "1.55.0",
+  "version": "1.56.0",
   "status": "developer-preview",
   "contracts": {
-    "campaign_spec": "4.2-4.3",
+    "campaign_spec": "4.2-5.0",
     "build_packet": "campaign-runtime-build-packet/v0",
     "build_context": "campaign-runtime-build-context/v0",
     "assembly_report": "campaign-runtime-assembly-report/v0",

@@ -86,3 +86,39 @@ test("a malformed spec.local_path is reported as malformed, not as an absent pat
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// Multi-step checkout rules (campaigns-os#641): each one reaches doctor through
+// the shared registry, with its fixture, at its declared severity. A v4 spec
+// that chained checkout → checkout is upgraded on read and stays quiet.
+test("doctor reports each multi-step checkout rule from its fixture", () => {
+  const cases = [
+    { fixture: "checkout-forwards-to-checkout", ruleId: "CheckoutForwardTarget", bucket: "errors" },
+    { fixture: "checkout-forwards-to-checkout", ruleId: "OneCheckoutPerPath", bucket: "errors" },
+    { fixture: "pre-payment-skips-checkout", ruleId: "PrePaymentForwardTarget", bucket: "errors" },
+    { fixture: "checkout-step-dead-end", ruleId: "CheckoutStepReachesCheckout", bucket: "errors" },
+    { fixture: "checkout-step-route-fields", ruleId: "RouteFieldIgnoredForPageType", bucket: "warnings" },
+  ];
+  const dir = mkdtempSync(join(tmpdir(), "multi-step-specval-"));
+  try {
+    const base = JSON.parse(readFileSync(join(ROOT, "examples/build-packet.basic.json"), "utf8"));
+    const reports = new Map();
+    for (const name of [...new Set([...cases.map((entry) => entry.fixture), "v4-checkout-chain-upgraded"])]) {
+      cpSync(join(ROOT, `campaign-spec/fixtures/${name}.json`), join(dir, `${name}.json`));
+      const packet = JSON.parse(JSON.stringify(base));
+      packet.spec.local_path = `${name}.json`;
+      writeFileSync(join(dir, `${name}.packet.json`), JSON.stringify(packet, null, 2));
+      reports.set(name, runDoctorJson(join(dir, `${name}.packet.json`)));
+    }
+    for (const { fixture, ruleId, bucket } of cases) {
+      const hit = (reports.get(fixture)[bucket] || []).find((issue) => issue.code === "spec.validation" && issue.detail?.ruleId === ruleId);
+      assert.ok(hit, `${fixture}: expected ${ruleId} among doctor ${bucket}`);
+    }
+    const multiStepRules = new Set(["CheckoutForwardTarget", "PrePaymentForwardTarget", "CheckoutStepReachesCheckout", "OneCheckoutPerPath"]);
+    const upgraded = reports.get("v4-checkout-chain-upgraded");
+    const flagged = [...(upgraded.errors || []), ...(upgraded.warnings || [])]
+      .filter((issue) => issue.code === "spec.validation" && multiStepRules.has(issue.detail?.ruleId));
+    assert.deepEqual(flagged, [], "a v4 checkout → checkout chain reads as checkout_step pages and passes");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

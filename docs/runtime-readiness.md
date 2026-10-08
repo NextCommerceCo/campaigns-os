@@ -8,7 +8,7 @@
 
 How a checkout of this repository at one commit becomes a usable installed runtime, and how a consumer decides whether a prepared one is still trustworthy. Everything below is generated from `contracts/runtime-recipe.campaigns-os-node-v1.json`, which is the only authority for these values.
 
-Recipe kind `campaigns-os-node-v1`, revision `1.0.2`, validated by `schemas/campaigns-os-runtime-recipe.v1.schema.json` (`Campaigns OS Runtime Recipe v1`). Supported surface at generation time: `1.55.0`.
+Recipe kind `campaigns-os-node-v1`, revision `1.0.3`, validated by `schemas/campaigns-os-runtime-recipe.v1.schema.json` (`Campaigns OS Runtime Recipe v1`). Supported surface at generation time: `1.56.0`.
 
 ## What this is
 
@@ -81,9 +81,10 @@ Not redundant with the install step. Because install runs with lifecycle scripts
 
 The complete input set, enumerated explicitly rather than globbed. The compiler's configured include globs are NOT the input set: two root modules enter the compilation transitively through imports from the entry module and are emitted, so a fingerprint derived from the globs would cover 36 of the 38 compiled sources and miss one of the larger emitted surfaces. Test fixtures and the package's own tests are not inputs; nothing under them is emitted. A checker resolves the compiler's actual file list and asserts it equals this enumeration, so this list cannot rot silently.
 
-Fingerprint algorithm `sha256`, over 42 enumerated files:
+Fingerprint algorithm `sha256`, over 47 enumerated files:
 
 - `campaign-spec/analytics-vocabulary.ts`
+- `campaign-spec/checkout-flow.ts`
 - `campaign-spec/index.ts`
 - `campaign-spec/normalize.ts`
 - `campaign-spec/package.json`
@@ -91,7 +92,9 @@ Fingerprint algorithm `sha256`, over 42 enumerated files:
 - `campaign-spec/rules/analytics-contract-shape.ts`
 - `campaign-spec/rules/assembly-hints-shape.ts`
 - `campaign-spec/rules/campaign-metadata.ts`
+- `campaign-spec/rules/checkout-forward-target.ts`
 - `campaign-spec/rules/checkout-has-success-url.ts`
+- `campaign-spec/rules/checkout-step-reaches-checkout.ts`
 - `campaign-spec/rules/cycle-detection.ts`
 - `campaign-spec/rules/design-source-shape.ts`
 - `campaign-spec/rules/downsell-without-upsell.ts`
@@ -102,9 +105,11 @@ Fingerprint algorithm `sha256`, over 42 enumerated files:
 - `campaign-spec/rules/funnel-weight-sum.ts`
 - `campaign-spec/rules/index.ts`
 - `campaign-spec/rules/offer-ref-integrity.ts`
+- `campaign-spec/rules/one-checkout-per-path.ts`
 - `campaign-spec/rules/package-pricing-sanity.ts`
 - `campaign-spec/rules/page-count.ts`
 - `campaign-spec/rules/page-id-uniqueness.ts`
+- `campaign-spec/rules/pre-payment-forward-target.ts`
 - `campaign-spec/rules/promo-code-input-validation.ts`
 - `campaign-spec/rules/promo-codes-shape.ts`
 - `campaign-spec/rules/route-field-ignored-for-page-type.ts`
@@ -132,7 +137,7 @@ The output directory is a build product. It is untracked and git-ignored, no com
 
 Directory `campaign-spec/dist`. Committed: `false`. Type entry `campaign-spec/dist/index.d.ts`.
 
-Expected inventory is derived, never listed twice. For every enumerated input under module_source_root whose path ends in .ts, the build is expected to emit campaign-spec/dist/<path relative to module_source_root, with .ts replaced> once per entry in emitted_extensions. The expected inventory is exactly that set: nothing missing, nothing extra. Emitted extensions: `.js`, `.d.ts`. At this revision that derivation yields 76 files.
+Expected inventory is derived, never listed twice. For every enumerated input under module_source_root whose path ends in .ts, the build is expected to emit campaign-spec/dist/<path relative to module_source_root, with .ts replaced> once per entry in emitted_extensions. The expected inventory is exactly that set: nothing missing, nothing extra. Emitted extensions: `.js`, `.d.ts`. At this revision that derivation yields 86 files.
 
 ### Mandatory checks
 

@@ -2,7 +2,7 @@
   "_note": "Declarative descriptions of the prepared-runtime states an output-check implementation must distinguish. A test builds each state from the accepted recipe rather than from paths written down here, so adding a module to the input set cannot leave a fixture describing an inventory that no longer exists.",
   "schema": "campaigns-os-runtime-recipe-dist-states/v1",
   "directory": "campaign-spec/dist",
-  "expected_file_count": 76,
+  "expected_file_count": 86,
   "states": [
     {
       "id": "healthy",

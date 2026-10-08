@@ -1,11 +1,11 @@
 ---
 name: campaign-lifecycle-orientation
-version: 1.0.32
+version: 1.0.33
 description: Orient a reader to the Campaigns OS lifecycle artifacts a run has already emitted, without advancing any stage or changing any state.
 ---
 
-Bundle revision: 1.55.0+skills.1
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.55.0+skills.1`
+Bundle revision: 1.56.0+skills.1
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.56.0+skills.1`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -53,9 +53,9 @@ from Git HEAD, from the word "latest", or from prose in a checkout.
 
 `CONTEXT.md` is the glossary kept reconciled against the code, and it separates
 public lifecycle language from internal implementation language. A
-**CampaignSpec** is the JSON campaign contract; current packets use CampaignSpec
-4.2, whose funnel structure lives in `funnels[]`
-(`schemas/campaign-spec.v4.schema.json`). A **Build Packet** is the assembly
+**CampaignSpec** is the JSON campaign contract; current specs use CampaignSpec
+5.0, whose funnel structure lives in `funnels[]`
+(`schemas/campaign-spec.v5.schema.json`; 4.2 and 4.3 specs are upgraded on read). A **Build Packet** is the assembly
 handoff that wraps the spec without replacing it (`docs/build-packet.md`). An
 **Assembly Report** is the machine-readable record of lifecycle progress.
 
@@ -88,8 +88,10 @@ route cannot make evidence from another local spec belong to this campaign
 (`docs/build-packet.md`, "Local-spec entry").
 
 Campaign pages are typed. The page-type vocabulary is `presell`, `landing`,
-`select`, `checkout`, `upsell`, `downsell` and `thankyou`; `select` is where a
-shopper chooses a package before checkout. Use the spec's own term for a page
+`select`, `checkout_step`, `checkout`, `upsell`, `downsell` and `thankyou`;
+`select` is where a shopper chooses a package before checkout, a
+`checkout_step` collects checkout details without placing an order, and
+`checkout` is the page that takes payment. Use the spec's own term for a page
 rather than describing it.
 
 ## Read doctor as a gate

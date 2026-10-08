@@ -16,7 +16,9 @@ rules are pure TypeScript over a normalized spec with no heavy dependencies.
 campaign-spec/
   index.ts                 # public interface
   types.ts                 # CampaignSpec, Rule, Violation, Tag, Severity
-  normalize.ts             # v4.3 authoring → canonical v4.2 funnels[] shape
+  normalize.ts             # authoring → canonical funnels[] shape; upgrades v4.2/v4.3 to v5
+  checkout-flow.ts         # which page takes payment; v4 → v5 upgrade; path helpers
+  routing.ts               # a page's outgoing edges
   rules/
     index.ts               # preset RuleSet constants
     cycle-detection.ts     # one file per rule
@@ -130,6 +132,18 @@ A campaign authoring UI can bundle this module (e.g. with esbuild as a browser
 IIFE) and expose the public interface on `window` to run export-time validation
 client-side. The rules have no Node-only or live-data dependencies, so the same
 registry that backs the CLI doctor runs unchanged in the browser.
+
+## CampaignSpec 5.0: the page that takes payment
+
+`checkout` is the page that takes payment; `checkout_step` is a checkout form
+that collects details and moves on through `next_page`; `select` is the bundle
+picker before them. `normalize()` upgrades a 4.2/4.3 spec to that vocabulary
+on read (each `checkout` whose resolved forward target is another `checkout`
+becomes `checkout_step`) and never mutates its input. Four rules hold the
+shape — `CheckoutForwardTarget`, `PrePaymentForwardTarget`,
+`CheckoutStepReachesCheckout` and `OneCheckoutPerPath` — and none of them
+reads page order or page names. `paymentPageFrom`, `checkoutPathFrom` and
+`paymentPagesForFunnel` answer "which Checkout is on this path".
 
 ## See also
 

@@ -1,6 +1,6 @@
 {
   "_note": "The downstream contract manifest. Everything listed here is SUPPORTED SURFACE: consumers (campaigns-agent, campaign-builder, the private ops repo, page-kit campaign repos) may depend on it, and changing it is a deliberate act — hashed entries require a surface_version bump in the same change (check-supported-surface.mjs --base, mirroring the skills.json bump gate), named entries must keep existing at their path, cli_commands must keep resolving in the CLI dispatch, package_exports must stay exported, and every entry must ship in the npm pack (files[] coverage). Anything NOT listed here — src/** internals, scripts/** checkers, examples/**, prompts/**, contracts/** other than this file and the entries named[] below (the orientation contract, the release ledger, and the consumer-facing orientation fixtures) — is implementation: consumers may read it for context but must not build on it, and it can change without notice. Rationale and the compatibility promise: docs/supported-surface.md.",
-  "surface_version": "1.55.0",
+  "surface_version": "1.56.0",
   "package_exports": [
     "./commercial-journey",
     "./commercial-parity",
@@ -8,6 +8,7 @@
     "./campaign-spec",
     "./legacy-migration",
     "./schemas/campaign-spec.v4.schema.json",
+    "./schemas/campaign-spec.v5.schema.json",
     "./schemas/campaigns-os-legacy-migration-inventory.v0.schema.json",
     "./schemas/campaigns-os-legacy-provisioning-plan.v0.schema.json",
     "./schemas/campaigns-os-legacy-provisioning-receipt.v0.schema.json",
@@ -51,7 +52,7 @@
       "sha256": "53269453dfdaac4b286124d445b60b0c46205dfbaf8037ac61b30254a32df53a"
     },
     "contracts/runtime-recipe.campaigns-os-node-v1.json": {
-      "sha256": "90aaaaade90cf2525ea1aa05be5cb2d02b57e6e59f9278a946efa8a087946fd3"
+      "sha256": "ab0537a4756310d3a35b400d3932e46695a820f1b8b398f52f6fd0906098bc1d"
     },
     "schemas/campaign-build-brief.v1.schema.json": {
       "sha256": "d524003184131398dc15fdb84385af1be0de0c69d6c5ede7278689a5b6101b81"
@@ -63,13 +64,16 @@
       "sha256": "625a6f2ed6bee726f9cddad750e64a54a7e03744c777f5a70afe4a39afdd9848"
     },
     "schemas/campaign-runtime-build-context.v0.schema.json": {
-      "sha256": "f310c1b7844d9b1994864d15858ff0c6f17efc1e5285ba193d181bdb2dd4be2f"
+      "sha256": "1f9bd6cced44a8ba6b29cc650f2b071db67ad710c5a9e9dfe47287eac11e0ebf"
     },
     "schemas/campaign-runtime-build-packet.v0.schema.json": {
-      "sha256": "5002529c5979c4d8fef7e298de82ebdf625ffbd11f5284ba684d96d173788d62"
+      "sha256": "f0952f64fe9f5ae6147649e5e99b24f215c8d080fca4e330d73f54e49a00d0e2"
     },
     "schemas/campaign-spec.v4.schema.json": {
       "sha256": "af56c3de638d3c4e1fd5df8c2d733754d9ad16caa23b5bec92ce3a6f71bd0271"
+    },
+    "schemas/campaign-spec.v5.schema.json": {
+      "sha256": "2923382e94ac51f6a19a3f9dfd0993d8c30fab33cd9be3d6901f314e02f5d960"
     },
     "schemas/campaigns-os-legacy-migration-inventory.v0.schema.json": {
       "sha256": "d6edc4572900d15fdaf6b8c59916b0d885303c1d398bdadeb7c58285522c9049"

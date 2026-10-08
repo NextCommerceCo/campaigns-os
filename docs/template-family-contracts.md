@@ -56,11 +56,12 @@ privately-sourced families) report freshness as unknown.
 Two vocabularies in these contracts look identical and are not:
 
 - **Page type** — the authoring `page.type` from CampaignSpec, enumerated in
-  `campaign-spec/types.ts` and `schemas/campaign-spec.v4.schema.json`:
-  `presell`, `landing`, `select`, `checkout`, `upsell`, `downsell`, `thankyou`.
-  This is what the `page_types` lists in `template-brand-contract.*.json` are
-  matched against at QA time, with one projection: `thankyou` is matched as
-  `receipt`.
+  `campaign-spec/types.ts` and `schemas/campaign-spec.v5.schema.json`:
+  `presell`, `landing`, `select`, `checkout_step`, `checkout`, `upsell`,
+  `downsell`, `thankyou`. This is what the `page_types` lists in
+  `template-brand-contract.*.json` are matched against at QA time, with two
+  projections: `thankyou` is matched as `receipt`, and `checkout_step` as
+  `checkout`, whose surface it renders.
 - **Page ID / family page slot** — author-chosen page identifiers and the
   family's own page vocabulary. `supported_pages` and
   `required_sdk_anchors` are keyed in this namespace, which is why they legally
@@ -84,6 +85,18 @@ computed-style residue, bump pricing — apply to `select` and not to `landing`.
 Its forward link resolves like every other page's, from whichever routing
 field it declares (`campaign-spec/routing.ts`) — page type does not gate
 routing for any type.
+
+### The `checkout_step` page type
+
+From CampaignSpec 5.0, `checkout` means the page that takes payment. A page
+with a checkout form that collects details and moves on without placing an
+order is `checkout_step`: `shop-three-step`'s `information` and `shipping`
+pages, ahead of `billing`, the Checkout. Its form carries
+`data-next-checkout-step` (its next page) and `data-next-step-number`, and its
+`next-success-url` is the Checkout's post-payment destination, so an express
+order placed on a step lands on the first upsell. QA submits each step and
+asserts it lands on the step's declared next page before paying on the
+Checkout. A 4.2/4.3 spec that typed every step `checkout` is retyped on read.
 
 ## Inventory Matrix
 

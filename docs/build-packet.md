@@ -19,7 +19,8 @@ The current schema is `schemas/campaign-runtime-build-packet.v0.schema.json`.
 
 A saved Map is optional for a prepared-HTML build. The coding agent authors an
 ordinary CampaignSpec from the brief, source design and configured campaign's
-real commerce values, following `schemas/campaign-spec.v4.schema.json`. The
+real commerce values, following `schemas/campaign-spec.v5.schema.json` (a 4.2/4.3
+spec still reads, upgraded on read; see `docs/versioning.md`). The
 operator supplies the selected store/campaign, public Campaigns API key, intended
 pages and commercial choices, plus store contact details and policy URLs. Verify
 the store/campaign binding, and read the package, offer and shipping references
@@ -1463,8 +1464,8 @@ Fresh `prepare-build` output also writes `source_html.pages[].page_kit` for mapp
 - `target_path` is the page file relative to `assembly.output_dir` (`checkout.html`, `receipt.html`, etc.).
 - `output_path` is the same target file relative to `assembly.target_repo`.
 - `public_route` is the rendered campaign-rooted route Page Kit should produce.
-- `page_type` is the CPK runtime/analytics vocabulary (`product`, `checkout`, `upsell`, `receipt`), not the richer CampaignSpec or producer page type. CampaignSpec `select` pages project as CPK `checkout` because they are pre-checkout runtime selection surfaces.
-- `frontmatter` names the Page Kit frontmatter fields the build should write or preserve.
+- `page_type` is the CPK runtime/analytics vocabulary (`product`, `checkout`, `upsell`, `receipt`), not the richer CampaignSpec or producer page type. CampaignSpec `select` and `checkout_step` pages project as CPK `checkout` because they render the SDK checkout surface ahead of the page that takes payment.
+- `frontmatter` names the Page Kit frontmatter fields the build should write or preserve. Beside `page_type`, `permalink`, `next_url` and `decline_url`, two keys wire multi-step checkout paths: `success_url`, on every page that leads into a Checkout (a `select` page, a `checkout_step`, or a landing page whose forward links reach one), is that Checkout's post-payment destination and feeds the page's `next-success-url` meta tag, which the SDK reads for express orders; `step_number`, on a `checkout_step` only, is its position on its path from 1, for the step form's `data-next-step-number`. The step form's `data-next-checkout-step` is the page's `next_url`.
 - `permalink_required` is true when Page Kit's filename-derived route would not match `public_route`.
 
 The Design Source Package should reference this projection without confusing it
