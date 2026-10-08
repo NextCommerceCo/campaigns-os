@@ -10,9 +10,9 @@
  * Paths follow both edges a page can traverse (forward and decline, from
  * routing.ts) and start at the funnel's entry pages (checkout-flow.ts
  * `entryPages`): pages flagged `is_entry`, else those nothing routes to. No
- * page order or name is consulted. The search runs over (page, checkouts
- * passed so far: 0, 1, 2+) states, so each bad page is reported once per count
- * however many paths reach it.
+ * page order or name is consulted. The search runs, per entry page, over
+ * (page, checkouts passed so far: 0, 1, 2+) states, so each bad page is
+ * reported once per entry and count however many of that entry's paths reach it.
  *
  * A spec with no Checkout anywhere is left to UpsellWithoutCheckout, so the
  * two never report one defect twice.
@@ -50,9 +50,11 @@ export const OneCheckoutPerPath: Rule = {
       const indexOf = new Map<Page, number>()
       ;(funnel.pages ?? []).forEach((page, idx) => indexOf.set(page, idx))
 
-      const seen = new Set<string>()
-      const reported = new Set<string>()
+      // Searched once per entry page, so every entry whose path misses or
+      // doubles the Checkout is named, not only the first one to reach the page.
       for (const entry of entryPages(funnel)) {
+        const seen = new Set<string>()
+        const reported = new Set<string>()
         const stack: Array<[Page, number]> = [[entry, 0]]
         while (stack.length) {
           const [page, before] = stack.pop() as [Page, number]

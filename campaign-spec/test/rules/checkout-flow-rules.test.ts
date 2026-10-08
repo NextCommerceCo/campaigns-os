@@ -145,6 +145,19 @@ describe('OneCheckoutPerPath', () => {
     expect(OneCheckoutPerPath.check(spec(pages))).toEqual([])
   })
 
+  test('names every entry page whose path misses the Checkout, not only the first', () => {
+    const pages = [
+      { id: 'a', type: 'landing', is_entry: true, next_page: 'up' },
+      { id: 'b', type: 'select', is_entry: true, next_page: 'up' },
+      { id: 'c', type: 'landing', is_entry: true, next_page: 'pay' },
+      { id: 'pay', type: 'checkout', success_url: 'up' },
+      UPSELL,
+      THANKS,
+    ] as Page[]
+    const violations = OneCheckoutPerPath.check(spec(pages))
+    expect(violations.map((v) => `${v.data?.entryPageId}->${v.data?.pageId}`)).toEqual(['a->up', 'b->up'])
+  })
+
   test('follows the decline branch too', () => {
     const pages = [
       { id: 'l', type: 'landing', is_entry: true, next_page: 'pay' },

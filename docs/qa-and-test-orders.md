@@ -1451,9 +1451,12 @@ Five steps write structured evidence today.
 **Multi-step checkout paths (campaigns-os#641).** The ladder drives the
 Checkout — the page that takes payment (`type: "checkout"`) — on the tested
 path, never the first page typed checkout. When `checkout_step` pages lead
-into it, the cart is entered into the first step, `customer_fields_filled`
-fills only the fields that step renders, one `checkout_step_submitted` rung
-per step follows, and the order is submitted only on the Checkout. With
+into it, the runner lands on the first step: through a `select` page ahead of
+it when there is one (`entered_via_landing` with `control_kind:
+checkout_button`), otherwise the step fills the cart itself.
+`customer_fields_filled` fills only the fields that step renders, one
+`checkout_step_submitted` rung per step follows, and the order is submitted
+only on the Checkout. With
 split-test paths in one campaign, each Checkout reached from an entry page is
 its own path; `tiers` plans read declared tiers and bumps from every page of
 that path (the select page or first step declares the cart), and coupons from

@@ -1064,8 +1064,9 @@ function acceptDelta(page) {
 // is priced on whichever checkout-flow page carries it: the select page of a
 // two-step flow, the first step of a split checkout, or the Checkout itself
 // (campaigns-os#641). The Checkout of a multi-step path carries no packages, so
-// looking for the page typed "checkout" priced nothing on those flows. Pages
-// arrive sorted by page_order; with several paths the first carrying a cart is
+// looking for the page typed "checkout" priced nothing on those flows. Only
+// pages that declare packages are planned, so every page here carries a cart;
+// pages arrive sorted by page_order, and with several paths the first is
 // summarized.
 function journeySummary(pages) {
   const checkout = pages.find((page) => CHECKOUT_FLOW_PAGE_TYPES.includes(page.page_type));

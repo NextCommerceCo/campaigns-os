@@ -185,7 +185,9 @@ export function paymentPagesForFunnel(funnel: Funnel | null | undefined): Page[]
   }
   // A funnel whose entry is a landing page that links into checkout through a
   // CTA (no forward field) still has a Checkout; fall back to every Checkout
-  // the funnel declares so a lookup never reports "none" for a real one.
+  // the funnel declares, in declaration order (funnel.pages), so a lookup never
+  // reports "none" for a real one. No entry path reaches these, so there is no
+  // path order to follow; QA's topology walker falls back the same way.
   if (!out.length) for (const page of pages) if (isPaymentPage(page)) out.push(page)
   return out
 }
