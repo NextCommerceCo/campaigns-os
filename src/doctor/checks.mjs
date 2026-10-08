@@ -3973,7 +3973,8 @@ function selectableVariantMatrixCount(packages) {
   const selectable = Array.isArray(packages)
     ? packages.filter((pkg) => pkg && pkg.is_order_bump !== true && pkg.is_upsell !== true)
     : [];
-  if (selectable.length <= 1) return 0;
+  const quantityRows = selectable.filter((pkg) => String(pkg.qty ?? "").trim());
+  if (quantityRows.length <= 1) return 0;
   const attributeIdentity = (pkg) => {
     if (!Array.isArray(pkg.variant_attributes) || pkg.variant_attributes.length === 0) return null;
     const attributes = pkg.variant_attributes.map((attribute) => {
@@ -3988,12 +3989,11 @@ function selectableVariantMatrixCount(packages) {
     return typeof value === "string" && value.trim() ? value.trim() : null;
   };
   for (const identity of [attributeIdentity, textIdentity("product_variant_name")]) {
-    const values = selectable.map(identity);
+    const values = quantityRows.map(identity);
     if (!values.every(Boolean)) continue;
     const quantitiesByVariant = new Map();
     for (const [index, value] of values.entries()) {
-      const qty = String(selectable[index].qty ?? "").trim();
-      if (!qty) return 0;
+      const qty = String(quantityRows[index].qty).trim();
       if (!quantitiesByVariant.has(value)) quantitiesByVariant.set(value, new Set());
       quantitiesByVariant.get(value).add(qty);
     }
@@ -4004,7 +4004,7 @@ function selectableVariantMatrixCount(packages) {
   return 0;
 }
 
-function warnCheckoutPackageFamilyFit(specPages, family, catalog, warnings) {
+function warnCheckoutPackageFamilyFit(specPages, family, catalog, warnings, report) {
   const selectedContract = catalog.families?.[family]?.agentContract;
   if (
     !selectedContract ||
@@ -4015,17 +4015,54 @@ function warnCheckoutPackageFamilyFit(specPages, family, catalog, warnings) {
   const fittingFamilies = [...certifiedTemplateFamilies(catalog)]
     .filter((candidate) => supportsCheckoutVariantSlots(catalog.families[candidate]?.agentContract))
     .sort();
-  const action = fittingFamilies.length
-    ? `At intake, rerun \`npx --no-install campaigns-os start --spec <json> --source <html-dir> --target <page-kit-dir> --template-family ${fittingFamilies[0]}\` if this configurable checkout surface is intended.`
-    : "Choose a certified family with a configurable variant-slot checkout surface when one is available.";
-  for (const page of specPages.filter((candidate) => CHECKOUT_FLOW_PAGE_TYPES.includes(candidate.type))) {
+  const checkoutPages = specPages.filter((page) => CHECKOUT_FLOW_PAGE_TYPES.includes(page.type));
+  const byFunnel = new Map();
+  for (const page of checkoutPages) {
+    if (!byFunnel.has(page.funnel_id)) byFunnel.set(page.funnel_id, new Map());
+    byFunnel.get(page.funnel_id).set(page.id, page);
+  }
+  const paths = new Map();
+  for (const page of checkoutPages) {
+    const pages = byFunnel.get(page.funnel_id);
+    let end = page;
+    const visited = new Set([page.id]);
+    while (typeof end.next_page === "string" && pages.has(end.next_page) && !visited.has(end.next_page)) {
+      visited.add(end.next_page);
+      end = pages.get(end.next_page);
+    }
+    const key = `${page.funnel_id}:${end.id}`;
+    if (!paths.has(key)) paths.set(key, []);
+    paths.get(key).push(page);
+  }
+  const hasStageEvidence = ASSEMBLY_REPORT_STAGE_KEYS.some((key) => {
+    if (key === "prepare_build") return false;
+    const stage = report?.stages?.[key];
+    if (!isObject(stage)) return false;
+    const seedStatuses = key === "setup" ? ["pending", "skipped"] : ["pending"];
+    return !seedStatuses.includes(optionalString(stage.status, "pending"))
+      || ["inputs", "outputs", "commands", "blockers", "warnings", "evidence"].some((field) => Array.isArray(stage[field]) && stage[field].length > 0)
+      || (isObject(stage.evidence) && Object.keys(stage.evidence).length > 0);
+  });
+  for (const pathPages of paths.values()) {
+    const page = pathPages.find((candidate) => selectableVariantMatrixCount(candidate.packages) > 1);
+    if (!page) continue;
     const variantCount = selectableVariantMatrixCount(page.packages);
-    if (variantCount <= 1) continue;
+    const multiStep = pathPages.some((candidate) => candidate.type === "checkout_step" || candidate.type === "select");
+    const shapeMatches = fittingFamilies.filter((candidate) => Boolean(catalog.families[candidate]?.canonicalSurfaces?.selectStep) === multiStep);
+    // The catalog has no base-family field; its family-name prefix is the shared-base convention.
+    const baseMatches = shapeMatches.filter((candidate) => candidate.startsWith(`${family}-`));
+    const ranked = [...baseMatches, ...shapeMatches.filter((candidate) => !baseMatches.includes(candidate))];
+    const choice = baseMatches.length === 1 ? baseMatches[0] : ranked.length === 1 ? ranked[0] : `<one of: ${ranked.join(", ")}>`;
+    const action = hasStageEvidence
+      ? "The template family is a build-time decision. Changing it requires rerunning intake with --force (destructive; clears recorded stage evidence)."
+      : ranked.length
+        ? `At intake, rerun \`npx --no-install campaigns-os start --spec <json> --source <html-dir> --target <page-kit-dir> --template-family ${choice}\` if this configurable checkout surface is intended.`
+        : "Choose a certified family with a configurable variant-slot checkout surface that matches this checkout path when one is available.";
     addIssue(
       warnings,
       "template_contract.checkout_package_fit",
-      `Checkout-flow page "${page.id}" has ${variantCount} variants, some offered at several quantities, but template family "${family}" has no configurable variant_slots[] checkout surface. Certified families with variant slots: ${fittingFamilies.join(", ") || "none"}. ${action}`,
-      { page_id: page.id, funnel_id: page.funnel_id, template_family: family, distinct_product_variants: variantCount, fitting_families: fittingFamilies },
+      `Checkout path through page "${page.id}" has ${variantCount} variants, some offered at several quantities, but template family "${family}" has no configurable variant_slots[] checkout surface. Certified families with variant slots: ${fittingFamilies.join(", ") || "none"}. ${action}`,
+      { page_id: page.id, funnel_id: page.funnel_id, template_family: family, distinct_product_variants: variantCount, fitting_families: ranked },
     );
   }
 }
@@ -4213,7 +4250,7 @@ export function validateCommerceCatalog(packet, packetPath, spec, errors, warnin
 
     // ADR-003 step 2: template-contract checks ported from the private doctor.
     const specPages = activeSpecPages(spec);
-    warnCheckoutPackageFamilyFit(specPages, family, catalog, warnings);
+    warnCheckoutPackageFamilyFit(specPages, family, catalog, warnings, buildState.report);
 
     const mismatchedFamilies = specPages.filter(
       (page) => isNonEmptyString(page.sdk_hints?.template_family) && page.sdk_hints.template_family !== family
