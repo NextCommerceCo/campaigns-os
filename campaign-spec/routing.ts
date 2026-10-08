@@ -82,9 +82,12 @@ export const DECLINE_ROUTE_FIELD = 'on_decline' as const
  * is about one field's MEANING: reading a payment-shaped field on a page with
  * no payment is not respecting the author's intent, it is inventing one.
  *
- * Membership is deliberately narrow. The three-step shop family types its
- * `information` / `shipping` / `billing` pages as `checkout`, so they are
- * already covered; no certified family carries a second payment-bearing type.
+ * Membership is deliberately narrow. From CampaignSpec v5 (campaigns-os#641)
+ * `checkout` means exactly the page that takes payment; the earlier steps of a
+ * split checkout (the three-step shop family's `information` and `shipping`)
+ * are `checkout_step`, which take no payment and advance through `next_page`.
+ * A v4 spec that chained `checkout → checkout` is retyped on read
+ * (checkout-flow.ts), so the billing page alone stays payment-bearing here.
  * An `upsell` takes a one-click payment but expresses its post-purchase branch
  * through `on_accept`, which has its own applicability rule below.
  * Ratified on campaigns-os#234, 2026-08-25.

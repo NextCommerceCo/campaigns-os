@@ -11,6 +11,7 @@
  */
 
 import { specHashOf, specHashesMatch } from "./spec-hash.mjs";
+import { CHECKOUT_FLOW_PAGE_TYPES, upgradeCampaignSpec } from "../campaign-spec/dist/index.js";
 
 export const CALC_LABEL = "Campaigns-calculated · before tax";
 export const CALCULATED_PAIR_EVIDENCE = "calculated_pair";
@@ -213,6 +214,20 @@ function catalogImportedAt(mapDoc) {
     ?? null;
 }
 
+// The page's type in the v5 vocabulary: a v4 Map's `checkout → checkout` chain
+// reads as `checkout_step` pages ahead of the one Checkout (campaigns-os#641).
+const upgradedMaps = new WeakMap();
+function v5PageType(mapDoc, page) {
+  if (!mapDoc || typeof mapDoc !== "object") return page?.type ?? null;
+  if (!upgradedMaps.has(mapDoc)) upgradedMaps.set(mapDoc, upgradeCampaignSpec(mapDoc));
+  const upgraded = upgradedMaps.get(mapDoc);
+  for (const funnel of array(upgraded?.funnels)) {
+    const hit = array(funnel?.pages).find((candidate) => present(page?.id) && String(candidate?.id) === String(page.id));
+    if (hit) return hit.type ?? null;
+  }
+  return page?.type ?? null;
+}
+
 function descriptor(page, mapDoc, role, lines, options = {}) {
   const funnel = findFunnel(mapDoc, page);
   const suffix = options.id_suffix ? `:${options.id_suffix}` : "";
@@ -221,7 +236,7 @@ function descriptor(page, mapDoc, role, lines, options = {}) {
     upsell: page?.type === "upsell" || page?.type === "downsell",
     context: {
       page_id: page?.id ?? null,
-      page_type: page?.type ?? null,
+      page_type: v5PageType(mapDoc, page),
       page_label: page?.label ?? page?.name ?? page?.id ?? null,
       page_order: Number(page?.order) || 0,
       funnel_id: funnel?.id ?? null,
@@ -1045,8 +1060,16 @@ function acceptDelta(page) {
   return moneyFact(signedCents(cents), total.state);
 }
 
+// The checkout total is the cart the shopper pays for at the Checkout. That cart
+// is priced on whichever checkout-flow page carries it: the select page of a
+// two-step flow, the first step of a split checkout, or the Checkout itself
+// (campaigns-os#641). The Checkout of a multi-step path carries no packages, so
+// looking for the page typed "checkout" priced nothing on those flows. Only
+// pages that declare packages are planned, so every page here carries a cart;
+// pages arrive sorted by page_order, and with several paths the first is
+// summarized.
 function journeySummary(pages) {
-  const checkout = pages.find((page) => page.page_type === "checkout");
+  const checkout = pages.find((page) => CHECKOUT_FLOW_PAGE_TYPES.includes(page.page_type));
   const checkoutTotal = checkout?.representative_total
     || unresolvedFact("Unresolved: checkout scenario unavailable");
   const bumps = pages.flatMap((page) => page.bumps.map((bump) => ({ ...bump, page_id: page.page_id })));

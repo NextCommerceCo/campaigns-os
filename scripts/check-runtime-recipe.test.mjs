@@ -158,14 +158,14 @@ test("a prepared runtime cannot run browser QA, and the contract says so", () =>
 test("the enumerated input set is the compiler's RESOLVED file set, not the config's include globs", () => {
   const tsconfig = readJson("campaign-spec/tsconfig.build.json");
   const declared = moduleInputs(recipe);
-  assert.equal(declared.length, 38);
+  assert.equal(declared.length, 43);
 
-  // The trap this contract exists to avoid: two compiled root modules appear in no
+  // The trap this contract exists to avoid: three compiled root modules appear in no
   // include glob and enter transitively. Assert that is still true, so if the config
   // is ever widened to name them, this test says so rather than quietly agreeing.
   const globbedRoots = tsconfig.include.filter((entry) => !entry.includes("*")).map((entry) => `campaign-spec/${entry}`);
   const transitive = declared.filter((path) => !path.startsWith("campaign-spec/rules/") && !globbedRoots.includes(path));
-  assert.deepEqual(transitive.sort(), ["campaign-spec/routing.ts", "campaign-spec/sdk-version-parse.ts"]);
+  assert.deepEqual(transitive.sort(), ["campaign-spec/checkout-flow.ts", "campaign-spec/routing.ts", "campaign-spec/sdk-version-parse.ts"]);
 
   // And nothing under the fixture or test trees is an input; nothing there is emitted.
   for (const path of recipe.inputs.files) {

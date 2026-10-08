@@ -23,7 +23,10 @@ This repo uses independent compatibility versions:
 - QA Verdict sidecar projection: same `"1.0"` literal, projection guarantees in
   `schemas/campaigns-os-qa-verdict-sidecar.v0.schema.json` (one contract, two
   schema files — the sidecar is an allowlist projection, never a second lineage)
-- CampaignSpec: `4.2`–`4.3` (JSON Schema: `schemas/campaign-spec.v4.schema.json`)
+- CampaignSpec: `5.0` (JSON Schema: `schemas/campaign-spec.v5.schema.json`), with
+  `4.2`–`4.3` still read (`schemas/campaign-spec.v4.schema.json`) and upgraded on
+  read: each `checkout` page whose resolved forward target is another `checkout`
+  becomes `checkout_step`
 - starter-template agent contract: `1`
 - commerce surface catalog: `2`
 - Tooling Orientation: `campaigns-os-tooling-orientation/v1`

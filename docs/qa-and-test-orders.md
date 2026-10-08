@@ -1446,7 +1446,21 @@ timeout still leaves the ladder up to the point of failure. Ladder entries carry
 object. Evidence is resolved even when the step fails or times out, because the
 failing path is the one worth reading.
 
-Four steps write structured evidence today.
+Five steps write structured evidence today.
+
+**Multi-step checkout paths (campaigns-os#641).** The ladder drives the
+Checkout — the page that takes payment (`type: "checkout"`) — on the tested
+path, never the first page typed checkout. When `checkout_step` pages lead
+into it, the runner lands on the first step: through a `select` page ahead of
+it when there is one (`entered_via_landing` with `control_kind:
+checkout_button`), otherwise the step fills the cart itself.
+`customer_fields_filled` fills only the fields that step renders, one
+`checkout_step_submitted` rung per step follows, and the order is submitted
+only on the Checkout. With
+split-test paths in one campaign, each Checkout reached from an entry page is
+its own path; `tiers` plans read declared tiers and bumps from every page of
+that path (the select page or first step declares the cart), and coupons from
+its steps and Checkout.
 
 **`entered_via_landing` — cart entry.** The first rung of the ladder, before
 `opened_checkout`. A checkout renders its customer form whether or not the SDK
@@ -1490,7 +1504,13 @@ checkout — never a receipt or an offer page), navigates there, waits for the
 SDK, and clicks the cart-entry control: an SDK add-to-cart control
 (`[data-next-action="add-to-cart"]`, the only attribute the SDK activates the
 feature on), or a link into the checkout URL carrying `?forcePackageId=`,
-which is what the certified `shop-single-step` landing renders. A control
+which is what the certified `shop-single-step` landing renders, or, on a
+page with bundle cards (`[data-next-bundle-card]`, a `select` page), a checkout
+button: the SDK's `[data-next-action="checkout"]` or a plain link into the
+checkout URL. There the swap-mode selector already wrote the cart and the SDK
+persists it, so the runner keeps the pre-selected card, or with
+`--select-package <ref>` clicks the bundle card carrying that ref first,
+strictly, before the button. A control
 spelled any other way is not a cart entry, so a page that offers nothing else
 fails the step by name (`cart_entry_control_missing`) rather than clicking a
 control the SDK never wired and waiting out the navigation budget. A visible
@@ -1508,8 +1528,9 @@ cart away. `opened_checkout` then records the arrival instead of re-opening.
 
 Evidence: `landing_url`, `landing_page_id`, `landing_page_type`,
 `landing_resolution` (`routes_into_checkout`, `entry_page_fallback`,
-`first_page_fallback`), `control_text`, `control_kind` (`add_to_cart` or
-`checkout_link`), `package_id`, `sdk_ready`, `arrived_url`, the
+`first_page_fallback`), `control_text`, `control_kind` (`add_to_cart`,
+`checkout_link`, or `checkout_button`), `package_id`, `bundle_card_selection`
+when `--select-package` clicked a bundle card, `sdk_ready`, `arrived_url`, the
 `checkout_selection_surface` probe result, `selection_surface_probe`
 (`loaded`, `reused`, or `failed`), and `selection_surface_probe_error` when it
 failed. The failure codes are
@@ -1544,6 +1565,21 @@ Required field actions are bounded by the step budget, capped at Playwright's
 own 30s default, so a caller-supplied budget only ever tightens the ceiling. A
 stuck required field fails as that field rather than as an anonymous step
 timeout; a slow-but-working funnel waits no longer than it did before.
+
+**`checkout_step_submitted` — one rung per `checkout_step`.** On a path whose
+Checkout is preceded by `checkout_step` pages, each step's rung checks the page
+is on that step, clicks the submit control of its
+`form[data-next-checkout-step]` (the SDK validates the step's fields, keeps the
+answers and navigates), and waits for the page to land on the step's declared
+next page (`expected_next_url`). It then fills whatever fields the arrived page
+renders. A step whose form carries no `data-next-checkout-step`, or whose
+submit never reaches the declared next page (usually a required field the
+step validates), fails the rung by name; nothing is reserved or submitted, so
+the creation classifier reads it as `not_created`. Evidence: `step_page_id`,
+`step_number`, `expected_next_url`, `arrived_url` and the arrived page's
+`fields` trace. A path that starts on its first step, with no page routing into
+it, skips `entered_via_landing`: the step page fills the cart and the guard
+before submit checks it.
 
 **`cart_created` — cart-API observation.** The step reports what the cart API
 actually returned: the most recent `POST /api/v1/carts/` response's `status`, an

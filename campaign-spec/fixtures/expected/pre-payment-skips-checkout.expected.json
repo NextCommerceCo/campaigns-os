@@ -1,0 +1,29 @@
+{
+  "violations": [
+    {
+      "ruleId": "PrePaymentForwardTarget",
+      "severity": "error",
+      "message": "\"select\" page \"select-1\" forwards to \"upsell-1\" (type \"upsell\") without passing a Checkout. Route it (via next_page) to the next checkout step or to the Checkout that takes payment.",
+      "path": "/funnels/0/pages/0/next_page",
+      "data": {
+        "pageId": "select-1",
+        "pageType": "select",
+        "target": "upsell-1",
+        "targetPageId": "upsell-1",
+        "targetType": "upsell"
+      }
+    },
+    {
+      "ruleId": "OneCheckoutPerPath",
+      "severity": "error",
+      "message": "A path from entry page \"select-1\" reaches \"upsell-1\" (upsell) without passing a Checkout, so no order has been placed.",
+      "path": "/funnels/0/pages/3",
+      "data": {
+        "pageId": "upsell-1",
+        "entryPageId": "select-1",
+        "checkoutsPassed": 0,
+        "isPartialScope": false
+      }
+    }
+  ]
+}

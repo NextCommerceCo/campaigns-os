@@ -25,13 +25,20 @@ import {
   commonTestOrderPlan,
   fullTestOrderPaths,
   OFFER_PAGE_TYPES,
+  checkoutPathPages,
+  checkoutStepPages,
+  findPaymentPage,
+  isCheckoutStepTopologyPage,
   pageAtUrl,
+  paymentPagesForTopology,
   remainingActionDisposition,
   resolveTestOrderTopology,
   terminalAtUrl,
 } from "./qa-test-order-topology.mjs";
 import {
   CART_ENTRY_CODES,
+  CART_ENTRY_BUNDLE_CARD_SELECTOR,
+  CART_ENTRY_CHECKOUT_BUTTON_SELECTOR,
   CART_ENTRY_CONTROL_SELECTOR,
   cartEntryHrefFor,
   CART_ENTRY_ROUTE_ATTRIBUTE,
@@ -191,7 +198,9 @@ export async function runBrowserChecks(topologies, args = {}, options = {}) {
 }
 
 export async function runBrowserTestOrders(topologies, args = {}, runId = "local", options = {}) {
-  const checkoutPage = findPage(topologies, "checkout");
+  // The Checkout (the page that takes payment) on the first entry path, never
+  // the first page typed checkout: on a split checkout that is step 1 (#641).
+  const checkoutPage = findPaymentPage(topologies);
   if (!checkoutPage?.url) {
     const coverage = upsellActionCoverageAssertion({ topologies, orders: [], checkoutPage });
     return {
@@ -1090,6 +1099,10 @@ async function runPageBrowserChecks(context, page, args, options = {}, policyLin
     }
     if (page.page_type === "checkout") {
       assertions.push(...await checkoutPaymentSurfaceAssertions(browserPage, page));
+    }
+    // Exit-intent and promo-code surfaces may sit on any checkout-flow page
+    // (#641); each assertion runs only where the spec declares the surface.
+    if (["select", "checkout_step", "checkout"].includes(page.page_type)) {
       assertions.push(...await checkoutOfferSurfaceAssertions(browserPage, page));
     }
     assertions.push(...await templateResidueAssertions(browserPage, page, options));
@@ -1330,7 +1343,7 @@ function primaryCtaCheckEligible(page) {
 // where the page declares, not where they point.
 function primaryCtaPageRoutesSdkControls(page) {
   const pageType = String(page?.page_type || "").toLowerCase();
-  return pageType === "checkout" || OFFER_PAGE_TYPES.has(pageType);
+  return pageType === "checkout" || pageType === "checkout_step" || OFFER_PAGE_TYPES.has(pageType);
 }
 
 // The forms whose action is no route on this page, handed to the route rule
@@ -1357,7 +1370,9 @@ function primaryCtaRoutelessForms(page) {
 // container, the only place the SDK binds it.
 function primaryCtaDeclaredRoutes(page) {
   if (!primaryCtaPageRoutesSdkControls(page)) return [];
-  if (String(page.page_type).toLowerCase() === "checkout") {
+  // A checkout_step's form submits to its declared next step the same way the
+  // Checkout's submits to its success route: the SDK navigates, not the form.
+  if (["checkout", "checkout_step"].includes(String(page.page_type).toLowerCase())) {
     const notWallet = ":not([data-next-express-checkout]):not([data-next-express-checkout] *)";
     const submit = ['button[type="submit"]', "button:not([type])", 'input[type="submit"]']
       .map((control) => `${CHECKOUT_FORM_SELECTOR} ${control}${notWallet}`)
@@ -2397,7 +2412,10 @@ function promoCodeSurfaceAssertion({ page, declaration, evidence }) {
 
 function contractPageType(page) {
   const type = String(page?.page_type || "").toLowerCase();
-  return type === "thankyou" ? "receipt" : type;
+  if (type === "thankyou") return "receipt";
+  // A checkout step renders the family's checkout surface without taking
+  // payment (campaigns-os#641); the brand contract keys that surface "checkout".
+  return type === "checkout_step" ? "checkout" : type;
 }
 
 // The palette-residue rows (style, logo, payment chrome) take their severity
@@ -3707,7 +3725,12 @@ async function runSingleBrowserTestOrder(context, checkoutPage, plan, args, runI
   let orderDeadline = null;
   let events = { requests: [], responses: [], failed: [], console: [], pageErrors: [] };
   const email = testEmail(planArgs);
-  const entryPage = resolveCartEntryPage(options.topologies, checkoutPage);
+  // The checkout path this order walks (campaigns-os#641): any checkout_step
+  // pages before the Checkout. The cart is entered into the first form page
+  // of the path, and the step pages are submitted in order before payment.
+  const stepPages = checkoutStepPagesFor(options.topologies, checkoutPage);
+  const formEntryPage = stepPages[0] || checkoutPage;
+  const entryPage = resolvePathEntryPage(options.topologies, formEntryPage, stepPages);
   let tracking = null;
   try {
     tracking = options.tracking ? options.tracking.observe(planId(normalizedPlan)) : null;
@@ -3828,6 +3851,7 @@ async function runSingleBrowserTestOrder(context, checkoutPage, plan, args, runI
         ladder,
         checkoutPage,
         entryPage,
+        stepPages,
         topologyPlan: normalizedPlan.topology_plan,
         path,
         args: planArgs,
@@ -3916,10 +3940,13 @@ function stablePrivateCaptureError(value) {
   return projectAnalyticsCaptureError(value, { fallbackKind: "unreadable" });
 }
 
-async function executeTestOrderPath({ page, events, email, ladder, checkoutPage, entryPage = null, topologyPlan, path, args, deadline, reserveOrderCreation = null, selectorProbeCache = null, tracking = null, cardReadyTimeoutMs = CARD_READY_TIMEOUT_MS }) {
+async function executeTestOrderPath({ page, events, email, ladder, checkoutPage, entryPage = null, stepPages = [], topologyPlan, path, args, deadline, reserveOrderCreation = null, selectorProbeCache = null, tracking = null, cardReadyTimeoutMs = CARD_READY_TIMEOUT_MS }) {
   const stepTimeoutMs = numberArg(args["step-timeout-ms"], DEFAULT_STEP_TIMEOUT_MS);
   const budget = () => Math.min(stepTimeoutMs, deadline - Date.now());
   const hostedNow = () => hostedRedirectInfo(safePageUrl(page), checkoutPage.url);
+  // The page the cart enters and the form filling starts on: the first
+  // checkout_step of a multi-step path, else the Checkout itself.
+  const formEntryPage = stepPages[0] || checkoutPage;
   const selectedPackages = parseCart(args["select-package"]);
   const currencyLoad = pathCurrencyLoad(args);
   let checkoutDisplay = null;
@@ -3937,7 +3964,8 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
   // page the probe left there rather than loading the same URL a second time,
   // which would fire the SDK's page-view events twice into the same capture.
   const entry = await ladder.run(CART_ENTRY_STEP, () => enterCartViaLanding({
-    page, checkoutPage, entryPage, selectedPackages, args, budget, selectorProbeCache, tracking, currencyLoad,
+    page, checkoutPage: formEntryPage, entryPage, selectedPackages, args, budget, selectorProbeCache, tracking, currencyLoad,
+    startsOnCheckoutStep: formEntryPage !== checkoutPage,
   }), { timeoutMs: budget() });
   const enteredViaLanding = Boolean(entry && typeof entry === "object" && entry.entered);
   // Responses captured from here on belong to the checkout the ladder drives.
@@ -3945,7 +3973,7 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
   // made before the hand-off.
   const checkoutResponseOffset = events.responses.length;
 
-  await ladder.run("opened_checkout", () => openCheckoutForPath({ page, checkoutPage, entry, args, tracking, currencyLoad }), { timeoutMs: budget() });
+  await ladder.run("opened_checkout", () => openCheckoutForPath({ page, checkoutPage: formEntryPage, entry, args, tracking, currencyLoad }), { timeoutMs: budget() });
   await ladder.run("selected_bundle", async () => {
     // The requested package was selected on the entry page, where the cards
     // live; checkout renders none, so re-running strict selection here would
@@ -3969,8 +3997,20 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
     const fieldTrace = createFieldTrace();
     await ladder.run("customer_fields_filled", async () => {
       ensurePageFillable(page, checkoutPage.url);
-      await fillCheckoutFields(page, args, email, { trace: fieldTrace, actionTimeoutMs: budget() });
+      // On a multi-step path each page renders only its own fields, so every
+      // field is filled where it is present and skipped where it is not. The
+      // SDK's step validation refuses to advance when one is missing, which
+      // the step rung below reports by name.
+      await fillCheckoutFields(page, args, email, { trace: fieldTrace, actionTimeoutMs: budget(), presentOnly: stepPages.length > 0 });
     }, { timeoutMs: budget(), evidence: () => fieldTrace.summary() });
+    // Walk the path: submit each checkout_step and assert it lands on the
+    // step's declared next page, then fill what the arrived page renders. No
+    // order is placed until the Checkout (campaigns-os#641).
+    for (const [index, step] of stepPages.entries()) {
+      await ladder.run("checkout_step_submitted", () => submitCheckoutStepAndArrive({
+        page, step, index, args, email, budget, checkoutUrl: checkoutPage.url, tracking,
+      }), { timeoutMs: budget() });
+    }
     await ladder.run("coupon_applied", async () => {
       const code = stringArg(args["apply-coupon"]);
       if (!code) return { skip: "no --apply-coupon code requested" };
@@ -4248,7 +4288,7 @@ async function openCheckoutForPath({ page, checkoutPage, entry, args, tracking =
 // The entry step body. Resolves to `{ skip }` when the checkout selects for
 // itself, to `{ entered: true, ... }` when the runner came in through the entry
 // page, and throws a coded error (never a bare timeout) when it cannot.
-async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPackages, args, budget, selectorProbeCache = null, tracking = null, currencyLoad = null }) {
+async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPackages, args, budget, selectorProbeCache = null, tracking = null, currencyLoad = null, startsOnCheckoutStep = false }) {
   // Probe the checkout first: whether it carries a selection surface is a fact
   // about the rendered page, not about the spec (the spec cannot say it yet —
   // that is the design half of #206). The probe's load is the checkout's only
@@ -4284,6 +4324,15 @@ async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPack
       evidence: { checkout_selection_surface: surface, ...probeEvidence },
     };
   }
+  if (!entryPage?.url && startsOnCheckoutStep) {
+    // A path that begins on its first checkout_step has no page before it to
+    // fill the cart from; the step page fills it (the family's main package).
+    // The empty-cart guard before submit still refuses an empty cart by name.
+    return {
+      skip: "the checkout path begins on its first checkout step and no page routes into it; the step page fills the cart, and the guard before submit checks it",
+      evidence: { checkout_selection_surface: surface, ...probeEvidence },
+    };
+  }
   if (!entryPage?.url) {
     throw codedError(
       CART_ENTRY_CODES.ENTRY_UNRESOLVED,
@@ -4294,15 +4343,47 @@ async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPack
   await gotoAndSettle(page, entryPage.url, args, tracking, currencyLoad);
   const sdkReady = await waitForSdkReady(page, Math.min(budget(), DEFAULT_SETTLE_TIMEOUT_MS));
   await tracking?.readDocument(page);
-  const controls = await page.evaluate(cartEntryControlsScript(), { selector: CART_ENTRY_CONTROL_SELECTOR, checkoutUrl: checkoutPage.url }).catch(() => []);
+  const readControls = () => page.evaluate(cartEntryControlsScript(), {
+    selector: CART_ENTRY_CONTROL_SELECTOR,
+    checkoutUrl: checkoutPage.url,
+    checkoutButtonSelector: CART_ENTRY_CHECKOUT_BUTTON_SELECTOR,
+    bundleCardSelector: CART_ENTRY_BUNDLE_CARD_SELECTOR,
+  }).catch(() => []);
+  let controls = await readControls();
+  // A two-step select page can hold its checkout button in a second step that
+  // a variant control reveals (olympus-mv-two-step: "Select Color & Size").
+  // When no checkout button is visible yet, click that control once and read
+  // the controls again, so a hidden decoy link is never chosen over the
+  // button the reveal shows.
+  const checkoutButtons = controls.filter((entry) => entry.kind === "checkout_button");
+  if (checkoutButtons.length && !checkoutButtons.some((entry) => entry.visible)) {
+    const reveal = page.locator('[data-next-action="select-variants"]:visible').first();
+    if (await reveal.count().catch(() => 0)) {
+      await clickControl(reveal, { timeout: 5000 }).catch(() => {});
+      await page.locator(CART_ENTRY_CHECKOUT_BUTTON_SELECTOR).filter({ visible: true }).first()
+        .waitFor({ state: "visible", timeout: Math.max(1000, Math.min(budget(), 8000)) }).catch(() => {});
+      controls = await readControls();
+    }
+  }
   const choice = chooseCartEntryControl(controls, selectedPackages);
   if (!choice.control) {
     throw codedError(CART_ENTRY_CODES.ENTRY_CONTROL_MISSING, `${choice.reason} (entry page ${redactUrlQuery(entryPage.url)})`);
   }
   const control = choice.control;
+  // A select page (#641): the bundle card is the cart. --select-package clicks
+  // the matching data-next-bundle-card first, strictly, as on a checkout that
+  // selects for itself; otherwise the page's pre-selected card stands.
+  let cardSelection = null;
+  if (control.kind === "checkout_button") {
+    cardSelection = choice.select_card ? await selectPackageCard(page, choice.select_card, []) : null;
+    control.package_id = choice.select_card?.packageId || await selectedBundleCardPackage(page);
+  }
   // The index is the control's position among what its own locator matches,
   // so it replays with nth(); no selector is rebuilt from an attribute value.
-  const target = page.locator(control.kind === "add_to_cart" ? CART_ENTRY_CONTROL_SELECTOR : "a[href]").nth(control.index);
+  const controlSelector = control.kind === "add_to_cart"
+    ? CART_ENTRY_CONTROL_SELECTOR
+    : control.kind === "checkout_button" ? CART_ENTRY_CHECKOUT_BUTTON_SELECTOR : "a[href]";
+  const target = page.locator(controlSelector).nth(control.index);
   const perpetual = await scrollControlIntoView(target);
   await clickControl(target, { timeout: 8000, perpetual });
 
@@ -4332,12 +4413,99 @@ async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPack
       control_text: control.text || null,
       control_kind: control.kind,
       package_id: control.package_id || null,
+      ...(cardSelection ? { bundle_card_selection: cardSelection } : {}),
       sdk_ready: sdkReady,
       arrived_url: redactUrlQuery(safePageUrl(page)),
       checkout_selection_surface: surface,
       ...probeEvidence,
     },
   };
+}
+
+// The package of the bundle card a select page shows as selected, or null.
+async function selectedBundleCardPackage(page) {
+  return page.evaluate((cardSelector) => {
+    const card = Array.from(document.querySelectorAll(cardSelector)).find((node) => (
+      node.classList.contains("next-selected") || node.getAttribute("data-next-selected") === "true" || node.getAttribute("aria-checked") === "true"
+    ));
+    const holder = card && (card.hasAttribute("data-next-package-id") ? card : card.querySelector("[data-next-package-id]"));
+    const value = holder ? String(holder.getAttribute("data-next-package-id") || "").trim() : "";
+    return value || null;
+  }, CART_ENTRY_BUNDLE_CARD_SELECTOR).catch(() => null);
+}
+
+// One checkout_step rung: the page must be on this step, its form's submit is
+// clicked, and the page must land on the step's declared next page. Then the
+// fields the arrived page renders are filled. The SDK owns the navigation
+// (data-next-checkout-step on the form); the runner only waits for it.
+async function submitCheckoutStepAndArrive({ page, step, index, args, email, budget, checkoutUrl, tracking = null }) {
+  ensurePageFillable(page, checkoutUrl);
+  const here = safePageUrl(page);
+  if (!checkoutUrlPredicate(step.url)(here)) {
+    throw new Error(`expected to be on checkout step "${step.page_id || index + 1}" (${redactUrlQuery(step.url)}) but the page is at ${redactUrlQuery(here) || "(unknown)"}`);
+  }
+  const expected = step.expected_next_url;
+  if (!expected) throw new Error(`checkout step "${step.page_id || index + 1}" declares no next page; the spec must route it (next_page) toward its Checkout`);
+  await tracking?.readDocument(page);
+  await submitCheckoutStep(page);
+  const atNext = checkoutUrlPredicate(expected);
+  const timeout = Math.max(1000, Math.min(budget(), numberArg(args["browser-timeout"], DEFAULT_BROWSER_TIMEOUT_MS)));
+  const arrived = await page.waitForURL((url) => atNext(url.toString()), { timeout }).then(() => true, () => false);
+  if (!arrived) {
+    throw new Error(`submitted checkout step "${step.page_id || index + 1}" but the page did not reach its declared next page ${redactUrlQuery(expected)} within ${timeout}ms (now at ${redactUrlQuery(safePageUrl(page)) || "(unknown)"}); a required field the step validates may be missing`);
+  }
+  await page.waitForLoadState("networkidle", { timeout: DEFAULT_SETTLE_TIMEOUT_MS }).catch(() => {});
+  await page.waitForTimeout(500);
+  ensurePageFillable(page, checkoutUrl);
+  const fieldTrace = createFieldTrace();
+  await fillCheckoutFields(page, args, email, { trace: fieldTrace, actionTimeoutMs: budget(), presentOnly: true });
+  return {
+    detail: `step ${index + 1} "${step.page_id || "(unnamed)"}": submitted and landed on its declared next page ${redactUrlQuery(expected)}`,
+    evidence: {
+      step_page_id: step.page_id || null,
+      step_number: index + 1,
+      expected_next_url: redactUrlQuery(expected),
+      arrived_url: redactUrlQuery(safePageUrl(page)),
+      fields: fieldTrace.summary(),
+    },
+  };
+}
+
+// The submit control of a checkout_step form. The step contract puts
+// data-next-checkout-step on the checkout form itself, so a page without one
+// is reported rather than submitted some other way.
+async function submitCheckoutStep(page) {
+  await closeAddressAutocomplete(page);
+  const scope = "form[data-next-checkout-step]";
+  // Never an express-wallet button: on a step page those place an order.
+  const notWallet = ":not([data-next-express-checkout]):not([data-next-express-checkout] *)";
+  const submit = page.locator([`button[type="submit"]`, "button:not([type])", `input[type="submit"]`]
+    .map((control) => `${scope} ${control}${notWallet}`).join(", ")).first();
+  if (!await submit.count().catch(() => 0)) {
+    throw new Error("checkout step page renders no form[data-next-checkout-step] with a submit control; the step form must carry data-next-checkout-step and data-next-step-number");
+  }
+  await submit.waitFor({ state: "visible" });
+  const perpetual = await scrollControlIntoView(submit);
+  await clickControl(submit, { forceFallback: false, perpetual });
+}
+
+// The checkout_step pages on the path into `checkoutPage`, read from the
+// topology that holds it.
+function checkoutStepPagesFor(topologies, checkoutPage) {
+  if (!checkoutPage) return [];
+  const owner = (Array.isArray(topologies) ? topologies : []).find((topology) => (topology?.pages || []).includes(checkoutPage))
+    || (Array.isArray(topologies) ? topologies : []).find((topology) => (topology?.pages || []).some((page) => checkoutUrlPredicate(checkoutPage.url)(page?.url)));
+  return owner ? checkoutStepPages(owner, checkoutPage) : [];
+}
+
+// The page the cart is entered from. Into a Checkout, the usual resolution.
+// Into a first checkout_step, only a page that routes straight into it: the
+// order-and-type fallbacks would pick another path's page in a campaign with
+// parallel paths, and a path that starts on its step has none (#641).
+function resolvePathEntryPage(topologies, formEntryPage, stepPages) {
+  const resolved = resolveCartEntryPage(topologies, formEntryPage);
+  if (!stepPages.length) return resolved;
+  return resolved?.resolution === "routes_into_checkout" ? resolved : null;
 }
 
 // The SDK installs `window.next` late in boot. Bounded and tolerant: a page
@@ -5271,10 +5439,13 @@ async function fillCheckoutFields(page, args, email, options = {}) {
   // Field order, progressive-disclosure calls and optional/onlyVisible flags
   // below are unchanged; only the per-field recording wrapper is new.
   const track = (field, action, fn, opts = {}) => (trace ? trace.inspect(field, action, fn, opts) : fn());
+  // presentOnly (a multi-step checkout page): every field optional and
+  // visible-only, because each page of the path renders only its own.
+  const present = options.presentOnly === true ? { optional: true, onlyVisible: true } : {};
   const fill = (field, value, opts = {}) =>
-    track(field, "fill", () => fillByField(page, field, value, { ...opts, actionTimeoutMs }), opts);
+    track(field, "fill", () => fillByField(page, field, value, { ...opts, ...present, actionTimeoutMs }), { ...opts, ...present });
   const select = (field, value, opts = {}) =>
-    track(field, "select", () => selectByField(page, field, value, { ...opts, actionTimeoutMs }), opts);
+    track(field, "select", () => selectByField(page, field, value, { ...opts, ...present, actionTimeoutMs }), { ...opts, ...present });
   const address = {
     firstName: stringArg(args["test-first-name"]) || "QA",
     lastName: stringArg(args["test-last-name"]) || "Playwright",
@@ -7440,7 +7611,7 @@ function testOrderPaths(mode, topologies = [], args = {}) {
 }
 
 function resolvePrimaryTestOrderTopology(topologies = []) {
-  const checkout = findPage(topologies, "checkout");
+  const checkout = findPaymentPage(topologies);
   const topology = (topologies || []).find((candidate) => (candidate?.pages || []).includes(checkout)) || { pages: [] };
   return resolveTestOrderTopology(topology, checkout);
 }
@@ -7467,7 +7638,7 @@ function testOrderPlans(mode, topologies = [], args = {}, options = {}) {
   if (tiersMatch) return specTierPlans(topologies, args, tiersMatch[1] || "checkout", options);
   const selectPackage = stringArg(args["select-package"]);
   const applyCoupon = stringArg(args["apply-coupon"]);
-  const checkoutPage = findPage(topologies, "checkout");
+  const checkoutPage = findPaymentPage(topologies);
   const topologyPlan = resolvePrimaryTestOrderTopology(topologies);
   return testOrderPaths(mode, topologies, args).map((path) => ({
     path,
@@ -7498,24 +7669,31 @@ function specTierPlans(topologies, args, variant, { warn = (line) => process.std
   // fail for the wrong reason. A later funnel's checkout with declarations
   // but no resolvable URL cannot be driven; it is warned about, not dropped
   // silently.
-  const primary = findPage(topologies, "checkout");
+  const primary = findPaymentPage(topologies);
   if (!primary) {
     throw new Error("--test-order tiers requires a CampaignSpec-driven run with a checkout page; this spec/topology has no checkout page to derive tiers or coupons from (non-packet --site runs have none by design).");
   }
   const plans = [];
-  for (const topology of Array.isArray(topologies) ? topologies : []) {
-    const pages = Array.isArray(topology?.pages) ? topology.pages : [];
-    const checkoutPage = pages.find((page) => String(page?.page_type || "").toLowerCase() === "checkout");
-    if (!checkoutPage) continue;
-    const declaredTiers = declaredSelectorTiers(checkoutPage);
-    const bumps = declaredOrderBumps(checkoutPage);
+  // Every Checkout of every funnel: split-test paths in one funnel each reach
+  // their own (#641). A multi-step path declares its cart on the select page or
+  // first step, not on the Checkout, so tiers and bumps are read from every
+  // page of the path; coupons from the pages the runner fills (steps and the
+  // Checkout), since a select page is left before any form is filled.
+  const paymentPages = (Array.isArray(topologies) ? topologies : [])
+    .flatMap((topology) => paymentPagesForTopology(topology).map((checkoutPage) => ({ topology, checkoutPage })));
+  for (const { topology, checkoutPage } of paymentPages) {
+    const pathPages = checkoutPathPages(topology, checkoutPage);
+    const declaredTiers = uniqueTiers(pathPages.flatMap((page) => declaredSelectorTiers(page)));
+    const bumps = [...new Set(pathPages.flatMap((page) => declaredOrderBumps(page)))];
     if (bumps.length) {
       warn(`[qa:test-order] checkout page "${checkoutPage.page_id || checkoutPage.label || "(unnamed)"}" declares order bump package(s) ${bumps.join(", ")} (is_order_bump or is_upsell) — not planned as selector tiers; bump coverage comes from --cart.`);
     }
     for (const tier of declaredTiers) declaredIdentities.add(selectorTierIdentity(tier));
     for (const ref of bumps) bumpRefs.add(ref);
     const tiers = narrowTo ? declaredTiers.filter((tier) => narrowTo.has(selectorTierIdentity(tier))) : declaredTiers;
-    const coupons = declaredCheckoutCoupons(checkoutPage);
+    const coupons = mergeDeclaredCoupons(pathPages
+      .filter((page) => page === checkoutPage || isCheckoutStepTopologyPage(page))
+      .map((page) => declaredCheckoutCoupons(page)));
     if (!tiers.length && !coupons.length) continue;
     if (checkoutPage !== primary && !checkoutPage.url) {
       if (narrowTo && tiers.length) {
@@ -7637,6 +7815,28 @@ function selectorTierNarrowing(value) {
 // Declared coupons follow the repo's offer-surface rule (build-brief, cli
 // exit-pop gates): a surface counts only when `enabled === true` and it maps
 // an offer_code. Both surfaces mapping the same code collapse into one plan.
+// Tiers read from several pages of one path, first declaration kept.
+function uniqueTiers(tiers) {
+  const seen = new Set();
+  return tiers.filter((tier) => {
+    const identity = selectorTierIdentity(tier);
+    if (seen.has(identity)) return false;
+    seen.add(identity);
+    return true;
+  });
+}
+
+// Coupon lists from several pages of one path, merged by code.
+function mergeDeclaredCoupons(lists) {
+  const merged = [];
+  for (const coupon of lists.flat()) {
+    const existing = merged.find((entry) => normalizeLabel(entry.code) === normalizeLabel(coupon.code));
+    if (!existing) merged.push({ code: coupon.code, surfaces: [...coupon.surfaces] });
+    else for (const surface of coupon.surfaces) if (!existing.surfaces.includes(surface)) existing.surfaces.push(surface);
+  }
+  return merged;
+}
+
 function declaredCheckoutCoupons(checkoutPage) {
   const coupons = [];
   const add = (surface, block) => {
@@ -7966,7 +8166,7 @@ function describeCoverageDoubt(doubt) {
 
 // Page types that never carry an upsell action. Any other type, or none, does
 // not say either way.
-const NON_OFFER_PAGE_TYPES = new Set(["presell", "landing", "select", "product", "checkout", "thankyou", "receipt"]);
+const NON_OFFER_PAGE_TYPES = new Set(["presell", "landing", "select", "product", "checkout_step", "checkout", "thankyou", "receipt"]);
 const UPSELL_COVERAGE_UNASSESSABLE = Object.freeze({
   no_url: "no URL",
   unresolvable_url: "URL is not an absolute http(s) address",
@@ -7989,7 +8189,7 @@ export function upsellActionCoverageWithoutOrders(topologies = []) {
   return upsellActionCoverageAssertion({
     topologies,
     orders: [],
-    checkoutPage: findPage(topologies, "checkout"),
+    checkoutPage: findPaymentPage(topologies),
     testOrdersOff: true,
   });
 }
@@ -8450,14 +8650,6 @@ function persistedUpsellStep(step) {
   }
   if (Object.hasOwn(step, "api_response_order_body")) projected.api_response_order_body = summarizeResponseBody(step.api_response_order_body);
   return projected;
-}
-
-function findPage(topologies, type) {
-  for (const topology of topologies || []) {
-    const page = (topology.pages || []).find((candidate) => candidate.page_type === type);
-    if (page) return page;
-  }
-  return null;
 }
 
 function parseCart(value) {

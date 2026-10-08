@@ -2,9 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  checkoutPathPages,
+  checkoutStepPages,
   commonTestOrderPaths,
+  findPaymentPage,
   fullTestOrderPaths,
   pageAtUrl,
+  paymentPagesForTopology,
   remainingActionDisposition,
   resolveTestOrderTopology,
   terminalAtUrl,
@@ -297,4 +301,52 @@ test("a checkout-level cross-origin handoff is recognized without inventing an a
 
   assert.deepEqual(fullTestOrderPaths(resolved), ["checkout"]);
   assert.equal(terminalAtUrl(resolved, "https://hosted.example/complete/?ref_id=qa").kind, "external_handoff");
+});
+
+// Multi-step checkout (campaigns-os#641): the Checkout is the page that takes
+// payment on the path, never the first page typed checkout.
+
+const MS = "https://ms.example";
+function multiStepTopology() {
+  return {
+    funnel_id: "default",
+    pages: [
+      { page_id: "select", page_type: "select", is_entry: true, url: `${MS}/select/`, expected_next_url: `${MS}/checkout/` },
+      { page_id: "checkout", page_type: "checkout", url: `${MS}/checkout/`, expected_next_url: `${MS}/upsell/` },
+      { page_id: "information", page_type: "checkout_step", is_entry: true, url: `${MS}/information/`, expected_next_url: `${MS}/shipping/` },
+      { page_id: "shipping", page_type: "checkout_step", url: `${MS}/shipping/`, expected_next_url: `${MS}/billing/` },
+      { page_id: "billing", page_type: "checkout", url: `${MS}/billing/`, expected_next_url: `${MS}/upsell/` },
+      { page_id: "upsell", page_type: "upsell", url: `${MS}/upsell/`, expected_accept_url: `${MS}/receipt/`, expected_decline_url: `${MS}/receipt/` },
+      { page_id: "receipt", page_type: "thankyou", url: `${MS}/receipt/` },
+    ],
+  };
+}
+
+test("each entry path finds its own Checkout, in entry order", () => {
+  const topology = multiStepTopology();
+  assert.deepEqual(paymentPagesForTopology(topology).map((page) => page.page_id), ["checkout", "billing"]);
+  assert.equal(findPaymentPage([topology]).page_id, "checkout");
+});
+
+test("a split checkout's Checkout is the billing page, not the first step", () => {
+  const topology = { pages: multiStepTopology().pages.filter((page) => !["select", "checkout"].includes(page.page_id)) };
+  assert.equal(findPaymentPage([topology]).page_id, "billing");
+  assert.deepEqual(checkoutPathPages(topology, findPaymentPage([topology])).map((page) => page.page_id), ["information", "shipping", "billing"]);
+  assert.deepEqual(checkoutStepPages(topology, findPaymentPage([topology])).map((page) => page.page_id), ["information", "shipping"]);
+});
+
+test("the select page starts its own path and holds no steps", () => {
+  const topology = multiStepTopology();
+  const checkout = topology.pages.find((page) => page.page_id === "checkout");
+  assert.deepEqual(checkoutPathPages(topology, checkout).map((page) => page.page_id), ["select", "checkout"]);
+  assert.deepEqual(checkoutStepPages(topology, checkout), []);
+});
+
+test("resolving from a checkout_step walks to its Checkout instead of reporting a nonterminal target", () => {
+  const topology = multiStepTopology();
+  const information = topology.pages.find((page) => page.page_id === "information");
+  const resolved = resolveTestOrderTopology(topology, information);
+  assert.equal(resolved.checkout_page_id, "billing");
+  assert.deepEqual(resolved.invalid_paths, []);
+  assert.equal(resolved.has_offer_entry, true);
 });

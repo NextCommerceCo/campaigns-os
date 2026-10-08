@@ -103,12 +103,19 @@ describe('CheckoutHasSuccessUrl rule', () => {
     // What the OLD rule flagged: a checkout with no success_url, regardless of
     // any other forward route it declared.
     const wouldHaveWarned: string[] = []
+    // The count is of the corpus as it stood at the narrowing. Since v5 the
+    // three-step fixture's first two pages are typed checkout_step (they were
+    // checkout then), so both types count; the two-path fixture arrived with v5
+    // and is not part of that history.
+    const sinceV5 = new Set(['two-path-split-checkout.json'])
     for (const name of readdirSync(dir).filter((f) => f.endsWith('.json'))) {
       const spec = JSON.parse(readFileSync(join(dir, name), 'utf8')) as CampaignSpec
       if (CheckoutHasSuccessUrl.check(normalize(spec)).length) noisy.push(name)
+      if (sinceV5.has(name)) continue
       for (const funnel of spec.funnels ?? []) {
         for (const page of funnel.pages ?? []) {
-          if (page.type === 'checkout' && !page.success_url) wouldHaveWarned.push(`${name}:${page.id}`)
+          const wasCheckout = page.type === 'checkout' || page.type === 'checkout_step'
+          if (wasCheckout && !page.success_url) wouldHaveWarned.push(`${name}:${page.id}`)
         }
       }
     }

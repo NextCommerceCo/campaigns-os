@@ -2,6 +2,28 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.56.0] - 2026-10-08
+
+### Added
+
+CampaignSpec 5.0 (`schemas/campaign-spec.v5.schema.json`, also a package export) makes `checkout` mean the page that takes payment and adds the `checkout_step` page type: a page with a checkout form that collects details and moves on through `next_page` without placing an order. `select` stays the bundle picker before checkout. All three render as SDK page type `checkout`. A 4.2 or 4.3 spec, including a Map saved before this release, still validates against the v4 schema and is upgraded when read: each `checkout` page whose resolved forward target is another `checkout` becomes `checkout_step`. The input is never rewritten, so spec hashes still cover the bytes as written. A campaign may hold several Checkouts, one per split-test path (campaigns-os#641).
+
+Four new spec rules run in doctor through `spec.validation`. Each has a fixture under `campaign-spec/fixtures/`, and none of them reads page order or page names:
+
+- `CheckoutForwardTarget` (error): a Checkout's resolved forward target is not an upsell, downsell or thank-you page.
+- `PrePaymentForwardTarget` (error): a `select` or `checkout_step` page forwards straight to an upsell, downsell or thank-you page.
+- `OneCheckoutPerPath` (error): a path from an entry page reaches an upsell or downsell without passing exactly one Checkout. In partial build scope, the case with no Checkout is a warning.
+- `CheckoutStepReachesCheckout` (error): a `checkout_step` page is not on a path to a Checkout.
+
+`RouteFieldIgnoredForPageType` now also warns about a `success_url` or `on_accept` on a `checkout_step`.
+
+### Changed
+
+- Build: `prepare-build` projects `checkout_step` pages to Page Kit `page_type: checkout`, with the default route `checkout-step/`. Page Kit frontmatter in the Build Packet and Build Context gains two keys. `success_url` goes on every page that feeds a Checkout and holds that Checkout's post-payment destination, for the `next-success-url` meta tag the SDK reads for express orders. `step_number` goes on each `checkout_step` and is its position on its path, for the step form's `data-next-step-number`. The build prompt and the `next-campaigns-build` skill now describe the select-page handoff the templates use: the swap-mode bundle selector writes the cart, the SDK persists it, and a checkout button or link moves on. `forcePackageId` is only for a page with no selector. Step forms carry `data-next-checkout-step` and `data-next-step-number`.
+- QA: test orders drive the Checkout on the tested path instead of the first page typed `checkout`. On a multi-step path the runner enters the cart on the select page or the first step. It submits each `checkout_step` form and checks the page lands on the step's declared next page, recording one `checkout_step_submitted` ladder rung per step. The order is submitted only on the Checkout. On a page with bundle cards, the cards plus a checkout button now count as a cart-entry control (`control_kind: checkout_button`), and `--select-package` clicks the matching `data-next-bundle-card`. `tiers` plans read tiers and bumps from every page of each Checkout's path. The legacy API test order takes its success URL from the Checkout. The theme gate covers `select` and `checkout_step` pages.
+- Doctor and the Build Brief treat exit intent, promo-code input and order bumps on `select` and `checkout_step` pages like those on a Checkout. The payment-method residue scan also reads built `select` and `checkout_step` pages, where express buttons render. The commercial journey summary prices the cart on the checkout-flow page that carries it.
+- The runtime recipe enumerates the five new `campaign-spec` sources (revision `1.0.3`).
+
 ## [1.55.0] - 2026-10-07
 
 ### Changed

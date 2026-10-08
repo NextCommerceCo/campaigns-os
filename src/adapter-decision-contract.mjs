@@ -38,7 +38,7 @@ export const TEMPLATE_SLICE_REQUIRED_GROUPS = Object.freeze([
 ]);
 
 const TEMPLATE_FILES_COPIED_REQUIRED_FIELDS = Object.freeze(["status", "required_groups", "groups", "paths"]);
-const RUNTIME_PAGE_TYPES = new Set(["checkout", "select", "upsell", "downsell", "thankyou", "receipt"]);
+const RUNTIME_PAGE_TYPES = new Set(["checkout", "checkout_step", "select", "upsell", "downsell", "thankyou", "receipt"]);
 const RAW_HTML_CONVERSION_STATUSES = new Set(["pending", "in_progress", "completed", "not_required", "blocked"]);
 const SOURCE_ASSET_STRATEGIES = new Set(["pagekit_campaign_asset_root", "external_cdn", "raw_passthrough", "not_applicable", "unknown"]);
 const ROUTE_REWRITE_POLICIES = new Set(["campaignspec_routes_via_campaign_link", "pagekit_public_routes", "raw_passthrough", "not_applicable", "unknown"]);

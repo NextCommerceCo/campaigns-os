@@ -3,6 +3,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, extname, join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 
+import { CHECKOUT_FLOW_PAGE_TYPES } from "../campaign-spec/dist/index.js";
 import { cmd } from "./install-invocation.mjs";
 import { canonicalJson } from "./polish-capture.mjs";
 import { escapeRegExp } from "./repo-scan.mjs";
@@ -537,7 +538,7 @@ function draftCampaignBuildBrief({ spec, activePages, pageMappings, templateFami
 
   const variantSignals = collectVariantSignals(spec, sourceAssetCrawl);
   const paymentMethods = collectSpecPaymentMethods(spec);
-  const hasExitPop = activePages?.some((page) => page?.type === "checkout" && page?.exit_intent?.enabled === true) === true;
+  const hasExitPop = activePages?.some((page) => isCheckoutFlowPage(page) && page?.exit_intent?.enabled === true) === true;
   const hasOrderBump = hasOrderBumpSignals(spec);
   // With no CampaignSpec surface to fill them, the template's promo
   // placeholders are removed: "none" for both.
@@ -718,8 +719,15 @@ function addQuestion(questions, id, { detail = null, options = [] } = {}) {
   });
 }
 
+// select, checkout_step and checkout all render the SDK checkout surface, so
+// payment-page features (exit pop, promo input) and the conversion goal apply
+// to each of them (campaigns-os#641).
+function isCheckoutFlowPage(page) {
+  return CHECKOUT_FLOW_PAGE_TYPES.includes(page?.type);
+}
+
 function inferConversionGoal(activePages = []) {
-  const hasCheckout = activePages.some((page) => page?.type === "checkout");
+  const hasCheckout = activePages.some((page) => isCheckoutFlowPage(page));
   const hasUpsell = activePages.some((page) => /upsell|downsell/i.test(String(page?.type || "")));
   if (hasCheckout && hasUpsell) return "direct response funnel with post-purchase offers";
   if (hasCheckout) return "single-product direct response funnel";
@@ -837,9 +845,10 @@ function templatePromoSurfaces({ spec = null, activePages = [] } = {}) {
     surfaces.push("promo codes (funnels[].promo_codes)");
   }
   const pages = Array.isArray(activePages) ? activePages : [];
-  // Checkout-only and enabled: true, the rule hasExitPop, doctor's exit-pop
-  // contract and QA's coupon orders use for these surfaces.
-  const checkoutSurface = (page, key) => page?.type === "checkout" && page?.[key]?.enabled === true;
+  // Checkout-flow pages only (select, checkout_step, checkout) and enabled:
+  // true, the rule hasExitPop, doctor's exit-pop contract and QA's coupon
+  // orders use for these surfaces.
+  const checkoutSurface = (page, key) => isCheckoutFlowPage(page) && page?.[key]?.enabled === true;
   if (pages.some((page) => checkoutSurface(page, "exit_intent"))) {
     surfaces.push("an exit-intent offer (exit_intent)");
   }

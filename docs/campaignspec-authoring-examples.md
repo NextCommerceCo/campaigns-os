@@ -46,8 +46,17 @@ Authoring guidance:
     Declared anywhere else they are inert, `next_page` wins, and the
     `RouteFieldIgnoredForPageType` warning says which field was skipped and
     where the shopper actually goes. A `select` page is the first step of a
-    two-step checkout: it neither takes payment nor presents an accept/decline
-    offer, so a copy-pasted `success_url` or `on_accept` there does not route.
+    two-step checkout and a `checkout_step` is a non-final page of a split
+    checkout: neither takes payment nor presents an accept/decline offer, so a
+    copy-pasted `success_url` or `on_accept` there does not route.
+  - Multi-step checkout (CampaignSpec 5.0): `checkout` is the page that takes
+    payment, and it forwards to an upsell, downsell or thank-you page. A page
+    with a checkout form that collects details and moves on without placing an
+    order is `type: "checkout_step"` and routes with `next_page`; a bundle
+    picker before checkout is `type: "select"`. Every path from an entry page
+    to an upsell passes exactly one `checkout`; a campaign may hold several, one
+    per split-test path. A 4.2/4.3 spec that chained `checkout → checkout` is
+    read as `checkout_step` pages ahead of the last one.
     See `campaign-spec/routing.ts` (`PAYMENT_BEARING_PAGE_TYPES`,
     `OFFER_BEARING_PAGE_TYPES`).
 

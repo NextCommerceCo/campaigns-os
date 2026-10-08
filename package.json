@@ -1,6 +1,6 @@
 {
   "name": "@nextcommerce/campaigns-os",
-  "version": "1.55.0",
+  "version": "1.56.0",
   "description": "Toolkit for agent-assisted NEXT campaign builds.",
   "license": "Apache-2.0",
   "repository": {
@@ -44,6 +44,7 @@
       "default": "./src/legacy-migration.mjs"
     },
     "./schemas/campaign-spec.v4.schema.json": "./schemas/campaign-spec.v4.schema.json",
+    "./schemas/campaign-spec.v5.schema.json": "./schemas/campaign-spec.v5.schema.json",
     "./schemas/campaigns-os-legacy-migration-inventory.v0.schema.json": "./schemas/campaigns-os-legacy-migration-inventory.v0.schema.json",
     "./schemas/campaigns-os-legacy-provisioning-plan.v0.schema.json": "./schemas/campaigns-os-legacy-provisioning-plan.v0.schema.json",
     "./schemas/campaigns-os-legacy-provisioning-receipt.v0.schema.json": "./schemas/campaigns-os-legacy-provisioning-receipt.v0.schema.json",

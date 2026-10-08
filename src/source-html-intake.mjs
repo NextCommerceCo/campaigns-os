@@ -4,7 +4,7 @@ import {
 } from "./source-html-manifest.mjs";
 // Built output of campaign-spec (same import shape as src/page-kit-sdk-version.mjs),
 // so build-time wiring and spec-time analysis share one edge resolver.
-import { declineRouteTarget, forwardRouteTarget } from "../campaign-spec/dist/index.js";
+import { checkoutPathFrom, declineRouteTarget, forwardRouteTarget, forwardTargetPage, isCheckoutStepPage } from "../campaign-spec/dist/index.js";
 import { isAbsoluteHttpUrl, normalizePageKitRoute, normalizePublicRouteSlug, stripPublicRoutePrefix } from "./route-identity.mjs";
 
 const CPK_PAGE_TYPES = new Set(["product", "checkout", "upsell", "receipt"]);
@@ -30,7 +30,7 @@ export function createSourceHtmlIntake({
   const mappings = matched.mappings.map((mapping) => {
     const specPage = pageById.get(mapping.page_id);
     if (!specPage || !mapping.path) return mapping;
-    const pageKit = pageKitProjectionForPage(specPage, { pageById, publicRouteSlug, outputDir });
+    const pageKit = pageKitProjectionForPage(specPage, { pageById, publicRouteSlug, outputDir, specPages: specPages || [] });
     projectionDecisions.push({
       id: `dec_page_kit_target_${specPage.id}`,
       stage: "prepare_build",
@@ -559,7 +559,7 @@ function addSpecHints(mapping, page) {
   if (variantLabels) mapping.variant_labels = variantLabels;
 }
 
-function pageKitProjectionForPage(page, { pageById, publicRouteSlug, outputDir }) {
+function pageKitProjectionForPage(page, { pageById, publicRouteSlug, outputDir, specPages = [] }) {
   const specRoute = publicRouteForPage(page);
   const relativeRoute = stripPublicRoutePrefix(specRoute, publicRouteSlug);
   const publicRoute = rootedCampaignRoute(relativeRoute, publicRouteSlug);
@@ -574,6 +574,7 @@ function pageKitProjectionForPage(page, { pageById, publicRouteSlug, outputDir }
   if (nextUrl) frontmatter.next_url = nextUrl;
   const declineUrl = declineUrlForPage(page, pageById, publicRouteSlug);
   if (declineUrl && declineUrl !== nextUrl) frontmatter.decline_url = declineUrl;
+  Object.assign(frontmatter, checkoutFlowFrontmatter(page, { specPages, pageById, publicRouteSlug }));
 
   return {
     target_path: targetPath,
@@ -584,6 +585,43 @@ function pageKitProjectionForPage(page, { pageById, publicRouteSlug, outputDir }
     permalink_required: permalinkRequired,
     frontmatter,
   };
+}
+
+// Multi-step checkout wiring (campaigns-os#641), for any page that leads into a
+// Checkout without being it: a select page, a checkout_step, or a landing page
+// whose forward links reach a Checkout.
+//   success_url  the Checkout's post-payment destination (its own next_url).
+//                The page's next-success-url meta tag carries it, because the
+//                SDK reads that tag for express orders placed on this page; an
+//                express order on step 1 must land on the first upsell, not on
+//                step 2. Forward navigation never uses that tag: a step form
+//                navigates by data-next-checkout-step, a select page by a link.
+//   step_number  on a checkout_step only: its position among the steps of its
+//                path, from 1, for the form's data-next-step-number.
+function checkoutFlowFrontmatter(page, { specPages, pageById, publicRouteSlug }) {
+  if (!page || page.type === "checkout") return {};
+  const path = checkoutPathFrom(specPages, page);
+  if (!path || path.length < 2) return {};
+  const out = {};
+  const successUrl = nextUrlForPage(path[path.length - 1], pageById, publicRouteSlug);
+  if (successUrl) out.success_url = successUrl;
+  if (isCheckoutStepPage(page)) out.step_number = checkoutStepNumber(page, specPages);
+  return out;
+}
+
+function checkoutStepNumber(page, specPages) {
+  let number = 1;
+  const seen = new Set([page]);
+  let current = page;
+  for (;;) {
+    const previous = specPages.find((candidate) => !seen.has(candidate)
+      && isCheckoutStepPage(candidate)
+      && forwardTargetPage(specPages, candidate) === current);
+    if (!previous) return number;
+    number += 1;
+    seen.add(previous);
+    current = previous;
+  }
 }
 
 function pageKitTargetPrompts(mappings) {
@@ -664,12 +702,15 @@ function cpkPageTypeForSpecType(type) {
   if (type === "presell" || type === "landing") return "product";
   if (type === "thankyou" || type === "receipt") return "receipt";
   if (type === "upsell" || type === "downsell") return "upsell";
-  if (type === "checkout" || type === "select") return "checkout";
+  // select, checkout_step and checkout all render the SDK checkout surface
+  // (campaigns-os#641); only the Checkout places the order.
+  if (type === "checkout" || type === "checkout_step" || type === "select") return "checkout";
   return CPK_PAGE_TYPES.has(type) ? type : "product";
 }
 
 function defaultRouteForSpecType(type) {
   if (type === "thankyou" || type === "receipt") return "receipt/";
+  if (type === "checkout_step") return "checkout-step/";
   if (["presell", "landing", "checkout", "upsell", "downsell"].includes(type)) return `${type}/`;
   return `${type || "page"}/`;
 }
@@ -696,6 +737,7 @@ function pageMatchKeys(page, ordinal) {
   }
   if (page.type === "landing" || page.type === "presell") keys.add("index");
   if (page.type === "checkout") keys.add("checkout");
+  if (page.type === "checkout_step") keys.add("checkout-step");
   if (page.type === "upsell") keys.add("upsell");
   if (page.type === "downsell") keys.add("downsell");
   return [...keys];

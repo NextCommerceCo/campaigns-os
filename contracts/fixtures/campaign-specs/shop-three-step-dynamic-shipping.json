@@ -1,5 +1,5 @@
 {
-  "schema_version": "4.3",
+  "schema_version": "5.0",
   "campaign": {
     "id": "fixture-shop-three-step",
     "name": "Fixture Shop Three Step Dynamic Shipping",
@@ -49,7 +49,7 @@
       "pages": [
         {
           "id": "information",
-          "type": "checkout",
+          "type": "checkout_step",
           "order": 1,
           "label": "Information",
           "template": "src/shop-three-step/information.html",
@@ -71,7 +71,7 @@
         },
         {
           "id": "shipping",
-          "type": "checkout",
+          "type": "checkout_step",
           "order": 2,
           "label": "Shipping",
           "template": "src/shop-three-step/shipping.html",

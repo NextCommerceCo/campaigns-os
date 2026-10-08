@@ -37,6 +37,17 @@ applied brand tokens, and pricing-surface modes. QA reads it to fail "still
 visually the starter template" deterministically.
 _Avoid_: style guide, design tokens doc, theme report
 
+**Checkout (payment page)**:
+The page on a checkout path that takes payment: CampaignSpec `type: "checkout"`
+(campaigns-os#641). It forwards to an upsell, downsell or thank-you page, and
+every path from an entry page to an upsell passes exactly one. Pages ahead of
+it render the same SDK checkout surface without placing an order: a `select`
+page (the bundle picker) and `checkout_step` pages (a split checkout's
+information and shipping forms). A campaign may hold several Checkouts, one
+per split-test path; every consumer asks for "the Checkout on this path"
+(`campaign-spec/checkout-flow.ts`), never for the first page typed checkout.
+_Avoid_: first checkout, checkout page (for a step), final step
+
 **Template Reference**:
 The canonical baseline for a template family: its safe runtime structure,
 expected screenshots or render references, default assets, starter residue

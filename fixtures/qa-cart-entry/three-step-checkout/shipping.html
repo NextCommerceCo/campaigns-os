@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shipping (step 2)</title>
+<style>body{font-family:sans-serif;margin:24px} .card{border:1px solid #ccc;padding:12px;margin:8px 0} .card.next-selected{border-color:#000} iframe{width:200px;height:32px;border:1px solid #ccc}</style>
+</head>
+<body>
+<main>
+  <h1>Shipping (step 2)</h1>
+  <form data-next-checkout="form" data-next-checkout-step="/x/billing/" data-next-step-number="2">
+    <div data-next-checkout-review="email"></div>
+    <label><input type="radio" name="shipping" value="standard" checked> Standard</label>
+    <button type="submit">Continue to payment</button>
+  </form>
+</main>
+<script src="/sdk-shim.js"></script>
+</body>
+</html>

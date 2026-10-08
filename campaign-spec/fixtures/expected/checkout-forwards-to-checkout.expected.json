@@ -1,0 +1,28 @@
+{
+  "violations": [
+    {
+      "ruleId": "CheckoutForwardTarget",
+      "severity": "error",
+      "message": "Checkout \"checkout-1\" forwards to \"checkout-2\" (type \"checkout\"). A Checkout takes payment, so it must forward to an upsell, downsell or thank-you page. If this page collects details and moves on without placing an order, type it \"checkout_step\".",
+      "path": "/funnels/0/pages/1",
+      "data": {
+        "pageId": "checkout-1",
+        "target": "checkout-2",
+        "targetPageId": "checkout-2",
+        "targetType": "checkout"
+      }
+    },
+    {
+      "ruleId": "OneCheckoutPerPath",
+      "severity": "error",
+      "message": "A path from entry page \"landing-1\" reaches \"upsell-1\" (upsell) after passing more than one Checkout, so it takes payment twice.",
+      "path": "/funnels/0/pages/3",
+      "data": {
+        "pageId": "upsell-1",
+        "entryPageId": "landing-1",
+        "checkoutsPassed": 2,
+        "isPartialScope": false
+      }
+    }
+  ]
+}

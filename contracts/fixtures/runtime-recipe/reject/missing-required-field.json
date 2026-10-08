@@ -3,7 +3,7 @@
   "_growth_note": "When a bound below is genuinely reached, the answer is to find out why before raising it. A dependency install that exceeds its bound on a warm machine is a supply-chain change, not a slow morning; an output inventory that exceeds its file or byte bound is a build that went wrong, not a package that grew 50x overnight. Raising a bound is the fallback, it advances recipe_revision, and it owes a release-ledger entry. Widening the accepted npm range follows the same path, and its trigger is external and checkable: widen when a Node release line ships that npm major by default, not when a particular machine happens to have it installed.",
   "schema": "campaigns-os-runtime-recipe/v1",
   "recipe_kind": "campaigns-os-node-v1",
-  "recipe_revision": "1.0.2",
+  "recipe_revision": "1.0.3",
   "refusal_reason_code": "runtime_recipe_refused",
   "fail_closed": true,
   "unperformable_check_disposition": "failed",

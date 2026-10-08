@@ -1,0 +1,70 @@
+{
+  "schema_version": "4.3",
+  "spec_identity": {
+    "map_id": "fixture-v4-checkout-chain-upgraded"
+  },
+  "campaign": {
+    "ref_id": 1,
+    "slug": "v4-checkout-chain-upgraded",
+    "payment_env_key": "test_key"
+  },
+  "runtime": {
+    "sdk_version": "0.4.0"
+  },
+  "shipping_methods": [
+    {
+      "ref_id": "ship-standard"
+    }
+  ],
+  "funnels": [
+    {
+      "id": "f1",
+      "name": "Primary",
+      "hypothesis": "A v4 three-step checkout chained checkout to checkout; read as v5 the first two become checkout_step.",
+      "weight": 100,
+      "pages": [
+        {
+          "id": "information",
+          "type": "checkout",
+          "label": "Information",
+          "page_url": "/information/",
+          "next_page": "shipping.html"
+        },
+        {
+          "id": "shipping",
+          "type": "checkout",
+          "label": "Shipping",
+          "page_url": "/shipping/",
+          "next_page": "billing.html"
+        },
+        {
+          "id": "billing",
+          "type": "checkout",
+          "label": "Billing",
+          "page_url": "/billing/",
+          "next_page": "upsell-1"
+        },
+        {
+          "id": "upsell-1",
+          "type": "upsell",
+          "label": "Upsell",
+          "on_accept": "thankyou-1",
+          "on_decline": "thankyou-1",
+          "packages": [
+            {
+              "ref_id": 1,
+              "name": "Bump",
+              "price": 19,
+              "price_retail": 29
+            }
+          ]
+        },
+        {
+          "id": "thankyou-1",
+          "type": "thankyou",
+          "label": "Thank You"
+        }
+      ]
+    }
+  ]
+}

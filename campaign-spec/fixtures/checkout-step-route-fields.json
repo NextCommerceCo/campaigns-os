@@ -1,0 +1,63 @@
+{
+  "schema_version": "5.0",
+  "spec_identity": {
+    "map_id": "fixture-checkout-step-route-fields"
+  },
+  "campaign": {
+    "ref_id": 1,
+    "slug": "checkout-step-route-fields",
+    "payment_env_key": "test_key"
+  },
+  "runtime": {
+    "sdk_version": "0.4.0"
+  },
+  "shipping_methods": [
+    {
+      "ref_id": "ship-standard"
+    }
+  ],
+  "funnels": [
+    {
+      "id": "f1",
+      "name": "Primary",
+      "hypothesis": "A checkout step that copied success_url and on_accept down from the checkout below it.",
+      "weight": 100,
+      "pages": [
+        {
+          "id": "information-1",
+          "type": "checkout_step",
+          "label": "Information",
+          "next_page": "checkout-1",
+          "success_url": "upsell-1",
+          "on_accept": "upsell-1"
+        },
+        {
+          "id": "checkout-1",
+          "type": "checkout",
+          "label": "Billing",
+          "success_url": "upsell-1"
+        },
+        {
+          "id": "upsell-1",
+          "type": "upsell",
+          "label": "Upsell",
+          "on_accept": "thankyou-1",
+          "on_decline": "thankyou-1",
+          "packages": [
+            {
+              "ref_id": 1,
+              "name": "Bump",
+              "price": 19,
+              "price_retail": 29
+            }
+          ]
+        },
+        {
+          "id": "thankyou-1",
+          "type": "thankyou",
+          "label": "Thank You"
+        }
+      ]
+    }
+  ]
+}

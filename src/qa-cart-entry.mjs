@@ -127,6 +127,17 @@ export function cartEntryHrefFor(element, { cartEntrySelector, cartEntryRouteAtt
   }
 }
 
+// A select page (campaigns-os#641) has no add-to-cart control: its swap-mode
+// bundle selector writes the cart when a card is chosen, the SDK persists the
+// cart between pages, and a checkout button or link moves on. The runner
+// treats "bundle cards plus one of these" as a cart-entry control: the SDK's
+// checkout action, or a plain link into the next page. Matched by this one
+// selector so the chosen control replays with nth().
+export const CART_ENTRY_CHECKOUT_BUTTON_SELECTOR = '[data-next-action="checkout"], a[href]';
+
+// The bundle cards a select page renders, outside the cart summary.
+export const CART_ENTRY_BUNDLE_CARD_SELECTOR = "[data-next-bundle-card]";
+
 // Route-shaped spellings the runner used to consult and no longer does,
 // because the SDK never declares them. They are not routes, but a page that
 // carries one is reported so an operator can tell "the runner narrowed its
@@ -138,8 +149,10 @@ export const UNDECLARED_ROUTE_ATTRIBUTES = Object.freeze(["data-next-href", "dat
 // shop-single-step landing declares; the rest are the entry-like types
 // `deriveEntryUrls` already recognises.
 // Pages that can only follow the checkout: the checkout itself plus the
-// topology module's own offer and receipt sets, so the two never drift.
-const POST_CHECKOUT_PAGE_TYPES = new Set(["checkout", ...OFFER_PAGE_TYPES, ...RECEIPT_PAGE_TYPES]);
+// topology module's own offer and receipt sets, so the two never drift. A
+// checkout_step is never a cart entry either: it is a form page of the
+// checkout path itself (campaigns-os#641).
+const POST_CHECKOUT_PAGE_TYPES = new Set(["checkout", "checkout_step", ...OFFER_PAGE_TYPES, ...RECEIPT_PAGE_TYPES]);
 const PREFERRED_ENTRY_PAGE_TYPES = ["select", "landing", "product", "presell", "entry", "lander", "advertorial", "listicle", "review", "opt-in", "optin"];
 
 export function codedError(code, message) {
@@ -234,18 +247,22 @@ export function summarizeSelectionSurface(surface) {
   return parts.length ? parts.join(", ") : "none";
 }
 
-// evaluate() body: the cart-entry controls the entry page renders. Two kinds:
-//   add_to_cart   the SDK action controls (CART_ENTRY_CONTROL_SELECTOR); the
-//                 SDK adds the package and navigates via data-next-url;
-//   checkout_link a plain link into the checkout URL carrying
-//                 `?forcePackageId=`, which the SDK reads on the checkout page
-//                 to pre-load the cart. This is what the certified
-//                 shop-single-step landing renders today.
+// evaluate() body: the cart-entry controls the entry page renders. Three kinds:
+//   add_to_cart     the SDK action controls (CART_ENTRY_CONTROL_SELECTOR); the
+//                   SDK adds the package and navigates via data-next-url;
+//   checkout_link   a plain link into the checkout URL carrying
+//                   `?forcePackageId=`, which the SDK reads on the checkout
+//                   page to pre-load the cart. This is what the certified
+//                   shop-single-step landing renders today;
+//   checkout_button on a page with bundle cards only: the SDK checkout action
+//                   or a plain link into the checkout URL. The selected card
+//                   is the cart; `bundle_package_ids` lists what the cards
+//                   carry so --select-package can name one (campaigns-os#641).
 // Each control reports its visibility, text, and the package id it carries
 // (own attribute, nearest card, or the forcePackageId ref), so the caller can
 // prefer a visible SDK control and honour --select-package in one round trip.
 export function cartEntryControlsScript() {
-  return ({ selector, checkoutUrl }) => {
+  return ({ selector, checkoutUrl, checkoutButtonSelector = null, bundleCardSelector = null }) => {
     const clean = (value) => String(value || "").replace(/\s+/g, " ").trim();
     const isVisible = (element) => {
       const rect = element.getBoundingClientRect();
@@ -313,7 +330,39 @@ export function cartEntryControlsScript() {
         }];
       })
       : [];
-    return [...actions, ...links];
+    const cards = Array.from(document.querySelectorAll(bundleCardSelector || "[data-next-bundle-card]"))
+      .filter((card) => !card.closest("[data-next-cart-summary], [data-next-upsell-context], [data-next-upsell], template"));
+    const bundlePackageIds = [...new Set(cards.flatMap((card) => {
+      const own = clean(card.getAttribute("data-next-package-id"));
+      const nested = Array.from(card.querySelectorAll("[data-next-package-id]")).map((node) => clean(node.getAttribute("data-next-package-id")));
+      return [own, ...nested].filter(Boolean);
+    }))];
+    const buttons = cards.length && checkoutButtonSelector
+      ? Array.from(document.querySelectorAll(checkoutButtonSelector)).flatMap((element, index) => {
+        const isAction = element.getAttribute("data-next-action") === "checkout";
+        if (!isAction) {
+          const href = element.getAttribute("href");
+          if (!checkout || canonical(href) !== checkout) return [];
+          try {
+            if (new URL(href, document.baseURI).searchParams.get("forcePackageId")) return [];
+          } catch {
+            return [];
+          }
+        }
+        return [{
+          kind: "checkout_button",
+          index,
+          visible: isVisible(element),
+          text: label(element),
+          package_id: null,
+          bundle_package_ids: bundlePackageIds,
+          quantity: 1,
+          next_url: isAction ? null : element.getAttribute("href"),
+          tag: element.tagName.toLowerCase(),
+        }];
+      })
+      : [];
+    return [...actions, ...links, ...buttons];
   };
 }
 
@@ -323,7 +372,7 @@ export function cartEntryControlsScript() {
 // control is only used when nothing is visible.
 export function chooseCartEntryControl(controls = [], requested = []) {
   const list = Array.isArray(controls) ? controls : [];
-  if (!list.length) return { control: null, reason: "no add-to-cart control or forcePackageId checkout link rendered on the entry page" };
+  if (!list.length) return { control: null, reason: "no add-to-cart control, forcePackageId checkout link, or bundle cards with a checkout button rendered on the entry page" };
   const wanted = Array.isArray(requested) ? requested.filter((item) => item?.packageId) : [];
   if (wanted.length > 1) {
     return {
@@ -331,9 +380,24 @@ export function chooseCartEntryControl(controls = [], requested = []) {
       reason: `--select-package requested ${wanted.length} refs, but a landing-page entry can select at most one package before the SDK navigates to checkout`,
     };
   }
+  // A select page's checkout button carries no package of its own: the
+  // requested package is the bundle card the runner clicks before it. Used
+  // only when no add-to-cart control or forcePackageId link carries the ref.
+  const buttons = list.filter((control) => control.kind === "checkout_button");
+  const carriers = list.filter((control) => control.kind !== "checkout_button");
   const byRef = wanted.length
-    ? list.filter((control) => String(control.package_id) === String(wanted[0].packageId))
-    : list;
+    ? carriers.filter((control) => String(control.package_id) === String(wanted[0].packageId))
+    : carriers;
+  if (!byRef.length && buttons.length) {
+    const pick = (pool) => pool.find((control) => control.visible) || pool[0];
+    if (!wanted.length) return { control: pick(buttons), reason: null };
+    const withCard = buttons.filter((control) => (control.bundle_package_ids || []).map(String).includes(String(wanted[0].packageId)));
+    if (withCard.length) return { control: pick(withCard), select_card: wanted[0], reason: null };
+    return {
+      control: null,
+      reason: `--select-package ${wanted[0].packageId}: no bundle card on the entry page carries package ${wanted[0].packageId} (rendered: ${[...new Set(buttons.flatMap((control) => control.bundle_package_ids || []))].join(", ") || "(none)"})`,
+    };
+  }
   if (!byRef.length) {
     return {
       control: null,

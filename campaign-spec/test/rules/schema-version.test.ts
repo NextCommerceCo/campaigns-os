@@ -3,7 +3,8 @@ import { SchemaVersion, SUPPORTED_SCHEMA_VERSIONS } from '../../rules/schema-ver
 import { normalize } from '../../normalize.ts'
 import { fixtureByName } from '../../fixtures/index.ts'
 import type { CampaignSpec } from '../../types.ts'
-import schema from '../../../schemas/campaign-spec.v4.schema.json' with { type: 'json' }
+import schemaV4 from '../../../schemas/campaign-spec.v4.schema.json' with { type: 'json' }
+import schemaV5 from '../../../schemas/campaign-spec.v5.schema.json' with { type: 'json' }
 
 describe('SchemaVersion rule', () => {
   test('flags missing schema_version', () => {
@@ -32,16 +33,16 @@ describe('SchemaVersion rule', () => {
     expect(violations[0].severity).toBe('error')
     expect(violations[0].path).toBe('/schema_version')
     expect(violations[0].message).toContain('"4.1"')
-    expect(violations[0].message).toContain('4.2, 4.3')
+    expect(violations[0].message).toContain('4.2, 4.3, 5.0')
     expect(violations[0].data).toEqual({
       value: '4.1',
-      supported: ['4.2', '4.3'],
+      supported: ['4.2', '4.3', '5.0'],
       check: 'schema-version-supported',
     })
   })
 
   test('errors on a future unsupported lineage', () => {
-    const spec = { schema_version: '5.0', funnels: [] } as unknown as CampaignSpec
+    const spec = { schema_version: '6.0', funnels: [] } as unknown as CampaignSpec
     const violations = SchemaVersion.check(normalize(spec))
     expect(violations).toHaveLength(1)
     expect(violations[0].data?.check).toBe('schema-version-supported')
@@ -50,10 +51,11 @@ describe('SchemaVersion rule', () => {
   // The rule stays pure (no filesystem), so its supported matrix duplicates
   // the schema's schema_version enum. This is the drift gate: the two lists
   // must stay identical, updated together (the UnknownTopLevelFields pattern).
-  test('supported matrix matches the schemas/campaign-spec.v4.schema.json enum', () => {
-    const schemaEnum = (schema as {
+  test('supported matrix matches the v4 then v5 schema enums', () => {
+    const enumOf = (schema: unknown) => (schema as {
       properties: { schema_version: { enum: string[] } }
     }).properties.schema_version.enum
+    const schemaEnum = [...enumOf(schemaV4), ...enumOf(schemaV5)]
     // Exact order, no sort: the constant and the schema enum must agree on
     // membership AND order (lexical sort would hide drift once '4.10' exists).
     expect([...SUPPORTED_SCHEMA_VERSIONS]).toEqual([...schemaEnum])

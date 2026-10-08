@@ -5,9 +5,126 @@ const ACTIONS = Object.freeze([
   ["accept", "expected_accept_url"],
 ]);
 
+// The page types of a checkout path, as pageType() spells them (lowercase, `_`
+// and `-` dropped). `checkout` is the page that takes payment; `select` and
+// `checkout_step` lead into it without placing an order (campaigns-os#641).
+const PAYMENT_PAGE_TYPE = "checkout";
+const PRE_PAYMENT_PAGE_TYPES = new Set(["select", "checkoutstep"]);
+
+export function isPaymentTopologyPage(page) {
+  return pageType(page) === PAYMENT_PAGE_TYPE;
+}
+
+export function isCheckoutStepTopologyPage(page) {
+  return pageType(page) === "checkoutstep";
+}
+
+// Follow forward links (expected_next_url) from `start` to the page that takes
+// payment. Null when the walk leaves the topology, loops, or reaches any page
+// that is neither a pre-payment page nor the Checkout.
+export function paymentPageFrom(topology, start) {
+  const pages = Array.isArray(topology?.pages) ? topology.pages : [];
+  const seen = new Set();
+  let page = start || null;
+  while (page && !seen.has(page)) {
+    seen.add(page);
+    if (isPaymentTopologyPage(page)) return page;
+    const key = canonicalHttpUrl(page.expected_next_url);
+    const next = key ? pages.find((candidate) => canonicalHttpUrl(candidate?.url) === key) : null;
+    if (!next) return null;
+    if (!isPaymentTopologyPage(next) && !PRE_PAYMENT_PAGE_TYPES.has(pageType(next))) return null;
+    page = next;
+  }
+  return null;
+}
+
+// The topology's entry pages: flagged is_entry, else those no page links to
+// (offer and receipt pages excluded: an orphaned upsell is not where a shopper
+// starts), else the first page. Never decided by page names.
+function topologyEntryPages(pages) {
+  const flagged = pages.filter((page) => page?.is_entry === true);
+  if (flagged.length) return flagged;
+  const targeted = new Set();
+  for (const page of pages) {
+    for (const field of ["expected_next_url", "expected_accept_url", "expected_decline_url"]) {
+      const key = canonicalHttpUrl(page?.[field]);
+      if (key && key !== canonicalHttpUrl(page?.url)) targeted.add(key);
+    }
+  }
+  const roots = pages.filter((page) => {
+    const key = canonicalHttpUrl(page?.url);
+    const type = pageType(page);
+    return !(key && targeted.has(key)) && !OFFER_PAGE_TYPES.has(type) && !RECEIPT_PAGE_TYPES.has(type);
+  });
+  return roots.length ? roots : pages.slice(0, 1);
+}
+
+// Every Checkout the topology's entry paths reach, in entry order, then any
+// Checkout no entry path reaches (a landing CTA into checkout declares no
+// forward field). "The first page typed checkout" is never the answer on its
+// own: on a multi-step path it is a step, and with split-test paths there are
+// several (campaigns-os#641).
+export function paymentPagesForTopology(topology) {
+  const pages = Array.isArray(topology?.pages) ? topology.pages : [];
+  const out = [];
+  for (const entry of topologyEntryPages(pages)) {
+    const checkout = paymentPageFrom(topology, entry);
+    if (checkout && !out.includes(checkout)) out.push(checkout);
+  }
+  for (const page of pages) if (isPaymentTopologyPage(page) && !out.includes(page)) out.push(page);
+  return out;
+}
+
+// The Checkout of the first entry path of the first topology that has one.
+export function findPaymentPage(topologies = []) {
+  for (const topology of Array.isArray(topologies) ? topologies : []) {
+    const page = paymentPagesForTopology(topology)[0];
+    if (page) return page;
+  }
+  return null;
+}
+
+// The pages a shopper passes through to reach `checkoutPage`, in order and
+// ending with it: an optional select page, then each checkout_step, then the
+// Checkout. Walks backwards over forward links, so it holds whichever path the
+// Checkout sits on; where two pages lead into the same page a checkout_step is
+// preferred over a select page, which can only start the chain.
+export function checkoutPathPages(topology, checkoutPage) {
+  const pages = Array.isArray(topology?.pages) ? topology.pages : [];
+  if (!checkoutPage) return [];
+  const chain = [checkoutPage];
+  const seen = new Set(chain);
+  let current = checkoutPage;
+  for (;;) {
+    const key = canonicalHttpUrl(current?.url);
+    if (!key) break;
+    const leading = pages.filter((page) => !seen.has(page)
+      && PRE_PAYMENT_PAGE_TYPES.has(pageType(page))
+      && canonicalHttpUrl(page?.expected_next_url) === key);
+    const previous = leading.find(isCheckoutStepTopologyPage) || leading[0] || null;
+    if (!previous) break;
+    chain.unshift(previous);
+    seen.add(previous);
+    if (!isCheckoutStepTopologyPage(previous)) break;
+    current = previous;
+  }
+  return chain;
+}
+
+// Only the checkout_step pages of that path, in order.
+export function checkoutStepPages(topology, checkoutPage) {
+  return checkoutPathPages(topology, checkoutPage).filter(isCheckoutStepTopologyPage);
+}
+
 export function resolveTestOrderTopology(topology = {}, checkoutPage = null) {
   const pages = Array.isArray(topology?.pages) ? topology.pages : [];
-  const checkout = checkoutPage || pages.find((page) => pageType(page) === "checkout") || null;
+  // A caller may hand in a select or checkout_step page; the path's Checkout is
+  // the page whose forward link leads to the offers. Starting from a step made
+  // its next step a `nonterminal_target` and hid every offer path.
+  const given = checkoutPage && !isPaymentTopologyPage(checkoutPage) && PRE_PAYMENT_PAGE_TYPES.has(pageType(checkoutPage))
+    ? paymentPageFrom(topology, checkoutPage) || checkoutPage
+    : checkoutPage;
+  const checkout = given || paymentPagesForTopology(topology)[0] || null;
   const pagesByUrl = new Map();
   for (const page of pages) {
     const key = canonicalHttpUrl(page?.url);

@@ -1,0 +1,221 @@
+{
+  "schema_version": "5.0",
+  "campaign": {
+    "id": "fixture-two-path-split-checkout",
+    "name": "Fixture Two Path Split Checkout",
+    "slug": "fixture-two-path",
+    "currency": "USD",
+    "language": "en",
+    "payment_env_key": "fixture_payment_env_key",
+    "tracking": {
+      "status": "not_configured"
+    },
+    "footer_links": [
+      {
+        "label": "Privacy Policy",
+        "url": "https://example.com/privacy",
+        "required": true
+      },
+      {
+        "label": "Terms of Service",
+        "url": "https://example.com/terms",
+        "required": true
+      },
+      {
+        "label": "Contact Us",
+        "url": "https://example.com/contact",
+        "required": true
+      }
+    ],
+    "seo": {
+      "required": false,
+      "title": "Fixture Two Path Split Checkout",
+      "description": "Agent contract fixture. Replace with campaign-specific metadata when required."
+    }
+  },
+  "spec_identity": {
+    "map_id": "fixture-two-path-split-checkout-map",
+    "source": "campaigns-os agent fixture"
+  },
+  "global_config": {
+    "sdk_version": "0.4.41"
+  },
+  "funnels": [
+    {
+      "id": "default",
+      "name": "Default",
+      "weight": 100,
+      "hypothesis": "Fixture only: two entry paths in one campaign, each reaching its own Checkout, sharing the upsell and receipt.",
+      "pages": [
+        {
+          "id": "select",
+          "type": "select",
+          "order": 1,
+          "label": "Path A: select bundle",
+          "template": "src/olympus-mv-two-step/select.html",
+          "page_url": "/select/",
+          "next_page": "checkout",
+          "packages": [
+            {
+              "ref_id": 10,
+              "qty": 1
+            },
+            {
+              "ref_id": 10,
+              "qty": 2
+            },
+            {
+              "ref_id": 10,
+              "qty": 3
+            }
+          ],
+          "sdk_hints": {
+            "sdk_page_type": "checkout",
+            "template_family": "olympus-mv-two-step"
+          },
+          "is_entry": true
+        },
+        {
+          "id": "checkout",
+          "type": "checkout",
+          "order": 2,
+          "label": "Path A: checkout (takes payment)",
+          "template": "src/olympus-mv-two-step/checkout.html",
+          "page_url": "/checkout/",
+          "success_url": "upsell",
+          "sdk_hints": {
+            "sdk_page_type": "checkout",
+            "template_family": "olympus-mv-two-step"
+          }
+        },
+        {
+          "id": "information",
+          "type": "checkout_step",
+          "is_entry": true,
+          "order": 3,
+          "label": "Path B: information",
+          "template": "src/shop-three-step/information.html",
+          "page_url": "/information/",
+          "next_page": "shipping",
+          "sdk_hints": {
+            "sdk_page_type": "checkout",
+            "template_family": "shop-three-step"
+          }
+        },
+        {
+          "id": "shipping",
+          "type": "checkout_step",
+          "order": 4,
+          "label": "Path B: shipping",
+          "template": "src/shop-three-step/shipping.html",
+          "page_url": "/shipping/",
+          "next_page": "billing",
+          "sdk_hints": {
+            "sdk_page_type": "checkout",
+            "template_family": "shop-three-step"
+          }
+        },
+        {
+          "id": "billing",
+          "type": "checkout",
+          "order": 5,
+          "label": "Path B: billing (takes payment)",
+          "template": "src/shop-three-step/billing.html",
+          "page_url": "/billing/",
+          "success_url": "upsell",
+          "sdk_hints": {
+            "sdk_page_type": "checkout",
+            "template_family": "shop-three-step"
+          }
+        },
+        {
+          "id": "upsell",
+          "type": "upsell",
+          "order": 6,
+          "label": "Shared post-purchase upsell",
+          "template": "src/shop-three-step/upsell-bundle-stepper.html",
+          "page_url": "/upsell/",
+          "next_page": "receipt",
+          "on_accept": "receipt",
+          "on_decline": "receipt",
+          "packages": [
+            {
+              "ref_id": 30,
+              "qty": 1,
+              "is_upsell": true
+            }
+          ],
+          "offers": [
+            {
+              "ref_id": "1",
+              "code": "UP50"
+            }
+          ],
+          "sdk_hints": {
+            "sdk_page_type": "upsell",
+            "template_family": "shop-three-step",
+            "frontmatter": {
+              "upsell_offer.package_id": 30,
+              "upsell_offer.vouchers_json": "[\"UP50\"]",
+              "upsell_bundle_tiers[].items_json": "[{\"packageId\":30,\"quantity\":1}]"
+            }
+          }
+        },
+        {
+          "id": "receipt",
+          "type": "thankyou",
+          "order": 7,
+          "label": "Receipt",
+          "template": "src/shop-three-step/receipt.html",
+          "page_url": "/receipt/",
+          "sdk_hints": {
+            "sdk_page_type": "receipt",
+            "template_family": "shop-three-step",
+            "frontmatter": {
+              "receipt_summary.title": "Order Summary",
+              "receipt_summary.mobile_item_template_id": "order-item-template-mobile",
+              "receipt_summary.desktop_item_template_id": "order-item-template-desktop"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "shipping_methods": [
+    {
+      "key": "standard",
+      "ref_id": 20,
+      "name": "Standard Shipping",
+      "price": "4.95"
+    },
+    {
+      "key": "free",
+      "ref_id": 21,
+      "name": "Free Shipping",
+      "price": "0.00"
+    }
+  ],
+  "offers": [
+    {
+      "ref_id": "1",
+      "name": "50% off package 30",
+      "type": "offer",
+      "code": "UP50",
+      "condition": {
+        "type": "any",
+        "value": null,
+        "description": "No minimum purchase requirement"
+      },
+      "benefit": {
+        "type": "package_percentage",
+        "value": "50.00",
+        "description": "50% off selected packages"
+      },
+      "packages": [
+        {
+          "package_id": 30
+        }
+      ]
+    }
+  ]
+}

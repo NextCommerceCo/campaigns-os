@@ -1,0 +1,30 @@
+{
+  "violations": [
+    {
+      "ruleId": "RouteFieldIgnoredForPageType",
+      "severity": "warning",
+      "message": "\"on_accept\" is ignored for routing on a \"checkout_step\" page — it means where the shopper goes after accepting the offer on this page, which only \"upsell\" or \"downsell\" can satisfy. This page routes forward to \"checkout-1\" instead.",
+      "path": "/funnels/0/pages/0/on_accept",
+      "data": {
+        "pageId": "information-1",
+        "pageType": "checkout_step",
+        "field": "on_accept",
+        "target": "upsell-1",
+        "routedTo": "checkout-1"
+      }
+    },
+    {
+      "ruleId": "RouteFieldIgnoredForPageType",
+      "severity": "warning",
+      "message": "\"success_url\" is ignored for routing on a \"checkout_step\" page — it means where the shopper goes after payment succeeds, which only \"checkout\" can satisfy. This page routes forward to \"checkout-1\" instead.",
+      "path": "/funnels/0/pages/0/success_url",
+      "data": {
+        "pageId": "information-1",
+        "pageType": "checkout_step",
+        "field": "success_url",
+        "target": "upsell-1",
+        "routedTo": "checkout-1"
+      }
+    }
+  ]
+}

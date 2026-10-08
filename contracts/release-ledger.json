@@ -6971,6 +6971,369 @@
         }
       ],
       "entry_sha256": "cdd823b095d9a05eb39d751c20396d25303dcc00dc1a2c12baeb15ac580e6819"
+    },
+    {
+      "id": "RL-0255",
+      "sequence": 244,
+      "date": "2026-10-08",
+      "kind": "release",
+      "surface_version": "1.56.0",
+      "changelog_section": "1.56.0",
+      "changelog_sha256": "57d6b92e7a715769dd83ee58c6c84c2deefcedda8d05c0acc019538acae6aa9c",
+      "agent_impact": "CampaignSpec 5.0: checkout is the page that takes payment and checkout_step is a non-paying checkout form page; 4.2/4.3 specs are upgraded on read. Four new doctor errors check multi-step paths. Build Packet and Build Context Page Kit frontmatter may carry success_url and step_number. QA drives the Checkout on the tested path, walks checkout steps, and enters select pages through bundle cards and a checkout button.",
+      "compatibility": "breaking",
+      "migration": "Validate 5.0 specs with schemas/campaign-spec.v5.schema.json (4.2/4.3 keep the v4 schema). Accept success_url and step_number in page_kit.frontmatter. Find the payment page as the checkout on a path, not the first page typed checkout; fix any spec the four new rules reject.",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": "CONTEXT.md",
+          "surface_entry": "CONTEXT.md",
+          "summary": "Add the Checkout (payment page) glossary entry: the page typed checkout takes payment, select and checkout_step lead into it, and consumers ask for the Checkout on a path."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/checkout-flow.ts",
+          "surface_entry": null,
+          "summary": "Add the v4 to v5 read-time upgrade (upgradeCampaignSpec) and the path helpers that find the Checkout on a path."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/index.ts",
+          "surface_entry": null,
+          "summary": "Export the checkout-flow helpers, page-type sets and upgradeCampaignSpec."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/normalize.ts",
+          "surface_entry": null,
+          "summary": "Upgrade a 4.2/4.3 spec to the v5 page vocabulary on read, returning a copy."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/routing.ts",
+          "surface_entry": null,
+          "summary": "Correct the payment-bearing note: split-checkout steps are checkout_step, and only the Checkout satisfies success_url."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/rules/checkout-forward-target.ts",
+          "surface_entry": null,
+          "summary": "Add CheckoutForwardTarget: a Checkout must forward to an upsell, downsell or thank-you page."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/rules/checkout-step-reaches-checkout.ts",
+          "surface_entry": null,
+          "summary": "Add CheckoutStepReachesCheckout: every checkout_step must lie on a path to a Checkout."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/rules/exit-intent-validation.ts",
+          "surface_entry": null,
+          "summary": "Accept exit intent on select and checkout_step pages as well as on a Checkout."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/rules/index.ts",
+          "surface_entry": null,
+          "summary": "Register the four multi-step checkout rules."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/rules/one-checkout-per-path.ts",
+          "surface_entry": null,
+          "summary": "Add OneCheckoutPerPath: every path from an entry page to an upsell or downsell passes exactly one Checkout."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/rules/pre-payment-forward-target.ts",
+          "surface_entry": null,
+          "summary": "Add PrePaymentForwardTarget: a select or checkout_step page must not forward straight to a post-payment page."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/rules/promo-code-input-validation.ts",
+          "surface_entry": null,
+          "summary": "Accept promo-code input on select and checkout_step pages as well as on a Checkout."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/rules/schema-version.ts",
+          "surface_entry": null,
+          "summary": "Support schema_version 5.0 beside 4.2 and 4.3."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/types.ts",
+          "surface_entry": null,
+          "summary": "Add the checkout_step page type and document checkout as the page that takes payment."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "compatibility.json",
+          "surface_entry": "compatibility.json",
+          "summary": "Name 1.56.0 and widen the CampaignSpec range to 4.2-5.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/accept/current.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/accept/current.json",
+          "summary": "Regenerate the fixture at recipe revision 1.0.3."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/accept/minimal.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/accept/minimal.json",
+          "summary": "Regenerate the fixture at recipe revision 1.0.3."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/dist-states.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/dist-states.json",
+          "summary": "Regenerate the fixture at recipe revision 1.0.3."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/advisory-enforcement.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/advisory-enforcement.json",
+          "summary": "Regenerate the fixture at recipe revision 1.0.3."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/allowlist-without-hosts.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/allowlist-without-hosts.json",
+          "summary": "Regenerate the fixture at recipe revision 1.0.3."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/committed-output-claim.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/committed-output-claim.json",
+          "summary": "Regenerate the fixture at recipe revision 1.0.3."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/engines-disagreement-warns.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/engines-disagreement-warns.json",
+          "summary": "Regenerate the fixture at recipe revision 1.0.3."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/lifecycle-scripts-enabled.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/lifecycle-scripts-enabled.json",
+          "summary": "Regenerate the fixture at recipe revision 1.0.3."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/missing-required-field.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/missing-required-field.json",
+          "summary": "Regenerate the fixture at recipe revision 1.0.3."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/unknown-kind.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/unknown-kind.json",
+          "summary": "Regenerate the fixture at recipe revision 1.0.3."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/unknown-network-policy.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/unknown-network-policy.json",
+          "summary": "Regenerate the fixture at recipe revision 1.0.3."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/unknown-output-check.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/unknown-output-check.json",
+          "summary": "Regenerate the fixture at recipe revision 1.0.3."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/unknown-revision.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/unknown-revision.json",
+          "summary": "Regenerate the fixture at recipe revision 1.0.3."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/unknown-step-id.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/unknown-step-id.json",
+          "summary": "Regenerate the fixture at recipe revision 1.0.3."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/unperformable-check-skipped.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/unperformable-check-skipped.json",
+          "summary": "Regenerate the fixture at recipe revision 1.0.3."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/unpinned-lockfile.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/unpinned-lockfile.json",
+          "summary": "Regenerate the fixture at recipe revision 1.0.3."
+        },
+        {
+          "class": "hashed_surface",
+          "path": "contracts/runtime-recipe.campaigns-os-node-v1.json",
+          "surface_entry": "contracts/runtime-recipe.campaigns-os-node-v1.json",
+          "summary": "Enumerate checkout-flow.ts and the four new rule sources as inputs; advance recipe_revision to 1.0.3."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Advance surface_version to 1.56.0, add the v5 CampaignSpec schema as a hashed entry and package export, and record the new Build Packet, Build Context and runtime recipe hashes."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Author local specs against the v5 schema and document the success_url and step_number Page Kit frontmatter keys and the checkout_step projection."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Pin the documented toolkit install to 1.56.0."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerate the reference at surface 1.56.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Document multi-step test orders: the Checkout on the tested path, select-page entry through bundle cards and a checkout button, and the checkout_step_submitted rung."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerate at recipe revision 1.0.3 and surface 1.56.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Refresh the bundle revision examples to 1.56.0+skills.1."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "Mark 1.56.0 breaking: the v5 CampaignSpec schema, and success_url and step_number in the closed Page Kit frontmatter object of the Build Packet and Build Context."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/versioning.md",
+          "surface_entry": "docs/versioning.md",
+          "summary": "State CampaignSpec 5.0 as current, with 4.2-4.3 still read and upgraded on read."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Advance the package version to 1.56.0."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Advance the package version to 1.56.0 and export schemas/campaign-spec.v5.schema.json."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaign-runtime-build-context.v0.schema.json",
+          "surface_entry": "schemas/campaign-runtime-build-context.v0.schema.json",
+          "summary": "Allow success_url and step_number in page_kit.frontmatter."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaign-runtime-build-packet.v0.schema.json",
+          "surface_entry": "schemas/campaign-runtime-build-packet.v0.schema.json",
+          "summary": "Allow success_url and step_number in source_html.pages[].page_kit.frontmatter."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaign-spec.v5.schema.json",
+          "surface_entry": "schemas/campaign-spec.v5.schema.json",
+          "summary": "Add the CampaignSpec 5.0 schema: v4's shape with schema_version 5.0 and the checkout_step page type."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance the bundle to 1.56.0+skills.1 and every bundled skill one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Name CampaignSpec 5.0 and the checkout_step page type; bump the skill one patch and state bundle 1.56.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and state bundle 1.56.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and state bundle 1.56.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and state bundle 1.56.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Describe the select-page handoff, step-form attributes and success_url on pages that feed a Checkout; bump the skill one patch and state bundle 1.56.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and state bundle 1.56.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and state bundle 1.56.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and state bundle 1.56.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Describe multi-step test orders on the Checkout of the tested path; bump the skill one patch and state bundle 1.56.0+skills.1."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "Rewrite the build prompt's select-page handoff and step-form rules, and read order bumps from the Checkout's whole path for the bump QA command."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "Read spec pages in the v5 vocabulary and treat select and checkout_step pages as checkout-flow pages for payment-method residue, bump pricing, package refs and exit-pop governance."
+        }
+      ],
+      "entry_sha256": "1e056ff9b882639e2a41e83a093c0b6782ad73f4b26d3b56a880b6ece242cc3b"
     }
   ]
 }

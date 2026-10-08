@@ -6,6 +6,7 @@
  */
 
 import type { CampaignSpec, Offer, Rule, Violation } from '../types.ts'
+import { isCheckoutFlowPage } from '../checkout-flow.ts'
 
 function isTruthyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
@@ -52,7 +53,7 @@ export const PromoCodeInputValidation: Rule = {
         const refOffer = ref ? index.byRefId.get(String(ref)) : null
         const codeOffer = code ? index.byCode.get(String(code).toUpperCase()) : null
 
-        if (page.type !== 'checkout') {
+        if (!isCheckoutFlowPage(page)) {
           violations.push({
             ruleId: 'PromoCodeInputValidation',
             severity: 'warning',
