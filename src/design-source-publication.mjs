@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { accessSync, constants as fsConstants, existsSync, linkSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { writeThemeArtifacts } from "./brand-theme.mjs";
-import { cloneJson, filesystemPathsMatch, isObject, isNonEmptyString, optionalString, readJson, resolveFromFile, sha256File } from "./cli-helpers.mjs";
+import { cloneJson, filesystemPathsMatch, isObject, isNonEmptyString, optionalString, portableArtifactPaths, readJson, resolveFromFile, sha256File } from "./cli-helpers.mjs";
 import { DESIGN_SOURCE_PACKAGE_REL_PATH, createDesignSourcePackageArtifactReference, hashSerializedDesignSourcePackage, serializeDesignSourcePackage, synthesizeHtmlFunnelDesignSourcePackage, validateDesignSourcePackage } from "./design-source-package.mjs";
 import { stampDoctorProducer } from "./doctor-sidecar.mjs";
 import { stageWriteInputs } from "./input-currency.mjs";
@@ -979,10 +979,10 @@ export async function withDesignSourcePublication({ targetRepo, outputs, force =
             : [],
         );
         publishPrepareBuildJsonOutputs([
-          { label: "Build Packet", path: packetPath, value: packet },
-          { label: "Campaign Build Brief", path: briefPath, value: brief },
-          { label: "Build Context", path: contextPath, value: context },
-          { label: "Assembly Report", path: reportPath, value: report },
+          { label: "Build Packet", path: packetPath, value: portableArtifactPaths(packet, targetRepo) },
+          { label: "Campaign Build Brief", path: briefPath, value: portableArtifactPaths(brief, targetRepo) },
+          { label: "Build Context", path: contextPath, value: portableArtifactPaths(context, targetRepo) },
+          { label: "Assembly Report", path: reportPath, value: portableArtifactPaths(report, targetRepo) },
         ], prepareBuildCollisionPaths, {
           beforePublish: recheckStageEvidence,
         });
@@ -997,7 +997,7 @@ export async function withDesignSourcePublication({ targetRepo, outputs, force =
         // stamped with the intake command that ran doctor (`start` or `build`,
         // #312) without a second write path for it.
         publishPrepareBuildJsonOutputs([
-          { label: "Doctor Output", path: doctorOutPath, value: stampDoctorProducer(doctor, command) },
+          { label: "Doctor Output", path: doctorOutPath, value: portableArtifactPaths(stampDoctorProducer(doctor, command), targetRepo) },
         ], prepareBuildCollisionPaths);
       },
     }));

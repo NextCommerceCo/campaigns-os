@@ -606,7 +606,8 @@ test("CLI: blocked qa run records an attempt and keeps the session open for repa
     const report = JSON.parse(readFileSync(join(dir, ".campaign-runtime/assembly-report.json"), "utf8"));
     assert.equal(report.stages.qa.status, "blocked");
     assert.equal(report.stages.qa.checked_at, qa.verdict.completed_at);
-    assert.ok(report.stages.qa.outputs.includes(qa.local_path));
+    assert.ok(report.stages.qa.outputs.includes(`./${join("qa-output", packet.spec.map_id, `${qa.verdict.run_id}.json`)}`));
+    assert.ok(report.stages.qa.outputs.some((path) => realpathSync(resolve(dir, path)) === realpathSync(qa.local_path)));
     const doctorSidecar = JSON.parse(readFileSync(join(dir, ".campaign-runtime/doctor-output.json"), "utf8"));
     assert.notEqual(doctorSidecar.stale, true);
     const recordPath = resolveRunRecordPath(start.session.run_id, dir);

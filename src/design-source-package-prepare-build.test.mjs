@@ -16,7 +16,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { createServer } from "node:http";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -251,6 +251,63 @@ function targetArtifactPaths(target) {
     join(target, ".campaign-runtime/theme/brand-theme.css"),
   ];
 }
+
+test("default persisted handoff paths remain portable after doctor and next refresh", () => {
+  withFixture((fixture) => {
+    const prepared = runPrepare(fixture);
+    assert.equal(prepared.status, 0, prepared.stderr);
+    for (const path of targetArtifactPaths(fixture.target)) {
+      if (!existsSync(path)) continue;
+      const content = readFileSync(path, "utf8");
+      assert.ok(!content.includes(fixture.target), `${path} retained the absolute target path after prepare-build`);
+      assert.ok(!content.includes(homedir()), `${path} retained the home directory after prepare-build`);
+    }
+    const packetPath = join(fixture.target, "campaign-runtime.build.json");
+    const inspected = runCli(["doctor", "--packet", packetPath, "--write", "--no-live-refs"], fixture.dir);
+    assert.ok(inspected.json, inspected.stderr);
+    const stripped = runCli(["doctor", "--packet", packetPath, "--strip-paths", "--no-live-refs"], fixture.dir);
+    assert.ok(stripped.json, stripped.stderr);
+    assert.ok(!JSON.stringify(stripped.json).includes(fixture.target));
+    const advanced = runCli(["next", "--packet", packetPath], fixture.dir);
+    assert.ok(advanced.json, advanced.stderr);
+    const reportPath = join(fixture.target, ".campaign-runtime/assembly-report.json");
+    const report = readJson(reportPath);
+    Object.assign(report.stages.prepare_build, { status: "completed", blockers: [] });
+    report.blockers = [];
+    report.status = "prepared";
+    writeJson(reportPath, report);
+    const contextPath = join(fixture.target, ".campaign-runtime/build-context.json");
+    const context = readJson(contextPath);
+    context.source.root = fixture.source;
+    writeJson(contextPath, context);
+    mkdirSync(join(fixture.target, "src", "dsp-fixture"), { recursive: true });
+    const setup = runCli(["record", "setup", "--packet", packetPath], fixture.dir);
+    assert.equal(setup.status, 0, setup.stdout || setup.stderr);
+
+    const paths = [packetPath];
+    const collect = (dir) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const path = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (!["run-records", "fetched-specs", "polish-evidence", "evidence"].includes(entry.name)) collect(path);
+        } else if (!["run-session.json", "command-lifecycle.jsonl", "agent-deviations.jsonl", "workflow-findings.jsonl"].includes(entry.name)
+          && !/\.(?:log|tmp)$/.test(entry.name)) paths.push(path);
+      }
+    };
+    collect(join(fixture.target, ".campaign-runtime"));
+    for (const path of paths) {
+      const content = readFileSync(path, "utf8");
+      assert.ok(!content.includes(fixture.target), `${path} retained the absolute target path`);
+      assert.ok(!content.includes(homedir()), `${path} retained the home directory`);
+    }
+    const sidecar = readJson(join(fixture.target, ".campaign-runtime/doctor-output.json"));
+    const command = sidecar.next.command;
+    assert.match(command, /--packet (?:\.\/)?campaign-runtime\.build\.json/);
+    const packetArg = command.match(/--packet (\S+)/)?.[1];
+    const runnable = runCli(["next", "--packet", packetArg, "--no-write"], fixture.target);
+    assert.ok(runnable.json, runnable.stderr);
+  });
+});
 
 function snapshotArtifacts(paths) {
   return new Map(paths.map((path) => [path, existsSync(path) ? readFileSync(path) : null]));

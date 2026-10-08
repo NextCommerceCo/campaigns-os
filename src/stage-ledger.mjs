@@ -5,6 +5,7 @@ import { STATUS as QA_STATUS } from "./qa-verdict.mjs";
 import { assessInputCurrency, currentPacketInputs, effectiveStageStatus, effectiveStatusIsTerminal, wellFormedBriefMaterial } from "./input-currency.mjs";
 import { isPlainObject, normalizeString as optionalString } from "./repo-scan.mjs";
 import { withTargetLockSync } from "./target-lock.mjs";
+import { portableArtifactPaths } from "./cli-helpers.mjs";
 import {
   ASSEMBLY_REPORT_STAGE_KEYS,
   NEXT_STAGE_CONTRACTS,
@@ -687,7 +688,7 @@ function commitAssemblyReportUnderLock(workspace, mutate, {
   const finish = () => {
     if (hasRefresh) {
       const doctor = refreshDoctor(outcome);
-      if (doctor !== null && doctor !== undefined) writeDoctorSidecar(doctorOutPath, doctor, { command: command.trim() });
+      if (doctor !== null && doctor !== undefined) writeDoctorSidecar(doctorOutPath, doctor, { command: command.trim(), targetRepo });
     } else if (outcome.written) {
       markDoctorSidecarStale(targetRepo, { command: command.trim(), reason: staleReason.trim() });
     }
@@ -731,7 +732,8 @@ function commitAssemblyReportUnderLock(workspace, mutate, {
   // (every mutator in this repo returns a copy), so the restatement is in
   // place rather than a second deep clone. Stages are read at their effective
   // status against the inputs the workspace's packet names now.
-  const next = applyDerivedAssemblyReportSummary(mutated, workspaceInputs(workspace));
+  const nextReport = applyDerivedAssemblyReportSummary(mutated, workspaceInputs(workspace));
+  const next = targetRepo ? portableArtifactPaths(nextReport, targetRepo) : nextReport;
   if (stage && producerStageOutcomeUnchanged(report, next, stage)) {
     outcome.skipped = "unchanged";
     return finish();

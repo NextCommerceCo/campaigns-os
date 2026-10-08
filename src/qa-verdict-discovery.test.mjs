@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 
 import {
   discoverQaVerdicts,
@@ -51,6 +51,41 @@ test("path hints are the *.json strings the report's qa stage records", () => {
   assert.deepEqual(qaVerdictPathHints(report), ["qa-output/demo/run_1.json", "/abs/run_2.json", "qa-output/demo/run_3.json?x"]);
   assert.deepEqual(qaVerdictPathHints(null), []);
 });
+
+test("repo-relative QA output hint resolves from the target root outside its cwd", () => withDir((dir) => {
+  const repo = join(dir, "repo");
+  const verdictPath = join(repo, "qa-output/demo/run_1.json");
+  writeJson(verdictPath, { campaign_slug: "demo", disposition: "ready" });
+  const report = { stages: { qa: { outputs: ["qa-output/demo/run_1.json"] } } };
+  const found = discoverQaVerdicts({ report, reportPath: join(repo, ".campaign-runtime/nested/assembly-report.json"), roots: [repo], withDigest: true });
+  assert.equal(found.length, 1);
+  assert.equal(found[0].source, "assembly_report");
+  assert.equal(found[0].path, verdictPath);
+  const legacy = discoverQaVerdicts({ report: { stages: { qa: { outputs: [verdictPath] } } }, reportPath: join(repo, ".campaign-runtime/nested/assembly-report.json"), roots: [repo] });
+  assert.equal(legacy[0]?.path, verdictPath);
+}));
+
+test("report-relative QA hint wins when a target-root sibling has the same name", () => withDir((dir) => {
+  const repo = join(dir, "repo");
+  const hint = "qa-output/demo/run_1.json";
+  const reportPath = join(repo, ".campaign-runtime/assembly-report.json");
+  const legacyPath = join(repo, ".campaign-runtime", hint);
+  const rootedPath = join(repo, hint);
+  writeJson(legacyPath, { campaign_slug: "demo", disposition: "ready" });
+  writeJson(rootedPath, { campaign_slug: "demo", disposition: "blocked" });
+  const report = { stages: { qa: { outputs: [hint] } } };
+  const found = discoverQaVerdicts({ report, reportPath, roots: [repo], withDigest: true });
+  assert.equal(found.length, 1);
+  assert.equal(found[0].path, legacyPath, "the recorded QA hint names the report-relative file");
+  assert.equal(found[0].verdict.disposition, "ready");
+}));
+
+test("a relative QA hint without a report path or target root has no candidate", () => withDir((dir) => {
+  const verdictPath = join(dir, "verdict.json");
+  writeJson(verdictPath, { disposition: "ready" });
+  const report = { stages: { qa: { outputs: [relative(process.cwd(), verdictPath)] } } };
+  assert.deepEqual(discoverQaVerdicts({ report }), [], "a relative hint must never resolve from the process cwd");
+}));
 
 test("discoverQaVerdicts walks the report's hints and every root's qa-output identifier directories once", () => withDir((dir) => {
   const repo = join(dir, "repo");

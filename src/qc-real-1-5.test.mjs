@@ -22,7 +22,7 @@
 // src/cart-placeholders.test.mjs).
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, statSync, utimesSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import test, { after, afterEach } from "node:test";
 
 import {
@@ -347,7 +347,7 @@ test("F1.0-W2 [real: 1.5] doctor half: a real 1.5 doctor warning and a QA qc_res
   const qaResults = resultsOf(readQaResults({
     stageEvidence: report.stages.qa.evidence,
     stage: report.stages.qa,
-    fullVerdict: readJson(report.stages.qa.outputs[0]),
+    fullVerdict: readJson(resolve(f.targetRepo, report.stages.qa.outputs[0])),
     currentBuild: BUILD_FP,
     qcStandIns,
   }));

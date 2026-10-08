@@ -264,6 +264,7 @@ import {
   sha256File,
   relFromDir,
   isLocalAbsolutePath,
+  portableArtifactPaths,
   resolveFromFile,
   extractFrontmatterValue,
   addIssue,
@@ -730,7 +731,7 @@ export function recordQaStageOutcome(args, result) {
         disposition: verdict.disposition,
         timestamp: verdict.completed_at,
         command: `campaigns-os ${QA_RUN_PRODUCER}`,
-        outputs: [result.local_path, result.qa_sidecar?.path].filter(isNonEmptyString),
+        outputs: portableArtifactPaths([result.local_path, result.qa_sidecar?.path].filter(isNonEmptyString), workspace.targetRepo),
         blockers: verdict.disposition === "blocked" ? failed : [],
         warnings: verdict.disposition === "ready_with_exceptions"
           ? ["QA passed with explicitly attributed exceptions. Report them to the operator; do not clear or waive them, or change markup just to make them pass."]
@@ -4218,11 +4219,11 @@ const RUN_RECORD_QA_DIGEST_LIMIT = 8;
 // Digests of the verdicts the report records, best-effort: an unreadable
 // hint contributes no digest, which fails open to "outdated" rather than to
 // a false match.
-function currentQaVerdictDigestsForReport(report, reportPath) {
+function currentQaVerdictDigestsForReport(report, reportPath, targetRepo) {
   const digests = new Set();
   // Lazy on purpose, and the check follows the add: once the limit is
   // reached the next candidate is never pulled, read or hashed.
-  for (const candidate of iterateQaVerdicts({ report, reportPath, withDigest: true })) {
+  for (const candidate of iterateQaVerdicts({ report, reportPath, roots: [targetRepo], withDigest: true })) {
     if (candidate.source === "assembly_report" && candidate.sha256) digests.add(candidate.sha256);
     if (digests.size >= RUN_RECORD_QA_DIGEST_LIMIT) break;
   }
@@ -4303,7 +4304,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
       // Atomic like the assembly report: a torn sidecar would be a corrupted
       // freshness artifact — the exact green-lie shape this refresh exists to
       // prevent (Kilo review, PR #176). Stamped generated_by: "next" (#312).
-      writeDoctorSidecar(doctorOutPath, doctor, { command: NEXT_PRODUCER });
+      writeDoctorSidecar(doctorOutPath, doctor, { command: NEXT_PRODUCER, targetRepo });
     } catch {
       // sidecar refresh is best-effort; orchestration must not fail on it
     }
@@ -4343,7 +4344,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
       records: readRunRecordsForTarget(dirname(packetPath)),
       packet,
       report,
-      currentQaVerdictDigests: currentQaVerdictDigestsForReport(report, report ? reportPath : null),
+      currentQaVerdictDigests: currentQaVerdictDigestsForReport(report, report ? reportPath : null, targetRepo),
       qaVerdictRecorded: qaVerdictPathHints(report).length > 0,
     });
   } catch {

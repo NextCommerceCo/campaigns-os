@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.56.0+agent.4] - 2026-10-08
+
+### Fixed
+
+Committed Build Packet and `.campaign-runtime/` handoff artifacts now retain target-repository paths in relative form after `doctor --write`, `next`, and stage updates. Stored commands use a relative packet path and run from the target repository root. Outside inputs use ordinary relative paths. Machine-local ignored run state keeps its existing path behavior. `doctor --strip-paths` remains available for older packets. QA verdict discovery resolves recorded outputs from the target root.
+
 ## [1.56.0] - 2026-10-08
 
 ### Added

@@ -1,7 +1,7 @@
 // Small general helpers the CLI and the doctor modules share.
 import { htmlScanDigest } from "./html-scan.mjs";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { canonicalPath } from "./fs-identity.mjs";
 import { refused } from "./lifecycle.mjs";
 import { isAbsoluteHttpUrl } from "./route-identity.mjs";
@@ -79,6 +79,47 @@ function isLocalAbsolutePath(value) {
   return isNonEmptyString(value) && !isAbsoluteHttpUrl(value) && isAbsolute(value);
 }
 
+// Commit-ready JSON may contain paths as fields or inside instructions.
+// Root replacements also catch a path embedded only in a message or command.
+function portableArtifactPath(targetRepo, path, { baseDir = targetRepo } = {}) {
+  const rel = relative(resolve(baseDir), resolve(path));
+  return !rel ? "." : rel.startsWith(".") ? rel : `./${rel}`;
+}
+
+function portableArtifactPaths(value, targetRepo) {
+  const roots = [...new Set([resolve(targetRepo), canonicalPath(targetRepo)])];
+  const filesystemRoots = [...new Set([...roots, "/tmp", "/var", "/private", "/home", "/Users", "/Volumes", "/mnt", "/srv"])];
+  const paths = new Set(roots);
+  const pathField = (key) => !/(?:^|_)(?:url|route)_path$/.test(key || "")
+    && (/(?:^|_)(?:path|root|dir|directory|file)$/.test(key || "") || key === "target_repo");
+  const isFilesystemPath = (entry, key = null) => isLocalAbsolutePath(entry)
+    && (key === null || pathField(key) || filesystemRoots.some((root) => entry === root || entry.startsWith(`${root}${sep}`)) || existsSync(entry));
+  function collect(entry, key = null) {
+    if (Array.isArray(entry)) return entry.forEach((item) => collect(item, key));
+    if (isObject(entry)) return Object.entries(entry).forEach(([field, item]) => collect(item, field));
+    if (isFilesystemPath(entry, key)) paths.add(entry);
+    if (typeof entry === "string" && !isAbsoluteHttpUrl(entry) && !isAbsolute(entry)) {
+      for (const match of entry.matchAll(/(?:^|[\s"'(=])(\/[^\s"'()[\]{},;]+)/g)) {
+        if (isFilesystemPath(match[1], "message")) paths.add(match[1]);
+      }
+    }
+  }
+  collect(value);
+  const replacements = [...paths]
+    .sort((left, right) => right.length - left.length)
+    .map((path) => [path, portableArtifactPath(targetRepo, path)]);
+  function visit(entry, key = null) {
+    if (Array.isArray(entry)) return entry.map((item) => visit(item, key));
+    if (isObject(entry)) return Object.fromEntries(Object.entries(entry).map(([field, item]) => [field, visit(item, field)]));
+    if (typeof entry !== "string" || isAbsoluteHttpUrl(entry)) return entry;
+    if (isFilesystemPath(entry, key)) return portableArtifactPath(targetRepo, entry);
+    let output = entry;
+    for (const [path, replacement] of replacements) output = output.split(path).join(replacement);
+    return output;
+  }
+  return visit(value);
+}
+
 function resolveFromFile(filePath, targetPath) {
   if (!isNonEmptyString(targetPath)) return null;
   if (isAbsoluteHttpUrl(targetPath)) return targetPath;
@@ -111,6 +152,7 @@ export {
   sha256File,
   relFromDir,
   isLocalAbsolutePath,
+  portableArtifactPaths,
   resolveFromFile,
   filesystemPathsMatch,
   extractFrontmatterValue,
