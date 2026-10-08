@@ -3963,6 +3963,72 @@ function packageRefsFromEntries(entries) {
     .filter((value) => value !== undefined && value !== null && String(value).trim().length > 0)
     .map((value) => String(value));
 }
+
+function supportsCheckoutVariantSlots(agentContract) {
+  const required = frontmatterList(agentContract, "requiredWhenCloning");
+  return required.includes("variant_slots[].id") && required.includes("variant_slots[].quantity");
+}
+
+function selectableVariantMatrixCount(packages) {
+  const selectable = Array.isArray(packages)
+    ? packages.filter((pkg) => pkg && pkg.is_order_bump !== true && pkg.is_upsell !== true)
+    : [];
+  if (selectable.length <= 1) return 0;
+  const attributeIdentity = (pkg) => {
+    if (!Array.isArray(pkg.variant_attributes) || pkg.variant_attributes.length === 0) return null;
+    const attributes = pkg.variant_attributes.map((attribute) => {
+      const value = String(attribute?.value ?? "").trim();
+      if (!value) return null;
+      return [String(attribute?.code || attribute?.name || "").trim(), value];
+    });
+    return attributes.every(Boolean) ? JSON.stringify(attributes.sort(([a], [b]) => a.localeCompare(b))) : null;
+  };
+  const textIdentity = (key) => (pkg) => {
+    const value = pkg[key];
+    return typeof value === "string" && value.trim() ? value.trim() : null;
+  };
+  for (const identity of [attributeIdentity, textIdentity("product_variant_name")]) {
+    const values = selectable.map(identity);
+    if (!values.every(Boolean)) continue;
+    const quantitiesByVariant = new Map();
+    for (const [index, value] of values.entries()) {
+      const qty = String(selectable[index].qty ?? "").trim();
+      if (!qty) return 0;
+      if (!quantitiesByVariant.has(value)) quantitiesByVariant.set(value, new Set());
+      quantitiesByVariant.get(value).add(qty);
+    }
+    return quantitiesByVariant.size > 1 && [...quantitiesByVariant.values()].some((quantities) => quantities.size > 1)
+      ? quantitiesByVariant.size
+      : 0;
+  }
+  return 0;
+}
+
+function warnCheckoutPackageFamilyFit(specPages, family, catalog, warnings) {
+  const selectedContract = catalog.families?.[family]?.agentContract;
+  if (
+    !selectedContract ||
+    !isCertifiedTemplateFamily(family, catalog) ||
+    !frontmatterList(selectedContract, "requiredWhenCloning").includes("packages.main_package") ||
+    supportsCheckoutVariantSlots(selectedContract)
+  ) return;
+  const fittingFamilies = [...certifiedTemplateFamilies(catalog)]
+    .filter((candidate) => supportsCheckoutVariantSlots(catalog.families[candidate]?.agentContract))
+    .sort();
+  const action = fittingFamilies.length
+    ? `At intake, rerun \`npx --no-install campaigns-os start --spec <json> --source <html-dir> --target <page-kit-dir> --template-family ${fittingFamilies[0]}\` if this configurable checkout surface is intended.`
+    : "Choose a certified family with a configurable variant-slot checkout surface when one is available.";
+  for (const page of specPages.filter((candidate) => CHECKOUT_FLOW_PAGE_TYPES.includes(candidate.type))) {
+    const variantCount = selectableVariantMatrixCount(page.packages);
+    if (variantCount <= 1) continue;
+    addIssue(
+      warnings,
+      "template_contract.checkout_package_fit",
+      `Checkout-flow page "${page.id}" has ${variantCount} variants, some offered at several quantities, but template family "${family}" has no configurable variant_slots[] checkout surface. Certified families with variant slots: ${fittingFamilies.join(", ") || "none"}. ${action}`,
+      { page_id: page.id, funnel_id: page.funnel_id, template_family: family, distinct_product_variants: variantCount, fitting_families: fittingFamilies },
+    );
+  }
+}
 function offerRefsFromEntries(entries) {
   if (!Array.isArray(entries)) return [];
   return entries
@@ -4147,6 +4213,7 @@ export function validateCommerceCatalog(packet, packetPath, spec, errors, warnin
 
     // ADR-003 step 2: template-contract checks ported from the private doctor.
     const specPages = activeSpecPages(spec);
+    warnCheckoutPackageFamilyFit(specPages, family, catalog, warnings);
 
     const mismatchedFamilies = specPages.filter(
       (page) => isNonEmptyString(page.sdk_hints?.template_family) && page.sdk_hints.template_family !== family

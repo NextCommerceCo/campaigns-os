@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.56.0+agent.5] - 2026-10-08
+
+### Fixed
+
+Doctor warns when selectable packages on a checkout-flow page form a variant and quantity matrix but the selected certified template family declares one main package and no configurable variant-slot checkout surface. The matrix requires at least two variants, with at least one offered at multiple quantities. Variant identity comes from attributes shared by every selectable row, or from variant names shared by every row; SKUs, order bumps, upsells, pack-size rows, and quantity tiers of one variant do not trigger the warning. It names certified families whose catalog contracts require variant slots, without blocking intake or changing the selected family.
+
 ## [1.56.0] - 2026-10-08
 
 ### Added

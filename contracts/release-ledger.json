@@ -7334,6 +7334,27 @@
         }
       ],
       "entry_sha256": "1e056ff9b882639e2a41e83a093c0b6782ad73f4b26d3b56a880b6ece242cc3b"
+    },
+    {
+      "id": "RL-0260",
+      "sequence": 245,
+      "date": "2026-10-08",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.56.0+agent.5",
+      "changelog_sha256": "8e30d2d0b33b3aca6d32746705aba161e02af58dbe88c8903c1273f6889a634e",
+      "agent_impact": "Doctor warns when selectable checkout-flow packages form a variant and quantity matrix and the selected certified family declares one main package without configurable variant slots; use a named certified variant-slot family at intake when that surface is needed.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "Warn about a selectable variant and quantity matrix when the selected family's catalog declares one main package without variant slots, and name certified fitting families."
+        }
+      ],
+      "entry_sha256": "5cb1b736ab94b9d2620c56b90787de2a8fea15a6432b3d58c932cc3c846184ca"
     }
   ]
 }
