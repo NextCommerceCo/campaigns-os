@@ -60,7 +60,7 @@ function comparableUrl(value) {
   try {
     const url = new URL(String(value));
     if (!/^https?:$/.test(url.protocol)) return null;
-    return `${url.origin}${url.pathname.replace(/\/+$/, "") || "/"}${url.search}`;
+    return `${url.origin}${url.pathname.replace(/\/+$/, "") || "/"}`;
   } catch {
     return null;
   }
@@ -85,12 +85,14 @@ function pageLoadRecorded(report) {
   return report?.stages?.polish?.evidence?.visual_review?.page_load != null;
 }
 
-function carried(gate, policy = LOCAL_PREVIEW_POLICY, packet = null) {
+export function carried(gate, policy = LOCAL_PREVIEW_POLICY, packet = null) {
+  const previewUrl = packet?.deploy?.preview_url;
+  if (policy === HOSTED_TEMPLATE_PREVIEW_POLICY && !comparableUrl(previewUrl)) return gate;
   return {
     ...gate,
     status: CARRIED_FORWARD,
     ...(policy === HOSTED_TEMPLATE_PREVIEW_POLICY
-      ? { required_actions: [hostedTemplateQaAction(packet.deploy.preview_url)] }
+      ? { required_actions: [hostedTemplateQaAction(previewUrl)] }
       : {}),
     carried_forward: { policy, from_status: gate.status, evidence: "missing" },
   };
@@ -121,18 +123,23 @@ export function polishCarriedForwardForLadder(report, gate) {
 
 export function applyLocalPreviewToPolishGate(gate, { packet, checkpointGate = null, baseUrl = null } = {}) {
   if (gate?.status !== "blocked") return gate;
+  // A template-stock map has no route that capture can measure, even when
+  // the preview is strict. Do not keep an impossible recapture action.
+  const actionableGate = checkpointGate?.code === NO_CAPTURABLE_ROUTES_CODE
+    ? { ...gate, required_actions: (gate.required_actions || []).filter((action) => action.id !== "polish.hidden_eager_media.capture") }
+    : gate;
   if (hostedTemplateNeedsPreviewUrl(packet, checkpointGate)) {
-    return { ...gate, required_actions: [HOSTED_TEMPLATE_PREVIEW_URL_ACTION] };
+    return { ...actionableGate, required_actions: [HOSTED_TEMPLATE_PREVIEW_URL_ACTION] };
   }
   const hostedTemplate = checkpointGate?.code === NO_CAPTURABLE_ROUTES_CODE
     && checkpointGate?.carried_forward?.policy === HOSTED_TEMPLATE_PREVIEW_POLICY
     && isHostedTemplatePreview(packet, { baseUrl });
-  if (!hostedTemplate && !isLocalPreview(packet, { baseUrl })) return gate;
+  if (!hostedTemplate && !isLocalPreview(packet, { baseUrl })) return actionableGate;
   const checkpointCarried = checkpointGate?.status === CARRIED_FORWARD;
-  if (gate.owned_checkpoint_status === "blocked" && !checkpointCarried) return gate;
+  if (gate.owned_checkpoint_status === "blocked" && !checkpointCarried) return actionableGate;
   const policy = hostedTemplate ? HOSTED_TEMPLATE_PREVIEW_POLICY : LOCAL_PREVIEW_POLICY;
-  if (gate.owned_checkpoint_only) return checkpointCarried ? carried(gate, policy, packet) : gate;
-  return CARRIED_POLISH_CODES.has(gate.code) ? carried(gate, policy, packet) : gate;
+  if (gate.owned_checkpoint_only) return checkpointCarried ? carried(actionableGate, policy, packet) : actionableGate;
+  return CARRIED_POLISH_CODES.has(gate.code) ? carried(actionableGate, policy, packet) : actionableGate;
 }
 
 export function starterResidueIsExpected(themeGate, { packet, baseUrl = null } = {}) {
@@ -141,7 +148,7 @@ export function starterResidueIsExpected(themeGate, { packet, baseUrl = null } =
 
 export function carriedForwardMessage(gate) {
   if (gate?.carried_forward?.policy === HOSTED_TEMPLATE_PREVIEW_POLICY) {
-    return `Carried forward on the hosted preview: ${gate.reason} This evidence is missing, not passed; run campaigns-os qa run --packet <packet> --base-url <preview-url> to test the hosted preview. Production QA still requires the evidence.`;
+    return `Carried forward on the hosted preview: ${gate.reason} This evidence is missing, not passed; production QA still requires it.`;
   }
   return `Carried forward on the local preview: ${gate.reason} This evidence is missing, not passed; production QA still requires it.`;
 }

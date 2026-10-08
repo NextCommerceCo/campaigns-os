@@ -1,6 +1,6 @@
 ---
 name: next-campaigns-polish
-version: 1.1.38
+version: 1.1.39
 description: Run the visual/runtime polish pass after build and before QA for a Campaigns OS campaign.
 ---
 
@@ -71,23 +71,29 @@ Responsibilities:
 - For bundle selectors and order bumps, verify active/inactive visual state after interaction, mobile label wrapping, badge placement, and selected/unchecked state. A native hidden input state that disagrees with the SDK class state is a polish blocker. So is a selected/active visual driven by a *non-SDK static attribute the SDK never clears* — e.g. a hardcoded `data-selected="true"` left on the initial card. (The native `selected` attribute on `<option>`/custom selects *is* SDK/browser-managed, so do not flag that.) The selected style must follow the SDK-managed class (e.g. `.next-selected` — see the family's bundle-selector selectors in `contracts/template-brand-contract.<family>.v0.json`) so a single-select swap clears the previous selection. Verify by interaction that the previously-selected item deselects after another is picked — a selector that only ever paints "selected" on click is a blocker.
 - For exit-intent pops and promo-code inputs, polish the wrapper/copy states without breaking SDK coupon/voucher apply hooks or `cart.hasCoupon("CODE")` conditional labels.
 - If `report.theme` or `context.theme` exists, verify brand-theme load order after `next-core.css`, source-token parity for primary color/CTA/surface/text/font/radius when present, and SDK safety. When the brand layer is missing, stale, low-confidence, or unsafe to apply, record the first repair-loop defect or an explicit skipped reason.
-- Before recording a terminal Polish status, install the package-owned browser
-  once with `npx --no-install campaigns-os qa install-browser`, serve the
-  current build, and run `campaigns-os polish capture --packet <packet> --base-url <served-build-url>`
+- When at least one mapped page has a design route, before recording a terminal
+  Polish status, install the package-owned browser once with
+  `npx --no-install campaigns-os qa install-browser`, serve the current build,
+  and run `campaigns-os polish capture --packet <packet> --base-url <served-build-url>`
   (tier `A`: it writes the polish evidence and assembly report under the target
   and fetches the served build at `--base-url`).
   The package captures every mapped route at fixed desktop/mobile viewports and
   attaches `stages.polish.evidence.visual_review.page_load`. Never hand-author,
   copy, or repair that object directly.
 - If every mapped page is template stock (`skip_reason`), there is no design
-  route for that capture. On a local loopback preview or a hosted preview at
-  the packet's `deploy.preview_url`, doctor carries the missing evidence
-  forward as a warning. If the hosted preview URL is not yet recorded, run
+  route for that capture. On a local loopback preview, or a hosted preview at
+  the packet's non-loopback HTTP(S) `deploy.preview_url` that differs from
+  `deploy.production_url` by origin or route path, doctor carries the missing
+  evidence forward as a warning. Query or fragment text on the production
+  page does not make it a distinct preview. If the hosted preview URL is not
+  yet recorded, run
   `campaigns-os qa policy set --packet <packet> --preview-url <url>` first,
   then `campaigns-os next --packet <packet>`. Run
   `campaigns-os next qa --packet <packet>`, then
-  `campaigns-os qa run --packet <packet> --base-url <preview-url>`. QA against
-  the packet's production URL keeps the checkpoint blocked.
+  `campaigns-os qa run --packet <packet> --base-url <preview-url> --browser
+  --test-order common`. The hosted preview URL satisfies the deploy handoff;
+  after QA records its verdict, run `campaigns-os next --packet <packet>` for
+  closeout. QA against the packet's production URL keeps the checkpoint blocked.
 - When a readability warning appears, report it with its colours, ratio, requirement and pages. Offer the operator options inside the brand palette (a darker or lighter shade of the same hue, the palette's text colour, or a larger, bold label where the design allows). Do not recolour the merchant's design until the operator chooses. Accept a warning only with the refs, reason and name the operator gives you at the QC handoff.
 - Record Polish as `completed`, `skipped`, or `blocked` with
   `campaigns-os record polish --packet <packet> --evidence <polish-evidence.json>`

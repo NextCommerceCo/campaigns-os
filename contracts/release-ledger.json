@@ -7342,40 +7342,40 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.56.0+agent.2",
-      "changelog_sha256": "b76cc22df14fb66513c5c2e394b8a4a30acf386f94ab5d953bb6b167887bb080",
-      "agent_impact": "An all-template hosted preview can carry missing Polish and page-load evidence as warnings. With no preview URL, use qa policy set --preview-url; with one, use next qa and qa run. A pending hosted deploy record does not suppress this handoff. QA against the packet production URL and hosted design-route capture failures remain blocked. Refresh bundled skills to 1.56.0+skills.2.",
+      "changelog_sha256": "68dd2c18553c3b6dcca6c936e013daf7d30410dcbd06b9ecf693b12b2affeb2d",
+      "agent_impact": "An all-template hosted preview distinct from production by origin and route path can carry missing Polish and page-load evidence as warnings. With no preview URL, use qa policy set --preview-url; with one, use browser and typed-card QA. The recorded preview satisfies deploy, and next reaches closeout after current-build QA. Production QA and hosted design-route capture failures remain blocked. Refresh bundled skills to 1.56.0+skills.2.",
       "compatibility": "additive",
-      "migration": "Use campaigns-os qa policy set --packet <packet> --preview-url <url> if the hosted preview URL is unset, then campaigns-os next qa --packet <packet> and campaigns-os qa run --packet <packet> --base-url <preview-url>. Refresh bundled skills.",
+      "migration": "Use campaigns-os qa policy set --packet <packet> --preview-url <url> if the hosted preview URL is unset, then campaigns-os next qa --packet <packet> and campaigns-os qa run --packet <packet> --base-url <preview-url> --browser --test-order common. Run next after QA for closeout. Refresh bundled skills.",
       "changes": [
         {
           "class": "named_surface",
           "path": "docs/build-packet.md",
           "surface_entry": "docs/build-packet.md",
-          "summary": "Document direct hosted-preview QA after the all-template Polish carry-forward and the local-only deploy recorder."
+          "summary": "Document browser and typed-card hosted-preview QA, the preview-only deploy handoff and the local-only deploy recorder."
         },
         {
           "class": "named_surface",
           "path": "docs/qa-and-test-orders.md",
           "surface_entry": "docs/qa-and-test-orders.md",
-          "summary": "Distinguish local and hosted preview carry-forward checks and keep production URL QA strict."
+          "summary": "Document the hosted preview URL condition, current-build QA command and closeout after the deploy handoff."
         },
         {
           "class": "skill",
           "path": "skills/next-campaigns-polish/SKILL.md",
           "surface_entry": null,
-          "summary": "Name next qa and direct qa run for an all-template hosted preview with missing capture evidence."
+          "summary": "Name the full hosted preview condition, browser QA command and closeout for all-template campaigns."
         },
         {
           "class": "cli_surface",
           "path": "src/cli.mjs",
           "surface_entry": null,
-          "summary": "Send the all-template hosted preview from deploy handoff directly to next qa and qa run without a hosted record deploy command."
+          "summary": "Send the all-template hosted preview through browser QA to closeout without a hosted deploy record."
         },
         {
           "class": "cli_surface",
           "path": "src/doctor/next-step.mjs",
           "surface_entry": "doctor",
-          "summary": "For an all-template checkpoint that stays blocked, name the design-route remedy instead of an impossible polish capture."
+          "summary": "Treat the carried hosted preview as satisfying deploy and name preview policy setup when production is recorded."
         },
         {
           "class": "named_surface",
@@ -7438,7 +7438,7 @@
           "summary": "Advance the skill version and stamp bundle 1.56.0+skills.2."
         }
       ],
-      "entry_sha256": "c910fef76d6e05011e7d6a4cd1e889ebe734a1c629534698db538f5b963c8a0a"
+      "entry_sha256": "07819e8619f82eb235f0291fead587b56149b1dcc624d58abc2dc1363d73c4c1"
     }
   ]
 }

@@ -24,6 +24,7 @@ import {
   renderedPagePin,
 } from "./local-proof.mjs";
 import { plainHttpDependencyFailures } from "./polish-capture.mjs";
+import { carried, HOSTED_TEMPLATE_PREVIEW_POLICY } from "./local-preview-policy.mjs";
 import { shellToken } from "./shell-token.mjs";
 import {
   capturePolishPageLoad,
@@ -328,6 +329,27 @@ test("the parity next action shell-quotes the packet path", () => {
   assert.match(spaced.find((action) => action.id === "build_production_parity").command, /page-kit parity --packet '\/campaigns\/my demo\/campaign-runtime\.build\.json'$/);
 });
 
+test("local deploy and Polish next actions preserve a packet path with spaces", () => {
+  const packetPath = "/campaigns/my demo/campaign-runtime.build.json";
+  const base = { packetPath, packet: { deploy: { target: "local-serve" } }, themeGate: null, polishGate: null, ambient: null };
+  const deploy = buildNextActions({ ...base, result: { stage: "deploy" } });
+  const advance = deploy.find((action) => action.id === "advance");
+  assert.equal(posixWords(advance.command)[3], packetPath, "local deploy advance must preserve the packet path");
+  const deployRecord = deploy.find((action) => action.id === "deploy").description.match(/record deploy --packet (.+?) --base-url/);
+  assert.equal(posixWords(`record deploy --packet ${deployRecord[1]} --base-url placeholder`)[3], packetPath, "local deploy record command must preserve the packet path");
+
+  const polish = buildNextActions({ ...base, result: { stage: "polish" } });
+  const polishRecord = polish.find((action) => action.id === "polish_skill").description.match(/record polish --packet (.+?) --evidence/);
+  assert.equal(posixWords(`record polish --packet ${polishRecord[1]} --evidence placeholder`)[3], packetPath, "Polish record command must preserve the packet path");
+});
+
+test("hosted carried gate stays blocked without a usable preview URL", () => {
+  const gate = { status: "blocked", code: "polish.report_missing", reason: "Polish evidence is missing." };
+  for (const packet of [null, {}, { deploy: {} }, { deploy: { preview_url: "" } }, { deploy: { preview_url: "not a URL" } }]) {
+    assert.equal(carried(gate, HOSTED_TEMPLATE_PREVIEW_POLICY, packet), gate, JSON.stringify(packet));
+  }
+});
+
 test("page-kit parity records a pass on the report, and a pass it could not record is not a pass", (t) => {
   const { packetPath, targetRepo } = packetFixture(t);
   const reportPath = writeReport(targetRepo, (report) => {
@@ -563,6 +585,7 @@ test("a template-stock build carries missing polish forward on local and hosted 
     { name: "hosted preview without production URL", deploy: { target: "netlify", preview_url: "https://preview.example.test/runtime-packet-demo/", production_url: undefined }, carried: true },
     { name: "hosted preview equal to production", deploy: { target: "netlify", preview_url: "https://preview.example.test/runtime-packet-demo/", production_url: "https://preview.example.test/runtime-packet-demo/" }, carried: false },
     { name: "hosted preview equal to production after URL normalization", deploy: { target: "netlify", preview_url: "https://preview.example.test/runtime-packet-demo/", production_url: "https://preview.example.test/runtime-packet-demo" }, carried: false },
+    { name: "hosted production URL with a preview query", deploy: { target: "netlify", preview_url: "https://www.example.test/runtime-packet-demo/?preview=1", production_url: "https://www.example.test/runtime-packet-demo/" }, carried: false },
     { name: "local-serve on a non-loopback host", deploy: { target: "local-serve", preview_url: "http://192.0.2.10:8080/runtime-packet-demo/" }, carried: false },
   ];
   for (const { name, deploy, carried } of cases) {
@@ -600,6 +623,7 @@ test("a template-stock build carries missing polish forward on local and hosted 
         __qaNodeTestHooks.hiddenEagerMediaGateAssertion(qaCheckpoint),
       ];
       assert.deepEqual(rows.map((row) => [row.status, row.severity]), [["warn", "warn"], ["warn", "warn"]], name);
+      if (name.startsWith("hosted")) assert.doesNotMatch(JSON.stringify(rows.map((row) => row.actual)), /qa run|<packet>|<preview-url>/, name);
       // Missing evidence is never a pass: the verdict cannot be plain ready.
       assert.equal(computeDisposition(rows), "ready_with_exceptions", name);
     }
@@ -655,8 +679,10 @@ test("a hosted all-template preview prints a runnable QA handoff without a deplo
   assert.equal(set.status, 0, set.stderr);
   const after = doctorPacket(packetPath, { write: false });
   assert.equal(after.derived.polish_checkpoint_gate.status, "carried_forward");
+  assert.doesNotMatch(JSON.stringify(after.warnings.filter((issue) => POLISH_MISSING_CODES.includes(issue.code)).map((issue) => issue.message)), /qa run|<packet>|<preview-url>/);
+  assert.match(after.derived.polish_checkpoint_gate.required_actions[0].command, /--browser --test-order common$/);
   const next = nextStage(null, { packet: packetPath, "no-write": true });
-  assert.equal(next.stage, "deploy");
+  assert.equal(next.stage, "qa");
   const passedPolish = nextStage("polish", { packet: packetPath, "no-write": true });
   const deploy = nextStage("deploy", { packet: packetPath, "no-write": true });
   const qa = nextStage("qa", { packet: packetPath, "no-write": true });
@@ -664,13 +690,14 @@ test("a hosted all-template preview prints a runnable QA handoff without a deplo
     assert.equal(output.divergences?.length || 0, 0, JSON.stringify(output.divergences));
     assert.doesNotMatch(JSON.stringify(output), /polish capture|checkpoint waive/);
   }
-  assert.ok(next.next_actions.some((action) => action.command?.includes(`next qa --packet ${packetArg}`)), JSON.stringify(next.next_actions));
+  assert.ok(next.next_actions.some((action) => action.id === "qa_run"), JSON.stringify(next.next_actions));
   for (const output of [passedPolish, deploy, qa]) {
     const qaRun = output.next_actions.find((action) => action.id === "qa_run");
     assert.ok(qaRun, JSON.stringify(output.next_actions));
     const words = posixWords(qaRun.command);
     assert.equal(words[words.indexOf("--base-url") + 1], previewUrl, `${output.stage}: printed QA command must preserve the preview URL`);
     assert.equal(words[words.indexOf("--packet") + 1], packetPath, `${output.stage}: printed QA command must preserve the packet path`);
+    assert.ok(words.includes("--browser") && words.includes("--test-order") && words.includes("common"), `${output.stage}: hosted QA must include browser and typed-card proof`);
   }
   assert.equal(deploy.next_actions.find((action) => action.id === "advance")?.command, `campaigns-os next qa --packet ${packetArg}`, "the hosted preview advance action must target QA");
   for (const output of [passedPolish, deploy, qa]) {
@@ -678,14 +705,56 @@ test("a hosted all-template preview prints a runnable QA handoff without a deplo
     assert.ok(output.prompt.includes(`--base-url ${previewArg}`), `${output.stage}: prompt must quote the preview URL`);
   }
   const printedNext = await runCli(["next", "--packet", packetPath, "--no-write", "--json"], { cwd: targetRepo });
-  const printedQa = JSON.parse(printedNext.stdout).next_actions.find((action) => action.command?.includes(`next qa --packet ${packetArg}`));
-  assert.equal(printedQa.command, `campaigns-os next qa --packet ${packetArg}`);
+  const printedQa = JSON.parse(printedNext.stdout).next_actions.find((action) => action.id === "qa_run");
+  assert.equal(posixWords(printedQa.command)[posixWords(printedQa.command).indexOf("--base-url") + 1], previewUrl);
   const qaStage = await runCli(["next", "qa", "--packet", packetPath, "--no-write", "--json"], { cwd: targetRepo });
   assert.equal(qaStage.status, 0, qaStage.stderr);
   assert.ok(JSON.parse(qaStage.stdout).next_actions.some((action) => posixWords(action.command || "").includes(previewUrl)));
-  const resolve = await runCli(["qa", "resolve", "--packet", packetPath, "--base-url", previewUrl, "--no-probe", "--json"], { cwd: targetRepo });
+  const resolve = await runCli(["qa", "resolve", "--packet", packetPath, "--base-url", previewUrl, "--no-probe"], { cwd: targetRepo });
   assert.equal(resolve.status, 0, resolve.stderr);
   assert.match(resolve.stdout, /ready_unprobed/);
+  const expectedProof = resolve.stdout.match(/Next expected proof: ([^\n]+)/)?.[1];
+  assert.ok(expectedProof, resolve.stdout);
+  const proofWords = posixWords(expectedProof);
+  assert.equal(proofWords[proofWords.indexOf("--base-url") + 1], previewUrl, "qa resolve must print the same query-bearing preview URL");
+  const resolvedProof = await runCli(["qa", "resolve", "--packet", packetPath, "--base-url", proofWords[proofWords.indexOf("--base-url") + 1], "--no-probe"], { cwd: targetRepo });
+  assert.equal(resolvedProof.status, 0, resolvedProof.stderr);
+  assert.match(resolvedProof.stdout, /ready_unprobed/);
+
+  const recorded = JSON.parse(readFileSync(reportPath, "utf8"));
+  recorded.stages.qa = {
+    status: "completed_with_warnings",
+    evidence: { qc_build_fingerprint: recorded.stages.assembly.build_fingerprint },
+    ...inputStamps(currentPacketInputs({ packet: JSON.parse(readFileSync(packetPath, "utf8")), packetPath })),
+  };
+  writeFileSync(reportPath, `${JSON.stringify(recorded, null, 2)}\n`);
+  const afterQa = nextStage(null, { packet: packetPath, "no-write": true });
+  assert.equal(afterQa.stage, "done", "hosted preview with current-build QA must leave the deploy stage behind");
+});
+
+test("hosted template stock with only a production URL still offers the preview policy command", (t) => {
+  const { packetPath, targetRepo } = templateStockFixture(t, {
+    target: "netlify", production_url: "https://www.example.test/runtime-packet-demo/", preview_url: null,
+  });
+  const reportPath = join(targetRepo, ".campaign-runtime/assembly-report.json");
+  const report = JSON.parse(readFileSync(reportPath, "utf8"));
+  report.stages.setup.status = "completed";
+  report.stages.deploy = { status: "pending" };
+  Object.assign(report.stages.assembly, inputStamps(currentPacketInputs({ packet: JSON.parse(readFileSync(packetPath, "utf8")), packetPath })));
+  writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
+  const result = nextStage(null, { packet: packetPath, "no-write": true });
+  assert.ok(result.next_actions.some((action) => action.command?.includes("qa policy set --packet")), JSON.stringify(result.next_actions));
+});
+
+test("template-stock Polish guidance never recommends a capture on local or strict hosted targets", (t) => {
+  for (const deploy of [
+    { target: "local-serve", preview_url: "http://localhost:8080/runtime-packet-demo/" },
+    { target: "netlify", preview_url: "https://www.example.test/runtime-packet-demo/", production_url: "https://www.example.test/runtime-packet-demo/" },
+  ]) {
+    const { packetPath } = templateStockFixture(t, deploy);
+    const polish = nextStage("polish", { packet: packetPath, "no-write": true });
+    assert.doesNotMatch(JSON.stringify(polish), /polish capture/, JSON.stringify(deploy));
+  }
 });
 
 test("hosted preview does not carry missing page-load evidence for a design route", async (t) => {

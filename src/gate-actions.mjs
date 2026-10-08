@@ -72,11 +72,15 @@ export const HIDDEN_EAGER_MEDIA_ACTIONS = Object.freeze({
   }),
 });
 
+export function qaRunCommand(packetPath, url, bumpCart = null) {
+  return `${invocationPrefixFor(PACKAGE_ROOT)} qa run --packet ${packetPath ? shellToken(packetPath) : "<packet>"} --base-url ${shellToken(url)} --browser --test-order common${bumpCart ? ` --cart ${shellToken(bumpCart.cart)}` : ""}`;
+}
+
 export function hostedTemplateQaAction(previewUrl) {
   return {
     id: "polish.hidden_eager_media.hosted_preview_qa",
     kind: "command",
-    command: `campaigns-os qa run --packet <packet> --base-url ${shellToken(previewUrl)}`,
+    command: qaRunCommand(null, previewUrl),
     description: "Run QA against the packet's hosted preview URL; missing Polish evidence remains a warning.",
   };
 }

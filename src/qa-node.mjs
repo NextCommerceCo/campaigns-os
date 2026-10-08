@@ -4063,7 +4063,13 @@ function resolvePublicRouteSlug({ packet, spec, rawSpec }) {
 }
 
 function ensureUrlTrailingSlash(value) {
-  return value.endsWith("/") ? value : `${value}/`;
+  try {
+    const url = new URL(value);
+    if (!url.pathname.endsWith("/")) url.pathname += "/";
+    return url.toString();
+  } catch {
+    return value.endsWith("/") ? value : `${value}/`;
+  }
 }
 
 function stripOrigin(value) {

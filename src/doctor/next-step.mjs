@@ -1,7 +1,6 @@
 // The next step doctor recommends, and the gate issues `next` reads from doctor.
 import { campaignIdentitiesMatch } from "../spec-source-identity.mjs";
 import { NO_CAPTURABLE_ROUTES_CODE, hostedTemplateNeedsPreviewUrl, polishCarriedForwardForLadder } from "../local-preview-policy.mjs";
-import { substitutePacket } from "../gate-actions.mjs";
 import { resolve } from "node:path";
 import { orderPathDepthDriftText } from "../proof-policy.mjs";
 import { anyAssemblyReportStageBlocked, qaRecordedBuildFingerprint, qaRecordedForCurrentBuild } from "../stage-ledger.mjs";
@@ -414,7 +413,7 @@ export function assessPurchaseProofCoverage({ packet = null, report = null } = {
   };
 }
 
-function pickNextStage(report, { errors = [], derived = null }, prepareBuildGate, purchaseProof = null) {
+function pickNextStage(report, { errors = [], derived = null }, prepareBuildGate, purchaseProof = null, packet = null) {
   const polishGate = derived?.polish_gate || evaluatePolishGate({ report });
   const polishCheckpointGate = derived?.polish_checkpoint_gate || null;
   // prepare-build is the earliest lifecycle prerequisite. Surface its
@@ -478,6 +477,12 @@ function pickNextStage(report, { errors = [], derived = null }, prepareBuildGate
     // A first local preview may carry missing Polish forward. A theme waiver
     // or prior capture makes the recorded Polish stage owed again.
     if (cliStage === "polish" && polishCarriedForwardForLadder(report, polishGate)) continue;
+    // A hosted all-template preview has no hosted deploy recorder. The
+    // recorded preview URL satisfies this one deploy handoff while the
+    // carried-forward gate identifies the exact preview-only shape.
+    if (cliStage === "deploy" && packet?.deploy?.preview_url
+      && polishGate?.carried_forward?.policy === "hosted_template_preview"
+      && polishCheckpointGate?.carried_forward?.policy === "hosted_template_preview") continue;
     const reportKey = reportKeyForCliStage(cliStage);
     const stage = report.stages[reportKey];
     if (!stage) {
@@ -521,7 +526,9 @@ function pickNextStage(report, { errors = [], derived = null }, prepareBuildGate
 
   return {
     stage: "done",
-    reason: "All stages are in a terminal status (completed / completed_with_warnings / skipped). Pipeline is complete.",
+    reason: packet?.deploy?.preview_url && polishGate?.carried_forward?.policy === "hosted_template_preview"
+      ? "The recorded hosted preview satisfies deploy, and QA is terminal for the current build. Pipeline is complete."
+      : "All stages are in a terminal status (completed / completed_with_warnings / skipped). Pipeline is complete.",
   };
 }
 
@@ -637,7 +644,7 @@ function doctorNextActions(errors, warnings, derived, { polishBlocked, polishGat
   if (polishBlocked) {
     const needsHostedPreview = hostedTemplateNeedsPreviewUrl(packet, polishCheckpointGate);
     if (needsHostedPreview) {
-      actions.push(`Every mapped page is template stock and the hosted preview URL is missing. Run ${substitutePacket(polishCheckpointGate.required_actions[0].command, derived.packet_path || "<packet>")}, then run ${cmd("next")} --packet ${packetRef}.`);
+      actions.push(`Every mapped page is template stock and the hosted preview URL is missing. Run ${cmd("qa")} policy set --packet ${packetRef} --preview-url <url>, then run ${cmd("next")} --packet ${packetRef}.`);
     } else if (polishGate.status === "blocked") {
       actions.push(`${polishGate.reason} Run next-campaigns-polish and record structured evidence before deploy/QA handoff.`);
     }
@@ -663,7 +670,7 @@ function buildNextStep(errors, warnings, derived, report = null, packet = null, 
     && (polishGate.status === "blocked" || polishCheckpointGate?.status === "blocked");
   const codes = new Set([...errors, ...warnings].map((issue) => issue.code));
   const purchaseProof = report ? assessPurchaseProofCoverage({ packet, report }) : null;
-  const picked = pickNextStage(report, { errors, derived }, prepareBuildGate, purchaseProof);
+  const picked = pickNextStage(report, { errors, derived }, prepareBuildGate, purchaseProof, packet);
   // The picker's vocabulary and this table must not drift apart: a stage the
   // table does not know would otherwise be relabelled as an operator step and
   // sliced into the whole ladder. Fail loudly instead.
@@ -720,7 +727,9 @@ function buildNextStep(errors, warnings, derived, report = null, packet = null, 
       ? `${cmd("next")} --packet ${packetRef}`
       : `${cmd("next")} ${picked.stage} --packet ${packetRef}`;
   const fallbackAction = picked.stage === "done"
-    ? `All stages are recorded as terminal; run ${cmd("next")} to confirm the closeout actions.`
+    ? (picked.reason?.startsWith("The recorded hosted preview")
+      ? `${picked.reason} Run ${cmd("next")} to confirm the closeout actions.`
+      : `All stages are recorded as terminal; run ${cmd("next")} to confirm the closeout actions.`)
     : `Run ${command}.`;
   if (picked.stage === "done") {
     actions.unshift(fallbackAction);
