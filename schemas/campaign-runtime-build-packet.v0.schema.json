@@ -193,7 +193,9 @@
                       },
                       "permalink": { "type": "string", "minLength": 1 },
                       "next_url": { "type": "string", "minLength": 1 },
-                      "decline_url": { "type": "string", "minLength": 1 }
+                      "decline_url": { "type": "string", "minLength": 1 },
+                      "success_url": { "type": "string", "minLength": 1, "description": "On a page that leads into a Checkout (select, checkout_step, or a landing page whose forward links reach one): that Checkout's post-payment destination, for the next-success-url meta tag the SDK reads for express orders. Never the next step (campaigns-os#641)." },
+                      "step_number": { "type": "integer", "minimum": 1, "description": "On a checkout_step page: its position among its path's steps, from 1, for the step form's data-next-step-number." }
                     }
                   }
                 },

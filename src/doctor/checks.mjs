@@ -108,7 +108,7 @@ import { evaluatePageKitSdkVersion, PAGE_KIT_SDK_VERSION_SCOPE } from "../page-k
 // `npm run build:spec` (tsc -> campaign-spec/dist) so the package runs on the
 // node engine in package.json without type-stripping. build runs on `prepare`,
 // so a fresh install (including the git-ref consumer) always has dist.
-import { isReleasedSdkVersion, normalize as normalizeCampaignSpec, runRules, specOnlyRules } from "../../campaign-spec/dist/index.js";
+import { CHECKOUT_FLOW_PAGE_TYPES, isReleasedSdkVersion, normalize as normalizeCampaignSpec, runRules, specOnlyRules, upgradeCampaignSpec } from "../../campaign-spec/dist/index.js";
 import { cmd, asInvocation } from "../install-invocation.mjs";
 import { specHashesMatch, specMaterialHash } from "../spec-identity.mjs";
 import {
@@ -237,8 +237,12 @@ const US_MARKET_COPY_PATTERNS = [
 const HARDCODED_CURRENCY_REGEX = /\$\s?\d[\d,]*(?:\.\d+)?(?:\/[A-Za-z]+)?/g;
 const HARDCODED_PHONE_REGEX = /\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/g;
 
+// Pages read through here see the v5 vocabulary: a v4 spec's `checkout → checkout`
+// chain is retyped `checkout_step` on read (campaigns-os#641), so every doctor
+// check asks "is this the page that takes payment" of `type === "checkout"`.
 function normalizeFunnels(spec) {
-  if (Array.isArray(spec?.funnels)) return spec.funnels;
+  const upgraded = upgradeCampaignSpec(spec);
+  if (Array.isArray(upgraded?.funnels)) return upgraded.funnels;
   if (Array.isArray(spec?.funnel_pages)) {
     return [{ id: "default", weight: 100, pages: spec.funnel_pages }];
   }
@@ -1201,17 +1205,20 @@ function paymentLogoForcedOn(html, method) {
 // unless the checkout page passes show_<method>=false.
 export const STARTER_TEMPLATE_DEFAULT_ON_PAYMENT_METHODS = Object.freeze(["paypal", "klarna", "apple_pay", "google_pay"]);
 
-// Built checkout pages on disk for the spec's active checkout pages: the
-// rendered _site/<slug>/<route>/index.html files that exist. Empty before a
-// build (or when the spec declares no checkout page), which is the pre-build
-// state the spec-only advisory covers.
+// Built checkout-flow pages on disk for the spec's active select, checkout_step
+// and checkout pages: the rendered _site/<slug>/<route>/index.html files that
+// exist. Steps and select pages are included on purpose: they carry express
+// payment buttons upstream of the Checkout (campaigns-os#641), and an
+// unsupported method rendered there ships just the same. Empty before a build
+// (or when the spec declares no checkout page), which is the pre-build state
+// the spec-only advisory covers.
 function builtCheckoutPagesForSpec(spec, packet, derived = {}) {
   const targetRepo = derived?.target_repo;
   const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
   if (!targetRepo || !publicRouteSlug) return [];
   const built = [];
   for (const page of activeSpecPages(spec)) {
-    if (String(page?.type || page?.page_type || "").toLowerCase().trim() !== "checkout") continue;
+    if (!CHECKOUT_FLOW_PAGE_TYPES.includes(String(page?.type || page?.page_type || "").toLowerCase().trim())) continue;
     const path = builtHtmlPathForPage(targetRepo, publicRouteSlug, page, derived);
     if (!path || !existsSync(path) || !statSync(path).isFile()) continue;
     built.push({ page_id: page.id, path, file: relative(targetRepo, path).split(sep).join("/") });
@@ -2815,7 +2822,7 @@ function bumpDisplaysPresent(block, displays) {
   return displays.some((name) => new RegExp(`data-next-toggle-display\\s*=\\s*["']${name}["']`, "i").test(block));
 }
 
-const CHECKOUT_BUMP_PAGE_TYPES = new Set(["checkout", "select"]);
+const CHECKOUT_BUMP_PAGE_TYPES = new Set(CHECKOUT_FLOW_PAGE_TYPES);
 
 export function validateBuiltBumpPricing(content, builtPath, targetRepo, page, issueTarget) {
   const type = String(page?.type || page?.page_type || "").toLowerCase().trim();
@@ -3446,7 +3453,7 @@ function validateSpecPublicRoutes(spec, errors, ready) {
 }
 
 function pageRole(type) {
-  if (["checkout", "upsell", "downsell", "thankyou", "receipt", "select"].includes(type)) return "runtime";
+  if (["checkout", "checkout_step", "upsell", "downsell", "thankyou", "receipt", "select"].includes(type)) return "runtime";
   return "visual";
 }
 
@@ -4153,7 +4160,7 @@ export function validateCommerceCatalog(packet, packetPath, spec, errors, warnin
     }
 
     const checkoutPackageRefs = specPages
-      .filter((page) => page.type === "checkout" || page.type === "select")
+      .filter((page) => CHECKOUT_FLOW_PAGE_TYPES.includes(page.type))
       .flatMap((page) => packageRefsFromEntries(page.packages));
     if (familyAutomatable && contractMentions(contract, /\b(packages\.main_package|single_offer\.package_id|variant_slots)\b/) && checkoutPackageRefs.length === 0) {
       addIssue(
@@ -4268,7 +4275,7 @@ export function validateExitPopContract(contract, spec, family, warnings, ready,
   const exitPop = contract?.exit_pop;
   if (!exitPop || !spec) return;
   const hasGovernedOfferSurface = activeSpecPages(spec).some((page) => (
-    page?.type === "checkout" && (page?.exit_intent?.enabled === true || page?.promo_code_input?.enabled === true)
+    CHECKOUT_FLOW_PAGE_TYPES.includes(page?.type) && (page?.exit_intent?.enabled === true || page?.promo_code_input?.enabled === true)
   ));
   if (hasGovernedOfferSurface) {
     ready.push(`${family} exit-pop/promo-code behavior is governed by CampaignSpec offer-surface fields`);

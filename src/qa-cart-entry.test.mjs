@@ -497,7 +497,22 @@ test("control choice prefers a visible SDK control, then a visible checkout link
   assert.equal(chooseCartEntryControl([hiddenAction, link, visibleAction]).control, visibleAction);
   assert.equal(chooseCartEntryControl([hiddenAction, link]).control, link);
   assert.equal(chooseCartEntryControl([hiddenAction]).control, hiddenAction);
-  assert.match(chooseCartEntryControl([]).reason, /no add-to-cart control or forcePackageId checkout link/);
+  assert.match(chooseCartEntryControl([]).reason, /no add-to-cart control, forcePackageId checkout link, or bundle cards with a checkout button/);
+});
+
+// A select page (#641): bundle cards plus a checkout button. The button carries
+// no package; --select-package names the bundle card the runner clicks first.
+const checkoutButton = { kind: "checkout_button", index: 0, visible: true, text: "Checkout", package_id: null, bundle_package_ids: ["10", "11"], quantity: 1 };
+
+test("a select page's checkout button is a cart-entry control, after any add-to-cart or forcePackageId control", () => {
+  assert.equal(chooseCartEntryControl([checkoutButton]).control, checkoutButton);
+  assert.equal(chooseCartEntryControl([checkoutButton, link]).control, link);
+  const chosen = chooseCartEntryControl([checkoutButton], [{ packageId: "11", quantity: 1 }]);
+  assert.equal(chosen.control, checkoutButton);
+  assert.deepEqual(chosen.select_card, { packageId: "11", quantity: 1 });
+  const miss = chooseCartEntryControl([checkoutButton], [{ packageId: "7", quantity: 1 }]);
+  assert.equal(miss.control, null);
+  assert.match(miss.reason, /--select-package 7: no bundle card on the entry page carries package 7 \(rendered: 10, 11\)/);
 });
 
 test("--select-package is strict on the entry page: the control must carry the ref", () => {

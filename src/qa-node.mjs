@@ -61,8 +61,10 @@ import {
   declineRouteTarget,
   forwardRouteTarget,
   inapplicableForwardFields,
+  upgradeCampaignSpec,
 } from "../campaign-spec/dist/index.js";
 import { evaluateThemeGate } from "./theme-gate.mjs";
+import { findPaymentPage } from "./qa-test-order-topology.mjs";
 import { probeRouteUrls, ROUTE_PROBE_DEFAULT_TIMEOUT_MS } from "./qa-route-probe.mjs";
 import { resolveCommerceCatalog, resolvePacketCommerceCatalogPath, resolveTemplateBrandContract } from "./private-template-source.mjs";
 import { computeBuildFingerprint, resolveBuiltSiteScope, topologiesFromBuiltSiteScope } from "./built-site-scope.mjs";
@@ -971,7 +973,9 @@ function resolvePolishGate({
   return gate;
 }
 
-const THEME_GATE_COMMERCE_TYPES = new Set(["checkout", "upsell", "downsell", "receipt", "thankyou"]);
+// select and checkout_step pages render the family's checkout surface without
+// taking payment (campaigns-os#641); the brand theme applies to them as well.
+const THEME_GATE_COMMERCE_TYPES = new Set(["select", "checkout_step", "checkout", "upsell", "downsell", "receipt", "thankyou"]);
 
 function themeGateScopeFromTopologies(topologies = []) {
   const built_pages = [];
@@ -3234,7 +3238,10 @@ async function maybeRunLegacyApiTestOrders({ args, resolved, runId, assertions }
   const apiBase = stringArg(args["campaigns-api-base"]) || process.env.CAMPAIGNS_API_BASE;
   if (!apiKey || !apiBase) throw new Error("Legacy direct API test orders require --api-key/QA_CAMPAIGNS_API_KEY and --campaigns-api-base/CAMPAIGNS_API_BASE.");
   const { cart, paths } = legacyTestOrderInputs(args);
-  const checkout = findPage(resolved.topologies, "checkout");
+  // The Checkout on the tested path, never the first page typed checkout: on a
+  // split checkout that was the first step, whose forward link is the next
+  // step, so the order's success URL pointed back into checkout (#641).
+  const checkout = findPaymentPage(resolved.topologies);
   if (!checkout?.url) throw new Error("--test-order requires a checkout page URL.");
   const upsell = findPage(resolved.topologies, "upsell");
   const orders = [];
@@ -3318,8 +3325,11 @@ async function createTestOrder({ apiBase, apiKey, cart, runId, successUrl, spec,
   }
 }
 
+// QA reads the v5 page vocabulary: a v4 spec's `checkout → checkout` chain is
+// retyped `checkout_step` on read (campaigns-os#641). The raw spec is untouched,
+// so the spec hash still covers the bytes as written.
 function normalizeSpec(raw) {
-  if (Array.isArray(raw?.funnels)) return raw;
+  if (Array.isArray(raw?.funnels)) return upgradeCampaignSpec(raw);
   if (Array.isArray(raw?.funnel_pages)) {
     return { ...raw, funnels: [{ id: "default", name: "Default", weight: 100, pages: raw.funnel_pages }] };
   }
@@ -3406,6 +3416,7 @@ function resolvePageUrl(page, baseUrl, publicRouteSlug = null) {
 
 function defaultRouteForType(type) {
   if (type === "thankyou") return "receipt/";
+  if (type === "checkout_step") return "checkout-step/";
   if (["presell", "landing", "checkout", "upsell", "downsell"].includes(type)) return `${type}/`;
   return `${type || "page"}/`;
 }

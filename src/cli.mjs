@@ -21,6 +21,7 @@ import { homedir } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { shellToken } from "./shell-token.mjs";
 import { declaredOrderBumps, declaredSelectorTiers } from "./commercial-journey.mjs";
+import { checkoutPathFrom, entryPages, isCheckoutFlowPage, paymentPageForFunnel, upgradeCampaignSpec } from "../campaign-spec/dist/index.js";
 import { diagnosticExport, diagnosticTextLines } from "./diagnostic.mjs";
 import { observeProgress, PROGRESS_OBSERVATION } from "./progress-node.mjs";
 import { HIDDEN_EAGER_MEDIA_ACTIONS, requiredActionText, substitutePacket } from "./gate-actions.mjs";
@@ -5072,7 +5073,8 @@ Rules:
 - For one-time prepurchase/order-bump packages outside the main bundles, default package_sync=false and show_line_total_price=false unless the spec explicitly requires quantity sync.
 - Record spec-driven removals, especially unsupported payment methods, so polish does not reintroduce them.
 - Replace demo refs; do not copy Olympus-style shipping_methods into shop-three-step.
-- For two-step package-selection flows, treat the selector page as the pre-checkout step and pass the selected cart to checkout with forcePackageId; preserve normal tracking params and strip forcePackageId from visible checkout URLs after SDK initialization.
+- Multi-step checkout paths run select -> checkout_step... -> checkout; only the checkout page takes payment. On a select page the swap-mode bundle selector (data-next-bundle-selector with data-next-selection-mode="swap") writes the cart and the SDK persists it between pages; a checkout button or link (href from the page's next_url) goes to the next page. Use forcePackageId only on a page with no selector, such as a landing call-to-action into a checkout that renders none.
+- Each checkout_step page's checkout form (<form data-next-checkout="form">) carries data-next-checkout-step="<its next_url>" and data-next-step-number="<step_number>" (Build Context page_kit frontmatter step_number); the checkout page's form carries neither. On every page that feeds a Checkout (select, checkout_step, or a landing page with express checkout buttons), next-success-url is that Checkout's post-payment destination (frontmatter success_url), not the next step, because the SDK reads it for express orders; forward navigation uses the step form attribute or a plain link, never that meta tag.
 - After page-kit build, inspect rendered _site output before handoff: each active page should have a body, Campaign Cart runtime markers, SDK meta tags from CampaignSpec sdk_hints.meta_tags, and no stale copied funnel attribution.
 - Run page-kit build and SDK/template lint, then record build before polish: \`${cmd("record")} build --packet ${packetPath}${isLocalServePacket(packet) ? ` --build-environment ${LOCAL_PROOF_BUILD_ENVIRONMENT}` : ""} --adapter-decision <key>=<value>[,<key>=<value>...]\`. Record the value that is true for this build: for example, raw_html_conversion_status=completed once source HTML is converted, or not_required when there is none. Put all scalar adapter decisions in one comma-separated flag; a repeated flag keeps only the last. Use the allowed values in docs/build-packet.md. Record the nine recordable scalar decisions with the command, never by editing those fields in the Assembly Report. wrapper_policy is selected at intake with prepare-build --wrapper-policy or the source-html manifest's wrapper_policy option; the object-valued template_files_copied proof has no flag. It stamps stages.assembly.build_fingerprint with the fingerprint doctor computes from the built output (derived.build_output_fingerprint.value, sha256 over the sorted path+sha256 manifest of _site/<slug>/; doctor reports built_output.fingerprint_stale whenever the output on disk stops matching the recorded value), records report.design_source_package.material_fingerprint on stages.assembly.source_package_material_fingerprint when present, and sets stages.polish to "required" (required_by="build", required_for=["qa"]). Re-run it after every rebuild; never hand-edit these fields. Build must not mark stages.polish as completed/completed_with_warnings/skipped. If you applied a brand theme, run \`${cmd("record")} theme --packet ${packetPath}\` after record build: it reads each built commerce page's stylesheet links and records report.theme (status applied, load_order=after-next-core, css_path, commerce_pages, evidence), and refuses, writing nothing, when a page that loads next-core.css does not load the brand layer after it. Never hand-edit report.theme.
 - Capture the machine-readable build summary as an artifact: \`${PAGE_KIT_BUILD_SUMMARY_CAPTURE_COMMAND}\` (requires next-campaign-page-kit >= 0.1.4). Doctor verifies it for per-page build errors and Page Kit shape warnings (NESTED_NO_PERMALINK, DUPLICATE_OUTPUT, MISSING_FRONTMATTER, LAYOUT_NOT_FOUND). If the installed page-kit predates --json, record that in the assembly report instead of skipping silently.${localProofPromptLines(packet, packetPath)}`;
@@ -5254,29 +5256,37 @@ function qaRunCommand(packetPath, url, bumpCart = null) {
 // `qa run --test-order common` never puts a checkout order bump in a test
 // order: the tier planner skips bump rows by design and bump coverage comes
 // from --cart. So when the spec declares one, `next` names a second run with
-// the bump in the cart. It reads the one checkout QA drives, with QA's own row
-// classifiers: QA's test orders run on findPage(topologies, "checkout"), the
-// first checkout across funnels in array order, each funnel's pages filtered
-// to enabled and sorted by `order || 0` (extractTopologies). This picks the
-// same page, and when that checkout declares no bump it returns null rather
-// than looking at a later funnel: QA never drives a later funnel's checkout,
-// so that funnel's bump ref in --cart would land on a checkout without it. The base is the first selector tier QA would plan: QA's default
-// keeps the page's pre-selected card, which a spec does not name. A checkout
-// that declares no tier (the cart is filled on an entry page) gets the bump
-// alone, on whatever selection the entry page made.
+// the bump in the cart. It reads the one checkout path QA drives, with QA's own
+// row classifiers: QA's test orders run on the Checkout (the page that takes
+// payment) of the first entry path of the first funnel that has one, each
+// funnel's pages filtered to enabled and sorted by `order || 0`
+// (extractTopologies, findPaymentPage). The rows are read from every
+// checkout-flow page on that path — the select page or first step of a
+// multi-step checkout declares the cart, not the Checkout (campaigns-os#641).
+// When that path declares no bump it returns null rather than looking at a
+// later funnel: QA never drives a later funnel's checkout, so that funnel's
+// bump ref in --cart would land on a checkout without it. The base is the
+// first selector tier QA would plan: QA's default keeps the page's
+// pre-selected card, which a spec does not name. A path that declares no tier
+// (the cart is filled on an entry page) gets the bump alone, on whatever
+// selection the entry page made.
 export function checkoutOrderBumpCart(spec) {
-  const funnels = Array.isArray(spec?.funnels)
-    ? spec.funnels
-    : Array.isArray(spec?.funnel_pages) ? [{ pages: spec.funnel_pages }] : [];
+  const upgraded = upgradeCampaignSpec(spec);
+  const funnels = Array.isArray(upgraded?.funnels)
+    ? upgraded.funnels
+    : Array.isArray(upgraded?.funnel_pages) ? [{ pages: upgraded.funnel_pages }] : [];
   for (const funnel of funnels) {
-    const checkout = (Array.isArray(funnel?.pages) ? funnel.pages : [])
+    const pages = (Array.isArray(funnel?.pages) ? funnel.pages : [])
       .filter((page) => page && page.enabled !== false)
-      .sort((a, b) => (a.order || 0) - (b.order || 0))
-      .find((page) => page.type === "checkout");
+      .sort((a, b) => (a.order || 0) - (b.order || 0));
+    const sorted = { ...funnel, pages };
+    const checkout = paymentPageForFunnel(sorted);
     if (!checkout) continue;
-    const bumps = declaredOrderBumps(checkout);
+    const entryPath = entryPages(sorted).map((entry) => checkoutPathFrom(pages, entry)).find((path) => path?.includes(checkout));
+    const pathPages = (entryPath || [checkout]).filter((page) => isCheckoutFlowPage(page));
+    const bumps = [...new Set(pathPages.flatMap((page) => declaredOrderBumps(page)))];
     if (!bumps.length) return null;
-    const base = declaredSelectorTiers(checkout)[0]?.ref || null;
+    const base = pathPages.map((page) => declaredSelectorTiers(page)[0]?.ref).find(Boolean) || null;
     return { base, bumps, cart: [base, ...bumps].filter(Boolean).map((ref) => `${ref}:1`).join(",") };
   }
   return null;

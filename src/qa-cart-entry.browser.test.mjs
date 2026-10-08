@@ -103,7 +103,7 @@ async function serveFixture(name, { cardFields = "iframe-v1", cardBehaviour = nu
   const orders = [];
   // Page-HTML loads by page name: every checkout load is an SDK boot and a
   // page-view fire, so the tests count them.
-  const pageLoads = { landing: 0, checkout: 0, receipt: 0 };
+  const pageLoads = { landing: 0, select: 0, information: 0, shipping: 0, billing: 0, checkout: 0, receipt: 0 };
   const server = createServer(async (request, response) => {
     const url = new URL(request.url, "http://localhost");
     const send = (status, body, type = "text/html; charset=utf-8") => {
@@ -132,7 +132,7 @@ async function serveFixture(name, { cardFields = "iframe-v1", cardBehaviour = nu
     if (url.pathname === "/sdk-shim.js") {
       return send(200, await readFile(join(FIXTURES, "sdk-shim.js")), "text/javascript");
     }
-    const page = /^\/x\/(landing|checkout|receipt)\/?$/.exec(url.pathname);
+    const page = /^\/x\/(landing|select|information|shipping|billing|checkout|receipt)\/?$/.exec(url.pathname);
     if (page) {
       pageLoads[page[1]] += 1;
       try {
@@ -418,7 +418,7 @@ browserTest("landing-unwired-controls: a control the SDK never wires is not a ca
 
   assert.equal(steps[0].step, "entered_via_landing");
   assert.equal(byName.entered_via_landing.status, "failed");
-  assert.match(byName.entered_via_landing.error, /^cart_entry_control_missing: no add-to-cart control or forcePackageId checkout link/);
+  assert.match(byName.entered_via_landing.error, /^cart_entry_control_missing: no add-to-cart control, forcePackageId checkout link, or bundle cards with a checkout button/);
   assert.equal(byName.opened_checkout, undefined, "the ladder stopped at the entry step");
   assert.ok(Date.now() - started < ARGS["browser-timeout"], "refused before any click: no navigation wait was spent");
   assert.equal(server.orders.length, 0);
@@ -524,4 +524,72 @@ browserTest("primary-cta: data-next-url counts only on SDK controls, and a relat
 test("fixture topology resolves a checkout the runner can drive", () => {
   const plan = resolveTestOrderTopology(topologies("http://127.0.0.1:1")[0]);
   assert.equal(plan.checkout_url, "http://127.0.0.1:1/x/checkout/");
+});
+
+// Multi-step checkout (campaigns-os#641). The topologies are the shapes
+// extractTopologies emits for a v5 spec: page_type is the spec type.
+function selectTopologies(base) {
+  return [{ funnel_id: "default", funnel_name: "Default", pages: [
+    { page_id: "select", page_type: "select", order: 1, is_entry: true, url: `${base}/x/select/`, expected_next_url: `${base}/x/checkout/` },
+    { page_id: "checkout", page_type: "checkout", order: 2, url: `${base}/x/checkout/`, expected_next_url: `${base}/x/receipt/` },
+    { page_id: "receipt", page_type: "receipt", order: 3, url: `${base}/x/receipt/` },
+  ] }];
+}
+
+function threeStepTopologies(base) {
+  return [{ funnel_id: "default", funnel_name: "Default", pages: [
+    { page_id: "information", page_type: "checkout_step", order: 1, url: `${base}/x/information/`, expected_next_url: `${base}/x/shipping/` },
+    { page_id: "shipping", page_type: "checkout_step", order: 2, url: `${base}/x/shipping/`, expected_next_url: `${base}/x/billing/` },
+    { page_id: "billing", page_type: "checkout", order: 3, url: `${base}/x/billing/`, expected_next_url: `${base}/x/receipt/` },
+    { page_id: "receipt", page_type: "receipt", order: 4, url: `${base}/x/receipt/` },
+  ] }];
+}
+
+async function runMultiStep(name, topologiesFor, args = {}) {
+  const server = await serveFixture(name);
+  try {
+    const result = await runBrowserTestOrders(topologiesFor(server.base), { ...ARGS, ...args }, `qa-multi-step-${name}`);
+    const order = result.orders[0];
+    return { result, order, steps: order?.evidence?.steps || [], server };
+  } finally {
+    await server.close();
+  }
+}
+
+browserTest("select → checkout: bundle cards plus a checkout button enter the cart, and the order is placed on the Checkout", async () => {
+  const { result, steps, server } = await runMultiStep("select-bundle-entry", selectTopologies);
+  const byName = stepsByName(steps);
+  assert.equal(byName.entered_via_landing.status, "ok", byName.entered_via_landing.error);
+  assert.equal(byName.entered_via_landing.evidence.control_kind, "checkout_button");
+  assert.equal(byName.entered_via_landing.evidence.landing_page_type, "select");
+  assert.equal(byName.entered_via_landing.evidence.package_id, "1", "the pre-selected bundle card is the cart");
+  assert.equal(byName.order_submitted.status, "ok", byName.order_submitted.error);
+  assert.deepEqual(byName.order_submitted.evidence.cart_before_submit.package_ids, ["1"]);
+  assert.equal(server.orders.length, 1);
+  assert.equal(result.assertions.find((entry) => entry.id === "browser-test-order:checkout")?.status, "pass");
+});
+
+browserTest("select → checkout with --select-package: the runner clicks the matching data-next-bundle-card", async () => {
+  const { steps, server } = await runMultiStep("select-bundle-entry", selectTopologies, { "select-package": "2" });
+  const byName = stepsByName(steps);
+  assert.equal(byName.entered_via_landing.status, "ok", byName.entered_via_landing.error);
+  assert.equal(byName.entered_via_landing.evidence.package_id, "2");
+  assert.match(byName.entered_via_landing.evidence.bundle_card_selection, /^2:1 via /);
+  assert.deepEqual(byName.order_submitted.evidence.cart_before_submit.package_ids, ["2"]);
+  assert.equal(server.orders.length, 1);
+});
+
+browserTest("three-step: the runner submits each checkout_step, lands on its declared next page, and pays only on the Checkout", async () => {
+  const { result, steps, server } = await runMultiStep("three-step-checkout", threeStepTopologies);
+  const byName = stepsByName(steps);
+  assert.equal(byName.entered_via_landing.status, "skipped");
+  const stepRungs = steps.filter((entry) => entry.step === "checkout_step_submitted");
+  assert.equal(stepRungs.length, 2, "one rung per checkout_step");
+  assert.deepEqual(stepRungs.map((entry) => entry.status), ["ok", "ok"], stepRungs.map((entry) => entry.error).join("; "));
+  assert.deepEqual(stepRungs.map((entry) => entry.evidence.arrived_url), [`${server.base}/x/shipping/`, `${server.base}/x/billing/`]);
+  assert.equal(byName.order_submitted.status, "ok", byName.order_submitted.error);
+  assert.equal(server.orders.length, 1, "exactly one order, placed from the billing page");
+  assert.equal(server.pageLoads.billing, 1);
+  assert.equal(result.assertions.find((entry) => entry.id === "browser-test-order:checkout")?.status, "pass");
+  assert.match(result.orders[0].checkout_url, /\/x\/billing\/$/, "the order's checkout is the page that takes payment");
 });

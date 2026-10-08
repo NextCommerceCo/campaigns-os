@@ -2085,7 +2085,7 @@ function sourceReferenceKindForManifestFile(file) {
 function normalizedPageRole(type) {
   const normalized = slugify(type || "page");
   if (["landing", "product", "presell", "advertorial"].includes(normalized)) return "landing";
-  if (["checkout", "select", "cart"].includes(normalized)) return "checkout";
+  if (["checkout", "checkout-step", "checkout_step", "select", "cart"].includes(normalized)) return "checkout";
   if (["upsell", "oto", "one-time-offer"].includes(normalized)) return "upsell";
   if (["downsell", "downsell-offer"].includes(normalized)) return "downsell";
   if (["receipt", "thank-you", "thankyou", "confirmation"].includes(normalized)) return "receipt";

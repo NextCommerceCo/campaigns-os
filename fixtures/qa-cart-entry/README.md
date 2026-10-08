@@ -14,6 +14,8 @@ it reproduces only the cart read, the add-to-cart navigation, the
 | `landing-entry-empty-cart` | add-to-cart control with **no** package id | cart display only | `entered_via_landing` ok, then `cart_empty_before_submit` — no submit click, no reservation |
 | `landing-unwired-controls` | two buttons carrying `data-next-url` and a package id under attribute spellings the SDK never activates on (`data-next-add-to-cart`, `data-next-checkout-action="add-to-cart"`); no SDK control, no `forcePackageId` link | cart display only | `cart_entry_control_missing` at the entry step, not a click followed by a navigation timeout; `inspectPrimaryCta` gives neither button a route |
 | `no-entry-resolvable` | (none; topology carries only the checkout) | cart display only | `cart_entry_unresolved` at the entry step, not a step timeout |
+| `select-bundle-entry` | a `select` page (campaigns-os#641): a swap-mode `[data-next-bundle-selector]` with a pre-selected `[data-next-bundle-card]` and a `[data-next-action="checkout"]` button; no add-to-cart control | cart display only | `entered_via_landing` ok with `control_kind: checkout_button`; with `--select-package 2` the runner clicks that bundle card first |
+| `three-step-checkout` | (none; the path starts on its first `checkout_step`) | `information` and `shipping` step forms carrying `data-next-checkout-step`, then `billing`, the Checkout | `entered_via_landing` skipped, one `checkout_step_submitted` rung per step landing on its declared next page, the order placed from `billing` |
 
 Served by `src/qa-cart-entry.browser.test.mjs` on a local port under `/x/`.
 The checkout pages also render an order-bump toggle carrying
