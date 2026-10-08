@@ -4052,11 +4052,12 @@ function warnCheckoutPackageFamilyFit(specPages, family, catalog, warnings, repo
     // The catalog has no base-family field; its family-name prefix is the shared-base convention.
     const baseMatches = shapeMatches.filter((candidate) => candidate.startsWith(`${family}-`));
     const ranked = [...baseMatches, ...shapeMatches.filter((candidate) => !baseMatches.includes(candidate))];
-    const choice = baseMatches.length === 1 ? baseMatches[0] : ranked.length === 1 ? ranked[0] : `<one of: ${ranked.join(", ")}>`;
+    const choice = ranked[0];
+    const otherCandidates = baseMatches.length === 1 ? [] : ranked.slice(1);
     const action = hasStageEvidence
       ? "The template family is a build-time decision. Changing it requires rerunning intake with --force (destructive; clears recorded stage evidence)."
       : ranked.length
-        ? `At intake, rerun \`npx --no-install campaigns-os start --spec <json> --source <html-dir> --target <page-kit-dir> --template-family ${choice}\` if this configurable checkout surface is intended.`
+        ? `At intake, rerun \`npx --no-install campaigns-os start --spec <json> --source <html-dir> --target <page-kit-dir> --template-family ${choice}\` if this configurable checkout surface is intended.${otherCandidates.length ? ` Other matching ${otherCandidates.length === 1 ? "family" : "families"}: ${otherCandidates.join(", ")}.` : ""}`
         : "Choose a certified family with a configurable variant-slot checkout surface that matches this checkout path when one is available.";
     addIssue(
       warnings,

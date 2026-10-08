@@ -80,7 +80,9 @@ test("an unclear base lists shape-matching family choices", () => {
   const { warnings } = inspect("demeter");
   const issue = warnings.find((warning) => warning.code === finding);
   assert.ok(issue);
-  assert.match(issue.message, /--template-family <one of: apollo-mv-single-step, olympus-mv-single-step>`/);
+  assert.match(issue.message, /--template-family apollo-mv-single-step`/);
+  assert.match(issue.message, /Other matching family: olympus-mv-single-step\./);
+  assert.doesNotMatch(issue.message, /<one of:/);
 });
 
 test("a completed assembly warning does not advise an ordinary start rerun", () => {
