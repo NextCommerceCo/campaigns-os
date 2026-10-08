@@ -7342,10 +7342,10 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.56.0+agent.1",
-      "changelog_sha256": "5ae27afaff4c2ed63d459d333394abf9b5baa7210d230754d2be1e96a200cd26",
+      "changelog_sha256": "0036ff20d1b11d5a03950a9d4b7025cde2790346066ea021150b3b5223b0357b",
       "agent_impact": "Use campaigns-os --version or campaigns-os -v to read the installed package version without campaign runtime writes. Progress snapshots and remit records under .campaign-runtime/progress/ are ignored by Git in new and existing managed blocks.",
       "compatibility": "additive",
-      "migration": "Run the next toolkit setup write in older targets to add the progress ignore rule.",
+      "migration": "In an older target, run one of campaigns-os start, prepare-build, install-agent-context or run start to add the progress ignore rule. Snapshots already committed stay tracked until removed with git rm -r --cached .campaign-runtime/progress/.",
       "changes": [
         {
           "class": "named_surface",
@@ -7360,7 +7360,7 @@
           "summary": "Add global --version and -v flags that print the package version before invocation policy can read or write campaign state."
         }
       ],
-      "entry_sha256": "27e00cbda6ade2f3a9b1ae39fa77cc16de5b62eaef1e644f3252ad8ccec2dc55"
+      "entry_sha256": "71db6099ccea2fd9ca9d0368ac0287982a60e6bc18524d8e0aca759bf4a28e5f"
     }
   ]
 }

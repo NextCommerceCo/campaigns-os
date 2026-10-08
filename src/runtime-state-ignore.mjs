@@ -45,8 +45,8 @@ export const RUNTIME_STATE_IGNORED_PATHS = [
 // these name directories the toolkit itself fills with campaign observations,
 // live URLs, or order references. A target set up before the entry existed
 // must gain it on the next setup command rather than on the next accidental
-// commit. An entry an
-// operator has placed anywhere else in the file counts as present.
+// commit. An entry an operator has placed anywhere else in the file counts as
+// present.
 export const RUNTIME_STATE_REQUIRED_IGNORED_PATHS = ["qa-output/", ".campaign-runtime/progress/"];
 
 export const RUNTIME_STATE_IGNORE_BLOCK = [

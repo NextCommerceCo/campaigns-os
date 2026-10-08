@@ -7,7 +7,7 @@ Notable supported-surface changes are recorded here.
 ### Fixed
 
 - `campaigns-os --version` and `campaigns-os -v` print only the installed package version, with no campaign runtime writes (campaigns-os#644).
-- Campaign runtime progress snapshots and their remit records are ignored by Git. A target with an older managed `.gitignore` block gains `.campaign-runtime/progress/` on the next toolkit write (campaigns-os#645).
+- Campaign runtime progress snapshots and their remit records are ignored by Git. A target with an older managed `.gitignore` block gains `.campaign-runtime/progress/` on its next `start`, `prepare-build`, `install-agent-context` or `run start`. A rule does not untrack files already committed; remove those with `git rm -r --cached .campaign-runtime/progress/` (campaigns-os#645).
 
 ## [1.56.0] - 2026-10-08
 
