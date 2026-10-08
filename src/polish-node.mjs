@@ -160,7 +160,7 @@ export function planPolishCapture({ packet, baseUrl } = {}) {
   if (routes.length === 0) {
     const error = new Error(
       "polish capture has no mapped non-skipped routes to capture: every mapped page is template stock (skip_reason), so there is no design route to compare."
-      + " On a local-serve preview, missing polish evidence is carried forward as a warning; run `next` for the next stage.",
+      + " On a local or hosted preview, missing polish evidence is carried forward as a warning; run `next` for the next stage.",
     );
     error.code = NO_CAPTURABLE_ROUTES_ERROR;
     throw error;
@@ -226,13 +226,13 @@ function recordedAuthorityBlock({ packet, report, plan = null, now } = {}) {
 
 // Every mapped page is template stock: there is nothing for polish capture to
 // measure, which is missing evidence rather than a malformed packet. It stays
-// a non-waivable block; the local preview policy carries it forward.
+// a non-waivable block; the preview policy carries it forward.
 function noCapturableRoutesBlock({ packet, report, now } = {}) {
   const block = recordedAuthorityBlock({ packet, report, now });
   return {
     ...block,
     code: NO_CAPTURABLE_ROUTES_CODE,
-    reason: "Every mapped page is template stock (skip_reason), so polish capture has no design route to capture and this build has no page-load evidence.",
+    reason: "Every mapped page is template stock (skip_reason), so this build has no design route to compare and no page-load evidence.",
     required_actions: [HIDDEN_EAGER_MEDIA_ACTIONS.map_design_route],
   };
 }

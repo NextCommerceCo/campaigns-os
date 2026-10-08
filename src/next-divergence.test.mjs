@@ -8,6 +8,7 @@ import { detectLedgerDivergence, nextStage } from "./cli.mjs";
 import { currentPacketInputs, inputStamps } from "./input-currency.mjs";
 import { buildPageLoadCapture } from "./polish-capture.mjs";
 import { buildPolishPageLoadEvidence } from "./polish-page-load.mjs";
+import { shellToken } from "./shell-token.mjs";
 
 // Packet 03 (INV-5 first slice, EN-1): `next` must report ledger-artifact
 // divergence instead of answering `doctor-blocked` + "go back to the
@@ -326,6 +327,20 @@ test("partial divergence (deploy URL only) points forward to QA, not re-setup", 
   assert.match(inspect.description, /campaigns-os next qa --packet/);
   assertNoStartOverRecommendation(result);
   rmSync(dir, { recursive: true, force: true });
+});
+
+test("the inspection action shell-quotes a packet path that contains a space", () => {
+  const { dir } = doctorGreenFixture();
+  const spaced = mkdtempSync(join(tmpdir(), "next divergence spaced "));
+  cpSync(dir, spaced, { recursive: true });
+  const packetPath = join(spaced, "campaign-runtime.build.json");
+  const result = runNext(packetPath);
+  const inspect = (result.next_actions || []).find((action) => action.id === "divergence_inspect");
+  assert.ok(inspect);
+  assert.ok(inspect.description.includes(`qa --packet ${shellToken(packetPath)})`), inspect.description);
+  assert.ok(inspect.description.includes(`--packet ${shellToken(packetPath)} --json`), inspect.description);
+  rmSync(dir, { recursive: true, force: true });
+  rmSync(spaced, { recursive: true, force: true });
 });
 
 // ---------------------------------------------------------------------------
