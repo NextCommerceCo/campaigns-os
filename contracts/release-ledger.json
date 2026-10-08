@@ -7361,6 +7361,111 @@
         }
       ],
       "entry_sha256": "71db6099ccea2fd9ca9d0368ac0287982a60e6bc18524d8e0aca759bf4a28e5f"
+    },
+    {
+      "id": "RL-0257",
+      "sequence": 246,
+      "date": "2026-10-08",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.56.0+agent.2",
+      "changelog_sha256": "5ae05e852378438784c651aace551c3ec25285fcb7ce03e85409a96aa944a5b9",
+      "agent_impact": "An all-template hosted preview distinct from production by origin or QA-resolved campaign route path can carry missing Polish and page-load evidence as warnings. With an unset, loopback or production-equivalent preview URL, use qa policy set --preview-url; with a valid preview, use browser and typed-card QA. The recorded preview satisfies deploy, and next reaches closeout after current-build QA. Production QA and hosted design-route capture failures remain blocked. Refresh bundled skills to 1.56.0+skills.2.",
+      "compatibility": "additive",
+      "migration": "Use campaigns-os qa policy set --packet <packet> --preview-url <url> if the hosted preview URL is unset, loopback or production-equivalent, then campaigns-os next qa --packet <packet> and campaigns-os qa run --packet <packet> --base-url <preview-url> --browser --test-order common. Run next after QA for closeout. Refresh bundled skills.",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Document browser and typed-card hosted-preview QA, the preview-only deploy handoff and the local-only deploy recorder."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Document the hosted preview URL condition, current-build QA command and closeout after the deploy handoff."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Name the full hosted preview condition, browser QA command and closeout for all-template campaigns."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "Send the all-template hosted preview through browser QA to closeout without a hosted deploy record."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/next-step.mjs",
+          "surface_entry": "doctor",
+          "summary": "Treat the carried hosted preview as satisfying deploy and name preview policy setup when production is recorded."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Show the current 1.56.0+skills.2 bundle identity in preflight examples."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": null,
+          "summary": "Advance the bundled skill identity to 1.56.0+skills.2 and match each skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Advance the skill version and stamp bundle 1.56.0+skills.2."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Advance the skill version and stamp bundle 1.56.0+skills.2."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Advance the skill version and stamp bundle 1.56.0+skills.2."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Advance the skill version and stamp bundle 1.56.0+skills.2."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Advance the skill version and stamp bundle 1.56.0+skills.2."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Advance the skill version and stamp bundle 1.56.0+skills.2."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Advance the skill version and stamp bundle 1.56.0+skills.2."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Advance the skill version and stamp bundle 1.56.0+skills.2."
+        }
+      ],
+      "entry_sha256": "24dbf5e7dc455f8f7bcdc444105ed43d0b353f2ffce5d89033a0fb03e54b02ea"
     }
   ]
 }
