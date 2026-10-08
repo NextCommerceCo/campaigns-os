@@ -4343,12 +4343,28 @@ async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPack
   await gotoAndSettle(page, entryPage.url, args, tracking, currencyLoad);
   const sdkReady = await waitForSdkReady(page, Math.min(budget(), DEFAULT_SETTLE_TIMEOUT_MS));
   await tracking?.readDocument(page);
-  const controls = await page.evaluate(cartEntryControlsScript(), {
+  const readControls = () => page.evaluate(cartEntryControlsScript(), {
     selector: CART_ENTRY_CONTROL_SELECTOR,
     checkoutUrl: checkoutPage.url,
     checkoutButtonSelector: CART_ENTRY_CHECKOUT_BUTTON_SELECTOR,
     bundleCardSelector: CART_ENTRY_BUNDLE_CARD_SELECTOR,
   }).catch(() => []);
+  let controls = await readControls();
+  // A two-step select page can hold its checkout button in a second step that
+  // a variant control reveals (olympus-mv-two-step: "Select Color & Size").
+  // When no checkout button is visible yet, click that control once and read
+  // the controls again, so a hidden decoy link is never chosen over the
+  // button the reveal shows.
+  const checkoutButtons = controls.filter((entry) => entry.kind === "checkout_button");
+  if (checkoutButtons.length && !checkoutButtons.some((entry) => entry.visible)) {
+    const reveal = page.locator('[data-next-action="select-variants"]:visible').first();
+    if (await reveal.count().catch(() => 0)) {
+      await clickControl(reveal, { timeout: 5000 }).catch(() => {});
+      await page.locator(CART_ENTRY_CHECKOUT_BUTTON_SELECTOR).filter({ visible: true }).first()
+        .waitFor({ state: "visible", timeout: Math.max(1000, Math.min(budget(), 8000)) }).catch(() => {});
+      controls = await readControls();
+    }
+  }
   const choice = chooseCartEntryControl(controls, selectedPackages);
   if (!choice.control) {
     throw codedError(CART_ENTRY_CODES.ENTRY_CONTROL_MISSING, `${choice.reason} (entry page ${redactUrlQuery(entryPage.url)})`);
@@ -4461,7 +4477,10 @@ async function submitCheckoutStepAndArrive({ page, step, index, args, email, bud
 async function submitCheckoutStep(page) {
   await closeAddressAutocomplete(page);
   const scope = "form[data-next-checkout-step]";
-  const submit = page.locator(`${scope} button[type="submit"], ${scope} button:not([type]), ${scope} input[type="submit"]`).first();
+  // Never an express-wallet button: on a step page those place an order.
+  const notWallet = ":not([data-next-express-checkout]):not([data-next-express-checkout] *)";
+  const submit = page.locator([`button[type="submit"]`, "button:not([type])", `input[type="submit"]`]
+    .map((control) => `${scope} ${control}${notWallet}`).join(", ")).first();
   if (!await submit.count().catch(() => 0)) {
     throw new Error("checkout step page renders no form[data-next-checkout-step] with a submit control; the step form must carry data-next-checkout-step and data-next-step-number");
   }

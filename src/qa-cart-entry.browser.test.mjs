@@ -593,3 +593,13 @@ browserTest("three-step: the runner submits each checkout_step, lands on its dec
   assert.equal(result.assertions.find((entry) => entry.id === "browser-test-order:checkout")?.status, "pass");
   assert.match(result.orders[0].checkout_url, /\/x\/billing\/$/, "the order's checkout is the page that takes payment");
 });
+
+browserTest("select → checkout with the checkout button behind a select-variants step: the runner reveals it, then enters", async () => {
+  const { steps, server } = await runMultiStep("select-variants-reveal", selectTopologies, { "select-package": "2" });
+  const byName = stepsByName(steps);
+  assert.equal(byName.entered_via_landing.status, "ok", byName.entered_via_landing.error);
+  assert.equal(byName.entered_via_landing.evidence.control_kind, "checkout_button");
+  assert.equal(byName.entered_via_landing.evidence.control_text, "Next");
+  assert.deepEqual(byName.order_submitted.evidence.cart_before_submit.package_ids, ["2"]);
+  assert.equal(server.orders.length, 1);
+});
