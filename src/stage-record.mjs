@@ -1017,8 +1017,8 @@ function recordUnderLock({ stage, packetPath, sidecars, lockedTarget, input, dry
     if (dryRun) return null;
     // Written inside the report's critical section, after every check and
     // before the report itself, so the files move together.
-    if (next.context) writeJsonAtomic(contextPath, portableArtifactPaths(next.context, workspace.targetRepo));
-    if (next.packet) writeJsonAtomic(packetPath, portableArtifactPaths(next.packet, workspace.targetRepo));
+    if (next.context) writeJsonAtomic(contextPath, portableArtifactPaths(next.context, workspace.targetRepo, { artifactPath: contextPath }));
+    if (next.packet) writeJsonAtomic(packetPath, portableArtifactPaths(next.packet, workspace.targetRepo, { artifactPath: packetPath }));
     return next.report;
   };
   // Already inside the target lock, which commitAssemblyReport re-enters.

@@ -122,8 +122,14 @@ const ARTIFACT_PATH_FIELDS = Object.freeze({
 });
 
 const ARTIFACT_COMMAND_FIELDS = Object.freeze({
+  "campaign-runtime-build-packet/v0": ["source_html.pages.*.skip_reason"],
+  "campaign-runtime-build-context/v0": [
+    "decisions.*.decision", "decisions.*.evidence.*",
+    "prompts_required.*.message", "page_map.*.skip_reason", "source.manifest_warnings.*",
+  ],
   "campaign-runtime-assembly-report/v0": [
     "next.command", "stages.**.commands.*",
+    "decisions.*.decision", "decisions.*.evidence.*",
     "**.message", "**.blockers.*", "**.warnings.*",
   ],
   "campaigns-os-doctor-output/v0": [
@@ -141,19 +147,48 @@ function fieldMatches(pattern, segments) {
   return matches(0, 0);
 }
 
-function portableArtifactPaths(value, targetRepo) {
+function portableArtifactPaths(value, targetRepo, { artifactPath = null } = {}) {
   const schema = isObject(value) ? value.schema_version : null;
   const pathFields = ARTIFACT_PATH_FIELDS[schema] || [];
   const commandFields = ARTIFACT_COMMAND_FIELDS[schema] || [];
-  const roots = [...new Set([resolve(targetRepo), canonicalPath(targetRepo)])]
+  const artifactDir = artifactPath ? dirname(resolve(artifactPath)) : null;
+  const packet = schema === "campaign-runtime-build-packet/v0";
+  const context = schema === "campaign-runtime-build-context/v0";
+  const report = schema === "campaign-runtime-assembly-report/v0";
+  const sourceField = packet ? value.source_html?.root : context ? value.source?.root : report ? value.inputs?.source?.root : null;
+  const sourceBase = packet ? artifactDir : targetRepo;
+  const sourceRoot = isNonEmptyString(sourceField) && sourceBase ? resolve(sourceBase, sourceField) : null;
+  const outputField = packet ? value.assembly?.output_dir : context ? value.scaffold?.output_dir : null;
+  const outputBase = targetRepo;
+  const outputDir = isNonEmptyString(outputField) && outputBase ? resolve(outputBase, outputField) : null;
+  const roots = [...new Set([targetRepo, sourceRoot].filter(Boolean).flatMap((root) => [resolve(root), canonicalPath(root)]))]
     .filter((root) => root !== "/")
     .sort((left, right) => right.length - left.length);
+  function fieldBase(segments) {
+    const path = segments.join(".");
+    if (packet) {
+      if (path === "source_html.pages.*.path") return sourceRoot;
+      if (path === "source_html.pages.*.page_kit.target_path") return outputDir;
+      if (path === "source_html.pages.*.page_kit.output_path") return targetRepo;
+      if (path === "assembly.output_dir") return targetRepo;
+      return artifactDir;
+    }
+    if (context) {
+      if (path === "page_map.*.source_path") return sourceRoot;
+      if (path === "page_map.*.page_kit.target_path") return outputDir;
+      if (path === "design_source_package.path") return artifactDir;
+    }
+    if (report && path === "design_source_package.path") return artifactDir;
+    if (schema === "campaigns-os-build-brief/v1") return artifactDir;
+    return targetRepo;
+  }
   function portableCommand(command) {
     let output = command;
     for (const root of roots) {
       const escaped = root.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      output = output.replace(new RegExp(`(^|[\\s"'(=,;])${escaped}(?=$|[/\\s"',;)])`, "g"),
-        (_match, prefix) => `${prefix}.`);
+      const replacement = portableArtifactPath(targetRepo, root);
+      output = output.replace(new RegExp(`(^|[\\s"'\`(=,;\\[<])${escaped}(?=$|[/\\s"'\`.,:;)\\]>])`, "g"),
+        (_match, prefix) => `${prefix}${replacement}`);
     }
     return output;
   }
@@ -163,7 +198,8 @@ function portableArtifactPaths(value, targetRepo) {
     if (typeof entry !== "string") return entry;
     if (Array.isArray(value) && segments.length === 1 && isLocalAbsolutePath(entry)) return portableArtifactPath(targetRepo, entry);
     if (pathFields.some((pattern) => fieldMatches(pattern, segments)) && isLocalAbsolutePath(entry)) {
-      return portableArtifactPath(targetRepo, entry);
+      const baseDir = fieldBase(segments);
+      return baseDir ? portableArtifactPath(targetRepo, entry, { baseDir }) : entry;
     }
     if (commandFields.some((pattern) => fieldMatches(pattern, segments))) return portableCommand(entry);
     return entry;

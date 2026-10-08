@@ -7474,8 +7474,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.56.0+agent.4",
-      "changelog_sha256": "188c41064afc1f03bdcfe3d80be764e6a0e8811a0f7e1b9aaabba30f8c9c0f16",
-      "agent_impact": "Read committed packet, context, report, doctor, and QA output paths from the target repository root. Keep outside inputs at their recorded relative locations and run retained commands from that root.",
+      "changelog_sha256": "c2fd419e4f6391d0cccc083bd8525cab23d6782e18d3821943bc0ff9e2f9e319",
+      "agent_impact": "Resolve Build Packet input fields from the packet directory, output fields from the target repository, source page fields from the source root, Page Kit target_path from the Page Kit output directory, Design Source Package references in context and report from each artifact's directory, and normalized brief _meta.input_path from the brief directory. Resolve other committed sidecar paths and run retained commands from the target repository root. Keep outside inputs at their recorded relative locations.",
       "compatibility": "compatible",
       "migration": "none",
       "changes": [
@@ -7483,7 +7483,7 @@
           "class": "named_surface",
           "path": "docs/build-packet.md",
           "surface_entry": "docs/build-packet.md",
-          "summary": "Document target-relative handoff paths, ordinary relative outside inputs, and the working directory for retained commands."
+          "summary": "Document each handoff path's reader base, ordinary relative outside inputs, and the working directory for retained commands."
         },
         {
           "class": "cli_surface",
@@ -7498,7 +7498,7 @@
           "summary": "Record the doctor stage output path relative to the target repository."
         }
       ],
-      "entry_sha256": "2c79fdaff9dba17d1fc1bef209989de704502df62b5e0e65d1dd81395c755eb2"
+      "entry_sha256": "18614110fcc2d64e2025b0df0abe49b2a8dd349d54c1a28a2d9f6ed8334935cb"
     }
   ]
 }

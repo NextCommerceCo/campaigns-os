@@ -1027,7 +1027,19 @@ Packet-mode `doctor` is inspection-only by default and preserves retained eviden
 
 `campaigns-os doctor --packet <packet> --write` restates its outcome on the Assembly Report's `stages.doctor` (status, command, outputs, blockers, warnings, `checked_at`). A re-run that reaches the same outcome leaves the report's bytes unchanged rather than refreshing the timestamp alone, so a digest taken of the report — a Run Record's `assembly_report` sha256 — keeps verifying across repeated doctor runs; a changed outcome still rewrites the file.
 
-`campaigns-os start` / `campaigns-os prepare-build` writes packet, context, report, and generated doctor-output paths relative to the target repository by default. Outside inputs retain ordinary relative paths from the target repository; ensure those inputs remain at the recorded relative locations when moving the repository. Later `doctor --write`, `next`, and stage writes keep committed sidecars relative. A stored command such as `next.command` uses a relative packet path and runs from the target repository root. `campaigns-os doctor` continues to accept older absolute-path packets; `--strip-paths` remains available when inspecting an older packet. Machine-local run sessions and journals remain ignored and may use absolute paths.
+`campaigns-os start` / `campaigns-os prepare-build` writes portable packet, context, report, and generated doctor-output paths. Resolve each path from its reader's base:
+
+| Field | Base | Writer |
+|---|---|---|
+| Build Packet `spec.local_path`, `design_source_package.path`, `source_html.root`, `build_brief.input_path`, `build_brief.normalized_path`, `assembly.target_repo`, `assembly.commerce_catalog.path` | Build Packet file's directory, including when `--out` places it under `config/` | `start` / `prepare-build`; `record brief` and stage records retain this base for older absolute values |
+| Build Packet `source_html.pages[].path`; Build Context `page_map[].source_path` | Source HTML root | `start` / `prepare-build`; later context writes retain it |
+| Build Packet and Build Context `source_html.pages[].page_kit.target_path` / `page_map[].page_kit.target_path` | Page Kit output directory | `start` / `prepare-build`; later packet/context writes retain it |
+| Build Packet `assembly.output_dir` and `source_html.pages[].page_kit.output_path`; Build Context `page_map[].output_path` and `page_map[].page_kit.output_path` | Target repository root | `start` / `prepare-build`; later packet/context writes retain it |
+| Build Context and Assembly Report `design_source_package.path` | Directory of that context or report file (normally `.campaign-runtime/`) | `start` / `prepare-build`; later report writes retain it |
+| Normalized Campaign Build Brief `_meta.input_path` | Directory of the normalized brief file | `start` / `prepare-build`; `record brief` and `record spec` retain it |
+| Other listed Build Context, Assembly Report, and doctor-output filesystem paths | Target repository root | Intake, `doctor --write`, `next`, and stage writes |
+
+Outside source inputs use ordinary relative paths from the applicable base; keep them at the recorded locations when moving the repository. Manifest paths embedded in decision evidence use relative paths from the target repository root. A stored command such as `next.command` uses a relative packet path and runs from the target repository root. `campaigns-os doctor` continues to accept older absolute-path packets; `--strip-paths` remains available when inspecting an older packet. Machine-local run sessions and journals remain ignored and may use absolute paths.
 
 `start` / `prepare-build` also run the [Brand Theme Bridge](./brand-theme-bridge.md)
 in `inspect_only` mode. The optional theme evidence lives in `context.theme`,

@@ -733,7 +733,7 @@ function commitAssemblyReportUnderLock(workspace, mutate, {
   // place rather than a second deep clone. Stages are read at their effective
   // status against the inputs the workspace's packet names now.
   const nextReport = applyDerivedAssemblyReportSummary(mutated, workspaceInputs(workspace));
-  const next = targetRepo ? portableArtifactPaths(nextReport, targetRepo) : nextReport;
+  const next = targetRepo ? portableArtifactPaths(nextReport, targetRepo, { artifactPath: reportPath }) : nextReport;
   if (stage && producerStageOutcomeUnchanged(report, next, stage)) {
     outcome.skipped = "unchanged";
     return finish();

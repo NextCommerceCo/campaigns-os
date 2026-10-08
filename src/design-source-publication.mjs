@@ -979,10 +979,10 @@ export async function withDesignSourcePublication({ targetRepo, outputs, force =
             : [],
         );
         publishPrepareBuildJsonOutputs([
-          { label: "Build Packet", path: packetPath, value: portableArtifactPaths(packet, targetRepo) },
-          { label: "Campaign Build Brief", path: briefPath, value: portableArtifactPaths(brief, targetRepo) },
-          { label: "Build Context", path: contextPath, value: portableArtifactPaths(context, targetRepo) },
-          { label: "Assembly Report", path: reportPath, value: portableArtifactPaths(report, targetRepo) },
+          { label: "Build Packet", path: packetPath, value: portableArtifactPaths(packet, targetRepo, { artifactPath: packetPath }) },
+          { label: "Campaign Build Brief", path: briefPath, value: portableArtifactPaths(brief, targetRepo, { artifactPath: briefPath }) },
+          { label: "Build Context", path: contextPath, value: portableArtifactPaths(context, targetRepo, { artifactPath: contextPath }) },
+          { label: "Assembly Report", path: reportPath, value: portableArtifactPaths(report, targetRepo, { artifactPath: reportPath }) },
         ], prepareBuildCollisionPaths, {
           beforePublish: recheckStageEvidence,
         });
