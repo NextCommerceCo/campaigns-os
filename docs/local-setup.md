@@ -3,7 +3,7 @@
 For a new campaign, create an empty working folder and run this from it:
 
 ```sh
-npm init -y && npm install --save-exact next-campaign-page-kit@0.2.0 && npm install --save-dev --save-exact @nextcommerce/campaigns-os@1.54.0 && npx --no-install campaigns-os tooling setup --target . --platform claude
+npm init -y && npm install --save-exact next-campaign-page-kit@0.2.0 && npm install --save-dev --save-exact @nextcommerce/campaigns-os@1.55.0 && npx --no-install campaigns-os tooling setup --target . --platform claude
 ```
 
 `npm init -y` gives the folder its own `package.json`. Without one, npm

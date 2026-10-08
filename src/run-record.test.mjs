@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -14,10 +14,13 @@ import {
 import {
   assembleRunRecord,
   mintRunId,
+  readRunRecordsForTarget,
   resolveRunRecordPath,
   RUN_RECORD_COMMIT_PATTERN,
   RUN_RECORD_QA_VERDICT_PUBLISH_STATES,
   RUN_RECORD_QA_VERDICT_PUBLISHERS,
+  RUN_RECORD_QA_VERDICT_PUBLISH_REASONS,
+  RUN_RECORD_CLOSERS,
   RUN_RECORD_REMIT_BASE_KINDS,
   RUN_RECORD_REMIT_RESULTS,
   RUN_RECORD_SCHEMA,
@@ -25,9 +28,10 @@ import {
   selectRunFindingIds,
   validateQaVerdictPublish,
   validateRunRecord,
+  validateRunRecordLifecycle,
   writeRunRecord,
 } from "./run-record.mjs";
-import { readLifecycleJournal } from "./lifecycle.mjs";
+import { readLifecycleJournal, validateLifecycle } from "./lifecycle.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CLI = resolve(ROOT, "bin/campaigns-os.mjs");
@@ -39,6 +43,14 @@ function withTempDir(run) {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+}
+
+function cliResult(dir, argv) {
+  return spawnSync(process.execPath, [CLI, ...argv], {
+    cwd: dir,
+    encoding: "utf8",
+    env: { ...process.env, CAMPAIGNS_OS_TELEMETRY: "off" },
+  });
 }
 
 function minimalRecord(overrides = {}) {
@@ -138,12 +150,7 @@ test("validator accepts a fully-populated record", () => {
     surfaces: ["template", "cli"],
     primary_surface: "template",
     surface_confidence: "low",
-    agent_usage: {
-      total_tokens: 1234,
-      elapsed_ms: 5000,
-      model: "test-model",
-      source: "fixture",
-    },
+    closed_by: "manual",
   });
   const result = validateRunRecord(record);
   assert.equal(result.ok, true, JSON.stringify(result.errors));
@@ -209,13 +216,28 @@ test("validator rejects malformed observation arrays", () => {
   assert.equal(validateRunRecord(minimalRecord({ observations: { findings_journal: { malformed_lines: ["1"] } } })).ok, false);
 });
 
-test("validator rejects malformed agent usage fields", () => {
-  assert.equal(validateRunRecord(minimalRecord({ agent_usage: "nope" })).ok, false);
-  assert.equal(validateRunRecord(minimalRecord({ agent_usage: { total_tokens: -1 } })).ok, false);
-  assert.equal(validateRunRecord(minimalRecord({ agent_usage: { elapsed_ms: 1.5 } })).ok, false);
-  assert.equal(validateRunRecord(minimalRecord({ agent_usage: { model: 7 } })).ok, false);
-  assert.equal(validateRunRecord(minimalRecord({ agent_usage: { total_tokens: 12, elapsed_ms: 50 } })).ok, true);
+test("closed_by is optional, constrained to the closer enum, and legacy agent_usage is unknown", () => {
+  const schema = JSON.parse(readFileSync(resolve(ROOT, "schemas/campaigns-os-run-record.v0.schema.json"), "utf8"));
+  const validateSchema = new Ajv2020({ strict: true, validateFormats: false }).compile(schema);
+  assert.deepEqual(schema.properties.closed_by.enum, RUN_RECORD_CLOSERS);
+  for (const record of [minimalRecord(), ...RUN_RECORD_CLOSERS.map((closed_by) => minimalRecord({ closed_by }))]) {
+    assert.equal(validateRunRecord(record).ok, true);
+    assert.equal(validateSchema(record), true);
+  }
+  for (const record of [minimalRecord({ closed_by: "other" }), minimalRecord({ agent_usage: { total_tokens: 12 } })]) {
+    assert.equal(validateRunRecord(record).ok, false);
+    assert.equal(validateSchema(record), false);
+  }
 });
+
+test("a legacy local record remains readable but cannot be written under the current contract", () => withTempDir((dir) => {
+  const legacy = minimalRecord({ agent_usage: { total_tokens: 12 } });
+  const path = resolveRunRecordPath(legacy.run_id, dir);
+  mkdirSync(resolve(path, ".."), { recursive: true });
+  writeFileSync(path, `${JSON.stringify(legacy)}\n`);
+  assert.deepEqual(readRunRecordsForTarget(dir)[0].record, legacy);
+  assert.throws(() => writeRunRecord(legacy, { baseDir: dir }), /record.agent_usage/);
+}));
 
 test("validator rejects invalid remit status fields", () => {
   assert.equal(validateRunRecord(minimalRecord({ remit_state: "maybe" })).ok, false);
@@ -234,6 +256,7 @@ test("qa_verdict_publish: the validator and the JSON Schema agree, and malformed
     result: "stored",
     base_kind: "loopback",
     published_at: "2026-09-17T09:00:00.000Z",
+    reason: "flag_opt_in",
   };
   assert.equal(validateRunRecord(minimalRecord({ qa_verdict_publish: ok })).ok, true);
   assert.equal(validateRunRecord(minimalRecord({ qa_verdict_publish: null })).ok, true);
@@ -245,6 +268,11 @@ test("qa_verdict_publish: the validator and the JSON Schema agree, and malformed
   assert.deepEqual(codes({ ...ok, result: "maybe" }), ["record.qa_verdict_publish.result"]);
   assert.deepEqual(codes({ ...ok, base_kind: "internet" }), ["record.qa_verdict_publish.base_kind"]);
   assert.deepEqual(codes({ ...ok, endpoint: "api/qa/verdicts" }), ["record.qa_verdict_publish.endpoint"]);
+  assert.deepEqual(codes({ ...ok, reason: "unknown" }), ["record.qa_verdict_publish.reason"]);
+  assert.deepEqual(codes({ ...ok, reason: null }), []);
+  const withoutReason = { ...ok };
+  delete withoutReason.reason;
+  assert.deepEqual(codes(withoutReason), []);
   assert.deepEqual(codes({ ...ok, extra: 1 }), ["record.qa_verdict_publish.extra"]);
   assert.deepEqual(codes([]), ["record.qa_verdict_publish"]);
   assert.equal(validateRunRecord(minimalRecord({ qa_verdict_publish: { ...ok, state: "pending" } })).ok, false);
@@ -256,6 +284,8 @@ test("qa_verdict_publish: the validator and the JSON Schema agree, and malformed
   assert.deepEqual(published.properties.publisher.enum, RUN_RECORD_QA_VERDICT_PUBLISHERS);
   assert.deepEqual(published.properties.result.enum, [...RUN_RECORD_REMIT_RESULTS, null]);
   assert.deepEqual(published.properties.base_kind.enum, [...RUN_RECORD_REMIT_BASE_KINDS, null]);
+  assert.deepEqual(published.properties.reason.enum, [...RUN_RECORD_QA_VERDICT_PUBLISH_REASONS, null]);
+  assert.equal(validateRunRecord(minimalRecord({ qa_verdict_publish: { ...ok, reason: "unknown" } })).ok, false);
   assert.deepEqual(Object.keys(published.properties).sort(), Object.keys(ok).sort(), "the validator's allowed field set is the schema's");
   assert.deepEqual(published.required, ["verdict_run_id", "publisher", "attempted", "state"]);
 });
@@ -375,6 +405,31 @@ test("assembleRunRecord with all signal absent is still a minimal valid record",
   assert.equal(record.remit_state, "skipped");
   assert.equal(record.surfaces, undefined);
   assert.equal(record.primary_surface, undefined);
+});
+
+test("QA observation binds the verdict to its recorded build and treats missing fingerprints as unknown", () => {
+  const verdict = { run_id: "qa_run_one", disposition: "blocked", exceptions: [] };
+  const report = { stages: { assembly: { build_fingerprint: "sha256:build-one" }, qa: { verdict_run_id: "qa_run_one", evidence: { qc_build_fingerprint: "sha256:build-one" } } } };
+  const observation = (candidate) => assembleRunRecord(assembleArgs({ qaVerdict: verdict, report: candidate })).observations.qa;
+  assert.deepEqual(observation(report), { disposition: "blocked", gap_classes: [], verdict_run_id: "qa_run_one", build_fingerprint: "sha256:build-one", stale: false });
+  assert.equal(observation({ ...report, stages: { ...report.stages, assembly: { build_fingerprint: "sha256:build-two" } } }).stale, true);
+  assert.equal(observation({ ...report, stages: { ...report.stages, assembly: {} } }).stale, null);
+  assert.equal(observation({ ...report, stages: { ...report.stages, qa: { verdict_run_id: "another_verdict", evidence: { qc_build_fingerprint: "sha256:build-one" } } } }).build_fingerprint, null);
+  assert.equal(observation({ ...report, stages: { ...report.stages, qa: { verdict_run_id: "another_verdict", evidence: { qc_build_fingerprint: "sha256:build-one" } } } }).stale, null);
+});
+
+test("QA observation validator and schema reject invalid field types", () => {
+  const schema = JSON.parse(readFileSync(resolve(ROOT, "schemas/campaigns-os-run-record.v0.schema.json"), "utf8"));
+  const validateSchema = new Ajv2020({ strict: true, validateFormats: false }).compile(schema);
+  const qa = { disposition: "blocked", gap_classes: [], verdict_run_id: "qa_run_one", build_fingerprint: null, stale: null };
+  const valid = minimalRecord({ observations: { qa } });
+  assert.equal(validateRunRecord(valid).ok, true);
+  assert.equal(validateSchema(valid), true, JSON.stringify(validateSchema.errors));
+  for (const [field, value] of [["stale", "false"], ["verdict_run_id", 123]]) {
+    const invalid = minimalRecord({ observations: { qa: { ...qa, [field]: value } } });
+    assert.ok(validateRunRecord(invalid).errors.some((error) => error.code === `record.observations.qa.${field}`));
+    assert.equal(validateSchema(invalid), false);
+  }
 });
 
 test("assembleRunRecord auto-derives improvement surfaces from run observations and findings", () => {
@@ -582,7 +637,7 @@ test("CLI: run-record assembles a valid record from a real packet (argv shape, n
   assert.equal(record.consent_state, "on");
 });
 
-test("CLI: run-record infers the latest local QA verdict and records optional agent usage", () => {
+test("CLI: run-record infers the latest local QA verdict and ignores removed usage flags", () => {
   withTempDir((dir) => {
     const packetPath = join(dir, "campaign-runtime.build.json");
     cpSync(resolve(ROOT, "examples/build-packet.basic.json"), packetPath);
@@ -608,6 +663,7 @@ test("CLI: run-record infers the latest local QA verdict and records optional ag
       "--agent-elapsed-ms", "123456",
       "--agent-model", "gpt-test",
       "--agent-usage-source", "fixture",
+      "--closed-by", "qa_auto_end",
       "--no-write", "--json",
     ], { encoding: "utf8" }));
 
@@ -617,12 +673,8 @@ test("CLI: run-record infers the latest local QA verdict and records optional ag
     assert.equal(out.record.observations.qa.disposition, "ready_with_exceptions");
     assert.deepEqual(out.record.observations.qa.gap_classes, ["browser-runtime"]);
     assert.ok(out.record.surfaces.includes("platform"), JSON.stringify(out.record.surfaces));
-    assert.deepEqual(out.record.agent_usage, {
-      total_tokens: 9876,
-      elapsed_ms: 123456,
-      model: "gpt-test",
-      source: "fixture",
-    });
+    assert.equal(out.record.closed_by, "manual");
+    assert.equal(Object.hasOwn(out.record, "agent_usage"), false);
   });
 });
 
@@ -895,6 +947,42 @@ test("validateRunRecord rejects lifecycle fields that the published JSON schema 
   assert.equal(validateRunRecord(minimalRecord({ lifecycle: { command: "x", argv_shape: [], run_id: 7 } })).ok, false);
   // a well-formed stage still passes
   assert.equal(validateRunRecord(minimalRecord({ lifecycle: { command: "x", argv_shape: [], stages: [{ name: "build", duration_ms: 5 }] } })).ok, true);
+  for (const stage of [
+    { name: "doctor", wait_ms: -1 },
+    { name: "doctor", exit_status: 2, finding_codes: ["a", "b", "c", "d", "e", "f"] },
+    { name: "doctor", exit_status: 2, finding_codes: ["a", 3] },
+    { name: "doctor", exit_status: 0, finding_codes: ["a"] },
+  ]) assert.equal(validateRunRecord(minimalRecord({ lifecycle: { stages: [stage] } })).ok, false);
+});
+
+test("schema and both lifecycle validators agree on wait, finding codes, and run counts", () => {
+  const schema = JSON.parse(readFileSync(resolve(ROOT, "schemas/campaigns-os-run-record.v0.schema.json"), "utf8"));
+  const validateSchema = new Ajv2020({ strict: true, validateFormats: false }).compile(schema);
+  const agrees = (stage, expected, exitStatus = 2) => {
+    const journal = {
+      command: "start", argv_shape: [], exit_status: exitStatus, stages: [stage],
+      ...(Object.hasOwn(stage, "wait_ms") ? { wait_ms: stage.wait_ms } : {}),
+      ...(Object.hasOwn(stage, "finding_codes") ? { finding_codes: stage.finding_codes } : {}),
+    };
+    const lifecycle = { stages: [{ ...stage, exit_status: exitStatus }] };
+    assert.equal(validateLifecycle(journal).ok, expected, `journal: ${JSON.stringify(stage)}`);
+    assert.equal(validateRunRecordLifecycle(lifecycle).length === 0, expected, `Run Record validator: ${JSON.stringify(stage)}`);
+    assert.equal(validateSchema(minimalRecord({ lifecycle })), expected, `schema: ${JSON.stringify(stage)} ${JSON.stringify(validateSchema.errors)}`);
+  };
+  for (const [value, expected] of [[undefined, true], [null, true], [0, true], [4, true], [-1, false], [1.5, false], ["4", false]]) {
+    agrees({ name: "prepare-build", ...(value === undefined ? {} : { wait_ms: value }) }, expected);
+  }
+  for (const [value, expected] of [[undefined, true], [[], true], [["a", "b"], true], [["a", "a"], false], [null, false], [["a", 3], false], [["a", "b", "c", "d", "e", "f"], false]]) {
+    agrees({ name: "prepare-build", ...(value === undefined ? {} : { finding_codes: value }) }, expected);
+  }
+  agrees({ name: "prepare-build", finding_codes: ["a"] }, false, 0);
+  for (const field of ["needs_input_count", "failure_count"]) {
+    for (const [value, expected] of [[undefined, true], [0, true], [2, true], [null, false], [-1, false], [1.5, false], ["2", false]]) {
+      const lifecycle = { stages: [], ...(value === undefined ? {} : { [field]: value }) };
+      assert.equal(validateRunRecordLifecycle(lifecycle).length === 0, expected, `${field}: ${String(value)}`);
+      assert.equal(validateSchema(minimalRecord({ lifecycle })), expected, `${field}: ${String(value)} ${JSON.stringify(validateSchema.errors)}`);
+    }
+  }
 });
 
 test("CLI: an unreadable/directory lifecycle-journal path never breaks run-record (best-effort)", () => {
@@ -965,6 +1053,102 @@ test("CLI: prepare-build sub-phases flow through the journal into the aggregated
     assert.ok(stageNames.includes("prepare-build:prepare-build"), JSON.stringify(stageNames));
     assert.equal(validateRunRecord(out.record).ok, true);
   });
+});
+
+test("CLI: blocked qa run journals verdict finding codes", () => {
+  withTempDir((dir) => {
+    const packetPath = join(dir, "campaign-runtime.build.json");
+    const packet = JSON.parse(readFileSync(join(ROOT, "examples/build-packet.basic.json"), "utf8"));
+    packet.assembly.target_repo = ".";
+    writeFileSync(packetPath, `${JSON.stringify(packet)}\n`);
+    cpSync(join(ROOT, "examples/campaignspec.v42.basic.json"), join(dir, "campaignspec.v42.basic.json"));
+    mkdirSync(join(dir, ".campaign-runtime"), { recursive: true });
+    cpSync(join(ROOT, "contracts/fixtures/sidecar-bundle/production-shaped/.campaign-runtime/assembly-report.json"),
+      join(dir, ".campaign-runtime/assembly-report.json"));
+    const journal = join(dir, "lifecycle.jsonl");
+    const result = cliResult(dir, ["qa", "run", "--packet", packetPath,
+      "--base-url", "http://127.0.0.1:1/", "--no-post-verdict",
+      "--no-remit", "--json", "--lifecycle-journal", journal]);
+    assert.equal(result.status, 4, result.stderr);
+    const verdict = JSON.parse(result.stdout).verdict;
+    assert.equal(verdict.disposition, "blocked");
+    const expected = [...new Set(verdict.assertions
+      .filter((item) => item.status === "fail" || item.severity === "blocker")
+      .map((item) => item.evidence?.code || item.id)
+      .filter(Boolean))].slice(0, 5);
+    assert.ok(expected.length > 0, "fixture must yield a coded blocked assertion");
+    const { entries } = readLifecycleJournal(journal);
+    assert.equal(entries.length, 1);
+    assert.equal(entries[0].command, "qa");
+    assert.deepEqual(entries[0].finding_codes, expected);
+  });
+});
+
+test("CLI: start journals doctor errors on its prepare-build phase", () => {
+  withTempDir((dir) => {
+    const target = join(dir, "target");
+    cpSync(join(ROOT, "examples/target-page-kit"), target, { recursive: true });
+    const journal = join(dir, "lifecycle.jsonl");
+    const result = cliResult(dir, ["start",
+      "--spec", join(ROOT, "examples/campaignspec.v42.basic.json"),
+      "--source", join(ROOT, "examples/source-html"),
+      "--target", target, "--template-family", "olympus",
+      "--no-run-session", "--no-remit", "--json", "--lifecycle-journal", journal]);
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.doctor.ok, false, result.stderr);
+    const expected = [...new Set(output.doctor.errors.map((issue) => issue.code).filter(Boolean))].slice(0, 5);
+    assert.ok(expected.length > 0, "fixture must yield a coded doctor error");
+    const { entries } = readLifecycleJournal(journal);
+    assert.equal(entries.length, 1);
+    assert.equal(entries[0].command, "start");
+    assert.deepEqual(entries[0].stages.find((stage) => stage.name === "prepare-build").finding_codes, expected);
+  });
+});
+
+test("CLI: interactive findings add journals time spent at its prompt", () => {
+  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-findings-wait-"));
+  try {
+    const journal = join(dir, "lifecycle.jsonl");
+    // Python's standard-library pty gives the CLI a real TTY without a socket
+    // or a production input seam. Delay the one answer until the prompt appears.
+    const ptyDriver = `import os, pty, sys, time
+pid, master = pty.fork()
+if pid == 0:
+    os.execv(sys.argv[1], sys.argv[1:])
+seen = b''
+answered = False
+while True:
+    try:
+        chunk = os.read(master, 4096)
+    except OSError:
+        break
+    if not chunk:
+        break
+    seen += chunk
+    if not answered and b'Summary:' in seen:
+        time.sleep(0.05)
+        os.write(master, b'A prompted finding\\n')
+        answered = True
+_, status = os.waitpid(pid, 0)
+sys.stdout.buffer.write(seen)
+sys.exit(os.waitstatus_to_exitcode(status))`;
+    const result = spawnSync("python3", ["-c", ptyDriver, process.execPath, CLI,
+      "findings", "add", "--stage", "doctor", "--kind", "friction",
+      "--details", "Prompt timing", "--no-remit", "--lifecycle-journal", journal], {
+      cwd: dir,
+      env: { ...process.env, CAMPAIGNS_OS_TELEMETRY: "off" },
+      encoding: "utf8",
+      timeout: 5000,
+    });
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.match(result.stdout, /Summary:/);
+    const { entries } = readLifecycleJournal(journal);
+    assert.equal(entries.length, 1);
+    assert.equal(entries[0].command, "findings");
+    assert.ok(entries[0].wait_ms > 0, JSON.stringify(entries[0]));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("CLI: lifecycle persists on the THROW path (failure telemetry is captured, not dropped)", () => {
@@ -1059,7 +1243,10 @@ test("CLI: a lifecycle journal entry is captured then embedded into the Run Reco
     };
 
     // 1) A command runs with opt-in lifecycle persistence, stamped with run_id.
-    run(["doctor", "--write", "--packet", packetPath, "--run-id", "run_lc", "--lifecycle-journal", lcJournal, "--json"]);
+    const doctor = JSON.parse(run(["doctor", "--write", "--packet", packetPath, "--run-id", "run_lc", "--lifecycle-journal", lcJournal, "--json"]));
+    const doctorEntry = readLifecycleJournal(lcJournal).entries.find((entry) => entry.command === "doctor");
+    assert.equal(doctorEntry.wait_ms, 0);
+    assert.deepEqual(doctorEntry.finding_codes, [...new Set(doctor.errors.map((issue) => issue.code))].slice(0, 5));
 
     // 2) run-record embeds the matching lifecycle entry.
     const out = JSON.parse(execFileSync("node", [
@@ -1072,6 +1259,10 @@ test("CLI: a lifecycle journal entry is captured then embedded into the Run Reco
     assert.equal(out.record.lifecycle.run_id, "run_lc");
     assert.equal(out.record.lifecycle.exit_status, 2); // doctor flagged the synthetic packet
     assert.ok(typeof out.record.lifecycle.duration_ms === "number");
+    assert.equal(out.record.lifecycle.stages[0].wait_ms, 0);
+    assert.deepEqual(out.record.lifecycle.stages[0].finding_codes, doctorEntry.finding_codes);
+    assert.equal(out.record.lifecycle.needs_input_count, 1);
+    assert.equal(out.record.lifecycle.failure_count, 0);
     assert.equal(validateRunRecord(out.record).ok, true);
   });
 });

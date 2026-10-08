@@ -1,4 +1,5 @@
 import { createCredentialStore } from './credential-store.mjs';
+import { timeOperatorWait } from './lifecycle.mjs';
 
 export const GATEWAY = 'https://mcp.nextcommerce.com';
 export const CLIENT_ID = 'campaigns-os-owned-store-pilot';
@@ -27,7 +28,7 @@ export function authenticationArguments(argv) {
 async function askStore() {
   const { createInterface } = await import('node:readline/promises');
   const prompt = createInterface({ input: process.stdin, output: process.stdout });
-  try { return await prompt.question('Store subdomain (or network domain): '); }
+  try { return await timeOperatorWait(() => prompt.question('Store subdomain (or network domain): ')); }
   finally { prompt.close(); }
 }
 const bindingFor = store => ({ gateway: GATEWAY, client_id: CLIENT_ID, store });

@@ -1,6 +1,6 @@
 {
   "_note": "The downstream contract manifest. Everything listed here is SUPPORTED SURFACE: consumers (campaigns-agent, campaign-builder, the private ops repo, page-kit campaign repos) may depend on it, and changing it is a deliberate act — hashed entries require a surface_version bump in the same change (check-supported-surface.mjs --base, mirroring the skills.json bump gate), named entries must keep existing at their path, cli_commands must keep resolving in the CLI dispatch, package_exports must stay exported, and every entry must ship in the npm pack (files[] coverage). Anything NOT listed here — src/** internals, scripts/** checkers, examples/**, prompts/**, contracts/** other than this file and the entries named[] below (the orientation contract, the release ledger, and the consumer-facing orientation fixtures) — is implementation: consumers may read it for context but must not build on it, and it can change without notice. Rationale and the compatibility promise: docs/supported-surface.md.",
-  "surface_version": "1.54.0",
+  "surface_version": "1.55.0",
   "package_exports": [
     "./commercial-journey",
     "./commercial-parity",
@@ -96,7 +96,7 @@
       "sha256": "d7521fe0ab4deb62485f92286cb890ee548ea290793a6ce7444ecc42ba336d49"
     },
     "schemas/campaigns-os-run-record.v0.schema.json": {
-      "sha256": "00dc9bcec79c12ea22a27f636188bcc33c6811df2d646ac7b49d4cc076e97355"
+      "sha256": "390cbc9debacfbfb17d999961baa041a2138fa20a116ec463fbbefbbb05f622d"
     },
     "schemas/campaigns-os-runtime-recipe.v1.schema.json": {
       "sha256": "f8a2ab5eadbb71fb6d5653b670ee71e4471c3df74dd04000d3dbd3d9ae9e71fc"

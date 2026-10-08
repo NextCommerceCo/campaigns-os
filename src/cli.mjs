@@ -96,6 +96,7 @@ import {
   refused,
   refusing,
   runWithRefusalScope,
+  timeOperatorWait,
 } from "./lifecycle.mjs";
 import { commandNames, optsOutOfRunSession, runInvocation } from "./invocation.mjs";
 import {
@@ -364,7 +365,7 @@ Usage:
   campaigns-os findings harvest --packet <json> [--context <json>] [--report <json>] [--journal <path>] [--run-id <id>] [--write] [--json]
   campaigns-os findings list [--packet <json>] [--journal <path>] [--json]
   campaigns-os findings export [--summary | --json] [--packet <json>] [--journal <path>]
-  campaigns-os run-record --packet <json> [--context <json>] [--report <json>] [--qa-verdict <path>] [--run-id <id>] [--new-run] [--journal <path>] [--lifecycle-journal <path>] [--surfaces <a,b>] [--primary-surface <s>] [--surface-confidence <text>] [--agent-total-tokens <n>] [--agent-elapsed-ms <n>] [--proxy-base <url>] [--no-remit] [--no-write] [--dry-run] [--list] [--json]
+  campaigns-os run-record --packet <json> [--context <json>] [--report <json>] [--qa-verdict <path>] [--run-id <id>] [--new-run] [--journal <path>] [--lifecycle-journal <path>] [--surfaces <a,b>] [--primary-surface <s>] [--surface-confidence <text>] [--proxy-base <url>] [--no-remit] [--no-write] [--dry-run] [--list] [--json]
     run_id: --run-id > the active run session > the most recent Run Record for this packet's campaign (re-emitted in place; a remitted one is left as written) > freshly minted. --new-run always mints; --list prints the run ids on disk for this packet (id, created_at, remit state, path) and, like --no-write, writes and sends nothing.
     --dry-run assembles the record and prints it (with --json: dry_run, would_write, would_remit), then writes no file and sends nothing — where --no-write skips the assembly's reads too. Combining them is allowed and still writes nothing. \`run end --dry-run\` hands the flag on to run-record and leaves the run session open, so the close can still be made for real afterwards.
 
@@ -897,6 +898,7 @@ async function autoEndRunSessionAfterTerminalQa(args, sessionHolder, thrown, imp
 
   const summary = await closeRunSession(updatedFound, {
     packet,
+    closedBy: "qa_auto_end",
     extraArgs,
     silent: true,
     promptForConsent: false,
@@ -1020,7 +1022,13 @@ async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = nul
     args.spec = resolved.specPath;
     // `command` rides along for the doctor sidecar's generated_by stamp when
     // the mode runs doctor (#312): threaded from here, not re-read from argv.
-    const result = await recorder.time("prepare-build", () => prepareBuild(args, { ...mode, command, specInput, publishSpec, sourceKind, wrapperPolicyFlag, orderPathDepthFlag }));
+    // Doctor runs inside prepare-build, so its codes are recorded while that
+    // phase is active and attach to it.
+    const result = await recorder.time("prepare-build", async () => {
+      const prepared = await prepareBuild(args, { ...mode, command, specInput, publishSpec, sourceKind, wrapperPolicyFlag, orderPathDepthFlag });
+      if (prepared.doctor && !prepared.doctor.ok) recorder.recordFindingCodes(prepared.doctor.errors?.map((issue) => issue.code));
+      return prepared;
+    });
     result.spec_source = resolved;
     autoStartRunSession(result, args, ambient, sessionHolder);
     printPrepareResult(result, args);
@@ -1032,6 +1040,7 @@ async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = nul
     // synchronous inspection; see readDoctorLiveCampaign.
     const liveCampaign = await readDoctorLiveCampaign(args);
     const result = doctorCommand(args, { liveCampaign, qcStandIns });
+    if (!result.ok) recorder.recordFindingCodes(result.errors?.map((issue) => issue.code));
     writeResult(result, args, result.ok ? 0 : 2);
     printDoctorTinyPrompt(result, args);
     return;
@@ -1225,6 +1234,10 @@ async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = nul
     // command a QA run prints has to agree with the run_id this session will
     // later close and remit under.
     const result = await runQaCli(args, { ambient });
+    if (result?.verdict?.disposition === "blocked") {
+      recorder.recordFindingCodes(result.verdict.assertions?.filter((item) => item.status === "fail" || item.severity === "blocker")
+        .map((item) => item.evidence?.code || item.id));
+    }
     // nextStage requires a packet. Guard its optional, swallowed progress
     // probe explicitly so it cannot construct a refusal in that try block.
     if (args._[1] === "run" && result?.verdict && isNonEmptyString(args.packet) && recordQaStageOutcome(args, result)) {
@@ -6621,10 +6634,10 @@ async function promptForFinding(current) {
   const { createInterface } = await import("node:readline/promises");
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   try {
-    const stage = current.stage || (await rl.question(`Stage (${FINDING_STAGES.join("/")}): `)).trim();
-    const kind = current.kind || (await rl.question(`Kind (${FINDING_KINDS.join("/")}): `)).trim();
-    const summary = current.summary || (await rl.question("Summary: ")).trim();
-    const details = current.details || (await rl.question("Details (optional): ")).trim() || null;
+    const stage = current.stage || (await timeOperatorWait(() => rl.question(`Stage (${FINDING_STAGES.join("/")}): `))).trim();
+    const kind = current.kind || (await timeOperatorWait(() => rl.question(`Kind (${FINDING_KINDS.join("/")}): `))).trim();
+    const summary = current.summary || (await timeOperatorWait(() => rl.question("Summary: "))).trim();
+    const details = current.details || (await timeOperatorWait(() => rl.question("Details (optional): "))).trim() || null;
     return { stage, kind, summary, details };
   } finally {
     rl.close();
@@ -7099,7 +7112,7 @@ async function runSessionEnd(args, ambient = null, sessionHolder = null) {
   // `run end` is "assemble the Run Record for this session and stop logging to
   // it". A throw leaves the session active so the operator can fix the packet
   // and re-run `run end`. In text mode run-record prints its own summary.
-  const summary = await closeRunSession(found, { packet, extraArgs: args, silent: args.json === true });
+  const summary = await closeRunSession(found, { packet, extraArgs: args, silent: args.json === true, closedBy: "run_end" });
   return { result: summary, exitCode: 0 };
 }
 
@@ -7114,13 +7127,9 @@ async function runSessionEnd(args, ambient = null, sessionHolder = null) {
 // `dryRun` entries in src/invocation.mjs and autoEndRunSessionAfterTerminalQa.
 export const RUN_RECORD_INHERITABLE_FLAGS = Object.freeze([
   "context", "report", "qa-verdict", "journal", "surfaces", "primary-surface", "surface-confidence",
-  "agent-input-tokens", "agent-output-tokens", "agent-tool-output-tokens", "agent-total-tokens", "agent-elapsed-ms", "agent-model", "agent-usage-source",
   "no-remit", "no-write", "proxy-base", "dry-run", "json",
 ]);
 const RUN_RECORD_BOOLEAN_INHERITABLE_FLAGS = new Set(["no-remit", "no-write", "dry-run", "json"]);
-const RUN_RECORD_INTEGER_INHERITABLE_FLAGS = new Set([
-  "agent-input-tokens", "agent-output-tokens", "agent-tool-output-tokens", "agent-total-tokens", "agent-elapsed-ms",
-]);
 
 // The run-record argv that closes `session`: its run_id and journal, the
 // packet the closer resolved, and only the inheritable flags of `extraArgs`.
@@ -7144,7 +7153,7 @@ export function runSessionEndArgs(session, packet, extraArgs = {}) {
 // session is cleared only AFTER run-record succeeds: on a throw it stays on
 // disk, and the error is rethrown unless `onError` takes it, in which case
 // the closer returns null.
-async function closeRunSession(found, { packet, extraArgs = {}, silent = false, promptForConsent = true, onError = null } = {}) {
+async function closeRunSession(found, { packet, extraArgs = {}, silent = false, promptForConsent = true, onError = null, closedBy } = {}) {
   const endArgs = runSessionEndArgs(found.session, packet, extraArgs);
   try {
     // No internal closeout currently constructs a refusal before its invoking
@@ -7152,7 +7161,7 @@ async function closeRunSession(found, { packet, extraArgs = {}, silent = false, 
     // run-record, run end validates its own argv first, and QA auto-end runs
     // after QA persistence. Keep the scope at this boundary so a future
     // closeout refusal swallowed by onError cannot mark the outer invocation.
-    const summary = await runWithRefusalScope(() => runRecordCommand(endArgs, found, { silent, promptForConsent }));
+    const summary = await runWithRefusalScope(() => runRecordCommand(endArgs, found, { silent, promptForConsent, closedBy }));
     // Clearing the session is a write like any other, so a closer carrying
     // --dry-run leaves it open: the operator sees the record the close would
     // assemble and can still close for real afterwards.
@@ -7233,6 +7242,7 @@ async function closeOutStaleRunSession(rootDir, inherited = {}) {
   if (packet && existsSync(packet)) {
     const summary = await closeRunSession(stale, {
       packet,
+      closedBy: "stale_sweep",
       extraArgs: { ...inherited, json: true },
       silent: true,
       promptForConsent: false,
@@ -7261,12 +7271,11 @@ async function closeOutStaleRunSession(rootDir, inherited = {}) {
 // run-record.mjs to assemble the manifest, then (consent-gated, non-fatal)
 // remit it. Capture is ALWAYS local; consent gates only the remit. See
 // docs/workflow-findings-sidecar.md.
-async function runRecordCommand(args, ambient = null, { silent = false, promptForConsent = true } = {}) {
+async function runRecordCommand(args, ambient = null, { silent = false, promptForConsent = true, closedBy = "manual" } = {}) {
   const packetPath = resolve(requireArg(args, "packet"));
   if (args["new-run"] === true && optionalString(args["run-id"])) {
     throw refused("run-record: --new-run and --run-id are exclusive; --run-id names the run to re-emit, --new-run mints a fresh one.");
   }
-  const agentUsage = refusing(() => parseAgentUsageArgs(args));
   // --dry-run assembles the record and shows it, then writes and sends
   // nothing. It differs from --no-write, which skips the assembly's reads
   // as well; combining the two is allowed and still writes nothing.
@@ -7503,6 +7512,7 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
     packageVersion: packageVersion(),
     ...toolkitProvenance({ silent }),
     qaVerdictPublish,
+    closedBy,
     command: "run-record",
     argvShape: argvShape(args),
     consent: { state: consent.state, source: consent.source },
@@ -7524,7 +7534,6 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
     primarySurface: optionalString(args["primary-surface"]),
     surfaceConfidence: optionalString(args["surface-confidence"]),
     lifecycle,
-    agentUsage,
   });
 
   const shouldAttemptRemit = !remitDisabled && consent.state === "on";
@@ -7886,9 +7895,7 @@ function parseRunRecordSurfaces(value) {
 
 function validateRunRecordArgv(args) {
   for (const flag of RUN_RECORD_INHERITABLE_FLAGS) {
-    // The integer flags are checked below by parseAgentUsageArgs, which keeps
-    // their non-negative-integer diagnostics for bare and blank values.
-    if (!RUN_RECORD_BOOLEAN_INHERITABLE_FLAGS.has(flag) && !RUN_RECORD_INTEGER_INHERITABLE_FLAGS.has(flag) && Object.hasOwn(args, flag)) requireArg(args, flag);
+    if (!RUN_RECORD_BOOLEAN_INHERITABLE_FLAGS.has(flag) && Object.hasOwn(args, flag)) requireArg(args, flag);
   }
   if (Object.hasOwn(args, "run-id")) requireArg(args, "run-id");
   if (Object.hasOwn(args, "new-run") && args["new-run"] !== true) {
@@ -7898,39 +7905,9 @@ function validateRunRecordArgv(args) {
     throw refused("run-record: --new-run and --run-id are exclusive; --run-id names the run to re-emit, --new-run mints a fresh one.");
   }
   return {
-    agentUsage: refusing(() => parseAgentUsageArgs(args)),
     dryRun: isDryRun(args),
     parsedSurfaces: parseRunRecordSurfaces(args.surfaces),
   };
-}
-
-function parseAgentUsageArgs(args) {
-  const fields = {
-    "agent-input-tokens": "input_tokens",
-    "agent-output-tokens": "output_tokens",
-    "agent-tool-output-tokens": "tool_output_tokens",
-    "agent-total-tokens": "total_tokens",
-    "agent-elapsed-ms": "elapsed_ms",
-  };
-  const usage = {};
-  for (const [flag, field] of Object.entries(fields)) {
-    if (!(flag in args)) continue;
-    usage[field] = parseNonNegativeIntegerFlag(args[flag], flag);
-  }
-  if (isNonEmptyString(args["agent-model"])) usage.model = args["agent-model"].trim();
-  if (isNonEmptyString(args["agent-usage-source"])) usage.source = args["agent-usage-source"].trim();
-  return Object.keys(usage).length ? usage : null;
-}
-
-function parseNonNegativeIntegerFlag(value, flag) {
-  if (value === true || value === false || value == null || String(value).trim() === "") {
-    throw new Error(`--${flag} requires a non-negative integer value.`);
-  }
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 0) {
-    throw new Error(`--${flag} must be a non-negative integer.`);
-  }
-  return parsed;
 }
 
 function packageVersion() {

@@ -83,7 +83,7 @@ export function skippedQaVerdictPublish() {
  * remit (`ok` when the receiver's answer counts as stored, `failed` when it
  * refused or never answered, `skipped` when nothing was sent).
  */
-export function qaVerdictPublishBlock(outcome, { verdictRunId, publisher, publishedAt = null }) {
+export function qaVerdictPublishBlock(outcome, { verdictRunId, publisher, publishedAt = null, reason = null }) {
   const attempted = Boolean(outcome?.attempted);
   const ok = attempted ? outcome.ok === true : null;
   return {
@@ -94,6 +94,7 @@ export function qaVerdictPublishBlock(outcome, { verdictRunId, publisher, publis
     error: attempted && typeof outcome.error === "string" ? outcome.error : null,
     endpoint: attempted ? outcome.endpoint ?? QA_VERDICT_PUBLISH_ENDPOINT : null,
     state: attempted ? (ok ? "ok" : "failed") : "skipped",
+    reason: reason ?? outcome?.reason ?? null,
     result: attempted ? outcome.result ?? null : null,
     base_kind: attempted ? outcome.base_kind ?? null : null,
     published_at: attempted && ok ? publishedAt : null,

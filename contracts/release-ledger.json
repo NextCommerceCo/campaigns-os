@@ -6812,6 +6812,165 @@
         }
       ],
       "entry_sha256": "446b7cc41c5af2352fecedebc543e9bb38a31b025afe2b60848d912e615f902b"
+    },
+    {
+      "id": "RL-0254",
+      "sequence": 243,
+      "date": "2026-10-07",
+      "kind": "release",
+      "surface_version": "1.55.0",
+      "changelog_section": "1.55.0",
+      "changelog_sha256": "cfd5709d45e917e8e4ee92e42b8ceb09d560c9fbf023ca4c6552a55874877e7b",
+      "agent_impact": "Run Records carry QA publish reason, closing path, QA verdict/build binding, prompt wait, bounded doctor/QA codes, and separate needs-input/failure invocation counts. Legacy journal entries keep wait unknown. Agent usage input is gone. Re-emitting a record with agent_usage replaces it with a fresh record without carrying its prior remit state; qa publish posts but cannot stamp that older record as published.",
+      "compatibility": "breaking",
+      "migration": "Stop passing agent usage flags. Re-emitting a legacy agent_usage record replaces it and drops its prior remit state; qa publish posts but cannot stamp it.",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Advance surface_version to 1.55.0 and record the Run Record schema hash, including lifecycle telemetry fields."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/effects.md",
+          "surface_entry": "docs/effects.md",
+          "summary": "Remove the obsolete agent usage flag validation description."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Name the nullable QA publish decision reason in the Run Record."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "Mark 1.55.0 breaking: add publish, closeout, QA observation, lifecycle stage wait and finding-code, and run-level exit-count fields; remove agent_usage."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/workflow-findings-sidecar.md",
+          "surface_entry": "docs/workflow-findings-sidecar.md",
+          "summary": "Document the publish reason, closing path, QA verdict/build binding, prompt wait, code sources, and exit buckets."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Advance the package version to 1.55.0."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Advance the package version to 1.55.0 with exports unchanged."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-run-record.v0.schema.json",
+          "surface_entry": "schemas/campaigns-os-run-record.v0.schema.json",
+          "summary": "Add optional QA publish, closeout, and currency fields plus lifecycle wait, finding codes, and exit buckets; remove agent_usage."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": "run-record",
+          "summary": "Pass each closer through internal options, route prompt wait and finding codes to lifecycle capture, and remove agent usage flags."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerate at surface 1.55.0."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerate at surface 1.55.0."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "compatibility.json",
+          "surface_entry": null,
+          "summary": "Advance the declared version to 1.55.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Pin the 1.55.0 package in the local setup install command."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Restamp to skills bundle 1.55.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": null,
+          "summary": "Advance bundle_revision to 1.55.0+skills.1 and the patch version of each restamped skill."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Restamp to skills bundle 1.55.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Restamp to skills bundle 1.55.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Restamp to skills bundle 1.55.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Restamp to skills bundle 1.55.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Restamp to skills bundle 1.55.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Restamp to skills bundle 1.55.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Restamp to skills bundle 1.55.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Restamp to skills bundle 1.55.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Restamp to skills bundle 1.55.0+skills.1."
+        }
+      ],
+      "entry_sha256": "cdd823b095d9a05eb39d751c20396d25303dcc00dc1a2c12baeb15ac580e6819"
     }
   ]
 }

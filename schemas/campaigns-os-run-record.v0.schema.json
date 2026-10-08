@@ -134,6 +134,11 @@
           "enum": ["skipped", "ok", "failed"],
           "description": "skipped: publish was off for the run (no send). ok: the receiver's answer counts as stored. failed: refused or never answered."
         },
+        "reason": {
+          "type": ["string", "null"],
+          "enum": ["loopback_base_url", "portal_managed_default", "consent_off", "flag_opt_out", "flag_opt_in", "default", "local_spec", null],
+          "description": "The QA publish decision's reason. null when no decision was recorded, such as a later qa publish of a stored verdict."
+        },
         "result": {
           "type": ["string", "null"],
           "enum": ["stored", "already_stored", "ok_unparsed_ack", "refused", "transport_error", null],
@@ -226,6 +231,9 @@
           "additionalProperties": false,
           "properties": {
             "disposition": { "type": ["string", "null"] },
+            "verdict_run_id": { "type": ["string", "null"], "minLength": 1, "description": "Run ID of the verdict supplying disposition." },
+            "build_fingerprint": { "type": ["string", "null"], "minLength": 1, "description": "QA build fingerprint from the Assembly Report stage bound to that verdict." },
+            "stale": { "type": ["boolean", "null"], "description": "Whether that QA fingerprint differs from the current recorded build; null when either fingerprint is unknown." },
             "gap_classes": {
               "type": "array",
               "items": { "type": "string" },
@@ -286,19 +294,10 @@
       "type": ["string", "null"],
       "description": "Optional free-form confidence hint for primary_surface, e.g. \"low\"."
     },
-    "agent_usage": {
-      "type": "object",
-      "additionalProperties": false,
-      "description": "Optional host-supplied agent runtime usage. Campaigns OS does not infer these values; outer runners provide them when available.",
-      "properties": {
-        "input_tokens": { "type": "integer", "minimum": 0 },
-        "output_tokens": { "type": "integer", "minimum": 0 },
-        "tool_output_tokens": { "type": "integer", "minimum": 0 },
-        "total_tokens": { "type": "integer", "minimum": 0 },
-        "elapsed_ms": { "type": "integer", "minimum": 0 },
-        "model": { "type": "string" },
-        "source": { "type": "string" }
-      }
+    "closed_by": {
+      "type": "string",
+      "enum": ["run_end", "qa_auto_end", "stale_sweep", "manual"],
+      "description": "The command path that closed this Run Record. Absent on records written before this field existed."
     },
     "lifecycle": {
       "type": ["object", "null"],
@@ -327,17 +326,23 @@
             "type": "object",
             "additionalProperties": false,
             "required": ["name"],
+            "if": { "required": ["finding_codes"], "properties": { "finding_codes": {} } },
+            "then": { "required": ["exit_status"], "properties": { "exit_status": { "type": "integer", "not": { "const": 0 } } } },
             "properties": {
               "name": { "type": "string" },
               "duration_ms": { "type": ["number", "null"] },
-              "exit_status": { "type": ["integer", "null"] }
+              "exit_status": { "type": ["integer", "null"] },
+              "wait_ms": { "type": ["integer", "null"], "minimum": 0, "description": "Whole milliseconds blocked on operator input. Absent or null means unknown for legacy entries; duration_ms includes it." },
+              "finding_codes": { "type": "array", "maxItems": 5, "uniqueItems": true, "items": { "type": "string" }, "description": "First five distinct doctor or QA finding codes, only on a non-zero exit." }
             }
           }
         },
         "repair_loop_count": {
           "type": ["integer", "null"],
           "description": "Re-runs of any command within the run (a re-run is a repair loop: doctor -> fix -> doctor). 0 when each command ran once."
-        }
+        },
+        "needs_input_count": { "type": "integer", "minimum": 0, "description": "Number of command invocations with exit_status 2." },
+        "failure_count": { "type": "integer", "minimum": 0, "description": "Number of command invocations with a non-zero exit_status other than 2." }
       }
     }
   }

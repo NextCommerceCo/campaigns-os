@@ -26,6 +26,7 @@ import { runSessionCommand, runSessionEndArgs } from "./cli.mjs";
 import { LIFECYCLE_JOURNAL_REL_PATH, readLifecycleJournal } from "./lifecycle.mjs";
 import { SESSION_ENDING_DISPOSITIONS } from "./qa-verdict.mjs";
 import { resolveRunRecordPath, validateRunRecord } from "./run-record.mjs";
+import { computeBuildFingerprint } from "./built-site-scope.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CLI = resolve(ROOT, "bin/campaigns-os.mjs");
@@ -368,6 +369,7 @@ test("CLI: run start --packet from an unrelated directory roots the session in t
     const end = JSON.parse(runIn(unrelated, ["run", "end", "--packet", packetPath, "--no-remit", "--no-write", "--json"]));
     assert.equal(end.action, "run-record");
     assert.equal(end.record.run_id, start.session.run_id);
+    assert.equal(end.record.closed_by, "run_end");
     assert.equal(findRunSession(target), null, "run end --packet from elsewhere cleared the target session");
     assert.equal(existsSync(join(unrelated, ".campaign-runtime")), false);
 
@@ -823,6 +825,7 @@ test("runSessionEndArgs: the closing argv carries the session's identity and onl
     json: true,
     report: "/p/report.json",
     "qa-verdict": "/p/qa-output/verdict.json",
+    "agent-total-tokens": "42",
   };
   assert.deepEqual(runSessionEndArgs(session, "/p/campaign-runtime.build.json", qaRunArgs), {
     _: ["run-record"],
@@ -952,12 +955,115 @@ test("CLI: an auto-ended Run Record's argv_shape is run-record's, not qa run's",
   const start = JSON.parse(await run(["run", "start", "--packet", packetPath, "--json"]));
   // A refused loopback proxy keeps QA's proxy reads (the live campaign read,
   // #533, and price preview) on this machine.
-  const qa = JSON.parse(await run(["qa", "run", "--packet", packetPath, "--base-url", baseUrl, "--proxy-base", "http://127.0.0.1:1", "--no-post-verdict", "--no-remit", "--json"]));
+  const qa = JSON.parse(await run(["qa", "run", "--packet", packetPath, "--base-url", baseUrl, "--proxy-base", "http://127.0.0.1:1", "--no-remit", "--json"]));
   assert.ok(SESSION_ENDING_DISPOSITIONS.has(qa.verdict.disposition), `the fixture must end the session: ${qa.verdict.disposition}`);
   assert.equal(findRunSession(dir), null, "a session-ending verdict closes the session");
 
   const record = JSON.parse(readFileSync(resolveRunRecordPath(start.session.run_id, dir), "utf8"));
   assert.equal(record.command, "run-record");
+  assert.equal(record.closed_by, "qa_auto_end");
+  assert.equal(record.qa_verdict_publish.state, "skipped");
+  assert.equal(record.qa_verdict_publish.reason, "loopback_base_url");
   assert.deepEqual(record.argv_shape, ["--json", "--lifecycle-journal", "--packet", "--qa-verdict", "--run-id"]);
   assert.ok(record.artifacts.some((artifact) => artifact.kind === "qa_verdict"));
+});
+
+test("CLI: loopback QA followed by run end keeps the publish decision reason", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-run-session-loopback-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  cpSync(resolve(ROOT, "examples/target-page-kit"), dir, { recursive: true });
+  const packetPath = join(dir, "campaign-runtime.build.json");
+  copyPacket(packetPath);
+  const packet = JSON.parse(readFileSync(packetPath, "utf8"));
+  packet.assembly.target_repo = ".";
+  writeFileSync(packetPath, `${JSON.stringify(packet)}\n`);
+  cpSync(resolve(ROOT, "examples/campaignspec.v42.basic.json"), join(dir, "campaignspec.v42.basic.json"));
+  mkdirSync(join(dir, ".campaign-runtime"), { recursive: true });
+  cpSync(resolve(ROOT, "contracts/fixtures/sidecar-bundle/production-shaped/.campaign-runtime/assembly-report.json"), join(dir, ".campaign-runtime/assembly-report.json"));
+  const server = createServer((_request, response) => {
+    response.writeHead(404, { "content-type": "text/plain" });
+    response.end("fixture unavailable");
+  });
+  await new Promise((done) => server.listen(0, "127.0.0.1", done));
+  t.after(() => new Promise((done) => server.close(done)));
+  const run = async (argv) => {
+    try {
+      return (await promisify(execFile)(process.execPath, [CLI, ...argv], {
+        cwd: dir,
+        encoding: "utf8",
+        env: { ...process.env, CAMPAIGNS_OS_TELEMETRY: "off", CAMPAIGNS_OS_LIFECYCLE_LOG: "" },
+      })).stdout;
+    } catch (error) {
+      return error.stdout || "";
+    }
+  };
+  const start = JSON.parse(await run(["run", "start", "--packet", packetPath, "--json"]));
+  const baseUrl = `http://127.0.0.1:${server.address().port}/runtime-packet-demo/`;
+  const qa = JSON.parse(await run(["qa", "run", "--packet", packetPath, "--base-url", baseUrl, "--proxy-base", "http://127.0.0.1:1", "--no-remit", "--json"]));
+  assert.equal(qa.status, "blocked");
+  assert.ok(findRunSession(dir), "blocked QA leaves the session for run end");
+  const ended = JSON.parse(await run(["run", "end", "--packet", packetPath, "--no-remit", "--json"]));
+  assert.equal(ended.record.run_id, start.session.run_id);
+  assert.equal(ended.record.closed_by, "run_end");
+  assert.equal(ended.record.qa_verdict_publish.state, "skipped");
+  assert.equal(ended.record.qa_verdict_publish.reason, "loopback_base_url");
+});
+
+test("CLI: QA then run end records verdict binding and changed build currency", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-run-session-qa-binding-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  cpSync(resolve(ROOT, "examples/target-page-kit"), dir, { recursive: true });
+  const packetPath = join(dir, "campaign-runtime.build.json");
+  copyPacket(packetPath);
+  cpSync(resolve(ROOT, "examples/campaignspec.v42.basic.json"), join(dir, "campaignspec.v42.basic.json"));
+  mkdirSync(join(dir, ".campaign-runtime"), { recursive: true });
+  const reportPath = join(dir, ".campaign-runtime/assembly-report.json");
+  cpSync(resolve(ROOT, "contracts/fixtures/sidecar-bundle/production-shaped/.campaign-runtime/assembly-report.json"), reportPath);
+  const site = join(dir, "_site", "runtime-packet-demo");
+  mkdirSync(site, { recursive: true });
+  const builtPage = join(site, "index.html");
+  writeFileSync(builtPage, "<html><body>First build</body></html>");
+  const firstBuild = computeBuildFingerprint(site).fingerprint;
+  const report = JSON.parse(readFileSync(reportPath, "utf8"));
+  report.stages.assembly.build_fingerprint = firstBuild;
+  writeFileSync(reportPath, JSON.stringify(report));
+  const run = async (argv) => {
+    try {
+      return JSON.parse((await promisify(execFile)(process.execPath, [CLI, ...argv], {
+        cwd: dir, encoding: "utf8",
+        env: { ...process.env, CAMPAIGNS_OS_TELEMETRY: "off", CAMPAIGNS_OS_LIFECYCLE_LOG: "" },
+      })).stdout);
+    } catch (error) {
+      return JSON.parse(error.stdout || "{}");
+    }
+  };
+  await run(["run", "start", "--packet", packetPath, "--json"]);
+  const baseUrl = "http://127.0.0.1:1/runtime-packet-demo/";
+  const qa = await run(["qa", "run", "--packet", packetPath, "--base-url", baseUrl, "--no-remit", "--json"]);
+  assert.equal(qa.status, "blocked");
+  const recorded = JSON.parse(readFileSync(reportPath, "utf8"));
+  assert.equal(recorded.stages.qa.verdict_run_id, qa.verdict.run_id);
+  assert.equal(recorded.stages.qa.evidence.qc_build_fingerprint, firstBuild);
+  const unchanged = await run(["run", "end", "--packet", packetPath, "--no-remit", "--json"]);
+  assert.equal(unchanged.record.observations.qa.verdict_run_id, qa.verdict.run_id);
+  assert.equal(unchanged.record.observations.qa.build_fingerprint, firstBuild);
+  assert.equal(unchanged.record.observations.qa.stale, false);
+  assert.equal(validateRunRecord(unchanged.record).ok, true);
+
+  await run(["run", "start", "--packet", packetPath, "--json"]);
+  const laterQa = await run(["qa", "run", "--packet", packetPath, "--base-url", baseUrl, "--no-remit", "--json"]);
+  assert.equal(laterQa.status, "blocked");
+  const laterReport = JSON.parse(readFileSync(reportPath, "utf8"));
+  assert.equal(laterReport.stages.qa.verdict_run_id, laterQa.verdict.run_id);
+  assert.equal(laterReport.stages.qa.evidence.qc_build_fingerprint, firstBuild);
+  // As in the QA re-owed test, changed built output yields a new build stamp.
+  writeFileSync(builtPage, "<html><body>Second build</body></html>");
+  const nextBuild = computeBuildFingerprint(site).fingerprint;
+  assert.notEqual(nextBuild, firstBuild);
+  laterReport.stages.assembly.build_fingerprint = nextBuild;
+  writeFileSync(reportPath, JSON.stringify(laterReport));
+  const changed = await run(["run", "end", "--packet", packetPath, "--no-remit", "--json"]);
+  assert.equal(changed.record.observations.qa.verdict_run_id, laterQa.verdict.run_id);
+  assert.equal(changed.record.observations.qa.build_fingerprint, firstBuild);
+  assert.equal(changed.record.observations.qa.stale, true);
 });

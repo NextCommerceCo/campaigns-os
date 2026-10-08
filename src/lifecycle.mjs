@@ -66,6 +66,7 @@ export const LIFECYCLE_JOURNAL_REL_PATH = ".campaign-runtime/command-lifecycle.j
 // from anywhere.
 export const REFUSED_INVOCATION = "refused_invocation";
 const refusalScope = new AsyncLocalStorage();
+const invocationScope = new AsyncLocalStorage();
 
 /** Run `fn` with its own refusal verdict. Returns whatever `fn` returns. */
 export function runWithRefusalScope(fn) {
@@ -96,6 +97,14 @@ export function refusalSeen() {
   return refusalScope.getStore()?.seen === true;
 }
 
+// Prompt sites share this hook. Nested prompts count only the outer blocked
+// interval, so a prompt helper can call another without inflating wait time.
+export async function timeOperatorWait(fn) {
+  const active = invocationScope.getStore();
+  if (!active) return fn();
+  return active.wait(fn);
+}
+
 /**
  * Run `fn()` and re-throw anything it throws as a tagged refusal, message
  * byte-identical. The contract it encodes: THE TAG IS APPLIED AT THE UP-FRONT
@@ -123,6 +132,10 @@ function isStringArray(value) {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string");
 }
 
+function isFindingCodes(value) {
+  return isStringArray(value) && value.length <= 5 && new Set(value).size === value.length;
+}
+
 // Injectable so tests are deterministic. `now` is wall-clock (ISO source);
 // `monotonic` is a steadily-increasing millisecond counter for durations.
 const defaultClock = {
@@ -146,13 +159,22 @@ function defaultReadExitStatus() {
 export function createLifecycleRecorder(clock = defaultClock) {
   const stages = [];
   let repairLoopCount = 0;
+  let waitMs = 0;
+  let waitDepth = 0;
+  const activeStages = [];
+  const findingCodes = [];
   function stage(name) {
     const t0 = clock.monotonic();
+    const phase = { name: String(name), wait_ms: 0 };
+    activeStages.push(phase);
     let stopped = false;
     return function stop() {
       if (stopped) return;
       stopped = true;
-      stages.push({ name: String(name), duration_ms: Math.max(0, Math.round(clock.monotonic() - t0)) });
+      activeStages.splice(activeStages.indexOf(phase), 1);
+      // Wait accumulates unrounded and is rounded once here, so it never
+      // exceeds the stage's own rounded duration.
+      stages.push({ ...phase, wait_ms: Math.round(phase.wait_ms), duration_ms: Math.max(0, Math.round(clock.monotonic() - t0)) });
     };
   }
   // Convenience: time `fn` as a named sub-phase. Records the stage even if fn
@@ -168,11 +190,38 @@ export function createLifecycleRecorder(clock = defaultClock) {
   return {
     stage,
     time,
+    async wait(fn) {
+      if (waitDepth++) {
+        try { return await fn(); } finally { waitDepth -= 1; }
+      }
+      const t0 = clock.monotonic();
+      const phase = activeStages.at(-1);
+      try { return await fn(); }
+      finally {
+        const elapsed = Math.max(0, clock.monotonic() - t0);
+        waitMs += elapsed;
+        if (phase) phase.wait_ms += elapsed;
+        waitDepth -= 1;
+      }
+    },
+    recordFindingCodes(codes) {
+      // Codes attach to the phase active when they are recorded; outside any
+      // phase they stay invocation-level only.
+      const phase = activeStages.at(-1);
+      for (const code of Array.isArray(codes) ? codes : []) {
+        if (typeof code !== "string") continue;
+        if (!findingCodes.includes(code) && findingCodes.length < 5) findingCodes.push(code);
+        if (phase) {
+          phase.finding_codes ??= [];
+          if (!phase.finding_codes.includes(code) && phase.finding_codes.length < 5) phase.finding_codes.push(code);
+        }
+      }
+    },
     recordRepairLoop() {
       repairLoopCount += 1;
     },
     snapshot() {
-      return { stages: stages.slice(), repair_loop_count: repairLoopCount };
+      return { stages: stages.slice(), repair_loop_count: repairLoopCount, wait_ms: Math.round(waitMs), finding_codes: findingCodes.slice() };
     },
   };
 }
@@ -183,7 +232,9 @@ export const NOOP_RECORDER = {
   stage: () => () => {},
   time: async (_name, fn) => fn(),
   recordRepairLoop: () => {},
-  snapshot: () => ({ stages: [], repair_loop_count: 0 }),
+  wait: (fn) => fn(),
+  recordFindingCodes: () => {},
+  snapshot: () => ({ stages: [], repair_loop_count: 0, wait_ms: 0, finding_codes: [] }),
 };
 
 function buildLifecycle({ command, argvShape, runId, exitStatus, startedAt, completedAt, durationMs, recorder }) {
@@ -197,7 +248,10 @@ function buildLifecycle({ command, argvShape, runId, exitStatus, startedAt, comp
     started_at: startedAt,
     completed_at: completedAt,
     duration_ms: Number.isFinite(durationMs) ? Math.max(0, Math.round(durationMs)) : null,
-    stages: recorded.stages,
+    wait_ms: recorded.wait_ms,
+    ...(Number.isInteger(exitStatus) && exitStatus !== 0 && recorded.finding_codes.length ? { finding_codes: recorded.finding_codes } : {}),
+    stages: recorded.stages.map(({ finding_codes, ...stage }) =>
+      Number.isInteger(exitStatus) && exitStatus !== 0 && finding_codes?.length ? { ...stage, finding_codes } : stage),
     repair_loop_count: recorded.repair_loop_count,
   };
 }
@@ -225,7 +279,7 @@ export async function withCommandLifecycle({
   let thrown = null;
   let exitStatus = 0;
   try {
-    result = await fn(recorder);
+    result = await invocationScope.run(recorder, () => fn(recorder));
     // A clean return is exit 0 unless the command set process.exitCode.
     const raw = readExitStatus();
     exitStatus = Number.isInteger(raw) ? raw : 0;
@@ -278,6 +332,8 @@ export function validateLifecycle(entry) {
   if (entry.exit_status != null && !Number.isInteger(entry.exit_status)) add("lifecycle.exit_status", "exit_status must be an integer or null.");
   if (entry.run_id != null && typeof entry.run_id !== "string") add("lifecycle.run_id", "run_id must be a string or null.");
   if (entry.duration_ms != null && typeof entry.duration_ms !== "number") add("lifecycle.duration_ms", "duration_ms must be a number or null.");
+  if (entry.wait_ms != null && (!Number.isInteger(entry.wait_ms) || entry.wait_ms < 0)) add("lifecycle.wait_ms", "wait_ms must be a non-negative integer or null.");
+  if (entry.finding_codes !== undefined && (!isFindingCodes(entry.finding_codes) || !Number.isInteger(entry.exit_status) || entry.exit_status === 0)) add("lifecycle.finding_codes", "finding_codes must have at most five distinct strings and require a non-zero exit_status.");
   if (entry.repair_loop_count != null && !Number.isInteger(entry.repair_loop_count)) add("lifecycle.repair_loop_count", "repair_loop_count must be an integer.");
   if (entry.stages != null) {
     if (!Array.isArray(entry.stages)) {
@@ -285,7 +341,11 @@ export function validateLifecycle(entry) {
     } else {
       entry.stages.forEach((stage, index) => {
         if (!stage || typeof stage !== "object" || Array.isArray(stage)) add(`lifecycle.stages[${index}]`, "each stage must be an object.");
-        else if (!isNonEmptyString(stage.name)) add(`lifecycle.stages[${index}].name`, "stage name is required.");
+        else {
+          if (!isNonEmptyString(stage.name)) add(`lifecycle.stages[${index}].name`, "stage name is required.");
+          if (stage.wait_ms != null && (!Number.isInteger(stage.wait_ms) || stage.wait_ms < 0)) add(`lifecycle.stages[${index}].wait_ms`, "wait_ms must be a non-negative integer or null.");
+          if (stage.finding_codes !== undefined && (!isFindingCodes(stage.finding_codes) || !Number.isInteger(entry.exit_status) || entry.exit_status === 0)) add(`lifecycle.stages[${index}].finding_codes`, "finding_codes must have at most five distinct strings and require a non-zero exit_status.");
+        }
       });
     }
   }
@@ -366,6 +426,8 @@ export function aggregateLifecycleForRun(journal, runId, { excludeCommands = [] 
   let latest = null;
   let durationSum = 0;
   let explicitRepairLoops = 0;
+  let needsInputCount = 0;
+  let failureCount = 0;
 
   // Only finite, parseable ISO timestamps participate in span timing; a junk
   // string (e.g. a hand-edited journal) is ignored rather than emitted as a
@@ -376,6 +438,11 @@ export function aggregateLifecycleForRun(journal, runId, { excludeCommands = [] 
     const command = typeof entry.command === "string" ? entry.command : "(unknown)";
     commandCounts.set(command, (commandCounts.get(command) || 0) + 1);
     const exitStatus = Number.isInteger(entry.exit_status) ? entry.exit_status : null;
+    if (exitStatus === 2) needsInputCount += 1;
+    else if (exitStatus !== null && exitStatus !== 0) failureCount += 1;
+    const findings = exitStatus !== null && exitStatus !== 0 && isStringArray(entry.finding_codes)
+      ? [...new Set(entry.finding_codes)].slice(0, 5) : [];
+    const findingFields = findings.length ? { finding_codes: findings } : {};
     // A command may have recorded its own repair loops via recordRepairLoop().
     if (Number.isInteger(entry.repair_loop_count)) explicitRepairLoops += entry.repair_loop_count;
 
@@ -384,12 +451,25 @@ export function aggregateLifecycleForRun(journal, runId, { excludeCommands = [] 
           name: `${command}:${typeof stage?.name === "string" ? stage.name : "stage"}`,
           duration_ms: typeof stage?.duration_ms === "number" ? stage.duration_ms : null,
           exit_status: exitStatus,
+          ...(Number.isInteger(stage?.wait_ms) && stage.wait_ms >= 0 ? { wait_ms: stage.wait_ms } : {}),
+          ...(exitStatus !== null && exitStatus !== 0 && isFindingCodes(stage?.finding_codes) && stage.finding_codes.length
+            ? { finding_codes: stage.finding_codes } : {}),
         }))
       : [{
           name: command,
           duration_ms: typeof entry.duration_ms === "number" ? entry.duration_ms : null,
           exit_status: exitStatus,
+          ...(Number.isInteger(entry.wait_ms) && entry.wait_ms >= 0 ? { wait_ms: entry.wait_ms } : {}),
+          ...findingFields,
         }];
+    if (subStages.length > 1 || (Array.isArray(entry.stages) && entry.stages.length)) {
+      const attributed = new Set(subStages.flatMap((stage) => stage.finding_codes ?? []));
+      const unknown = findings.filter((code) => !attributed.has(code));
+      if (unknown.length) {
+        const lastStage = subStages.at(-1);
+        lastStage.finding_codes = [...new Set([...(lastStage.finding_codes ?? []), ...unknown])].slice(0, 5);
+      }
+    }
     stages.push(...subStages);
 
     if (typeof entry.duration_ms === "number") durationSum += entry.duration_ms;
@@ -430,5 +510,7 @@ export function aggregateLifecycleForRun(journal, runId, { excludeCommands = [] 
     wall_clock_duration_ms: wallClockDurationMs == null ? null : Math.round(wallClockDurationMs),
     stages,
     repair_loop_count: repairLoopCount,
+    needs_input_count: needsInputCount,
+    failure_count: failureCount,
   };
 }

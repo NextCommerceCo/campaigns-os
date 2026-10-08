@@ -51,7 +51,8 @@ own schemas and evolve independently). Instead it carries:
 
 - **Stable envelope** — `schema_version` (`campaigns-os-run-record/v0`),
   `run_id`, package version, the command that ran, an `argv` *shape* (flag names
-  present, not raw values), `created_at`, consent state, and remit status.
+  present, not raw values), `created_at`, consent state, remit status, and
+  optional `closed_by` (`run_end`, `qa_auto_end`, `stale_sweep`, or `manual`).
 - **Run identity** — `map_id`, `campaign_slug`, `template_family`,
   `entry_point_shape`. (Best-effort; missing identity never blocks capture.)
 - **Source artifact refs** — for the Build Packet, Build Context, Assembly
@@ -63,6 +64,17 @@ own schemas and evolve independently). Instead it carries:
   decisions, QA verdict disposition + gap classes, and the **finding IDs** for
   this run.
 - **Findings snapshot** — this run's Workflow Findings (see channel below).
+
+When a QA verdict is present, `observations.qa.verdict_run_id` names the same
+verdict that supplies `disposition`. `build_fingerprint` is the QA stage's
+recorded build fingerprint only when the Assembly Report binds that stage to
+the same verdict; otherwise it is `null`. `stale` compares that fingerprint
+with the Assembly Report's recorded build fingerprint using the same comparison
+as `next`: `true` when they differ, `false` when they match, and `null` when
+either fingerprint is unknown. A rebuild without `record build` therefore reads
+`stale: false` when the recorded fingerprints still match; doctor's
+`built_output.fingerprint_stale` checks the output on disk. All three fields
+are optional for older records; without a verdict, `observations.qa` is absent.
 
 ### Run identity
 
@@ -78,6 +90,45 @@ Stage timings and repair-loop count are captured from the command lifecycle
 journal when a run session or explicit lifecycle journal is active. They remain
 best-effort signal: telemetry records the commands Campaigns OS can observe, not
 every thought, browser click, or external editor action in an agent session.
+Each new journal entry records `wait_ms` as non-negative whole milliseconds
+blocked on terminal input; an invocation without a prompt records 0. Legacy
+entries may omit it or hold null, and Run Record stages preserve unknown wait
+as absent or null rather than inventing 0. `duration_ms` still includes prompt
+wait, so observed command work is `duration_ms - wait_ms` when wait is known. Tier-2 phases carry their
+own measured wait when the prompt occurs while that phase is active; the journal
+also retains the invocation total. Nested prompt hooks count their outer wait
+interval once. Authentication prompts are outside lifecycle capture by policy.
+
+On a non-zero doctor or QA exit, optional `finding_codes` is an array of at most
+five distinct string codes in first-seen order; null is invalid. Codes belong
+to the phase active when they were recorded. Codes recorded outside any phase,
+and codes in a legacy entry, are invocation-level only; aggregation assigns them
+to the entry's last phase. A successful stage has no finding codes. The optional run-level
+`needs_input_count` and `failure_count` are non-negative integer counts; null is
+invalid and absence means a legacy record did not report the count.
+`needs_input_count` counts journal entries with exit 2 and `failure_count`
+counts entries with any other non-zero exit. Current command
+paths use 0 for success, 1 for operational errors, 2 for missing or blocked
+inputs, and 4 for blocked QA; the other-non-zero rule also covers a future
+status without reclassifying exit 2. Both counts are per command invocation,
+including a command that emits multiple Tier-2 stages. `repair_loop_count`
+continues to count repeated commands plus explicit repair-loop hooks.
+
+| Terminal input site | Wait hook | Capture context |
+|---|---|---|
+| Consent question (`src/consent.mjs`) | Around the injectable `ask` call | Active command, including `run-record` |
+| Store question (`src/login.mjs`) | Around readline `question` | Authentication runs outside lifecycle capture |
+| Finding stage, kind, summary, details (`src/cli.mjs`) | Around each readline `question` | Active `findings add` command; omitted fields do not prompt |
+
+| Non-zero finding source | Codes recorded |
+|---|---|
+| `doctor` | `result.errors[].code` before rendering and exit 2 |
+| `start` and `build` | Their embedded doctor `errors[].code` before the prepare result sets exit 2 |
+| `qa run` and `qa parity` | Blocked verdict assertions: `evidence.code`, or assertion `id` when no code is present, before returning from QA dispatch with exit 4 |
+
+Spec resolution exceptions and prepare-build without a doctor result do not
+expose doctor or QA codes. They keep their existing exit and timing evidence,
+with no invented finding code.
 
 ### Validation
 
@@ -246,7 +297,11 @@ remit(path, payload, proxyBase)   // mirrors qa-node.mjs postVerdict
   for a later post of the stored verdict), `attempted` / `ok` / `error` /
   `endpoint` (`/api/qa/verdicts`), a `state` (`skipped` when the run's
   publish was off, `ok`, `failed`), the `result` in the same vocabulary as
-  `remit_result`, the `base_kind`, and `published_at`. `qa run` hands the
+  `remit_result`, the `base_kind`, `published_at`, and optional `reason`.
+  The reason records the actual QA publish decision: `loopback_base_url`,
+  `portal_managed_default`, `consent_off`, `flag_opt_out`, `flag_opt_in`,
+  `default`, or `local_spec`. A later `qa publish` has no QA run decision and
+  records a null reason. `qa run` hands the
   block to the session through its QA attempt, so `run end` and the auto-end
   stamp it; `qa publish` stamps the record whose `qa_verdict` artifact
   references the verdict, reads `state: "ok"` as already published, and

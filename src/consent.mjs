@@ -14,6 +14,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { timeOperatorWait } from "./lifecycle.mjs";
 
 export const TELEMETRY_ENV_VAR = "CAMPAIGNS_OS_TELEMETRY";
 export const TELEMETRY_CONFIG_SCHEMA = "campaigns-os-telemetry-config/v0";
@@ -337,9 +338,9 @@ export async function promptAndPersistConsent({
   if (existing.resolved) return { ...existing, prompted: false };
   if (!isTTY) return { state: "off", source: "default", resolved: false, prompted: false };
 
-  const answer = await ask(
+  const answer = await timeOperatorWait(() => ask(
     "Campaigns OS can send build telemetry and minimal stage observations to Next Commerce to improve templates, tools, and guidance; stage observations support Workspace progress. Share telemetry from this machine? [Y/n] (change any time): ",
-  );
+  ));
   const normalized = String(answer || "").trim().toLowerCase();
   const state = (normalized === "" || ["y", "yes", "1", "true", "on"].includes(normalized)) ? "on" : "off";
   writeConsentConfig(state, { configPath, proxyBase, source: "prompt", now });
