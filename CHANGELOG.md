@@ -8,6 +8,13 @@ Notable supported-surface changes are recorded here.
 
 When the built output no longer matches the recorded build fingerprint, doctor's `built_output.fingerprint_stale` and the `polish capture` refusal now name the paths that are extra, missing, or changed, at most 20 per list followed by `(+N more)`. Before, both reported only the recorded and current hashes, so finding the files behind a mismatch took a manual diff of `_site/`. `record build` keeps the path and SHA-256 list behind the fingerprint on `stages.assembly.build_manifest` to make the comparison possible; the field is additive and the fingerprint value is unchanged. A file or folder named like a macOS or iCloud sync conflict copy (`<name> 2.<ext>` beside `<name>.<ext>`) is marked as one, with a hint to remove the copies and rebuild. A build recorded before this change carries no manifest: the refusal is unchanged and says to run `record build` again to record one (campaigns-os#659).
 
+## [1.58.0+agent.2] - 2026-10-09
+
+### Fixed
+
+- Doctor, and so `start` and `build`, warns `template_contract.select_step_missing` before build when the selected template family puts package selection on its own `select` page and its checkout carries no selector, but no enabled `select` page in the Map leads to a Checkout. The certified family affected today is `olympus-mv-two-step`. Without the select page, QA resolves the landing as the entry page, finds no add-to-cart control, and every order path fails after build, polish and deploy. The warning names the Checkout and funnel and the fix: add a Select page between the entry page and checkout in Map Builder. It stays silent when a `select` page routes to that Checkout, when the family's checkout carries its own selector, and for a Checkout pinned to another family through `sdk_hints.template_family`. The family's shape is read from the commerce surface catalog's `selectStep` and `mainSelector` surfaces. The warning does not block intake (campaigns-os#658).
+- `copy.hardcoded_phone` no longer reads digit runs inside HTML comments, `<style>` blocks or CSS comments as phone numbers, such as a design-export frame name like `Group 1000003339`. Visible phone numbers still warn, at their original line numbers (campaigns-os#660).
+
 ## [1.58.0] - 2026-10-09
 
 ### Changed
