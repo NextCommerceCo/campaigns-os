@@ -18,6 +18,11 @@
 //                                     clicked, tracked in a page-level object,
 //                                     even when the row equals the pre-filled
 //                                     value (a native change does not count)
+//   data-fixture-menu-delay="600"      the menu shows that many ms after the
+//                                     toggle click ("never": it never shows)
+//   data-fixture-rerender-on-toggle    the toggle click rebuilds the rows in
+//                                     reverse order, so a row index planned
+//                                     before the click is stale
 //
 // A size choice puts that size's package in the cart, one line per slot. The
 // Next control ([data-next-action="checkout"]) refuses, before the shim's
@@ -34,6 +39,8 @@
     { value: "L", packageId: "22", inStock: true },
   ];
   var dropdown = body.hasAttribute("data-fixture-dropdown");
+  var menuDelay = body.getAttribute("data-fixture-menu-delay") || "";
+  var rerenderOnToggle = body.hasAttribute("data-fixture-rerender-on-toggle");
   var picks = {};
   window.fixtureVariantPicks = picks;
   var stage = document.getElementById("bundle-slots-stage");
@@ -104,6 +111,13 @@
   // The dropdown UI: the toggle shows a placeholder until a row is clicked,
   // the menu shows on toggle, and a row click records the pick, then sets the
   // native select and dispatches change.
+  // A row is unavailable by the same rules the runner reads.
+  function rowUnavailable(row) {
+    return row.hasAttribute("disabled") || row.getAttribute("aria-disabled") === "true" ||
+      row.classList.contains("next-oos") || row.classList.contains("next-variant-unavailable") ||
+      row.getAttribute("data-available") === "false";
+  }
+
   function buildDropdown(field, select, index) {
     var box = document.createElement("os-dropdown");
     box.className = "os-variant-dropdown";
@@ -112,24 +126,36 @@
     button.className = "os-card__variant-dropdown-toggle is-placeholder";
     button.textContent = "Size";
     var menu = document.createElement("os-dropdown-menu");
-    Array.prototype.forEach.call(select.options, function (option) {
-      var row = document.createElement("os-dropdown-item");
-      row.className = "os-card__variant-dropdown-item";
-      row.setAttribute("value", option.value);
-      row.textContent = option.textContent;
-      if (option.disabled) row.setAttribute("disabled", "");
-      row.addEventListener("click", function () {
-        if (row.hasAttribute("disabled")) return;
-        picks[index] = row.getAttribute("value");
-        button.textContent = row.getAttribute("value");
-        button.classList.remove("is-placeholder");
-        menu.classList.remove("show");
-        select.value = row.getAttribute("value");
-        select.dispatchEvent(new Event("change", { bubbles: true }));
+    function renderRows(reversed) {
+      menu.replaceChildren();
+      var options = Array.prototype.slice.call(select.options);
+      if (reversed) options.reverse();
+      options.forEach(function (option) {
+        var row = document.createElement("os-dropdown-item");
+        row.className = "os-card__variant-dropdown-item";
+        row.setAttribute("value", option.value);
+        row.textContent = option.textContent;
+        if (option.disabled) row.setAttribute("disabled", "");
+        menu.appendChild(row);
       });
-      menu.appendChild(row);
+    }
+    renderRows(false);
+    menu.addEventListener("click", function (event) {
+      var row = event.target.closest("os-dropdown-item");
+      if (!row || rowUnavailable(row)) return;
+      picks[index] = row.getAttribute("value");
+      button.textContent = row.getAttribute("value");
+      button.classList.remove("is-placeholder");
+      menu.classList.remove("show");
+      select.value = row.getAttribute("value");
+      select.dispatchEvent(new Event("change", { bubbles: true }));
     });
-    button.addEventListener("click", function () { menu.classList.toggle("show"); });
+    button.addEventListener("click", function () {
+      if (menuDelay === "never") return;
+      if (rerenderOnToggle) renderRows(true);
+      if (menuDelay) setTimeout(function () { menu.classList.add("show"); }, Number(menuDelay));
+      else menu.classList.toggle("show");
+    });
     box.append(button, menu);
     field.appendChild(box);
     return box;

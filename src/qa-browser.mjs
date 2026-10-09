@@ -4445,6 +4445,47 @@ async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPack
 // field has no in-stock row or option, a pick cannot be clicked, or the page
 // keeps asking for more choices.
 const SLOT_VARIANT_FILL_LIMIT = 40;
+const SLOT_VARIANT_ROW_WAIT_MS = 2000;
+
+// The slot variant field a pick names, found again by its slot identity
+// (data-next-bundle-id, data-next-slot-index, variant code) so a re-render
+// since the pick was planned does not leave a stale index; the planned index
+// is the fallback for a field that carries no slot index.
+async function slotVariantField(page, pick) {
+  const fields = page.locator(SLOT_VARIANT_FIELD_SELECTOR);
+  const index = await fields.evaluateAll((nodes, want) => {
+    const clean = (value) => String(value || "").replace(/\s+/g, " ").trim();
+    const found = nodes.findIndex((node) => {
+      const slotIndex = Number.parseInt(node.getAttribute("data-next-slot-index") ?? "", 10);
+      if (!Number.isFinite(slotIndex) || slotIndex + 1 !== want.slot) return false;
+      if ((clean(node.getAttribute("data-next-bundle-id")) || null) !== want.bundle_id) return false;
+      const select = node.querySelector("select");
+      const code = clean(select?.getAttribute("data-next-variant-code") || select?.getAttribute("data-variant-code") || node.getAttribute("data-next-variant-code") || select?.name) || null;
+      return code === want.variant_code;
+    });
+    return found >= 0 ? found : want.field_index;
+  }, pick).catch(() => pick.field_index);
+  return fields.nth(index);
+}
+
+// The pick's row, matched by its value among the field's rows (no selector is
+// built from the value), once it is visible; null if it does not show in time.
+async function visibleSlotVariantRow(page, pick, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const field = await slotVariantField(page, pick);
+    const rows = field.locator(SLOT_VARIANT_DROPDOWN_ROW_SELECTOR);
+    const index = await rows.evaluateAll((nodes, value) => nodes.findIndex((node) => {
+      if (String(node.getAttribute("value") || "").replace(/\s+/g, " ").trim() !== value) return false;
+      const rect = node.getBoundingClientRect();
+      const style = getComputedStyle(node);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+    }), pick.value).catch(() => -1);
+    if (index >= 0) return rows.nth(index);
+    if (Date.now() >= deadline) return null;
+    await page.waitForTimeout(100);
+  }
+}
 async function fillSlotVariants(page) {
   const selections = [];
   const picked = [];
@@ -4461,6 +4502,9 @@ async function fillSlotVariants(page) {
       if (selections.length) await page.waitForLoadState("networkidle", { timeout: 3000 }).catch(() => {});
       return selections;
     }
+    if (result?.unfillable?.detail) {
+      throw codedError(CART_ENTRY_CODES.ENTRY_VARIANT_UNFILLED, `${slotVariantLabel(result.unfillable)}: ${result.unfillable.detail}; the page would refuse Next`);
+    }
     if (result?.unfillable) {
       throw codedError(
         CART_ENTRY_CODES.ENTRY_VARIANT_UNFILLED,
@@ -4469,11 +4513,21 @@ async function fillSlotVariants(page) {
     }
     const choice = result.pick || result.filled;
     if (result.pick) {
-      const field = page.locator(SLOT_VARIANT_FIELD_SELECTOR).nth(result.pick.field_index);
       try {
+        const field = await slotVariantField(page, result.pick);
         await clickControl(field.locator(SLOT_VARIANT_DROPDOWN_TOGGLE_SELECTOR).filter({ visible: true }).first(), { timeout: 5000 });
-        await clickControl(field.locator(SLOT_VARIANT_DROPDOWN_ROW_SELECTOR).nth(result.pick.row_index), { timeout: 5000 });
+        // The menu may open late or re-render on toggle: re-resolve the field
+        // and the row by its value, and wait for that row to show.
+        const row = await visibleSlotVariantRow(page, result.pick, SLOT_VARIANT_ROW_WAIT_MS);
+        if (!row) {
+          throw codedError(
+            CART_ENTRY_CODES.ENTRY_VARIANT_UNFILLED,
+            `${slotVariantLabel(choice)} dropdown row "${choice.value}" did not show within ${SLOT_VARIANT_ROW_WAIT_MS}ms of opening the dropdown; the page would refuse Next`,
+          );
+        }
+        await clickControl(row, { timeout: 5000 });
       } catch (error) {
+        if (error?.code === CART_ENTRY_CODES.ENTRY_VARIANT_UNFILLED) throw error;
         throw codedError(
           CART_ENTRY_CODES.ENTRY_VARIANT_UNFILLED,
           `${slotVariantLabel(choice)} dropdown row "${choice.value}" could not be clicked (${String(error?.message || error).split("\n")[0]}); the page would refuse Next`,

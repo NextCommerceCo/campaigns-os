@@ -657,3 +657,20 @@ browserTest("select → checkout with pre-filled selects behind dropdowns that n
   assert.equal(byName.order_submitted.evidence.cart_before_submit.count, 2);
   assert.equal(server.orders.length, 1);
 });
+
+browserTest("select → checkout with a dropdown menu that opens late and re-renders its rows on toggle: the runner waits for the row and finds it by value", async () => {
+  const { steps, server } = await runMultiStep("select-variant-dropdowns-late-menu", selectTopologies);
+  const byName = stepsByName(steps);
+  assert.equal(byName.entered_via_landing.status, "ok", byName.entered_via_landing.error);
+  assert.deepEqual(byName.entered_via_landing.evidence.variant_selections.map((entry) => [entry.slot, entry.value, entry.via]), [[1, "L", "dropdown"], [2, "L", "dropdown"]]);
+  assert.deepEqual(byName.order_submitted.evidence.cart_before_submit.package_ids, ["22"]);
+  assert.equal(server.orders.length, 1);
+});
+
+browserTest("select → checkout with a dropdown menu that never opens: the attempt fails with cart_entry_variant_unfilled naming the slot", async () => {
+  const { steps, server } = await runMultiStep("select-variant-dropdowns-dead-menu", selectTopologies);
+  const byName = stepsByName(steps);
+  assert.equal(byName.entered_via_landing.status, "failed");
+  assert.match(byName.entered_via_landing.error, /^cart_entry_variant_unfilled: slot 1 \(bundle "pairs"\) size dropdown row "L" did not show within 2000ms/);
+  assert.equal(server.orders.length, 0);
+});

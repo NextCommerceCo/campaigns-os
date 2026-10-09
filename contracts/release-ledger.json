@@ -7900,8 +7900,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.58.0+agent.6",
-      "changelog_sha256": "d1110d80e5c0f22d7a2c838ebda6dd407918535522a8cfcb9ea260baee8015f9",
-      "agent_impact": "qa run --test-order now chooses a select page's bundle-slot variants before clicking the checkout control: a field showing an os-dropdown UI is picked by clicking its toggle and a row (the row matching the select's current value when in stock, else the first in-stock row), even when the select is pre-filled; a native-only select is filled with its first in-stock option only when empty. Choices are recorded as entered_via_landing evidence variant_selections [{ bundle_id, slot, variant_code, value, via }]. A field with no in-stock row or option, or an unclickable row, fails before Next with the new cart-entry code cart_entry_variant_unfilled (classified not_created) instead of cart_entry_no_navigation. Pages whose filled selects have no dropdown UI are unchanged.",
+      "changelog_sha256": "0b2061ee2bfd66eca93384feda523af157d96767b47c54dca8988d53740fab42",
+      "agent_impact": "qa run --test-order now chooses a select page's bundle-slot variants before clicking the checkout control: a field showing an os-dropdown UI is picked by clicking its toggle and a row (the row matching the select's current value when in stock, else the first in-stock row), even when the select is pre-filled; a native-only select is filled with its first in-stock option only when empty. Choices are recorded as entered_via_landing evidence variant_selections [{ bundle_id, slot, variant_code, value, via }]. A field with no in-stock row or option, or a row that does not show within 2s of opening the dropdown or cannot be clicked, fails before Next with the new cart-entry code cart_entry_variant_unfilled (classified not_created) instead of cart_entry_no_navigation. Pages whose filled selects have no dropdown UI are unchanged.",
       "compatibility": "additive",
       "migration": "none",
       "changes": [
@@ -7912,7 +7912,7 @@
           "summary": "Document slot variant choice on select-page cart entry (dropdown row click or native fill), the variant_selections evidence, and the cart_entry_variant_unfilled code."
         }
       ],
-      "entry_sha256": "7cbf136737acf2eb674b44002cd466ed34d3662e2a71239f9ff71b703a30668c"
+      "entry_sha256": "54fef69e2f79451fd1c3069e28ec3296854b8315037ae86b931de5ff6a2be58c"
     }
   ]
 }

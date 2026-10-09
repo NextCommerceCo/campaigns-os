@@ -1580,7 +1580,10 @@ visible when its field is):
   row, like a shopper, even when the select is already filled. A page may count
   a field as chosen only when a row was clicked. It clicks the row matching the
   select's current value when that row is in stock, so the cart stays what the
-  SDK chose, and otherwise the first in-stock row.
+  SDK chose, and otherwise the first in-stock row. After the toggle click it
+  finds the field again by slot identity and the row again by its value, and
+  waits up to 2 s for that row to show, so a menu that opens late or re-renders
+  its rows is handled.
 - With no dropdown UI, an empty select gets its first in-stock option, with
   `input` and `change` dispatched. A filled native select is left alone.
 
@@ -1590,8 +1593,8 @@ also means not `[disabled]`, `aria-disabled`, `.next-oos`,
 native option is not disabled. Each choice is recorded in
 `variant_selections` as `{ bundle_id, slot, variant_code, value, via }`, where
 `via` is `dropdown` or `select`, so the ordered variants can be checked against
-the cart lines. A field with nothing to choose, or a row that cannot be
-clicked, fails the path with `cart_entry_variant_unfilled` before Next is
+the cart lines. A field with nothing to choose, or a row that does not show
+or cannot be clicked, fails the path with `cart_entry_variant_unfilled` before Next is
 clicked. A page whose filled selects have no dropdown UI is left untouched and
 `variant_selections` is omitted.
 

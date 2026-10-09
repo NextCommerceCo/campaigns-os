@@ -496,17 +496,25 @@ export function slotVariantStepScript() {
       if (toggle) {
         if (picked.includes(keyOf(info))) continue;
         const rows = Array.from(field.querySelectorAll(rowSelector));
+        // One in-stock rule: a row is in stock when its own markup says so and
+        // its native option (if any) passes optionInStock.
+        const optionsByValue = new Map(Array.from(select.options).map((option) => [clean(option.value), option]));
         const rowInStock = (row) => {
           const value = clean(row.getAttribute("value"));
           if (!value || row.hidden || row.hasAttribute("disabled") || row.getAttribute("aria-disabled") === "true") return false;
           if (row.classList.contains("next-oos") || row.classList.contains("next-variant-unavailable") || row.getAttribute("data-available") === "false") return false;
-          const option = Array.from(select.options).find((candidate) => candidate.value === row.getAttribute("value"));
+          const option = optionsByValue.get(value);
           return !option || optionInStock(option);
         };
         const current = clean(select.value);
-        const row = rows.find((candidate) => current && candidate.getAttribute("value") === select.value && rowInStock(candidate)) || rows.find(rowInStock);
+        const row = (current && rows.find((candidate) => clean(candidate.getAttribute("value")) === current && rowInStock(candidate))) || rows.find(rowInStock);
         if (!row) return { unfillable: { ...info, options: rows.length, via: "dropdown" } };
-        return { pick: { ...info, value: row.getAttribute("value"), field_index: fields.indexOf(field), row_index: rows.indexOf(row) } };
+        const fieldIndex = fields.indexOf(field);
+        const rowIndex = rows.indexOf(row);
+        if (fieldIndex < 0 || rowIndex < 0) {
+          return { unfillable: { ...info, options: rows.length, via: "dropdown", detail: `the dropdown ${fieldIndex < 0 ? "field" : "row"} could not be located` } };
+        }
+        return { pick: { ...info, value: clean(row.getAttribute("value")), field_index: fieldIndex, row_index: rowIndex } };
       }
       if (clean(select.value) !== "") continue;
       const option = Array.from(select.options).find(optionInStock);
