@@ -275,7 +275,7 @@ test("a blocked gate surfaces one disposition: advisories stay on warned[] and a
 });
 
 test("the vendored attribute index names its SDK tag and holds the field-name contract the issue lists", () => {
-  assert.equal(SDK_ATTRIBUTE_INDEX_VERSION, "0.4.41");
+  assert.equal(SDK_ATTRIBUTE_INDEX_VERSION, "0.4.42");
   assert.ok(SDK_DATA_NEXT_ATTRIBUTES.length > 100);
   // The 0.4.41 address block and i18n names, and two names the SDK's 0.4.41
   // attribute docs leave out but its source still reads.

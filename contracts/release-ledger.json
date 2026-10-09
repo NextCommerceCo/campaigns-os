@@ -7844,6 +7844,27 @@
         }
       ],
       "entry_sha256": "437ff972f3680e3bd4e46090fbe67833fb8c988e9ad7dd2aa12c566319afae01"
+    },
+    {
+      "id": "RL-0264",
+      "sequence": 253,
+      "date": "2026-10-09",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.58.0+agent.1",
+      "changelog_sha256": "efed7b6c163aad20b5e69d351ec56df443f69ecf1987215c852b067ac22751f2",
+      "agent_impact": "The starter catalog now pins campaign-cart-starter-templates d5ff501: multi-step templates read next_step and render next_url as next-success-url, matching 1.58.0 frontmatter, and certified families ship Campaign Cart SDK 0.4.42. The checkout field-name check reads the v0.4.42 index, and pages pinned to 0.4.42 pass the cart placeholder check.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Name v0.4.42 as the vendored SDK attribute index tag."
+        }
+      ],
+      "entry_sha256": "ff88c2aa0015393dcc0f829520b741a34ccc6c383662d86ce473c296596cc2a8"
     }
   ]
 }

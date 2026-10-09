@@ -1,5 +1,5 @@
 {
-  "schema_version": "5.0",
+  "schema_version": "4.3",
   "campaign": {
     "id": "fixture-shop-three-step",
     "name": "Fixture Shop Three Step Dynamic Shipping",
@@ -38,7 +38,7 @@
     "source": "campaign-cart-starter-templates agent fixture"
   },
   "global_config": {
-    "sdk_version": "0.4.41"
+    "sdk_version": "0.4.42"
   },
   "funnels": [
     {
