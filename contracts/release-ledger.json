@@ -7961,13 +7961,121 @@
       "sequence": 258,
       "date": "2026-10-09",
       "kind": "release",
-      "surface_version": null,
-      "changelog_section": "1.58.0+agent.8",
-      "changelog_sha256": "5da1f0be08e745e5ffdc5a9cb9f3ff4ea3c3f536094e733713a61fdd555af0ea",
-      "agent_impact": "record deploy now records a hosted deploy: on a non-local-serve packet it takes an https --base-url at the route root, requires every built page to answer 200 and every same-origin script and stylesheet to match the built output by sha256, and writes deploy.preview_url and stages.deploy as the loopback path does. The hosted all-template preview no longer skips the deploy stage; next hands off record deploy for it.",
-      "compatibility": "additive",
-      "migration": "On a hosted target, run record deploy --packet <p> --base-url <https preview url> after deploying instead of hand-editing stages.deploy. A hosted all-template preview now records its deploy the same way before QA.",
+      "surface_version": "1.59.0",
+      "changelog_section": "1.59.0",
+      "changelog_sha256": "7600e0c8922c50c512d2cea94706ca555015a6c98450396c03a2a8440195e2bd",
+      "agent_impact": "The 1.59.0 package publishes the untagged 1.58.0 multi-step checkout frontmatter change, its five same-surface follow-ups and a hosted record deploy. record deploy now records an https preview on a hosted packet after checking every built page answers 200 and every same-origin script and stylesheet matches the build; the hosted all-template preview no longer skips the deploy stage. Consumers also gain the select-step doctor warning, named files on a stale build fingerprint, attempt-aware QA verdicts, slot variant choice in QA cart entry and the d5ff501 starter catalog; refresh the bundled skills to 1.59.0+skills.1.",
+      "compatibility": "breaking",
+      "migration": "From the last published 1.57.0, wire a select or checkout_step page forward navigation from frontmatter next_step (not next_url), render next_url as next-success-url, and build against starter templates that include campaign-cart-starter-templates#223. On a hosted target run record deploy --base-url <https preview url> after deploying instead of hand-editing stages.deploy. Update the pinned package and bundled skills together.",
       "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "compatibility.json",
+          "surface_entry": "compatibility.json",
+          "summary": "Name 1.59.0 as the published package version."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Advance surface_version to 1.59.0 and record the effects contract hash."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Pin the documented toolkit install to 1.59.0."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerate the orientation reference at surface 1.59.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerate runtime readiness at surface 1.59.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Show the current 1.59.0+skills.1 bundle identity in preflight examples."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Advance both package version stamps to 1.59.0."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Advance the package version to 1.59.0."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance the bundle to 1.59.0+skills.1 and each bundled skill by one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.59.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.59.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.59.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.59.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.59.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.59.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.59.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.59.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.59.0+skills.1."
+        },
         {
           "class": "compatibility_policy",
           "path": "contracts/effects.v1.json",
@@ -7999,7 +8107,7 @@
           "summary": "Remove the hosted_template_preview deploy skip and the hosted_preview_satisfies_deploy done outcome."
         }
       ],
-      "entry_sha256": "8238712a84dc2a3a399db516e208d1dd9ff361463d78085fe9db948ce55e628f"
+      "entry_sha256": "4975d17b9eed9427582df2b992f712980eb6c763dd7dbf0ea4187fd2b3b13091"
     }
   ]
 }

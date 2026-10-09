@@ -2,7 +2,17 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.58.0+agent.8] - 2026-10-09
+## [1.59.0] - 2026-10-09
+
+### Changed
+
+- Publishes the untagged `1.58.0` change: multi-step checkout frontmatter follows the starter-template `next_step` contract (campaigns-os#641).
+- Publishes `1.58.0+agent.2`: doctor warns `template_contract.select_step_missing` for a two-step family with no select page before checkout, and the phone scan skips comments and `<style>` content (campaigns-os#658, campaigns-os#660).
+- Publishes `1.58.0+agent.3`: a stale build fingerprint names the extra, missing and changed files and flags sync conflict copies (campaigns-os#659).
+- Publishes `1.58.0+agent.4`: QA verdicts separate planned order paths from retry attempts (campaigns-os#661).
+- Publishes `1.58.0+agent.6`: QA cart entry chooses each slot's variant on a select page before Next (campaigns-os#667).
+- Publishes `1.58.0+agent.7`: the starter catalog is re-synced to campaign-cart-starter-templates `d5ff501` (campaign-cart-starter-templates#223, SDK 0.4.42).
+- Bundled skills advance to `1.59.0+skills.1`.
 
 ### Added
 
