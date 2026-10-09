@@ -1557,16 +1557,49 @@ Evidence: `landing_url`, `landing_page_id`, `landing_page_type`,
 `landing_resolution` (`routes_into_checkout`, `entry_page_fallback`,
 `first_page_fallback`), `control_text`, `control_kind` (`add_to_cart`,
 `checkout_link`, or `checkout_button`), `package_id`, `bundle_card_selection`
-when `--select-package` clicked a bundle card, `sdk_ready`, `arrived_url`, the
+when `--select-package` clicked a bundle card, `variant_selections` when the
+runner chose slot variants (below), `sdk_ready`, `arrived_url`, the
 `checkout_selection_surface` probe result, `selection_surface_probe`
 (`loaded`, `reused`, or `failed`), and `selection_surface_probe_error` when it
 failed. The failure codes are
 `cart_entry_unresolved` (no selection surface on checkout and no entry page
 resolves from the topology), `cart_entry_control_missing` (the entry page
 renders no control, or none carrying the requested ref), and
-`cart_entry_no_navigation` (the click did not reach the checkout URL). Each
-fails the path inside the step budget with the code as the first word of the
-error, never as a step timeout.
+`cart_entry_no_navigation` (the click did not reach the checkout URL), and
+`cart_entry_variant_unfilled` (a bundle slot's variant control has no in-stock
+option or row, or its row could not be clicked, named by slot). Each fails the path inside the step budget with the
+code as the first word of the error, never as a step timeout.
+
+On a select page whose bundle slots each need a variant (size, colour) before
+Next, the runner chooses one per slot after any bundle card click and before
+the checkout control, one field at a time. It looks at every visible, enabled
+slot variant select (`[data-next-variant-selectors] select` or
+`.next-slot-variant-field select`, the native select the SDK renders, counted
+visible when its field is):
+
+- When the field shows a dropdown UI (an `os-dropdown` with a
+  `.os-card__variant-dropdown-toggle` and `os-dropdown-item` rows, as the
+  olympus-mv-two-step starter renders), the runner clicks the toggle and then a
+  row, like a shopper, even when the select is already filled. A page may count
+  a field as chosen only when a row was clicked. It clicks the row matching the
+  select's current value when that row is in stock, so the cart stays what the
+  SDK chose, and otherwise the first in-stock row. After the toggle click it
+  finds the field again by slot identity and the row again by its value, and
+  waits up to 2 s for that row to show, so a menu that opens late or re-renders
+  its rows is handled.
+- With no dropdown UI, an empty select gets its first in-stock option, with
+  `input` and `change` dispatched. A filled native select is left alone.
+
+In stock means enabled, not hidden, and with a non-empty value. For a row it
+also means not `[disabled]`, `aria-disabled`, `.next-oos`,
+`.next-variant-unavailable` or `data-available="false"`, and that the row's
+native option is not disabled. Each choice is recorded in
+`variant_selections` as `{ bundle_id, slot, variant_code, value, via }`, where
+`via` is `dropdown` or `select`, so the ordered variants can be checked against
+the cart lines. A field with nothing to choose, or a row that does not show
+or cannot be clicked, fails the path with `cart_entry_variant_unfilled` before Next is
+clicked. A page whose filled selects have no dropdown UI is left untouched and
+`variant_selections` is omitted.
 
 Which page a funnel enters the cart from is still inferred from topology and
 the rendered checkout. Recording it authoritatively on the spec is the open
@@ -1843,7 +1876,7 @@ deciding what to do next, it classifies what the attempt did to the store:
 
 | Classification | What it means | What the runner does |
 |---|---|---|
-| `not_created` | The path failed before the checkout was submitted (including the runner's own named refusals: `cart_entry_unresolved`, `cart_entry_control_missing`, `cart_entry_no_navigation`, `cart_empty_before_submit`), or the platform rejected every order create it saw. Nothing reached the store. | Re-runs the path once, if the creation budget has a slot no still-unrun planned path needs. This is the bounded retry for a transient miss; the re-run decides the assertion. |
+| `not_created` | The path failed before the checkout was submitted (including the runner's own named refusals: `cart_entry_unresolved`, `cart_entry_control_missing`, `cart_entry_no_navigation`, `cart_entry_variant_unfilled`, `cart_empty_before_submit`), or the platform rejected every order create it saw. Nothing reached the store. | Re-runs the path once, if the creation budget has a slot no still-unrun planned path needs. This is the bounded retry for a transient miss; the re-run decides the assertion. |
 | `created` | An order exists and was read back — the failure happened after the purchase (most often a receipt that did not render its line items). | Runs a **read-only recovery pass**: reloads the receipt the order already produced, re-reads the persisted order, and re-checks the buyer-visible receipt surface and the voucher read-back. It clicks nothing, applies nothing, and submits nothing. |
 | `ambiguous` | The submit may have created an order this runner cannot see: a ref id with an unusable read-back, a lost create response, a network-failed create, or a 4xx that follows an earlier 2xx on the same endpoint. | Stops. It never resubmits, and the assertion names the check an operator should run — look for an existing order against the run's QA email or the observed ref id. |
 
