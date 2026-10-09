@@ -18,7 +18,7 @@ import {
   SOURCE_HTML_MANIFEST_SCHEMA,
   validateSourceHtmlManifest,
 } from "./source-html-manifest.mjs";
-import { forwardRouteTarget, isPrePaymentPage } from "../campaign-spec/dist/index.js";
+import { checkoutPathFrom, forwardRouteTarget, isPrePaymentPage } from "../campaign-spec/dist/index.js";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CLI = resolve(ROOT, "bin/campaigns-os.mjs");
@@ -643,9 +643,11 @@ test("no certified fixture silently drops a declared forward edge", () => {
         // and a hardcoded array would flag a correctly-inert success_url on a
         // select page as a dropped edge.
         const declares = forwardRouteTarget(page) !== null;
-        // A select or checkout_step page carries its forward edge in next_step;
-        // its next_url is the Checkout's post-payment destination.
-        const field = isPrePaymentPage(page) ? "next_step" : "next_url";
+        // A select or checkout_step page on a path to a Checkout carries its
+        // forward edge in next_step (its next_url is the Checkout's
+        // post-payment destination); any other page carries it in next_url.
+        const onCheckoutPath = isPrePaymentPage(page) && (checkoutPathFrom(funnel.pages, page)?.length ?? 0) >= 2;
+        const field = onCheckoutPath ? "next_step" : "next_url";
         if (declares && !emitted[key][field]) {
           dropped.push(`${key} (type=${page.type}) declares a forward edge but emits no ${field}`);
         }

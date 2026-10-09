@@ -604,13 +604,16 @@ function pageKitProjectionForPage(page, { pageById, publicRouteSlug, outputDir, 
 //   step_number  on a checkout_step only: its position among the steps of its
 //                path, from 1, for the form's data-next-step-number.
 function checkoutFlowFrontmatter(page, forwardUrl, { specPages, pageById, publicRouteSlug }) {
-  if (!isPrePaymentPage(page)) return null;
+  // A path of two or more pages means the page has a resolvable forward link,
+  // so forwardUrl is set; the guard keeps the pair together regardless, never
+  // emitting the Checkout's destination without a next_step to navigate by.
+  if (!isPrePaymentPage(page) || !forwardUrl) return null;
   const path = checkoutPathFrom(specPages, page);
   if (!path || path.length < 2) return null;
   const out = {};
   const successUrl = nextUrlForPage(path[path.length - 1], pageById, publicRouteSlug);
   if (successUrl) out.next_url = successUrl;
-  if (forwardUrl) out.next_step = forwardUrl;
+  out.next_step = forwardUrl;
   if (isCheckoutStepPage(page)) out.step_number = checkoutStepNumber(page, specPages);
   return out;
 }
