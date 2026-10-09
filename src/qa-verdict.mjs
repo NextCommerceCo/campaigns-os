@@ -270,7 +270,8 @@ export function summarizePurchaseProof({ verdict = null, proofPolicy = null } = 
 // it is an attempt, not another path. Entries written before `attempt` existed
 // each count as a path, which is what they were counted as then.
 function isTestOrderRetry(order) {
-  return Number.isInteger(order?.attempt) && order.attempt > 1;
+  const attempt = Number(order?.attempt);
+  return Number.isInteger(attempt) && attempt > 1;
 }
 
 function plural(count, noun) {

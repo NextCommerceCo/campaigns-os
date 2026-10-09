@@ -286,6 +286,14 @@ test("summarizePurchaseProof counts order paths without carrying any order ident
   }
 });
 
+test("summarizePurchaseProof treats a string attempt above 1 as a retry, not another path", () => {
+  const summary = summarizePurchaseProof({
+    verdict: { test_orders: [{ plan_id: "checkout", attempt: "1" }, { plan_id: "checkout", attempt: "2" }, { plan_id: "accept", attempt: "two" }] },
+  });
+  assert.equal(summary.order_paths_executed, 2);
+  assert.equal(summary.test_order_attempts, 3);
+});
+
 test("summarizePurchaseProof reports an explicit zero for a --test-order off run", () => {
   const summary = summarizePurchaseProof({ verdict: { test_orders: [] }, proofPolicy: { order_path_depth: "common" } });
   assert.equal(summary.order_paths_executed, 0);
