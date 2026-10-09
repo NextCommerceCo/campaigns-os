@@ -593,8 +593,8 @@ function composeTheme(report, { now, recordedBy, layer }) {
 // The served preview a `record deploy` URL must name, as recorded (origin
 // plus the packet's route root, "/<slug>/" or "/" for a root-served
 // campaign), and the problems that refuse it. A local-serve packet names a
-// loopback http(s) origin. A hosted packet names an https origin (plain http
-// only on a loopback host).
+// loopback http(s) origin. A hosted packet names an https origin unless the
+// host is loopback, where http is accepted too.
 function deployPreviewUrl(packet, rawUrl) {
   const hosted = !isLocalServePacket(packet);
   if (hosted && !optionalString(packet?.deploy?.target)) {
@@ -654,21 +654,74 @@ function builtAssets(site, pageUrls) {
       }
       const file = resolve(site.site_root, `.${pathname}`);
       if (!file.startsWith(`${resolve(site.site_root)}${sep}`) || !existsSync(file) || !statSync(file).isFile()) continue;
-      if (!assets.has(served.href)) assets.set(served.href, { url: served.href, file, sha256: sha256Of(readFileSync(file)) });
+      if (!assets.has(served.href)) {
+        const bytes = readFileSync(file);
+        assets.set(served.href, { url: served.href, file, sha256: sha256Of(bytes), size: bytes.byteLength });
+      }
     }
   });
   return [...assets.values()];
 }
 
-// One served asset, compared by bytes: it must answer 200 at its own URL.
-async function probeAsset(asset, fetchImpl) {
+// A file's sha256, or null when it cannot be read (removed, or replaced by a
+// directory, since it was listed).
+function fileSha256(file) {
   try {
-    const response = await fetchImpl(asset.url, { redirect: "manual", signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
-    if (response.status !== 200) {
-      await response.body?.cancel?.();
-      return { ...asset, served: null, error: `HTTP ${response.status}` };
+    return sha256Of(readFileSync(file));
+  } catch {
+    return null;
+  }
+}
+
+// A served body, read no further than `limit` bytes: a response that says or
+// streams more than the built file holds cannot be that file, so the read
+// stops there instead of buffering whatever the host sends.
+async function readCapped(response, limit) {
+  const declared = Number(response.headers?.get?.("content-length"));
+  if (Number.isFinite(declared) && declared > limit) {
+    await response.body?.cancel?.();
+    return { bytes: null, error: `Content-Length ${declared} exceeds the built file's ${limit} bytes` };
+  }
+  const reader = response.body?.getReader?.();
+  if (!reader) return { bytes: Buffer.alloc(0) };
+  const chunks = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > limit) {
+      await reader.cancel();
+      return { bytes: null, error: `served more than the built file's ${limit} bytes` };
     }
-    return { ...asset, served: sha256Of(Buffer.from(await response.arrayBuffer())) };
+    chunks.push(Buffer.from(value));
+  }
+  return { bytes: Buffer.concat(chunks) };
+}
+
+// One served asset, compared by bytes: it must answer 200, following
+// redirects only within the preview's own origin as a page request does.
+async function probeAsset(asset, fetchImpl) {
+  let current = asset.url;
+  try {
+    for (let hop = 0; hop <= PROBE_MAX_REDIRECTS; hop += 1) {
+      const response = await fetchImpl(current, { redirect: "manual", signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
+      const location = response.headers?.get?.("location");
+      if (response.status >= 300 && response.status < 400 && location) {
+        await response.body?.cancel?.();
+        const next = new URL(location, current);
+        if (next.origin !== new URL(asset.url).origin) return { ...asset, served: null, error: `redirects to ${next.href}, off this preview; nothing was requested there` };
+        current = next.href;
+        continue;
+      }
+      if (response.status !== 200) {
+        await response.body?.cancel?.();
+        return { ...asset, served: null, error: `HTTP ${response.status}` };
+      }
+      const { bytes, error } = await readCapped(response, asset.size);
+      return bytes ? { ...asset, served: sha256Of(bytes) } : { ...asset, served: null, error };
+    }
+    return { ...asset, served: null, error: `more than ${PROBE_MAX_REDIRECTS} redirects` };
   } catch (error) {
     return { ...asset, served: null, error: error?.name === "TimeoutError" ? `no answer within ${PROBE_TIMEOUT_MS / 1000} s` : String(error?.cause?.code || error?.message || error) };
   }
@@ -732,7 +785,11 @@ export async function probeLocalPreview({ packetPath, baseUrl, fetchImpl = globa
         : `Serve the current _site/ build so every page answers at ${url}, then run ${cmd("record")} deploy again.`,
     ]);
   }
-  if (!hosted) return { url, routes };
+  // The build the probe ran against, so a record build before the lock
+  // refuses instead of recording a probe of other output.
+  const probedBuild = computeBuildFingerprint(site.campaign_dir);
+  const buildFingerprint = probedBuild.ok ? probedBuild.fingerprint : null;
+  if (!hosted) return { url, routes, buildFingerprint };
   const assets = await Promise.all(builtAssets(site, pageUrls).map((asset) => probeAsset(asset, fetchImpl)));
   const targetRepo = site.target_repo;
   const differing = assets.filter((asset) => asset.served !== asset.sha256);
@@ -744,7 +801,7 @@ export async function probeLocalPreview({ packetPath, baseUrl, fetchImpl = globa
       `The preview at ${url} is not serving the recorded build. Deploy the current _site/ build, then run ${cmd("record")} deploy again.`,
     ]);
   }
-  return { url, routes, assets: assets.map(({ url: assetUrl, file, sha256 }) => ({ url: assetUrl, file, sha256 })) };
+  return { url, routes, buildFingerprint, assets: assets.map(({ url: assetUrl, file, sha256 }) => ({ url: assetUrl, file, sha256 })) };
 }
 
 // A recorded preview (local or hosted): the packet's deploy.preview_url, and stages.deploy
@@ -908,7 +965,7 @@ function assertOutputUnchanged(stage, facts) {
 // Under the lock, the probe is checked against the packet as it is now (it
 // could have been retargeted while the probe ran), and the theme gate, which
 // blocks deploy, must not be blocked.
-function deployFacts(doctor, packet, probe) {
+function deployFacts(doctor, packet, probe, fingerprint) {
   const { url, problems } = deployPreviewUrl(packet, probe.url);
   if (problems.length) throw refuseRecord("deploy", problems);
   if (url !== probe.url) {
@@ -916,9 +973,12 @@ function deployFacts(doctor, packet, probe) {
   }
   // The served assets were compared with the files as they were before the
   // lock; a build since then is a refusal, not a record of other output.
-  const rebuilt = (probe.assets || []).filter((asset) => !existsSync(asset.file) || sha256Of(readFileSync(asset.file)) !== asset.sha256);
+  const rebuilt = (probe.assets || []).filter((asset) => fileSha256(asset.file) !== asset.sha256);
   if (rebuilt.length) {
     throw refuseRecord("deploy", [`The built output changed while the preview was probed (${rebuilt.map((asset) => asset.url).join(", ")}); run ${cmd("record")} build, then record deploy again.`]);
+  }
+  if (probe.buildFingerprint !== undefined && probe.buildFingerprint !== fingerprint) {
+    throw refuseRecord("deploy", [`The built output changed while the preview was probed (probed ${probe.buildFingerprint || "no output"}, now ${fingerprint}); run ${cmd("record")} deploy again.`]);
   }
   const gate = doctor.derived?.theme_gate;
   if (gate?.status === "blocked") {
@@ -1088,7 +1148,7 @@ function recordUnderLock({ stage, packetPath, sidecars, lockedTarget, input, dry
     facts = doctorFacts(stage, doctor, report, packet);
     if (typeof afterDoctorRead === "function") afterDoctorRead();
     if (stage === "theme") layer = brandLayerFacts(doctor);
-    if (stage === "deploy") deployFacts(doctor, packet, input);
+    if (stage === "deploy") deployFacts(doctor, packet, input, facts.fingerprint);
     const next = stage === "setup"
       ? composeSetup(report, context, { now: timestamp, recordedBy })
       : stage === "build"
