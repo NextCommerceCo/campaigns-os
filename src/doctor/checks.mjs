@@ -76,7 +76,7 @@ import {
   resolveTemplateBrandContract,
 } from "../private-template-source.mjs";
 import { assessTemplateFreshness, defaultSdkSupportPolicy, renderTemplateFreshness } from "../template-freshness.mjs";
-import { computeBuildFingerprint, resolveBuiltSiteScope } from "../built-site-scope.mjs";
+import { BUILD_DRIFT_PATH_LIMIT, computeBuildFingerprint, describeBuildOutputDrift, resolveBuiltSiteScope } from "../built-site-scope.mjs";
 import {
   UPSELL_SELECTOR_SCOPE,
   builtPageTypeOverRouteGuess,
@@ -1895,12 +1895,33 @@ export function validateBuildOutputFingerprint(packet, errors, warnings, ready, 
     );
     return;
   }
+  const drift = describeBuildOutputDrift(buildState.report?.stages?.assembly, current);
+  const capped = (paths) => paths.slice(0, BUILD_DRIFT_PATH_LIMIT);
   addIssue(
     assemblyComplete ? errors : warnings,
     "built_output.fingerprint_stale",
     `Built output under _site/${publicRouteSlug}/ no longer matches stages.assembly.build_fingerprint (recorded ${recorded}, current ${current.fingerprint}, ${current.file_count} file(s)). `
+      + `${drift.summary} `
       + "The output changed after build recorded it; re-run build (page-kit build, then record the current fingerprint) before polish or QA evidence can bind to it.",
-    { root: `_site/${publicRouteSlug}/`, recorded, current: current.fingerprint, file_count: current.file_count, assembly_complete: assemblyComplete }
+    {
+      root: `_site/${publicRouteSlug}/`,
+      recorded,
+      current: current.fingerprint,
+      file_count: current.file_count,
+      assembly_complete: assemblyComplete,
+      drift: drift.manifest === "recorded"
+        ? {
+          manifest: "recorded",
+          extra_count: drift.extra.length,
+          missing_count: drift.missing.length,
+          changed_count: drift.changed.length,
+          extra: capped(drift.extra),
+          missing: capped(drift.missing),
+          changed: capped(drift.changed),
+          conflict_copies: capped(drift.conflict_copies),
+        }
+        : { manifest: "unavailable" },
+    }
   );
 }
 
