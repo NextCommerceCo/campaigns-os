@@ -8,6 +8,12 @@ Notable supported-surface changes are recorded here.
 
 Page Kit frontmatter for multi-step checkout paths follows the starter-template contract adopted in NextCommerceCo/campaign-cart-starter-templates#223. On a `select` or `checkout_step` page on a path to a Checkout, `next_url` is now the Checkout's post-payment destination, the meaning `next_url` has on every checkout page; the layouts render it as `next-success-url`, which the SDK reads for express orders. The page's forward link moves to the new `next_step` key, which the templates render as the step form's `data-next-checkout-step` and the select page's checkout link. `step_number` is unchanged. `success_url` is no longer emitted as a frontmatter key; it stays a CampaignSpec field on `checkout` pages, and the Build Context and Build Packet schemas still accept it so packets written by 1.56.0 and 1.57.0 validate. A landing page that feeds a Checkout keeps `next_url` as its call-to-action target, because every certified family's landing call-to-action reads it; it no longer carries `success_url`, and the build prompt takes an express landing page's `next-success-url` from the Checkout's own `next_url`. The build prompt and the `next-campaigns-build` skill describe the new keys. Bundled skills advance to `1.58.0+skills.1` (campaigns-os#641).
 
+## [1.57.0+agent.1] - 2026-10-08
+
+### Fixed
+
+Reading a 4.2 or 4.3 spec no longer turns a `checkout → checkout` chain linked through `success_url` into Checkout Steps with no way forward. A page retyped `checkout_step` keeps the link it followed as a checkout: the resolved forward target is written to `next_page` and `success_url` is dropped, because routing ignores `success_url` on a step. Before this, the upgraded spec failed `CheckoutStepReachesCheckout` and warned `RouteFieldIgnoredForPageType` on every step. A `next_page` the checkout never took (shadowed by `success_url`) is replaced by the followed link. Chains already linked through `next_page`, and 5.x specs, read as before.
+
 ## [1.57.0] - 2026-10-08
 
 ### Changed

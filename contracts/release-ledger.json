@@ -7678,8 +7678,29 @@
       "entry_sha256": "00e7dc8146ae7c1e860f2496ade44d5f4e98f3f25120d1a313021e5ff5d28e7c"
     },
     {
-      "id": "RL-0263",
+      "id": "RL-0262",
       "sequence": 251,
+      "date": "2026-10-08",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.57.0+agent.1",
+      "changelog_sha256": "b6aff356276059f9f4447507b1e179895c45019b53fd9b4c5d0b57adbe6d79f0",
+      "agent_impact": "Reading a 4.2/4.3 spec now carries a retyped checkout_step's forward link onto next_page, so a v4 checkout chain linked through success_url upgrades into a valid v5 path instead of failing CheckoutStepReachesCheckout.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/checkout-flow.ts",
+          "surface_entry": null,
+          "summary": "upgradeCampaignSpec writes a retyped page's resolved forward target to next_page and drops its success_url."
+        }
+      ],
+      "entry_sha256": "6ff873f77bcaa4d939ab8693932adf69a450c37d202a86414a201ace8d4787ef"
+    },
+    {
+      "id": "RL-0263",
+      "sequence": 252,
       "date": "2026-10-09",
       "kind": "release",
       "surface_version": "1.58.0",
@@ -7822,7 +7843,7 @@
           "summary": "Build prompt wires the step form and select link from next_step and next-success-url from next_url, and names no success_url frontmatter key."
         }
       ],
-      "entry_sha256": "7b259491f093d5f957f49492392fe98d9d0fe58d7dc1e26299f07d521f6338d4"
+      "entry_sha256": "437ff972f3680e3bd4e46090fbe67833fb8c988e9ad7dd2aa12c566319afae01"
     }
   ]
 }
