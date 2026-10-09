@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.58.0+agent.6] - 2026-10-09
+
+### Fixed
+
+On a select page whose bundle slots each need a variant (size, colour) before Next, `qa run --test-order` now chooses one before clicking the checkout control. After revealing the second step and any bundle card click, the runner fills every visible, enabled slot variant select that is still empty (`[data-next-variant-selectors] select` or `.next-slot-variant-field select`, counted visible when its field is, since the starter hides the native select) with its first in-stock option, dispatching `input` and `change`. Each choice is recorded on the `entered_via_landing` evidence as `variant_selections: [{ bundle_id, slot, variant_code, value }]`, so the ordered variants can be checked against the cart lines. A select with no in-stock option fails the path before Next with the new code `cart_entry_variant_unfilled`, naming the slot, instead of `cart_entry_no_navigation` after the navigation timeout. It classifies as `not_created` like the other cart-entry codes. Pre-filled selects, as the stock SDK renders them, are left alone and `variant_selections` is omitted. Before this, every path on such a page failed with `cart_entry_no_navigation` (campaigns-os#667).
+
 ## [1.58.0] - 2026-10-09
 
 ### Changed

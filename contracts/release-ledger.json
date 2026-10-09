@@ -7844,6 +7844,27 @@
         }
       ],
       "entry_sha256": "437ff972f3680e3bd4e46090fbe67833fb8c988e9ad7dd2aa12c566319afae01"
+    },
+    {
+      "id": "RL-0269",
+      "sequence": 253,
+      "date": "2026-10-09",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.58.0+agent.6",
+      "changelog_sha256": "5b498b731c91c2a65e73ed2cf3f62bc6c3e5d21cab8e947353ae8e73ee456cef",
+      "agent_impact": "qa run --test-order now fills a select page's empty bundle-slot variant selects with the first in-stock option before clicking the checkout control, and records the choices as entered_via_landing evidence variant_selections [{ bundle_id, slot, variant_code, value }]. A slot with no in-stock option fails before Next with the new cart-entry code cart_entry_variant_unfilled (classified not_created) instead of cart_entry_no_navigation. Pre-filled pages are unchanged.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Document slot variant filling on select-page cart entry, the variant_selections evidence, and the cart_entry_variant_unfilled code."
+        }
+      ],
+      "entry_sha256": "f385ece45c1d9ead69e89f63f585fe278d6965dcb507cdce693ce8a5e95ff887"
     }
   ]
 }

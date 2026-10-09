@@ -129,8 +129,9 @@ async function serveFixture(name, { cardFields = "iframe-v1", cardBehaviour = nu
       const order = orders.find((candidate) => url.pathname.includes(candidate.ref_id));
       return order ? send(200, JSON.stringify(order), "application/json") : send(404, "{}", "application/json");
     }
-    if (url.pathname === "/sdk-shim.js") {
-      return send(200, await readFile(join(FIXTURES, "sdk-shim.js")), "text/javascript");
+    const script = /^\/(sdk-shim|variant-slots)\.js$/.exec(url.pathname);
+    if (script) {
+      return send(200, await readFile(join(FIXTURES, `${script[1]}.js`)), "text/javascript");
     }
     const page = /^\/x\/(landing|select|information|shipping|billing|checkout|receipt)\/?$/.exec(url.pathname);
     if (page) {
@@ -601,5 +602,41 @@ browserTest("select → checkout with the checkout button behind a select-varian
   assert.equal(byName.entered_via_landing.evidence.control_kind, "checkout_button");
   assert.equal(byName.entered_via_landing.evidence.control_text, "Next");
   assert.deepEqual(byName.order_submitted.evidence.cart_before_submit.package_ids, ["2"]);
+  assert.equal(server.orders.length, 1);
+});
+
+// campaigns-os#667: each bundle slot needs a size before Next, and the page's
+// Next handler refuses while any slot is empty.
+browserTest("select → checkout with empty slot variant selects: the runner chooses the first in-stock size per slot, then enters", async () => {
+  const { steps, server } = await runMultiStep("select-variant-slots", selectTopologies);
+  const byName = stepsByName(steps);
+  assert.equal(byName.entered_via_landing.status, "ok", byName.entered_via_landing.error);
+  assert.deepEqual(byName.entered_via_landing.evidence.variant_selections, [
+    { bundle_id: "pairs", slot: 1, variant_code: "size", value: "M" },
+    { bundle_id: "pairs", slot: 2, variant_code: "size", value: "M" },
+  ], "one size per slot; the out-of-stock S is skipped");
+  // Size M is package 21 in the fixture: the cart holds one 21 per slot.
+  assert.deepEqual(byName.order_submitted.evidence.cart_before_submit.package_ids, ["21"]);
+  assert.equal(byName.order_submitted.evidence.cart_before_submit.count, 2);
+  assert.equal(server.orders.length, 1);
+});
+
+browserTest("select → checkout with a slot that has no in-stock size: the attempt fails with cart_entry_variant_unfilled before Next", async () => {
+  const { steps, server } = await runMultiStep("select-variant-slots-out-of-stock", selectTopologies);
+  const byName = stepsByName(steps);
+  assert.equal(byName.entered_via_landing.status, "failed");
+  assert.match(byName.entered_via_landing.error, /^cart_entry_variant_unfilled: slot 2 \(bundle "pairs"\) size has no in-stock option/);
+  // The one checkout load is the runner's selection-surface probe, before
+  // entry; Next never navigated there.
+  assert.equal(server.pageLoads.checkout, 1, "Next was never clicked through to checkout");
+  assert.equal(server.orders.length, 0);
+});
+
+browserTest("select → checkout with pre-filled slot variant selects: nothing is chosen and entry is unchanged", async () => {
+  const { steps, server } = await runMultiStep("select-variant-slots-prefilled", selectTopologies);
+  const byName = stepsByName(steps);
+  assert.equal(byName.entered_via_landing.status, "ok", byName.entered_via_landing.error);
+  assert.equal("variant_selections" in byName.entered_via_landing.evidence, false);
+  assert.deepEqual(byName.order_submitted.evidence.cart_before_submit.package_ids, ["21"]);
   assert.equal(server.orders.length, 1);
 });

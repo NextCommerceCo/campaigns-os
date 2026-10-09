@@ -49,9 +49,12 @@ import {
   checkoutSelectionSurfaceScript,
   chooseCartEntryControl,
   codedError,
+  fillSlotVariantScript,
   isCartEntryCode,
   resolveCartEntryPage,
   sdkCartSnapshotScript,
+  SLOT_VARIANT_SELECT_SELECTOR,
+  slotVariantLabel,
   summarizeSelectionSurface,
   UNDECLARED_ROUTE_ATTRIBUTES,
 } from "./qa-cart-entry.mjs";
@@ -4378,6 +4381,11 @@ async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPack
     cardSelection = choice.select_card ? await selectPackageCard(page, choice.select_card, []) : null;
     control.package_id = choice.select_card?.packageId || await selectedBundleCardPackage(page);
   }
+  // Each bundle slot may need a variant (size, colour) before the page lets
+  // Next through (campaigns-os#667). Fill every visible empty slot variant
+  // select with its first in-stock option now, after the card that decides
+  // the slots, and refuse by name when one has nothing to choose.
+  const variantSelections = control.kind === "checkout_button" ? await fillSlotVariants(page) : [];
   // The index is the control's position among what its own locator matches,
   // so it replays with nth(); no selector is rebuilt from an attribute value.
   const controlSelector = control.kind === "add_to_cart"
@@ -4414,12 +4422,45 @@ async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPack
       control_kind: control.kind,
       package_id: control.package_id || null,
       ...(cardSelection ? { bundle_card_selection: cardSelection } : {}),
+      ...(variantSelections.length ? { variant_selections: variantSelections } : {}),
       sdk_ready: sdkReady,
       arrived_url: redactUrlQuery(safePageUrl(page)),
       checkout_selection_surface: surface,
       ...probeEvidence,
     },
   };
+}
+
+// Fills a select page's empty slot variant selects one at a time (a choice can
+// re-render its slot) and returns the choices. A pre-filled page returns []
+// without touching anything. Throws ENTRY_VARIANT_UNFILLED, before any click
+// on the checkout control, when a select has no in-stock option or keeps
+// coming back empty.
+const SLOT_VARIANT_FILL_LIMIT = 40;
+async function fillSlotVariants(page) {
+  const selections = [];
+  for (let pass = 0; pass < SLOT_VARIANT_FILL_LIMIT; pass += 1) {
+    const result = await page.evaluate(fillSlotVariantScript(), SLOT_VARIANT_SELECT_SELECTOR).catch(() => ({ done: true }));
+    if (result?.done) {
+      if (selections.length) await page.waitForLoadState("networkidle", { timeout: 3000 }).catch(() => {});
+      return selections;
+    }
+    if (result?.unfillable) {
+      throw codedError(
+        CART_ENTRY_CODES.ENTRY_VARIANT_UNFILLED,
+        `${slotVariantLabel(result.unfillable)} has no in-stock option to choose (${result.unfillable.options} option(s), all disabled or placeholder); the page would refuse Next`,
+      );
+    }
+    const { bundle_id: bundleId, slot, variant_code: variantCode, value } = result.filled;
+    selections.push({ bundle_id: bundleId, slot, variant_code: variantCode, value });
+    await page.waitForTimeout(250);
+  }
+  const pending = await page.evaluate(fillSlotVariantScript(), SLOT_VARIANT_SELECT_SELECTOR).catch(() => ({ done: true }));
+  if (pending?.done) return selections;
+  throw codedError(
+    CART_ENTRY_CODES.ENTRY_VARIANT_UNFILLED,
+    `${slotVariantLabel(pending.filled || pending.unfillable)} was still empty after ${SLOT_VARIANT_FILL_LIMIT} variant choices; the page keeps clearing it`,
+  );
 }
 
 // The package of the bundle card a select page shows as selected, or null.

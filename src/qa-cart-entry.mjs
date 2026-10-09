@@ -35,6 +35,10 @@ export const CART_ENTRY_CODES = Object.freeze({
   ENTRY_CONTROL_MISSING: "cart_entry_control_missing",
   // The control was clicked but the page never reached the checkout URL.
   ENTRY_NO_NAVIGATION: "cart_entry_no_navigation",
+  // A select page's bundle slot shows an empty variant control (size,
+  // colour) with no in-stock option to choose, so its Next would refuse.
+  // Fired before the checkout control is clicked (campaigns-os#667).
+  ENTRY_VARIANT_UNFILLED: "cart_entry_variant_unfilled",
   // The SDK cart held zero items at submit time. Fired before the budget
   // reservation and before the submit click.
   CART_EMPTY_BEFORE_SUBMIT: "cart_empty_before_submit",
@@ -427,6 +431,58 @@ export function chooseCartEntryControl(controls = [], requested = []) {
 // returns the store's `totalQuantity` — and the debugger's cart store second
 // (`window.nextDebug.stores.cart`, present with `?debugger=true`), which is
 // the only public place the line items and their package ids are readable.
+// The variant controls a select page renders per bundle slot: the
+// campaign-cart SDK injects a native select into each slot's
+// [data-next-variant-selectors] (inside a .next-slot-variant-field), and the
+// olympus-mv-two-step starter hides that select behind its own dropdown UI.
+export const SLOT_VARIANT_SELECT_SELECTOR = "[data-next-variant-selectors] select, .next-slot-variant-field select";
+
+// evaluate() body: fill the first visible, enabled, empty slot variant select
+// with its first in-stock option (enabled, not hidden, non-empty value), and
+// dispatch input + change, which the SDK and the starter listen for. One
+// select per call, because a choice can re-render its slot. Returns
+// { done: true } when no empty select remains, { filled } with the choice,
+// or { unfillable } naming the slot when no option can be chosen. A select
+// counts as visible when it or its field is (the starter hides the native
+// select). A pre-filled select is never touched.
+export function fillSlotVariantScript() {
+  return (selector) => {
+    const clean = (value) => String(value || "").replace(/\s+/g, " ").trim();
+    const isVisible = (element) => {
+      if (!element) return false;
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+    };
+    const holderOf = (select) => select.closest(".next-slot-variant-field") || select.closest("[data-next-variant-selectors]");
+    const visible = Array.from(new Set(document.querySelectorAll(selector)))
+      .filter((select) => !select.disabled && (isVisible(select) || isVisible(holderOf(select))));
+    const slotRoots = Array.from(new Set(visible.map((select) => select.closest("[data-next-variant-selectors]") || holderOf(select))));
+    const describe = (select) => {
+      const field = select.closest(".next-slot-variant-field");
+      const index = Number.parseInt(field?.getAttribute("data-next-slot-index") ?? "", 10);
+      const root = select.closest("[data-next-variant-selectors]") || holderOf(select);
+      return {
+        bundle_id: clean(field?.getAttribute("data-next-bundle-id")) || null,
+        slot: Number.isFinite(index) ? index + 1 : slotRoots.indexOf(root) + 1,
+        variant_code: clean(select.getAttribute("data-next-variant-code") || select.getAttribute("data-variant-code") || field?.getAttribute("data-next-variant-code") || select.name) || null,
+      };
+    };
+    const empty = visible.find((select) => clean(select.value) === "");
+    if (!empty) return { done: true };
+    const option = Array.from(empty.options).find((candidate) => !candidate.disabled && !candidate.hidden && clean(candidate.value) !== "");
+    if (!option) return { unfillable: { ...describe(empty), options: empty.options.length } };
+    empty.value = option.value;
+    empty.dispatchEvent(new Event("input", { bubbles: true }));
+    empty.dispatchEvent(new Event("change", { bubbles: true }));
+    return { filled: { ...describe(empty), value: option.value } };
+  };
+}
+
+export function slotVariantLabel({ bundle_id: bundleId, slot, variant_code: code } = {}) {
+  return `slot ${slot}${bundleId ? ` (bundle "${bundleId}")` : ""}${code ? ` ${code}` : " variant"}`;
+}
+
 // The enriched line list on `getCartData()` is deliberately NOT read: it is
 // always empty on the shipped SDK (campaign-cart#36; see the cart-state
 // verification section of docs/qa-and-test-orders.md), so it would call every
