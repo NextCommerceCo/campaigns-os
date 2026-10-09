@@ -18,7 +18,7 @@ import {
   SOURCE_HTML_MANIFEST_SCHEMA,
   validateSourceHtmlManifest,
 } from "./source-html-manifest.mjs";
-import { forwardRouteTarget } from "../campaign-spec/dist/index.js";
+import { checkoutPathFrom, forwardRouteTarget, isPrePaymentPage } from "../campaign-spec/dist/index.js";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CLI = resolve(ROOT, "bin/campaigns-os.mjs");
@@ -643,8 +643,13 @@ test("no certified fixture silently drops a declared forward edge", () => {
         // and a hardcoded array would flag a correctly-inert success_url on a
         // select page as a dropped edge.
         const declares = forwardRouteTarget(page) !== null;
-        if (declares && !emitted[key].next_url) {
-          dropped.push(`${key} (type=${page.type}) declares a forward edge but emits no next_url`);
+        // A select or checkout_step page on a path to a Checkout carries its
+        // forward edge in next_step (its next_url is the Checkout's
+        // post-payment destination); any other page carries it in next_url.
+        const onCheckoutPath = isPrePaymentPage(page) && (checkoutPathFrom(funnel.pages, page)?.length ?? 0) >= 2;
+        const field = onCheckoutPath ? "next_step" : "next_url";
+        if (declares && !emitted[key][field]) {
+          dropped.push(`${key} (type=${page.type}) declares a forward edge but emits no ${field}`);
         }
       }
     }
@@ -709,7 +714,7 @@ test("a stray success_url off a checkout does not wire the built page past payme
   });
   const frontmatter = (id) => result.mappings.find((m) => m.page_id === id).page_kit.frontmatter;
 
-  assert.equal(frontmatter("select").next_url, "/campaign/checkout/");
+  assert.equal(frontmatter("select").next_step, "/campaign/checkout/");
   assert.equal(frontmatter("checkout").next_url, "/campaign/upsell/");
 });
 
@@ -732,11 +737,74 @@ test("a stray on_accept off an offer page does not wire the built page past paym
   });
   const frontmatter = (id) => result.mappings.find((m) => m.page_id === id).page_kit.frontmatter;
 
-  assert.equal(frontmatter("select").next_url, "/campaign/checkout/");
+  assert.equal(frontmatter("select").next_step, "/campaign/checkout/");
   // The checkout keeps its own success_url instead of the shadowing on_accept.
   assert.equal(frontmatter("checkout").next_url, "/campaign/upsell/");
   // The upsell presents the offer, so its on_accept still wins.
   assert.equal(frontmatter("upsell").next_url, "/campaign/receipt/");
+});
+
+function checkoutFlowFrontmatterFor(pages) {
+  const result = createSourceHtmlIntake({
+    sourceRoot: resolve(ROOT, "no-source-html-manifest-here"),
+    specPages: pages,
+    htmlFiles: pages.map((p) => ({ path: `${p.id}.html`, basename: p.id })),
+    publicRouteSlug: "campaign",
+    outputDir: "src/campaign",
+  });
+  return (id) => result.mappings.find((m) => m.page_id === id).page_kit.frontmatter;
+}
+
+test("select and checkout_step pages carry next_step forward and next_url to the Checkout's destination", () => {
+  // Starter-template contract from campaign-cart-starter-templates#223: next_url
+  // is where a completed order goes on every checkout-surface page (it feeds
+  // next-success-url, which the SDK reads for express orders), and next_step is
+  // the page's own forward link. success_url is no longer a frontmatter key.
+  const frontmatter = checkoutFlowFrontmatterFor([
+    { id: "select", type: "select", next_page: "information", page_url: "select/" },
+    { id: "information", type: "checkout_step", next_page: "shipping", page_url: "information/" },
+    { id: "shipping", type: "checkout_step", next_page: "billing", page_url: "shipping/" },
+    { id: "billing", type: "checkout", success_url: "upsell", page_url: "billing/" },
+    { id: "upsell", type: "upsell", on_accept: "receipt", on_decline: "receipt", page_url: "upsell/" },
+    { id: "receipt", type: "thankyou", page_url: "receipt/" },
+  ]);
+
+  assert.deepEqual(frontmatter("select"), {
+    page_type: "checkout",
+    next_url: "/campaign/upsell/",
+    next_step: "/campaign/information/",
+  });
+  assert.deepEqual(frontmatter("information"), {
+    page_type: "checkout",
+    next_url: "/campaign/upsell/",
+    next_step: "/campaign/shipping/",
+    step_number: 1,
+  });
+  assert.deepEqual(frontmatter("shipping"), {
+    page_type: "checkout",
+    next_url: "/campaign/upsell/",
+    next_step: "/campaign/billing/",
+    step_number: 2,
+  });
+  assert.deepEqual(frontmatter("billing"), { page_type: "checkout", next_url: "/campaign/upsell/" });
+});
+
+test("a landing page with express buttons that feeds a Checkout keeps next_url as its call-to-action", () => {
+  // Every certified family's landing call-to-action is an href from next_url,
+  // and the landing layouts render no next-success-url. Giving a landing page
+  // the Checkout's destination as next_url would send its buttons to the
+  // upsell without payment, so it keeps its forward link and gains no
+  // next_step or success_url. The build prompt points an express landing
+  // page's next-success-url at the Checkout's own next_url instead.
+  const frontmatter = checkoutFlowFrontmatterFor([
+    { id: "landing", type: "landing", next_page: "checkout", page_url: "landing/" },
+    { id: "checkout", type: "checkout", success_url: "upsell", page_url: "checkout/" },
+    { id: "upsell", type: "upsell", on_accept: "receipt", on_decline: "receipt", page_url: "upsell/" },
+    { id: "receipt", type: "thankyou", page_url: "receipt/" },
+  ]);
+
+  assert.deepEqual(frontmatter("landing"), { page_type: "product", next_url: "/campaign/checkout/" });
+  assert.equal(frontmatter("checkout").next_url, "/campaign/upsell/");
 });
 
 test("the decline branch is taken wherever it is declared, not only on upsells", () => {
