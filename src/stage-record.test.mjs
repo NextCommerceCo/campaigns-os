@@ -633,6 +633,19 @@ test("record deploy stops reading a served asset larger than the built file, by 
   });
 });
 
+test("record deploy refuses a served asset with no readable body as a transport failure, not a byte mismatch", async () => {
+  await withLifecycle(async (f) => {
+    await hostedDeployReady(f);
+    const url = `${HOSTED_ORIGIN}/${f.slug}/`;
+    const js = `/${f.slug}/js/campaign.js`;
+    const bodiless = async (target) => (new URL(target).pathname === js
+      ? { status: 200, url: target, headers: { get: () => null }, body: null }
+      : hostedFetch(f).fetchImpl(target));
+    await assert.rejects(recordCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": url }, { fetchImpl: bodiless }),
+      (error) => new RegExp(`${HOSTED_ORIGIN}${js}: the response had no readable body`).test(error.message) && !/differ/.test(error.message));
+  });
+});
+
 test("record deploy refuses, as a record refusal, when a probed asset vanishes before the lock", async () => {
   await withLifecycle(async (f) => {
     await hostedDeployReady(f);

@@ -7963,7 +7963,7 @@
       "kind": "release",
       "surface_version": "1.59.0",
       "changelog_section": "1.59.0",
-      "changelog_sha256": "7600e0c8922c50c512d2cea94706ca555015a6c98450396c03a2a8440195e2bd",
+      "changelog_sha256": "1c4bd4b6e52a716737ac149211ac9a4f9c26281d1290455c70ae10ec9072f047",
       "agent_impact": "The 1.59.0 package publishes the untagged 1.58.0 multi-step checkout frontmatter change, its five same-surface follow-ups and a hosted record deploy. record deploy now records an https preview on a hosted packet after checking every built page answers 200 and every same-origin script and stylesheet matches the build; the hosted all-template preview no longer skips the deploy stage. Consumers also gain the select-step doctor warning, named files on a stale build fingerprint, attempt-aware QA verdicts, slot variant choice in QA cart entry and the d5ff501 starter catalog; refresh the bundled skills to 1.59.0+skills.1.",
       "compatibility": "breaking",
       "migration": "From the last published 1.57.0, wire a select or checkout_step page forward navigation from frontmatter next_step (not next_url), render next_url as next-success-url, and build against starter templates that include campaign-cart-starter-templates#223. On a hosted target run record deploy --base-url <https preview url> after deploying instead of hand-editing stages.deploy. Update the pinned package and bundled skills together.",
@@ -8080,7 +8080,7 @@
           "class": "compatibility_policy",
           "path": "contracts/effects.v1.json",
           "surface_entry": "contracts/effects.v1.json",
-          "summary": "record deploy (and --dry-run) declare the hosted https probe: each built page and each same-origin script and stylesheet, compared by sha256."
+          "summary": "record deploy (and --dry-run) declare the hosted https probe: each built page and each same-origin script and stylesheet, compared by sha256. A record build between the probe and the write refuses on either deploy target."
         },
         {
           "class": "named_surface",
@@ -8107,7 +8107,7 @@
           "summary": "Remove the hosted_template_preview deploy skip and the hosted_preview_satisfies_deploy done outcome."
         }
       ],
-      "entry_sha256": "4975d17b9eed9427582df2b992f712980eb6c763dd7dbf0ea4187fd2b3b13091"
+      "entry_sha256": "54697c8b2c8e0857687a01f4ac43942202f8e6f9a523fc1151070ac890a0133d"
     }
   ]
 }

@@ -687,7 +687,9 @@ async function readCapped(response, limit) {
     return { bytes: null, error: `Content-Length ${declared} exceeds the built file's ${limit} bytes` };
   }
   const reader = response.body?.getReader?.();
-  if (!reader) return { bytes: Buffer.alloc(0) };
+  // No readable body is a transport failure, not an empty file, unless the
+  // built file is itself empty.
+  if (!reader) return limit === 0 ? { bytes: Buffer.alloc(0) } : { bytes: null, error: "the response had no readable body" };
   const chunks = [];
   let total = 0;
   for (;;) {
