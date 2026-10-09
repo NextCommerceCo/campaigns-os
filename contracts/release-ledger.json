@@ -7676,6 +7676,153 @@
         }
       ],
       "entry_sha256": "00e7dc8146ae7c1e860f2496ade44d5f4e98f3f25120d1a313021e5ff5d28e7c"
+    },
+    {
+      "id": "RL-0263",
+      "sequence": 251,
+      "date": "2026-10-09",
+      "kind": "release",
+      "surface_version": "1.58.0",
+      "changelog_section": "1.58.0",
+      "changelog_sha256": "d62aaaeb0c36220ab53768ac465d8471bed051738eeea979a3e1f7a786b6c00a",
+      "agent_impact": "On select and checkout_step pages, Build Context page_kit.frontmatter.next_url is now the Checkout's post-payment destination (for next-success-url) and the new next_step is the page's forward link (for data-next-checkout-step and the select checkout link). success_url is no longer emitted. Landing pages keep next_url as their call-to-action target. Refresh the bundled skills to 1.58.0+skills.1.",
+      "compatibility": "breaking",
+      "migration": "Wire a select or checkout_step page's forward navigation from frontmatter next_step, not next_url, and render next_url as next-success-url. Build against starter templates that include campaign-cart-starter-templates#223. Update the pinned package and bundled skills together.",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "compatibility.json",
+          "surface_entry": "compatibility.json",
+          "summary": "Name 1.58.0 as the package version."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Advance surface_version to 1.58.0 and record the two schema hashes."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Document next_url and next_step on select and checkout_step pages, the landing-page exception, and success_url no longer emitted."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Pin the documented toolkit install to 1.58.0."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerate the orientation reference at surface 1.58.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerate runtime readiness at surface 1.58.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Show the current 1.58.0+skills.1 bundle identity in preflight examples."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Advance both package version stamps to 1.58.0."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Advance the package version to 1.58.0."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaign-runtime-build-context.v0.schema.json",
+          "surface_entry": "schemas/campaign-runtime-build-context.v0.schema.json",
+          "summary": "Allow next_step in page_kit.frontmatter; describe success_url as no longer emitted."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaign-runtime-build-packet.v0.schema.json",
+          "surface_entry": "schemas/campaign-runtime-build-packet.v0.schema.json",
+          "summary": "Allow next_step in page_kit.frontmatter; describe success_url as no longer emitted."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance the bundle to 1.58.0+skills.1 and each bundled skill by one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.58.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.58.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.58.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.58.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Read next_step for the step form and select link and next_url for next-success-url on select and checkout_step pages; take an express landing page's next-success-url from the Checkout's next_url; bump one patch and stamp bundle 1.58.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.58.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.58.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.58.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.58.0+skills.1."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "Build prompt wires the step form and select link from next_step and next-success-url from next_url, and names no success_url frontmatter key."
+        }
+      ],
+      "entry_sha256": "7b259491f093d5f957f49492392fe98d9d0fe58d7dc1e26299f07d521f6338d4"
     }
   ]
 }

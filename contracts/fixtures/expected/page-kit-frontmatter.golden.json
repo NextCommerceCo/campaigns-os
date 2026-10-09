@@ -91,8 +91,8 @@
   },
   "olympus-mv-two-step-configurable.json::default::select": {
     "page_type": "checkout",
-    "next_url": "/campaign/checkout/",
-    "success_url": "/campaign/upsell-mv/"
+    "next_url": "/campaign/upsell-mv/",
+    "next_step": "/campaign/checkout/"
   },
   "olympus-mv-two-step-configurable.json::default::checkout": {
     "page_type": "checkout",
@@ -141,14 +141,14 @@
   },
   "shop-three-step-dynamic-shipping.json::default::information": {
     "page_type": "checkout",
-    "next_url": "/campaign/shipping/",
-    "success_url": "/campaign/upsell-stepper/",
+    "next_url": "/campaign/upsell-stepper/",
+    "next_step": "/campaign/shipping/",
     "step_number": 1
   },
   "shop-three-step-dynamic-shipping.json::default::shipping": {
     "page_type": "checkout",
-    "next_url": "/campaign/billing/",
-    "success_url": "/campaign/upsell-stepper/",
+    "next_url": "/campaign/upsell-stepper/",
+    "next_step": "/campaign/billing/",
     "step_number": 2
   },
   "shop-three-step-dynamic-shipping.json::default::billing": {
@@ -171,8 +171,8 @@
   },
   "two-path-split-checkout.json::default::select": {
     "page_type": "checkout",
-    "next_url": "/campaign/checkout/",
-    "success_url": "/campaign/upsell/"
+    "next_url": "/campaign/upsell/",
+    "next_step": "/campaign/checkout/"
   },
   "two-path-split-checkout.json::default::checkout": {
     "page_type": "checkout",
@@ -180,14 +180,14 @@
   },
   "two-path-split-checkout.json::default::information": {
     "page_type": "checkout",
-    "next_url": "/campaign/shipping/",
-    "success_url": "/campaign/upsell/",
+    "next_url": "/campaign/upsell/",
+    "next_step": "/campaign/shipping/",
     "step_number": 1
   },
   "two-path-split-checkout.json::default::shipping": {
     "page_type": "checkout",
-    "next_url": "/campaign/billing/",
-    "success_url": "/campaign/upsell/",
+    "next_url": "/campaign/upsell/",
+    "next_step": "/campaign/billing/",
     "step_number": 2
   },
   "two-path-split-checkout.json::default::billing": {

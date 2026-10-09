@@ -4,7 +4,7 @@ import {
 } from "./source-html-manifest.mjs";
 // Built output of campaign-spec (same import shape as src/page-kit-sdk-version.mjs),
 // so build-time wiring and spec-time analysis share one edge resolver.
-import { checkoutPathFrom, declineRouteTarget, forwardRouteTarget, forwardTargetPage, isCheckoutStepPage } from "../campaign-spec/dist/index.js";
+import { checkoutPathFrom, declineRouteTarget, forwardRouteTarget, forwardTargetPage, isCheckoutStepPage, isPrePaymentPage } from "../campaign-spec/dist/index.js";
 import { isAbsoluteHttpUrl, normalizePageKitRoute, normalizePublicRouteSlug, stripPublicRoutePrefix } from "./route-identity.mjs";
 
 const CPK_PAGE_TYPES = new Set(["product", "checkout", "upsell", "receipt"]);
@@ -570,11 +570,12 @@ function pageKitProjectionForPage(page, { pageById, publicRouteSlug, outputDir, 
   const frontmatter = { page_type: pageType };
   if (permalinkRequired) frontmatter.permalink = publicRoute;
 
-  const nextUrl = nextUrlForPage(page, pageById, publicRouteSlug);
-  if (nextUrl) frontmatter.next_url = nextUrl;
+  const forwardUrl = nextUrlForPage(page, pageById, publicRouteSlug);
+  const checkoutFlow = checkoutFlowFrontmatter(page, forwardUrl, { specPages, pageById, publicRouteSlug });
+  if (checkoutFlow) Object.assign(frontmatter, checkoutFlow);
+  else if (forwardUrl) frontmatter.next_url = forwardUrl;
   const declineUrl = declineUrlForPage(page, pageById, publicRouteSlug);
-  if (declineUrl && declineUrl !== nextUrl) frontmatter.decline_url = declineUrl;
-  Object.assign(frontmatter, checkoutFlowFrontmatter(page, { specPages, pageById, publicRouteSlug }));
+  if (declineUrl && declineUrl !== forwardUrl) frontmatter.decline_url = declineUrl;
 
   return {
     target_path: targetPath,
@@ -587,24 +588,29 @@ function pageKitProjectionForPage(page, { pageById, publicRouteSlug, outputDir, 
   };
 }
 
-// Multi-step checkout wiring (campaigns-os#641), for any page that leads into a
-// Checkout without being it: a select page, a checkout_step, or a landing page
-// whose forward links reach a Checkout.
-//   success_url  the Checkout's post-payment destination (its own next_url).
-//                The page's next-success-url meta tag carries it, because the
-//                SDK reads that tag for express orders placed on this page; an
-//                express order on step 1 must land on the first upsell, not on
-//                step 2. Forward navigation never uses that tag: a step form
-//                navigates by data-next-checkout-step, a select page by a link.
+// Multi-step checkout wiring (campaigns-os#641) for a select or checkout_step
+// page on a path to a Checkout. The keys follow the starter-template contract
+// (campaign-cart-starter-templates#223). Null for any other page, whose
+// next_url stays its own forward link: a landing page's call-to-action reads
+// next_url, so pointing it past the Checkout would skip payment.
+//   next_url     where a completed order goes: the Checkout's post-payment
+//                destination (its own next_url), the meaning next_url has on a
+//                single-page checkout. The page's next-success-url meta tag
+//                carries it, because the SDK reads that tag for express orders
+//                placed on this page; an express order on step 1 must land on
+//                the first upsell, not on step 2.
+//   next_step    this page's forward link: a step form's
+//                data-next-checkout-step, a select page's checkout link.
 //   step_number  on a checkout_step only: its position among the steps of its
 //                path, from 1, for the form's data-next-step-number.
-function checkoutFlowFrontmatter(page, { specPages, pageById, publicRouteSlug }) {
-  if (!page || page.type === "checkout") return {};
+function checkoutFlowFrontmatter(page, forwardUrl, { specPages, pageById, publicRouteSlug }) {
+  if (!isPrePaymentPage(page)) return null;
   const path = checkoutPathFrom(specPages, page);
-  if (!path || path.length < 2) return {};
+  if (!path || path.length < 2) return null;
   const out = {};
   const successUrl = nextUrlForPage(path[path.length - 1], pageById, publicRouteSlug);
-  if (successUrl) out.success_url = successUrl;
+  if (successUrl) out.next_url = successUrl;
+  if (forwardUrl) out.next_step = forwardUrl;
   if (isCheckoutStepPage(page)) out.step_number = checkoutStepNumber(page, specPages);
   return out;
 }

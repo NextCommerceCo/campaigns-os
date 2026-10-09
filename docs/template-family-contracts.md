@@ -92,9 +92,10 @@ From CampaignSpec 5.0, `checkout` means the page that takes payment. A page
 with a checkout form that collects details and moves on without placing an
 order is `checkout_step`: `shop-three-step`'s `information` and `shipping`
 pages, ahead of `billing`, the Checkout. Its form carries
-`data-next-checkout-step` (its next page) and `data-next-step-number`, and its
-`next-success-url` is the Checkout's post-payment destination, so an express
-order placed on a step lands on the first upsell. QA submits each step and
+`data-next-checkout-step` (its next page, from frontmatter `next_step`) and
+`data-next-step-number`, and its `next-success-url` (from frontmatter
+`next_url`) is the Checkout's post-payment destination, so an express order
+placed on a step lands on the first upsell. QA submits each step and
 asserts it lands on the step's declared next page before paying on the
 Checkout. A 4.2/4.3 spec that typed every step `checkout` is retyped on read.
 

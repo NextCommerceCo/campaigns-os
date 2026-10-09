@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-build
-version: 1.0.40
+version: 1.0.41
 description: Assemble a NEXT campaign from a doctor-cleared Build Packet, CampaignSpec/API values, prepared HTML/assets, page-kit, and starter-template contracts.
 ---
 
-Bundle revision: 1.57.0+skills.1
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.57.0+skills.1`
+Bundle revision: 1.58.0+skills.1
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.58.0+skills.1`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -100,9 +100,9 @@ Build rules:
 - If setup/build needs starter-template files, copy the template family atomically with its dependent pages, `_includes/`, `_layouts/`, `assets/css/`, and `assets/js/`; copying only checkout/receipt pages is incomplete.
 - Resolve SDK routing meta tags to deployed campaign-root paths, not spec literals. For example, `next-success-url: upsell/` in the spec should become `/<public_route_slug>/upsell/` in built HTML.
 - If an order bump package comes from `packages.prepurchase_*` and is not one of the main `bundles[]`, default `package_sync=false` and `show_line_total_price=false` unless the CampaignSpec explicitly says the add-on quantity must sync with the main bundle.
-- Multi-step checkout paths run `select` → `checkout_step`… → `checkout`; only the `checkout` page takes payment. On a `select` page the swap-mode bundle selector (`data-next-bundle-selector` with `data-next-selection-mode="swap"`) writes the cart and the SDK persists it between pages; a checkout button or link (`href` from the page's `next_url`) goes to the next page. Use `forcePackageId` only on a page with no selector, such as a landing call-to-action into a checkout that renders none.
-- Each `checkout_step` page's checkout form (`<form data-next-checkout="form">`) carries `data-next-checkout-step="<its next_url>"` and `data-next-step-number="<step_number>"` (frontmatter `step_number`, 1 for the first step on its path). The `checkout` page's form carries neither.
-- On every page that feeds a Checkout (`select`, `checkout_step`, or a landing page with express checkout buttons), the `next-success-url` meta tag is that Checkout's post-payment destination (frontmatter `success_url`), not the next step: the SDK reads it for express orders placed on that page. Forward navigation uses the step form attribute or a plain link, never that meta tag.
+- Multi-step checkout paths run `select` → `checkout_step`… → `checkout`; only the `checkout` page takes payment. On a `select` page the swap-mode bundle selector (`data-next-bundle-selector` with `data-next-selection-mode="swap"`) writes the cart and the SDK persists it between pages; a checkout button or link (`href` from the page's `next_step`) goes to the next page. Use `forcePackageId` only on a page with no selector, such as a landing call-to-action into a checkout that renders none.
+- Each `checkout_step` page's checkout form (`<form data-next-checkout="form">`) carries `data-next-checkout-step="<its next_step>"` and `data-next-step-number="<step_number>"` (frontmatter `next_step` and `step_number`, 1 for the first step on its path). The `checkout` page's form carries neither.
+- On `select` and `checkout_step` pages, frontmatter `next_url` is the Checkout's post-payment destination, the same meaning it has on the `checkout` page, and the layout renders it as the `next-success-url` meta tag: the SDK reads that tag for express orders placed on the page. `next_step` is the page's forward link. A landing page keeps `next_url` as its call-to-action target; if it has express checkout buttons, set its `next-success-url` to the Checkout's own `next_url` from the Build Context `page_map`, never to the landing page's `next_url`. Forward navigation uses the step form attribute or a plain link, never that meta tag. Page Kit frontmatter has no `success_url` key; `success_url` stays a CampaignSpec field on `checkout` pages.
 - Record intentional drops from source HTML in the assembly report, especially payment/provider changes such as "PayPal removed because CampaignSpec available_payment_methods excludes it." Polish must inherit these decisions.
 - Preserve any existing Build Context `theme` inspection state and Assembly Report `theme` application state. If build applies, skips, or invalidates generated theme CSS, update `report.theme` rather than leaving stale evidence.
 - After page-kit build, inspect rendered `_site` output: body exists, Campaign Cart runtime markers exist, `sdk_hints.meta_tags` rendered, route meta points at the campaign root, and copied funnel attribution/runtime baggage is gone.
