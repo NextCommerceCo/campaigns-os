@@ -7915,13 +7915,34 @@
       "entry_sha256": "99c2bba07b9cbe7860b60a5af237081c995eee317586b7f06e86e4f8876d9bb5"
     },
     {
-      "id": "RL-0268",
+      "id": "RL-0269",
       "sequence": 256,
       "date": "2026-10-09",
       "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.58.0+agent.5",
-      "changelog_sha256": "2d9e28c6cabd27843bb4267cf2a69a8bba0b7a33870fbb468a2fa28929331bdd",
+      "changelog_section": "1.58.0+agent.6",
+      "changelog_sha256": "0b2061ee2bfd66eca93384feda523af157d96767b47c54dca8988d53740fab42",
+      "agent_impact": "qa run --test-order now chooses a select page's bundle-slot variants before clicking the checkout control: a field showing an os-dropdown UI is picked by clicking its toggle and a row (the row matching the select's current value when in stock, else the first in-stock row), even when the select is pre-filled; a native-only select is filled with its first in-stock option only when empty. Choices are recorded as entered_via_landing evidence variant_selections [{ bundle_id, slot, variant_code, value, via }]. A field with no in-stock row or option, or a row that does not show within 2s of opening the dropdown or cannot be clicked, fails before Next with the new cart-entry code cart_entry_variant_unfilled (classified not_created) instead of cart_entry_no_navigation. Pages whose filled selects have no dropdown UI are unchanged.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Document slot variant choice on select-page cart entry (dropdown row click or native fill), the variant_selections evidence, and the cart_entry_variant_unfilled code."
+        }
+      ],
+      "entry_sha256": "3d4f8131b1d1d74e4a9f21e98bbbc721d6dd36ba98f8f2617f383adc253a9877"
+    },
+    {
+      "id": "RL-0268",
+      "sequence": 257,
+      "date": "2026-10-09",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.58.0+agent.8",
+      "changelog_sha256": "5da1f0be08e745e5ffdc5a9cb9f3ff4ea3c3f536094e733713a61fdd555af0ea",
       "agent_impact": "record deploy now records a hosted deploy: on a non-local-serve packet it takes an https --base-url at the route root, requires every built page to answer 200 and every same-origin script and stylesheet to match the built output by sha256, and writes deploy.preview_url and stages.deploy as the loopback path does. The hosted all-template preview no longer skips the deploy stage; next hands off record deploy for it.",
       "compatibility": "additive",
       "migration": "On a hosted target, run record deploy --packet <p> --base-url <https preview url> after deploying instead of hand-editing stages.deploy. A hosted all-template preview now records its deploy the same way before QA.",
@@ -7957,7 +7978,7 @@
           "summary": "Remove the hosted_template_preview deploy skip and the hosted_preview_satisfies_deploy done outcome."
         }
       ],
-      "entry_sha256": "1ffe4764b7f744097c8725b3ef90e3fd59f45319c773142e34eda88a0b3b7487"
+      "entry_sha256": "4f48cc1236df4de3e05716e71267d6fed4421e44919bbcbf6bec0e14bd0393fd"
     }
   ]
 }

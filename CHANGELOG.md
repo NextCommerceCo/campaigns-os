@@ -2,12 +2,17 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.58.0+agent.5] - 2026-10-09
+## [1.58.0+agent.8] - 2026-10-09
 
 ### Added
 
 `record deploy` records a hosted deploy. On a packet whose `deploy.target` is not `local-serve` it takes an https `--base-url` naming the campaign's route root (plain http only on a loopback host), requests every built page there, and requires each to answer HTTP 200. It then requests every script and stylesheet the built pages load from that origin and compares each one's sha256 with the file in the built output, following redirects only within that origin and reading no more bytes than the built file holds; a missing, larger or different asset refuses the record, naming the URL and the built file. A `record build` between the probe and the write refuses the record. HTML is not compared, because hosts inject toolbars and other markup. A passing probe writes what the loopback path writes: `deploy.preview_url` on the packet, and `stages.deploy` completed with the URL in `outputs`, one evidence line per page and per matched asset, and the build fingerprint it probed, so a later `record build` of other output makes deploy owed again. `local-serve` packets keep the loopback-only rules. The hosted all-template preview no longer skips the deploy stage: `next` hands off `record deploy` for the recorded preview URL and then QA, and the hosted deploy prompt names `record deploy` in place of hand-editing `stages.deploy` (campaigns-os#657).
 
+## [1.58.0+agent.6] - 2026-10-09
+
+### Fixed
+
+On a select page whose bundle slots each need a variant (size, colour) before Next, `qa run --test-order` now chooses one per slot before clicking the checkout control. It does this after revealing the second step and after any bundle card click, one field at a time, over the visible, enabled slot variant selects (`[data-next-variant-selectors] select` or `.next-slot-variant-field select`, counted visible when the field is). When a field shows a dropdown UI (`os-dropdown` with a `.os-card__variant-dropdown-toggle` and `os-dropdown-item` rows, as the olympus-mv-two-step starter renders), the runner clicks the toggle and a row like a shopper, even when the SDK has already filled the select, because a page may count a field as chosen only when a row was clicked. It clicks the row matching the select's current value when that row is in stock, so the cart stays what the SDK chose, and otherwise the first in-stock row. After the toggle click it finds the field again by slot identity and the row again by its value, and waits up to 2 seconds for that row to show. A field with no dropdown UI gets its first in-stock option only when its select is empty, with `input` and `change` dispatched. Each choice is recorded on the `entered_via_landing` evidence as `variant_selections: [{ bundle_id, slot, variant_code, value, via }]`, with `via` set to `dropdown` or `select`, so the ordered variants can be checked against the cart lines. A field with no in-stock row or option, or a row that does not show or cannot be clicked, fails the path before Next with the new code `cart_entry_variant_unfilled`, naming the slot, instead of `cart_entry_no_navigation` after the navigation timeout. It classifies as `not_created` like the other cart-entry codes. A page whose filled selects have no dropdown UI is left untouched and `variant_selections` is omitted. Before this, every path on a page that blocks Next until a variant is picked failed with `cart_entry_no_navigation` (campaigns-os#667).
 ## [1.58.0+agent.4] - 2026-10-09
 
 ### Fixed

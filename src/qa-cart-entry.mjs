@@ -35,6 +35,10 @@ export const CART_ENTRY_CODES = Object.freeze({
   ENTRY_CONTROL_MISSING: "cart_entry_control_missing",
   // The control was clicked but the page never reached the checkout URL.
   ENTRY_NO_NAVIGATION: "cart_entry_no_navigation",
+  // A select page's bundle slot shows an empty variant control (size,
+  // colour) with no in-stock option to choose, so its Next would refuse.
+  // Fired before the checkout control is clicked (campaigns-os#667).
+  ENTRY_VARIANT_UNFILLED: "cart_entry_variant_unfilled",
   // The SDK cart held zero items at submit time. Fired before the budget
   // reservation and before the submit click.
   CART_EMPTY_BEFORE_SUBMIT: "cart_empty_before_submit",
@@ -427,6 +431,107 @@ export function chooseCartEntryControl(controls = [], requested = []) {
 // returns the store's `totalQuantity` — and the debugger's cart store second
 // (`window.nextDebug.stores.cart`, present with `?debugger=true`), which is
 // the only public place the line items and their package ids are readable.
+// The variant controls a select page renders per bundle slot: the
+// campaign-cart SDK injects a native select into each slot's
+// [data-next-variant-selectors] (inside a .next-slot-variant-field). The
+// olympus-mv-two-step starter, and pages built from it, hide that select behind
+// a visible os-dropdown (a toggle button plus os-dropdown-item rows carrying
+// `value`); a row click is what sets the select and dispatches `change`.
+export const SLOT_VARIANT_SELECT_SELECTOR = "[data-next-variant-selectors] select, .next-slot-variant-field select";
+export const SLOT_VARIANT_FIELD_SELECTOR = ".next-slot-variant-field";
+export const SLOT_VARIANT_DROPDOWN_TOGGLE_SELECTOR = "os-dropdown .os-card__variant-dropdown-toggle";
+export const SLOT_VARIANT_DROPDOWN_ROW_SELECTOR = "os-dropdown os-dropdown-item";
+
+export const slotVariantKey = ({ bundle_id: bundleId, slot, variant_code: code } = {}) => `${bundleId ?? ""}|${slot}|${code ?? ""}`;
+
+// evaluate() body: the next slot variant action, one per call because a
+// choice can re-render its slot. In document order over the visible slot
+// variant selects (a select counts as visible when it or its field is):
+//   - a field showing a dropdown UI whose key is not in `picked` gets a pick:
+//     the row matching the select's current value when that row is in stock
+//     (so the cart stays what the SDK chose), else the first in-stock row. The
+//     caller clicks the toggle and the row like a shopper, because a page may
+//     count a field as chosen only when a row was clicked. Pre-filled selects
+//     are picked too. Returned as { pick } with the field's index among
+//     SLOT_VARIANT_FIELD_SELECTOR matches and the row's index among the
+//     field's SLOT_VARIANT_DROPDOWN_ROW_SELECTOR matches;
+//   - a select with no dropdown UI is filled here only when it is empty, with
+//     its first in-stock option and input + change dispatched ({ filled });
+//     a pre-filled one is left alone.
+// In stock: enabled, not hidden, non-empty value; for a row also not
+// [disabled], aria-disabled, .next-oos, .next-variant-unavailable or
+// data-available="false", and its native option not disabled. Nothing to
+// choose returns { unfillable } naming the slot; nothing left returns
+// { done: true }.
+export function slotVariantStepScript() {
+  return ({ selector, fieldSelector, toggleSelector, rowSelector, picked = [] }) => {
+    const clean = (value) => String(value || "").replace(/\s+/g, " ").trim();
+    const isVisible = (element) => {
+      if (!element) return false;
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+    };
+    const holderOf = (select) => select.closest(fieldSelector) || select.closest("[data-next-variant-selectors]");
+    const visible = Array.from(new Set(document.querySelectorAll(selector)))
+      .filter((select) => !select.disabled && (isVisible(select) || isVisible(holderOf(select))));
+    const slotRoots = Array.from(new Set(visible.map((select) => select.closest("[data-next-variant-selectors]") || holderOf(select))));
+    const fields = Array.from(document.querySelectorAll(fieldSelector));
+    const describe = (select) => {
+      const field = select.closest(fieldSelector);
+      const index = Number.parseInt(field?.getAttribute("data-next-slot-index") ?? "", 10);
+      const root = select.closest("[data-next-variant-selectors]") || holderOf(select);
+      return {
+        bundle_id: clean(field?.getAttribute("data-next-bundle-id")) || null,
+        slot: Number.isFinite(index) ? index + 1 : slotRoots.indexOf(root) + 1,
+        variant_code: clean(select.getAttribute("data-next-variant-code") || select.getAttribute("data-variant-code") || field?.getAttribute("data-next-variant-code") || select.name) || null,
+      };
+    };
+    const keyOf = (info) => `${info.bundle_id ?? ""}|${info.slot}|${info.variant_code ?? ""}`;
+    const optionInStock = (option) => !option.disabled && !option.hidden && clean(option.value) !== "";
+    for (const select of visible) {
+      const info = describe(select);
+      const field = select.closest(fieldSelector);
+      const toggle = field ? Array.from(field.querySelectorAll(toggleSelector)).find(isVisible) : null;
+      if (toggle) {
+        if (picked.includes(keyOf(info))) continue;
+        const rows = Array.from(field.querySelectorAll(rowSelector));
+        // One in-stock rule: a row is in stock when its own markup says so and
+        // its native option (if any) passes optionInStock.
+        const optionsByValue = new Map(Array.from(select.options).map((option) => [clean(option.value), option]));
+        const rowInStock = (row) => {
+          const value = clean(row.getAttribute("value"));
+          if (!value || row.hidden || row.hasAttribute("disabled") || row.getAttribute("aria-disabled") === "true") return false;
+          if (row.classList.contains("next-oos") || row.classList.contains("next-variant-unavailable") || row.getAttribute("data-available") === "false") return false;
+          const option = optionsByValue.get(value);
+          return !option || optionInStock(option);
+        };
+        const current = clean(select.value);
+        const row = (current && rows.find((candidate) => clean(candidate.getAttribute("value")) === current && rowInStock(candidate))) || rows.find(rowInStock);
+        if (!row) return { unfillable: { ...info, options: rows.length, via: "dropdown" } };
+        const fieldIndex = fields.indexOf(field);
+        const rowIndex = rows.indexOf(row);
+        if (fieldIndex < 0 || rowIndex < 0) {
+          return { unfillable: { ...info, options: rows.length, via: "dropdown", detail: `the dropdown ${fieldIndex < 0 ? "field" : "row"} could not be located` } };
+        }
+        return { pick: { ...info, value: clean(row.getAttribute("value")), field_index: fieldIndex, row_index: rowIndex } };
+      }
+      if (clean(select.value) !== "") continue;
+      const option = Array.from(select.options).find(optionInStock);
+      if (!option) return { unfillable: { ...info, options: select.options.length, via: "select" } };
+      select.value = option.value;
+      select.dispatchEvent(new Event("input", { bubbles: true }));
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+      return { filled: { ...info, value: option.value } };
+    }
+    return { done: true };
+  };
+}
+
+export function slotVariantLabel({ bundle_id: bundleId, slot, variant_code: code } = {}) {
+  return `slot ${slot}${bundleId ? ` (bundle "${bundleId}")` : ""}${code ? ` ${code}` : " variant"}`;
+}
+
 // The enriched line list on `getCartData()` is deliberately NOT read: it is
 // always empty on the shipped SDK (campaign-cart#36; see the cart-state
 // verification section of docs/qa-and-test-orders.md), so it would call every
