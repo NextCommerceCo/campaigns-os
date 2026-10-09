@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Select your pairs</title>
+<style>body{font-family:sans-serif;margin:24px} .card{border:1px solid #ccc;padding:12px;margin:8px 0} .card.next-selected{border-color:#000} .next-slot{border:1px dashed #ccc;padding:8px;margin:8px 0}</style>
+</head>
+<body data-fixture-reset-cart data-fixture-slots="2" data-fixture-prefill="M">
+<main>
+  <h1>Select your pairs</h1>
+  <section data-next-bundle-selector data-next-selection-mode="swap" data-next-selector-id="main">
+    <div class="card next-selected" data-next-bundle-card data-next-package-id="21">2 pairs</div>
+  </section>
+  <button data-next-action="select-variants" onclick="document.getElementById('step-two').hidden = false; this.hidden = true;">Select color &amp; size</button>
+  <div id="step-two" hidden>
+    <div data-next-bundle-slots-for="main" id="bundle-slots-stage"></div>
+    <template id="mv-slot-template"><div class="next-slot"><div data-next-variant-selectors></div></div></template>
+    <button data-next-action="checkout" data-next-url="/x/checkout/">Next</button>
+  </div>
+</main>
+<script src="/sdk-shim.js"></script>
+<script src="/variant-slots.js"></script>
+</body>
+</html>

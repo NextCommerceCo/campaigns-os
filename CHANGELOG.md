@@ -2,13 +2,30 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.58.0+agent.3] - 2026-10-09
+## [1.58.0+agent.7] - 2026-10-09
 
 ### Changed
 
 The vendored starter catalog is re-synced to campaign-cart-starter-templates `d5ff501`, which carries the multi-step checkout contract from campaign-cart-starter-templates#223 and the Campaign Cart SDK 0.4.42 pin. Builds made with 1.58.0's `next_step` frontmatter now take templates whose step forms and select links read `next_step` and whose `next-success-url` is the Checkout's post-payment destination. Every certified family records 0.4.42 verification evidence (`sdk-0.4.42-2026-10-09`), and the eight agent CampaignSpec fixtures pin `sdk_version` 0.4.42. The certified-family fixtures are regenerated at the pin, and the payment-chrome asset pin moves to `d5ff501`; the five asset hashes are unchanged.
 
 The SDK attribute index moves to v0.4.42 with the same recipe; it returns the same 149 names as at v0.4.41. 0.4.42 joins the cart-placeholder verified pins: the ten renderer and enhancer files the placeholder lists come from have the same git blob ids at v0.4.38 and v0.4.42. The checkout field-name mapping is unchanged at v0.4.42. The SDK support policy names 0.4.42 as `latest_known_release`; `minimum_supported` and `preferred_minimum` are unchanged.
+
+## [1.58.0+agent.6] - 2026-10-09
+
+### Fixed
+
+On a select page whose bundle slots each need a variant (size, colour) before Next, `qa run --test-order` now chooses one per slot before clicking the checkout control. It does this after revealing the second step and after any bundle card click, one field at a time, over the visible, enabled slot variant selects (`[data-next-variant-selectors] select` or `.next-slot-variant-field select`, counted visible when the field is). When a field shows a dropdown UI (`os-dropdown` with a `.os-card__variant-dropdown-toggle` and `os-dropdown-item` rows, as the olympus-mv-two-step starter renders), the runner clicks the toggle and a row like a shopper, even when the SDK has already filled the select, because a page may count a field as chosen only when a row was clicked. It clicks the row matching the select's current value when that row is in stock, so the cart stays what the SDK chose, and otherwise the first in-stock row. After the toggle click it finds the field again by slot identity and the row again by its value, and waits up to 2 seconds for that row to show. A field with no dropdown UI gets its first in-stock option only when its select is empty, with `input` and `change` dispatched. Each choice is recorded on the `entered_via_landing` evidence as `variant_selections: [{ bundle_id, slot, variant_code, value, via }]`, with `via` set to `dropdown` or `select`, so the ordered variants can be checked against the cart lines. A field with no in-stock row or option, or a row that does not show or cannot be clicked, fails the path before Next with the new code `cart_entry_variant_unfilled`, naming the slot, instead of `cart_entry_no_navigation` after the navigation timeout. It classifies as `not_created` like the other cart-entry codes. A page whose filled selects have no dropdown UI is left untouched and `variant_selections` is omitted. Before this, every path on a page that blocks Next until a variant is picked failed with `cart_entry_no_navigation` (campaigns-os#667).
+## [1.58.0+agent.4] - 2026-10-09
+
+### Fixed
+
+A QA run that re-ran failed order paths no longer reads as more paths than it planned. Each `test_orders[]` entry in the verdict now carries `attempt` (1 for the first try, 2 for the re-run) beside the `plan_id` of the planned path it belongs to, and `qa run` prints a summary line that keeps paths, attempts and created orders apart, such as `Test orders: 5 paths, 10 attempts, 0 orders created`. Before this, a run capped at five paths where every path was re-run once showed ten entries and nothing to say which were retries. The Assembly Report's `stages.qa.purchase_proof` gains `test_order_attempts`, and `order_paths_executed` now counts planned paths rather than attempts. Verdicts written before `attempt` existed count each entry as a path, as they did before. The array keeps one entry per attempt and no existing field changed shape.
+
+## [1.58.0+agent.3] - 2026-10-09
+
+### Fixed
+
+When the built output no longer matches the recorded build fingerprint, doctor's `built_output.fingerprint_stale` and the `polish capture` refusal now name the paths that are extra, missing, or changed, at most 20 per list followed by `(+N more)`. Before, both reported only the recorded and current hashes, so finding the files behind a mismatch took a manual diff of `_site/`. `record build` keeps the path and SHA-256 list behind the fingerprint on `stages.assembly.build_manifest` to make the comparison possible; the field is additive and the fingerprint value is unchanged. A file or folder named like a macOS or iCloud sync conflict copy (`<name> 2.<ext>` beside `<name>.<ext>`) is marked as one, with a hint to remove the copies and rebuild. A build recorded before this change carries no manifest: the refusal is unchanged and says to run `record build` again to record one (campaigns-os#659).
 
 ## [1.58.0+agent.2] - 2026-10-09
 

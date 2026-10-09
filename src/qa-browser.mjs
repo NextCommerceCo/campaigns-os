@@ -52,6 +52,13 @@ import {
   isCartEntryCode,
   resolveCartEntryPage,
   sdkCartSnapshotScript,
+  SLOT_VARIANT_DROPDOWN_ROW_SELECTOR,
+  SLOT_VARIANT_DROPDOWN_TOGGLE_SELECTOR,
+  SLOT_VARIANT_FIELD_SELECTOR,
+  SLOT_VARIANT_SELECT_SELECTOR,
+  slotVariantKey,
+  slotVariantLabel,
+  slotVariantStepScript,
   summarizeSelectionSurface,
   UNDECLARED_ROUTE_ATTRIBUTES,
 } from "./qa-cart-entry.mjs";
@@ -304,7 +311,7 @@ async function dispatchTestOrderPlans({ context, plans, checkoutPage, args = {},
       const identifier = planId(plan);
       const pageForPlan = (typeof plan === "object" && plan?.checkout_page?.url) ? plan.checkout_page : checkoutPage;
       const firstAttempt = await runSingle(context, pageForPlan, plan, args, runId, attemptOptions);
-      orders.push(firstAttempt.order);
+      orders.push(testOrderEntry(firstAttempt.order, identifier, 1));
       orderPlans.push(plan);
       // Every attempt this path actually SUBMITTED, in order. The confirmed
       // creation count is read from these and never from the deciding result
@@ -364,7 +371,7 @@ async function dispatchTestOrderPlans({ context, plans, checkoutPage, args = {},
               const rerunAttempt = await runSingle(context, pageForPlan, plan, args, runId, attemptOptions);
               attemptsForPlan.push(rerunAttempt);
               if (rerunAttempt.order) {
-                orders.push(rerunAttempt.order);
+                orders.push(testOrderEntry(rerunAttempt.order, identifier, 2));
                 orderPlans.push(plan);
               }
               if (rerunAttempt.budget_exhausted) {
@@ -498,6 +505,17 @@ async function dispatchTestOrderPlans({ context, plans, checkoutPage, args = {},
   if (coverage) assertions.push(coverage);
 
   return { orders, assertions, receiptAnalytics, journeyAnalytics, creationBudget, qcResults };
+}
+
+// One test_orders[] entry per attempt, never one per planned path: a re-run
+// places its own real order and the operator cleaning up test orders needs both.
+// So each entry names the planned path it belongs to (`plan_id`, the same id the
+// creation budget charges) and which attempt it was, 1-based, so a reader can
+// tell 5 paths with one retry each from 10 paths (#661). A copy, so the attempt
+// result the assertions read is left as the runner returned it.
+function testOrderEntry(order, identifier, attempt) {
+  if (!order || typeof order !== "object") return order;
+  return { ...order, plan_id: order.plan_id ?? identifier, attempt };
 }
 
 // Analytics-parity leg: capture the live dataLayer event stream + GTM/pixel
@@ -4378,6 +4396,11 @@ async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPack
     cardSelection = choice.select_card ? await selectPackageCard(page, choice.select_card, []) : null;
     control.package_id = choice.select_card?.packageId || await selectedBundleCardPackage(page);
   }
+  // Each bundle slot may need a variant (size, colour) before the page lets
+  // Next through (campaigns-os#667). Fill every visible empty slot variant
+  // select with its first in-stock option now, after the card that decides
+  // the slots, and refuse by name when one has nothing to choose.
+  const variantSelections = control.kind === "checkout_button" ? await fillSlotVariants(page) : [];
   // The index is the control's position among what its own locator matches,
   // so it replays with nth(); no selector is rebuilt from an attribute value.
   const controlSelector = control.kind === "add_to_cart"
@@ -4414,12 +4437,124 @@ async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPack
       control_kind: control.kind,
       package_id: control.package_id || null,
       ...(cardSelection ? { bundle_card_selection: cardSelection } : {}),
+      ...(variantSelections.length ? { variant_selections: variantSelections } : {}),
       sdk_ready: sdkReady,
       arrived_url: redactUrlQuery(safePageUrl(page)),
       checkout_selection_surface: surface,
       ...probeEvidence,
     },
   };
+}
+
+// Chooses a select page's slot variants one at a time (a choice can
+// re-render its slot) and returns the choices. A field showing a dropdown UI
+// is picked like a shopper, toggle then row, even when its select is
+// pre-filled, because a page may count a field as chosen only when a row was
+// clicked (campaigns-os#667). A select with no dropdown UI is filled only when
+// empty; a pre-filled native-only page returns [] untouched. Throws
+// ENTRY_VARIANT_UNFILLED, before any click on the checkout control, when a
+// field has no in-stock row or option, a pick cannot be clicked, or the page
+// keeps asking for more choices.
+const SLOT_VARIANT_FILL_LIMIT = 40;
+const SLOT_VARIANT_ROW_WAIT_MS = 2000;
+
+// The slot variant field a pick names, found again by its slot identity
+// (data-next-bundle-id, data-next-slot-index, variant code) so a re-render
+// since the pick was planned does not leave a stale index; the planned index
+// is the fallback for a field that carries no slot index.
+async function slotVariantField(page, pick) {
+  const fields = page.locator(SLOT_VARIANT_FIELD_SELECTOR);
+  const index = await fields.evaluateAll((nodes, want) => {
+    const clean = (value) => String(value || "").replace(/\s+/g, " ").trim();
+    const found = nodes.findIndex((node) => {
+      const slotIndex = Number.parseInt(node.getAttribute("data-next-slot-index") ?? "", 10);
+      if (!Number.isFinite(slotIndex) || slotIndex + 1 !== want.slot) return false;
+      if ((clean(node.getAttribute("data-next-bundle-id")) || null) !== want.bundle_id) return false;
+      const select = node.querySelector("select");
+      const code = clean(select?.getAttribute("data-next-variant-code") || select?.getAttribute("data-variant-code") || node.getAttribute("data-next-variant-code") || select?.name) || null;
+      return code === want.variant_code;
+    });
+    return found >= 0 ? found : want.field_index;
+  }, pick).catch(() => pick.field_index);
+  return fields.nth(index);
+}
+
+// The pick's row, matched by its value among the field's rows (no selector is
+// built from the value), once it is visible; null if it does not show in time.
+async function visibleSlotVariantRow(page, pick, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const field = await slotVariantField(page, pick);
+    const rows = field.locator(SLOT_VARIANT_DROPDOWN_ROW_SELECTOR);
+    const index = await rows.evaluateAll((nodes, value) => nodes.findIndex((node) => {
+      if (String(node.getAttribute("value") || "").replace(/\s+/g, " ").trim() !== value) return false;
+      const rect = node.getBoundingClientRect();
+      const style = getComputedStyle(node);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+    }), pick.value).catch(() => -1);
+    if (index >= 0) return rows.nth(index);
+    if (Date.now() >= deadline) return null;
+    await page.waitForTimeout(100);
+  }
+}
+async function fillSlotVariants(page) {
+  const selections = [];
+  const picked = [];
+  const step = () => page.evaluate(slotVariantStepScript(), {
+    selector: SLOT_VARIANT_SELECT_SELECTOR,
+    fieldSelector: SLOT_VARIANT_FIELD_SELECTOR,
+    toggleSelector: SLOT_VARIANT_DROPDOWN_TOGGLE_SELECTOR,
+    rowSelector: SLOT_VARIANT_DROPDOWN_ROW_SELECTOR,
+    picked,
+  }).catch(() => ({ done: true }));
+  for (let pass = 0; pass < SLOT_VARIANT_FILL_LIMIT; pass += 1) {
+    const result = await step();
+    if (result?.done) {
+      if (selections.length) await page.waitForLoadState("networkidle", { timeout: 3000 }).catch(() => {});
+      return selections;
+    }
+    if (result?.unfillable?.detail) {
+      throw codedError(CART_ENTRY_CODES.ENTRY_VARIANT_UNFILLED, `${slotVariantLabel(result.unfillable)}: ${result.unfillable.detail}; the page would refuse Next`);
+    }
+    if (result?.unfillable) {
+      throw codedError(
+        CART_ENTRY_CODES.ENTRY_VARIANT_UNFILLED,
+        `${slotVariantLabel(result.unfillable)} has no in-stock ${result.unfillable.via === "dropdown" ? "dropdown row" : "option"} to choose (${result.unfillable.options} ${result.unfillable.via === "dropdown" ? "row" : "option"}(s), all disabled or placeholder); the page would refuse Next`,
+      );
+    }
+    const choice = result.pick || result.filled;
+    if (result.pick) {
+      try {
+        const field = await slotVariantField(page, result.pick);
+        await clickControl(field.locator(SLOT_VARIANT_DROPDOWN_TOGGLE_SELECTOR).filter({ visible: true }).first(), { timeout: 5000 });
+        // The menu may open late or re-render on toggle: re-resolve the field
+        // and the row by its value, and wait for that row to show.
+        const row = await visibleSlotVariantRow(page, result.pick, SLOT_VARIANT_ROW_WAIT_MS);
+        if (!row) {
+          throw codedError(
+            CART_ENTRY_CODES.ENTRY_VARIANT_UNFILLED,
+            `${slotVariantLabel(choice)} dropdown row "${choice.value}" did not show within ${SLOT_VARIANT_ROW_WAIT_MS}ms of opening the dropdown; the page would refuse Next`,
+          );
+        }
+        await clickControl(row, { timeout: 5000 });
+      } catch (error) {
+        if (error?.code === CART_ENTRY_CODES.ENTRY_VARIANT_UNFILLED) throw error;
+        throw codedError(
+          CART_ENTRY_CODES.ENTRY_VARIANT_UNFILLED,
+          `${slotVariantLabel(choice)} dropdown row "${choice.value}" could not be clicked (${String(error?.message || error).split("\n")[0]}); the page would refuse Next`,
+        );
+      }
+      picked.push(slotVariantKey(choice));
+    }
+    selections.push({ bundle_id: choice.bundle_id, slot: choice.slot, variant_code: choice.variant_code, value: choice.value, via: result.pick ? "dropdown" : "select" });
+    await page.waitForTimeout(250);
+  }
+  const pending = await step();
+  if (pending?.done) return selections;
+  throw codedError(
+    CART_ENTRY_CODES.ENTRY_VARIANT_UNFILLED,
+    `${slotVariantLabel(pending.pick || pending.filled || pending.unfillable)} still needed a choice after ${SLOT_VARIANT_FILL_LIMIT} variant choices; the page keeps clearing them`,
+  );
 }
 
 // The package of the bundle card a select page shows as selected, or null.

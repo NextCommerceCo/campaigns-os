@@ -275,6 +275,7 @@ test("summarizePurchaseProof counts order paths without carrying any order ident
     declared_order_path_depth: "common",
     declared_typed_card_depth: "common",
     order_paths_executed: 2,
+    test_order_attempts: 2,
     orders_created: 2,
     orders_verified: 1,
     all_orders_test_mode: true,
@@ -283,6 +284,14 @@ test("summarizePurchaseProof counts order paths without carrying any order ident
   for (const leak of ["1001", "1002", "REF-1", "REF-2", "example.test", "qa@"]) {
     assert.equal(serialized.includes(leak), false, `summary must not carry ${leak}`);
   }
+});
+
+test("summarizePurchaseProof treats a string attempt above 1 as a retry, not another path", () => {
+  const summary = summarizePurchaseProof({
+    verdict: { test_orders: [{ plan_id: "checkout", attempt: "1" }, { plan_id: "checkout", attempt: "2" }, { plan_id: "accept", attempt: "two" }] },
+  });
+  assert.equal(summary.order_paths_executed, 2);
+  assert.equal(summary.test_order_attempts, 3);
 });
 
 test("summarizePurchaseProof reports an explicit zero for a --test-order off run", () => {

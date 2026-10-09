@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { __qaBrowserTestHooks } from "./qa-browser.mjs";
-import { computeDisposition, deriveExceptions } from "./qa-verdict.mjs";
+import { computeDisposition, deriveExceptions, formatTestOrderSummary, summarizePurchaseProof } from "./qa-verdict.mjs";
 import { __qaNodeTestHooks, runQaCli } from "./qa-node.mjs";
 
 const {
@@ -392,6 +392,36 @@ test("a provably pre-submit failure keeps its one bounded re-run", async () => {
   // one case that still earns a re-run.
   assert.equal(result.evidence.retry.attempts, 2);
   assert.equal(result.evidence.order_creation.action, "rerun");
+});
+
+test("a retried path keeps its path identity and attempt number on every test_orders[] entry", async () => {
+  // A 1.57.0 e2e run planned 5 order paths and its verdict carried 10
+  // test_orders[] entries: each failed path was re-run once and every attempt
+  // is its own entry. Each entry now names the planned path it belongs to and
+  // which attempt it was, and the counts separate paths, attempts and orders.
+  const runner = scriptedRunner([
+    { submits: false, attempt: preSubmitFailureAttempt() },
+    { submits: false, attempt: preSubmitFailureAttempt() },
+    { submits: true, attempt: passedAttempt("ref-3") },
+  ]);
+  const { orders } = await dispatch({ plans: ["checkout", "accept"], runner });
+
+  assert.equal(runner.calls.length, 3, "the checkout path was re-run once");
+  assert.deepEqual(
+    orders.map((order) => ({ plan_id: order.plan_id, attempt: order.attempt })),
+    [
+      { plan_id: "checkout", attempt: 1 },
+      { plan_id: "checkout", attempt: 2 },
+      { plan_id: "accept", attempt: 1 },
+    ],
+  );
+
+  const verdict = { test_orders: orders };
+  const proof = summarizePurchaseProof({ verdict });
+  assert.equal(proof.order_paths_executed, 2, "two planned paths ran, not three");
+  assert.equal(proof.test_order_attempts, 3);
+  assert.equal(proof.orders_created, 1);
+  assert.equal(formatTestOrderSummary(verdict), "Test orders: 2 paths, 3 attempts, 1 order created");
 });
 
 test("an exhausted creation budget stops the run before the submit click", async () => {
