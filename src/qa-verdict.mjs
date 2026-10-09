@@ -256,13 +256,35 @@ export function summarizePurchaseProof({ verdict = null, proofPolicy = null } = 
   return {
     declared_order_path_depth: optionalString(proofPolicy?.order_path_depth),
     declared_typed_card_depth: optionalString(proofPolicy?.typed_card_depth),
-    order_paths_executed: orders.length,
+    order_paths_executed: orders.filter((order) => !isTestOrderRetry(order)).length,
+    test_order_attempts: orders.length,
     orders_created: created.length,
     orders_verified: orders.filter((order) => order.verification?.verified === true).length,
     // null, not false, when nothing ran: "no order was out of test mode" and
     // "no order ran at all" are different facts.
     all_orders_test_mode: orders.length ? orders.every((order) => order.is_test === true) : null,
   };
+}
+
+// A re-run of a planned path is its own test_orders[] entry with `attempt` 2;
+// it is an attempt, not another path. Entries written before `attempt` existed
+// each count as a path, which is what they were counted as then.
+function isTestOrderRetry(order) {
+  return Number.isInteger(order?.attempt) && order.attempt > 1;
+}
+
+function plural(count, noun) {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+// The human summary line for a run that drove typed-card test orders: planned
+// paths, attempts (a re-run is a second attempt at the same path) and orders
+// the platform created, kept apart so a path that was retried is not read as
+// two paths against the --max-test-orders cap. null when no order path ran.
+export function formatTestOrderSummary(verdict) {
+  const summary = summarizePurchaseProof({ verdict });
+  if (!summary.test_order_attempts) return null;
+  return `Test orders: ${plural(summary.order_paths_executed, "path")}, ${plural(summary.test_order_attempts, "attempt")}, ${plural(summary.orders_created, "order")} created`;
 }
 
 // The browser placeholder-text residue gate (H3.1) emits one assertion per

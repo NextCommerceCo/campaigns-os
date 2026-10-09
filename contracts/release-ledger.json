@@ -7844,6 +7844,27 @@
         }
       ],
       "entry_sha256": "437ff972f3680e3bd4e46090fbe67833fb8c988e9ad7dd2aa12c566319afae01"
+    },
+    {
+      "id": "RL-0267",
+      "sequence": 253,
+      "date": "2026-10-09",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.58.0+agent.4",
+      "changelog_sha256": "4c5b0cd0c5f605b3511ef07e2927ffd1258f586cd82b52105eb56b4e09566d09",
+      "agent_impact": "QA verdict test_orders[] entries now carry attempt (1-based) beside plan_id, so a re-run of a planned path is distinguishable from another path. purchase_proof gains test_order_attempts and order_paths_executed counts planned paths, not attempts. Read paths, attempts and created orders as three separate counts.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Document the per-entry attempt number, the paths/attempts/orders summary line, and test_order_attempts in purchase_proof."
+        }
+      ],
+      "entry_sha256": "eb20e5e2338c54078a0a4dbc9a3f1d41956906912b890b1885454402954cd1aa"
     }
   ]
 }

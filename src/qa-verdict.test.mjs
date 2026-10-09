@@ -275,6 +275,7 @@ test("summarizePurchaseProof counts order paths without carrying any order ident
     declared_order_path_depth: "common",
     declared_typed_card_depth: "common",
     order_paths_executed: 2,
+    test_order_attempts: 2,
     orders_created: 2,
     orders_verified: 1,
     all_orders_test_mode: true,

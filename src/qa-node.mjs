@@ -37,7 +37,7 @@ import { assessReceiptPurchase } from "./qa-analytics-correctness.mjs";
 import { trackingQaAssertion, trackingRunScopeRows } from "./qa-tracking-params.mjs";
 import { contentParamNotRequestedRows, contentParamQaAssertion } from "./qa-content-params.mjs";
 import { policyLinkNotRequestedRows, policyLinkQaAssertion } from "./qa-policy-links.mjs";
-import { createVerdict, isFindingAssertion, QA_ASSERTION_FAMILY_VOCABULARY, SESSION_ENDING_DISPOSITIONS, SEVERITY, STATUS, validateVerdict } from "./qa-verdict.mjs";
+import { createVerdict, formatTestOrderSummary, isFindingAssertion, QA_ASSERTION_FAMILY_VOCABULARY, SESSION_ENDING_DISPOSITIONS, SEVERITY, STATUS, validateVerdict } from "./qa-verdict.mjs";
 import { normalizeSdkMetaName, lookupSdkIgnoredMetaTag } from "./sdk-meta-tags.mjs";
 import { annotateQaAssertionCauses, formatCauseReportLines, formatCauseTag } from "./finding-cause.mjs";
 import { promoteQaVerdict, writeQaSidecar } from "./qa-sidecar.mjs";
@@ -3577,6 +3577,8 @@ function output(value, args) {
       console.log("This is a passing proof with exceptions. Report these exceptions to the operator; do not clear or waive them, or change markup just to make them pass.");
     }
     console.log(`Counts: ${Object.entries(value.counts).map(([status, count]) => `${count} ${status}`).join(", ")}`);
+    const testOrderSummary = formatTestOrderSummary(value.verdict);
+    if (testOrderSummary) console.log(testOrderSummary);
     printCauseLines(value.verdict);
     printThemeGateLines(value.theme_gate, value.packet_path, value.report_path);
     if (value.commercial) {
