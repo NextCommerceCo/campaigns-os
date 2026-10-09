@@ -311,7 +311,7 @@ async function dispatchTestOrderPlans({ context, plans, checkoutPage, args = {},
       const identifier = planId(plan);
       const pageForPlan = (typeof plan === "object" && plan?.checkout_page?.url) ? plan.checkout_page : checkoutPage;
       const firstAttempt = await runSingle(context, pageForPlan, plan, args, runId, attemptOptions);
-      orders.push(firstAttempt.order);
+      orders.push(testOrderEntry(firstAttempt.order, identifier, 1));
       orderPlans.push(plan);
       // Every attempt this path actually SUBMITTED, in order. The confirmed
       // creation count is read from these and never from the deciding result
@@ -371,7 +371,7 @@ async function dispatchTestOrderPlans({ context, plans, checkoutPage, args = {},
               const rerunAttempt = await runSingle(context, pageForPlan, plan, args, runId, attemptOptions);
               attemptsForPlan.push(rerunAttempt);
               if (rerunAttempt.order) {
-                orders.push(rerunAttempt.order);
+                orders.push(testOrderEntry(rerunAttempt.order, identifier, 2));
                 orderPlans.push(plan);
               }
               if (rerunAttempt.budget_exhausted) {
@@ -505,6 +505,17 @@ async function dispatchTestOrderPlans({ context, plans, checkoutPage, args = {},
   if (coverage) assertions.push(coverage);
 
   return { orders, assertions, receiptAnalytics, journeyAnalytics, creationBudget, qcResults };
+}
+
+// One test_orders[] entry per attempt, never one per planned path: a re-run
+// places its own real order and the operator cleaning up test orders needs both.
+// So each entry names the planned path it belongs to (`plan_id`, the same id the
+// creation budget charges) and which attempt it was, 1-based, so a reader can
+// tell 5 paths with one retry each from 10 paths (#661). A copy, so the attempt
+// result the assertions read is left as the runner returned it.
+function testOrderEntry(order, identifier, attempt) {
+  if (!order || typeof order !== "object") return order;
+  return { ...order, plan_id: order.plan_id ?? identifier, attempt };
 }
 
 // Analytics-parity leg: capture the live dataLayer event stream + GTM/pixel

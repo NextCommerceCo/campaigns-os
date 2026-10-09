@@ -7894,8 +7894,29 @@
       "entry_sha256": "bf5bf930aecd1ff7c31b5fee33a696236114fe5839c5bffb375be5d0eb5e3ff9"
     },
     {
-      "id": "RL-0269",
+      "id": "RL-0267",
       "sequence": 255,
+      "date": "2026-10-09",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.58.0+agent.4",
+      "changelog_sha256": "4c5b0cd0c5f605b3511ef07e2927ffd1258f586cd82b52105eb56b4e09566d09",
+      "agent_impact": "QA verdict test_orders[] entries now carry attempt (1-based) beside plan_id, so a re-run of a planned path is distinguishable from another path. purchase_proof gains test_order_attempts and order_paths_executed counts planned paths, not attempts. Read paths, attempts and created orders as three separate counts.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Document the per-entry attempt number, the paths/attempts/orders summary line, and test_order_attempts in purchase_proof."
+        }
+      ],
+      "entry_sha256": "99c2bba07b9cbe7860b60a5af237081c995eee317586b7f06e86e4f8876d9bb5"
+    },
+    {
+      "id": "RL-0269",
+      "sequence": 256,
       "date": "2026-10-09",
       "kind": "release",
       "surface_version": null,
@@ -7912,7 +7933,7 @@
           "summary": "Document slot variant choice on select-page cart entry (dropdown row click or native fill), the variant_selections evidence, and the cart_entry_variant_unfilled code."
         }
       ],
-      "entry_sha256": "54fef69e2f79451fd1c3069e28ec3296854b8315037ae86b931de5ff6a2be58c"
+      "entry_sha256": "3d4f8131b1d1d74e4a9f21e98bbbc721d6dd36ba98f8f2617f383adc253a9877"
     }
   ]
 }
