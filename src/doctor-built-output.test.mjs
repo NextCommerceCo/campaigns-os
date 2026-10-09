@@ -1036,6 +1036,7 @@ test("built_output.fingerprint_stale names extra, missing and changed paths and 
     writeFileSync(join(root, "index.html"), "<html><body>Landing</body></html>");
     writeFileSync(join(root, "checkout", "index.html"), "<html><body>Checkout</body></html>");
     writeFileSync(join(root, "assets", "old.webp"), "old");
+    writeFileSync(join(root, "assets", "30d.webp"), "original");
     const recorded = computeBuildFingerprint(root).fingerprint;
     const assembly = { status: "completed", build_fingerprint: recorded, build_manifest: manifestEntries(root) };
 
@@ -1055,6 +1056,26 @@ test("built_output.fingerprint_stale names extra, missing and changed paths and 
     assert.deepEqual(detail.drift.missing, ["assets/old.webp"]);
     assert.deepEqual(detail.drift.changed, ["checkout/index.html"]);
     assert.deepEqual(detail.drift.conflict_copies, ["assets/30d 2.webp"]);
+  });
+});
+
+test("a trailing number is not a sync conflict copy unless the unsuffixed original exists", () => {
+  withTempDir((dir) => {
+    const root = join(dir, "_site", SLUG);
+    mkdirSync(join(root, "docs"), { recursive: true });
+    writeFileSync(join(root, "index.html"), "<html><body>Landing</body></html>");
+    const recorded = computeBuildFingerprint(root).fingerprint;
+    const assembly = { status: "completed", build_fingerprint: recorded, build_manifest: manifestEntries(root) };
+
+    writeFileSync(join(root, "docs", "chapter 12.html"), "real page");
+    mkdirSync(join(root, "week 10"), { recursive: true });
+    writeFileSync(join(root, "week 10", "index.html"), "real folder");
+
+    const errors = [];
+    validateBuildOutputFingerprint(PACKET, errors, [], [], { target_repo: dir }, { report: { stages: { assembly } } });
+    assert.deepEqual(codes(errors), ["built_output.fingerprint_stale"]);
+    assert.doesNotMatch(errors[0].message, /sync conflict cop/);
+    assert.deepEqual(errors[0].detail.drift.conflict_copies, []);
   });
 });
 

@@ -384,10 +384,22 @@ export function recordedBuildManifest(assembly) {
 }
 
 // macOS and iCloud name a sync conflict copy `<name> 2.<ext>` (then ` 3`,
-// ...), on files and on folders. A name of that shape in built output is
-// almost always one, so it is flagged; the flag is a hint, never a verdict.
-const CONFLICT_COPY_SEGMENT = /^.+ ([2-9]|[1-9]\d+)(\.[^.]+)?$/;
-export const isSyncConflictCopyPath = (path) => String(path).split("/").some((segment) => CONFLICT_COPY_SEGMENT.test(segment));
+// ...), on files and on folders. A trailing " N" alone is too common in real
+// names ("chapter 12.md"), so a path counts as a copy only when the same path
+// without the suffix also exists. The flag is a hint, never a verdict.
+const CONFLICT_COPY_SEGMENT = /^(.+) (?:[2-9]|[1-9]\d+)(\.[^.]+)?$/;
+export function isSyncConflictCopyPath(path, knownPaths) {
+  const segments = String(path).split("/");
+  const known = [...knownPaths];
+  return segments.some((segment, index) => {
+    const match = CONFLICT_COPY_SEGMENT.exec(segment);
+    if (!match) return false;
+    const original = [...segments.slice(0, index), `${match[1]}${match[2] ?? ""}`].join("/");
+    return index === segments.length - 1
+      ? known.includes(original)
+      : known.some((candidate) => candidate.startsWith(`${original}/`));
+  });
+}
 
 export const BUILD_DRIFT_PATH_LIMIT = 20;
 
@@ -412,16 +424,18 @@ export function describeBuildOutputDrift(assembly, current) {
   const extra = [...now.keys()].filter((path) => !before.has(path));
   const missing = [...before.keys()].filter((path) => !now.has(path));
   const changed = [...now.keys()].filter((path) => before.has(path) && before.get(path) !== now.get(path));
-  const conflictCopies = extra.filter(isSyncConflictCopyPath);
+  const knownPaths = new Set([...before.keys(), ...now.keys()]);
+  const isCopy = (path) => isSyncConflictCopyPath(path, knownPaths);
+  const conflictCopies = extra.filter(isCopy);
   const list = (label, paths) => {
     if (paths.length === 0) return null;
-    const shown = paths.slice(0, BUILD_DRIFT_PATH_LIMIT).map((path) => (isSyncConflictCopyPath(path) ? `${path} [sync conflict copy]` : path));
+    const shown = paths.slice(0, BUILD_DRIFT_PATH_LIMIT).map((path) => (isCopy(path) ? `${path} [sync conflict copy]` : path));
     const more = paths.length > BUILD_DRIFT_PATH_LIMIT ? ` (+${paths.length - BUILD_DRIFT_PATH_LIMIT} more)` : "";
     return `${paths.length} ${label}: ${shown.join(", ")}${more}`;
   };
   const parts = [list("extra", extra), list("missing", missing), list("changed", changed)].filter(Boolean);
   const hint = conflictCopies.length
-    ? ` ${conflictCopies.length} extra file name(s) match the macOS/iCloud sync conflict copy pattern "<name> 2.<ext>"; they are sync conflict copies, not build output, so remove them (or move the repo out of the synced folder) and rebuild.`
+    ? ` ${conflictCopies.length} extra file name(s) look like macOS/iCloud sync conflict copies ("<name> 2.<ext>" beside "<name>.<ext>"); if they are, remove them (or move the repo out of the synced folder) and rebuild.`
     : "";
   return {
     manifest: "recorded",

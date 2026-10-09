@@ -7852,7 +7852,7 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.58.0+agent.3",
-      "changelog_sha256": "390d6a2f912f8febb3998e87c2eb9e4b9ca936d91163701c5e4dd13d0958b3fb",
+      "changelog_sha256": "9bef01116d1c80113af92aea5cb07791aec016cfe203e2cd5ac7759ac5786e73",
       "agent_impact": "doctor built_output.fingerprint_stale and the polish capture fingerprint refusal now list the extra, missing and changed paths (capped at 20 per list) and flag macOS/iCloud sync conflict copies; record build writes the additive stages.assembly.build_manifest that makes the diff possible. Builds recorded earlier refuse as before and say to re-run record build.",
       "compatibility": "additive",
       "migration": "none",
@@ -7870,7 +7870,7 @@
           "summary": "built_output.fingerprint_stale names extra, missing and changed paths against the recorded manifest and flags sync conflict copies."
         }
       ],
-      "entry_sha256": "6d91f75cb49b302bc392c1e54a053efcea4dcf5910eccc5c06266559bac279bb"
+      "entry_sha256": "1e47ef797af7ca44f618b35a6b51c053fd19403e5c27119934974d992f54f554"
     }
   ]
 }
