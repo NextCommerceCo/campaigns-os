@@ -203,6 +203,13 @@ export function paymentPagesForFunnel(funnel: Funnel | null | undefined): Page[]
  * "this form moves on without taking payment". A supported v4 `schema_version`
  * becomes `5.0`; a missing or unsupported one is left for SchemaVersion to
  * report.
+ *
+ * A retyped page keeps the link it followed as a checkout. A `checkout_step`
+ * moves on through `next_page` only (routing.ts ignores `success_url` on it),
+ * so a v4 chain linked through `success_url` would otherwise upgrade into a
+ * step with no way forward and fail CheckoutStepReachesCheckout. The resolved
+ * forward target is written to `next_page` and `success_url` is dropped; a
+ * `next_page` the checkout shadowed (never taken) is replaced by it.
  */
 export function upgradeCampaignSpec<T>(input: T): T {
   if (input == null || typeof input !== 'object' || Array.isArray(input)) return input
@@ -224,7 +231,14 @@ export function upgradeCampaignSpec<T>(input: T): T {
     changed = true
     return {
       ...funnel,
-      pages: pages.map((page) => (retype.has(page) ? { ...page, type: CHECKOUT_STEP_PAGE_TYPE } : page)),
+      pages: pages.map((page) => {
+        if (!retype.has(page)) return page
+        const step = { ...page, type: CHECKOUT_STEP_PAGE_TYPE }
+        const forward = forwardRouteTarget(page)
+        if (forward === null) return step
+        const { success_url: _ignoredOnStep, ...rest } = step
+        return forward === page.next_page ? rest : { ...rest, next_page: forward }
+      }),
     }
   })
 

@@ -82,6 +82,46 @@ describe('upgradeCampaignSpec (v4 → v5 on read)', () => {
     const errors = validateSpec(v4ThreeStep()).filter((v) => v.severity === 'error')
     expect(errors).toEqual([])
   })
+
+  test('a v4 chain linked through success_url keeps its links as next_page', () => {
+    const v4 = { schema_version: '4.3', funnels: [{ id: 'f', pages: [
+      { id: 'info', type: 'checkout', is_entry: true, success_url: 'ship' },
+      { id: 'ship', type: 'checkout', success_url: 'pay.html' },
+      { id: 'pay', type: 'checkout', success_url: 'ty' },
+      { id: 'ty', type: 'thankyou' },
+    ] }] } as unknown as CampaignSpec
+    const pages = upgradeCampaignSpec(v4).funnels[0].pages ?? []
+    expect(pages.map((p: Page) => `${p.id}:${p.type}:${p.next_page ?? '-'}:${p.success_url ?? '-'}`)).toEqual([
+      'info:checkout_step:ship:-',
+      'ship:checkout_step:pay.html:-',
+      'pay:checkout:-:ty',
+      'ty:thankyou:-:-',
+    ])
+    const flagged = validateSpec(v4)
+      .filter((v) => ['CheckoutStepReachesCheckout', 'RouteFieldIgnoredForPageType'].includes(v.ruleId))
+    expect(flagged).toEqual([])
+  })
+
+  test('a retyped page takes the link it followed as a checkout, replacing a shadowed next_page', () => {
+    const v4 = { schema_version: '4.3', funnels: [{ id: 'f', pages: [
+      { id: 'info', type: 'checkout', success_url: 'pay', next_page: 'ty' },
+      { id: 'pay', type: 'checkout', success_url: 'ty' },
+      { id: 'ty', type: 'thankyou' },
+    ] }] } as unknown as CampaignSpec
+    const info = (upgradeCampaignSpec(v4).funnels[0].pages ?? [])[0]
+    expect(info).toEqual({ id: 'info', type: 'checkout_step', next_page: 'pay' })
+  })
+
+  test('a retyped page whose success_url repeats next_page drops the redundant success_url', () => {
+    const v4 = { schema_version: '4.3', funnels: [{ id: 'f', pages: [
+      { id: 'info', type: 'checkout', success_url: 'pay', next_page: 'pay' },
+      { id: 'pay', type: 'checkout', success_url: 'ty' },
+      { id: 'ty', type: 'thankyou' },
+    ] }] } as unknown as CampaignSpec
+    const info = (upgradeCampaignSpec(v4).funnels[0].pages ?? [])[0]
+    expect(info).toEqual({ id: 'info', type: 'checkout_step', next_page: 'pay' })
+    expect(validateSpec(v4).filter((v) => v.ruleId === 'RouteFieldIgnoredForPageType')).toEqual([])
+  })
 })
 
 describe('checkout paths', () => {
