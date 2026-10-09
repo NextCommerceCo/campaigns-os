@@ -2,13 +2,20 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.58.0+agent.1] - 2026-10-09
+## [1.58.0+agent.3] - 2026-10-09
 
 ### Changed
 
 The vendored starter catalog is re-synced to campaign-cart-starter-templates `d5ff501`, which carries the multi-step checkout contract from campaign-cart-starter-templates#223 and the Campaign Cart SDK 0.4.42 pin. Builds made with 1.58.0's `next_step` frontmatter now take templates whose step forms and select links read `next_step` and whose `next-success-url` is the Checkout's post-payment destination. Every certified family records 0.4.42 verification evidence (`sdk-0.4.42-2026-10-09`), and the eight agent CampaignSpec fixtures pin `sdk_version` 0.4.42. The certified-family fixtures are regenerated at the pin, and the payment-chrome asset pin moves to `d5ff501`; the five asset hashes are unchanged.
 
 The SDK attribute index moves to v0.4.42 with the same recipe; it returns the same 149 names as at v0.4.41. 0.4.42 joins the cart-placeholder verified pins: the ten renderer and enhancer files the placeholder lists come from have the same git blob ids at v0.4.38 and v0.4.42. The checkout field-name mapping is unchanged at v0.4.42. The SDK support policy names 0.4.42 as `latest_known_release`; `minimum_supported` and `preferred_minimum` are unchanged.
+
+## [1.58.0+agent.2] - 2026-10-09
+
+### Fixed
+
+- Doctor, and so `start` and `build`, warns `template_contract.select_step_missing` before build when the selected template family puts package selection on its own `select` page and its checkout carries no selector, but no enabled `select` page in the Map leads to a Checkout. The certified family affected today is `olympus-mv-two-step`. Without the select page, QA resolves the landing as the entry page, finds no add-to-cart control, and every order path fails after build, polish and deploy. The warning names the Checkout and funnel and the fix: add a Select page between the entry page and checkout in Map Builder. It stays silent when a `select` page routes to that Checkout, when the family's checkout carries its own selector, and for a Checkout pinned to another family through `sdk_hints.template_family`. The family's shape is read from the commerce surface catalog's `selectStep` and `mainSelector` surfaces. The warning does not block intake (campaigns-os#658).
+- `copy.hardcoded_phone` no longer reads digit runs inside HTML comments, `<style>` blocks or CSS comments as phone numbers, such as a design-export frame name like `Group 1000003339`. Visible phone numbers still warn, at their original line numbers (campaigns-os#660).
 
 ## [1.58.0] - 2026-10-09
 
