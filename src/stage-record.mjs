@@ -30,7 +30,7 @@ import Ajv2020 from "ajv/dist/2020.js";
 
 import { BRAND_LAYER_FILENAMES } from "./brand-theme.mjs";
 import { ADAPTER_DECISION_SCALAR_VALUES } from "./adapter-decision-contract.mjs";
-import { computeBuildFingerprint, resolveBuiltSiteScope } from "./built-site-scope.mjs";
+import { buildManifestEntries, computeBuildFingerprint, resolveBuiltSiteScope } from "./built-site-scope.mjs";
 import { resolveCampaignWorkspace, targetRepoFor } from "./campaign-workspace.mjs";
 import { isObject, optionalString, portableArtifactPaths, readJsonIfExists, requireArg } from "./cli-helpers.mjs";
 import { LOCAL_PROOF_BUILD_ENVIRONMENT, LOCAL_PROOF_PRODUCTION_ENVIRONMENT, isLocalServePacket } from "./local-proof.mjs";
@@ -330,7 +330,7 @@ function currentStamps(inputs) {
   return Object.fromEntries(Object.entries(stamps).filter(([, value]) => value !== null));
 }
 
-function composeBuild(report, { now, recordedBy, fingerprint, buildEnvironment = null, adapterDecisions = null, fallbackAdapterDecisions = null, inputs = {}, deviationReason = null }) {
+function composeBuild(report, { now, recordedBy, fingerprint, manifest = null, buildEnvironment = null, adapterDecisions = null, fallbackAdapterDecisions = null, inputs = {}, deviationReason = null }) {
   const nextReport = adapterDecisions ? { ...report, adapter_decisions: { ...(report.adapter_decisions || fallbackAdapterDecisions || {}), ...adapterDecisions } } : report;
   const sourcePackageFingerprint = currentSourcePackageMaterialFingerprint(report);
   const previousAssembly = stageObject(report, "assembly");
@@ -340,11 +340,15 @@ function composeBuild(report, { now, recordedBy, fingerprint, buildEnvironment =
   const writeInputs = stageWriteInputs("assembly", inputs);
   const detected = REPLACED_COMPLETED_STATUSES.includes(previousAssembly.status) ? writeInputs.detectChange(previousAssembly) : null;
   let assembly = {
-    ...withoutKeys(previousAssembly, ["source_package_material_fingerprint", "unchanged_output_reason", ...STAMP_FIELDS]),
+    ...withoutKeys(previousAssembly, ["source_package_material_fingerprint", "unchanged_output_reason", "build_manifest", ...STAMP_FIELDS]),
     ...(buildEnvironment ? { evidence: { ...(isObject(previousAssembly.evidence) ? previousAssembly.evidence : {}), build_environment: buildEnvironment } } : {}),
     stage: "assembly",
     status: "completed",
     build_fingerprint: fingerprint,
+    // The path + sha256 list the fingerprint hashes, so a later mismatch
+    // (doctor's built_output.fingerprint_stale, polish capture) can name the
+    // files that differ. Left out when it cannot be read back as this value.
+    ...(manifest ? { build_manifest: manifest } : {}),
     ...(sourcePackageFingerprint ? { source_package_material_fingerprint: sourcePackageFingerprint } : {}),
     ...stamps,
     completed_at: now,
@@ -949,6 +953,15 @@ function doctorFacts(stage, doctor, report, packet) {
   };
 }
 
+// The manifest of the output doctor fingerprinted, read with doctor's own
+// function over doctor's own root; null when the output on disk is no longer
+// that value (assertOutputUnchanged then refuses the record).
+function outputManifest(facts) {
+  if (!facts.fingerprint || !facts.fingerprintRoot) return null;
+  const current = computeBuildFingerprint(facts.fingerprintRoot);
+  return current.ok && current.fingerprint === facts.fingerprint ? buildManifestEntries(current) : null;
+}
+
 // The last check before the write: the output doctor fingerprinted is still
 // the output on disk. The target lock keeps campaigns-os writers out, but a
 // page-kit build does not take it, so the fingerprint is recomputed here with
@@ -1076,6 +1089,7 @@ export function recordStageCommand(args, { now = () => new Date(), beforeLock = 
   ] : [
     `stages.${stageKey}.status = ${composed.report.stages[stageKey].status}`,
     ...(facts.fingerprint ? [`build output fingerprint ${facts.fingerprint} (doctor derived.build_output_fingerprint.value)`] : []),
+    ...(stage === "build" && Array.isArray(composed.report.stages.assembly.build_manifest) ? [`stages.assembly.build_manifest lists ${composed.report.stages.assembly.build_manifest.length} file(s), so a later fingerprint mismatch names the paths that differ`] : []),
     ...(stage === "build" && buildEnvironment ? [`stages.assembly.evidence.build_environment = ${buildEnvironment}`] : []),
     ...(stage === "build" && adapterDecisions ? Object.entries(adapterDecisions).map(([key, value]) => `report.adapter_decisions.${key} = ${value}`) : []),
     ...(stage === "build" ? [`stages.polish.status = ${composed.report.stages.polish.status}`] : []),
@@ -1092,7 +1106,8 @@ export function recordStageCommand(args, { now = () => new Date(), beforeLock = 
     ...(composed.context ? { context_path: contextPath } : {}),
     ...(dryRun ? { would_write: writes } : { written: writes }),
     build_fingerprint: facts.fingerprint || null,
-    record: stage === "theme" ? composed.report.theme : composed.report.stages[stageKey],
+    // The manifest is kept in the report, not echoed: it lists every built file.
+    record: stage === "theme" ? composed.report.theme : stage === "build" ? withoutKeys(composed.report.stages.assembly, ["build_manifest"]) : composed.report.stages[stageKey],
     ...(stage === "build" ? { polish: composed.report.stages.polish } : {}),
     ...(composed.context ? { scaffold: composed.context.scaffold } : {}),
     ...(stage === "polish" && input.hasRepairLoopDefect ? { repair_loop_defect: input.repairLoopDefect } : {}),
@@ -1152,7 +1167,7 @@ function recordUnderLock({ stage, packetPath, sidecars, lockedTarget, input, dry
     const next = stage === "setup"
       ? composeSetup(report, context, { now: timestamp, recordedBy })
       : stage === "build"
-        ? composeBuild(report, { now: timestamp, recordedBy, fingerprint: facts.fingerprint, buildEnvironment, adapterDecisions, fallbackAdapterDecisions: adapterDecisions && !report.adapter_decisions ? readJsonIfExists(contextPath)?.adapter_decisions || packet.source_html?.adapter_contract : null, inputs: recordInputs(doctor), deviationReason })
+        ? composeBuild(report, { now: timestamp, recordedBy, fingerprint: facts.fingerprint, manifest: outputManifest(facts), buildEnvironment, adapterDecisions, fallbackAdapterDecisions: adapterDecisions && !report.adapter_decisions ? readJsonIfExists(contextPath)?.adapter_decisions || packet.source_html?.adapter_contract : null, inputs: recordInputs(doctor), deviationReason })
         : stage === "theme"
           ? composeTheme(report, { now: timestamp, recordedBy, layer })
           : stage === "deploy"

@@ -13,6 +13,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import Ajv2020 from "ajv/dist/2020.js";
 
 import { ADAPTER_DECISION_SCALAR_VALUES } from "./adapter-decision-contract.mjs";
+import { computeBuildFingerprint } from "./built-site-scope.mjs";
 import { parseArgs, polishCaptureCommand, recordQaStageOutcome } from "./cli.mjs";
 import { currentPacketInputs } from "./input-currency.mjs";
 import { evaluateRecordedHiddenEagerMediaCheckpoint } from "./polish-node.mjs";
@@ -206,6 +207,13 @@ test("record build stamps exactly doctor's output fingerprint and next advances 
     assert.equal(result.build_fingerprint, before.value);
     assert.equal(report.stages.assembly.status, "completed");
     assert.equal(report.stages.assembly.build_fingerprint, before.value);
+    // The path + sha256 manifest behind the value, so a later mismatch can
+    // name the files that differ.
+    const manifestLines = computeBuildFingerprint(join(f.target, before.root)).manifest.split("\n").filter(Boolean);
+    assert.deepEqual(
+      report.stages.assembly.build_manifest,
+      manifestLines.flatMap((line, index) => (index % 2 === 0 ? [{ path: line, sha256: manifestLines[index + 1] }] : [])),
+    );
     assert.equal(report.stages.assembly.source_package_material_fingerprint, report.design_source_package.material_fingerprint);
     assert.equal(report.stages.polish.status, "required");
     assert.ok(validReport(report), JSON.stringify(validReport.errors));

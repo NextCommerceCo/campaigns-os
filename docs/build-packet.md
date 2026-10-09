@@ -1207,6 +1207,20 @@ recorded build). `polish capture` refuses by name when the built route root is
 missing, unreadable, or drifted; symbolic links are never build output and are
 skipped by the walk.
 
+`record build` also keeps the manifest itself on `stages.assembly.build_manifest`,
+a sorted list of `{ "path", "sha256" }` entries that hashes to `build_fingerprint`.
+When the output drifts, `built_output.fingerprint_stale` and the `polish capture`
+refusal name the paths that are extra, missing, or changed against it, at most 20
+per list followed by `(+N more)`; doctor's issue `detail.drift` carries the counts
+and the same capped lists. An extra path shaped like a macOS or iCloud sync
+conflict copy (`<name> 2.<ext>`, `<name> 3.<ext>`, ...) whose unsuffixed original
+also exists is marked `[sync conflict copy]` with a hint to remove those copies and
+rebuild; a trailing number alone (`chapter 12.html`) is not flagged. A record
+made before build kept a manifest, or a manifest that does not hash to the recorded
+fingerprint, refuses as before and says the manifest is unavailable; run
+`record build` again to record one. Cleaning `_site/` before a build is Page Kit's
+job, not this check's.
+
 A stale or missing Assembly Source Package Fingerprint is waivable only as an
 exceptional Source Freshness Waiver. The waiver must be structured in
 `waivers[]`, with `scope: "assembly_source_package_freshness"` or an
