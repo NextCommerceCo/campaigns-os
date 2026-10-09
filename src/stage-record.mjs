@@ -17,10 +17,13 @@
 // polish` validate the context they read but write only the report. `record
 // theme` writes `report.theme` only after reading, in each built commerce
 // page, that a brand layer stylesheet is linked after next-core.css. `record
-// deploy` records a local preview: the packet's deploy.preview_url and
-// stages.deploy, after every built page answers on the served loopback URL.
-import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+// deploy` records a served deploy: the packet's deploy.preview_url and
+// stages.deploy, after every built page answers on the served URL (loopback
+// for a local-serve packet; https for a hosted one, whose served scripts and
+// stylesheets must also match the built output byte for byte).
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import Ajv2020 from "ajv/dist/2020.js";
@@ -591,30 +594,143 @@ function composeTheme(report, { now, recordedBy, layer }) {
   return { report: { ...report, theme }, context: null };
 }
 
-// The local preview a `record deploy` URL must name: a loopback http(s)
-// origin serving the packet's route root ("/<slug>/", or "/" for a
-// root-served campaign) of a local-serve packet. Returns the URL as recorded
-// (origin plus route root) and the problems that refuse it.
-function localPreviewUrl(packet, rawUrl) {
-  if (!isLocalServePacket(packet)) {
-    return { url: null, problems: [`record deploy records a local preview, and this packet's deploy.target is "${packet?.deploy?.target || "unset"}". Serve the build locally with deploy.target local-serve (${cmd("qa")} policy set --packet <p> --deploy-target local-serve), or record a hosted deploy on the packet and stages.deploy.`] };
+// The served preview a `record deploy` URL must name, as recorded (origin
+// plus the packet's route root, "/<slug>/" or "/" for a root-served
+// campaign), and the problems that refuse it. A local-serve packet names a
+// loopback http(s) origin. A hosted packet names an https origin unless the
+// host is loopback, where http is accepted too.
+function deployPreviewUrl(packet, rawUrl) {
+  const hosted = !isLocalServePacket(packet);
+  if (hosted && !optionalString(packet?.deploy?.target)) {
+    return { url: null, hosted, problems: ["This packet records no deploy.target; set it (local-serve, or the hosting target) with " + `${cmd("qa")} policy set --packet <p> --deploy-target <target>.`] };
   }
   let url;
   try {
     url = new URL(String(rawUrl));
   } catch {
-    return { url: null, problems: [`--base-url ${JSON.stringify(rawUrl)} is not a URL; give the served address, for example http://localhost:<port>/<slug>/.`] };
+    return { url: null, hosted, problems: [`--base-url ${JSON.stringify(rawUrl)} is not a URL; give the served address, for example ${hosted ? "https://<preview host>/<slug>/" : "http://localhost:<port>/<slug>/"}.`] };
   }
   const problems = [];
   if (!/^https?:$/.test(url.protocol)) problems.push(`--base-url must be http or https (got ${url.protocol}).`);
-  if (!isLoopbackHostname(url.hostname)) problems.push(`--base-url ${url.href} is not a loopback address; a local preview is served on localhost, 127.0.0.1 or [::1].`);
+  else if (!hosted && !isLoopbackHostname(url.hostname)) problems.push(`--base-url ${url.href} is not a loopback address; a local preview (deploy.target local-serve) is served on localhost, 127.0.0.1 or [::1].`);
+  else if (hosted && url.protocol !== "https:" && !isLoopbackHostname(url.hostname)) problems.push(`--base-url ${url.href} is plain http; a hosted deploy (deploy.target ${packet.deploy.target}) is recorded over https.`);
   const routeRoot = campaignRouteRoot(packet);
   if (!routeRoot) {
     problems.push("The packet records no campaign.public_route_slug, so the served route root is unknown; record it first.");
   } else if (`/${routeKey(url.pathname.replace(/\/index\.html?$/i, "/"))}/`.replace("//", "/") !== routeRoot) {
     problems.push(`--base-url ${url.href} serves ${url.pathname}, but this campaign's route root is ${routeRoot}; give ${url.origin}${routeRoot}.`);
   }
-  return { url: problems.length ? null : `${url.origin}${routeRoot}`, problems };
+  return { url: problems.length ? null : `${url.origin}${routeRoot}`, hosted, problems };
+}
+
+function scriptSrcs(html) {
+  return [...html.matchAll(/<script\b[^>]*>/gi)]
+    .map((match) => (match[0].match(/\bsrc\s*=\s*["']([^"']+)["']/i) || [])[1])
+    .filter(Boolean);
+}
+
+const sha256Of = (bytes) => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+
+// The scripts and stylesheets the built pages load from the preview's own
+// origin and the build output holds: each one's served URL, its file under
+// _site/ (the host serves _site/ as its origin root) and that file's sha256.
+// A reference to another origin, or to a path the build output does not hold,
+// is not the build's to compare.
+function builtAssets(site, pageUrls) {
+  const assets = new Map();
+  site.pages.forEach((page, index) => {
+    const html = readFileSync(page.built_path, "utf8");
+    const pageUrl = new URL(pageUrls[index]);
+    for (const ref of [...scriptSrcs(html), ...stylesheetHrefs(html)]) {
+      let served;
+      try {
+        served = new URL(ref, pageUrl);
+      } catch {
+        continue;
+      }
+      if (served.origin !== pageUrl.origin) continue;
+      served.hash = "";
+      let pathname;
+      try {
+        pathname = decodeURIComponent(served.pathname);
+      } catch {
+        continue;
+      }
+      const file = resolve(site.site_root, `.${pathname}`);
+      if (!file.startsWith(`${resolve(site.site_root)}${sep}`) || !existsSync(file) || !statSync(file).isFile()) continue;
+      if (!assets.has(served.href)) {
+        const bytes = readFileSync(file);
+        assets.set(served.href, { url: served.href, file, sha256: sha256Of(bytes), size: bytes.byteLength });
+      }
+    }
+  });
+  return [...assets.values()];
+}
+
+// A file's sha256, or null when it cannot be read (removed, or replaced by a
+// directory, since it was listed).
+function fileSha256(file) {
+  try {
+    return sha256Of(readFileSync(file));
+  } catch {
+    return null;
+  }
+}
+
+// A served body, read no further than `limit` bytes: a response that says or
+// streams more than the built file holds cannot be that file, so the read
+// stops there instead of buffering whatever the host sends.
+async function readCapped(response, limit) {
+  const declared = Number(response.headers?.get?.("content-length"));
+  if (Number.isFinite(declared) && declared > limit) {
+    await response.body?.cancel?.();
+    return { bytes: null, error: `Content-Length ${declared} exceeds the built file's ${limit} bytes` };
+  }
+  const reader = response.body?.getReader?.();
+  // No readable body is a transport failure, not an empty file, unless the
+  // built file is itself empty.
+  if (!reader) return limit === 0 ? { bytes: Buffer.alloc(0) } : { bytes: null, error: "the response had no readable body" };
+  const chunks = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > limit) {
+      await reader.cancel();
+      return { bytes: null, error: `served more than the built file's ${limit} bytes` };
+    }
+    chunks.push(Buffer.from(value));
+  }
+  return { bytes: Buffer.concat(chunks) };
+}
+
+// One served asset, compared by bytes: it must answer 200, following
+// redirects only within the preview's own origin as a page request does.
+async function probeAsset(asset, fetchImpl) {
+  let current = asset.url;
+  try {
+    for (let hop = 0; hop <= PROBE_MAX_REDIRECTS; hop += 1) {
+      const response = await fetchImpl(current, { redirect: "manual", signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
+      const location = response.headers?.get?.("location");
+      if (response.status >= 300 && response.status < 400 && location) {
+        await response.body?.cancel?.();
+        const next = new URL(location, current);
+        if (next.origin !== new URL(asset.url).origin) return { ...asset, served: null, error: `redirects to ${next.href}, off this preview; nothing was requested there` };
+        current = next.href;
+        continue;
+      }
+      if (response.status !== 200) {
+        await response.body?.cancel?.();
+        return { ...asset, served: null, error: `HTTP ${response.status}` };
+      }
+      const { bytes, error } = await readCapped(response, asset.size);
+      return bytes ? { ...asset, served: sha256Of(bytes) } : { ...asset, served: null, error };
+    }
+    return { ...asset, served: null, error: `more than ${PROBE_MAX_REDIRECTS} redirects` };
+  } catch (error) {
+    return { ...asset, served: null, error: error?.name === "TimeoutError" ? `no answer within ${PROBE_TIMEOUT_MS / 1000} s` : String(error?.cause?.code || error?.message || error) };
+  }
 }
 
 const PROBE_TIMEOUT_MS = 5_000;
@@ -645,32 +761,56 @@ async function probePage(target, fetchImpl) {
 
 /**
  * What only the running server can say, read before the target lock (like
- * the polish --evidence file): the URL names this campaign's local preview,
- * and every built page under it answers 2xx. The lock re-checks the
- * packet and the built output; the probe is never trusted for either.
+ * the polish --evidence file): the URL names this campaign's served preview,
+ * and every built page under it answers (2xx on a local preview, 200 on a
+ * hosted one). On a hosted preview every script and stylesheet the built
+ * pages load from that origin must also be served byte-identical to the
+ * built output; HTML is not compared, since hosts inject markup. The lock
+ * re-checks the packet and the built output; the probe is never trusted for
+ * either.
  */
 export async function probeLocalPreview({ packetPath, baseUrl, fetchImpl = globalThis.fetch }) {
   const packet = readPacketFile("deploy", packetPath);
-  const { url, problems } = localPreviewUrl(packet, baseUrl);
+  const { url, hosted, problems } = deployPreviewUrl(packet, baseUrl);
   if (problems.length) throw refuseRecord("deploy", problems);
   const site = resolveBuiltSiteScope(targetRepoFor(packetPath, packet), { slug: packet.campaign.public_route_slug });
   if (!site.ok) throw refuseRecord("deploy", [site.error]);
   // The built pages, not the bare route root: a funnel often has no index
   // page there, and servers answer that differently (404, a listing).
-  const targets = [...new Set(site.pages.map((page) => (routeKey(page.route) ? new URL(`${routeKey(page.route)}/`, url).href : url)))];
+  const pageUrls = site.pages.map((page) => (routeKey(page.route) ? new URL(`${routeKey(page.route)}/`, url).href : url));
+  const targets = [...new Set(pageUrls)];
   // Requested together; the evidence keeps the built pages' order.
   const routes = await Promise.all(targets.map((target) => probePage(target, fetchImpl)));
-  const failed = routes.filter((route) => !(route.status >= 200 && route.status < 300));
+  const answered = (status) => (hosted ? status === 200 : status >= 200 && status < 300);
+  const failed = routes.filter((route) => !answered(route.status));
   if (failed.length) {
     throw refuseRecord("deploy", [
       ...failed.map((route) => `${route.url}: ${route.status ? `HTTP ${route.status}` : route.error}.`),
-      `Serve the current _site/ build so every page answers at ${url}, then run ${cmd("record")} deploy again.`,
+      hosted
+        ? `Deploy the current _site/ build so every page answers HTTP 200 at ${url}, then run ${cmd("record")} deploy again.`
+        : `Serve the current _site/ build so every page answers at ${url}, then run ${cmd("record")} deploy again.`,
     ]);
   }
-  return { url, routes };
+  // The build the probe ran against, so a record build before the lock
+  // refuses instead of recording a probe of other output.
+  const probedBuild = computeBuildFingerprint(site.campaign_dir);
+  const buildFingerprint = probedBuild.ok ? probedBuild.fingerprint : null;
+  if (!hosted) return { url, routes, buildFingerprint };
+  const assets = await Promise.all(builtAssets(site, pageUrls).map((asset) => probeAsset(asset, fetchImpl)));
+  const targetRepo = site.target_repo;
+  const differing = assets.filter((asset) => asset.served !== asset.sha256);
+  if (differing.length) {
+    throw refuseRecord("deploy", [
+      ...differing.map((asset) => (asset.served
+        ? `${asset.url}: served bytes (${asset.served}) differ from ${relative(targetRepo, asset.file)} (${asset.sha256}).`
+        : `${asset.url}: ${asset.error}; ${relative(targetRepo, asset.file)} is in the build output.`)),
+      `The preview at ${url} is not serving the recorded build. Deploy the current _site/ build, then run ${cmd("record")} deploy again.`,
+    ]);
+  }
+  return { url, routes, buildFingerprint, assets: assets.map(({ url: assetUrl, file, sha256 }) => ({ url: assetUrl, file, sha256 })) };
 }
 
-// A recorded local preview: the packet's deploy.preview_url, and stages.deploy
+// A recorded preview (local or hosted): the packet's deploy.preview_url, and stages.deploy
 // completed with the URL in outputs (what next reads), the probe as evidence,
 // and the build it probed as source_build_fingerprint (doctorFacts has checked
 // it equals stages.assembly.build_fingerprint), so a later record build of
@@ -682,7 +822,10 @@ function composeDeploy(report, packet, { now, recordedBy, probe, fingerprint }) 
     status: "completed",
     source_build_fingerprint: fingerprint,
     outputs: [probe.url],
-    evidence: probe.routes.map((route) => `${route.url} answered HTTP ${route.status}`),
+    evidence: [
+      ...probe.routes.map((route) => `${route.url} answered HTTP ${route.status}`),
+      ...(probe.assets || []).map((asset) => `${asset.url} served ${asset.sha256}, as built`),
+    ],
     completed_at: now,
     recorded_by: recordedBy,
     blockers: [],
@@ -837,11 +980,20 @@ function assertOutputUnchanged(stage, facts) {
 // Under the lock, the probe is checked against the packet as it is now (it
 // could have been retargeted while the probe ran), and the theme gate, which
 // blocks deploy, must not be blocked.
-function deployFacts(doctor, packet, probe) {
-  const { url, problems } = localPreviewUrl(packet, probe.url);
+function deployFacts(doctor, packet, probe, fingerprint) {
+  const { url, problems } = deployPreviewUrl(packet, probe.url);
   if (problems.length) throw refuseRecord("deploy", problems);
   if (url !== probe.url) {
     throw refuseRecord("deploy", [`The packet's route root changed while the preview was probed (probed ${probe.url}, now ${url}); run ${cmd("record")} deploy again.`]);
+  }
+  // The served assets were compared with the files as they were before the
+  // lock; a build since then is a refusal, not a record of other output.
+  const rebuilt = (probe.assets || []).filter((asset) => fileSha256(asset.file) !== asset.sha256);
+  if (rebuilt.length) {
+    throw refuseRecord("deploy", [`The built output changed while the preview was probed (${rebuilt.map((asset) => asset.url).join(", ")}); run ${cmd("record")} build, then record deploy again.`]);
+  }
+  if (probe.buildFingerprint !== undefined && probe.buildFingerprint !== fingerprint) {
+    throw refuseRecord("deploy", [`The built output changed while the preview was probed (probed ${probe.buildFingerprint || "no output"}, now ${fingerprint}); run ${cmd("record")} deploy again.`]);
   }
   const gate = doctor.derived?.theme_gate;
   if (gate?.status === "blocked") {
@@ -1013,7 +1165,7 @@ function recordUnderLock({ stage, packetPath, sidecars, lockedTarget, input, dry
     facts = doctorFacts(stage, doctor, report, packet);
     if (typeof afterDoctorRead === "function") afterDoctorRead();
     if (stage === "theme") layer = brandLayerFacts(doctor);
-    if (stage === "deploy") deployFacts(doctor, packet, input);
+    if (stage === "deploy") deployFacts(doctor, packet, input, facts.fingerprint);
     const next = stage === "setup"
       ? composeSetup(report, context, { now: timestamp, recordedBy })
       : stage === "build"
@@ -1025,7 +1177,7 @@ function recordUnderLock({ stage, packetPath, sidecars, lockedTarget, input, dry
             : composePolish(report, { now: timestamp, recordedBy, fingerprint: facts.fingerprint, input, inputs: recordInputs(doctor) });
     applyDerivedAssemblyReportSummary(next.report, recordInputs(doctor));
     // The packet's one new value, deploy.preview_url, is checked by
-    // localPreviewUrl; the rest of the packet is as the operator left it.
+    // deployPreviewUrl; the rest of the packet is as the operator left it.
     validateRecord(stage, { report: next.report, context: next.context, packet, fingerprint: facts.fingerprint });
     assertOutputUnchanged(stage, facts);
     composed = next;

@@ -513,6 +513,187 @@ test("record deploy refuses, writing nothing, a non-loopback URL, the wrong rout
   });
 });
 
+// A hosted deploy (deploy.target other than local-serve, #657): build and
+// Polish recorded on a hosted packet whose built pages load a campaign
+// stylesheet and script from the campaign's own origin.
+const HOSTED_ORIGIN = "https://preview.example.test";
+async function hostedDeployReady(f) {
+  const packet = readJson(f.packetPath);
+  packet.deploy = { ...packet.deploy, target: "netlify" };
+  writeJson(f.packetPath, packet);
+  scaffold(f);
+  recordOk(f, "setup");
+  buildSite(f, "", () => `<link rel="stylesheet" href="/${f.slug}/css/campaign.css"><script src="../js/campaign.js"></script>`);
+  for (const dir of ["css", "js"]) mkdirSync(join(f.target, "_site", f.slug, dir), { recursive: true });
+  writeFileSync(join(f.target, "_site", f.slug, "css", "campaign.css"), "body{color:#1f4d3a}\n");
+  writeFileSync(join(f.target, "_site", f.slug, "js", "campaign.js"), "window.campaign=1;\n");
+  recordOk(f, "build");
+  await capture(f);
+  recordOk(f, "polish", ["--evidence", POLISH_EVIDENCE]);
+}
+
+// The hosted preview, as a stand-in fetch over the built _site/: pages carry
+// a host-injected toolbar (HTML differs from the build), and `override` maps
+// a served path to other bytes (or null for a 404).
+function hostedFetch(f, override = {}, { redirects = {}, headers = {} } = {}) {
+  const requested = [];
+  const fetchImpl = async (url) => {
+    const { origin, pathname } = new URL(url);
+    requested.push(url);
+    assert.equal(origin, HOSTED_ORIGIN, "the probe stays on the preview origin");
+    if (Object.hasOwn(redirects, pathname)) return new Response(null, { status: 302, headers: { location: redirects[pathname] } });
+    let bytes = null;
+    if (Object.hasOwn(override, pathname)) {
+      bytes = override[pathname] === null ? null : Buffer.from(override[pathname]);
+    } else {
+      const file = join(f.target, "_site", pathname, pathname.endsWith("/") ? "index.html" : "");
+      if (existsSync(file) && statSync(file).isFile()) {
+        bytes = readFileSync(file);
+        if (pathname.endsWith("/")) bytes = Buffer.from(String(bytes).replace("<body", "<div id=\"host-toolbar\"></div><body"));
+      }
+    }
+    return new Response(bytes, { status: bytes ? 200 : 404, headers: headers[pathname] || {} });
+  };
+  return { fetchImpl, requested };
+}
+
+test("record deploy records a hosted https preview whose served scripts and stylesheets match the build, and next moves past deploy", async () => {
+  await withLifecycle(async (f) => {
+    await hostedDeployReady(f);
+    assert.equal(nextStage(f).stage, "deploy", "control: next stops at deploy before the record");
+    const { fetchImpl, requested } = hostedFetch(f);
+    const url = `${HOSTED_ORIGIN}/${f.slug}/`;
+    const result = await recordCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": url }, { fetchImpl });
+    assert.deepEqual(result.written, [f.packetPath, f.reportPath]);
+    assert.equal(readJson(f.packetPath).deploy.preview_url, url);
+    const report = readJson(f.reportPath);
+    const deploy = report.stages.deploy;
+    assert.equal(deploy.status, "completed");
+    assert.deepEqual(deploy.outputs, [url]);
+    assert.equal(deploy.source_build_fingerprint, report.stages.assembly.build_fingerprint);
+    assert.ok(requested.includes(`${HOSTED_ORIGIN}/${f.slug}/css/campaign.css`) && requested.includes(`${HOSTED_ORIGIN}/${f.slug}/js/campaign.js`), requested.join("\n"));
+    assert.ok(!requested.some((href) => href.includes("cdn.example.com")), "another origin's loader is not compared");
+    assert.ok(deploy.evidence.some((line) => line.startsWith(`${HOSTED_ORIGIN}/${f.slug}/css/campaign.css served sha256:`)), deploy.evidence.join("\n"));
+    assert.ok(validReport(report), JSON.stringify(validReport.errors));
+    assert.equal(nextStage(f).stage, "qa");
+  });
+});
+
+test("record deploy refuses, writing nothing, a hosted preview serving other asset bytes or missing an asset, a plain-http host, or a page that does not answer 200", async () => {
+  await withLifecycle(async (f) => {
+    await hostedDeployReady(f);
+    const before = [readFileSync(f.packetPath, "utf8"), readFileSync(f.reportPath, "utf8")];
+    const url = `${HOSTED_ORIGIN}/${f.slug}/`;
+    const deploy = (override, base = url) => recordCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": base }, { fetchImpl: hostedFetch(f, override).fetchImpl });
+    await assert.rejects(deploy({ [`/${f.slug}/css/campaign.css`]: "body{color:red}\n" }),
+      new RegExp(`${HOSTED_ORIGIN}/${f.slug}/css/campaign\\.css: served bytes \\(sha256:[0-9a-f]{64}\\) differ from _site/${f.slug}/css/campaign\\.css`));
+    await assert.rejects(deploy({ [`/${f.slug}/js/campaign.js`]: null }),
+      new RegExp(`${HOSTED_ORIGIN}/${f.slug}/js/campaign\\.js: HTTP 404; _site/${f.slug}/js/campaign\\.js is in the build output`));
+    await assert.rejects(deploy({ [`/${f.slug}/checkout/`]: null }), /checkout\/: HTTP 404\.[\s\S]*answers HTTP 200/);
+    await assert.rejects(deploy({}, `http://preview.example.test/${f.slug}/`), /is plain http; a hosted deploy \(deploy\.target netlify\) is recorded over https/);
+    assert.deepEqual([readFileSync(f.packetPath, "utf8"), readFileSync(f.reportPath, "utf8")], before);
+  });
+});
+
+test("record deploy follows a same-origin redirect for a served asset, and refuses one off the preview", async () => {
+  await withLifecycle(async (f) => {
+    await hostedDeployReady(f);
+    const url = `${HOSTED_ORIGIN}/${f.slug}/`;
+    const css = `/${f.slug}/css/campaign.css`;
+    const before = [readFileSync(f.packetPath, "utf8"), readFileSync(f.reportPath, "utf8")];
+    const offOrigin = hostedFetch(f, {}, { redirects: { [css]: "https://cdn.example.test/campaign.css" } });
+    await assert.rejects(recordCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": url }, { fetchImpl: offOrigin.fetchImpl }),
+      new RegExp(`${HOSTED_ORIGIN}${css}: redirects to https://cdn\\.example\\.test/campaign\\.css, off this preview`));
+    assert.deepEqual([readFileSync(f.packetPath, "utf8"), readFileSync(f.reportPath, "utf8")], before);
+    // The host moves the stylesheet to a hashed path on the same origin.
+    const hashed = `/${f.slug}/css/campaign.0123abcd.css`;
+    const moved = hostedFetch(f, { [hashed]: readFileSync(join(f.target, "_site", css), "utf8") }, { redirects: { [css]: hashed } });
+    await recordCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": url }, { fetchImpl: moved.fetchImpl });
+    assert.ok(moved.requested.includes(`${HOSTED_ORIGIN}${hashed}`), moved.requested.join("\n"));
+    assert.equal(readJson(f.reportPath).stages.deploy.status, "completed");
+  });
+});
+
+test("record deploy stops reading a served asset larger than the built file, by Content-Length or by the bytes streamed", async () => {
+  await withLifecycle(async (f) => {
+    await hostedDeployReady(f);
+    const url = `${HOSTED_ORIGIN}/${f.slug}/`;
+    const js = `/${f.slug}/js/campaign.js`;
+    const size = readFileSync(join(f.target, "_site", js)).byteLength;
+    const declared = hostedFetch(f, {}, { headers: { [js]: { "content-length": String(size + 1) } } });
+    await assert.rejects(recordCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": url }, { fetchImpl: declared.fetchImpl }),
+      new RegExp(`${HOSTED_ORIGIN}${js}: Content-Length ${size + 1} exceeds the built file's ${size} bytes`));
+    let pulls = 0;
+    const endless = async (target) => (new URL(target).pathname === js
+      ? new Response(new ReadableStream({ pull(controller) { pulls += 1; controller.enqueue(new Uint8Array(1024)); } }), { status: 200 })
+      : hostedFetch(f).fetchImpl(target));
+    await assert.rejects(recordCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": url }, { fetchImpl: endless }),
+      new RegExp(`${HOSTED_ORIGIN}${js}: served more than the built file's ${size} bytes`));
+    assert.ok(pulls <= 3, `the read stops at the cap (pulled ${pulls} chunks)`);
+  });
+});
+
+test("record deploy refuses a served asset with no readable body as a transport failure, not a byte mismatch", async () => {
+  await withLifecycle(async (f) => {
+    await hostedDeployReady(f);
+    const url = `${HOSTED_ORIGIN}/${f.slug}/`;
+    const js = `/${f.slug}/js/campaign.js`;
+    const bodiless = async (target) => (new URL(target).pathname === js
+      ? { status: 200, url: target, headers: { get: () => null }, body: null }
+      : hostedFetch(f).fetchImpl(target));
+    await assert.rejects(recordCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": url }, { fetchImpl: bodiless }),
+      (error) => new RegExp(`${HOSTED_ORIGIN}${js}: the response had no readable body`).test(error.message) && !/differ/.test(error.message));
+  });
+});
+
+test("record deploy refuses, as a record refusal, when a probed asset vanishes before the lock", async () => {
+  await withLifecycle(async (f) => {
+    await hostedDeployReady(f);
+    const url = `${HOSTED_ORIGIN}/${f.slug}/`;
+    // A shared script outside the campaign directory: in the build output, outside the build fingerprint.
+    mkdirSync(join(f.target, "_site", "shared"), { recursive: true });
+    const shared = join(f.target, "_site", "shared", "vendor.js");
+    writeFileSync(shared, "window.vendor=1;\n");
+    for (const page of f.spec.funnels.flatMap((funnel) => funnel.pages)) {
+      const file = join(f.target, "_site", f.slug, String(page.page_url || "").replace(/^\/+|\/+$/g, ""), "index.html");
+      writeFileSync(file, readFileSync(file, "utf8").replace("</head>", "<script src=\"/shared/vendor.js\"></script></head>"));
+    }
+    recordOk(f, "build");
+    await capture(f);
+    recordOk(f, "polish", ["--evidence", POLISH_EVIDENCE]);
+    const before = [readFileSync(f.packetPath, "utf8"), readFileSync(f.reportPath, "utf8")];
+    const vanished = recordCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": url }, {
+      fetchImpl: hostedFetch(f).fetchImpl,
+      beforeLock: () => rmSync(shared),
+    });
+    await assert.rejects(vanished, (error) => /record deploy refused; nothing was written/.test(error.message)
+      && /The built output changed while the preview was probed \(https:\/\/preview\.example\.test\/shared\/vendor\.js\)/.test(error.message)
+      && !/ENOENT/.test(error.message));
+    assert.deepEqual([readFileSync(f.packetPath, "utf8"), readFileSync(f.reportPath, "utf8")], before);
+  });
+});
+
+test("record deploy refuses when a record build of other output lands between the probe and the lock", async () => {
+  await withLifecycle(async (f) => {
+    const packet = readJson(f.packetPath);
+    packet.deploy = { ...packet.deploy, target: "local-serve" };
+    writeJson(f.packetPath, packet);
+    scaffold(f);
+    recordOk(f, "setup");
+    buildSite(f);
+    recordOk(f, "build");
+    const rebuiltBeforeLock = recordCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": `http://127.0.0.1:4173/${f.slug}/` }, {
+      fetchImpl: async () => ({ status: 200, headers: { get: () => null }, body: null }),
+      beforeLock: () => {
+        buildSite(f, " (build B)");
+        recordOk(f, "build");
+      },
+    });
+    await assert.rejects(rebuiltBeforeLock, /record deploy refused; nothing was written[\s\S]*The built output changed while the preview was probed \(probed sha256:[0-9a-f]{64}, now sha256:[0-9a-f]{64}\)/);
+    assert.notEqual(readJson(f.reportPath).stages.deploy?.status, "completed");
+  });
+});
+
 test("record polish rejects repair_loop_defect given as a string, naming the field, and writes nothing", () => {
   withLifecycle((f) => {
     scaffold(f);

@@ -477,12 +477,6 @@ function pickNextStage(report, { errors = [], derived = null }, prepareBuildGate
     // A first local preview may carry missing Polish forward. A theme waiver
     // or prior capture makes the recorded Polish stage owed again.
     if (cliStage === "polish" && polishCarriedForwardForLadder(report, polishGate)) continue;
-    // A hosted all-template preview has no hosted deploy recorder. The
-    // recorded preview URL satisfies this one deploy handoff while the
-    // carried-forward gate identifies the exact preview-only shape.
-    if (cliStage === "deploy" && packet?.deploy?.preview_url
-      && polishGate?.carried_forward?.policy === "hosted_template_preview"
-      && polishCheckpointGate?.carried_forward?.policy === "hosted_template_preview") continue;
     const reportKey = reportKeyForCliStage(cliStage);
     const stage = report.stages[reportKey];
     if (!stage) {
@@ -524,13 +518,10 @@ function pickNextStage(report, { errors = [], derived = null }, prepareBuildGate
     }
   }
 
-  const hostedPreview = Boolean(packet?.deploy?.preview_url && polishGate?.carried_forward?.policy === "hosted_template_preview");
   return {
     stage: "done",
-    outcome: hostedPreview ? "hosted_preview_satisfies_deploy" : "standard_closeout",
-    reason: hostedPreview
-      ? "The recorded hosted preview satisfies deploy, and QA is terminal for the current build. Pipeline is complete."
-      : "All stages are in a terminal status (completed / completed_with_warnings / skipped). Pipeline is complete.",
+    outcome: "standard_closeout",
+    reason: "All stages are in a terminal status (completed / completed_with_warnings / skipped). Pipeline is complete.",
   };
 }
 
@@ -730,9 +721,7 @@ function buildNextStep(errors, warnings, derived, report = null, packet = null, 
       ? `${cmd("next")} --packet ${packetRef}`
       : `${cmd("next")} ${picked.stage} --packet ${packetRef}`;
   const fallbackAction = picked.stage === "done"
-    ? (picked.outcome === "hosted_preview_satisfies_deploy"
-      ? `${picked.reason} Run ${cmd("next")} to confirm the closeout actions.`
-      : `All stages are recorded as terminal; run ${cmd("next")} to confirm the closeout actions.`)
+    ? `All stages are recorded as terminal; run ${cmd("next")} to confirm the closeout actions.`
     : `Run ${command}.`;
   if (picked.stage === "done") {
     actions.unshift(fallbackAction);

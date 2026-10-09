@@ -643,12 +643,12 @@ test("a template-stock build carries missing polish forward on local and hosted 
         polishGate: doctor.derived.polish_gate,
         polishCheckpointGate: checkpoint,
       });
-      assert.ok(nextActions.some((action) => /qa run --packet .* --base-url https:\/\/preview\.example\.test/.test(action.command || "")), JSON.stringify(nextActions));
+      assert.ok(nextActions.some((action) => /record deploy --packet .* --base-url https:\/\/preview\.example\.test/.test(action.description || "")), JSON.stringify(nextActions));
     }
   }
 });
 
-test("a hosted all-template preview prints a runnable QA handoff without a deploy ledger record", async (t) => {
+test("a hosted all-template preview hands off record deploy for the preview, then a runnable QA handoff", async (t) => {
   const previewUrl = "https://preview.example.test/runtime-packet-demo/?v=1&mode=qa";
   const { packetPath, targetRepo } = templateStockFixture(t, { target: "netlify" }, "campaigns-os hosted proof ");
   const packetArg = shellToken(packetPath);
@@ -685,6 +685,17 @@ test("a hosted all-template preview prints a runnable QA handoff without a deplo
   assert.equal(after.derived.polish_checkpoint_gate.status, "carried_forward");
   assert.doesNotMatch(JSON.stringify(after.warnings.filter((issue) => POLISH_MISSING_CODES.includes(issue.code)).map((issue) => issue.message)), /qa run|<packet>|<preview-url>/);
   assert.match(after.derived.polish_checkpoint_gate.required_actions[0].command, /--browser --test-order common$/);
+  const pendingDeploy = nextStage(null, { packet: packetPath, "no-write": true });
+  assert.equal(pendingDeploy.stage, "deploy", "a hosted preview is recorded with record deploy, as a designed one is");
+  for (const output of [pendingDeploy, nextStage("polish", { packet: packetPath, "no-write": true })]) {
+    const recordDeploy = output.next_actions.find((action) => /record deploy/.test(action.command || action.description || ""));
+    assert.ok(recordDeploy, JSON.stringify(output.next_actions));
+    assert.match(recordDeploy.command || recordDeploy.description, new RegExp(`record deploy --packet ${packetArg.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} --base-url ${previewArg.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+  }
+  // What record deploy writes for the probed preview (its own tests probe it).
+  const deployed = JSON.parse(readFileSync(reportPath, "utf8"));
+  deployed.stages.deploy = { status: "completed", outputs: [previewUrl], source_build_fingerprint: deployed.stages.assembly.build_fingerprint };
+  writeFileSync(reportPath, `${JSON.stringify(deployed, null, 2)}\n`);
   const next = nextStage(null, { packet: packetPath, "no-write": true });
   assert.equal(next.stage, "qa");
   const passedPolish = nextStage("polish", { packet: packetPath, "no-write": true });
@@ -695,7 +706,7 @@ test("a hosted all-template preview prints a runnable QA handoff without a deplo
     assert.doesNotMatch(JSON.stringify(output), /polish capture|checkpoint waive/);
   }
   assert.ok(next.next_actions.some((action) => action.id === "qa_run"), JSON.stringify(next.next_actions));
-  for (const output of [passedPolish, deploy, qa]) {
+  for (const output of [passedPolish, qa]) {
     const qaRun = output.next_actions.find((action) => action.id === "qa_run");
     assert.ok(qaRun, JSON.stringify(output.next_actions));
     const words = posixWords(qaRun.command);
@@ -703,7 +714,6 @@ test("a hosted all-template preview prints a runnable QA handoff without a deplo
     assert.equal(words[words.indexOf("--packet") + 1], packetPath, `${output.stage}: printed QA command must preserve the packet path`);
     assert.ok(words.includes("--browser") && words.includes("--test-order") && words.includes("common"), `${output.stage}: hosted QA must include browser and typed-card proof`);
   }
-  assert.equal(deploy.next_actions.find((action) => action.id === "advance")?.command, `campaigns-os next qa --packet ${packetArg}`, "the hosted preview advance action must target QA");
   for (const output of [passedPolish, deploy, qa]) {
     assert.ok(output.prompt.includes(`--packet ${packetArg}`), `${output.stage}: prompt must quote the packet path`);
     assert.ok(output.prompt.includes(`--base-url ${previewArg}`), `${output.stage}: prompt must quote the preview URL`);
@@ -733,10 +743,8 @@ test("a hosted all-template preview prints a runnable QA handoff without a deplo
   };
   writeFileSync(reportPath, `${JSON.stringify(recorded, null, 2)}\n`);
   const afterQa = nextStage(null, { packet: packetPath, "no-write": true });
-  assert.equal(afterQa.stage, "done", "hosted preview with current-build QA must leave the deploy stage behind");
-  assert.match(afterQa.prompt, /^The recorded hosted preview satisfies deploy/, "the closeout names the hosted preview outcome");
-  assert.equal(afterQa.prompt.match(/recorded hosted preview satisfies/g)?.length, 1, "the hosted preview outcome is stated once");
-  assert.doesNotMatch(afterQa.prompt, /For a hosted deploy, record the URL/, "no hosted-deploy recording advice once the preview satisfies deploy");
+  assert.equal(afterQa.stage, "done", "a recorded hosted preview deploy with current-build QA closes out");
+  assert.match(afterQa.prompt, /^Pipeline complete/);
 });
 
 test("hosted template stock with only a production URL still offers the preview policy command", (t) => {

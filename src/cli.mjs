@@ -343,7 +343,7 @@ Usage:
   campaigns-os record build --packet <campaign-runtime.build.json> [--build-environment <development|production>] [--adapter-decision <key>=<value>[,<key>=<value>...]] [--context <json>] [--report <json>] [--dry-run] [--json]   # after page-kit build: records scalar adapter decisions on the Assembly Report (all pairs in one flag; a repeated flag keeps only the last), stamps stages.assembly.build_fingerprint from doctor's derived.build_output_fingerprint.value (and the Design Source Package material fingerprint when present), and makes Polish required unless its evidence is bound to this output; --build-environment records stages.assembly.evidence.build_environment (local proof mode records development)
   campaigns-os record polish --packet <campaign-runtime.build.json> --evidence <polish-evidence.json> [--context <json>] [--report <json>] [--dry-run] [--json]   # after polish capture: stages.polish from the file's status (completed, completed_with_warnings, blocked with blockers, or skipped with skip_reason), evidence and optional repair_loop_defect, bound to doctor's current fingerprint; a completed status is refused, writing nothing, unless the polish gate doctor evaluates would pass. --dry-run runs every check and writes nothing
   campaigns-os record theme --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--dry-run] [--json]   # after the brand layer is linked and build is recorded: report.theme becomes applied with load_order after-next-core, css_path, commerce_pages and per-page evidence, only when each built commerce page that loads next-core.css loads brand-theme.css (or checkout-brand.css) after it and at least one does; a page loading neither is left out as the design's own markup; refused, writing nothing, otherwise. --dry-run runs every check and writes nothing
-  campaigns-os record deploy --packet <campaign-runtime.build.json> --base-url <served url> [--context <json>] [--report <json>] [--dry-run] [--json]   # a local preview (deploy.target local-serve) after polish is recorded: GETs every built page under the loopback URL (the campaign route root), then records deploy.preview_url on the packet and stages.deploy completed with the URL in outputs and the build fingerprint it probed (a later record build of other output makes deploy required again); refused, writing nothing, when the URL is not loopback or not the route root, a page does not answer 2xx, the build changed since it was recorded, or the theme gate is blocked. --dry-run runs every check, the requests included, and writes nothing
+  campaigns-os record deploy --packet <campaign-runtime.build.json> --base-url <served url> [--context <json>] [--report <json>] [--dry-run] [--json]   # a served deploy after polish is recorded: GETs every built page under the URL (the campaign route root), then records deploy.preview_url on the packet and stages.deploy completed with the URL in outputs and the build fingerprint it probed (a later record build of other output makes deploy required again). A local-serve packet takes a loopback URL and each page must answer 2xx; any other deploy target takes an https URL (plain http only on a loopback host), each page must answer 200, and every script and stylesheet the built pages load from that origin must be served byte-identical (sha256) to the built output (HTML is not compared). Refused, writing nothing, when the URL breaks those rules or is not the route root, a page does not answer, a served asset differs or is missing, the build changed since it was recorded, or the theme gate is blocked. --dry-run runs every check, the requests included, and writes nothing
   campaigns-os readback <target-repo-root> [--json] [--packet <path>] [--doctor <path>] [--context <path>] [--report <path>] [--qa-verdict <path>] [--findings <path>]   # read-only projection of one run's emitted artifacts (packet, doctor output, build context, assembly report, QA verdict, findings export): artifact states, per-artifact freshness against the checkout's HEAD reflog, doctor warning grouping, skip cascades and cross-artifact divergences. Writes nothing, starts no process, touches no network, and records no lifecycle entry; --json emits one campaigns-os-readback/v2 object (docs/readback.md). Exit 2 for a missing target root or a Build Packet set freshness cannot single out.
   campaigns-os readback --example [--json]                                # project the bundled synthetic sample; freshness is not computable for it by design
   campaigns-os validate-assembly-report --report <json> [--json]
@@ -4465,7 +4465,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
         errors,
         warnings,
         ready,
-        prompt: `${picked.outcome === "hosted_preview_satisfies_deploy" ? picked.reason : "Pipeline complete. All stages in the assembly report are in a terminal status."} To repeat build work, do the work and run \`${cmd("record")} build --packet <path>\`; this makes downstream stages owed as needed. Run \`${cmd("qa")} run\` for QA.${picked.outcome === "hosted_preview_satisfies_deploy" ? "" : " For a hosted deploy, record the URL and stage outcome as the deploy prompt describes."} Then call \`${cmd("next")}\` again. If a run session is active, finish it with \`${cmd("run")} end\` so the Run Record is assembled and the session closes.${report?.stages?.qa?.status === "completed_with_warnings" ? " QA passed with exceptions; report them to the operator without clearing or waiving them or changing markup just to make them pass." : ""}`,
+        prompt: `Pipeline complete. All stages in the assembly report are in a terminal status. To repeat build work, do the work and run \`${cmd("record")} build --packet <path>\`; this makes downstream stages owed as needed. Run \`${cmd("qa")} run\` for QA. For a hosted deploy, record the URL and stage outcome as the deploy prompt describes. Then call \`${cmd("next")}\` again. If a run session is active, finish it with \`${cmd("run")} end\` so the Run Record is assembled and the session closes.${report?.stages?.qa?.status === "completed_with_warnings" ? " QA passed with exceptions; report them to the operator without clearing or waiving them or changing markup just to make them pass." : ""}`,
       });
     }
     stage = picked.stage;
@@ -4877,8 +4877,8 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
       return actions;
     }
     if (result.stage === "polish" && polishGate?.carried_forward?.policy === "hosted_template_preview") {
-      push("next_qa", "command", `${cmd("next")} qa --packet ${shellToken(packetPath)}`, "Inspect QA for the hosted preview; missing Polish evidence remains a warning.");
-      push("qa_run", "command", qaRunCommand(packetPath, packet.deploy.preview_url), "Run browser and typed-card QA against the hosted preview URL.");
+      push("record_deploy", "command", `${cmd("record")} deploy --packet ${shellToken(packetPath)} --base-url ${shellToken(packet.deploy.preview_url)}`, "Record the hosted preview deploy; missing Polish evidence remains a warning.");
+      push("qa_run", "command", qaRunCommand(packetPath, packet.deploy.preview_url), "Then run browser and typed-card QA against the hosted preview URL.");
       return actions;
     }
   }
@@ -4934,20 +4934,13 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
       : `Run the visual polish pass and ${cmd("polish")} capture, then record polish with ${cmd("record")} polish --packet ${shellToken(packetPath)} --evidence <polish-evidence.json>.`);
     if (polishCheckpointGate?.status === "blocked") pushPolishCheckpointActions();
   } else if (result.stage === "deploy") {
-    if (polishGate?.carried_forward?.policy === "hosted_template_preview" && packet.deploy?.preview_url) {
-      push("next_qa", "command", `${cmd("next")} qa --packet ${shellToken(packetPath)}`, "Inspect the QA stage for this hosted preview without recording a hosted deploy.");
-      push("qa_run", "command", qaRunCommand(packetPath, packet.deploy.preview_url), "Run browser and typed-card QA against the hosted preview; its missing Polish evidence remains a warning.");
-    } else if (packet.deploy?.target === LOCAL_SERVE_DEPLOY_TARGET) {
+    if (packet.deploy?.target === LOCAL_SERVE_DEPLOY_TARGET) {
       const plan = localServePlan(packet);
       push("deploy", "manual", null, `Serve the built ${plan.dir} output locally as the origin root (deploy.target is local-serve)${plan.rewrite ? ` — ${plan.rewrite}` : ""}, then run ${cmd("record")} deploy --packet ${shellToken(packetPath)} --base-url <served url>: it checks every built page answers and records deploy.preview_url and stages.deploy. Localhost on any port is a Development domain: SDK allowed, analytics suppressed.`);
     } else {
-      push("deploy", "manual", null, `Deploy _site/ output to ${packet.deploy?.target || "the deploy target"}, then record deploy.preview_url (or production_url) on the packet and stages.deploy in the assembly report.`);
+      push("deploy", "manual", null, `Deploy _site/ output to ${packet.deploy?.target || "the deploy target"} with _site/ as the origin root, then run ${cmd("record")} deploy --packet ${shellToken(packetPath)} --base-url ${packet.deploy?.preview_url ? shellToken(packet.deploy.preview_url) : "<https preview url>"}: it checks every built page answers HTTP 200 and every script and stylesheet the pages load from that origin is served byte-identical to the build, and records deploy.preview_url and stages.deploy.`);
     }
-    if (polishGate?.carried_forward?.policy === "hosted_template_preview" && packet.deploy?.preview_url) {
-      push("advance", "command", `${cmd("next")} qa --packet ${shellToken(packetPath)}`, "Inspect QA for the hosted preview without a deploy record.");
-    } else {
-      push("advance", "command", `${cmd("next")} --packet ${shellToken(packetPath)} --json`, "Advance to QA once the deploy URL is recorded.");
-    }
+    push("advance", "command", `${cmd("next")} --packet ${shellToken(packetPath)} --json`, "Advance to QA once the deploy URL is recorded.");
   } else if (result.stage === "qa") {
     const url = packet.deploy?.preview_url || packet.deploy?.production_url || "<preview-url>";
     push("install_browser", "command", `${cmd("qa")} install-browser`, "Install the Playwright browser once after install/update (npm run qa:install-browser from a checkout).");
@@ -5193,7 +5186,7 @@ function polishPrompt(packetPath, reportPath, packet, intent, polishCheckpointGa
       return `Every mapped page is template stock, so there is no design route to capture. Missing Polish evidence is carried forward only on a hosted preview whose deploy.preview_url is a non-loopback http(s) URL different from deploy.production_url; this packet's is not. Set one with \`${cmd("qa")} policy set --packet ${shellToken(packetPath)} --preview-url <url>\`, then \`${cmd("next")} --packet ${shellToken(packetPath)}\`.`;
     }
     return packet.deploy?.preview_url
-      ? `Every mapped page is template stock, so there is no design route to capture. Missing Polish evidence is carried forward on the hosted preview. Run \`${cmd("next")} qa --packet ${shellToken(packetPath)}\`, then \`${qaRunCommand(packetPath, packet.deploy.preview_url)}\`. Production QA remains blocked without the evidence.`
+      ? `Every mapped page is template stock, so there is no design route to capture. Missing Polish evidence is carried forward on the hosted preview. Run \`${cmd("record")} deploy --packet ${shellToken(packetPath)} --base-url ${shellToken(packet.deploy.preview_url)}\`, then \`${qaRunCommand(packetPath, packet.deploy.preview_url)}\`. Production QA remains blocked without the evidence.`
       : `Every mapped page is template stock, so there is no design route to capture. Run \`${cmd("qa")} policy set --packet ${shellToken(packetPath)} --preview-url <url>\` to record the hosted preview URL, then \`${cmd("next")} --packet ${shellToken(packetPath)}\`.`;
   }
   return `${campaignIntentPromptHeader(intent)}Use next-campaigns-polish for this built campaign.
@@ -5258,7 +5251,7 @@ function deployPrompt(packetPath, reportPath, packet, polishGate = null, polishC
   if (packet.deploy?.target !== LOCAL_SERVE_DEPLOY_TARGET
     && polishCheckpointGate?.code === "polish.hidden_eager_media.no_capturable_routes"
     && !packet.deploy?.preview_url) {
-    return `Every mapped page is template stock, and the hosted preview URL is not recorded. Run \`${cmd("qa")} policy set --packet ${shellToken(packetPath)} --preview-url <url>\` after the preview is deployed, then \`${cmd("next")} --packet ${shellToken(packetPath)}\`. There is no hosted record deploy command.`;
+    return `Every mapped page is template stock, and the hosted preview URL is not recorded. Run \`${cmd("qa")} policy set --packet ${shellToken(packetPath)} --preview-url <url>\` after the preview is deployed, then \`${cmd("next")} --packet ${shellToken(packetPath)}\`.`;
   }
   const target = packet.deploy?.target || "unknown";
   const liveUrlPath = packet.deploy?.live_url_path || packet.campaign?.live_url_path || campaignRouteRoot(packet) || "/<slug>/";
@@ -5282,7 +5275,7 @@ Once the server is up:
 If the served build cannot be reached, set stages.deploy.status to "blocked" with a clear reason in outputs so the orchestration loop surfaces it rather than skipping past.`;
   }
   if (polishGate?.carried_forward?.policy === "hosted_template_preview" && packet.deploy?.preview_url) {
-    return `The hosted preview URL is recorded at deploy.preview_url. Every mapped page is template stock, so missing Polish evidence is carried forward as a warning for this preview. Run \`${cmd("next")} qa --packet ${shellToken(packetPath)}\` to inspect the QA stage, then \`${qaRunCommand(packetPath, packet.deploy.preview_url)}\` to test the preview. The recorded hosted preview satisfies this deploy handoff; after QA records its verdict, run \`${cmd("next")} --packet ${shellToken(packetPath)}\` for closeout. Production QA remains strict.`;
+    return `The hosted preview URL is recorded at deploy.preview_url. Every mapped page is template stock, so missing Polish evidence is carried forward as a warning for this preview. Run \`${cmd("record")} deploy --packet ${shellToken(packetPath)} --base-url ${shellToken(packet.deploy.preview_url)}\` to record the deploy, then \`${qaRunCommand(packetPath, packet.deploy.preview_url)}\` to test the preview. Production QA remains strict.`;
   }
   return `Deploy the built campaign to ${target}.
 
@@ -5295,10 +5288,9 @@ Read first:
 Deploy is currently an out-of-band step: the page-kit build produces _site/ output; you (or your CI) ship it to ${target}. Use the deploy target's normal tooling (netlify deploy, wrangler pages deploy, vercel deploy, etc.).
 
 After deploy succeeds:
-1. Record the resulting URL on the packet at deploy.preview_url (preview deploys) or deploy.production_url (production).
-2. Update the assembly report's stages.deploy.status to "completed" with the URL and any relevant notes in outputs.
-3. Verify the SDK initialises on the tested origin. Localhost on any port is globally available as a Campaigns App Development domain (analytics suppressed). Non-localhost preview/production hosts must be in the Campaigns App SDK origin allowlist before QA.
-4. Run \`${cmd("next")} --packet ${packetPath}\` to advance to QA.
+1. Run \`${cmd("record")} deploy --packet ${packetPath} --base-url <https preview origin>${liveUrlPath}\`. It requests every built page under that URL (each must answer HTTP 200) and compares every script and stylesheet the built pages load from that origin with the built output by sha256 (HTML is not compared; hosts inject markup), then records the URL at deploy.preview_url and stages.deploy as completed with the URL in outputs and the build fingerprint it probed. It refuses, writing nothing, naming each page or asset that does not match.
+2. Verify the SDK initialises on the tested origin. Localhost on any port is globally available as a Campaigns App Development domain (analytics suppressed). Non-localhost preview/production hosts must be in the Campaigns App SDK origin allowlist before QA.
+3. Run \`${cmd("next")} --packet ${packetPath}\` to advance to QA.
 
 If the deploy is blocked (non-localhost allowed-domain not yet added, CI permission missing, host-side outage), set stages.deploy.status to "blocked" with a clear reason in outputs so the orchestration loop surfaces it rather than skipping past.`;
 }

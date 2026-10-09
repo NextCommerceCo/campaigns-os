@@ -119,15 +119,14 @@ checks are carried forward:
 
 A carried-forward gate has status `carried_forward`. Doctor reports it as a
 warning starting "Carried forward on the local preview" or "Carried forward on the hosted preview"; `next` moves past
-polish to deploy and QA, and the recorded all-template hosted preview satisfies deploy without a deploy record; QA records it as a `warn` row, so the verdict is at
+polish to deploy and QA; QA records it as a `warn` row, so the verdict is at
 best `ready_with_exceptions`. The evidence is reported as missing, never as
 passed. On a hosted all-template preview, first record an unset preview URL
 with `campaigns-os qa policy set --packet <packet> --preview-url <url>`, then
-run `campaigns-os next --packet <packet>`. Run `campaigns-os next qa --packet <packet>`
-then `campaigns-os qa run --packet <packet> --base-url <preview-url> --browser --test-order common` directly. After QA records the current-build verdict, run `campaigns-os next --packet <packet>` for closeout;
-`record deploy` only accepts loopback local-serve URLs; a pending hosted deploy
-record does not suppress these QA actions when the all-template checkpoint is
-carried forward. The hosted exception
+record the deploy with `campaigns-os record deploy --packet <packet> --base-url <preview-url>`
+(on a hosted target it takes an https URL, requires every built page to answer
+200, and compares the served scripts and stylesheets with the build by sha256),
+then run `campaigns-os qa run --packet <packet> --base-url <preview-url> --browser --test-order common`. After QA records the current-build verdict, run `campaigns-os next --packet <packet>` for closeout. The hosted exception
 requires a distinct packet `deploy.preview_url`; a query or fragment on the production page does not count as distinct. QA with `--base-url` equal to
 the packet's `deploy.production_url` stays blocked. A `local-serve` packet
 served from any other host also gets strict gates. `record polish` and the
