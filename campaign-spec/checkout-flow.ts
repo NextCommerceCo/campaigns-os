@@ -235,9 +235,9 @@ export function upgradeCampaignSpec<T>(input: T): T {
         if (!retype.has(page)) return page
         const step = { ...page, type: CHECKOUT_STEP_PAGE_TYPE }
         const forward = forwardRouteTarget(page)
-        if (forward === null || forward === page.next_page) return step
+        if (forward === null) return step
         const { success_url: _ignoredOnStep, ...rest } = step
-        return { ...rest, next_page: forward }
+        return forward === page.next_page ? rest : { ...rest, next_page: forward }
       }),
     }
   })
