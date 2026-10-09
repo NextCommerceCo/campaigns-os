@@ -8,6 +8,13 @@ Notable supported-surface changes are recorded here.
 
 `record deploy` records a hosted deploy. On a packet whose `deploy.target` is not `local-serve` it takes an https `--base-url` naming the campaign's route root (plain http only on a loopback host), requests every built page there, and requires each to answer HTTP 200. It then requests every script and stylesheet the built pages load from that origin and compares each one's sha256 with the file in the built output, following redirects only within that origin and reading no more bytes than the built file holds; a missing, larger or different asset refuses the record, naming the URL and the built file. A `record build` between the probe and the write refuses the record. HTML is not compared, because hosts inject toolbars and other markup. A passing probe writes what the loopback path writes: `deploy.preview_url` on the packet, and `stages.deploy` completed with the URL in `outputs`, one evidence line per page and per matched asset, and the build fingerprint it probed, so a later `record build` of other output makes deploy owed again. `local-serve` packets keep the loopback-only rules. The hosted all-template preview no longer skips the deploy stage: `next` hands off `record deploy` for the recorded preview URL and then QA, and the hosted deploy prompt names `record deploy` in place of hand-editing `stages.deploy` (campaigns-os#657).
 
+## [1.58.0+agent.2] - 2026-10-09
+
+### Fixed
+
+- Doctor, and so `start` and `build`, warns `template_contract.select_step_missing` before build when the selected template family puts package selection on its own `select` page and its checkout carries no selector, but no enabled `select` page in the Map leads to a Checkout. The certified family affected today is `olympus-mv-two-step`. Without the select page, QA resolves the landing as the entry page, finds no add-to-cart control, and every order path fails after build, polish and deploy. The warning names the Checkout and funnel and the fix: add a Select page between the entry page and checkout in Map Builder. It stays silent when a `select` page routes to that Checkout, when the family's checkout carries its own selector, and for a Checkout pinned to another family through `sdk_hints.template_family`. The family's shape is read from the commerce surface catalog's `selectStep` and `mainSelector` surfaces. The warning does not block intake (campaigns-os#658).
+- `copy.hardcoded_phone` no longer reads digit runs inside HTML comments, `<style>` blocks or CSS comments as phone numbers, such as a design-export frame name like `Group 1000003339`. Visible phone numbers still warn, at their original line numbers (campaigns-os#660).
+
 ## [1.58.0] - 2026-10-09
 
 ### Changed

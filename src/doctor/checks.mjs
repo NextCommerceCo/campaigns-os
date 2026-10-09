@@ -3342,7 +3342,7 @@ function collectHardcodedPhoneMatches(scanRoots, storePhone) {
   const matches = [];
   for (const { label: surface, root } of scanRoots) {
     for (const file of collectHtmlFiles(root)) {
-      const content = maskMarketLintIgnoredRegions(readHtmlScanText(join(root, file.path)));
+      const content = maskNonRenderedMarkup(maskMarketLintIgnoredRegions(readHtmlScanText(join(root, file.path))));
       for (const match of content.matchAll(HARDCODED_PHONE_REGEX)) {
         const found = normalizePhoneNumber(match[0]);
         if (!found || found === expected) continue;
@@ -3368,6 +3368,18 @@ function maskMarketLintIgnoredRegions(content) {
   return content
     .replace(ignoredElement, preserveNewlinesMask)
     .replace(ignoredTag, preserveNewlinesMask);
+}
+
+// Markup a shopper never reads: HTML comments, <style> blocks, and CSS
+// comments (in style attributes too). Design exports leave long digit runs
+// there, such as a Figma frame name "Group 1000003339", which the phone
+// pattern would otherwise read as a number (campaigns-os#660). Masking keeps
+// offsets and newlines, so reported line numbers stay true.
+function maskNonRenderedMarkup(content) {
+  return content
+    .replace(/<!--[\s\S]*?-->/g, preserveNewlinesMask)
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, preserveNewlinesMask)
+    .replace(/\/\*[\s\S]*?\*\//g, preserveNewlinesMask);
 }
 
 function preserveNewlinesMask(value) {
@@ -4138,6 +4150,42 @@ function warnCheckoutPackageFamilyFit(specPages, family, catalog, warnings, repo
     );
   }
 }
+// A family that puts package selection on its own `select` page (the catalog
+// names a selectStep surface) and carries no selector on checkout (no
+// mainSelector surface) can only fill the cart from a declared select page.
+// Without one on the path into a Checkout, QA resolves the landing as the
+// entry page, finds no add-to-cart control, and every order path fails after
+// the whole build (campaigns-os#658). Families whose checkout carries its own
+// selector, and families that fill the cart on the landing page, are not
+// affected.
+function warnMissingSelectStep(specPages, family, catalog, warnings) {
+  const surfaces = catalog.families?.[family]?.canonicalSurfaces;
+  if (!surfaces?.selectStep || surfaces.mainSelector) return;
+  const byFunnel = new Map();
+  for (const page of specPages) {
+    if (!byFunnel.has(page.funnel_id)) byFunnel.set(page.funnel_id, []);
+    byFunnel.get(page.funnel_id).push(page);
+  }
+  for (const [funnelId, pages] of byFunnel) {
+    const reachedFromSelect = new Set();
+    for (const select of pages.filter((page) => page.type === "select")) {
+      const path = checkoutPathFrom(pages, select);
+      if (path) reachedFromSelect.add(path[path.length - 1]);
+    }
+    for (const checkout of pages.filter((page) => page.type === "checkout")) {
+      if (reachedFromSelect.has(checkout)) continue;
+      // A split-test path built on another family is judged by that family.
+      const pageFamily = checkout.sdk_hints?.template_family;
+      if (isNonEmptyString(pageFamily) && pageFamily !== family) continue;
+      addIssue(
+        warnings,
+        "template_contract.select_step_missing",
+        `Template family "${family}" puts package selection on a select page, and its checkout carries no selector, but no select page leads to Checkout "${checkout.id}" in funnel "${funnelId}". QA will find no add-to-cart control on the entry page and every order path will fail. Fix: add a Select page between the entry page and checkout in Map Builder.`,
+        { funnel_id: funnelId, checkout_page_id: checkout.id, template_family: family },
+      );
+    }
+  }
+}
 function offerRefsFromEntries(entries) {
   if (!Array.isArray(entries)) return [];
   return entries
@@ -4323,6 +4371,7 @@ export function validateCommerceCatalog(packet, packetPath, spec, errors, warnin
     // ADR-003 step 2: template-contract checks ported from the private doctor.
     const specPages = activeSpecPages(spec);
     warnCheckoutPackageFamilyFit(specPages, family, catalog, warnings, buildState.report);
+    warnMissingSelectStep(specPages, family, catalog, warnings);
 
     const mismatchedFamilies = specPages.filter(
       (page) => isNonEmptyString(page.sdk_hints?.template_family) && page.sdk_hints.template_family !== family
