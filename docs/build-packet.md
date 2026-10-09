@@ -828,7 +828,7 @@ Blockers (not waivable — the markup provably does not do what it says):
 - `CHECKOUT_NOT_FORM` — `data-next-checkout` on an element that is not `<form>`.
 - `WRONG_FIELD_NAME` — `data-next-checkout-field` with a value the SDK does not
   map. The set is vendored from the SDK at a named tag
-  (`src/sdk-attribute-index.mjs`, currently v0.4.41: `email`, `fname`, `lname`,
+  (`src/sdk-attribute-index.mjs`, currently v0.4.42: `email`, `fname`, `lname`,
   `phone`, `address1`, `address2`, `city`, `province`, `postal`, `country`,
   `payment-method`, `accepts_marketing`, `cc-number`, `cc-month`, `cc-year`,
   `exp-month`, `exp-year`, `cvv`, the legacy `card-*` spellings, and any

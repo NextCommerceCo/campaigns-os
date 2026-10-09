@@ -2,6 +2,14 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.58.0+agent.7] - 2026-10-09
+
+### Changed
+
+The vendored starter catalog is re-synced to campaign-cart-starter-templates `d5ff501`, which carries the multi-step checkout contract from campaign-cart-starter-templates#223 and the Campaign Cart SDK 0.4.42 pin. Builds made with 1.58.0's `next_step` frontmatter now take templates whose step forms and select links read `next_step` and whose `next-success-url` is the Checkout's post-payment destination. Every certified family records 0.4.42 verification evidence (`sdk-0.4.42-2026-10-09`), and the eight agent CampaignSpec fixtures pin `sdk_version` 0.4.42. The certified-family fixtures are regenerated at the pin, and the payment-chrome asset pin moves to `d5ff501`; the five asset hashes are unchanged.
+
+The SDK attribute index moves to v0.4.42 with the same recipe; it returns the same 149 names as at v0.4.41. 0.4.42 joins the cart-placeholder verified pins: the ten renderer and enhancer files the placeholder lists come from have the same git blob ids at v0.4.38 and v0.4.42. The checkout field-name mapping is unchanged at v0.4.42. The SDK support policy names 0.4.42 as `latest_known_release`; `minimum_supported` and `preferred_minimum` are unchanged.
+
 ## [1.58.0+agent.6] - 2026-10-09
 
 ### Fixed

@@ -14,6 +14,11 @@
     return;
   }
   try {
+    // Coupling note: this reads the SDK's persisted checkout store directly
+    // (sessionStorage "next-checkout-store" / "next-checkout-store__<scope>" and
+    // "next_funnel_name__<scope>"), because it runs before the SDK boots and the SDK
+    // has no public "which step has this shopper completed" call. Those key names
+    // are SDK internals; re-check them when bumping the SDK version.
     // Try to get checkout store from sessionStorage. SDK 0.4.34+ scopes storage keys
     // per campaign (e.g. "next-checkout-store__of7f2o"), so fall back to a scan when
     // the unscoped legacy key is absent. Several campaigns on one origin each write
@@ -73,30 +78,32 @@
       console.warn('[CheckoutGuard] Unable to hide phone review row:', e);
     }
 
-    // Validate that previous steps have required data
+    // Validate that previous steps have required data.
+    //
+    // The SDK is the authority here. Leaving a step runs its own validateStep
+    // (campaign-cart step-validation.ts), which knows the country rules (postal and
+    // province are required only where the country asks for them), and on success
+    // records the next step number in the store (checkoutStore.setStep). That number
+    // is checked below. This list is only a cheap re-check for a store that was
+    // cleared behind the shopper, so it holds exactly the fields the SDK requires for
+    // every country at steps 1 and 2. Postal, province and shipping method are not
+    // here: postal/province depend on country rules this script cannot see before
+    // the SDK boots, and the SDK does not require a shipping method to leave step 2.
+    // validateStep is internal to the SDK (not on window.next), so it cannot be
+    // called from here. When bumping sdk_version, re-check this list against the
+    // step 1/2 requiredFields in campaign-cart
+    // src/features/checkout/validation/step-validation.ts.
     var hasRequiredData = true;
     var missingFields = [];
-    var redirectToStep = 1; // Default to step 1
-    // If trying to access step 2 or higher, validate step 1 data
+    var redirectToStep = 1;
     if (currentStep >= 2) {
-      var step1Required = ['email', 'fname', 'lname', 'address1', 'city', 'country', 'postal'];
-      step1Required.forEach(function(field) {
+      var alwaysRequired = ['email', 'fname', 'lname', 'country', 'address1', 'city'];
+      alwaysRequired.forEach(function(field) {
         if (!formData[field] || (typeof formData[field] === 'string' && formData[field].trim() === '')) {
           hasRequiredData = false;
           missingFields.push(field);
-          redirectToStep = 1; // Missing step 1 data
         }
       });
-    }
-    // If trying to access step 3 or higher, validate step 2 data (shipping method)
-    // Only check this if step 1 data is complete
-    if (currentStep >= 3 && hasRequiredData) {
-      var shippingMethod = store.state && store.state.shippingMethod;
-      if (!shippingMethod) {
-        hasRequiredData = false;
-        missingFields.push('shippingMethod');
-        redirectToStep = 2; // Missing step 2 data, redirect to step 2
-      }
     }
     // If required data is missing, redirect to the appropriate step
     if (!hasRequiredData) {
