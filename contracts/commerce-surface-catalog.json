@@ -848,9 +848,9 @@
         }
       },
       "verification": {
-        "sdk_version": "0.4.41",
-        "verified_at": "2026-10-06T23:03:41Z",
-        "evidence": "sdk-0.4.41-2026-10-06.5",
+        "sdk_version": "0.4.42",
+        "verified_at": "2026-10-09T01:35:51Z",
+        "evidence": "sdk-0.4.42-2026-10-09",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -1272,9 +1272,9 @@
         }
       },
       "verification": {
-        "sdk_version": "0.4.41",
-        "verified_at": "2026-10-06T23:03:41Z",
-        "evidence": "sdk-0.4.41-2026-10-06.5",
+        "sdk_version": "0.4.42",
+        "verified_at": "2026-10-09T01:35:51Z",
+        "evidence": "sdk-0.4.42-2026-10-09",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -1583,9 +1583,9 @@
         }
       },
       "verification": {
-        "sdk_version": "0.4.41",
-        "verified_at": "2026-10-06T23:03:41Z",
-        "evidence": "sdk-0.4.41-2026-10-06.5",
+        "sdk_version": "0.4.42",
+        "verified_at": "2026-10-09T01:35:51Z",
+        "evidence": "sdk-0.4.42-2026-10-09",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -1886,9 +1886,9 @@
         }
       },
       "verification": {
-        "sdk_version": "0.4.41",
-        "verified_at": "2026-10-06T23:03:41Z",
-        "evidence": "sdk-0.4.41-2026-10-06.5",
+        "sdk_version": "0.4.42",
+        "verified_at": "2026-10-09T01:35:51Z",
+        "evidence": "sdk-0.4.42-2026-10-09",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -2227,9 +2227,9 @@
         }
       },
       "verification": {
-        "sdk_version": "0.4.41",
-        "verified_at": "2026-10-06T23:03:41Z",
-        "evidence": "sdk-0.4.41-2026-10-06.5",
+        "sdk_version": "0.4.42",
+        "verified_at": "2026-10-09T01:35:51Z",
+        "evidence": "sdk-0.4.42-2026-10-09",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -2666,9 +2666,9 @@
         }
       },
       "verification": {
-        "sdk_version": "0.4.41",
-        "verified_at": "2026-10-06T23:03:41Z",
-        "evidence": "sdk-0.4.41-2026-10-06.5",
+        "sdk_version": "0.4.42",
+        "verified_at": "2026-10-09T01:35:51Z",
+        "evidence": "sdk-0.4.42-2026-10-09",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -2686,7 +2686,6 @@
       ],
       "canonicalSurfaces": {
         "selectStep": "mv-selection-step",
-        "checkoutSelector": "mv-selected-bundle-review",
         "variantSlots": "bundle-slot-selector",
         "personalization": "per-slot picker (data-next-property per slot, toggled by slot_personalization); order-wide default via personalization-field (ships unwired)",
         "orderSummary": "cart-summary03|cart-summary04",
@@ -3023,9 +3022,9 @@
         }
       },
       "verification": {
-        "sdk_version": "0.4.41",
-        "verified_at": "2026-10-06T23:03:41Z",
-        "evidence": "sdk-0.4.41-2026-10-06.5",
+        "sdk_version": "0.4.42",
+        "verified_at": "2026-10-09T01:35:51Z",
+        "evidence": "sdk-0.4.42-2026-10-09",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -3313,9 +3312,9 @@
         }
       },
       "verification": {
-        "sdk_version": "0.4.41",
-        "verified_at": "2026-10-06T23:03:41Z",
-        "evidence": "sdk-0.4.41-2026-10-06.5",
+        "sdk_version": "0.4.42",
+        "verified_at": "2026-10-09T01:35:51Z",
+        "evidence": "sdk-0.4.42-2026-10-09",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -3504,6 +3503,6 @@
     }
   },
   "_synced_from_repo": "NextCommerceCo/campaign-cart-starter-templates",
-  "_synced_from_ref": "783329017c6994a94d11e46580c33bd052aabdb0",
-  "_synced_from_sha": "783329017c6994a94d11e46580c33bd052aabdb0"
+  "_synced_from_ref": "main",
+  "_synced_from_sha": "d5ff501ab57aef160a7108341de8a952006a28a4"
 }

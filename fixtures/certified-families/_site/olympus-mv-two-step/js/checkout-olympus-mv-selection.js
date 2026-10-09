@@ -26,15 +26,25 @@ function handleStepTransition() {
 function handleCheckoutNavigate() {
   const btn = document.querySelector('[data-next-action="checkout"]');
   if (!btn) return;
-  btn.addEventListener('click', () => {
+  // The button is a real link to the next step (href from the page's next_step).
+  // next-success-url is where payment leads, not the next step, so it is never read here.
+  btn.addEventListener('click', (event) => {
+    const href = btn.getAttribute('href');
+    if (!href) return;
+    event.preventDefault();
+
     const spinner = btn.querySelector('[data-pb-element="checkout-button-spinner"]');
     const info = btn.querySelector('[data-pb-element="checkout-button-info"]');
     if (spinner) spinner.style.display = '';
     if (info) info.style.display = 'none';
 
-    const meta = document.querySelector('meta[name="next-success-url"]');
-    const url = meta ? meta.getAttribute('content') : null;
-    if (url) window.location.href = url;
+    // Carry this page's query params (currency, country, UTMs) to the checkout step,
+    // as the SDK does for data-next-checkout-step navigation.
+    const url = new URL(href, window.location.href);
+    new URLSearchParams(window.location.search).forEach((value, key) => {
+      if (!url.searchParams.has(key)) url.searchParams.set(key, value);
+    });
+    window.location.href = url.toString();
   });
 }
 

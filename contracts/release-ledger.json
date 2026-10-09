@@ -7936,8 +7936,29 @@
       "entry_sha256": "3d4f8131b1d1d74e4a9f21e98bbbc721d6dd36ba98f8f2617f383adc253a9877"
     },
     {
-      "id": "RL-0268",
+      "id": "RL-0264",
       "sequence": 257,
+      "date": "2026-10-09",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.58.0+agent.7",
+      "changelog_sha256": "560aa59b997b6acfb7f402654d8d449cdc1291f9823a2f48499a5ceaae3330ef",
+      "agent_impact": "The starter catalog now pins campaign-cart-starter-templates d5ff501: multi-step templates read next_step and render next_url as next-success-url, matching 1.58.0 frontmatter, and certified families ship Campaign Cart SDK 0.4.42. The checkout field-name check reads the v0.4.42 index, and pages pinned to 0.4.42 pass the cart placeholder check.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Name v0.4.42 as the vendored SDK attribute index tag."
+        }
+      ],
+      "entry_sha256": "d4ba96493d2eaabcb0174df8069fd4636824fd65e94d9eb286167a8ddf595cb1"
+    },
+    {
+      "id": "RL-0268",
+      "sequence": 258,
       "date": "2026-10-09",
       "kind": "release",
       "surface_version": null,
@@ -7978,7 +7999,7 @@
           "summary": "Remove the hosted_template_preview deploy skip and the hosted_preview_satisfies_deploy done outcome."
         }
       ],
-      "entry_sha256": "4f48cc1236df4de3e05716e71267d6fed4421e44919bbcbf6bec0e14bd0393fd"
+      "entry_sha256": "8238712a84dc2a3a399db516e208d1dd9ff361463d78085fe9db948ce55e628f"
     }
   ]
 }

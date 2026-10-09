@@ -8,6 +8,14 @@ Notable supported-surface changes are recorded here.
 
 `record deploy` records a hosted deploy. On a packet whose `deploy.target` is not `local-serve` it takes an https `--base-url` naming the campaign's route root (plain http only on a loopback host), requests every built page there, and requires each to answer HTTP 200. It then requests every script and stylesheet the built pages load from that origin and compares each one's sha256 with the file in the built output, following redirects only within that origin and reading no more bytes than the built file holds; a missing, larger or different asset refuses the record, naming the URL and the built file. A `record build` between the probe and the write refuses the record. HTML is not compared, because hosts inject toolbars and other markup. A passing probe writes what the loopback path writes: `deploy.preview_url` on the packet, and `stages.deploy` completed with the URL in `outputs`, one evidence line per page and per matched asset, and the build fingerprint it probed, so a later `record build` of other output makes deploy owed again. `local-serve` packets keep the loopback-only rules. The hosted all-template preview no longer skips the deploy stage: `next` hands off `record deploy` for the recorded preview URL and then QA, and the hosted deploy prompt names `record deploy` in place of hand-editing `stages.deploy` (campaigns-os#657).
 
+## [1.58.0+agent.7] - 2026-10-09
+
+### Changed
+
+The vendored starter catalog is re-synced to campaign-cart-starter-templates `d5ff501`, which carries the multi-step checkout contract from campaign-cart-starter-templates#223 and the Campaign Cart SDK 0.4.42 pin. Builds made with 1.58.0's `next_step` frontmatter now take templates whose step forms and select links read `next_step` and whose `next-success-url` is the Checkout's post-payment destination. Every certified family records 0.4.42 verification evidence (`sdk-0.4.42-2026-10-09`), and the eight agent CampaignSpec fixtures pin `sdk_version` 0.4.42. The certified-family fixtures are regenerated at the pin, and the payment-chrome asset pin moves to `d5ff501`; the five asset hashes are unchanged.
+
+The SDK attribute index moves to v0.4.42 with the same recipe; it returns the same 149 names as at v0.4.41. 0.4.42 joins the cart-placeholder verified pins: the ten renderer and enhancer files the placeholder lists come from have the same git blob ids at v0.4.38 and v0.4.42. The checkout field-name mapping is unchanged at v0.4.42. The SDK support policy names 0.4.42 as `latest_known_release`; `minimum_supported` and `preferred_minimum` are unchanged.
+
 ## [1.58.0+agent.6] - 2026-10-09
 
 ### Fixed
