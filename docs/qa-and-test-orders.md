@@ -1345,6 +1345,7 @@ Assembly Report's `stages.qa`:
   "declared_order_path_depth": "common",
   "declared_typed_card_depth": "common",
   "order_paths_executed": 3,
+  "test_order_attempts": 3,
   "orders_created": 3,
   "orders_verified": 3,
   "all_orders_test_mode": true
@@ -1357,7 +1358,9 @@ readback bundle, where the verdict's own order arrays are deliberately emptied
 (see the committed verdict sidecar above) — so the signal that a purchase
 happened has to be numbers, not the orders themselves. `all_orders_test_mode` is
 `null`, not `false`, when nothing ran: "no order left test mode" and "no order
-ran" are different facts.
+ran" are different facts. `order_paths_executed` counts planned paths and
+`test_order_attempts` counts every attempt, so a re-run adds an attempt and not a
+path.
 
 Beside it, `stages.qa.evidence` carries the build the verdict judged and the
 outcome of the gates doctor's static scan can only approximate:
@@ -1864,6 +1867,13 @@ is not re-run and its assertion records why under
 `evidence.order_creation.rerun_skipped`. Raise `--max-order-creations` to buy
 re-runs for those paths. A re-run that stops on the budget never becomes the
 deciding result: it proved nothing, so the first attempt's real failure stands.
+
+Every attempt is its own `test_orders[]` entry, because a re-run can place its
+own real order. Each entry carries `plan_id`, the planned path it belongs to,
+and `attempt`, 1 for the first try and 2 for the re-run, so a run with five
+planned paths that each re-ran once holds ten entries for five paths. The
+`qa run` summary prints the three counts apart, for example
+`Test orders: 5 paths, 10 attempts, 0 orders created`.
 
 Recovery may only clear a failure on evidence it actually re-read. If the
 receipt reload's persisted-order read-back fails or never happens, the pass stops

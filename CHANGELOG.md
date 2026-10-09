@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.58.0+agent.4] - 2026-10-09
+
+### Fixed
+
+A QA run that re-ran failed order paths no longer reads as more paths than it planned. Each `test_orders[]` entry in the verdict now carries `attempt` (1 for the first try, 2 for the re-run) beside the `plan_id` of the planned path it belongs to, and `qa run` prints a summary line that keeps paths, attempts and created orders apart, such as `Test orders: 5 paths, 10 attempts, 0 orders created`. Before this, a run capped at five paths where every path was re-run once showed ten entries and nothing to say which were retries. The Assembly Report's `stages.qa.purchase_proof` gains `test_order_attempts`, and `order_paths_executed` now counts planned paths rather than attempts. Verdicts written before `attempt` existed count each entry as a path, as they did before. The array keeps one entry per attempt and no existing field changed shape.
+
 ## [1.58.0+agent.3] - 2026-10-09
 
 ### Fixed
