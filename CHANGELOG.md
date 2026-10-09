@@ -8,6 +8,12 @@ Notable supported-surface changes are recorded here.
 
 `record deploy` records a hosted deploy. On a packet whose `deploy.target` is not `local-serve` it takes an https `--base-url` naming the campaign's route root (plain http only on a loopback host), requests every built page there, and requires each to answer HTTP 200. It then requests every script and stylesheet the built pages load from that origin and compares each one's sha256 with the file in the built output, following redirects only within that origin and reading no more bytes than the built file holds; a missing, larger or different asset refuses the record, naming the URL and the built file. A `record build` between the probe and the write refuses the record. HTML is not compared, because hosts inject toolbars and other markup. A passing probe writes what the loopback path writes: `deploy.preview_url` on the packet, and `stages.deploy` completed with the URL in `outputs`, one evidence line per page and per matched asset, and the build fingerprint it probed, so a later `record build` of other output makes deploy owed again. `local-serve` packets keep the loopback-only rules. The hosted all-template preview no longer skips the deploy stage: `next` hands off `record deploy` for the recorded preview URL and then QA, and the hosted deploy prompt names `record deploy` in place of hand-editing `stages.deploy` (campaigns-os#657).
 
+## [1.58.0+agent.4] - 2026-10-09
+
+### Fixed
+
+A QA run that re-ran failed order paths no longer reads as more paths than it planned. Each `test_orders[]` entry in the verdict now carries `attempt` (1 for the first try, 2 for the re-run) beside the `plan_id` of the planned path it belongs to, and `qa run` prints a summary line that keeps paths, attempts and created orders apart, such as `Test orders: 5 paths, 10 attempts, 0 orders created`. Before this, a run capped at five paths where every path was re-run once showed ten entries and nothing to say which were retries. The Assembly Report's `stages.qa.purchase_proof` gains `test_order_attempts`, and `order_paths_executed` now counts planned paths rather than attempts. Verdicts written before `attempt` existed count each entry as a path, as they did before. The array keeps one entry per attempt and no existing field changed shape.
+
 ## [1.58.0+agent.3] - 2026-10-09
 
 ### Fixed
