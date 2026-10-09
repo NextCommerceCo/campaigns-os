@@ -1016,3 +1016,75 @@ test("built_output.fingerprint: skips without a built route root and never guess
     assert.equal(derived.build_output_fingerprint, undefined);
   });
 });
+
+// --- Build output drift: name the paths behind a stale fingerprint ---
+// A stale fingerprint used to report two hashes and nothing else, so finding
+// a stray sync conflict copy in _site/ took a manual diff. record build now
+// keeps the path + sha256 manifest beside the fingerprint, and the stale
+// error lists what is extra, missing and changed against it.
+
+const manifestEntries = (root) => computeBuildFingerprint(root).manifest
+  .split("\n")
+  .filter(Boolean)
+  .reduce((entries, line, index, lines) => (index % 2 === 0 ? [...entries, { path: line, sha256: lines[index + 1] }] : entries), []);
+
+test("built_output.fingerprint_stale names extra, missing and changed paths and flags sync conflict copies", () => {
+  withTempDir((dir) => {
+    const root = join(dir, "_site", SLUG);
+    mkdirSync(join(root, "checkout"), { recursive: true });
+    mkdirSync(join(root, "assets"), { recursive: true });
+    writeFileSync(join(root, "index.html"), "<html><body>Landing</body></html>");
+    writeFileSync(join(root, "checkout", "index.html"), "<html><body>Checkout</body></html>");
+    writeFileSync(join(root, "assets", "old.webp"), "old");
+    const recorded = computeBuildFingerprint(root).fingerprint;
+    const assembly = { status: "completed", build_fingerprint: recorded, build_manifest: manifestEntries(root) };
+
+    writeFileSync(join(root, "checkout", "index.html"), "<html><body>Checkout v2</body></html>");
+    writeFileSync(join(root, "assets", "30d 2.webp"), "copy");
+    rmSync(join(root, "assets", "old.webp"));
+
+    const errors = [];
+    validateBuildOutputFingerprint(PACKET, errors, [], [], { target_repo: dir }, { report: { stages: { assembly } } });
+    assert.deepEqual(codes(errors), ["built_output.fingerprint_stale"]);
+    const { message, detail } = errors[0];
+    assert.match(message, /1 extra: assets\/30d 2\.webp \[sync conflict copy\]/);
+    assert.match(message, /1 missing: assets\/old\.webp/);
+    assert.match(message, /1 changed: checkout\/index\.html/);
+    assert.match(message, /macOS\/iCloud sync conflict cop/);
+    assert.deepEqual(detail.drift.extra, ["assets/30d 2.webp"]);
+    assert.deepEqual(detail.drift.missing, ["assets/old.webp"]);
+    assert.deepEqual(detail.drift.changed, ["checkout/index.html"]);
+    assert.deepEqual(detail.drift.conflict_copies, ["assets/30d 2.webp"]);
+  });
+});
+
+test("built_output.fingerprint_stale caps each path list and says the manifest is unavailable for older records", () => {
+  withTempDir((dir) => {
+    const root = join(dir, "_site", SLUG);
+    mkdirSync(root, { recursive: true });
+    writeFileSync(join(root, "index.html"), "<html><body>Landing</body></html>");
+    const recorded = computeBuildFingerprint(root).fingerprint;
+    const manifest = manifestEntries(root);
+    for (let index = 0; index < 25; index += 1) writeFileSync(join(root, `extra-${String(index).padStart(2, "0")}.txt`), String(index));
+
+    const capped = [];
+    validateBuildOutputFingerprint(PACKET, capped, [], [], { target_repo: dir }, { report: { stages: { assembly: { status: "completed", build_fingerprint: recorded, build_manifest: manifest } } } });
+    assert.match(capped[0].message, /25 extra: extra-00\.txt, .*extra-19\.txt \(\+5 more\)/);
+    assert.doesNotMatch(capped[0].message, /extra-20\.txt/);
+
+    // A record made before build kept a manifest: today's refusal, plus why
+    // the paths cannot be named and how to get them next time.
+    const legacy = [];
+    validateBuildOutputFingerprint(PACKET, legacy, [], [], { target_repo: dir }, { report: { stages: { assembly: { status: "completed", build_fingerprint: recorded } } } });
+    assert.deepEqual(codes(legacy), ["built_output.fingerprint_stale"]);
+    assert.match(legacy[0].message, /recorded sha256:[a-f0-9]{64}, current sha256:[a-f0-9]{64}/);
+    assert.match(legacy[0].message, /no file manifest.*re-run record build/i);
+
+    // A manifest that does not hash to the recorded fingerprint is not
+    // evidence about that build, so it reads as unavailable too.
+    const forged = [];
+    validateBuildOutputFingerprint(PACKET, forged, [], [], { target_repo: dir }, { report: { stages: { assembly: { status: "completed", build_fingerprint: `sha256:${"a".repeat(64)}`, build_manifest: manifest } } } });
+    assert.match(forged[0].message, /no file manifest/i);
+    assert.doesNotMatch(forged[0].message, /extra:/);
+  });
+});

@@ -355,3 +355,80 @@ export function computeBuildFingerprint(outputDir, { exclude = [] } = {}) {
     error: null,
   };
 }
+
+// The manifest as `{ path, sha256 }` entries, the shape `record build` keeps
+// on stages.assembly.build_manifest beside build_fingerprint so a later
+// mismatch can name the files that differ instead of only two hashes.
+export function buildManifestEntries(fingerprint) {
+  const lines = String(fingerprint?.manifest || "").split("\n");
+  const entries = [];
+  for (let index = 0; index + 1 < lines.length; index += 2) {
+    if (lines[index]) entries.push({ path: lines[index], sha256: lines[index + 1] });
+  }
+  return entries;
+}
+
+const SHA256_HEX = /^[a-f0-9]{64}$/;
+
+// The recorded manifest, only when it is evidence about the recorded build:
+// well-formed entries whose canonical manifest hashes to the recorded
+// fingerprint. A record made before build kept a manifest, or one rewritten
+// by hand, reads as unavailable (null) rather than as a misleading diff.
+export function recordedBuildManifest(assembly) {
+  const entries = assembly?.build_manifest;
+  const recorded = assembly?.build_fingerprint;
+  if (!Array.isArray(entries) || typeof recorded !== "string") return null;
+  if (!entries.every((entry) => typeof entry?.path === "string" && entry.path && typeof entry?.sha256 === "string" && SHA256_HEX.test(entry.sha256))) return null;
+  const manifest = entries.map((entry) => `${entry.path}\n${entry.sha256}\n`).join("");
+  return `sha256:${sha256Hex(Buffer.from(manifest, "utf8"))}` === recorded ? entries : null;
+}
+
+// macOS and iCloud name a sync conflict copy `<name> 2.<ext>` (then ` 3`,
+// ...), on files and on folders. A name of that shape in built output is
+// almost always one, so it is flagged; the flag is a hint, never a verdict.
+const CONFLICT_COPY_SEGMENT = /^.+ ([2-9]|[1-9]\d+)(\.[^.]+)?$/;
+export const isSyncConflictCopyPath = (path) => String(path).split("/").some((segment) => CONFLICT_COPY_SEGMENT.test(segment));
+
+export const BUILD_DRIFT_PATH_LIMIT = 20;
+
+/**
+ * Compare the output on disk (a computeBuildFingerprint result) with the
+ * manifest stages.assembly recorded. Returns
+ *   { manifest: "recorded", extra, missing, changed, conflict_copies, summary }
+ * with sorted path lists, or { manifest: "unavailable", summary } when the
+ * record carries no usable manifest. `summary` is one sentence for a
+ * refusal: each list capped at BUILD_DRIFT_PATH_LIMIT with "+N more".
+ */
+export function describeBuildOutputDrift(assembly, current) {
+  const recorded = recordedBuildManifest(assembly);
+  if (!recorded) {
+    return {
+      manifest: "unavailable",
+      summary: "The build record carries no file manifest (it was recorded before record build kept one), so the differing paths cannot be named; re-run record build to record one.",
+    };
+  }
+  const before = new Map(recorded.map((entry) => [entry.path, entry.sha256]));
+  const now = new Map(buildManifestEntries(current).map((entry) => [entry.path, entry.sha256]));
+  const extra = [...now.keys()].filter((path) => !before.has(path));
+  const missing = [...before.keys()].filter((path) => !now.has(path));
+  const changed = [...now.keys()].filter((path) => before.has(path) && before.get(path) !== now.get(path));
+  const conflictCopies = extra.filter(isSyncConflictCopyPath);
+  const list = (label, paths) => {
+    if (paths.length === 0) return null;
+    const shown = paths.slice(0, BUILD_DRIFT_PATH_LIMIT).map((path) => (isSyncConflictCopyPath(path) ? `${path} [sync conflict copy]` : path));
+    const more = paths.length > BUILD_DRIFT_PATH_LIMIT ? ` (+${paths.length - BUILD_DRIFT_PATH_LIMIT} more)` : "";
+    return `${paths.length} ${label}: ${shown.join(", ")}${more}`;
+  };
+  const parts = [list("extra", extra), list("missing", missing), list("changed", changed)].filter(Boolean);
+  const hint = conflictCopies.length
+    ? ` ${conflictCopies.length} extra file name(s) match the macOS/iCloud sync conflict copy pattern "<name> 2.<ext>"; they are sync conflict copies, not build output, so remove them (or move the repo out of the synced folder) and rebuild.`
+    : "";
+  return {
+    manifest: "recorded",
+    extra,
+    missing,
+    changed,
+    conflict_copies: conflictCopies,
+    summary: `Against the manifest build recorded: ${parts.length ? parts.join("; ") : "no path differs"}.${hint}`,
+  };
+}
