@@ -137,12 +137,11 @@ test("published and runtime test-order guidance does not call store orders appro
   assert.deepEqual(firstTurn, [], "QA-time text cannot assume it is still the first turn");
 });
 
-test("done guidance distinguishes local-serve recording from hosted deploys", () => {
+test("done guidance names record deploy for both local-serve and hosted deploys", () => {
   const guide = readFileSync(join(ROOT, "docs/build-packet.md"), "utf8");
   const done = guide.split('**`stage: "done"`**')[1]?.split("\n-")[0] || "";
   assert.match(done, /`record build`; it makes downstream stages owed/);
-  assert.match(done, /`record deploy` records a local-serve target/);
-  assert.match(done, /hosted deploy.*deploy prompt/);
+  assert.match(done, /`record deploy` records the served deploy, a loopback URL for a local-serve target or an https URL for a hosted one/);
   assert.doesNotMatch(done, /never hand-edit stage status/);
 });
 
