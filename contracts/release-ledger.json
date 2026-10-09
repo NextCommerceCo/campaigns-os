@@ -7844,6 +7844,51 @@
         }
       ],
       "entry_sha256": "437ff972f3680e3bd4e46090fbe67833fb8c988e9ad7dd2aa12c566319afae01"
+    },
+    {
+      "id": "RL-0268",
+      "sequence": 253,
+      "date": "2026-10-09",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.58.0+agent.5",
+      "changelog_sha256": "c93c6a20cddc62586f79d3d50a8c676c223a18b5eb60d4e85eb3bed443fd60f6",
+      "agent_impact": "record deploy now records a hosted deploy: on a non-local-serve packet it takes an https --base-url at the route root, requires every built page to answer 200 and every same-origin script and stylesheet to match the built output by sha256, and writes deploy.preview_url and stages.deploy as the loopback path does. The hosted all-template preview no longer skips the deploy stage; next hands off record deploy for it.",
+      "compatibility": "additive",
+      "migration": "On a hosted target, run record deploy --packet <p> --base-url <https preview url> after deploying instead of hand-editing stages.deploy. A hosted all-template preview now records its deploy the same way before QA.",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/effects.v1.json",
+          "surface_entry": "contracts/effects.v1.json",
+          "summary": "record deploy (and --dry-run) declare the hosted https probe: each built page and each same-origin script and stylesheet, compared by sha256."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Document hosted record deploy, its refusals and evidence, and drop the hosted all-template deploy skip from the stage order and done outcome."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "A hosted all-template preview records its deploy with record deploy before QA."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "record deploy help names the hosted https rules; the hosted deploy prompt and next actions hand off record deploy instead of hand-editing stages.deploy."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/next-step.mjs",
+          "surface_entry": "doctor",
+          "summary": "Remove the hosted_template_preview deploy skip and the hosted_preview_satisfies_deploy done outcome."
+        }
+      ],
+      "entry_sha256": "a6d37569591ba622785f2334486b008fee4a72bba81694704dbd6c799f16f897"
     }
   ]
 }

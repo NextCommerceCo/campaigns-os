@@ -336,7 +336,8 @@ test("F2.3-B13 answering open question brand_palette_cta with the default palett
 
 // The deploy prompt `next deploy` printed at BASE_SHA
 // (2a94726db9b5d2658b71a9cee3310098e94d323d) for this fixture: deploy.target
-// unset, the example's /runtime-packet-demo/ route.
+// unset, the example's /runtime-packet-demo/ route; its recording steps name
+// record deploy since hosted deploys record through it (#657).
 const BASE_DEPLOY_PROMPT = ({ packetPath, reportPath }) => `Deploy the built campaign to unknown.
 
 Read first:
@@ -348,10 +349,9 @@ Read first:
 Deploy is currently an out-of-band step: the page-kit build produces _site/ output; you (or your CI) ship it to unknown. Use the deploy target's normal tooling (netlify deploy, wrangler pages deploy, vercel deploy, etc.).
 
 After deploy succeeds:
-1. Record the resulting URL on the packet at deploy.preview_url (preview deploys) or deploy.production_url (production).
-2. Update the assembly report's stages.deploy.status to "completed" with the URL and any relevant notes in outputs.
-3. Verify the SDK initialises on the tested origin. Localhost on any port is globally available as a Campaigns App Development domain (analytics suppressed). Non-localhost preview/production hosts must be in the Campaigns App SDK origin allowlist before QA.
-4. Run \`campaigns-os next --packet ${packetPath}\` to advance to QA.
+1. Run \`campaigns-os record deploy --packet ${packetPath} --base-url <https preview origin>/runtime-packet-demo/\`. It requests every built page under that URL (each must answer HTTP 200) and compares every script and stylesheet the built pages load from that origin with the built output by sha256 (HTML is not compared; hosts inject markup), then records the URL at deploy.preview_url and stages.deploy as completed with the URL in outputs and the build fingerprint it probed. It refuses, writing nothing, naming each page or asset that does not match.
+2. Verify the SDK initialises on the tested origin. Localhost on any port is globally available as a Campaigns App Development domain (analytics suppressed). Non-localhost preview/production hosts must be in the Campaigns App SDK origin allowlist before QA.
+3. Run \`campaigns-os next --packet ${packetPath}\` to advance to QA.
 
 If the deploy is blocked (non-localhost allowed-domain not yet added, CI permission missing, host-side outage), set stages.deploy.status to "blocked" with a clear reason in outputs so the orchestration loop surfaces it rather than skipping past.`;
 
