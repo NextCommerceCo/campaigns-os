@@ -8,6 +8,12 @@ Notable supported-surface changes are recorded here.
 
 A QA run that re-ran failed order paths no longer reads as more paths than it planned. Each `test_orders[]` entry in the verdict now carries `attempt` (1 for the first try, 2 for the re-run) beside the `plan_id` of the planned path it belongs to, and `qa run` prints a summary line that keeps paths, attempts and created orders apart, such as `Test orders: 5 paths, 10 attempts, 0 orders created`. Before this, a run capped at five paths where every path was re-run once showed ten entries and nothing to say which were retries. The Assembly Report's `stages.qa.purchase_proof` gains `test_order_attempts`, and `order_paths_executed` now counts planned paths rather than attempts. Verdicts written before `attempt` existed count each entry as a path, as they did before. The array keeps one entry per attempt and no existing field changed shape.
 
+## [1.58.0+agent.3] - 2026-10-09
+
+### Fixed
+
+When the built output no longer matches the recorded build fingerprint, doctor's `built_output.fingerprint_stale` and the `polish capture` refusal now name the paths that are extra, missing, or changed, at most 20 per list followed by `(+N more)`. Before, both reported only the recorded and current hashes, so finding the files behind a mismatch took a manual diff of `_site/`. `record build` keeps the path and SHA-256 list behind the fingerprint on `stages.assembly.build_manifest` to make the comparison possible; the field is additive and the fingerprint value is unchanged. A file or folder named like a macOS or iCloud sync conflict copy (`<name> 2.<ext>` beside `<name>.<ext>`) is marked as one, with a hint to remove the copies and rebuild. A build recorded before this change carries no manifest: the refusal is unchanged and says to run `record build` again to record one (campaigns-os#659).
+
 ## [1.58.0+agent.2] - 2026-10-09
 
 ### Fixed

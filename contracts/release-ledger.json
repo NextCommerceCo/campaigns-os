@@ -7867,8 +7867,35 @@
       "entry_sha256": "19f5719805e5419f0ea78731e98e67adf3fba310dca00f9827d26b90dad4cf33"
     },
     {
-      "id": "RL-0267",
+      "id": "RL-0266",
       "sequence": 254,
+      "date": "2026-10-09",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.58.0+agent.3",
+      "changelog_sha256": "9bef01116d1c80113af92aea5cb07791aec016cfe203e2cd5ac7759ac5786e73",
+      "agent_impact": "doctor built_output.fingerprint_stale and the polish capture fingerprint refusal now list the extra, missing and changed paths (capped at 20 per list) and flag macOS/iCloud sync conflict copies; record build writes the additive stages.assembly.build_manifest that makes the diff possible. Builds recorded earlier refuse as before and say to re-run record build.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Document stages.assembly.build_manifest and the drift paths named on a fingerprint mismatch."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": null,
+          "summary": "built_output.fingerprint_stale names extra, missing and changed paths against the recorded manifest and flags sync conflict copies."
+        }
+      ],
+      "entry_sha256": "bf5bf930aecd1ff7c31b5fee33a696236114fe5839c5bffb375be5d0eb5e3ff9"
+    },
+    {
+      "id": "RL-0267",
+      "sequence": 255,
       "date": "2026-10-09",
       "kind": "release",
       "surface_version": null,
@@ -7885,7 +7912,7 @@
           "summary": "Document the per-entry attempt number, the paths/attempts/orders summary line, and test_order_attempts in purchase_proof."
         }
       ],
-      "entry_sha256": "0970dd3fe84fc50fbad9433e9bf32a5efb0a94a5291574c7c97743565cee5bef"
+      "entry_sha256": "99c2bba07b9cbe7860b60a5af237081c995eee317586b7f06e86e4f8876d9bb5"
     }
   ]
 }

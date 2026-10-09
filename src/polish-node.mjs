@@ -3,7 +3,7 @@ import { NO_CAPTURABLE_ROUTES_CODE } from "./local-preview-policy.mjs";
 import { createHash } from "node:crypto";
 import { HIDDEN_EAGER_MEDIA_ACTIONS } from "./gate-actions.mjs";
 import { dirname, join, resolve } from "node:path";
-import { computeBuildFingerprint } from "./built-site-scope.mjs";
+import { computeBuildFingerprint, describeBuildOutputDrift } from "./built-site-scope.mjs";
 import {
   buildPageLoadCapture,
   MAX_POLISH_CAPTURE_URL_LENGTH,
@@ -402,7 +402,7 @@ export function createPolishCaptureBinding({ packet, report, plan, packetPath, t
   // an output that has drifted from what build recorded would be evidence
   // about a build that no longer exists, and an output that changes during the
   // browser pass fails the unchanged-binding assertion after it.
-  const outputFingerprint = boundOutputFingerprint(join(resolve(targetRepo), "_site", slug), slug, buildFingerprint);
+  const outputFingerprint = boundOutputFingerprint(join(resolve(targetRepo), "_site", slug), slug, buildFingerprint, report.stages.assembly);
   const runId = nonemptyString(report.run_id);
   const reportPacketPath = nonemptyString(report?.inputs?.packet_path);
   if (!runId || !reportPacketPath) {
@@ -585,7 +585,7 @@ function uncapturedPages(packet, plan) {
 // (permissions, a file vanishing mid-walk), or an output that no longer
 // matches what build recorded. None of them may surface as an uncaught
 // filesystem error, and none may bind as a null.
-function boundOutputFingerprint(outputRoot, slug, buildFingerprint) {
+function boundOutputFingerprint(outputRoot, slug, buildFingerprint, assembly = null) {
   let current;
   try {
     current = computeBuildFingerprint(outputRoot);
@@ -604,7 +604,8 @@ function boundOutputFingerprint(outputRoot, slug, buildFingerprint) {
   if (current.fingerprint !== buildFingerprint) {
     throw new Error(
       `polish capture refuses: built output under _site/${slug}/ no longer matches stages.assembly.build_fingerprint `
-      + `(recorded ${buildFingerprint}, current ${current.fingerprint}). Re-run build and record the current fingerprint first.`,
+      + `(recorded ${buildFingerprint}, current ${current.fingerprint}). ${describeBuildOutputDrift(assembly, current).summary} `
+      + "Re-run build and record the current fingerprint first.",
     );
   }
   return current.fingerprint;
