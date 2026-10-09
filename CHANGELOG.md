@@ -8,6 +8,13 @@ Notable supported-surface changes are recorded here.
 
 A QA run that re-ran failed order paths no longer reads as more paths than it planned. Each `test_orders[]` entry in the verdict now carries `attempt` (1 for the first try, 2 for the re-run) beside the `plan_id` of the planned path it belongs to, and `qa run` prints a summary line that keeps paths, attempts and created orders apart, such as `Test orders: 5 paths, 10 attempts, 0 orders created`. Before this, a run capped at five paths where every path was re-run once showed ten entries and nothing to say which were retries. The Assembly Report's `stages.qa.purchase_proof` gains `test_order_attempts`, and `order_paths_executed` now counts planned paths rather than attempts. Verdicts written before `attempt` existed count each entry as a path, as they did before. The array keeps one entry per attempt and no existing field changed shape.
 
+## [1.58.0+agent.2] - 2026-10-09
+
+### Fixed
+
+- Doctor, and so `start` and `build`, warns `template_contract.select_step_missing` before build when the selected template family puts package selection on its own `select` page and its checkout carries no selector, but no enabled `select` page in the Map leads to a Checkout. The certified family affected today is `olympus-mv-two-step`. Without the select page, QA resolves the landing as the entry page, finds no add-to-cart control, and every order path fails after build, polish and deploy. The warning names the Checkout and funnel and the fix: add a Select page between the entry page and checkout in Map Builder. It stays silent when a `select` page routes to that Checkout, when the family's checkout carries its own selector, and for a Checkout pinned to another family through `sdk_hints.template_family`. The family's shape is read from the commerce surface catalog's `selectStep` and `mainSelector` surfaces. The warning does not block intake (campaigns-os#658).
+- `copy.hardcoded_phone` no longer reads digit runs inside HTML comments, `<style>` blocks or CSS comments as phone numbers, such as a design-export frame name like `Group 1000003339`. Visible phone numbers still warn, at their original line numbers (campaigns-os#660).
+
 ## [1.58.0] - 2026-10-09
 
 ### Changed
