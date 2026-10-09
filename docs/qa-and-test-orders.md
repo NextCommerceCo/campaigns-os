@@ -1564,20 +1564,36 @@ resolves from the topology), `cart_entry_control_missing` (the entry page
 renders no control, or none carrying the requested ref), and
 `cart_entry_no_navigation` (the click did not reach the checkout URL), and
 `cart_entry_variant_unfilled` (a bundle slot's variant control has no in-stock
-option, named by slot). Each fails the path inside the step budget with the
+option or row, or its row could not be clicked, named by slot). Each fails the path inside the step budget with the
 code as the first word of the error, never as a step timeout.
 
 On a select page whose bundle slots each need a variant (size, colour) before
-Next, the runner fills every visible, enabled slot variant select that is still
-empty (`[data-next-variant-selectors] select` or `.next-slot-variant-field
-select`, the native select the SDK renders, counted visible when its field is)
-with its first in-stock option: enabled, not hidden, non-empty value. It does
-this after any bundle card click and before the checkout control, one select at
-a time with `input` and `change` dispatched, and records each choice in
-`variant_selections` as `{ bundle_id, slot, variant_code, value }` so the
-ordered variants can be checked against the cart lines. A select with nothing
-to choose fails the path with `cart_entry_variant_unfilled` before Next is
-clicked. Pre-filled selects are left alone and `variant_selections` is omitted.
+Next, the runner chooses one per slot after any bundle card click and before
+the checkout control, one field at a time. It looks at every visible, enabled
+slot variant select (`[data-next-variant-selectors] select` or
+`.next-slot-variant-field select`, the native select the SDK renders, counted
+visible when its field is):
+
+- When the field shows a dropdown UI (an `os-dropdown` with a
+  `.os-card__variant-dropdown-toggle` and `os-dropdown-item` rows, as the
+  olympus-mv-two-step starter renders), the runner clicks the toggle and then a
+  row, like a shopper, even when the select is already filled. A page may count
+  a field as chosen only when a row was clicked. It clicks the row matching the
+  select's current value when that row is in stock, so the cart stays what the
+  SDK chose, and otherwise the first in-stock row.
+- With no dropdown UI, an empty select gets its first in-stock option, with
+  `input` and `change` dispatched. A filled native select is left alone.
+
+In stock means enabled, not hidden, and with a non-empty value. For a row it
+also means not `[disabled]`, `aria-disabled`, `.next-oos`,
+`.next-variant-unavailable` or `data-available="false"`, and that the row's
+native option is not disabled. Each choice is recorded in
+`variant_selections` as `{ bundle_id, slot, variant_code, value, via }`, where
+`via` is `dropdown` or `select`, so the ordered variants can be checked against
+the cart lines. A field with nothing to choose, or a row that cannot be
+clicked, fails the path with `cart_entry_variant_unfilled` before Next is
+clicked. A page whose filled selects have no dropdown UI is left untouched and
+`variant_selections` is omitted.
 
 Which page a funnel enters the cart from is still inferred from topology and
 the rendered checkout. Recording it authoritatively on the spec is the open

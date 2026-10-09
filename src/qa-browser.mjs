@@ -49,12 +49,16 @@ import {
   checkoutSelectionSurfaceScript,
   chooseCartEntryControl,
   codedError,
-  fillSlotVariantScript,
   isCartEntryCode,
   resolveCartEntryPage,
   sdkCartSnapshotScript,
+  SLOT_VARIANT_DROPDOWN_ROW_SELECTOR,
+  SLOT_VARIANT_DROPDOWN_TOGGLE_SELECTOR,
+  SLOT_VARIANT_FIELD_SELECTOR,
   SLOT_VARIANT_SELECT_SELECTOR,
+  slotVariantKey,
   slotVariantLabel,
+  slotVariantStepScript,
   summarizeSelectionSurface,
   UNDECLARED_ROUTE_ATTRIBUTES,
 } from "./qa-cart-entry.mjs";
@@ -4431,16 +4435,28 @@ async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPack
   };
 }
 
-// Fills a select page's empty slot variant selects one at a time (a choice can
-// re-render its slot) and returns the choices. A pre-filled page returns []
-// without touching anything. Throws ENTRY_VARIANT_UNFILLED, before any click
-// on the checkout control, when a select has no in-stock option or keeps
-// coming back empty.
+// Chooses a select page's slot variants one at a time (a choice can
+// re-render its slot) and returns the choices. A field showing a dropdown UI
+// is picked like a shopper, toggle then row, even when its select is
+// pre-filled, because a page may count a field as chosen only when a row was
+// clicked (campaigns-os#667). A select with no dropdown UI is filled only when
+// empty; a pre-filled native-only page returns [] untouched. Throws
+// ENTRY_VARIANT_UNFILLED, before any click on the checkout control, when a
+// field has no in-stock row or option, a pick cannot be clicked, or the page
+// keeps asking for more choices.
 const SLOT_VARIANT_FILL_LIMIT = 40;
 async function fillSlotVariants(page) {
   const selections = [];
+  const picked = [];
+  const step = () => page.evaluate(slotVariantStepScript(), {
+    selector: SLOT_VARIANT_SELECT_SELECTOR,
+    fieldSelector: SLOT_VARIANT_FIELD_SELECTOR,
+    toggleSelector: SLOT_VARIANT_DROPDOWN_TOGGLE_SELECTOR,
+    rowSelector: SLOT_VARIANT_DROPDOWN_ROW_SELECTOR,
+    picked,
+  }).catch(() => ({ done: true }));
   for (let pass = 0; pass < SLOT_VARIANT_FILL_LIMIT; pass += 1) {
-    const result = await page.evaluate(fillSlotVariantScript(), SLOT_VARIANT_SELECT_SELECTOR).catch(() => ({ done: true }));
+    const result = await step();
     if (result?.done) {
       if (selections.length) await page.waitForLoadState("networkidle", { timeout: 3000 }).catch(() => {});
       return selections;
@@ -4448,18 +4464,31 @@ async function fillSlotVariants(page) {
     if (result?.unfillable) {
       throw codedError(
         CART_ENTRY_CODES.ENTRY_VARIANT_UNFILLED,
-        `${slotVariantLabel(result.unfillable)} has no in-stock option to choose (${result.unfillable.options} option(s), all disabled or placeholder); the page would refuse Next`,
+        `${slotVariantLabel(result.unfillable)} has no in-stock ${result.unfillable.via === "dropdown" ? "dropdown row" : "option"} to choose (${result.unfillable.options} ${result.unfillable.via === "dropdown" ? "row" : "option"}(s), all disabled or placeholder); the page would refuse Next`,
       );
     }
-    const { bundle_id: bundleId, slot, variant_code: variantCode, value } = result.filled;
-    selections.push({ bundle_id: bundleId, slot, variant_code: variantCode, value });
+    const choice = result.pick || result.filled;
+    if (result.pick) {
+      const field = page.locator(SLOT_VARIANT_FIELD_SELECTOR).nth(result.pick.field_index);
+      try {
+        await clickControl(field.locator(SLOT_VARIANT_DROPDOWN_TOGGLE_SELECTOR).filter({ visible: true }).first(), { timeout: 5000 });
+        await clickControl(field.locator(SLOT_VARIANT_DROPDOWN_ROW_SELECTOR).nth(result.pick.row_index), { timeout: 5000 });
+      } catch (error) {
+        throw codedError(
+          CART_ENTRY_CODES.ENTRY_VARIANT_UNFILLED,
+          `${slotVariantLabel(choice)} dropdown row "${choice.value}" could not be clicked (${String(error?.message || error).split("\n")[0]}); the page would refuse Next`,
+        );
+      }
+      picked.push(slotVariantKey(choice));
+    }
+    selections.push({ bundle_id: choice.bundle_id, slot: choice.slot, variant_code: choice.variant_code, value: choice.value, via: result.pick ? "dropdown" : "select" });
     await page.waitForTimeout(250);
   }
-  const pending = await page.evaluate(fillSlotVariantScript(), SLOT_VARIANT_SELECT_SELECTOR).catch(() => ({ done: true }));
+  const pending = await step();
   if (pending?.done) return selections;
   throw codedError(
     CART_ENTRY_CODES.ENTRY_VARIANT_UNFILLED,
-    `${slotVariantLabel(pending.filled || pending.unfillable)} was still empty after ${SLOT_VARIANT_FILL_LIMIT} variant choices; the page keeps clearing it`,
+    `${slotVariantLabel(pending.pick || pending.filled || pending.unfillable)} still needed a choice after ${SLOT_VARIANT_FILL_LIMIT} variant choices; the page keeps clearing them`,
   );
 }
 

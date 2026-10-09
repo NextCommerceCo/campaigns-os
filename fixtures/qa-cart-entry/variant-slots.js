@@ -11,6 +11,13 @@
 //                                     stock SDK pre-selects the slot package's
 //                                     own variant); otherwise a placeholder
 //   data-fixture-out-of-stock-slot="2" every size in that slot is disabled
+//   data-fixture-dropdown              wrap each field in a visible os-dropdown
+//                                     (toggle + os-dropdown-item rows), the
+//                                     native select hidden; Next then also
+//                                     refuses until every field had a row
+//                                     clicked, tracked in a page-level object,
+//                                     even when the row equals the pre-filled
+//                                     value (a native change does not count)
 //
 // A size choice puts that size's package in the cart, one line per slot. The
 // Next control ([data-next-action="checkout"]) refuses, before the shim's
@@ -26,6 +33,9 @@
     { value: "M", packageId: "21", inStock: true },
     { value: "L", packageId: "22", inStock: true },
   ];
+  var dropdown = body.hasAttribute("data-fixture-dropdown");
+  var picks = {};
+  window.fixtureVariantPicks = picks;
   var stage = document.getElementById("bundle-slots-stage");
 
   function writeCart() {
@@ -76,19 +86,59 @@
     });
     toggle.textContent = select.value || "Choose size";
     select.addEventListener("change", (function (button, control) {
-      return function () { button.textContent = control.value || "Choose size"; writeCart(); };
+      return function () { if (!dropdown) button.textContent = control.value || "Choose size"; writeCart(); };
     })(toggle, select));
-    field.append(label, toggle, select);
+    if (dropdown) {
+      toggle = buildDropdown(field, select, index);
+      toggle.parentNode.insertBefore(label, toggle);
+      field.appendChild(select);
+    } else {
+      field.append(label, toggle, select);
+    }
     selectors.appendChild(field);
     slot.appendChild(selectors);
     stage.appendChild(slot);
   }
   writeCart();
 
+  // The dropdown UI: the toggle shows a placeholder until a row is clicked,
+  // the menu shows on toggle, and a row click records the pick, then sets the
+  // native select and dispatches change.
+  function buildDropdown(field, select, index) {
+    var box = document.createElement("os-dropdown");
+    box.className = "os-variant-dropdown";
+    var button = document.createElement("button");
+    button.type = "button";
+    button.className = "os-card__variant-dropdown-toggle is-placeholder";
+    button.textContent = "Size";
+    var menu = document.createElement("os-dropdown-menu");
+    Array.prototype.forEach.call(select.options, function (option) {
+      var row = document.createElement("os-dropdown-item");
+      row.className = "os-card__variant-dropdown-item";
+      row.setAttribute("value", option.value);
+      row.textContent = option.textContent;
+      if (option.disabled) row.setAttribute("disabled", "");
+      row.addEventListener("click", function () {
+        if (row.hasAttribute("disabled")) return;
+        picks[index] = row.getAttribute("value");
+        button.textContent = row.getAttribute("value");
+        button.classList.remove("is-placeholder");
+        menu.classList.remove("show");
+        select.value = row.getAttribute("value");
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      menu.appendChild(row);
+    });
+    button.addEventListener("click", function () { menu.classList.toggle("show"); });
+    box.append(button, menu);
+    field.appendChild(box);
+    return box;
+  }
+
   document.addEventListener("click", function (event) {
     if (!event.target.closest('[data-next-action="checkout"]')) return;
-    var empty = Array.prototype.some.call(stage.querySelectorAll("select.next-slot-variant-select"), function (select) {
-      return !select.value;
+    var empty = Array.prototype.some.call(stage.querySelectorAll("select.next-slot-variant-select"), function (select, index) {
+      return !select.value || (dropdown && !picks[index]);
     });
     if (empty) {
       event.preventDefault();

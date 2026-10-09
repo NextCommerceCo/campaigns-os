@@ -433,20 +433,38 @@ export function chooseCartEntryControl(controls = [], requested = []) {
 // the only public place the line items and their package ids are readable.
 // The variant controls a select page renders per bundle slot: the
 // campaign-cart SDK injects a native select into each slot's
-// [data-next-variant-selectors] (inside a .next-slot-variant-field), and the
-// olympus-mv-two-step starter hides that select behind its own dropdown UI.
+// [data-next-variant-selectors] (inside a .next-slot-variant-field). The
+// olympus-mv-two-step starter, and pages built from it, hide that select behind
+// a visible os-dropdown (a toggle button plus os-dropdown-item rows carrying
+// `value`); a row click is what sets the select and dispatches `change`.
 export const SLOT_VARIANT_SELECT_SELECTOR = "[data-next-variant-selectors] select, .next-slot-variant-field select";
+export const SLOT_VARIANT_FIELD_SELECTOR = ".next-slot-variant-field";
+export const SLOT_VARIANT_DROPDOWN_TOGGLE_SELECTOR = "os-dropdown .os-card__variant-dropdown-toggle";
+export const SLOT_VARIANT_DROPDOWN_ROW_SELECTOR = "os-dropdown os-dropdown-item";
 
-// evaluate() body: fill the first visible, enabled, empty slot variant select
-// with its first in-stock option (enabled, not hidden, non-empty value), and
-// dispatch input + change, which the SDK and the starter listen for. One
-// select per call, because a choice can re-render its slot. Returns
-// { done: true } when no empty select remains, { filled } with the choice,
-// or { unfillable } naming the slot when no option can be chosen. A select
-// counts as visible when it or its field is (the starter hides the native
-// select). A pre-filled select is never touched.
-export function fillSlotVariantScript() {
-  return (selector) => {
+export const slotVariantKey = ({ bundle_id: bundleId, slot, variant_code: code } = {}) => `${bundleId ?? ""}|${slot}|${code ?? ""}`;
+
+// evaluate() body: the next slot variant action, one per call because a
+// choice can re-render its slot. In document order over the visible slot
+// variant selects (a select counts as visible when it or its field is):
+//   - a field showing a dropdown UI whose key is not in `picked` gets a pick:
+//     the row matching the select's current value when that row is in stock
+//     (so the cart stays what the SDK chose), else the first in-stock row. The
+//     caller clicks the toggle and the row like a shopper, because a page may
+//     count a field as chosen only when a row was clicked. Pre-filled selects
+//     are picked too. Returned as { pick } with the field's index among
+//     SLOT_VARIANT_FIELD_SELECTOR matches and the row's index among the
+//     field's SLOT_VARIANT_DROPDOWN_ROW_SELECTOR matches;
+//   - a select with no dropdown UI is filled here only when it is empty, with
+//     its first in-stock option and input + change dispatched ({ filled });
+//     a pre-filled one is left alone.
+// In stock: enabled, not hidden, non-empty value; for a row also not
+// [disabled], aria-disabled, .next-oos, .next-variant-unavailable or
+// data-available="false", and its native option not disabled. Nothing to
+// choose returns { unfillable } naming the slot; nothing left returns
+// { done: true }.
+export function slotVariantStepScript() {
+  return ({ selector, fieldSelector, toggleSelector, rowSelector, picked = [] }) => {
     const clean = (value) => String(value || "").replace(/\s+/g, " ").trim();
     const isVisible = (element) => {
       if (!element) return false;
@@ -454,12 +472,13 @@ export function fillSlotVariantScript() {
       const style = getComputedStyle(element);
       return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
     };
-    const holderOf = (select) => select.closest(".next-slot-variant-field") || select.closest("[data-next-variant-selectors]");
+    const holderOf = (select) => select.closest(fieldSelector) || select.closest("[data-next-variant-selectors]");
     const visible = Array.from(new Set(document.querySelectorAll(selector)))
       .filter((select) => !select.disabled && (isVisible(select) || isVisible(holderOf(select))));
     const slotRoots = Array.from(new Set(visible.map((select) => select.closest("[data-next-variant-selectors]") || holderOf(select))));
+    const fields = Array.from(document.querySelectorAll(fieldSelector));
     const describe = (select) => {
-      const field = select.closest(".next-slot-variant-field");
+      const field = select.closest(fieldSelector);
       const index = Number.parseInt(field?.getAttribute("data-next-slot-index") ?? "", 10);
       const root = select.closest("[data-next-variant-selectors]") || holderOf(select);
       return {
@@ -468,14 +487,36 @@ export function fillSlotVariantScript() {
         variant_code: clean(select.getAttribute("data-next-variant-code") || select.getAttribute("data-variant-code") || field?.getAttribute("data-next-variant-code") || select.name) || null,
       };
     };
-    const empty = visible.find((select) => clean(select.value) === "");
-    if (!empty) return { done: true };
-    const option = Array.from(empty.options).find((candidate) => !candidate.disabled && !candidate.hidden && clean(candidate.value) !== "");
-    if (!option) return { unfillable: { ...describe(empty), options: empty.options.length } };
-    empty.value = option.value;
-    empty.dispatchEvent(new Event("input", { bubbles: true }));
-    empty.dispatchEvent(new Event("change", { bubbles: true }));
-    return { filled: { ...describe(empty), value: option.value } };
+    const keyOf = (info) => `${info.bundle_id ?? ""}|${info.slot}|${info.variant_code ?? ""}`;
+    const optionInStock = (option) => !option.disabled && !option.hidden && clean(option.value) !== "";
+    for (const select of visible) {
+      const info = describe(select);
+      const field = select.closest(fieldSelector);
+      const toggle = field ? Array.from(field.querySelectorAll(toggleSelector)).find(isVisible) : null;
+      if (toggle) {
+        if (picked.includes(keyOf(info))) continue;
+        const rows = Array.from(field.querySelectorAll(rowSelector));
+        const rowInStock = (row) => {
+          const value = clean(row.getAttribute("value"));
+          if (!value || row.hidden || row.hasAttribute("disabled") || row.getAttribute("aria-disabled") === "true") return false;
+          if (row.classList.contains("next-oos") || row.classList.contains("next-variant-unavailable") || row.getAttribute("data-available") === "false") return false;
+          const option = Array.from(select.options).find((candidate) => candidate.value === row.getAttribute("value"));
+          return !option || optionInStock(option);
+        };
+        const current = clean(select.value);
+        const row = rows.find((candidate) => current && candidate.getAttribute("value") === select.value && rowInStock(candidate)) || rows.find(rowInStock);
+        if (!row) return { unfillable: { ...info, options: rows.length, via: "dropdown" } };
+        return { pick: { ...info, value: row.getAttribute("value"), field_index: fields.indexOf(field), row_index: rows.indexOf(row) } };
+      }
+      if (clean(select.value) !== "") continue;
+      const option = Array.from(select.options).find(optionInStock);
+      if (!option) return { unfillable: { ...info, options: select.options.length, via: "select" } };
+      select.value = option.value;
+      select.dispatchEvent(new Event("input", { bubbles: true }));
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+      return { filled: { ...info, value: option.value } };
+    }
+    return { done: true };
   };
 }
 

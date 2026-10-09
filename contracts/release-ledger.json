@@ -7873,8 +7873,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.58.0+agent.6",
-      "changelog_sha256": "5b498b731c91c2a65e73ed2cf3f62bc6c3e5d21cab8e947353ae8e73ee456cef",
-      "agent_impact": "qa run --test-order now fills a select page's empty bundle-slot variant selects with the first in-stock option before clicking the checkout control, and records the choices as entered_via_landing evidence variant_selections [{ bundle_id, slot, variant_code, value }]. A slot with no in-stock option fails before Next with the new cart-entry code cart_entry_variant_unfilled (classified not_created) instead of cart_entry_no_navigation. Pre-filled pages are unchanged.",
+      "changelog_sha256": "d1110d80e5c0f22d7a2c838ebda6dd407918535522a8cfcb9ea260baee8015f9",
+      "agent_impact": "qa run --test-order now chooses a select page's bundle-slot variants before clicking the checkout control: a field showing an os-dropdown UI is picked by clicking its toggle and a row (the row matching the select's current value when in stock, else the first in-stock row), even when the select is pre-filled; a native-only select is filled with its first in-stock option only when empty. Choices are recorded as entered_via_landing evidence variant_selections [{ bundle_id, slot, variant_code, value, via }]. A field with no in-stock row or option, or an unclickable row, fails before Next with the new cart-entry code cart_entry_variant_unfilled (classified not_created) instead of cart_entry_no_navigation. Pages whose filled selects have no dropdown UI are unchanged.",
       "compatibility": "additive",
       "migration": "none",
       "changes": [
@@ -7882,10 +7882,10 @@
           "class": "named_surface",
           "path": "docs/qa-and-test-orders.md",
           "surface_entry": "docs/qa-and-test-orders.md",
-          "summary": "Document slot variant filling on select-page cart entry, the variant_selections evidence, and the cart_entry_variant_unfilled code."
+          "summary": "Document slot variant choice on select-page cart entry (dropdown row click or native fill), the variant_selections evidence, and the cart_entry_variant_unfilled code."
         }
       ],
-      "entry_sha256": "b9b0b26a31fca1e23acaed037550d569cc349bbbd93df811b4b54efbfb7f2fa0"
+      "entry_sha256": "be80b55b4a5f90150ee62ff94e3b54ed8bd564a05606f687676eb388d2115b14"
     }
   ]
 }
