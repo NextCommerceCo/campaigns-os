@@ -527,6 +527,53 @@ test("capture binding refuses a built output that drifted from the recorded fing
   }
 });
 
+test("capture refusal on a fingerprint mismatch names the extra and changed paths and flags a sync conflict copy", () => {
+  const packet = packetWithPages([{
+    page_id: "landing",
+    path: "landing.html",
+    page_kit: { public_route: "/merchant/landing/", spec_route: "landing/" },
+  }]);
+  const plan = planPolishCapture({ packet, baseUrl: "http://127.0.0.1:4173" });
+  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-polish-drift-"));
+  try {
+    const siteRoot = join(dir, "_site", "merchant");
+    mkdirSync(join(siteRoot, "landing"), { recursive: true });
+    writeFileSync(join(siteRoot, "landing", "index.html"), "<html><body>Landing</body></html>");
+    writeFileSync(join(siteRoot, "hero.webp"), "hero");
+    const recorded = computeBuildFingerprint(siteRoot);
+    const lines = recorded.manifest.split("\n").filter(Boolean);
+    const manifest = [];
+    for (let index = 0; index < lines.length; index += 2) manifest.push({ path: lines[index], sha256: lines[index + 1] });
+    const report = structuredClone(completedReport());
+    report.stages.assembly.build_fingerprint = recorded.fingerprint;
+    report.stages.assembly.build_manifest = manifest;
+
+    writeFileSync(join(siteRoot, "landing", "index.html"), "<html><body>Landing v2</body></html>");
+    writeFileSync(join(siteRoot, "hero 2.webp"), "hero");
+    const paths = { packetPath: join(dir, "campaign-runtime.build.json"), targetRepo: dir };
+    assert.throws(
+      () => createPolishCaptureBinding({ packet, report, plan, ...paths }),
+      (error) => {
+        assert.match(error.message, /no longer matches stages\.assembly\.build_fingerprint/);
+        assert.match(error.message, /1 extra: hero 2\.webp \[sync conflict copy\]/);
+        assert.match(error.message, /1 changed: landing\/index\.html/);
+        assert.match(error.message, /sync conflict cop/);
+        return true;
+      },
+    );
+
+    // A report recorded before build kept a manifest refuses as before and
+    // says why the paths cannot be named.
+    delete report.stages.assembly.build_manifest;
+    assert.throws(
+      () => createPolishCaptureBinding({ packet, report, plan, ...paths }),
+      /no longer matches stages\.assembly\.build_fingerprint[\s\S]*no file manifest[\s\S]*re-run record build/i,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("capture binding permits unrelated report updates and page-load merge preserves the latest report", () => {
   const packet = packetWithPages([{
     page_id: "landing",
