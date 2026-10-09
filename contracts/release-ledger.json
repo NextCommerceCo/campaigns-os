@@ -7844,6 +7844,27 @@
         }
       ],
       "entry_sha256": "437ff972f3680e3bd4e46090fbe67833fb8c988e9ad7dd2aa12c566319afae01"
+    },
+    {
+      "id": "RL-0265",
+      "sequence": 253,
+      "date": "2026-10-09",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.58.0+agent.2",
+      "changelog_sha256": "3ef901948a1144f1464052911e651a3637c3ebf8001830de91fb5fb0a941fe9b",
+      "agent_impact": "Doctor (and start/build) warns template_contract.select_step_missing before build when the family puts package selection on a select page, its checkout has no selector, and no select page in the Map leads to a Checkout; the fix is adding a Select page between the entry page and checkout in Map Builder. copy.hardcoded_phone ignores digits in HTML comments, <style> blocks and CSS comments.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "Warn template_contract.select_step_missing when a select-step family's Map declares no select page leading to a Checkout, and mask HTML comments, <style> content and CSS comments in the hardcoded phone scan."
+        }
+      ],
+      "entry_sha256": "19f5719805e5419f0ea78731e98e67adf3fba310dca00f9827d26b90dad4cf33"
     }
   ]
 }
