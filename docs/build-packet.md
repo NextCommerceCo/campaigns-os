@@ -1813,13 +1813,11 @@ On a hosted target, record an unset hosted preview URL with
 `campaigns-os qa policy set --packet <p> --preview-url <url>`, then record the
 deploy with `campaigns-os record deploy --packet <p> --base-url <preview url>`. The hosted preview must be a non-loopback
 HTTP(S) URL whose origin or QA-resolved campaign route path differs from `deploy.production_url`;
-query and fragment text does not make the production page a preview. With
-`deploy.preview_url` recorded, run `campaigns-os next qa --packet <p>` and
-`campaigns-os qa run --packet <p> --base-url <preview-url> --browser
---test-order common`. The recorded hosted preview satisfies the deploy step
-for this all-template shape. After QA records a verdict for the current build,
-`campaigns-os next --packet <p>` reaches closeout without a hosted deploy
-record. QA against the packet's production URL retains the strict gate.
+query and fragment text does not make the production page a preview. With the
+deploy recorded, run `campaigns-os qa run --packet <p> --base-url <preview-url>
+--browser --test-order common`; after QA records a verdict for the current
+build, `campaigns-os next --packet <p>` reaches closeout. QA against the
+packet's production URL retains the strict gate.
 
 Each command reads the same packet, Build Context and Assembly Report `next`
 reads (`--context` / `--report` override them the same way), validates what it
