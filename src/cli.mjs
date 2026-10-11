@@ -4465,7 +4465,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
         errors,
         warnings,
         ready,
-        prompt: `Pipeline complete. All stages in the assembly report are in a terminal status. To repeat build work, do the work and run \`${cmd("record")} build --packet <path>\`; this makes downstream stages owed as needed. Run \`${cmd("qa")} run\` for QA. \`${cmd("record")} deploy\` records the served deploy, a loopback URL for a local-serve target or an https URL for a hosted one. Then call \`${cmd("next")}\` again. If a run session is active, finish it with \`${cmd("run")} end\` so the Run Record is assembled and the session closes.${report?.stages?.qa?.status === "completed_with_warnings" ? " QA passed with exceptions; report them to the operator without clearing or waiving them or changing markup just to make them pass." : ""}`,
+        prompt: `Pipeline complete. All stages in the assembly report are in a terminal status. To repeat build work, do the work and run \`${cmd("record")} build --packet <path>\`; this makes downstream stages owed as needed. \`${cmd("record")} deploy\` records the served deploy, a loopback URL for a local-serve target or an https URL for a hosted one. Run \`${cmd("qa")} run\` for QA. Then call \`${cmd("next")}\` again. If a run session is active, finish it with \`${cmd("run")} end\` so the Run Record is assembled and the session closes.${report?.stages?.qa?.status === "completed_with_warnings" ? " QA passed with exceptions; report them to the operator without clearing or waiving them or changing markup just to make them pass." : ""}`,
       });
     }
     stage = picked.stage;

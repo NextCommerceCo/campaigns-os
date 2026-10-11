@@ -228,7 +228,8 @@ test("a closed Run Record for the current verdict stops next demanding a second 
   const before = runNext(fixture.packetPath);
   assert.equal(before.stage, "done", "the ladder must reach done once QA is recorded");
   assert.match(before.prompt, /record build --packet <path>/);
-  assert.match(before.prompt, /record deploy` records the served deploy, a loopback URL for a local-serve target or an https URL for a hosted one/);
+  assert.match(before.prompt, /record deploy`[^.]*local-serve[^.]*hosted/, "the done prompt names record deploy for both deploy targets");
+  assert.ok(before.prompt.indexOf("record deploy") < before.prompt.indexOf("qa run"), "the done prompt names record deploy before QA");
   assert.doesNotMatch(before.prompt, /set its status back to "pending"/);
   assert.equal(action(before, "run_record_closeout")?.required, true, "with no record on disk, closeout stays required");
 

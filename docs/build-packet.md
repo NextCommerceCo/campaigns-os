@@ -1880,7 +1880,7 @@ Result shape (with `--json`):
 Terminal states:
 
 - **`stage: "doctor-blocked"`** — doctor returned errors. Resolve the blockers and re-run `campaigns-os doctor` to confirm before calling `next` again.
-- **`stage: "done"`** — every stage is terminal. Pipeline is complete. To repeat build work, do the work and use `record build`; it makes downstream stages owed as needed. Use `record setup` or `record polish` after repeating those stages, and `qa run` for QA. `record deploy` records the served deploy, a loopback URL for a local-serve target or an https URL for a hosted one. Then call `next` again.
+- **`stage: "done"`** — every stage is terminal. Pipeline is complete. To repeat build work, do the work and use `record build`; it makes downstream stages owed as needed. Use `record setup` or `record polish` after repeating those stages. `record deploy` records the served deploy, a loopback URL for a local-serve target or an https URL for a hosted one. Use `qa run` for QA. Then call `next` again.
 - **`stage_blocked: true`** — the picker returned a stage whose recorded status is `blocked`. Don't run the prompt as-is; clear the blocker first.
 
 The legacy form `campaigns-os next <stage>` (e.g. `next build`) still works and is the way to force a specific stage when you want to override the picker.
