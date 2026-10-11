@@ -6,7 +6,7 @@ Notable supported-surface changes are recorded here.
 
 ### Fixed
 
-`run status` now always names `next` as the next command: `progress.next_command` is `campaigns-os next --packet <packet> --json`. Before, once every stage status the Assembly Report records read completed or skipped, it named `run end` even when `next` had not reached done: after a CampaignSpec edit with no `record spec` (`next` answers build), on a report written before input stamps existed, and after a rebuild with no `record build`. `next` decides whether the campaign is done, and once it is, with a run session active, it names `run end` as a required action. `run status` stays read-only, and `progress.incomplete_stages` still lists the recorded statuses.
+`run status` now always names `next` as the next command: `progress.next_command` is `campaigns-os next --packet <packet> --json`. Before, once every stage status the Assembly Report records read completed or skipped, it named `run end` even when `next` had not reached done: after a CampaignSpec edit with no `record spec` (`next` answers build), on a report written before input stamps existed, and after a rebuild with no `record build`. `next` decides whether the campaign is done, and once it is, with a run session active, it names `run end` as a required action. `run status` stays read-only, and `progress.incomplete_stages` still lists the recorded statuses (campaigns-os#673).
 
 ### Changed
 
