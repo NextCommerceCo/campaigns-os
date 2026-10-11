@@ -71,6 +71,8 @@ function buildFixture(root) {
 
   mkdirSync(builtDir, { recursive: true });
   writeFileSync(builtPath, html);
+  // polish capture re-hashes _site/<slug>/ (the example packet's slug is
+  // runtime-packet-demo) and refuses when it differs, so a drift here fails.
   const buildFingerprint = computeBuildFingerprint(dirname(builtDir)).fingerprint;
 
   const spec = readJson(new URL("campaignspec.v42.basic.json", EXAMPLES));
