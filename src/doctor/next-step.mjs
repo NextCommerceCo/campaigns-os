@@ -413,7 +413,7 @@ export function assessPurchaseProofCoverage({ packet = null, report = null } = {
   };
 }
 
-function pickNextStage(report, { errors = [], derived = null }, prepareBuildGate, purchaseProof = null, packet = null) {
+function pickNextStage(report, { errors = [], derived = null }, prepareBuildGate, purchaseProof = null) {
   const polishGate = derived?.polish_gate || evaluatePolishGate({ report });
   const polishCheckpointGate = derived?.polish_checkpoint_gate || null;
   // prepare-build is the earliest lifecycle prerequisite. Surface its
@@ -542,6 +542,9 @@ function checkpointExceptionPresent(derived) {
     || derived?.polish_checkpoint_gate?.status === "waived";
 }
 
+// The readiness ladder below "blocked", written once: doctor's status, the
+// `next` command's status and doctor's `next` block each decide "blocked"
+// first, then call it with their own warnings.
 function readinessStatus(warnings, derived) {
   if (checkpointExceptionPresent(derived)) return "ready_with_waivers";
   return warnings.length ? "ready_with_warnings" : "ready";
@@ -664,7 +667,7 @@ function buildNextStep(errors, warnings, derived, report = null, packet = null, 
     && (polishGate.status === "blocked" || polishCheckpointGate?.status === "blocked");
   const codes = new Set([...errors, ...warnings].map((issue) => issue.code));
   const purchaseProof = report ? assessPurchaseProofCoverage({ packet, report }) : null;
-  const picked = pickNextStage(report, { errors, derived }, prepareBuildGate, purchaseProof, packet);
+  const picked = pickNextStage(report, { errors, derived }, prepareBuildGate, purchaseProof);
   // The picker's vocabulary and this table must not drift apart: a stage the
   // table does not know would otherwise be relabelled as an operator step and
   // sliced into the whole ladder. Fail loudly instead.
@@ -758,6 +761,6 @@ export {
   prepareBuildGateIssue,
   addPrepareBuildGateErrors,
   deployUrlFromReportOutputs,
-  checkpointExceptionPresent,
+  readinessStatus,
   buildNextStep,
 };

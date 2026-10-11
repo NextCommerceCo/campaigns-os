@@ -63,7 +63,7 @@ import {
   nextPrepareBuildBindingIssues,
   prepareBuildGateIssue,
   addPrepareBuildGateErrors,
-  checkpointExceptionPresent,
+  readinessStatus,
   buildNextStep,
 } from "./next-step.mjs";
 
@@ -664,13 +664,7 @@ function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath =
       }
     }
   }
-  const status = errors.length
-    ? "blocked"
-    : checkpointExceptionPresent(derived)
-      ? "ready_with_waivers"
-      : warnings.length
-        ? "ready_with_warnings"
-        : "ready";
+  const status = errors.length ? "blocked" : readinessStatus(warnings, derived);
   const result = {
     schema_version: DOCTOR_SIDECAR_SCHEMA,
     generated_at: new Date().toISOString(),

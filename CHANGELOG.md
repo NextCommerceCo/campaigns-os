@@ -2,6 +2,16 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.59.0+agent.3] - 2026-10-11
+
+### Fixed
+
+`run status` now always names `next` as the next command: `progress.next_command` is `campaigns-os next --packet <packet> --json`. Before, once every stage status the Assembly Report records read completed or skipped, it named `run end` even when `next` had not reached done: after a CampaignSpec edit with no `record spec` (`next` answers build), on a report written before input stamps existed, and after a rebuild with no `record build`. `next` decides whether the campaign is done, and once it is, with a run session active, it names `run end` as a required action. `run status` stays read-only, and `progress.incomplete_stages` still lists the recorded statuses.
+
+### Changed
+
+`next` returns a blocked or unavailable prepare-build gate's recovery-only answer from one branch, whether the stage was named or picked; `requested_stage` still appears only when a stage was named. Doctor's status, `next`'s status and doctor's `next` block read one readiness ladder (`blocked`, then `ready_with_waivers`, `ready_with_warnings`, `ready`), each over its own errors and warnings. The output of `next` and doctor is unchanged.
+
 ## [1.59.0] - 2026-10-09
 
 ### Changed

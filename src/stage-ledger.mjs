@@ -11,7 +11,6 @@ import {
   NEXT_STAGE_CONTRACTS,
   NEXT_STAGE_OWNERS,
   stageIsBlocked,
-  stageIsTerminal,
 } from "./orchestration-stage-contract.mjs";
 
 const PRODUCER_STAGES = new Set(["doctor", "qa"]);
