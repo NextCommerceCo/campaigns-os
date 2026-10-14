@@ -41,7 +41,7 @@ URL.
 - Starter template contracts own the SDK attribute contract and protected runtime surfaces: checkout/cart/upsell/receipt/payment/address/totals/submit controls and their required data attributes.
 - Designed source owns visual composition, content hierarchy, imagery, and page-level copy.
 
-Packages identify sellable products or variants, and Offers own campaign price changes. The Campaigns App dashboard calls packages **Products** and creates one per variant when an Offer that selects it is saved, so a campaign set up there has one package per variant and a separate Offer for each Buy 1/2/3 tier. Package Retail Price/Quantity fields and multi-unit packages may exist on older campaigns, but assembly should not introduce them for new tier pricing.
+Packages identify sellable products or variants, and Offers own campaign price changes. The Campaigns App dashboard calls packages **Products** and creates one per variant when an Offer that selects it is saved, so a campaign set up there has one package per variant and a separate Offer for each Buy 1/2/3 tier. Package Retail Price/Quantity fields and multi-unit packages exist on older campaigns that have the legacy **Enable Package Retail Price & Quantity** setting on (see the "Older Campaigns" section of [Campaign Products](https://docs.nextcommerce.com/docs/apps/campaigns-app/build-campaign-packages)), but assembly should not introduce them for new tier pricing.
 
 ## Offer Application Surfaces
 

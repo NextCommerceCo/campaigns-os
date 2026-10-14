@@ -8117,7 +8117,7 @@
       "surface_version": null,
       "changelog_section": "1.59.0+agent.4",
       "changelog_sha256": "4bfd26f73f0eb599a40cb5fb338653d4fdf511f45ccd0ec291ba67d402c30086",
-      "agent_impact": "When a campaign is set up in the Campaigns App dashboard, expect one package per variant, created by saving an Offer that selects it, and a separate Offer per Buy 1/2/3 tier. The dashboard labels packages Products; pages still reference package IDs.",
+      "agent_impact": "When a campaign is set up in the Campaigns App dashboard, expect one package per variant, created by saving an Offer that selects it, and a separate Offer per Buy 1/2/3 tier. The dashboard labels packages Products; pages still reference package IDs. Quickstart and the build-flow commerce section both describe this Create Campaign then Add Offer setup, and that Admin API setups still create packages before Offers.",
       "compatibility": "compatible",
       "migration": "none",
       "changes": [
@@ -8128,7 +8128,7 @@
           "summary": "Describe how the dashboard creates packages from Offers under Commerce Ownership."
         }
       ],
-      "entry_sha256": "dce87b6831ecae696bc080e1a58f3599fddfa7cda9cf4a04a63447e828aeb051"
+      "entry_sha256": "b0708e5f1d10142d56f4cbc5d346053b89073bc65cb6c69b41afff432908e103"
     }
   ]
 }
