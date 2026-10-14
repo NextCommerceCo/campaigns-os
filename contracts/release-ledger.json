@@ -8108,6 +8108,27 @@
         }
       ],
       "entry_sha256": "54697c8b2c8e0857687a01f4ac43942202f8e6f9a523fc1151070ac890a0133d"
+    },
+    {
+      "id": "RL-0273",
+      "sequence": 259,
+      "date": "2026-10-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.59.0+agent.4",
+      "changelog_sha256": "4bfd26f73f0eb599a40cb5fb338653d4fdf511f45ccd0ec291ba67d402c30086",
+      "agent_impact": "When a campaign is set up in the Campaigns App dashboard, expect one package per variant, created by saving an Offer that selects it, and a separate Offer per Buy 1/2/3 tier. The dashboard labels packages Products; pages still reference package IDs.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/campaigns-os-build-flow.md",
+          "surface_entry": "docs/campaigns-os-build-flow.md",
+          "summary": "Describe how the dashboard creates packages from Offers under Commerce Ownership."
+        }
+      ],
+      "entry_sha256": "dce87b6831ecae696bc080e1a58f3599fddfa7cda9cf4a04a63447e828aeb051"
     }
   ]
 }
