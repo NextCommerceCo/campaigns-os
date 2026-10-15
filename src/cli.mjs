@@ -4465,7 +4465,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
         errors,
         warnings,
         ready,
-        prompt: `Pipeline complete. All stages in the assembly report are in a terminal status. To repeat build work, do the work and run \`${cmd("record")} build --packet <path>\`; this makes downstream stages owed as needed. Run \`${cmd("qa")} run\` for QA. For a hosted deploy, record the URL and stage outcome as the deploy prompt describes. Then call \`${cmd("next")}\` again. If a run session is active, finish it with \`${cmd("run")} end\` so the Run Record is assembled and the session closes.${report?.stages?.qa?.status === "completed_with_warnings" ? " QA passed with exceptions; report them to the operator without clearing or waiving them or changing markup just to make them pass." : ""}`,
+        prompt: `Pipeline complete. All stages in the assembly report are in a terminal status. To repeat build work, do the work and run \`${cmd("record")} build --packet <path>\`; this makes downstream stages owed as needed. \`${cmd("record")} deploy\` records the served deploy, a loopback URL for a local-serve target or an https URL for a hosted one. Run \`${cmd("qa")} run\` for QA. Then call \`${cmd("next")}\` again. If a run session is active, finish it with \`${cmd("run")} end\` so the Run Record is assembled and the session closes.${report?.stages?.qa?.status === "completed_with_warnings" ? " QA passed with exceptions; report them to the operator without clearing or waiving them or changing markup just to make them pass." : ""}`,
       });
     }
     stage = picked.stage;
@@ -5248,10 +5248,8 @@ function localServePlan(packet) {
 }
 
 function deployPrompt(packetPath, reportPath, packet, polishGate = null, polishCheckpointGate = null) {
-  if (packet.deploy?.target !== LOCAL_SERVE_DEPLOY_TARGET
-    && polishCheckpointGate?.code === "polish.hidden_eager_media.no_capturable_routes"
-    && !packet.deploy?.preview_url) {
-    return `Every mapped page is template stock, and the hosted preview URL is not recorded. Run \`${cmd("qa")} policy set --packet ${shellToken(packetPath)} --preview-url <url>\` after the preview is deployed, then \`${cmd("next")} --packet ${shellToken(packetPath)}\`.`;
+  if (hostedTemplateNeedsUsablePreview(packet, polishCheckpointGate)) {
+    return `Every mapped page is template stock, and deploy needs a hosted preview URL that differs from the production URL. Run \`${cmd("qa")} policy set --packet ${shellToken(packetPath)} --preview-url <url>\` after the preview is deployed, then \`${cmd("next")} --packet ${shellToken(packetPath)}\`.`;
   }
   const target = packet.deploy?.target || "unknown";
   const liveUrlPath = packet.deploy?.live_url_path || packet.campaign?.live_url_path || campaignRouteRoot(packet) || "/<slug>/";
@@ -5344,10 +5342,8 @@ function orderBumpRunReason(bumpCart) {
 }
 
 function qaPrompt(packetPath, reportPath, packet, spec = null, intent, polishCheckpointGate = null) {
-  if (packet.deploy?.target !== LOCAL_SERVE_DEPLOY_TARGET
-    && polishCheckpointGate?.code === "polish.hidden_eager_media.no_capturable_routes"
-    && !packet.deploy?.preview_url) {
-    return `Every mapped page is template stock, and QA needs the hosted preview URL. Run \`${cmd("qa")} policy set --packet ${shellToken(packetPath)} --preview-url <url>\`, then \`${cmd("next")} qa --packet ${shellToken(packetPath)}\`.`;
+  if (hostedTemplateNeedsUsablePreview(packet, polishCheckpointGate)) {
+    return `Every mapped page is template stock, and QA needs a hosted preview URL that differs from the production URL. Run \`${cmd("qa")} policy set --packet ${shellToken(packetPath)} --preview-url <url>\`, then \`${cmd("next")} --packet ${shellToken(packetPath)}\`.`;
   }
   const url = packet.deploy?.preview_url || packet.deploy?.production_url || "<preview-url>";
   const briefPath = packet.build_brief?.normalized_path || "(missing)";
