@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.59.0+agent.4] - 2026-10-14
+
+### Changed
+
+The build-flow doc and the quickstart describe the Campaigns App's offer-first setup: Create Campaign, then Add Offer on the campaign's Offers tab. Selecting store products in an Offer creates one campaign product (a package in the API) per variant at its store price when the Offer is saved, and later Offers reuse it. The dashboard's Packages tab is now Products. The rule against separate `1x` / `2x` / `3x` packages for tier pricing is unchanged, and campaigns set up over the Admin API still create packages before Offers.
+
 ## [1.59.0] - 2026-10-09
 
 ### Changed
