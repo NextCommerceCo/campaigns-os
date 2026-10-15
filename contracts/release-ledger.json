@@ -8129,6 +8129,39 @@
         }
       ],
       "entry_sha256": "b0708e5f1d10142d56f4cbc5d346053b89073bc65cb6c69b41afff432908e103"
+    },
+    {
+      "id": "RL-0272",
+      "sequence": 260,
+      "date": "2026-10-15",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.59.0+agent.7",
+      "changelog_sha256": "766c499fdb0ce69edf48f40f611ffd532a8789665a64208908491b68e0afa70b",
+      "agent_impact": "run status --json now always reports progress.next_command as `campaigns-os next --packet <packet> --json`; it no longer names `run end` when every recorded stage status is terminal, because a stage an input change or a new build owes again still records completed. Follow next, which names `run end` as a required action once the campaign is done and a run session is active. next and doctor output is unchanged.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "run status names next as the next command; next returns the prepare-build recovery answer from one branch and reads the shared readiness ladder."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/inspect.mjs",
+          "surface_entry": "doctor",
+          "summary": "Doctor's status reads the shared readiness ladder; its output is unchanged."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/next-step.mjs",
+          "surface_entry": "doctor",
+          "summary": "Export the readiness ladder that doctor and next share and drop the stage picker's unused packet parameter; output is unchanged."
+        }
+      ],
+      "entry_sha256": "25e95c8abc97cec6bd7522bcaf002cf53b53d7badc762a2508a2b967dea38925"
     }
   ]
 }
