@@ -8110,13 +8110,34 @@
       "entry_sha256": "54697c8b2c8e0857687a01f4ac43942202f8e6f9a523fc1151070ac890a0133d"
     },
     {
-      "id": "RL-0271",
+      "id": "RL-0273",
       "sequence": 259,
-      "date": "2026-10-10",
+      "date": "2026-10-14",
       "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.59.0+agent.1",
-      "changelog_sha256": "6e586b9421484231d3b57db64d2649ec1789d7dbdaced4753e588b402cacbe2f",
+      "changelog_section": "1.59.0+agent.4",
+      "changelog_sha256": "4bfd26f73f0eb599a40cb5fb338653d4fdf511f45ccd0ec291ba67d402c30086",
+      "agent_impact": "When a campaign is set up in the Campaigns App dashboard, expect one package per variant, created by saving an Offer that selects it, and a separate Offer per Buy 1/2/3 tier. The dashboard labels packages Products; pages still reference package IDs. Quickstart and the build-flow commerce section both describe this Create Campaign then Add Offer setup, and that Admin API setups still create packages before Offers.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/campaigns-os-build-flow.md",
+          "surface_entry": "docs/campaigns-os-build-flow.md",
+          "summary": "Describe how the dashboard creates packages from Offers under Commerce Ownership."
+        }
+      ],
+      "entry_sha256": "b0708e5f1d10142d56f4cbc5d346053b89073bc65cb6c69b41afff432908e103"
+    },
+    {
+      "id": "RL-0271",
+      "sequence": 260,
+      "date": "2026-10-15",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.59.0+agent.5",
+      "changelog_sha256": "64d75e58cefd497559d4fb0b30817f6d123bfc211ccb461e1c6dbf0b62eb107b",
       "agent_impact": "On a hosted all-template preview, follow next: record deploy --base-url <preview url>, then qa run, then closeout. The hosted preview URL no longer satisfies the deploy stage on its own (since 1.59.0), and the polish skill, docs and README now say so. A forced next deploy or next qa with an unset, loopback or production-equivalent preview URL prompts for qa policy set --preview-url, matching next actions and doctor. Refresh bundled skills to 1.59.0+skills.2.",
       "compatibility": "compatible",
       "migration": "none",
@@ -8200,7 +8221,7 @@
           "summary": "The deploy and QA prompts on an all-template hosted packet use the usable-preview rule next actions and doctor use; the done prompt names record deploy for both deploy targets."
         }
       ],
-      "entry_sha256": "da9eb2c73974ffd59d9f372672d1ab667cdc877cebdb3ea398927f571f53f929"
+      "entry_sha256": "2bad692257bfa5a2a5718b1861d1da60ae92c3a4cd23151d659c3867b308c839"
     }
   ]
 }
