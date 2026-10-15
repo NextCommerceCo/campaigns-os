@@ -8110,13 +8110,34 @@
       "entry_sha256": "54697c8b2c8e0857687a01f4ac43942202f8e6f9a523fc1151070ac890a0133d"
     },
     {
-      "id": "RL-0272",
+      "id": "RL-0273",
       "sequence": 259,
-      "date": "2026-10-11",
+      "date": "2026-10-14",
       "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.59.0+agent.3",
-      "changelog_sha256": "0cb10599ffafb96572984c158c75ecac128a69ef972578908b7026f9a309b7a3",
+      "changelog_section": "1.59.0+agent.4",
+      "changelog_sha256": "4bfd26f73f0eb599a40cb5fb338653d4fdf511f45ccd0ec291ba67d402c30086",
+      "agent_impact": "When a campaign is set up in the Campaigns App dashboard, expect one package per variant, created by saving an Offer that selects it, and a separate Offer per Buy 1/2/3 tier. The dashboard labels packages Products; pages still reference package IDs. Quickstart and the build-flow commerce section both describe this Create Campaign then Add Offer setup, and that Admin API setups still create packages before Offers.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/campaigns-os-build-flow.md",
+          "surface_entry": "docs/campaigns-os-build-flow.md",
+          "summary": "Describe how the dashboard creates packages from Offers under Commerce Ownership."
+        }
+      ],
+      "entry_sha256": "b0708e5f1d10142d56f4cbc5d346053b89073bc65cb6c69b41afff432908e103"
+    },
+    {
+      "id": "RL-0272",
+      "sequence": 260,
+      "date": "2026-10-15",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.59.0+agent.5",
+      "changelog_sha256": "509aac546c7522fda3fb4727e706e6a74011bde995a25f1b4583dc1fcf4f5a0d",
       "agent_impact": "run status --json now always reports progress.next_command as `campaigns-os next --packet <packet> --json`; it no longer names `run end` when every recorded stage status is terminal, because a stage an input change or a new build owes again still records completed. Follow next, which names `run end` as a required action once the campaign is done and a run session is active. next and doctor output is unchanged.",
       "compatibility": "compatible",
       "migration": "none",
@@ -8140,7 +8161,7 @@
           "summary": "Export the readiness ladder that doctor and next share and drop the stage picker's unused packet parameter; output is unchanged."
         }
       ],
-      "entry_sha256": "04f2c3ad548043c99f0495093073918193ce9220cc972d39797a109817a54cc9"
+      "entry_sha256": "63274186b4753fba1fa77986868e9c4fc24f5e2168eedd3407cda4c6e138f799"
     }
   ]
 }

@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.59.0+agent.3] - 2026-10-11
+## [1.59.0+agent.5] - 2026-10-15
 
 ### Fixed
 
@@ -11,6 +11,12 @@ Notable supported-surface changes are recorded here.
 ### Changed
 
 `next` returns a blocked or unavailable prepare-build gate's recovery-only answer from one branch, whether the stage was named or picked; `requested_stage` still appears only when a stage was named. Doctor's status, `next`'s status and doctor's `next` block read one readiness ladder (`blocked`, then `ready_with_waivers`, `ready_with_warnings`, `ready`), each over its own errors and warnings. The output of `next` and doctor is unchanged.
+
+## [1.59.0+agent.4] - 2026-10-14
+
+### Changed
+
+The build-flow doc and the quickstart describe the Campaigns App's offer-first setup: Create Campaign, then Add Offer on the campaign's Offers tab. Selecting store products in an Offer creates one campaign product (a package in the API) per variant at its store price when the Offer is saved, and later Offers reuse it. The dashboard's Packages tab is now Products. The rule against separate `1x` / `2x` / `3x` packages for tier pricing is unchanged, and campaigns set up over the Admin API still create packages before Offers.
 
 ## [1.59.0] - 2026-10-09
 
