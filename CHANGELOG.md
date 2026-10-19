@@ -8,6 +8,12 @@ Notable supported-surface changes are recorded here.
 
 Repository workflows move `actions/create-github-app-token` from 3.2.0 to 3.3.0, `actions/upload-artifact` from 7.0.1 to 7.0.2 and `actions/download-artifact` from 8.0.1 to 8.0.2 (campaigns-os#679). This changes repository CI only, and the published package is unchanged.
 
+## [1.59.0+agent.10] - 2026-10-19
+
+### Changed
+
+The lockfile moves Playwright from 1.63.0 to 1.64.1 and acorn from 8.18.0 to 8.19.0 (campaigns-os#675). Both stay within the ranges `package.json` already declares, so an installed toolkit resolves the same versions on a fresh install. Playwright drives `qa run --browser` and polish capture. acorn parses page scripts for doctor's `built_output.script_syntax` check, and 8.19.0 now rejects additional subscripts before the arrow in async arrow functions.
+
 ## [1.59.0+agent.9] - 2026-10-19
 
 ### Changed
