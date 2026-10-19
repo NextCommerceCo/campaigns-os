@@ -200,6 +200,33 @@ export function archiveSupersededRecord(stage, previous, { by, reason, at }) {
 }
 
 /**
+ * #668: the Polish record a CampaignSpec change moved to `polish.history`,
+ * restored as the live record stamped with `stamps` (the current inputs), or
+ * null. It is the same review of the same pages, so it is restored only when
+ * the live record's input_change is a CampaignSpec change over exactly
+ * `fingerprint`, the newest history entry is the completed Polish that change
+ * archived (same build fingerprint and source package fingerprint), and the
+ * brief's presentation stamp is unchanged: a presentation change still owes a
+ * new review. The caller decides that the operator kept this output.
+ */
+export function restorePolishKeptWithOutput(polish, { fingerprint, sourcePackageFingerprint = null, stamps = {}, completedStatuses }) {
+  const change = isPlainObject(polish) ? polish.input_change : null;
+  if (!isPlainObject(change) || change.reason !== "spec_material_changed" || change.superseded_build_fingerprint !== fingerprint) return null;
+  const history = Array.isArray(polish.history) ? polish.history : [];
+  const superseded = history[history.length - 1];
+  if (!isPlainObject(superseded) || superseded.archived_at !== change.at || !completedStatuses.includes(superseded.status)) return null;
+  if (superseded.source_build_fingerprint !== fingerprint) return null;
+  if ((superseded.source_package_material_fingerprint ?? null) !== (sourcePackageFingerprint ?? null)) return null;
+  if ((superseded.source_brief_material?.presentation ?? null) !== (stamps.source_brief_material?.presentation ?? null)) return null;
+  const restored = { ...polish };
+  for (const field of ["required_by", "required_for", "input_change", "source_brief_material", "source_spec_material_hash"]) delete restored[field];
+  for (const field of ["status", "completed_at", "recorded_by", "performed_by", "source_build_fingerprint", "source_package_material_fingerprint", "outputs", "evidence"]) {
+    if (Object.hasOwn(superseded, field)) restored[field] = JSON.parse(JSON.stringify(superseded[field]));
+  }
+  return { ...restored, stage: "polish", ...stamps };
+}
+
+/**
  * True when any stage of `report` carries a non-empty history: recorded
  * operator-visible state an intake must not silently drop.
  */
