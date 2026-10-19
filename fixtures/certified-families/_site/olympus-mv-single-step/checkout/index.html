@@ -79,9 +79,14 @@
     <div class="page-wrapper">
       <div class="main-wrapper">
 
-        <div data-next-hide="param.banner=='n'" class="section_header">
-          <promo-banner force-sale="default"></promo-banner>
-        </div>
+        <script>(function(p,c){p=new URLSearchParams(location.search);c=document.documentElement.classList;if(p.get('banner')==='n')c.add('cc-promo-banner-off');if(p.get('topbar')==='on')c.add('cc-promo-topbar-on');if(p.get('topbar')==='off')c.add('cc-promo-topbar-off');})();</script>
+<div class="section_header" data-promo-banner>
+  <div class="promo-banner promo-banner--classic">
+    <div class="promo-banner__bar">
+      <p class="promo-banner__text"><span class="promo-banner__strong">GET UP TO 69% OFF NOW!</span> <span class="promo-banner__label">USE PROMO CODE:</span><span class="promo-banner__code">XXCODE</span> <span class="promo-banner__suffix">- LIMITED TIME OFFER</span></p>
+    </div>
+  </div>
+</div>
         <section class="checkout-header">
   <div class="container">
     <div class="checkout-header__inner">
@@ -1483,8 +1488,6 @@
 
         <script>if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', () => initSwiperGalleries()); } else { initSwiperGalleries(); }</script>
 
-    
-    <script defer src="/olympus-mv-single-step/js/promo-banner.js"></script>
     
     <script defer src="/olympus-mv-single-step/js/promo-timer.js"></script>
     
