@@ -8360,6 +8360,93 @@
         }
       ],
       "entry_sha256": "2127a7133126fd80e7c519f484184463d44b0f1b655350184525b19d76cf979e"
+    },
+    {
+      "id": "RL-0277",
+      "sequence": 263,
+      "date": "2026-10-19",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.59.0+agent.12",
+      "changelog_sha256": "2bd2f6b05e609f8348165e737efc5628af764594fb6cd34b8c0b067a1d08ce6e",
+      "agent_impact": "Refresh bundled skills to 1.59.0+skills.4. For a Campaign Cart 0.4.x to later 0.4.x bump, follow next-campaigns-sdk-bump: it finds hard-coded loader pins as well as sdk_version, scopes sdk repin to the funnel folder, runs sdk storage-check with the target tag's manifest, then doctor and preview test orders under the existing approval rule, and reports what is not proven. It stops at a 0.3.x pin or the legacy Campaigns script.",
+      "compatibility": "additive",
+      "migration": "Run install-skills to install next-campaigns-sdk-bump and the refreshed bundle, then start a fresh agent session.",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Show the current 1.59.0+skills.4 bundle identity in preflight examples."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Add next-campaigns-sdk-bump 1.0.0, advance the bundle to 1.59.0+skills.4 and each other bundled skill by one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-sdk-bump/SKILL.md",
+          "surface_entry": null,
+          "summary": "New skill: a 0.4.x to later 0.4.x Campaign Cart bump on a page-kit or static repo, from pins through storage check, doctor, preview test orders and hand-back."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.59.0+skills.4."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.59.0+skills.4."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.59.0+skills.4."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.59.0+skills.4."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.59.0+skills.4."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.59.0+skills.4."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.59.0+skills.4."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.59.0+skills.4."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.59.0+skills.4."
+        }
+      ],
+      "entry_sha256": "4e57850f5e90810ecdca593384b6ebae1680d2415162d15d40531431d711cdd9"
     }
   ]
 }
