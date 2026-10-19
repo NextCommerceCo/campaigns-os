@@ -18,6 +18,27 @@ These are unchanged:
 - A presentation change, a different build, or a build recorded without the deviation reason still owes a new Polish.
 - The build is still recorded with a warning and the operator's reason.
 
+## [1.59.0+agent.12] - 2026-10-19
+
+### Added
+
+`install-skills` now installs `next-campaigns-sdk-bump`, so an agent told "bump this campaign to SDK 0.4.x" has a shipped procedure to follow instead of one written into the ticket (campaigns-os#677). It covers a 0.4.x to later 0.4.x Campaign Cart bump on page-kit and static repos, and it stops at a 0.3.x pin or the legacy Campaigns script, because moving those is migration work. The steps:
+
+- Find every pin: `_data/campaigns.json` and loaders that hard-code their version on page-kit repos, or `sdk repin` scoped to the funnel folder on static repos.
+- Read the release diff against the campaign's own code, including where its purchase event comes from.
+- Run `sdk storage-check` with the target tag's manifest.
+- Run `doctor --built`, or `doctor --packet` when there is a Build Packet.
+- Prove the bump on a preview, with the browser pinned to the store's main market and each test order approved.
+- Hand back what is not proven, on the ticket or the pull request, never in the served tree.
+
+It adds no write, send or order capability. Bundled skills advance to `1.59.0+skills.4`.
+
+## [1.59.0+agent.11] - 2026-10-19
+
+### Changed
+
+Repository workflows move `actions/create-github-app-token` from 3.2.0 to 3.3.0, `actions/upload-artifact` from 7.0.1 to 7.0.2 and `actions/download-artifact` from 8.0.1 to 8.0.2 (campaigns-os#679). This changes repository CI only, and the published package is unchanged.
+
 ## [1.59.0+agent.10] - 2026-10-19
 
 ### Changed

@@ -8383,8 +8383,122 @@
       "entry_sha256": "b0d2fbd5618d4fc635b346ae521085a77e0ac552e67e8f94a9c5ced7049f237b"
     },
     {
-      "id": "RL-0278",
+      "id": "RL-0276",
       "sequence": 264,
+      "date": "2026-10-19",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.59.0+agent.11",
+      "changelog_sha256": "bbde8ee78d523076a4011ba71cd6674bbc305aa03219c1ba2dd37c6d0fc5ee78",
+      "agent_impact": "None for package consumers: this changes repository CI only (add-to-project and publish workflow action versions).",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "workflow",
+          "path": ".github/workflows/add-to-project.yml",
+          "surface_entry": null,
+          "summary": "Move actions/create-github-app-token to 3.3.0."
+        },
+        {
+          "class": "workflow",
+          "path": ".github/workflows/publish.yml",
+          "surface_entry": null,
+          "summary": "Move actions/upload-artifact to 7.0.2 and actions/download-artifact to 8.0.2."
+        }
+      ],
+      "entry_sha256": "dbca912d6c5145cb494f83fe7c334bec6e978bf00f6146c2a7eeb2d706f7cb96"
+    },
+    {
+      "id": "RL-0277",
+      "sequence": 265,
+      "date": "2026-10-19",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.59.0+agent.12",
+      "changelog_sha256": "2bd2f6b05e609f8348165e737efc5628af764594fb6cd34b8c0b067a1d08ce6e",
+      "agent_impact": "Refresh bundled skills to 1.59.0+skills.4. For a Campaign Cart 0.4.x to later 0.4.x bump, follow next-campaigns-sdk-bump: it finds hard-coded loader pins as well as sdk_version, scopes sdk repin to the funnel folder, runs sdk storage-check with the target tag's manifest, then doctor and preview test orders under the existing approval rule, and reports what is not proven. It stops at a 0.3.x pin or the legacy Campaigns script.",
+      "compatibility": "additive",
+      "migration": "Run install-skills to install next-campaigns-sdk-bump and the refreshed bundle, then start a fresh agent session.",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Show the current 1.59.0+skills.4 bundle identity in preflight examples."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Add next-campaigns-sdk-bump 1.0.0, advance the bundle to 1.59.0+skills.4 and each other bundled skill by one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-sdk-bump/SKILL.md",
+          "surface_entry": null,
+          "summary": "New skill: a 0.4.x to later 0.4.x Campaign Cart bump on a page-kit or static repo, from pins through storage check, doctor, preview test orders and hand-back."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.59.0+skills.4."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.59.0+skills.4."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.59.0+skills.4."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.59.0+skills.4."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.59.0+skills.4."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.59.0+skills.4."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.59.0+skills.4."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.59.0+skills.4."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.59.0+skills.4."
+        }
+      ],
+      "entry_sha256": "f258fb6a51dfb20ab1b4eb71dd18fdc224ce6ee553ca3653be5efa581e644655"
+    },
+    {
+      "id": "RL-0278",
+      "sequence": 266,
       "date": "2026-10-19",
       "kind": "release",
       "surface_version": null,
@@ -8407,7 +8521,7 @@
           "summary": "Say that a CampaignSpec-only change kept with record build --deviation-reason keeps Polish, and that a presentation change still owes it."
         }
       ],
-      "entry_sha256": "b999f887ed47f6274a2ace844e3b01460635e37ee092b5f453e4a50400a5d931"
+      "entry_sha256": "8f05d402dfed44c9c94136551ea1aa97aecf3850346484a8f3f3a4d6540052f2"
     }
   ]
 }
