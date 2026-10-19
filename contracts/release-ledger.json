@@ -8255,6 +8255,111 @@
         }
       ],
       "entry_sha256": "6182da2e9bf076b2baceb3303518bfed33c3c8cb6ac72cddce70066a490b88c1"
+    },
+    {
+      "id": "RL-0274",
+      "sequence": 262,
+      "date": "2026-10-19",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.59.0+agent.8",
+      "changelog_sha256": "a2a97f2d4650f02eecb11398dc05f500f7aaef9a52271825b663009d5cd94ace",
+      "agent_impact": "On a target with next-campaign-page-kit 0.3.0, read doctor's built_output.build_asset_warning: each one names an .html file under assets/ that page-kit neither built nor copied, so a link or iframe to it 404s. Move the file out of assets/ if it is a page, or remove it. On 0.3.0, spec derive and doctor's built-page lookup no longer bind a page to an .html file under the campaign's top-level assets/; 0.2.x targets read as before. New folders install next-campaign-page-kit@0.3.0 from docs/local-setup.md. Refresh bundled skills to 1.59.0+skills.3.",
+      "compatibility": "additive",
+      "migration": "After the first build on page-kit 0.3.0, run record build again: the build fingerprint can change with unchanged source (0.3.0 removes stale _site/<slug>/ output and no longer copies .html under assets/), and polish, deploy and QA are owed again for the new build.",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Say that unpruned _site/ output and an assets/ index.html built as a page are page-kit 0.2.x behaviour, and that 0.3.0 cleans _site/<slug>/ and reports ASSET_IGNORED; the stray_files gate is unchanged."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Pin the new-folder page-kit install to next-campaign-page-kit@0.3.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Show the current 1.59.0+skills.3 bundle identity in preflight examples."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance the bundle to 1.59.0+skills.3 and each bundled skill by one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Name the build summary's assetWarnings and ASSET_IGNORED on page-kit 0.3.0, and what to do with an ignored HTML file under assets/."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.59.0+skills.3."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.59.0+skills.3."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.59.0+skills.3."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.59.0+skills.3."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.59.0+skills.3."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.59.0+skills.3."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.59.0+skills.3."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.59.0+skills.3."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "spec derive skips .html under the campaign's top-level assets/ when the target's installed page-kit is 0.3.0 or later; the build prompt names assetWarnings and ASSET_IGNORED."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": "doctor",
+          "summary": "Doctor reports each build summary assetWarnings entry for the campaign as the non-blocking built_output.build_asset_warning, and on page-kit 0.3.0 or later reads no source permalink from a file under assets/."
+        }
+      ],
+      "entry_sha256": "2127a7133126fd80e7c519f484184463d44b0f1b655350184525b19d76cf979e"
     }
   ]
 }

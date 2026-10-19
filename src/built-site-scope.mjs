@@ -290,8 +290,8 @@ export function synthesizeMinimalBuildPacket({
 // the same build. The manifest is `<path>\n<sha256>\n` per file, paths
 // relative to the output root with `/` separators and sorted by code point,
 // so directory walk order and the absolute location never leak into the
-// value. Page Kit (0.2.0) writes only rendered HTML and copied assets into
-// _site/, nothing it timestamps, so every file is hashed.
+// value. Page Kit (0.2.x and 0.3.x) writes only rendered HTML and copied
+// assets into _site/, nothing it timestamps, so every file is hashed.
 // Symbolic links are never build output and are skipped, not followed.
 export const BUILD_FINGERPRINT_ALGORITHM = "sha256-manifest/v1";
 

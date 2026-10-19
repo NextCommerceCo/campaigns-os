@@ -35,7 +35,7 @@ New campaign folder:
 
 ```bash
 mkdir "<route>" && cd "<route>"
-npm init -y && npm i --save-exact next-campaign-page-kit
+npm init -y && npm i --save-exact next-campaign-page-kit@0.3.0
 npx campaign-init --non-interactive --template <family> --slug "<route>" --name "<campaign name>"
 ```
 

@@ -1,8 +1,23 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { compareVersions, extractVersion } from "./repo-scan.mjs";
 import { normalizePublicRouteSlug } from "./route-identity.mjs";
 
 export const PAGE_KIT_CAMPAIGNS_REL_PATH = "_data/campaigns.json";
+
+// next-campaign-page-kit 0.3.0 stopped building or copying .html under a
+// campaign's top-level assets/. Source-page discovery follows the target's
+// installed page-kit, read from node_modules the way tooling setup reads it;
+// a missing or unreadable install keeps the 0.2.x rule.
+export const PAGE_KIT_ASSETS_HTML_IGNORED_FROM = "0.3.0";
+export function pageKitIgnoresAssetsHtml(targetRepo) {
+  try {
+    const { version } = JSON.parse(readFileSync(join(targetRepo, "node_modules", "next-campaign-page-kit", "package.json"), "utf8"));
+    return extractVersion(version) !== null && compareVersions(version, PAGE_KIT_ASSETS_HTML_IGNORED_FROM) >= 0;
+  } catch {
+    return false;
+  }
+}
 
 // Public doctor/next/verdict evidence must never inherit arbitrary merchant
 // configuration from campaigns.json. The raw entry is validation-local; this

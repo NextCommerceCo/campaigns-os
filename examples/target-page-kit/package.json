@@ -5,7 +5,7 @@
     "build": "campaign-build",
     "dev": "campaign-dev"
   },
-  "devDependencies": {
-    "next-campaign-page-kit": "^0.2.0"
+  "dependencies": {
+    "next-campaign-page-kit": "0.3.0"
   }
 }

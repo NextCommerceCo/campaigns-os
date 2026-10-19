@@ -56,13 +56,22 @@ const ROUTING_HINT_FIELDS = Object.freeze({
 });
 
 // The directories page-kit's own discovery ignores (`_layouts`, `_includes`;
-// everything else under the campaign root, `assets/` and `_data/` included,
-// is rendered when it is .html), plus the two no build reads. The CLI walker
-// prunes with this and pageRouteForFile filters with it, so the list lives
-// in one place.
+// on 0.2.x everything else under the campaign root, `assets/` and `_data/`
+// included, is rendered when it is .html), plus the two no build reads. The
+// CLI walker prunes with this and pageRouteForFile filters with it, so the
+// list lives in one place.
 export const PAGE_TREE_IGNORED_DIRS = Object.freeze(["_layouts", "_includes", "node_modules", ".git"]);
 export function isPageTreeIgnoredDir(name) {
   return PAGE_TREE_IGNORED_DIRS.includes(name);
+}
+
+// Whether a campaign-relative file sits where page-kit renders no page. From
+// 0.3.0 page-kit also skips the campaign's top-level `assets/` (its
+// `*/assets/**` glob; a nested `offers/assets/` still renders), so the caller
+// says which rule the target's installed page-kit follows.
+export function isPageTreeIgnoredPath(relativePath, { assetsHtmlIgnored = false } = {}) {
+  const dirs = String(relativePath || "").split("/").slice(0, -1);
+  return dirs.some(isPageTreeIgnoredDir) || (assetsHtmlIgnored && dirs[0] === "assets");
 }
 
 function isPlainObject(value) {
@@ -114,13 +123,14 @@ function containerProblem(spec, path) {
 // `upsell/`, intermediate directories ignored with its NESTED_NO_PERMALINK
 // warning), and `index.html` is the entry route "". A nested `index.html`
 // would collide with the campaign root (page-kit's DUPLICATE_OUTPUT), so it
-// is not a page this reads. Files under `_layouts/` or `_includes/` return
-// null, as page-kit never renders them.
-export function pageRouteForFile(relativePath) {
+// is not a page this reads. Files under `_layouts/` or `_includes/` (and,
+// with assetsHtmlIgnored, the top-level `assets/`) return null, as page-kit
+// never renders them.
+export function pageRouteForFile(relativePath, { assetsHtmlIgnored = false } = {}) {
   const path = String(relativePath || "").replace(/\\/g, "/").replace(/^\/+/, "");
   if (!path || !/\.html$/i.test(path)) return null;
   const segments = path.split("/");
-  if (segments.slice(0, -1).some(isPageTreeIgnoredDir)) return null;
+  if (isPageTreeIgnoredPath(path, { assetsHtmlIgnored })) return null;
   const basename = segments[segments.length - 1].replace(/\.html$/i, "");
   if (basename === "index") return segments.length === 1 ? "" : null;
   return `${basename}/`;

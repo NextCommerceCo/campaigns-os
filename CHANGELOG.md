@@ -2,6 +2,20 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.59.0+agent.8] - 2026-10-19
+
+### Changed
+
+Campaigns OS adopts next-campaign-page-kit 0.3.0 and keeps 0.2.x targets working. The new-folder installs in `docs/local-setup.md`, the quickstart and the README pin `next-campaign-page-kit@0.3.0`; the quickstart and README installed it unpinned, and `docs/local-setup.md` pinned 0.2.0. The example target declares page-kit as a runtime dependency at that pin.
+
+Doctor's build summary check reads the top-level `assetWarnings` array that page-kit 0.3.0 adds to `campaign-build --json`. 0.3.0 neither builds nor copies `.html` files under a campaign's `assets/`, and lists each one there as `ASSET_IGNORED`, never in `pages[].warnings`. Doctor read only `pages`, so such a build printed "no build errors or shape warnings". Each entry for the campaign is now a non-blocking `built_output.build_asset_warning` naming the file, because a link or iframe to it 404s on the built site, and the ready line prints only when there are neither page nor asset warnings. The build prompt and the Campaign Build skill name `assetWarnings` and `ASSET_IGNORED`.
+
+`spec derive` and doctor's built-page lookup follow the target's installed page-kit, read from `node_modules/next-campaign-page-kit/package.json`, when they discover source pages. On 0.3.0 and later they skip `.html` files under the campaign's top-level `assets/`, so a page is no longer bound to a file page-kit does not build. A target on 0.2.x, or with no readable install, keeps the 0.2.x rule. The stray-file text in `docs/build-packet.md` and in the campaign identity gate's message now says that unpruned `_site/` output and an `assets/` `index.html` built as a page are page-kit 0.2.x behaviour; the `stray_files` gate is unchanged. Bundled skills advance to `1.59.0+skills.3`.
+
+### Migration
+
+The first build on page-kit 0.3.0 can change the build fingerprint with unchanged source: 0.3.0 removes `_site/<slug>/` before it builds, so output left by earlier builds disappears, and it no longer copies `.html` files under `assets/` into `_site/`. Run `record build` again after that build and expect polish, deploy and QA to be owed again. That is the fingerprint doing its job.
+
 ## [1.59.0+agent.7] - 2026-10-15
 
 ### Fixed
