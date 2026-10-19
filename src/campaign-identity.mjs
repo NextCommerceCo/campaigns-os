@@ -263,9 +263,11 @@ function gateBase(subject) {
  * A page marked `spec_page: false` is built output that no CampaignSpec page
  * builds to. It is still scanned, because it is still served, but a finding
  * that names it says so: such a file is usually left in `_site/` by an earlier
- * build, or built from an HTML file copied into the source (a design export's
- * `index.html` under `assets/`), and the repair is to remove it, not to retag
- * it.
+ * build, or built from an HTML file copied into the source, and the repair is
+ * to remove it, not to retag it. Both are page-kit 0.2.x behaviour (no
+ * `_site/` pruning; a design export's `index.html` under `assets/` builds as
+ * a page). 0.3.0 cleans `_site/<slug>/` and ignores `.html` under `assets/`,
+ * so there a stray is a source page no spec page claims.
  *
  * @param {{ subject: object, pages: Array<{ page_id: string, route?: string|null,
  *   file?: string|null, content: string, spec_page?: boolean,
@@ -415,7 +417,7 @@ export function evaluateCampaignIdentity({ subject, pages = [], expectedApiKey =
     // own instruction (retag, or add a missing tag to a real page) is dropped:
     // that edit would land on the wrong file.
     const named = stray.length > 2 ? `${stray.slice(0, -1).join(", ")}, and ${stray.at(-1)}` : stray.join(" and ");
-    finding.message = `${named} ${stray.length === 1 ? "is" : "are"} not the built page of any CampaignSpec page: built output left by an earlier build, or an HTML file copied into the source (a design export's index.html under assets/ builds as its own page). Remove the source file if there is one, delete the built file, then rebuild and record the build again; do not retag either page. What it causes: ${finding.evidence}`;
+    finding.message = `${named} ${stray.length === 1 ? "is" : "are"} not the built page of any CampaignSpec page: built output left by an earlier build, or an HTML file copied into the source (on page-kit 0.2.x a design export's index.html under assets/ builds as its own page). Remove the source file if there is one, delete the built file, then rebuild and record the build again; do not retag either page. What it causes: ${finding.evidence}`;
   }
 
   // evidence is the message's first sentence, kept apart only so a stray

@@ -66,6 +66,25 @@ test("documented page-kit installs give a new folder its own package.json first"
   assert.ok(checked >= 3, "local setup, quickstart and README each document a page-kit install");
 });
 
+test("documented page-kit installs and the example target pin one exact page-kit version", () => {
+  // next-campaign-page-kit releases change what a build writes (0.3.0 cleans
+  // _site/<slug>/ and drops .html under assets/), so a new folder installs the
+  // version this toolkit was checked against, the same one everywhere.
+  const pins = new Map();
+  for (const file of ["docs/local-setup.md", "docs/quickstart.md", "README.md"]) {
+    const text = readFileSync(join(ROOT, file), "utf8");
+    const installs = [...text.matchAll(/^npm init -y && npm (?:install|i) [^\n]*$/gm)].map((m) => m[0]);
+    assert.ok(installs.length > 0, `${file} documents a new-folder page-kit install`);
+    for (const install of installs) pins.set(`${file}: ${install}`, install.match(/next-campaign-page-kit(?:@(\S+))?/)?.[1] ?? "(unpinned)");
+  }
+  const target = JSON.parse(readFileSync(join(ROOT, "examples/target-page-kit/package.json"), "utf8"));
+  pins.set("examples/target-page-kit dependencies", target.dependencies?.["next-campaign-page-kit"] ?? "(not a runtime dependency)");
+  const versions = new Set(pins.values());
+  assert.equal(versions.size, 1, `page-kit pins disagree: ${JSON.stringify(Object.fromEntries(pins), null, 2)}`);
+  assert.match([...versions][0], /^\d+\.\d+\.\d+$/, "the page-kit pin is an exact version");
+  assert.equal(target.devDependencies?.["next-campaign-page-kit"], undefined, "page-kit is a runtime dependency, not a dev one");
+});
+
 test("documented install commands keep page-kit a runtime dependency and the toolkit a dev dependency", () => {
   // `npm install --save-dev` moves an already-declared runtime dependency into
   // devDependencies, which `npm ci --omit=dev` builds then skip. Page-kit must

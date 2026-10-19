@@ -217,6 +217,7 @@ import {
 import {
   loadPageKitCampaignEntry,
   PAGE_KIT_CAMPAIGNS_REL_PATH,
+  pageKitIgnoresAssetsHtml,
 } from "./page-kit-campaign-config.mjs";
 import {
   evaluatePageKitStoreProfile,
@@ -236,6 +237,7 @@ import {
   applySpecDerive,
   formatDeriveValue,
   isPageTreeIgnoredDir,
+  isPageTreeIgnoredPath,
   frontmatterPermalink,
   pageRouteForFile,
   permalinkRoute,
@@ -3542,10 +3544,10 @@ export async function specDeriveFromStoreCommand(args, { fetchImpl = globalThis.
 // the route each one builds to (filename-derived, or the file's permalink;
 // a permalink derive cannot read as a campaign route carries `problem` and a
 // null route). Discovery follows page-kit's own: every .html outside
-// `_layouts/` and `_includes/`, symlinked entries included. Returns null when
-// the directory does not exist, so the plan can say "no page tree" rather
-// than "no pages".
-function listPageKitPageFiles(outputDir, publicRouteSlug) {
+// `_layouts/` and `_includes/` (and, from page-kit 0.3.0, the top-level
+// `assets/`), symlinked entries included. Returns null when the directory
+// does not exist, so the plan can say "no page tree" rather than "no pages".
+function listPageKitPageFiles(outputDir, publicRouteSlug, { assetsHtmlIgnored = false } = {}) {
   if (!outputDir || !existsSync(outputDir) || !statSync(outputDir).isDirectory()) return null;
   const files = [];
   const walk = (dir) => {
@@ -3559,8 +3561,7 @@ function listPageKitPageFiles(outputDir, publicRouteSlug) {
       }
       if (!stats.isFile() || extname(entry.name).toLowerCase() !== ".html") continue;
       const path = relative(outputDir, fullPath).split(sep).join("/");
-      const segments = path.split("/");
-      if (segments.slice(0, -1).some(isPageTreeIgnoredDir)) continue;
+      if (isPageTreeIgnoredPath(path, { assetsHtmlIgnored })) continue;
       // page-kit honours a permalink before its filename rule, so the
       // frontmatter is read first (quoting, comments, BOM and CRLF as
       // page-kit's reader takes them); only a file with no usable permalink
@@ -3769,7 +3770,7 @@ export function specDeriveCommand(args, { store: storeRead = null } = {}) {
   try {
     if (existsSync(outputDir)) {
       const realOutputDir = realpathSync(outputDir);
-      if (realOutputDir === realTargetRepo || realOutputDir.startsWith(`${realTargetRepo}${sep}`)) pageFiles = listPageKitPageFiles(realOutputDir, publicRouteSlug);
+      if (realOutputDir === realTargetRepo || realOutputDir.startsWith(`${realTargetRepo}${sep}`)) pageFiles = listPageKitPageFiles(realOutputDir, publicRouteSlug, { assetsHtmlIgnored: pageKitIgnoresAssetsHtml(targetRepo) });
       else addIssue(result.warnings, "spec.derive.page_tree_escapes_repo", `${outputDir} resolves to ${realOutputDir}, outside the target repo; routes were not read from it.`);
     }
   } catch (error) {
@@ -5081,7 +5082,7 @@ Rules:
 - Each checkout_step page's checkout form (<form data-next-checkout="form">) carries data-next-checkout-step="<its next_step>" and data-next-step-number="<step_number>" (Build Context page_kit frontmatter next_step and step_number); the checkout page's form carries neither. On select and checkout_step pages, frontmatter next_url is the Checkout's post-payment destination, the same meaning it has on the checkout page, and the layout renders it as next-success-url because the SDK reads that tag for express orders; next_step is the forward link. A landing page keeps next_url as its call-to-action target; if it has express checkout buttons, set its next-success-url to the Checkout's own next_url from the Build Context page_map, never to the landing page's next_url. Forward navigation uses the step form attribute or a plain link, never that meta tag. Page Kit frontmatter has no success_url key (success_url remains a CampaignSpec field on checkout pages).
 - After page-kit build, inspect rendered _site output before handoff: each active page should have a body, Campaign Cart runtime markers, SDK meta tags from CampaignSpec sdk_hints.meta_tags, and no stale copied funnel attribution.
 - Run page-kit build and SDK/template lint, then record build before polish: \`${cmd("record")} build --packet ${packetPath}${isLocalServePacket(packet) ? ` --build-environment ${LOCAL_PROOF_BUILD_ENVIRONMENT}` : ""} --adapter-decision <key>=<value>[,<key>=<value>...]\`. Record the value that is true for this build: for example, raw_html_conversion_status=completed once source HTML is converted, or not_required when there is none. Put all scalar adapter decisions in one comma-separated flag; a repeated flag keeps only the last. Use the allowed values in docs/build-packet.md. Record the nine recordable scalar decisions with the command, never by editing those fields in the Assembly Report. wrapper_policy is selected at intake with prepare-build --wrapper-policy or the source-html manifest's wrapper_policy option; the object-valued template_files_copied proof has no flag. It stamps stages.assembly.build_fingerprint with the fingerprint doctor computes from the built output (derived.build_output_fingerprint.value, sha256 over the sorted path+sha256 manifest of _site/<slug>/; doctor reports built_output.fingerprint_stale whenever the output on disk stops matching the recorded value), records report.design_source_package.material_fingerprint on stages.assembly.source_package_material_fingerprint when present, and sets stages.polish to "required" (required_by="build", required_for=["qa"]). Re-run it after every rebuild; never hand-edit these fields. Build must not mark stages.polish as completed/completed_with_warnings/skipped. If you applied a brand theme, run \`${cmd("record")} theme --packet ${packetPath}\` after record build: it reads each built commerce page's stylesheet links and records report.theme (status applied, load_order=after-next-core, css_path, commerce_pages, evidence), and refuses, writing nothing, when a page that loads next-core.css does not load the brand layer after it. Never hand-edit report.theme.
-- Capture the machine-readable build summary as an artifact: \`${PAGE_KIT_BUILD_SUMMARY_CAPTURE_COMMAND}\` (requires next-campaign-page-kit >= 0.1.4). Doctor verifies it for per-page build errors and Page Kit shape warnings (NESTED_NO_PERMALINK, DUPLICATE_OUTPUT, MISSING_FRONTMATTER, LAYOUT_NOT_FOUND). If the installed page-kit predates --json, record that in the assembly report instead of skipping silently.${localProofPromptLines(packet, packetPath)}`;
+- Capture the machine-readable build summary as an artifact: \`${PAGE_KIT_BUILD_SUMMARY_CAPTURE_COMMAND}\` (requires next-campaign-page-kit >= 0.1.4). Doctor verifies it for per-page build errors and Page Kit shape warnings (NESTED_NO_PERMALINK, DUPLICATE_OUTPUT, MISSING_FRONTMATTER, LAYOUT_NOT_FOUND), and on page-kit >= 0.3.0 for its top-level assetWarnings: ASSET_IGNORED names an .html file under assets/ that is neither built nor copied, so a link or iframe to it 404s. If the installed page-kit predates --json, record that in the assembly report instead of skipping silently.${localProofPromptLines(packet, packetPath)}`;
 }
 
 // Local proof mode lines for the build prompt: under local-serve the build is

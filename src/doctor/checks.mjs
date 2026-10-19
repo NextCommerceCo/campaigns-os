@@ -99,7 +99,7 @@ import {
   assessAssemblySourcePackageFreshnessWaivers,
   currentBuildFingerprint,
 } from "../polish-gate.mjs";
-import { loadPageKitCampaignEntry, projectPageKitCampaignLoad } from "../page-kit-campaign-config.mjs";
+import { loadPageKitCampaignEntry, pageKitIgnoresAssetsHtml, projectPageKitCampaignLoad } from "../page-kit-campaign-config.mjs";
 import { evaluatePageKitStoreProfile, PAGE_KIT_STORE_PROFILE_SCOPE, storeProfileIntentionallyEmptyNote } from "../page-kit-store-profile.mjs";
 import { evaluatePageKitSdkVersion, PAGE_KIT_SDK_VERSION_SCOPE } from "../page-kit-sdk-version.mjs";
 // ADR-003: the public, canonical CampaignSpec rule registry. The doctor and any
@@ -3039,7 +3039,7 @@ function builtHtmlPathForPage(targetRepo, publicRouteSlug, page, derived = {}) {
     mapping: derived?.page_kit_entry_mappings?.[page?.id],
   });
   if (entryRoute) return join(targetRepo, "_site", publicRouteSlug, ...(entryRoute.route ? [entryRoute.route] : []), "index.html");
-  const sourcePermalink = sourcePermalinkForPage(derived?.target_output_dir, publicRouteSlug, page);
+  const sourcePermalink = sourcePermalinkForPage(derived?.target_output_dir, publicRouteSlug, page, { assetsHtmlIgnored: pageKitIgnoresAssetsHtml(targetRepo) });
   const route = sourcePermalink || runtimeRelativeRouteForSpecValue(publicRouteForPage(page), publicRouteSlug);
   if (!route) return join(targetRepo, "_site", publicRouteSlug, "index.html");
   const clean = route.replace(/^\/+|\/+$/g, "");
@@ -3103,13 +3103,16 @@ export function entryPageKitFileRoute(targetRepo, publicRouteSlug, page, { targe
   return routes[0] ?? null;
 }
 
-function sourcePermalinkForPage(targetOutputDir, publicRouteSlug, page) {
+// page-kit 0.3.0 renders no .html under the campaign's top-level assets/, so
+// a permalink stated there is no route on that version (assetsHtmlIgnored).
+function sourcePermalinkForPage(targetOutputDir, publicRouteSlug, page, { assetsHtmlIgnored = false } = {}) {
   if (!targetOutputDir || !existsSync(targetOutputDir) || !statSync(targetOutputDir).isDirectory()) return null;
 
   const expectedTerminal = terminalRouteSegment(publicRouteForPage(page));
   const candidates = [];
   for (const file of collectHtmlFiles(targetOutputDir)) {
     if (file.path.includes("_includes/") || file.path.includes("_layouts/")) continue;
+    if (assetsHtmlIgnored && file.path.split(sep)[0] === "assets") continue;
     const fullPath = join(targetOutputDir, file.path);
     const content = readFileSync(fullPath, "utf8");
     const permalink = extractFrontmatterValue(content, "permalink");

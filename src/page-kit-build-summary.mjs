@@ -165,9 +165,29 @@ export function evaluatePageKitBuildSummary({
     }
   }
 
+  // page-kit >= 0.3.0 neither builds nor copies .html under assets/ and lists
+  // each such file in a top-level assetWarnings array (ASSET_IGNORED), never
+  // in pages[].warnings. A link or iframe to one 404s on the built site, and
+  // this is the only signal, so it is surfaced, but never escalated: removing
+  // or moving the file is the author's call. Entries carry no campaignSlug;
+  // the file path (src/<slug>/assets/...) names the campaign.
+  const assetWarnings = Array.isArray(summary.assetWarnings)
+    ? summary.assetWarnings.filter((warning) => typeof warning?.file === "string" && `/${warning.file.replace(/\\/g, "/")}`.includes(`/${publicRouteSlug}/assets/`))
+    : [];
+  for (const warning of assetWarnings) {
+    flagged += 1;
+    warnings.push({
+      code: "built_output.build_asset_warning",
+      message:
+        `Page Kit did not build or copy "${warning.file}": [${warning.code}] ${warning.message}. ` +
+        `A link or iframe to it 404s on the built site; move it out of assets/ if it is a page, or remove it.`,
+      detail: { file: warning.file, warning_code: warning.code },
+    });
+  }
+
   if (failed === 0 && flagged === 0) {
     ready.push(
-      `Page Kit build summary verified for "${publicRouteSlug}": ${campaignPages.length} page(s) built, no build errors or shape warnings`
+      `Page Kit build summary verified for "${publicRouteSlug}": ${campaignPages.length} page(s) built, no build errors, shape warnings or asset warnings`
     );
   }
 

@@ -89,6 +89,7 @@ test("build summary: clean summary produces a ready note and no issues", () => {
     assert.equal(result.errors.length, 0);
     assert.equal(result.warnings.length, 0);
     assert.ok(result.ready.some((note) => note.includes("Page Kit build summary verified")));
+    assert.match(result.ready[0], /no build errors, shape warnings or asset warnings$/);
   });
 });
 
@@ -166,6 +167,40 @@ test("build summary: a failed page's shape warnings survive alongside the error"
     assert.deepEqual(codes(result.errors), ["built_output.build_page_error"]);
     assert.deepEqual(codes(result.warnings), ["built_output.build_page_warning"]);
     assert.match(result.warnings[0].message, /NESTED_NO_PERMALINK/);
+  });
+});
+
+test("build summary: page-kit 0.3.0 assetWarnings surface as non-blocking warnings and suppress the ready note", () => {
+  withTempDir((dir) => {
+    // The 0.3.0 shape: .html under assets/ is neither built nor copied, and
+    // each ignored file is reported in a top-level assetWarnings array, never
+    // in pages[].warnings. Another campaign's entry is not this campaign's.
+    const ignored = (file) => ({ code: "ASSET_IGNORED", file, message: "ignored, .html files under assets/ are not copied to _site/" });
+    const targetRepo = scaffoldTargetRepo(dir, {
+      summary: {
+        built: 1,
+        errors: 0,
+        warnings: 2,
+        pages: [summaryPage()],
+        assetWarnings: [ignored(`src/${SLUG}/assets/embeds/video.html`), ignored("src/other-campaign/assets/terms.html")],
+      },
+    });
+    const result = evaluatePageKitBuildSummary({ targetRepo, publicRouteSlug: SLUG, assemblyComplete: true });
+    assert.equal(result.errors.length, 0, "an ignored assets file is a warning even after assembly");
+    assert.deepEqual(codes(result.warnings), ["built_output.build_asset_warning"]);
+    assert.match(result.warnings[0].message, /ASSET_IGNORED/);
+    assert.match(result.warnings[0].message, /assets\/embeds\/video\.html/);
+    assert.deepEqual(result.warnings[0].detail, { file: `src/${SLUG}/assets/embeds/video.html`, warning_code: "ASSET_IGNORED" });
+    assert.equal(result.ready.length, 0, "the no-warnings ready note needs both lists empty");
+  });
+});
+
+test("build summary: a 0.3.0 summary with an empty assetWarnings array still reads clean", () => {
+  withTempDir((dir) => {
+    const targetRepo = scaffoldTargetRepo(dir, { summary: { pages: [summaryPage()], assetWarnings: [] } });
+    const result = evaluatePageKitBuildSummary({ targetRepo, publicRouteSlug: SLUG, assemblyComplete: true });
+    assert.deepEqual(result.warnings, []);
+    assert.equal(result.ready.length, 1);
   });
 });
 

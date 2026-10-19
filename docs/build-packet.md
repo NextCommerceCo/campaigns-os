@@ -788,9 +788,13 @@ One error per finding; each names the two files and the two values, so the
 repair is a one-line edit. Every built HTML file under `_site/<slug>/` is
 scanned, because every one is served. When doctor has the CampaignSpec, a
 finding that names a file no active spec page builds to says so and lists it
-under `stray_files`. Such a file is leftover output (page-kit does not prune
-`_site/`) or an HTML file copied into the source, such as a design export's
-`index.html` under `assets/`. The repair is to remove the source file if
+under `stray_files`. Such a file is leftover output or an HTML file copied
+into the source. On page-kit 0.2.x both happen: it does not prune `_site/`,
+and it builds and copies a design export's `index.html` under `assets/`. From
+0.3.0 page-kit removes `_site/<slug>/` before each build and neither builds
+nor copies `.html` under `assets/` (the build summary lists each one as
+`ASSET_IGNORED`), so a stray there is a source page no spec page claims or
+output written outside a build. The repair is to remove the source file if
 there is one, delete the built file, and rebuild and record the build again,
 not to retag it. Pages whose route contains a `-backup-` or `-old-`
 segment are parked copies: skipped and listed on the gate as `pages_skipped`,

@@ -21,6 +21,7 @@ import {
   derivedRouteProblem,
   formatDeriveValue,
   isPageTreeIgnoredDir,
+  isPageTreeIgnoredPath,
   normalizePermalinkValue,
   pageRouteForFile,
   permalinkRoute,
@@ -248,7 +249,7 @@ test("pageRouteForFile follows page-kit's basename rule, permalinkRoute accepts 
   assert.equal(pageRouteForFile("offers/index.html"), null, "a nested index.html collides with the campaign root");
   assert.equal(pageRouteForFile("_includes/header.html"), null);
   assert.equal(pageRouteForFile("_layouts/base.html"), null);
-  assert.equal(pageRouteForFile("assets/x.html"), "x/", "page-kit renders .html under assets/ too");
+  assert.equal(pageRouteForFile("assets/x.html"), "x/", "page-kit 0.2.x renders .html under assets/ too");
   assert.equal(pageRouteForFile("_draft.html"), "_draft/");
   assert.equal(pageRouteForFile("notes.md"), null);
   assert.deepEqual(permalinkRoute("/acme/upsell-1/", "acme"), { route: "upsell-1/" });
@@ -790,6 +791,55 @@ test("spec derive reads the page tree from assembly.output_dir, refuses a tree l
   }
 });
 
+test("spec derive binds a page to an assets/ file only while the installed page-kit still builds one (0.2.x, not 0.3.0)", () => {
+  const { dir, packetPath, targetRepo, pageTree } = fixture({ tree: ["landing", "checkout", "receipt"] });
+  try {
+    mkdirSync(join(pageTree, "assets"));
+    writeFileSync(join(pageTree, "assets", "upsell.html"), "---\npage_type: upsell\npermalink: \"/runtime-packet-demo/upsell-1/\"\n---\n<h1>upsell</h1>\n");
+    const installPageKit = (version) => writeJson(join(targetRepo, "node_modules", "next-campaign-page-kit", "package.json"), { name: "next-campaign-page-kit", version });
+    const upsell = (result) => [...result.changes, ...result.not_derived].filter((row) => row.page_id === "upsell").map((row) => [row.after ?? null, row.source ?? row.reason]);
+
+    // No install read, or 0.2.x: page-kit renders .html under assets/, so the file binds.
+    assert.deepEqual(upsell(specDeriveCommand({ _: ["spec", "derive"], packet: packetPath, "dry-run": true })), [["upsell-1/", "assets/upsell.html (permalink)"]]);
+    installPageKit("0.2.0");
+    assert.deepEqual(upsell(specDeriveCommand({ _: ["spec", "derive"], packet: packetPath, "dry-run": true })), [["upsell-1/", "assets/upsell.html (permalink)"]]);
+
+    // 0.3.0 neither builds nor copies it, so it is no page to bind.
+    installPageKit("0.3.0");
+    assert.deepEqual(upsell(specDeriveCommand({ _: ["spec", "derive"], packet: packetPath, "dry-run": true })), [[null, "page_file_not_found"]]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("doctor resolves a page's built path past a source copy under assets/ only on page-kit 0.3.0", () => {
+  const { dir, packetPath, targetRepo, pageTree, slug } = fixture();
+  try {
+    // The page and a design-export copy under assets/ state the same permalink.
+    // 0.2.x builds both, so the permalink is ambiguous and doctor falls back to
+    // the spec route; 0.3.0 builds only the page, so its permalink is the route.
+    const upsell = `---\npage_type: upsell\npermalink: "/${slug}/offer/upsell/"\n---\n<h1>upsell</h1>\n`;
+    writeFileSync(join(pageTree, "upsell.html"), upsell);
+    mkdirSync(join(pageTree, "assets"));
+    writeFileSync(join(pageTree, "assets", "upsell.html"), upsell);
+    for (const route of ["landing", "checkout", "receipt", "offer/upsell"]) {
+      mkdirSync(join(targetRepo, "_site", slug, route), { recursive: true });
+      writeFileSync(join(targetRepo, "_site", slug, route, "index.html"), "<html><body></body></html>\n");
+    }
+    const upsellMissing = () => Object.values(doctorPacket(packetPath)).filter(Array.isArray).flat()
+      .filter((issue) => issue.code === "built_output.page_missing" && issue.detail?.page_id === "upsell")
+      .map((issue) => issue.message);
+    const installPageKit = (version) => writeJson(join(targetRepo, "node_modules", "next-campaign-page-kit", "package.json"), { name: "next-campaign-page-kit", version });
+
+    installPageKit("0.2.0");
+    assert.deepEqual(upsellMissing(), [`Built HTML is missing for CampaignSpec page "upsell" at ./_site/${slug}/upsell/index.html.`]);
+    installPageKit("0.3.0");
+    assert.deepEqual(upsellMissing(), [], "the assets/ copy is not built, so the page's permalink resolves");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("spec derive names every malformed target state, a map_id mismatch, a missing route slug and a non-object packet", () => {
   const { dir, packetPath, campaignsPath, specPath, slug } = fixture();
   try {
@@ -959,6 +1009,14 @@ test("a permalink the tree states must be a relative page-kit route before it be
   assert.equal(isPageTreeIgnoredDir("offers"), false);
   assert.equal(pageRouteForFile("node_modules/x.html"), null);
   assert.equal(pageRouteForFile(".git/x.html"), null);
+  // page-kit 0.3.0 also skips the campaign's top-level assets/, and only that one.
+  assert.equal(isPageTreeIgnoredPath("assets/x.html"), false);
+  assert.equal(isPageTreeIgnoredPath("assets/x.html", { assetsHtmlIgnored: true }), true);
+  assert.equal(isPageTreeIgnoredPath("offers/assets/x.html", { assetsHtmlIgnored: true }), false);
+  assert.equal(isPageTreeIgnoredPath("assets.html", { assetsHtmlIgnored: true }), false);
+  assert.equal(isPageTreeIgnoredPath("/assets/x.html", { assetsHtmlIgnored: true }), true, "a leading slash does not bypass the rule");
+  assert.equal(isPageTreeIgnoredPath("assets\\x.html", { assetsHtmlIgnored: true }), true);
+  assert.equal(pageRouteForFile("assets/x.html", { assetsHtmlIgnored: true }), null);
 });
 
 test("planSpecDerive refuses the entry route on a page not flagged is_entry, a placeholder id, and a container of the wrong type in both modes", () => {

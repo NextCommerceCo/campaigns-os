@@ -225,7 +225,7 @@ test("a drifting built page that no CampaignSpec page builds to is named as left
     writeConfig(repo, "examplekey");
     writePage(repo, "", page(head({ pageType: "product" })));
     writePage(repo, "checkout", page(head()));
-    // A design export copied under assets/ builds as its own page and keeps
+    // On page-kit 0.2.x a design export copied under assets/ builds as its own page and keeps
     // the design tool's funnel tag.
     writePage(repo, "assets/design", page(head({ funnel: "Design Mock", pageType: "product" })));
     const spec = {
