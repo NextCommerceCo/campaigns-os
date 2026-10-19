@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-polish
-version: 1.1.42
+version: 1.1.43
 description: Run the visual/runtime polish pass after build and before QA for a Campaigns OS campaign.
 ---
 
-Bundle revision: 1.59.0+skills.1
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.59.0+skills.1`
+Bundle revision: 1.59.0+skills.2
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.59.0+skills.2`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -87,13 +87,12 @@ Responsibilities:
   evidence forward as a warning. Query or fragment text on the production
   page does not make it a distinct preview. If the hosted preview URL is not
   yet recorded, run
-  `campaigns-os qa policy set --packet <packet> --preview-url <url>` first,
-  then `campaigns-os next --packet <packet>`. Run
-  `campaigns-os next qa --packet <packet>`, then
-  `campaigns-os qa run --packet <packet> --base-url <preview-url> --browser
-  --test-order common`. The hosted preview URL satisfies the deploy handoff;
-  after QA records its verdict, run `campaigns-os next --packet <packet>` for
-  closeout. QA against the packet's production URL keeps the checkpoint blocked.
+  `campaigns-os qa policy set --packet <packet> --preview-url <url>` first.
+  Then follow `campaigns-os next --packet <packet>`: it hands off
+  `campaigns-os record deploy --packet <packet> --base-url
+  <preview route root>`, then `campaigns-os qa run --packet <packet>
+  --base-url <preview-url> --browser --test-order common`, then closeout. QA
+  against the packet's production URL keeps the checkpoint blocked.
 - When a readability warning appears, report it with its colours, ratio, requirement and pages. Offer the operator options inside the brand palette (a darker or lighter shade of the same hue, the palette's text colour, or a larger, bold label where the design allows). Do not recolour the merchant's design until the operator chooses. Accept a warning only with the refs, reason and name the operator gives you at the QC handoff.
 - Record Polish as `completed`, `skipped`, or `blocked` with
   `campaigns-os record polish --packet <packet> --evidence <polish-evidence.json>`

@@ -13,7 +13,7 @@ This toolkit gives campaign developers and AI coding tools a clear path for asse
 7. Hand off to `next-campaigns-build`.
 8. Run build/lint and record the build with `campaigns-os record build`, then install the Campaigns OS Playwright browser once with `campaigns-os qa install-browser`.
 9. Run `next-campaigns-polish`, serve the current build, run the mandatory `campaigns-os polish capture` producer, then record Polish with `campaigns-os record polish --evidence <file>`.
-10. Deploy a preview. For a local preview (`--deploy-target local-serve`), serve the current build and record it with `campaigns-os record deploy --base-url <loopback route root>`; a later `record build` of different output makes the deploy owed again. `record deploy` takes only a loopback route root; for a hosted preview, deploy through your host and follow `next` for what to record.
+10. Deploy a preview and record it with `campaigns-os record deploy --base-url <route root>`: for a local preview (`--deploy-target local-serve`), serve the current build and pass its loopback route root; for a hosted preview, deploy through your host and pass the https route root. A later `record build` of different output makes the deploy owed again.
 11. Run `next-campaigns-qa` against the tested URL.
 12. Record launch blockers and follow-up work.
 
@@ -303,7 +303,7 @@ npm run campaigns-os -- next polish --packet <packet.json> --report <assembly-re
 npm run campaigns-os -- polish capture --packet <packet.json> --base-url <served-current-build-url>
 npm run campaigns-os -- record polish --packet <packet.json> --evidence <polish-evidence.json>
 npm run campaigns-os -- record theme --packet <packet.json>
-npm run campaigns-os -- record deploy --packet <packet.json> --base-url <loopback-route-root>
+npm run campaigns-os -- record deploy --packet <packet.json> --base-url <route-root>
 npm run campaigns-os -- record brief --packet <packet.json> --brief <campaign-build-brief.yaml>
 npm run campaigns-os -- record spec --packet <packet.json>
 npm run campaigns-os -- next qa --packet <packet.json> --report <assembly-report.json>
@@ -325,8 +325,9 @@ commands continue to record their own stages.
 
 Record a stage's completion with `record setup`, `record build` (after every
 rebuild), `record polish --evidence <file>`, `record theme` (once the brand layer
-is linked) and, for a local preview, `record deploy --base-url <loopback route
-root>`, rather than hand-editing `.campaign-runtime/build-context.json` or
+is linked) and `record deploy --base-url <route root>` (a loopback URL for a
+local preview, https for a hosted one), rather than hand-editing
+`.campaign-runtime/build-context.json` or
 `.campaign-runtime/assembly-report.json`. A recorded deploy is bound to the
 build it probed, so a later `record build` of different output makes it owed
 again. When the brief or the CampaignSpec changes after stages are recorded, save

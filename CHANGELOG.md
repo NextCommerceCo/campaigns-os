@@ -12,6 +12,12 @@ The polish gate reads the recorded build only from `stages.assembly.build_finger
 
 `npm run smoke:polish-capture` passes again. It wrote its page outside `_site/<slug>/` with a placeholder build fingerprint, which `polish capture` refuses; it now writes `_site/runtime-packet-demo/landing/` and records that tree's real fingerprint. A failed capture prints the underlying error after the smoke's failure message (campaigns-os#672).
 
+## [1.59.0+agent.5] - 2026-10-15
+
+### Fixed
+
+The hosted all-template guidance now matches what `next` has done since 1.59.0, where a hosted preview records its deploy with `record deploy` before QA. The Campaign Polish skill, `docs/build-packet.md` and the README no longer say that the hosted preview URL satisfies the deploy stage or that `record deploy` takes only a loopback route root; they name `record deploy --base-url <route root>` for both deploy targets and leave the order to `next`. A forced `next deploy` or `next qa` on an all-template hosted packet whose preview URL is loopback or the production page now prompts for `qa policy set --preview-url`, as its next actions and doctor already did and as an unset preview URL already did, instead of the generic deploy prompt or a QA command against that URL; the QA prompt then sends the agent to `next`, which records the deploy before QA. The done prompt names `record deploy` for both deploy targets in place of an instruction to record the hosted URL by hand. Bundled skills advance to `1.59.0+skills.2`.
+
 ## [1.59.0+agent.4] - 2026-10-14
 
 ### Changed
