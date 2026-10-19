@@ -68,10 +68,15 @@ export function isPageTreeIgnoredDir(name) {
 // Whether a campaign-relative file sits where page-kit renders no page. From
 // 0.3.0 page-kit also skips the campaign's top-level `assets/` (its
 // `*/assets/**` glob; a nested `offers/assets/` still renders), so the caller
-// says which rule the target's installed page-kit follows.
+// says which rule the target's installed page-kit follows. Backslashes and
+// leading slashes read as pageRouteForFile reads them.
 export function isPageTreeIgnoredPath(relativePath, { assetsHtmlIgnored = false } = {}) {
-  const dirs = String(relativePath || "").split("/").slice(0, -1);
+  const dirs = normalizePageTreePath(relativePath).split("/").slice(0, -1);
   return dirs.some(isPageTreeIgnoredDir) || (assetsHtmlIgnored && dirs[0] === "assets");
+}
+
+function normalizePageTreePath(relativePath) {
+  return String(relativePath || "").replace(/\\/g, "/").replace(/^\/+/, "");
 }
 
 function isPlainObject(value) {
@@ -127,7 +132,7 @@ function containerProblem(spec, path) {
 // with assetsHtmlIgnored, the top-level `assets/`) return null, as page-kit
 // never renders them.
 export function pageRouteForFile(relativePath, { assetsHtmlIgnored = false } = {}) {
-  const path = String(relativePath || "").replace(/\\/g, "/").replace(/^\/+/, "");
+  const path = normalizePageTreePath(relativePath);
   if (!path || !/\.html$/i.test(path)) return null;
   const segments = path.split("/");
   if (isPageTreeIgnoredPath(path, { assetsHtmlIgnored })) return null;

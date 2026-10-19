@@ -187,7 +187,7 @@ export function evaluatePageKitBuildSummary({
 
   if (failed === 0 && flagged === 0) {
     ready.push(
-      `Page Kit build summary verified for "${publicRouteSlug}": ${campaignPages.length} page(s) built, no build errors or shape warnings`
+      `Page Kit build summary verified for "${publicRouteSlug}": ${campaignPages.length} page(s) built, no build errors, shape warnings or asset warnings`
     );
   }
 

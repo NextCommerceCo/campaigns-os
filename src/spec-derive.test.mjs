@@ -1014,6 +1014,8 @@ test("a permalink the tree states must be a relative page-kit route before it be
   assert.equal(isPageTreeIgnoredPath("assets/x.html", { assetsHtmlIgnored: true }), true);
   assert.equal(isPageTreeIgnoredPath("offers/assets/x.html", { assetsHtmlIgnored: true }), false);
   assert.equal(isPageTreeIgnoredPath("assets.html", { assetsHtmlIgnored: true }), false);
+  assert.equal(isPageTreeIgnoredPath("/assets/x.html", { assetsHtmlIgnored: true }), true, "a leading slash does not bypass the rule");
+  assert.equal(isPageTreeIgnoredPath("assets\\x.html", { assetsHtmlIgnored: true }), true);
   assert.equal(pageRouteForFile("assets/x.html", { assetsHtmlIgnored: true }), null);
 });
 

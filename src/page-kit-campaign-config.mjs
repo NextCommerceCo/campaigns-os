@@ -8,7 +8,11 @@ export const PAGE_KIT_CAMPAIGNS_REL_PATH = "_data/campaigns.json";
 // next-campaign-page-kit 0.3.0 stopped building or copying .html under a
 // campaign's top-level assets/. Source-page discovery follows the target's
 // installed page-kit, read from node_modules the way tooling setup reads it;
-// a missing or unreadable install keeps the 0.2.x rule.
+// a missing, unreadable or malformed install keeps the 0.2.x rule. That is
+// deliberate: doctor's built-page lookup calls this from about ten checks, so
+// throwing would take doctor down over a broken install that the build itself
+// fails on loudly, and tooling setup already refuses a declared page-kit that
+// is not installed.
 export const PAGE_KIT_ASSETS_HTML_IGNORED_FROM = "0.3.0";
 export function pageKitIgnoresAssetsHtml(targetRepo) {
   try {

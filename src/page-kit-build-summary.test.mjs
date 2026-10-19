@@ -89,6 +89,7 @@ test("build summary: clean summary produces a ready note and no issues", () => {
     assert.equal(result.errors.length, 0);
     assert.equal(result.warnings.length, 0);
     assert.ok(result.ready.some((note) => note.includes("Page Kit build summary verified")));
+    assert.match(result.ready[0], /no build errors, shape warnings or asset warnings$/);
   });
 });
 
