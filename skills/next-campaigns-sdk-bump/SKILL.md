@@ -58,11 +58,15 @@ campaign folder and ask the developer about merge order before branching.
 - Pages that type the version into their own loader. Search with
   `grep -rn "campaign-cart@v" src`. Switch each one to
   `campaign-cart@v{{ campaign.sdk_version }}` so the data file is the only pin.
-  A data-file-only bump leaves those pages on the old SDK.
+  A data-file-only bump leaves those pages on the old SDK. The starter
+  templates render with Liquid and expose the entry as `campaign`; on a page
+  that does not, keep a literal version instead and say so. Step 5 checks the
+  built pages for an unrendered `{{`.
 - With a Build Packet, `campaigns-os page-kit sync --packet <packet>` (tier `B`)
   writes the CampaignSpec's pin into the entry; without one, edit the entry.
 
-**Static repo** (no `_data/campaigns.json`):
+**Static repo** (no `_data/campaigns.json` anywhere in the repository, root
+included):
 
 - Preview with `campaigns-os sdk repin --target <funnel folder> --target-sdk <x.y.z>`
   (tier `none` without `--apply`). It lists every loader and CSS pin with path
@@ -74,8 +78,10 @@ campaign folder and ask the developer about merge order before branching.
   `B`). It writes `.campaign-runtime/sdk-repin.json` under the target; that file
   is served if the publish root includes it, so say so or keep it out of the
   deploy.
-- `sdk repin` refuses a repository with `_data/campaigns.json` anywhere in the
-  scan; that is a page-kit repo.
+- `sdk repin` refuses a target with `_data/campaigns.json` at or below it,
+  but it does not look above `--target`. A funnel folder inside a page-kit
+  repository is not refused, so never point `sdk repin` at one; use the
+  page-kit steps above.
 
 ## 3. Read the release diff against the campaign
 
@@ -90,10 +96,12 @@ particular:
   moving to.
 - If a page shows a discount before the SDK confirms a coupon, check that the
   coupon exists on every campaign the funnel uses.
+- Note whether the range changes the card fields or the 3-D Secure flow; if it
+  does, plan a 3-D Secure test order in step 6.
 
 ## 4. Storage check
 
-Run `campaigns-os sdk storage-check --target <git root> --target-sdk <x.y.z> --manifest <storage-migrations.v1.json> --scope <funnel folder,shared js>`
+Run `campaigns-os sdk storage-check --target <git-root> --target-sdk <x.y.z> --manifest <storage-migrations.v1.json> --scope <funnel folder,shared js>`
 (tier `none`). Take the manifest from an unmodified checkout of the target
 Campaign Cart tag (`docs/compatibility/storage-migrations.v1.json`, v0.4.40 or
 later), at the highest version its supported range declares. Read each
@@ -103,7 +111,8 @@ later), at the highest version its supported range declares. Read each
 ## 5. Build and check
 
 **Page-kit:** run a development build, confirm every built page loads only the
-target version, then `campaigns-os doctor --built <repo> --family <family> --slug <slug>`
+target version and that no built loader URL still holds an unrendered `{{`,
+then `campaigns-os doctor --built <repo> --family <family> --slug <slug>`
 (tier `none`) for a repository with no Build Packet, or `campaigns-os doctor --packet <packet>`
 with one. Errors that are already on `main` are recorded, not fixed.
 
@@ -131,11 +140,13 @@ Cover:
 - one card order per live checkout;
 - PayPal cancelled, then a card order, where PayPal is offered;
 - an upsell at quantity 2 or more on a page that shows a quantity picker;
-- a 3-D Secure card when card fields changed in the range, and whether it challenged;
+- a 3-D Secure card when step 3 found card-field or 3-D Secure changes, and whether it challenged;
 - the coupon path, if the funnel has one;
 - the purchase event fires once, on the page the release says it should.
 
-Read the orders back.
+Read each order back in the store admin (the packet run's verdict under
+`qa-output/` also lists the orders it created) and keep the order numbers for
+the hand-back.
 
 ## 7. Hand back
 
