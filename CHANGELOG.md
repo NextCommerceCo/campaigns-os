@@ -2,6 +2,22 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.59.0+agent.13] - 2026-10-19
+
+### Fixed
+
+A CampaignSpec-only change no longer throws away a Polish review of pages it did not change (campaigns-os#668). Before, `record build --deviation-reason` recorded the build, but Polish stayed owed after the re-intake (or `record spec`). The next `qa run` then stopped on `polish.evidence_missing`, and the agent had to retake the same screenshots and re-record the same findings.
+
+Now `record build --deviation-reason` restores the Polish record that the change moved to history, stamped with the current inputs, when all of the following hold:
+- the build records the exact output that Polish reviewed (same build fingerprint and source package);
+- the record was a completed Polish;
+- only the CampaignSpec changed, not the brief's presentation.
+
+These are unchanged:
+- QA stays owed, because the CampaignSpec changed.
+- A presentation change, a different build, or a build recorded without the deviation reason still owes a new Polish.
+- The build is still recorded with a warning and the operator's reason.
+
 ## [1.59.0+agent.12] - 2026-10-19
 
 ### Added

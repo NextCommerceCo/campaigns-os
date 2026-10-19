@@ -8495,6 +8495,33 @@
         }
       ],
       "entry_sha256": "f258fb6a51dfb20ab1b4eb71dd18fdc224ce6ee553ca3653be5efa581e644655"
+    },
+    {
+      "id": "RL-0278",
+      "sequence": 266,
+      "date": "2026-10-19",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.59.0+agent.13",
+      "changelog_sha256": "0e1ce83cf5555290a681ff08d83a03a1e4210aca22b8d349a9af26022513f241",
+      "agent_impact": "After a CampaignSpec-only change, when the operator records build with --deviation-reason over the same output a completed Polish reviewed, Polish reads current again and next moves on toward QA; do not retake Polish captures for that unchanged build. QA is still owed for the changed CampaignSpec. A brief presentation change, a different build, or a build recorded without the deviation reason still owes Polish.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Name the exception: a deviation-recorded build of the output a completed Polish reviewed restores that Polish after a CampaignSpec-only change."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/campaign-build-brief.md",
+          "surface_entry": "docs/campaign-build-brief.md",
+          "summary": "Say that a CampaignSpec-only change kept with record build --deviation-reason keeps Polish, and that a presentation change still owes it."
+        }
+      ],
+      "entry_sha256": "8f05d402dfed44c9c94136551ea1aa97aecf3850346484a8f3f3a4d6540052f2"
     }
   ]
 }

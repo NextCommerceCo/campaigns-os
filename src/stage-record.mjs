@@ -52,7 +52,7 @@ import {
 import { evaluateRecordedHiddenEagerMediaCheckpoint } from "./polish-node.mjs";
 import { effectiveStageStatus, effectiveStatusIsTerminal, inputStamps, stageWriteInputs } from "./input-currency.mjs";
 import { demoteStages, recordBrief, recordSpec } from "./input-refresh.mjs";
-import { applyDerivedAssemblyReportSummary, archiveStageRecord, archiveSupersededRecord, assemblyReportMatchesPacket, commitAssemblyReport, inputChangeFor } from "./stage-ledger.mjs";
+import { applyDerivedAssemblyReportSummary, archiveStageRecord, archiveSupersededRecord, assemblyReportMatchesPacket, commitAssemblyReport, inputChangeFor, restorePolishKeptWithOutput } from "./stage-ledger.mjs";
 import { withTargetLockSync } from "./target-lock.mjs";
 import { commerceScopeFromScope } from "./theme-gate.mjs";
 
@@ -382,9 +382,15 @@ function composeBuild(report, { now, recordedBy, fingerprint, manifest = null, b
   if (detected) {
     const cause = detected === "spec_material_changed" ? "spec" : "presentation";
     const demoted = demoteStages({ ...nextReport, stages: { ...nextReport.stages, assembly, ...deploy } }, { causes: [cause], now, by: "record build", only: ["polish", "qa"] });
-    return { report: demoted.report, context: null };
+    const kept = keptPolishFor(demoted.report.stages.polish, { assembly, fingerprint, sourcePackageFingerprint, stamps });
+    return { report: kept ? { ...demoted.report, stages: { ...demoted.report.stages, polish: kept } } : demoted.report, context: null };
   }
   const previousPolish = stageObject(report, "polish");
+  // The usual #668 path: intake (prepare-build --force or record spec) already
+  // recorded the change on assembly, so nothing is detected here, but the
+  // carried input_change makes this build a replay the operator kept.
+  const keptPolish = keptPolishFor(previousPolish, { assembly, fingerprint, sourcePackageFingerprint, stamps });
+  if (keptPolish) return { report: { ...nextReport, stages: { ...nextReport.stages, assembly, polish: keptPolish, ...deploy } }, context: null };
   const polishStillCurrent = stageIsTerminal(String(previousPolish.status || ""))
     && optionalString(previousPolish.source_build_fingerprint) === fingerprint;
   const polish = polishStillCurrent
@@ -397,6 +403,16 @@ function composeBuild(report, { now, recordedBy, fingerprint, manifest = null, b
         required_for: ["qa"],
       };
   return { report: { ...nextReport, stages: { ...nextReport.stages, assembly, polish, ...deploy } }, context: null };
+}
+
+// #668: the Polish a CampaignSpec change superseded comes back when the
+// operator's --deviation-reason kept the output it reviewed (stage-ledger's
+// restorePolishKeptWithOutput decides from the archived record). A terminal
+// Polish, or a build the operator did not keep, is left alone.
+function keptPolishFor(polish, { assembly, fingerprint, sourcePackageFingerprint, stamps }) {
+  if (!isObject(assembly.unchanged_output_reason) || stageIsTerminal(String(polish?.status || ""))) return null;
+  const kept = restorePolishKeptWithOutput(polish, { fingerprint, sourcePackageFingerprint, stamps, completedStatuses: POLISH_COMPLETED_STATUSES });
+  return kept ? withoutKeys(kept, ["skip_reason"]) : null;
 }
 
 // stages.deploy after a build of `fingerprint`, or null when it is kept: a

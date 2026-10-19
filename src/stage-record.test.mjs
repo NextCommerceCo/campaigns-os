@@ -2462,10 +2462,11 @@ async function hostedSpecChangeKeepsOutput(f, afterPolish = () => {}) {
   recordOk(f, "build", ["--deviation-reason", OPERATOR_DECISION]);
 }
 
-test("F2.2-W8: on a hosted preview packet, record spec then record build --deviation-reason over the unchanged _site reads next polish", async () => {
+test("F2.2-W8: on a hosted preview packet, record spec then record build --deviation-reason over the unchanged _site keeps Polish, so next reads deploy (#668)", async () => {
   await guardedLifecycle(async (f) => {
     await hostedSpecChangeKeepsOutput(f);
-    assert.equal(nextOk(f).stage, "polish");
+    assert.equal(nextOk(f).stage, "deploy", "the Polish of this output is kept, so next is where it stood before the spec change");
+    assert.equal(readJson(f.reportPath).stages.polish.status, "completed");
     assert.equal(inputCurrency(f).stages.assembly, "current", "the operator's --deviation-reason build is current (rule 5(ii))");
   });
 });
@@ -2534,10 +2535,11 @@ test("F2.2-W11: with the spec edited and no record spec, record build --deviatio
   });
 });
 
-test("F2.2-B22: as W11, Polish is required", async () => {
+test("F2.2-B22: as W11, the Polish of the kept output is restored and current (#668)", async () => {
   await guardedLifecycle(async (f) => {
     await specEditKeepsOutput(f);
-    assert.equal(readJson(f.reportPath).stages.polish.status, "required");
+    assert.equal(readJson(f.reportPath).stages.polish.status, "completed");
+    assert.equal(inputCurrency(f).stages.polish, "current");
     assert.equal(inputCurrency(f).stages.assembly, "current", "the operator's --deviation-reason build is current (rule 5(ii))");
   });
 });
@@ -3402,6 +3404,48 @@ test("a brief save after prepare-build --force keeps the superseded build, so an
     const currency = inputCurrency(f);
     assert.equal(currency.stages.assembly, "owed");
     assert.equal(currency.reasons.assembly, "output_unchanged_after_input_change");
+  });
+});
+
+test("#668: after a CampaignSpec-only re-intake, record build --deviation-reason over the same output keeps the Polish bound to it", async () => {
+  await guardedLifecycle(async (f) => {
+    await recordThroughPolish(f);
+    const before = readJson(f.reportPath).stages.polish;
+    editSpec(f, bumpCheckoutQty);
+    reintake(f, ["--force"]);
+    recordOk(f, "setup");
+    assert.ok(["pending", "required"].includes(readJson(f.reportPath).stages.polish.status), "setup: the forced intake owes Polish again");
+    recordOk(f, "build", ["--deviation-reason", "the Map change needs no page change"]);
+    const report = readJson(f.reportPath);
+    assert.equal(report.stages.assembly.build_fingerprint, before.source_build_fingerprint, "setup: the rebuild is the output Polish reviewed");
+    const polish = report.stages.polish;
+    assert.equal(polish.status, before.status);
+    assert.equal(polish.completed_at, before.completed_at);
+    assert.equal(polish.performed_by, before.performed_by);
+    assert.equal(polish.source_build_fingerprint, before.source_build_fingerprint);
+    assert.equal(polish.input_change, undefined);
+    assert.equal(polish.required_by, undefined);
+    assert.deepEqual(polish.evidence, before.evidence, "the review evidence is the same review");
+    assert.equal(polish.source_spec_material_hash, report.stages.assembly.source_spec_material_hash, "Polish is stamped with the current CampaignSpec");
+    const currency = inputCurrency(f);
+    assert.equal(currency.stages.polish, "current");
+    assert.notEqual(currency.stages.qa, "current", "QA is still owed for the changed CampaignSpec");
+    const doctor = doctorOk(f);
+    const codes = [...(doctor.errors || []), ...(doctor.warnings || [])].map((issue) => issue.code);
+    assert.ok(!codes.some((code) => String(code).startsWith("polish.")), `doctor raises no Polish finding: ${codes.join(", ")}`);
+    assert.notEqual(nextOk(f).stage, "polish", "next does not send the campaign back to Polish");
+  });
+});
+
+test("#668: the same re-intake recorded without --deviation-reason leaves Polish owed", async () => {
+  await guardedLifecycle(async (f) => {
+    await recordThroughPolish(f);
+    editSpec(f, bumpCheckoutQty);
+    reintake(f, ["--force"]);
+    recordOk(f, "setup");
+    recordOk(f, "build");
+    assert.notEqual(readJson(f.reportPath).stages.polish.status, "completed");
+    assert.equal(inputCurrency(f).stages.assembly, "owed");
   });
 });
 
