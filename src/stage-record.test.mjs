@@ -4,7 +4,7 @@
 // would reject and stamping only the fingerprint doctor computes.
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -2664,6 +2664,22 @@ test("F2.2-B13: with every stage completed and the spec edited (no write), the r
     assert.ok(header, "setup: readback printed the STAGES section");
     assert.equal(/;\s*effective:\s*([a-z_]+)\]/.exec(header)?.[1], "prepared", header);
   });
+});
+
+// Every recorded stage status still reads completed after the edit, but the
+// edit owes the build again: run status names `next`, which decides that,
+// instead of `run end`.
+test("with a run session active, every stage completed and the spec edited (no record spec), run status names next and next answers build", async () => {
+  await guardedLifecycle(async (f) => {
+    await recordThroughQa(f);
+    const started = runJson(["run", "start", "--packet", f.packetPath], f.dir);
+    assert.equal(started.status, 0, `setup: run start opened a session: ${started.stderr.slice(0, 400)}`);
+    editSpec(f, bumpCheckoutQty);
+    const status = runJson(["run", "status"], f.target);
+    assert.equal(status.json?.active, true, `setup: run status sees the session: ${status.stderr.slice(0, 400)}`);
+    assert.equal(status.json.progress?.next_command, `campaigns-os next --packet ${realpathSync(f.packetPath)} --json`);
+    assert.equal(nextOk(f).stage, "build");
+  }, LOCAL_SPEC);
 });
 
 test("F2.2-B5: a page label-only edit refreshed with record spec makes assembly required", async () => {

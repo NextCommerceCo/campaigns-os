@@ -50,9 +50,12 @@ export function reportKeyForCliStage(cliStage) {
  * "completed", "completed_with_warnings", and "completed_partial" all
  * count as terminal under "completed". This matches how the existing
  * stages already report sub-statuses (see report.stages.assembly.status
- * shapes in src/cli.mjs and qa/shared/qa-verdict.js). Shared here so the
- * `next` picker, the session progress summary and the Assembly Report's own
- * derived summary (src/stage-ledger.mjs) read one definition of "done".
+ * shapes in src/cli.mjs and qa/shared/qa-verdict.js). This is the rule for a
+ * RECORDED status only (the session progress summary's incomplete stages,
+ * the prepare-build gate, doctor's checks). Whether a stage is done is
+ * decided on its effective status (src/input-currency.mjs), which the `next`
+ * picker and the Assembly Report's derived summary (src/stage-ledger.mjs)
+ * read: a stage owed again is not done, whatever status it records.
  */
 export const STAGE_TERMINAL_STATUS_PREFIXES = Object.freeze(["completed", "skipped"]);
 

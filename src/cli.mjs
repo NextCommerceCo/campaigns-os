@@ -193,13 +193,9 @@ import {
 import {
   ASSEMBLY_REPORT_STAGE_KEYS,
   NEXT_STAGE_ORDER,
-  STAGE_TERMINAL_STATUS_PREFIXES,
   stageIsTerminal,
 } from "./orchestration-stage-contract.mjs";
-import {
-  currentBuildFingerprint,
-  evaluatePolishGate,
-} from "./polish-gate.mjs";
+import { currentBuildFingerprint } from "./polish-gate.mjs";
 import {
   assertPolishCaptureBindingUnchanged,
   capturePolishPageLoad,
@@ -293,7 +289,7 @@ import {
   addPrepareBuildGateErrors,
   assessPurchaseProofCoverage,
   deployUrlFromReportOutputs,
-  checkpointExceptionPresent,
+  readinessStatus,
 } from "./doctor/next-step.mjs";
 
 export { derivePackagePin, localInstallStatus };
@@ -4318,7 +4314,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
     }
   }
   const themeGate = doctor.derived?.theme_gate || null;
-  const polishGate = doctor.derived?.polish_gate || evaluatePolishGate({ report });
+  const polishGate = doctor.derived?.polish_gate;
   const polishCheckpointGate = doctor.derived?.polish_checkpoint_gate || null;
   // Packet 03 (INV-5 first slice): compare the ledger's self-report against
   // the repo's artifacts before any recommendation goes out. Additive:
@@ -4398,21 +4394,25 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
   const ready = [...doctor.ready];
   if (!doctor.ok && !doctorHasOnlyPolishGateErrors) errors.push(...doctor.errors.map((issue) => withPacketSubstitutedIssue(issue, packetPath)));
 
-  // Explicit stage requests are still downstream of prepare-build. Do not
-  // construct the requested stage's prompt or executable actions when the
-  // authoritative prepare gate is blocked or unavailable; return the same
-  // recovery-only shape as automatic stage selection.
-  if (NEXT_STAGE_ORDER.includes(stage) && prepareBuildGate) {
+  // prepare-build is upstream of every stage. While its authoritative gate is
+  // blocked or unavailable, doctor's picker chooses prepare-build, and an
+  // explicit stage request gets the same recovery-only shape (requested_stage
+  // names it) instead of that stage's prompt or executable actions.
+  if (prepareBuildGate) {
     addPrepareBuildGateErrors(errors, report, prepareBuildGate);
     return finalize({
       ok: false,
       status: "blocked",
       stage: "prepare-build",
-      requested_stage: stage,
+      ...(stage ? { requested_stage: stage } : {}),
       reason: prepareBuildGate.reason,
       errors,
       warnings,
       ready,
+      // Packet 03: when the artifacts contradict the ledger, do NOT tell
+      // the operator to start over — rerunning prepare-build/start is the
+      // most destructive documented recovery, and the ledger alone is not
+      // trustworthy evidence that it is needed.
       prompt: prepareBuildRecoveryPrompt,
       stage_blocked: true,
     });
@@ -4438,28 +4438,10 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
         prompt: `Resolve the doctor errors above before continuing. Re-run \`${cmd("doctor")} --packet <path> --write\` to record the recovery, then \`${cmd("next")} --packet <path>\` to advance.`,
       });
     }
-    if (picked.stage === "prepare-build") {
-      addPrepareBuildGateErrors(errors, report, prepareBuildGate);
-      return finalize({
-        ok: false,
-        status: "blocked",
-        stage: "prepare-build",
-        reason: picked.reason,
-        errors,
-        warnings,
-        ready,
-        // Packet 03: when the artifacts contradict the ledger, do NOT tell
-        // the operator to start over — rerunning prepare-build/start is the
-        // most destructive documented recovery, and the ledger alone is not
-        // trustworthy evidence that it is needed.
-        prompt: prepareBuildRecoveryPrompt,
-        stage_blocked: true,
-      });
-    }
     if (picked.stage === "done") {
       return finalize({
         ok: true,
-        status: checkpointExceptionPresent(doctor.derived) ? "ready_with_waivers" : (warnings.length ? "ready_with_warnings" : "ready"),
+        status: readinessStatus(warnings, doctor.derived),
         stage: "done",
         reason: picked.reason,
         errors,
@@ -4509,13 +4491,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
     addThemeGateErrors(errors, themeGate, "qa");
     prompt = qaPrompt(packetPath, reportPath, packet, spec, intentSummary, polishCheckpointGate);
   }
-  const status = errors.length
-    ? "blocked"
-    : checkpointExceptionPresent(doctor.derived)
-      ? "ready_with_waivers"
-      : warnings.length
-        ? "ready_with_warnings"
-        : "ready";
+  const status = errors.length ? "blocked" : readinessStatus(warnings, doctor.derived);
   const result = {
     ok: errors.length === 0,
     status,
@@ -7113,6 +7089,12 @@ function runSessionStatus(args, ambient = null) {
 // Session progress: incomplete assembly-report stages, the deviation count,
 // and the exact next command. Read-only and best-effort; the status command
 // must never fail because an artifact is missing or torn.
+//
+// The incomplete stages are the recorded statuses. Whether every stage is
+// actually done is `next`'s decision, not this one: an input change or a new
+// build owes a stage again while its recorded status still reads completed.
+// So the next command is always `next`, which names `run end` once the
+// campaign is done and a session is active.
 function runSessionProgress(found) {
   const packetPath = found.session.packet;
   if (!isNonEmptyString(packetPath) || !existsSync(packetPath)) return null;
@@ -7122,7 +7104,7 @@ function runSessionProgress(found) {
     const incomplete = [];
     for (const key of ASSEMBLY_REPORT_STAGE_KEYS) {
       const status = String(report?.stages?.[key]?.status || "");
-      if (!STAGE_TERMINAL_STATUS_PREFIXES.some((prefix) => status.startsWith(prefix))) {
+      if (!stageIsTerminal(status)) {
         incomplete.push({ stage: key, status: status || null });
       }
     }
@@ -7131,9 +7113,7 @@ function runSessionProgress(found) {
       incomplete_stages: incomplete,
       deviations,
       qa_attempt_count: Array.isArray(found.session.qa_attempts) ? found.session.qa_attempts.length : 0,
-      next_command: incomplete.length
-        ? `${cmd("next")} --packet ${packetPath} --json`
-        : `${cmd("run")} end --packet ${packetPath}`,
+      next_command: `${cmd("next")} --packet ${packetPath} --json`,
     };
   } catch {
     return null;
