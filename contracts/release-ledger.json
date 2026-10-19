@@ -8381,6 +8381,33 @@
         }
       ],
       "entry_sha256": "b0d2fbd5618d4fc635b346ae521085a77e0ac552e67e8f94a9c5ced7049f237b"
+    },
+    {
+      "id": "RL-0276",
+      "sequence": 264,
+      "date": "2026-10-19",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.59.0+agent.11",
+      "changelog_sha256": "bbde8ee78d523076a4011ba71cd6674bbc305aa03219c1ba2dd37c6d0fc5ee78",
+      "agent_impact": "None for package consumers: this changes repository CI only (add-to-project and publish workflow action versions).",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "workflow",
+          "path": ".github/workflows/add-to-project.yml",
+          "surface_entry": null,
+          "summary": "Move actions/create-github-app-token to 3.3.0."
+        },
+        {
+          "class": "workflow",
+          "path": ".github/workflows/publish.yml",
+          "surface_entry": null,
+          "summary": "Move actions/upload-artifact to 7.0.2 and actions/download-artifact to 8.0.2."
+        }
+      ],
+      "entry_sha256": "dbca912d6c5145cb494f83fe7c334bec6e978bf00f6146c2a7eeb2d706f7cb96"
     }
   ]
 }

@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.59.0+agent.11] - 2026-10-19
+
+### Changed
+
+Repository workflows move `actions/create-github-app-token` from 3.2.0 to 3.3.0, `actions/upload-artifact` from 7.0.1 to 7.0.2 and `actions/download-artifact` from 8.0.1 to 8.0.2 (campaigns-os#679). This changes repository CI only, and the published package is unchanged.
+
 ## [1.59.0+agent.10] - 2026-10-19
 
 ### Changed
