@@ -95,7 +95,6 @@
     // src/features/checkout/validation/step-validation.ts.
     var hasRequiredData = true;
     var missingFields = [];
-    var redirectToStep = 1;
     if (currentStep >= 2) {
       var alwaysRequired = ['email', 'fname', 'lname', 'country', 'address1', 'city'];
       alwaysRequired.forEach(function(field) {
@@ -105,11 +104,11 @@
         }
       });
     }
-    // If required data is missing, redirect to the appropriate step
+    // Every field in the list is collected on step 1, so missing data always goes back there.
     if (!hasRequiredData) {
-      var targetUrl = stepUrls[redirectToStep] || redirectUrl;
+      var targetUrl = stepUrls[1] || redirectUrl;
       console.warn('[CheckoutGuard] Required data missing for previous steps:', missingFields);
-      console.warn('[CheckoutGuard] Redirecting to step', redirectToStep, ':', targetUrl);
+      console.warn('[CheckoutGuard] Redirecting to step 1:', targetUrl);
       window.location.replace(targetUrl);
       return;
     }
