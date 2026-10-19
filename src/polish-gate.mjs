@@ -45,11 +45,7 @@ function terminalAssembly(report) {
 }
 
 export function currentBuildFingerprint(report) {
-  return normalizeString(report?.stages?.assembly?.build_fingerprint)
-    || normalizeString(report?.stages?.assembly?.artifact_fingerprint)
-    || normalizeString(report?.build_fingerprint)
-    || normalizeString(report?.artifact_fingerprint)
-    || null;
+  return normalizeString(report?.stages?.assembly?.build_fingerprint) || null;
 }
 
 export function currentSourcePackageMaterialFingerprint(report) {

@@ -254,15 +254,8 @@ test("computeBuildFingerprint: write order does not matter and the manifest is t
   }));
 });
 
-test("computeBuildFingerprint: exclusions are root-relative and reported; a missing root is not a fingerprint", () => {
+test("computeBuildFingerprint: a missing root is not a fingerprint", () => {
   withTempDir((dir) => {
-    const root = join(dir, "_site", "x");
-    writeTree(root, FINGERPRINT_TREE);
-    const full = computeBuildFingerprint(root);
-    const partial = computeBuildFingerprint(root, { exclude: ["products/hero.png", "not/there.txt"] });
-    assert.notEqual(partial.fingerprint, full.fingerprint);
-    assert.equal(partial.file_count, 3);
-    assert.deepEqual(partial.excluded, ["products/hero.png"]);
     const missing = computeBuildFingerprint(join(dir, "_site", "nope"));
     assert.equal(missing.ok, false);
     assert.equal(missing.fingerprint, null);

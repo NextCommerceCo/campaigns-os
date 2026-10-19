@@ -291,8 +291,7 @@ export function synthesizeMinimalBuildPacket({
 // relative to the output root with `/` separators and sorted by code point,
 // so directory walk order and the absolute location never leak into the
 // value. Page Kit (0.2.0) writes only rendered HTML and copied assets into
-// _site/, nothing it timestamps, so nothing is excluded by default; `exclude`
-// takes root-relative paths for a consumer whose build does stamp a file.
+// _site/, nothing it timestamps, so every file is hashed.
 // Symbolic links are never build output and are skipped, not followed.
 export const BUILD_FINGERPRINT_ALGORITHM = "sha256-manifest/v1";
 
@@ -326,22 +325,17 @@ function sha256Hex(buffer) {
  * hand (`sha256sum` over each file, sort by path, hash the lines). `ok: false`
  * with `error` when the root is not a directory; an empty tree still hashes
  * (the empty manifest) so a wiped _site/ reads as a changed build, not a
- * missing one.
+ * missing one. `excluded` is always empty; doctor's build_output_fingerprint
+ * still reports it.
  */
-export function computeBuildFingerprint(outputDir, { exclude = [] } = {}) {
+export function computeBuildFingerprint(outputDir) {
   const root = String(outputDir || "");
   const base = { ok: false, algorithm: BUILD_FINGERPRINT_ALGORITHM, root, fingerprint: null, file_count: 0, excluded: [], manifest: null };
   if (!root || !existsSync(root) || !statSync(root).isDirectory()) {
     return { ...base, error: `Build output directory does not exist: ${root || "(empty)"}` };
   }
-  const excludeSet = new Set((Array.isArray(exclude) ? exclude : []).map((path) => String(path).split(sep).join("/")));
-  const excluded = [];
   const lines = [];
   for (const path of listFilesRelative(root)) {
-    if (excludeSet.has(path)) {
-      excluded.push(path);
-      continue;
-    }
     lines.push(`${path}\n${sha256Hex(readFileSync(join(root, path)))}\n`);
   }
   const manifest = lines.join("");
@@ -350,7 +344,6 @@ export function computeBuildFingerprint(outputDir, { exclude = [] } = {}) {
     ok: true,
     fingerprint: `sha256:${sha256Hex(Buffer.from(manifest, "utf8"))}`,
     file_count: lines.length,
-    excluded,
     manifest,
     error: null,
   };

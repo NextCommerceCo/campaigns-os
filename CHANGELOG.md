@@ -2,6 +2,16 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.59.0+agent.6] - 2026-10-15
+
+### Fixed
+
+The progress snapshot binds a QA record to its build through the field `next`, the QA gate and the Run Record already read: `stages.qa.evidence.qc_build_fingerprint`, falling back to `source_build_fingerprint`. It used to read only `source_build_fingerprint`, which QA writes only when the placeholder-text gate records an outcome. A `qa run` without `--browser`, or with that gate skipped, therefore showed `qa.binding: "unconfirmed"` and a qa stage row with `build_binding: "unconfirmed"` and no fingerprint, although QA was recorded for the current build. Records that bind no build, or a different one, still read `unconfirmed`.
+
+The polish gate reads the recorded build only from `stages.assembly.build_fingerprint`. It no longer falls back to `stages.assembly.artifact_fingerprint`, a top-level `build_fingerprint` or a top-level `artifact_fingerprint`, which no toolkit version writes. A report carrying only one of those used to make doctor print "Build output fingerprint matches stages.assembly.build_fingerprint" and report `polish.evidence_missing`, while `record polish`, `record theme`, `record deploy` and `polish capture` refused the same report as having no recorded build. Doctor now reports `polish.build_fingerprint_missing` for it, as they do.
+
+`npm run smoke:polish-capture` passes again. It wrote its page outside `_site/<slug>/` with a placeholder build fingerprint, which `polish capture` refuses; it now writes `_site/runtime-packet-demo/landing/` and records that tree's real fingerprint. A failed capture prints the underlying error after the smoke's failure message (campaigns-os#672).
+
 ## [1.59.0+agent.5] - 2026-10-15
 
 ### Fixed
