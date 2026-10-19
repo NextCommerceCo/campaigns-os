@@ -18,6 +18,12 @@ These are unchanged:
 - A presentation change, a different build, or a build recorded without the deviation reason still owes a new Polish.
 - The build is still recorded with a warning and the operator's reason.
 
+## [1.59.0+agent.10] - 2026-10-19
+
+### Changed
+
+The lockfile moves Playwright from 1.63.0 to 1.64.1 and acorn from 8.18.0 to 8.19.0 (campaigns-os#675). Both stay within the ranges `package.json` already declares, so an installed toolkit resolves the same versions on a fresh install. Playwright drives `qa run --browser` and polish capture. acorn parses page scripts for doctor's `built_output.script_syntax` check, and 8.19.0 now rejects additional subscripts before the arrow in async arrow functions.
+
 ## [1.59.0+agent.9] - 2026-10-19
 
 ### Changed
