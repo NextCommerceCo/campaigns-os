@@ -8360,6 +8360,27 @@
         }
       ],
       "entry_sha256": "2127a7133126fd80e7c519f484184463d44b0f1b655350184525b19d76cf979e"
+    },
+    {
+      "id": "RL-0275",
+      "sequence": 263,
+      "date": "2026-10-19",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.59.0+agent.10",
+      "changelog_sha256": "a2cc415ae5174c3381b505e8109ce9a30f042593d7e89ac9b25ad2910a0f0092",
+      "agent_impact": "None expected: the lockfile resolves Playwright 1.64.1 and acorn 8.19.0 within the ranges package.json already declares. Browser QA and polish capture run on Playwright 1.64.1; doctor's script syntax check parses with acorn 8.19.0.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Resolve Playwright 1.64.1 and acorn 8.19.0."
+        }
+      ],
+      "entry_sha256": "b0d2fbd5618d4fc635b346ae521085a77e0ac552e67e8f94a9c5ced7049f237b"
     }
   ]
 }
