@@ -19,8 +19,9 @@
  *     {% if promo_sale %}force-sale="{{ promo_sale }}"{% endif %}
  *   ></promo-timer>
  *
- * Tip: use the same promo_sale value on both <promo-banner> and <promo-timer>
- * so both components show the same code.
+ * The page banner (_includes/promo-banner.html) does not read promo_sale or
+ * this sale list; it shows the code from its own promo_banner frontmatter.
+ * When a sale is forced here, set the same code in promo_banner.code.
  *
  * ─── HTML ATTRIBUTES ────────────────────────────────────────────────────────
  *
@@ -45,10 +46,10 @@
  *
  * ─── ADDING OR EDITING A SALE ───────────────────────────────────────────────
  *
- * Keep this list in sync with promo-banner.js. Each entry needs:
+ * Each entry needs:
  *
  *   {
- *     name: "summersale",               ← must match the name in promo-banner.js
+ *     name: "summersale",               ← unique ID used in force-sale / ?sale=
  *     start: new Date(2026, 5, 15),     ← month is 0-indexed (0 = Jan, 5 = Jun)
  *     end:   new Date(2026, 7, 30, 23, 59, 59),
  *     promoCode: "SUMMER26",            ← code shown in the "PROMO APPLIED" pill
@@ -180,7 +181,7 @@ class PromoTimer extends HTMLElement {
     const forceSale = urlParams.get('sale') || this.getAttribute('force-sale');
 
     // ─── Sale schedule ───────────────────────────────────────────────────────
-    // Keep in sync with promo-banner.js. Months are 0-indexed: 0=Jan … 11=Dec.
+    // Months are 0-indexed: 0=Jan … 11=Dec.
     const sales = [
       {
         name: "newyear",

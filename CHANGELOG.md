@@ -2,6 +2,17 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.59.0+agent.9] - 2026-10-19
+
+### Changed
+
+The vendored starter catalog is re-synced to campaign-cart-starter-templates `3987b18` (was `d5ff501`). That range carries:
+- campaign-cart-starter-templates#229: step and select pages prefetch `next_step` rather than the post-payment `next_url`.
+- campaign-cart-starter-templates#234: every family renders the promo banner at build time from `promo_banner` frontmatter. The `<promo-banner>` web component and `promo-banner.js` are gone, along with the layout shift they caused.
+- #228, #230, #235 and #237: the 5.0 multi-step fixture specs and recertified SDK 0.4.42 evidence. Each certified family now records `sdk-0.4.42-2026-10-16.2`.
+
+The certified-family fixtures are regenerated at the pin with page-kit 0.2.0, which is what the starter repository still pins. The payment-chrome `asset_pin` moves to `3987b18`. Its five images have the same bytes there, so no hash changed. The SDK pin (0.4.42), the support policy and the CampaignSpec fixtures do not change.
+
 ## [1.59.0+agent.8] - 2026-10-19
 
 ### Changed
