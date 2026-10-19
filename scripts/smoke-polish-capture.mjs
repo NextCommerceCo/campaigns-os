@@ -14,12 +14,12 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
+import { computeBuildFingerprint } from "../src/built-site-scope.mjs";
 import { polishCaptureCommand } from "../src/cli.mjs";
 import { createPolishBrowserAdapter } from "../src/polish-browser.mjs";
 import { evaluateRecordedHiddenEagerMediaCheckpoint } from "../src/polish-node.mjs";
 
 const RUN_FLAG = "--run";
-const BUILD_FINGERPRINT = `sha256:${"a".repeat(64)}`;
 const EXPECTED_ROUTE = "/runtime-packet-demo/landing/";
 const EXAMPLES = new URL("../examples/", import.meta.url);
 
@@ -52,7 +52,7 @@ function writeJson(path, value) {
 function buildFixture(root) {
   const targetRepo = join(root, "target-page-kit");
   const runtimeDir = join(targetRepo, ".campaign-runtime");
-  const builtDir = join(targetRepo, "src", "runtime-packet-demo", "landing");
+  const builtDir = join(targetRepo, "_site", "runtime-packet-demo", "landing");
   const builtPath = join(builtDir, "index.html");
   const packetPath = join(root, "campaign-runtime.build.json");
   const specPath = join(root, "campaign-spec.json");
@@ -71,6 +71,9 @@ function buildFixture(root) {
 
   mkdirSync(builtDir, { recursive: true });
   writeFileSync(builtPath, html);
+  // polish capture re-hashes _site/<slug>/ (the example packet's slug is
+  // runtime-packet-demo) and refuses when it differs, so a drift here fails.
+  const buildFingerprint = computeBuildFingerprint(dirname(builtDir)).fingerprint;
 
   const spec = readJson(new URL("campaignspec.v42.basic.json", EXAMPLES));
   writeJson(specPath, spec);
@@ -93,12 +96,12 @@ function buildFixture(root) {
   report.inputs.spec_path = "../campaign-spec.json";
   report.inputs.target_repo = ".";
   report.stages.assembly.status = "completed";
-  report.stages.assembly.build_fingerprint = BUILD_FINGERPRINT;
+  report.stages.assembly.build_fingerprint = buildFingerprint;
   report.stages.polish = {
     ...report.stages.polish,
     status: "completed",
     performed_by: "next-campaigns-polish",
-    source_build_fingerprint: BUILD_FINGERPRINT,
+    source_build_fingerprint: buildFingerprint,
     completed_at: "2026-08-20T00:00:00.000Z",
     evidence: {
       visual_review: { screenshots: ["qa-output/landing-desktop.png", "qa-output/landing-mobile.png"] },
@@ -240,8 +243,8 @@ async function runSmoke() {
       const packet = readJson(fixture.packetPath);
       const persistedReport = readJson(fixture.reportPath);
       assertPassingCapture({ result, packet, persistedReport, runtimeDir: fixture.runtimeDir });
-    } catch {
-      throw new SmokeFailure(MESSAGES.capture);
+    } catch (error) {
+      throw new SmokeFailure(`${MESSAGES.capture} ${error?.message || error}`);
     }
   } finally {
     if (browserAdapter) {

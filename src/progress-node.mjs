@@ -6,6 +6,7 @@ import {join,resolve,dirname} from 'node:path';
 import {PROGRESS_SCHEMA_VERSION,PROGRESS_STAGES,PROGRESS_STAGE_STATUSES,PROGRESS_CONTINUATIONS,PROGRESS_ACTION_IDS,PROGRESS_GATE_IDS,canonicalProgressJson,progressSnapshotId,verifyProgressSnapshot} from './progress.mjs';
 import {specMaterialHash} from './spec-identity.mjs';
 import {effectiveStageStatus} from './input-currency.mjs';
+import {qaRecordedBuildFingerprint} from './stage-ledger.mjs';
 import {sameFile} from './fs-identity.mjs';
 import {withDirectoryLock} from './directory-lock.mjs';
 import {resolveConsent,CANONICAL_REMIT_SCOPE,normalizeConsentScope,announceDefaultOnTelemetry} from './consent.mjs';
@@ -64,7 +65,7 @@ export function projectProgressObservation({workspace,context,report,doctor,cont
   // The report is also bound to the spec material on disk now, so output and
   // verdict evidence recorded against it can match.
   const reportBound=stagesBound&&localHash===hash(report?.identity?.spec_material_hash);
-  const qaSource=hash(report?.stages?.qa?.evidence?.source_build_fingerprint);
+  const qaSource=hash(qaRecordedBuildFingerprint(report));
   const verdict=qaResult?.verdict;
   const qa=verdict?{
     verdict_id:id(verdict.run_id),disposition:accepted(verdict.disposition,['ready','ready_with_exceptions','blocked']),

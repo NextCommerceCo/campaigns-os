@@ -82,6 +82,7 @@ test('blocked, divergent, stale, unsupported and QA exceptions remain independen
  input.doctor.derived.build_output_fingerprint={status:'pass',value:H('c')};input.report.stages.qa={status:'completed_with_warnings',verdict_run_id:'qa_example',evidence:{source_build_fingerprint:H('c')},...input.stamps};
  input.qaResult={verdict:{run_id:'qa_example',disposition:'ready_with_exceptions',spec_hash:specMaterialHash(input.spec),assertions:[{order_id:'secret'}]},qa_verdict_publish:{state:'failed',error:'private@example.test'}};
  s=projectProgressObservation(input);assert.deepEqual(s.qa,{verdict_id:'qa_example',disposition:'ready_with_exceptions',binding:'matching',publish_state:'failed'});assert.equal(s.stages[5].status,'completed_with_warnings');
+ input.report.stages.qa.evidence={qc_results:[],qc_build_fingerprint:H('c')};assert.equal(projectProgressObservation(input).qa.binding,'matching','a QA record without a gate outcome binds through its QC build stamp');
  input.context.packet_path='other.json';assert.equal(projectProgressObservation(input).identity.saved_revision_alignment,'unconfirmed');assert.equal(projectProgressObservation(input).qa.binding,'unconfirmed');
 }));
 

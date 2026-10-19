@@ -809,6 +809,7 @@ test("strict hosted template stock names a distinct preview URL in doctor and ne
       const guidance = JSON.stringify(result.next_actions);
       assert.match(guidance, /qa policy set --packet .* --preview-url <url>/, `${previewUrl}: ${stage}: ${guidance}`);
       assert.match(guidance, /differ.*production URL/i, `${previewUrl}: ${stage}: ${guidance}`);
+      if (stage === "deploy" || stage === "qa") assert.match(result.prompt, /qa policy set --packet .* --preview-url <url>/, `${previewUrl}: ${stage} prompt: ${result.prompt.slice(0, 200)}`);
     }
   }
 });

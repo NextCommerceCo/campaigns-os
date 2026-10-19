@@ -12,6 +12,22 @@ Notable supported-surface changes are recorded here.
 
 `next` returns a blocked or unavailable prepare-build gate's recovery-only answer from one branch, whether the stage was named or picked; `requested_stage` still appears only when a stage was named. Doctor's status, `next`'s status and doctor's `next` block read one readiness ladder (`blocked`, then `ready_with_waivers`, `ready_with_warnings`, `ready`), each over its own errors and warnings. The output of `next` and doctor is unchanged.
 
+## [1.59.0+agent.6] - 2026-10-15
+
+### Fixed
+
+The progress snapshot binds a QA record to its build through the field `next`, the QA gate and the Run Record already read: `stages.qa.evidence.qc_build_fingerprint`, falling back to `source_build_fingerprint`. It used to read only `source_build_fingerprint`, which QA writes only when the placeholder-text gate records an outcome. A `qa run` without `--browser`, or with that gate skipped, therefore showed `qa.binding: "unconfirmed"` and a qa stage row with `build_binding: "unconfirmed"` and no fingerprint, although QA was recorded for the current build. Records that bind no build, or a different one, still read `unconfirmed`.
+
+The polish gate reads the recorded build only from `stages.assembly.build_fingerprint`. It no longer falls back to `stages.assembly.artifact_fingerprint`, a top-level `build_fingerprint` or a top-level `artifact_fingerprint`, which no toolkit version writes. A report carrying only one of those used to make doctor print "Build output fingerprint matches stages.assembly.build_fingerprint" and report `polish.evidence_missing`, while `record polish`, `record theme`, `record deploy` and `polish capture` refused the same report as having no recorded build. Doctor now reports `polish.build_fingerprint_missing` for it, as they do.
+
+`npm run smoke:polish-capture` passes again. It wrote its page outside `_site/<slug>/` with a placeholder build fingerprint, which `polish capture` refuses; it now writes `_site/runtime-packet-demo/landing/` and records that tree's real fingerprint. A failed capture prints the underlying error after the smoke's failure message (campaigns-os#672).
+
+## [1.59.0+agent.5] - 2026-10-15
+
+### Fixed
+
+The hosted all-template guidance now matches what `next` has done since 1.59.0, where a hosted preview records its deploy with `record deploy` before QA. The Campaign Polish skill, `docs/build-packet.md` and the README no longer say that the hosted preview URL satisfies the deploy stage or that `record deploy` takes only a loopback route root; they name `record deploy --base-url <route root>` for both deploy targets and leave the order to `next`. A forced `next deploy` or `next qa` on an all-template hosted packet whose preview URL is loopback or the production page now prompts for `qa policy set --preview-url`, as its next actions and doctor already did and as an unset preview URL already did, instead of the generic deploy prompt or a QA command against that URL; the QA prompt then sends the agent to `next`, which records the deploy before QA. The done prompt names `record deploy` for both deploy targets in place of an instruction to record the hosted URL by hand. Bundled skills advance to `1.59.0+skills.2`.
+
 ## [1.59.0+agent.4] - 2026-10-14
 
 ### Changed

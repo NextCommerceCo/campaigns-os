@@ -1813,13 +1813,11 @@ On a hosted target, record an unset hosted preview URL with
 `campaigns-os qa policy set --packet <p> --preview-url <url>`, then record the
 deploy with `campaigns-os record deploy --packet <p> --base-url <preview url>`. The hosted preview must be a non-loopback
 HTTP(S) URL whose origin or QA-resolved campaign route path differs from `deploy.production_url`;
-query and fragment text does not make the production page a preview. With
-`deploy.preview_url` recorded, run `campaigns-os next qa --packet <p>` and
-`campaigns-os qa run --packet <p> --base-url <preview-url> --browser
---test-order common`. The recorded hosted preview satisfies the deploy step
-for this all-template shape. After QA records a verdict for the current build,
-`campaigns-os next --packet <p>` reaches closeout without a hosted deploy
-record. QA against the packet's production URL retains the strict gate.
+query and fragment text does not make the production page a preview. With the
+deploy recorded, run `campaigns-os qa run --packet <p> --base-url <preview-url>
+--browser --test-order common`; after QA records a verdict for the current
+build, `campaigns-os next --packet <p>` reaches closeout. QA against the
+packet's production URL retains the strict gate.
 
 Each command reads the same packet, Build Context and Assembly Report `next`
 reads (`--context` / `--report` override them the same way), validates what it
@@ -1882,7 +1880,7 @@ Result shape (with `--json`):
 Terminal states:
 
 - **`stage: "doctor-blocked"`** — doctor returned errors. Resolve the blockers and re-run `campaigns-os doctor` to confirm before calling `next` again.
-- **`stage: "done"`** — every stage is terminal. Pipeline is complete. To repeat build work, do the work and use `record build`; it makes downstream stages owed as needed. Use `record setup` or `record polish` after repeating those stages, and `qa run` for QA. `record deploy` records the served deploy, a loopback URL for a local-serve target or an https URL for a hosted one. Then call `next` again.
+- **`stage: "done"`** — every stage is terminal. Pipeline is complete. To repeat build work, do the work and use `record build`; it makes downstream stages owed as needed. Use `record setup` or `record polish` after repeating those stages. `record deploy` records the served deploy, a loopback URL for a local-serve target or an https URL for a hosted one. Use `qa run` for QA. Then call `next` again.
 - **`stage_blocked: true`** — the picker returned a stage whose recorded status is `blocked`. Don't run the prompt as-is; clear the blocker first.
 
 The legacy form `campaigns-os next <stage>` (e.g. `next build`) still works and is the way to force a specific stage when you want to override the picker.
