@@ -386,6 +386,9 @@ function composeBuild(report, { now, recordedBy, fingerprint, manifest = null, b
     return { report: kept ? { ...demoted.report, stages: { ...demoted.report.stages, polish: kept } } : demoted.report, context: null };
   }
   const previousPolish = stageObject(report, "polish");
+  // The usual #668 path: intake (prepare-build --force or record spec) already
+  // recorded the change on assembly, so nothing is detected here, but the
+  // carried input_change makes this build a replay the operator kept.
   const keptPolish = keptPolishFor(previousPolish, { assembly, fingerprint, sourcePackageFingerprint, stamps });
   if (keptPolish) return { report: { ...nextReport, stages: { ...nextReport.stages, assembly, polish: keptPolish, ...deploy } }, context: null };
   const polishStillCurrent = stageIsTerminal(String(previousPolish.status || ""))
@@ -409,7 +412,7 @@ function composeBuild(report, { now, recordedBy, fingerprint, manifest = null, b
 function keptPolishFor(polish, { assembly, fingerprint, sourcePackageFingerprint, stamps }) {
   if (!isObject(assembly.unchanged_output_reason) || stageIsTerminal(String(polish?.status || ""))) return null;
   const kept = restorePolishKeptWithOutput(polish, { fingerprint, sourcePackageFingerprint, stamps, completedStatuses: POLISH_COMPLETED_STATUSES });
-  return kept ? { ...withoutKeys(kept, ["skip_reason"]), blockers: [] } : null;
+  return kept ? withoutKeys(kept, ["skip_reason"]) : null;
 }
 
 // stages.deploy after a build of `fingerprint`, or null when it is kept: a
