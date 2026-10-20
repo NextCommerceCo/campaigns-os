@@ -38,7 +38,7 @@ those changes bundle selection, cart calculation and more, and is migration
 work, not a bump.
 
 Judge a legacy page by what drives its cart and checkout, not by a script URL.
-The 0.4.x SDK loads `https://campaigns.apps.29next.com/js/v1/campaign/` itself
+The 0.4.x SDK loads the Campaigns analytics script (`/js/v1/campaign/`) itself
 for analytics, and some layouts also load it by hand; on a page the 0.4.x SDK
 drives, that script alone is not a reason to stop.
 
