@@ -8530,8 +8530,8 @@
       "kind": "release",
       "surface_version": "1.60.0",
       "changelog_section": "1.60.0",
-      "changelog_sha256": "4c7508972e42399dae1a4ff97db5d188707492b925b654392c10c74f01848061",
-      "agent_impact": "The 1.60.0 package publishes the ten same-surface changes since 1.59.0 (agent.4 to agent.13). Consumers gain the next-campaigns-sdk-bump skill, page-kit 0.3.0 support with asset warnings, the 3987b18 starter catalog, QA build binding and run status fixes, and Polish carry-over after a spec-only change; refresh the bundled skills to 1.60.0+skills.1.",
+      "changelog_sha256": "9d37d356a3ffaa2f44c66f14c643bae9dbee69bce507db6076dfa0aa92110106",
+      "agent_impact": "The 1.60.0 package publishes the ten same-surface changes since 1.59.0 (agent.4 to agent.13). Consumers gain the next-campaigns-sdk-bump skill (with the fixes from its first live bump), page-kit 0.3.0 support with asset warnings, the 3987b18 starter catalog, QA build binding and run status fixes, and Polish carry-over after a spec-only change; refresh the bundled skills to 1.60.0+skills.1.",
       "compatibility": "additive",
       "migration": "From the published 1.59.0, update the pinned package and run install-skills to get 1.60.0+skills.1, including next-campaigns-sdk-bump. After the first build on page-kit 0.3.0, run record build again: the build fingerprint can change with unchanged source, so Polish, deploy and QA are owed again.",
       "changes": [
@@ -8647,10 +8647,10 @@
           "class": "skill",
           "path": "skills/next-campaigns-sdk-bump/SKILL.md",
           "surface_entry": null,
-          "summary": "Bump the skill one patch and stamp bundle 1.60.0+skills.1."
+          "summary": "Apply the first live-bump feedback (#683: removed features, next:initialized guard, legacy detection, manifest range, QA portal and qa-output) and stamp bundle 1.60.0+skills.1."
         }
       ],
-      "entry_sha256": "422f15a4c70fe853a811dbb03f1a6178927a29246a61ddd1a0d15ef0a5dadd6a"
+      "entry_sha256": "25d3db88fb7e0259e9b3a4b91244cf504d0bd99bfc815ab60393b3982927564f"
     }
   ]
 }

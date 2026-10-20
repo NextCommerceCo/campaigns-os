@@ -15,6 +15,7 @@ Notable supported-surface changes are recorded here.
 - Publishes `1.59.0+agent.10` and `1.59.0+agent.11`: the Playwright 1.64.1 / acorn 8.19.0 lockfile bump and repository workflow action bumps (campaigns-os#675, campaigns-os#679).
 - Publishes `1.59.0+agent.12`: `install-skills` installs `next-campaigns-sdk-bump`, the 0.4.x Campaign Cart bump procedure (campaigns-os#677).
 - Publishes `1.59.0+agent.13`: a CampaignSpec-only change keeps the Polish review of the kept output (campaigns-os#668).
+- The `next-campaigns-sdk-bump` skill takes the feedback from its first live bump (campaigns-os#683). When the release range removes a feature the campaign uses, the skill now looks for a documented replacement and stops to ask rather than deleting the call. It guards every `next:initialized` listener for cached reloads, which 0.4.42 no longer replays, and proves them on fresh and cached loads. It judges a legacy page by what drives its cart and checkout, not by the Campaigns analytics script the 0.4.x SDK loads itself, and it explains a storage manifest whose range stops below the target tag. It also names the QA portal post and `--local-only`, keeps `qa-output/` out of commits, mentions `qa install-browser`, and triggers on bump requests in repositories that have their own BUMP.md.
 - Bundled skills advance to `1.60.0+skills.1`.
 
 ## [1.59.0+agent.13] - 2026-10-19
