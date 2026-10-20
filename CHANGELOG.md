@@ -2,6 +2,21 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.60.0] - 2026-10-20
+
+### Changed
+
+- Publishes `1.59.0+agent.4`: the build-flow doc and quickstart describe the Campaigns App's offer-first setup.
+- Publishes `1.59.0+agent.5`: hosted all-template guidance names `record deploy --base-url <route root>` for both deploy targets.
+- Publishes `1.59.0+agent.6`: the progress snapshot binds QA to its build through `qc_build_fingerprint`, and the polish gate reads the recorded build only from `stages.assembly.build_fingerprint` (campaigns-os#672).
+- Publishes `1.59.0+agent.7`: `run status` always names `next` as the next command (campaigns-os#673).
+- Publishes `1.59.0+agent.8`: Campaigns OS adopts next-campaign-page-kit 0.3.0, keeps 0.2.x targets working, and doctor reports page-kit's `assetWarnings`. The first 0.3.0 build can change the build fingerprint; run `record build` again.
+- Publishes `1.59.0+agent.9`: the starter catalog is re-synced to campaign-cart-starter-templates `3987b18` (build-time promo banner, `next_step` prefetch).
+- Publishes `1.59.0+agent.10` and `1.59.0+agent.11`: the Playwright 1.64.1 / acorn 8.19.0 lockfile bump and repository workflow action bumps (campaigns-os#675, campaigns-os#679).
+- Publishes `1.59.0+agent.12`: `install-skills` installs `next-campaigns-sdk-bump`, the 0.4.x Campaign Cart bump procedure (campaigns-os#677).
+- Publishes `1.59.0+agent.13`: a CampaignSpec-only change keeps the Polish review of the kept output (campaigns-os#668).
+- Bundled skills advance to `1.60.0+skills.1`.
+
 ## [1.59.0+agent.13] - 2026-10-19
 
 ### Fixed
