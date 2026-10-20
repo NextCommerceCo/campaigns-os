@@ -13,7 +13,16 @@ const skill = raw.replace(/\s+/g, " ");
 
 test("the SDK bump skill names each step the bump needs", () => {
   for (const step of [
-    "Stop and say so if you find a 0.3.x pin, the legacy Campaigns JS, or a direct Campaigns API script:",
+    "Stop and say so if you find a 0.3.x pin or a legacy page: one whose own code calls the Campaigns JS or the Campaigns API directly for cart and checkout.",
+    "Judge a legacy page by what drives its cart and checkout, not by a script URL.",
+    "When the range removes a feature the campaign uses, say so, and do not just delete the call",
+    "If none is documented, stop and ask.",
+    "Classify every `next:initialized` listener.",
+    "on a fresh load and on a cached reload",
+    "report that it does not speak for the versions above it",
+    "pass `--local-only` unless the developer wants the verdict there",
+    "Keep `qa-output/` out of commits",
+    "campaigns-os qa install-browser",
     'grep -rn "campaign-cart@v" src',
     "campaign-cart@v{{ campaign.sdk_version }}",
     "sdk repin --target <funnel folder>",
