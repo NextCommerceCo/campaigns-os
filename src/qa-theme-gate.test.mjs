@@ -563,7 +563,7 @@ test("resolveQaInputsFromSite builds topologies + brand contract from a built _s
     assert.ok(resolved.brandContract, "brand contract loaded for the QA residue gates");
     assert.equal(resolved.topologies[0].pages.length, 3);
     const checkout = resolved.topologies[0].pages.find((p) => p.page_type === "checkout");
-    assert.equal(checkout.url, "http://localhost:8080/checkout/");
+    assert.equal(checkout.url, "http://localhost:8080/acme/checkout/");
     // No theme artifacts exist for a built-site run -> the gate is non-blocking
     // (not_applicable), so browser QA still runs the residue/placeholder gates.
     assert.notEqual(resolved.themeGate.status, "blocked");
@@ -574,6 +574,34 @@ test("resolveQaInputsFromSite builds topologies + brand contract from a built _s
     ]);
     assert.equal(resolved.packetPath, null);
     assert.equal(resolved.builtSite.html_count, 3);
+  });
+});
+
+// #683 item 5: `qa run --site <repo> --base-url <preview origin> --slug <slug>`
+// requested /checkout/ instead of /<slug>/checkout/, so every page 404'd. The
+// built pages live under _site/<slug>/, so an origin base URL gets the slug
+// composed on, and a base URL that already ends in the slug is left alone.
+test("resolveQaInputsFromSite composes the slug onto an origin base URL (#683)", () => {
+  withTempSite((repo) => {
+    for (const [route, html] of Object.entries({ "": "<h1>Landing</h1>", checkout: "<h1>Checkout</h1>" })) {
+      const dir = route ? join(repo, "_site", "acme", route) : join(repo, "_site", "acme");
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "index.html"), html);
+    }
+    const urls = (baseUrl, slug) => {
+      const resolved = resolveQaInputsFromSite({ site: repo, "base-url": baseUrl, family: "olympus", ...(slug ? { slug } : {}) });
+      return { baseUrl: resolved.baseUrl, pages: resolved.topologies[0].pages.map((page) => page.url).sort() };
+    };
+    const expected = {
+      baseUrl: "https://preview.example.com/acme/",
+      pages: ["https://preview.example.com/acme/", "https://preview.example.com/acme/checkout/"],
+    };
+    assert.deepEqual(urls("https://preview.example.com", "acme"), expected);
+    assert.deepEqual(urls("https://preview.example.com/", "acme"), expected);
+    assert.deepEqual(urls("https://preview.example.com/acme", "acme"), expected);
+    assert.deepEqual(urls("https://preview.example.com/acme/", "acme"), expected);
+    // A discovered slug (single campaign under _site/) composes the same way.
+    assert.deepEqual(urls("https://preview.example.com"), expected);
   });
 });
 
