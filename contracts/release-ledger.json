@@ -8522,6 +8522,135 @@
         }
       ],
       "entry_sha256": "8f05d402dfed44c9c94136551ea1aa97aecf3850346484a8f3f3a4d6540052f2"
+    },
+    {
+      "id": "RL-0279",
+      "sequence": 267,
+      "date": "2026-10-20",
+      "kind": "release",
+      "surface_version": "1.60.0",
+      "changelog_section": "1.60.0",
+      "changelog_sha256": "9d37d356a3ffaa2f44c66f14c643bae9dbee69bce507db6076dfa0aa92110106",
+      "agent_impact": "The 1.60.0 package publishes the ten same-surface changes since 1.59.0 (agent.4 to agent.13). Consumers gain the next-campaigns-sdk-bump skill (with the fixes from its first live bump), page-kit 0.3.0 support with asset warnings, the 3987b18 starter catalog, QA build binding and run status fixes, and Polish carry-over after a spec-only change; refresh the bundled skills to 1.60.0+skills.1.",
+      "compatibility": "additive",
+      "migration": "From the published 1.59.0, update the pinned package and run install-skills to get 1.60.0+skills.1, including next-campaigns-sdk-bump. After the first build on page-kit 0.3.0, run record build again: the build fingerprint can change with unchanged source, so Polish, deploy and QA are owed again.",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "compatibility.json",
+          "surface_entry": "compatibility.json",
+          "summary": "Name 1.60.0 as the published package version."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Advance surface_version to 1.60.0 for the package release."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Pin the documented toolkit install to 1.60.0."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerate the orientation reference at surface 1.60.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerate runtime readiness at surface 1.60.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Show the current 1.60.0+skills.1 bundle identity in preflight examples."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Advance both package version stamps to 1.60.0."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Advance the package version to 1.60.0."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance the bundle to 1.60.0+skills.1 and each bundled skill by one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.60.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.60.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.60.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.60.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.60.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.60.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.60.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.60.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.60.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-sdk-bump/SKILL.md",
+          "surface_entry": null,
+          "summary": "Apply the first live-bump feedback (#683: removed features, next:initialized guard, legacy detection, manifest range, QA portal and qa-output) and stamp bundle 1.60.0+skills.1."
+        }
+      ],
+      "entry_sha256": "25d3db88fb7e0259e9b3a4b91244cf504d0bd99bfc815ab60393b3982927564f"
     }
   ]
 }

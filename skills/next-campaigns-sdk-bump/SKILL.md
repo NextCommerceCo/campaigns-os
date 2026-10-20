@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-sdk-bump
-version: 1.0.0
-description: Bump a live campaign's Campaign Cart SDK from one 0.4.x release to a later 0.4.x on a page-kit or static repo — find every pin, check the release diff and storage against the campaign's own code, prove on a preview with approved test orders, and report what is not proven.
+version: 1.0.1
+description: Bump a live campaign's Campaign Cart SDK from one 0.4.x release to a later 0.4.x on a page-kit or static repo. Use for any request to bump, upgrade or move a campaign to SDK 0.4.x, including when the repository has its own BUMP.md. Find every pin, check the release diff and storage against the campaign's own code, prove on a preview with approved test orders, and report what is not proven.
 ---
 
-Bundle revision: 1.59.0+skills.4
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.59.0+skills.4`
+Bundle revision: 1.60.0+skills.1
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.60.0+skills.1`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -20,6 +20,10 @@ installs the toolkit, asks for the bump, approves each push, the pull request
 and each test order, then reviews and merges. Everything here uses existing
 commands; there is no new write or order capability.
 
+If `tooling status` prints `Refresh installed skills` for `--platform codex` or
+`--platform agents` only, that refresh is for those harnesses; it is not
+required in a session that uses neither.
+
 In the instructions below, bare `campaigns-os …` means `npx --no-install
 campaigns-os …` from the campaign folder. The effect class in each
 parenthetical is the declared row of `contracts/effects.v1.json`.
@@ -28,9 +32,15 @@ parenthetical is the declared row of `contracts/effects.v1.json`.
 
 A bump moves a funnel from one Campaign Cart 0.4.x release to a later 0.4.x.
 Before anything else, confirm every page in scope loads a 0.4.x loader. Stop
-and say so if you find a 0.3.x pin, the legacy Campaigns JS, or a direct
-Campaigns API script: moving those changes bundle selection, cart calculation
-and more, and is migration work, not a bump.
+and say so if you find a 0.3.x pin or a legacy page: one whose own code calls
+the Campaigns JS or the Campaigns API directly for cart and checkout. Moving
+those changes bundle selection, cart calculation and more, and is migration
+work, not a bump.
+
+Judge a legacy page by what drives its cart and checkout, not by a script URL.
+The 0.4.x SDK loads the Campaigns analytics script (`/js/v1/campaign/`) itself
+for analytics, and some layouts also load it by hand; on a page the 0.4.x SDK
+drives, that script alone is not a reason to stop.
 
 A bump does not adopt new SDK components. Hand-written address or phone fields
 stay hand-written; adopting `data-next-address` or another new component is
@@ -44,6 +54,13 @@ cancel; follow the `next-campaigns-qa` rule: ask once up front, then follow the
 answer. Never write evidence or notes into the served tree: many static repos
 publish from the repository root. The hand-back goes on the ticket or the pull
 request.
+
+`qa run` against a preview that is not a local address posts its verdict to the
+QA portal on campaign-map.nextcommerce.com and prints the link. Say so when you
+ask about test orders, and pass `--local-only` unless the developer wants the
+verdict there. `qa run` writes its local verdict under `qa-output/` in the
+current folder (or `--output-dir <path>`). Keep `qa-output/` out of commits:
+check `.gitignore`, and never stage it.
 
 ## 1. Branch
 
@@ -98,6 +115,15 @@ particular:
   coupon exists on every campaign the funnel uses.
 - Note whether the range changes the card fields or the 3-D Secure flow; if it
   does, plan a 3-D Secure test order in step 6.
+- When the range removes a feature the campaign uses, say so, and do not just
+  delete the call: that silently drops the feature from a live funnel. Look for
+  a documented replacement in the repository's own docs (`CLAUDE.md`,
+  `BUMP.md`) and the release notes. If none is documented, stop and ask.
+- Classify every `next:initialized` listener. From 0.4.42 the SDK fires that
+  event once and does not replay it, so a deferred script that only listens for
+  it can miss it on a cached reload. Guard each one in the bump: run now if
+  `window.next` exists and `document.body.dataset.nextSdkLoading === "false"`,
+  otherwise wait for the event, and run once either way. Step 6 proves it.
 
 ## 4. Storage check
 
@@ -108,13 +134,21 @@ later), at the highest version its supported range declares. Read each
 `incompatible` and `unknown` line and say whose key it is. See
 `docs/sdk-storage-compatibility.md`.
 
+The manifest's `supportedSdkVersions` can stop below the tag it ships in: tags
+v0.4.39 to v0.4.42 declare 0.4.38 to 0.4.38, so `--target-sdk 0.4.42` returns
+`target-outside-manifest-range`. Run the check at the manifest's highest
+version and report that it does not speak for the versions above it.
+
 ## 5. Build and check
 
 **Page-kit:** run a development build, confirm every built page loads only the
 target version and that no built loader URL still holds an unrendered `{{`,
 then `campaigns-os doctor --built <repo> --family <family> --slug <slug>`
 (tier `none`) for a repository with no Build Packet, or `campaigns-os doctor --packet <packet>`
-with one. Errors that are already on `main` are recorded, not fixed.
+with one. Errors that are already on `main` are recorded, not fixed. Report doctor's
+advisories with the rest; an attribute flagged as missing from the SDK's index
+that the page does set (for example `data-next-page-type` on `<body>`) goes in
+the hand-back as unchecked, not fixed by guesswork.
 
 **Static:** there is no build and no doctor. Re-run the repin preview (it
 should list nothing below the target) and search the served pages for any
@@ -123,7 +157,9 @@ remaining old version.
 ## 6. Preview proof
 
 Deploy a preview and prove the bump with browser test orders under the
-approval rule above. Pin the browser to the store's main market: a run
+approval rule above. `qa run --browser` needs the browser once per machine:
+`campaigns-os qa install-browser` downloads about 100 MB, so ask before running
+it. Pin the browser to the store's main market: a run
 geolocated elsewhere can order in another currency and skip a currency-gated
 upsell.
 
@@ -142,7 +178,9 @@ Cover:
 - an upsell at quantity 2 or more on a page that shows a quantity picker;
 - a 3-D Secure card when step 3 found card-field or 3-D Secure changes, and whether it challenged;
 - the coupon path, if the funnel has one;
-- the purchase event fires once, on the page the release says it should.
+- the purchase event fires once, on the page the release says it should;
+- each SDK page on a fresh load and on a cached reload, with every
+  `next:initialized` listener from step 3 running once on both.
 
 Read each order back in the store admin (the packet run's verdict under
 `qa-output/` also lists the orders it created) and keep the order numbers for
