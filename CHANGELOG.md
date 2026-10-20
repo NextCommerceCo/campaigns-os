@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.60.0+agent.1] - 2026-10-20
+
+### Fixed
+
+`qa run --site <repo> --base-url <site origin> --slug <slug>` now requests the campaign's pages under `/<slug>/` (campaigns-os#683). Before, it joined each page route straight onto `--base-url`, so it requested `/checkout/` rather than `/<slug>/checkout/` and every page returned 404. The slug is added the same way packet QA adds it: a base URL that already ends in the slug is used as given, and a slug found from the single campaign under `_site/` is added too.
+
 ## [1.60.0] - 2026-10-20
 
 ### Changed

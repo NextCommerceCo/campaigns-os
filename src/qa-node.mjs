@@ -765,8 +765,8 @@ function resolvedFromBlockedCheckpointPreflight(preflight, args) {
 // yields "not_applicable" rather than blocking, so browser QA still runs the
 // residue/placeholder/demo gates. Test orders are not attempted (no policy).
 export function resolveQaInputsFromSite(args) {
-  const baseUrl = normalizeBaseUrl(stringArg(args["base-url"]));
-  if (!baseUrl) {
+  const inputBaseUrl = normalizeBaseUrl(stringArg(args["base-url"]));
+  if (!inputBaseUrl) {
     throw refused("Non-packet site QA requires --base-url <served-campaign-root> so built pages have a fetchable URL.");
   }
   const templateFamily = stringArg(args.family);
@@ -778,6 +778,10 @@ export function resolveQaInputsFromSite(args) {
   if (!scope.ok) {
     throw new Error(scope.error || `Could not resolve a built campaign from ${targetRepo}.`);
   }
+  // The built pages live under _site/<slug>/, so compose the slug onto a site
+  // origin the way packet QA does; a base URL already ending in the slug is
+  // left alone (#683).
+  const baseUrl = normalizeQaBaseUrl(inputBaseUrl, scope.slug);
   const brandContract = loadBrandContract(templateFamily);
   if (brandContract.status !== "loaded" || !brandContract.contract) {
     throw new Error(`Non-packet site QA requires a loadable template brand contract for --family "${templateFamily}" (got ${brandContract.status}).`);
@@ -800,8 +804,8 @@ export function resolveQaInputsFromSite(args) {
     polishGate,
     // Non-packet site QA has no Assembly Report, so no recorded waivers.
     qaWaivers: {},
-    // Non-packet site QA: --base-url IS the served campaign root by this
-    // mode's contract (no spec identity exists to compose from).
+    // Non-packet site QA: the served campaign root is --base-url with the
+    // built slug composed on (no spec identity exists to compose from).
     analyticsCaptureTarget: buildAnalyticsCaptureTarget({
       url: ensureUrlTrailingSlash(baseUrl),
       publicRouteSlug: scope.slug || null,

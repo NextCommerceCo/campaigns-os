@@ -2119,7 +2119,9 @@ npm run campaigns-os -- qa run --site ../my-campaign-repo --base-url http://loca
 ```
 
 `--family` is required (the residue gates need the family's brand contract).
-`--slug` selects the campaign when `_site/` holds more than one. With no theme
+`--slug` selects the campaign when `_site/` holds more than one. `--base-url`
+can be the served site origin or the campaign root: QA adds the campaign's slug
+when the URL does not already end in it, so pages resolve under `/<slug>/`. With no theme
 artifacts the theme gate resolves to `not_applicable` (non-blocking), so the
 placeholder-text blocker and the other residue gates still run. The emitted
 minimal packet is marked `_synthesized` — it points doctor/QA at the built

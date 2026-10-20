@@ -8651,6 +8651,27 @@
         }
       ],
       "entry_sha256": "25d3db88fb7e0259e9b3a4b91244cf504d0bd99bfc815ab60393b3982927564f"
+    },
+    {
+      "id": "RL-0280",
+      "sequence": 268,
+      "date": "2026-10-20",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.60.0+agent.1",
+      "changelog_sha256": "d83b499fd21495ba4520b374856b9b3693c5040ec85c3b60e5669ec6c9038456",
+      "agent_impact": "qa run --site with --base-url set to the site origin and --slug <slug> now loads pages under /<slug>/ instead of the origin root. Passing the origin or the campaign root both work; a workaround that put the slug in --base-url keeps working unchanged.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Say that qa run --site accepts the site origin or the campaign root as --base-url."
+        }
+      ],
+      "entry_sha256": "6fd5e26ac8593f53e2037590e19dc4bc8e0327e0c162c6919542773ba96fcd8b"
     }
   ]
 }
