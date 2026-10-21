@@ -404,27 +404,43 @@ test("unknown attributes surface as one advisory ready line naming the index ver
   });
 });
 
-// campaigns-os#683: the SDK reads the page type only from the meta tag (or
-// window.nextConfig.pageType), and records the upsell page view only from
-// <meta name="next-page-type" content="upsell">.
+// campaigns-os#683: the SDK never reads data-next-page-type, and records the
+// upsell page view only from <meta name="next-page-type" content="upsell">.
 test("page-type advisories: what each one needs and what silences it", () => {
-  const scan = (html) => scanPageMarkup({ page_id: "p", file: "p.html", content: html }).findings.map((item) => item.code_name);
+  const scanned = (html) => scanPageMarkup({ page_id: "p", file: "p.html", content: html }).findings;
+  const scan = (html) => scanned(html).map((item) => item.code_name);
   const upsell = '<div data-next-upsell="offer"><button data-next-upsell-action="add">Yes</button></div>';
 
   assert.deepEqual(scan('<html><body data-next-page-type="checkout"><form data-next-checkout></form></body></html>'), ["PAGE_TYPE_ATTRIBUTE"]);
-  assert.match(scanPageMarkup({ page_id: "p", content: `<html><body data-next-page-type="upsell">${upsell}</body></html>` }).findings[0].message,
-    /upsell page view is never recorded/);
-  // One finding for the root cause: the attribute case does not also raise the upsell one.
-  assert.deepEqual(scan(`<html><body data-next-page-type="upsell">${upsell}</body></html>`), ["PAGE_TYPE_ATTRIBUTE"]);
-  // window.nextConfig.pageType is a page type the SDK reads.
-  assert.deepEqual(scan('<html><head><script>window.nextConfig = { pageType: "checkout" };</script></head><body data-next-page-type="checkout"></body></html>'), []);
-  // A meta tag silences the attribute advisory.
+  // A meta tag silences the attribute advisory; window.nextConfig.pageType does not,
+  // since it never reaches the upsell page view and the meta is the source every reader uses.
   assert.deepEqual(scan('<html><head><meta name="next-page-type" content="checkout"></head><body data-next-page-type="checkout"></body></html>'), []);
+  assert.deepEqual(scan('<html><head><script>window.nextConfig = { pageType: "checkout" };</script></head><body data-next-page-type="checkout"></body></html>'), ["PAGE_TYPE_ATTRIBUTE"]);
+
+  // One finding for the root cause, and it names the upsell meta, whatever the
+  // attribute says, when the page carries an upsell offer.
+  for (const value of ["upsell", "downsell", "checkout"]) {
+    const findings = scanned(`<html><body data-next-page-type="${value}">${upsell}</body></html>`);
+    assert.deepEqual(findings.map((item) => item.code_name), ["PAGE_TYPE_ATTRIBUTE"], value);
+    assert.match(findings[0].message, /upsell page view is never recorded/);
+    assert.match(findings[0].message, /content="upsell"/);
+    assert.equal(findings[0].detail.suggested, "upsell");
+  }
+  // Without an offer, an alias maps to the SDK page type, and an unknown value is not echoed back.
+  const thankyou = scanned('<html><body data-next-page-type="thankyou"></body></html>')[0];
+  assert.match(thankyou.message, /content="receipt"/);
+  assert.match(thankyou.message, /"thankyou" is not an SDK page type/);
+  const unknown = scanned('<html><body data-next-page-type="vsl"></body></html>')[0];
+  assert.equal(unknown.detail.suggested, null);
+  assert.doesNotMatch(unknown.message, /content="vsl"/);
+  assert.match(unknown.message, /one of product, cart, checkout, upsell, receipt/);
 
   assert.deepEqual(scan(`<html><body>${upsell}</body></html>`), ["UPSELL_PAGE_TYPE_MISSING"]);
+  assert.deepEqual(scan(`<html><head><meta name="next-page-type" content="downsell"></head><body>${upsell}</body></html>`), ["UPSELL_PAGE_TYPE_MISSING"]);
   assert.deepEqual(scan(`<html><head><meta name="next-page-type" content="Upsell"></head><body>${upsell}</body></html>`), []);
-  // nextConfig.pageType does not drive the upsell page view.
+  // A meta tag that is not upsell plus the attribute: the attribute is silenced
+  // by the meta, and the upsell finding still names the page.
+  assert.deepEqual(scan(`<html><head><meta name="next-page-type" content="checkout"></head><body data-next-page-type="downsell">${upsell}</body></html>`), ["UPSELL_PAGE_TYPE_MISSING"]);
   assert.deepEqual(scan(`<html><head><script>window.nextConfig = { pageType: "upsell" };</script></head><body>${upsell}</body></html>`), ["UPSELL_PAGE_TYPE_MISSING"]);
-  // No upsell container, no meta: nothing to say here.
   assert.deepEqual(scan('<html><body><h1>Landing</h1></body></html>'), []);
 });

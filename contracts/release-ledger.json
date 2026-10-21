@@ -8680,7 +8680,7 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.60.0+agent.3",
-      "changelog_sha256": "9b22fa1b2a04fe345937baba3cfa2e47e775596032392eec0e2b46e765f08c0e",
+      "changelog_sha256": "961b0a16ed510921583ca73e05a37ea0eb0dd235dfacab69627ce295e5de532c",
       "agent_impact": "Doctor may now warn built_output.sdk_markup.page_type_attribute (data-next-page-type with no next-page-type meta) or built_output.sdk_markup.upsell_page_type_missing (a data-next-upsell offer page whose next-page-type meta is not upsell). Fix either by adding <meta name=\"next-page-type\" content=\"<type>\">, with upsell on upsell offer pages. tooling status now names the harnesses a partial skills refresh is for; a refresh named for another harness is not this session's step.",
       "compatibility": "additive",
       "migration": "none",
@@ -8704,7 +8704,7 @@
           "summary": "tooling status names the harnesses a per-platform skills refresh is for."
         }
       ],
-      "entry_sha256": "e5f118cc1343a9b4a64434b2e0dc8a828b09fed343169693c8e040c1d6723c4b"
+      "entry_sha256": "b2b7c61bf3ba87e1d9f730f33a07335f74230b0ece0b94a0370d4de5af1e7859"
     }
   ]
 }

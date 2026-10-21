@@ -6083,7 +6083,7 @@ function toolingCommand(args) {
     // A per-platform refresh names the harnesses it is for, so a session in
     // another harness does not read it as its own required step (#683).
     const forHarnesses = !args.target && skillScope.scope === "installed_platforms" && stalePlatforms.length < SKILL_PLATFORMS.length
-      ? ` (for ${stalePlatforms.map((id) => SKILL_PLATFORMS.find((platform) => platform.id === id).label).join(" and ")}; not needed in a session that uses another harness)`
+      ? ` (for ${stalePlatforms.map((id) => SKILL_PLATFORMS.find((platform) => platform.id === id)?.label || id).join(" and ")}; not needed in a session that uses another harness)`
       : "";
     actions.push(`Refresh installed skills: ${commands.join(" and ")}${forHarnesses}. ${SKILLS_READ_NOW_FOLLOW_UP}`);
   }

@@ -8,7 +8,7 @@ Notable supported-surface changes are recorded here.
 
 Doctor's SDK markup check gains two advisories about the page type (campaigns-os#683), on both `doctor --built` and packet doctor:
 
-- `PAGE_TYPE_ATTRIBUTE`: a page sets `data-next-page-type` but has no `<meta name="next-page-type">` and no inline `window.nextConfig.pageType`. The SDK reads the page type only from those, so the page runs as the default `product` step, and an upsell page records no upsell page view. Before, the attribute only appeared in the list of `data-next-*` names the SDK does not read.
+- `PAGE_TYPE_ATTRIBUTE`: a page sets `data-next-page-type` but has no `<meta name="next-page-type">`. The SDK never reads the attribute, so the page runs as the default `product` step, and an upsell page records no upsell page view. The message names the meta value to add, `upsell` on a page with an upsell offer, and never a page type the SDK does not have. Before, the attribute only appeared in the list of `data-next-*` names the SDK does not read.
 - `UPSELL_PAGE_TYPE_MISSING`: a page with a `data-next-upsell` offer whose `next-page-type` meta is missing or is not `upsell`. The SDK records the upsell page view only from `<meta name="next-page-type" content="upsell">` and has no `downsell` page type, so reports showed the purchase with no upsell view before it.
 
 Both are warnings; neither blocks. The certified templates raise neither.

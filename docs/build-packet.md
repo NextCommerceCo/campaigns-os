@@ -868,10 +868,14 @@ Warnings (advisory):
   SDK tokens are single-brace; a template nothing in the SDK reads, including
   a vendor template nested deeper inside SDK chrome, may use any syntax.
 - `PAGE_TYPE_ATTRIBUTE` — `data-next-page-type` on a page with no
-  `<meta name="next-page-type">` and no inline `window.nextConfig.pageType`.
-  The SDK reads the page type only from those, so the page runs as the default
-  `product` step; on an upsell page no upsell page view is recorded. Add the
-  meta tag with the same value.
+  `<meta name="next-page-type">`. The SDK never reads the attribute, so the
+  page runs as the default `product` step; on an upsell page no upsell page
+  view is recorded. `window.nextConfig.pageType` does not silence it: it
+  reaches the SDK's config store but not the upsell page view. The message
+  names the meta value to add: `upsell` on a page with a `data-next-upsell`
+  offer, otherwise the attribute's SDK page type (`product`, `cart`,
+  `checkout`, `upsell`, `receipt`, with `downsell` read as `upsell` and
+  `thankyou` as `receipt`), and never a value the SDK does not have.
 - `UPSELL_PAGE_TYPE_MISSING` — a `data-next-upsell` offer on a page whose
   `next-page-type` meta is missing or is not `upsell` (the SDK has no
   `downsell` page type). The SDK records the upsell page view only from

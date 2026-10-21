@@ -47,9 +47,11 @@
 //                              a double brace renders literally.
 //   PAGE_TYPE_ATTRIBUTE        data-next-page-type on a page with no
 //                              <meta name="next-page-type"> (campaigns-os#683).
-//                              The SDK reads the page type only from that meta
-//                              tag (or window.nextConfig.pageType), so the
-//                              page runs as the default "product" step.
+//                              The SDK never reads the attribute. The meta tag
+//                              is the source every reader uses; a
+//                              window.nextConfig.pageType reaches the config
+//                              store only, not the upsell page view, so it
+//                              does not stand in for the meta here.
 //   UPSELL_PAGE_TYPE_MISSING   a data-next-upsell container on a page whose
 //                              next-page-type meta is not "upsell". The SDK
 //                              records the upsell page view only from that meta
@@ -106,6 +108,20 @@ export const SDK_MARKUP_CODES = Object.freeze({
   // Unknown data-next-* names are not a finding and carry no code: they are
   // information on the gate (unknown_attributes[]) and one advisory ready line.
 });
+
+// The page types the SDK has (v0.4.42 PageType), and the usual other names
+// for them, so a remedy never proposes a value the SDK does not have.
+const SDK_PAGE_TYPES = ["product", "cart", "checkout", "upsell", "receipt"];
+const PAGE_TYPE_ALIASES = {
+  downsell: "upsell", oto: "upsell", "post-purchase": "upsell",
+  thankyou: "receipt", "thank-you": "receipt", confirmation: "receipt",
+  presell: "product", landing: "product", lander: "product", advertorial: "product", listicle: "product",
+};
+
+function sdkPageType(value) {
+  const key = String(value || "").trim().toLowerCase();
+  return SDK_PAGE_TYPES.includes(key) ? key : PAGE_TYPE_ALIASES[key] || null;
+}
 
 // Attributes whose value names a <template> by id. The SDK reads the template
 // they point at, so that template is SDK-owned wherever it sits.
@@ -223,12 +239,10 @@ export function scanPageMarkup({ page_id, file = null, content = "", sdk_version
   const referencedTemplateIds = new Set();
   let receiptPage = String(page_type || "").trim().toLowerCase() === "receipt";
   // The page's own next-page-type meta (first one, as querySelector reads it),
-  // the first data-next-page-type element, the first upsell container, and
-  // whether an inline script sets window.nextConfig.pageType.
+  // the first data-next-page-type element and the first upsell container.
   let pageTypeMeta = null;
   let pageTypeAttribute = null;
   let upsellContainer = null;
-  let configPageType = false;
   walkElements(document, (entry) => {
     const { tag, attrs: a } = entry;
     if (tag === "meta" && a.get("name")?.trim().toLowerCase() === "next-page-type") {
@@ -237,15 +251,24 @@ export function scanPageMarkup({ page_id, file = null, content = "", sdk_version
     }
     if (!pageTypeAttribute && a.has("data-next-page-type")) pageTypeAttribute = entry;
     if (!upsellContainer && a.has("data-next-upsell")) upsellContainer = entry;
-    if (tag === "script" && !a.has("src") && /\bpageType\s*[:=]/.test(serializeTemplateText(entry.node))) configPageType = true;
   });
-  if (pageTypeAttribute && pageTypeMeta === null && !configPageType) {
+  // The meta value the remedy names: an upsell offer page is "upsell"
+  // whatever the attribute says; otherwise the attribute's SDK page type.
+  let attributeNamesUpsell = false;
+  if (pageTypeAttribute && pageTypeMeta === null) {
     const value = (pageTypeAttribute.attrs.get("data-next-page-type") || "").trim();
-    const upsell = value.toLowerCase() === "upsell";
+    const mapped = upsellContainer && !receiptPage ? "upsell" : sdkPageType(value);
+    attributeNamesUpsell = mapped === "upsell";
+    const remedy = mapped
+      ? `Add <meta name="next-page-type" content="${mapped}"> to the page head${mapped !== value.toLowerCase() ? ` ("${value}" is not an SDK page type; the SDK has ${SDK_PAGE_TYPES.join(", ")})` : ""}.`
+      : `Add <meta name="next-page-type"> to the page head with the SDK page type this page is: one of ${SDK_PAGE_TYPES.join(", ")} ("${value}" is not one).`;
     findings.push(finding("PAGE_TYPE_ATTRIBUTE", page_id, where,
-      `${describe(pageTypeAttribute)} on ${where} carries data-next-page-type="${value}", which the SDK does not read, and the page has no <meta name="next-page-type">. The SDK takes the page type only from that meta tag (or window.nextConfig.pageType), so this page runs as the default "product" step${upsell ? " and the upsell page view is never recorded" : ""}. Add <meta name="next-page-type" content="${value || "<type>"}"> to the page head.`,
-      { value, element: pageTypeAttribute.tag }));
-  } else if (upsellContainer && (pageTypeMeta || "").toLowerCase() !== "upsell" && !receiptPage) {
+      `${describe(pageTypeAttribute)} on ${where} carries data-next-page-type="${value}", which the SDK does not read, and the page has no <meta name="next-page-type">. The SDK takes the page type from that meta tag, so this page runs as the default "product" step${attributeNamesUpsell ? " and the upsell page view is never recorded" : ""}. ${remedy}`,
+      { value, suggested: mapped, element: pageTypeAttribute.tag }));
+  }
+  // One finding per root cause: skipped only when the attribute finding
+  // above already names the upsell meta.
+  if (upsellContainer && !attributeNamesUpsell && (pageTypeMeta || "").toLowerCase() !== "upsell" && !receiptPage) {
     findings.push(finding("UPSELL_PAGE_TYPE_MISSING", page_id, where,
       `${describe(upsellContainer)} on ${where} is an upsell offer (data-next-upsell), but the page's next-page-type meta is ${pageTypeMeta === null ? "missing" : `"${pageTypeMeta}"`}. The SDK records the upsell page view only from <meta name="next-page-type" content="upsell">, so reports show the purchase with no upsell view before it. Add that meta tag to the page head.`,
       { meta_content: pageTypeMeta }));
