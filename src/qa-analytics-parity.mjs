@@ -107,6 +107,40 @@ export function analyticsInitScript(layers = HOOKED_DATA_LAYERS) {
         set(next) { backing = wrap(name, next || []); },
       });
     }
+    // Meta pixel calls (#686). Headless Chromium can run fbq init/track without
+    // fbevents.js ever requesting facebook.com/tr, so the pixel is also observed
+    // in-page: a pixel id counts once it is initialised and a track call follows
+    // in the same document. Only the id and event name leave the page.
+    const metaInits = [];
+    const metaFire = (id, ev) => emit({ type: "meta_call", call: { id: String(id), ev: ev ? String(ev) : null }, document: documentState });
+    const recordFbq = (args) => {
+      try {
+        const method = String(args[0] || "");
+        if (method === "init" && args[1] != null) {
+          const id = String(args[1]);
+          if (!metaInits.includes(id)) metaInits.push(id);
+        } else if (method === "track" || method === "trackCustom") {
+          for (const id of metaInits) metaFire(id, args[1]);
+        } else if ((method === "trackSingle" || method === "trackSingleCustom") && metaInits.includes(String(args[1]))) {
+          metaFire(args[1], args[2]);
+        }
+      } catch (_) {}
+    };
+    const wrapFbq = (fn) => {
+      if (typeof fn !== "function" || fn.__nextQaWrapped || typeof Proxy !== "function") return fn;
+      // A Proxy keeps fbq's own properties (queue, callMethod, loaded) on the
+      // real function, so fbevents.js sees the object it installed.
+      return new Proxy(fn, {
+        apply(target, self, args) { recordFbq(args); return Reflect.apply(target, self, args); },
+        get(target, key, receiver) { return key === "__nextQaWrapped" ? true : Reflect.get(target, key, receiver); },
+      });
+    };
+    let fbqBacking = wrapFbq(window.fbq);
+    Object.defineProperty(window, "fbq", {
+      configurable: true,
+      get() { return fbqBacking; },
+      set(next) { fbqBacking = wrapFbq(next); },
+    });
   })();`;
 }
 
@@ -207,6 +241,18 @@ export async function attachAnalyticsCapture(page, options = {}) {
           if (mainFrame && (!sourceRoute || !document.route || sourceRoute === document.route)) {
             activateMainDocument(document);
           }
+          return;
+        }
+        if (payload?.type === "meta_call") {
+          // An in-page fbq call is pixel inventory only. Its event name stays
+          // out of `params`, so it never counts as a Meta Purchase fire or
+          // supplies a CAPI dedup key; those still need the /tr request.
+          const id = payload.call?.id;
+          if (!id) return;
+          const document = payload.document
+            ? lookupDocument(payload.document, { fallbackUrl: sourceUrl, mainFrame })
+            : (mainFrame ? activeMainDocument : null) || lookupDocument({}, { fallbackUrl: sourceUrl, mainFrame });
+          tagFires.push({ kind: "meta", id: String(id), host: null, params: {}, source: "fbq", event: payload.call?.ev || null, document });
           return;
         }
         const entry = payload?.type === "event" ? payload.entry : payload;
@@ -457,13 +503,16 @@ export function normalizeCapture({ events = [], tagFires = [] } = {}) {
   }
 
   const inventory = { gtm: [], ga4: [], google_ads: [], meta: [], tiktok: [], everflow: [], other: [] };
+  // Pixel ids seen on a facebook.com request, apart from in-page fbq calls.
+  const metaRequestIds = [];
   let metaPurchaseEventId = null;
   let metaPurchaseFired = false;
   let ga4PurchaseFired = false;
   for (const fire of tagFires) {
     if (!fire || !inventory[fire.kind]) continue;
     if (fire.id && !inventory[fire.kind].includes(fire.id)) inventory[fire.kind].push(fire.id);
-    if (fire.kind === "meta") {
+    if (fire.kind === "meta" && fire.source !== "fbq") {
+      if (fire.id && !metaRequestIds.includes(fire.id)) metaRequestIds.push(fire.id);
       const ev = fire.params?.ev || fire.params?.event;
       if (ev && String(ev).toLowerCase() === "purchase") {
         metaPurchaseFired = true;
@@ -483,6 +532,7 @@ export function normalizeCapture({ events = [], tagFires = [] } = {}) {
     purchase: purchase ? { present: true, ...purchase } : { present: false },
     purchasesByEvent,
     inventory,
+    metaRequestIds,
     metaPurchaseEventId,
     // Purchase can fire from any of three sources (dataLayer event, Meta pixel,
     // GA4) — campaigns that block the SDK event and fire Meta/GA4 manually still
@@ -680,8 +730,11 @@ export function diffAnalyticsParity(baseline, candidate, options = {}) {
 
     // 5. Meta CAPI dedup — candidate's Meta Purchase fire carries an eventID,
     //    consistent with the order id so client + server events dedup.
-    const baselineHasMeta = (b.inventory?.meta || []).length > 0;
-    const candidateHasMeta = (c.inventory?.meta || []).length > 0;
+    //    Keyed on pixel requests: an in-page fbq call with no /tr request has
+    //    no eventID to compare (#686).
+    const metaRequests = (cap) => cap.metaRequestIds || cap.inventory?.meta || [];
+    const baselineHasMeta = metaRequests(b).length > 0;
+    const candidateHasMeta = metaRequests(c).length > 0;
     if (baselineHasMeta || candidateHasMeta) {
       const eid = c.metaPurchaseEventId;
       const consistent = eid && cp.transactionId && String(eid) === String(cp.transactionId);

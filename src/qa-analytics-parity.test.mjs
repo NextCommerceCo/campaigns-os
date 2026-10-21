@@ -341,3 +341,18 @@ test("diffAnalyticsParity — no baseline value falls back to manual review, not
   assert.equal(a["analytics-parity:purchase-value"].status, STATUS.MANUAL_REVIEW);
   assert.equal(a["analytics-parity:purchase-value"].severity, SEVERITY.WARN);
 });
+
+test("in-page fbq calls add pixel inventory but not Meta Purchase or CAPI dedup (#686)", () => {
+  const fbqFire = { kind: "meta", id: "998877", host: null, params: {}, source: "fbq", event: "Purchase" };
+  const cap = normalizeCapture({ tagFires: [fbqFire] });
+  assert.deepEqual(cap.inventory.meta, ["998877"]);
+  assert.deepEqual(cap.metaRequestIds, []);
+  assert.equal(cap.purchaseSignals.meta, false);
+  assert.equal(cap.metaPurchaseEventId, null);
+
+  // Parity: with no pixel request on either side, there is no eventID to
+  // compare, so capi-dedup is not emitted.
+  const side = { ...cap, eventNames: ["dl_purchase"], purchase: { present: true, value: 1, currency: "USD", transactionId: "1043" } };
+  const a = byId(diffAnalyticsParity(side, side));
+  assert.equal(a["analytics-parity:capi-dedup"], undefined);
+});
