@@ -356,3 +356,26 @@ test("in-page fbq calls add pixel inventory but not Meta Purchase or CAPI dedup 
   const a = byId(diffAnalyticsParity(side, side));
   assert.equal(a["analytics-parity:capi-dedup"], undefined);
 });
+
+test("without the binding, in-page fbq calls are read from the page's own store (#686)", async () => {
+  const page = {
+    async addInitScript() {},
+    on() {},
+    off() {},
+    url() { return "https://shop.example/landing/"; },
+    async evaluate() {
+      return {
+        events: [],
+        metaCalls: [{ id: "998877", ev: "PageView" }],
+        document: { url: "https://shop.example/landing/", token: "landing-doc" },
+      };
+    },
+  };
+  const handle = await attachAnalyticsCapture(page);
+  assert.equal(handle.rawEvents().complete, false, "no exposeBinding on this page");
+  const captures = await handle.collectScopes();
+  assert.deepEqual(captures.journey.inventory.meta, ["998877"]);
+  assert.deepEqual(captures.currentDocument.inventory.meta, ["998877"]);
+  assert.deepEqual(captures.journey.metaRequestIds, []);
+  handle.detach();
+});

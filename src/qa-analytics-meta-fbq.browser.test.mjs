@@ -110,6 +110,12 @@ browserTest("a pixel that initialises and tracks in-page passes tag:meta with no
   assert.equal(capture.evidence.inventory.meta, 1);
 });
 
+browserTest("init with advanced-matching userData records the pixel id, not the userData", async () => {
+  const { row } = await metaRow(`fbq('init', '${PIXEL_ID}', { em: 'hashed' }); fbq('track', 'PageView');`);
+  assert.equal(row.status, STATUS.PASS, `tag:meta ${row.status}: ${row.actual}`);
+  assert.equal(row.evidence.observed_count, 1);
+});
+
 browserTest("a pixel that initialises but never tracks still fails tag:meta", async () => {
   const { row } = await metaRow(`fbq('init', '${PIXEL_ID}');`);
   assert.equal(row.status, STATUS.FAIL);

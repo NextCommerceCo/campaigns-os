@@ -112,16 +112,25 @@ export function analyticsInitScript(layers = HOOKED_DATA_LAYERS) {
     // in-page: a pixel id counts once it is initialised and a track call follows
     // in the same document. Only the id and event name leave the page.
     const metaInits = [];
-    const metaFire = (id, ev) => emit({ type: "meta_call", call: { id: String(id), ev: ev ? String(ev) : null }, document: documentState });
+    // Mirrored into the in-page store as well, like record(), for pages where
+    // the binding could not attach.
+    store.metaCalls = [];
+    const metaFire = (id, ev) => {
+      const call = { id: String(id), ev: ev ? String(ev) : null };
+      store.metaCalls.push(call);
+      emit({ type: "meta_call", call, document: documentState });
+    };
+    const pixelId = (value) => (typeof value === "string" || typeof value === "number") && String(value) ? String(value) : null;
     const recordFbq = (args) => {
       try {
         const method = String(args[0] || "");
-        if (method === "init" && args[1] != null) {
-          const id = String(args[1]);
+        // fbq('init', pixelId[, userData]): the pixel id is always args[1].
+        if (method === "init" && pixelId(args[1])) {
+          const id = pixelId(args[1]);
           if (!metaInits.includes(id)) metaInits.push(id);
         } else if (method === "track" || method === "trackCustom") {
           for (const id of metaInits) metaFire(id, args[1]);
-        } else if ((method === "trackSingle" || method === "trackSingleCustom") && metaInits.includes(String(args[1]))) {
+        } else if ((method === "trackSingle" || method === "trackSingleCustom") && metaInits.includes(pixelId(args[1]))) {
           metaFire(args[1], args[2]);
         }
       } catch (_) {}
@@ -289,6 +298,7 @@ export async function attachAnalyticsCapture(page, options = {}) {
     try {
       const raw = await page.evaluate(() => ({
         events: window.__nextQaAnalytics?.events || [],
+        metaCalls: window.__nextQaAnalytics?.metaCalls || [],
         document: window.__nextQaAnalytics?.document || { url: String(location.href || "") },
       }));
       snapshot = Array.isArray(raw) ? { events: raw, document: null } : (raw || snapshot);
@@ -318,16 +328,24 @@ export async function attachAnalyticsCapture(page, options = {}) {
     const journeyEvents = bindingAttached
       ? [...accumulatedEvents, ...snapshotEvents]
       : snapshotEvents;
+    // Without the binding, in-page fbq calls come only from this document's
+    // store; with it, they are already in tagFires.
+    const snapshotMetaFires = !bindingAttached && Array.isArray(snapshot.metaCalls)
+      ? snapshot.metaCalls.filter((call) => call?.id).map((call) => ({
+          kind: "meta", id: String(call.id), host: null, params: {}, source: "fbq", event: call.ev || null, document: snapshotDocument,
+        }))
+      : [];
+    const journeyTagFires = [...tagFires, ...snapshotMetaFires];
     const currentEvents = journeyEvents.filter(
       (entry) => entry.document?.mainFrame === true
         && entry.document.generation === currentDocument.generation,
     );
-    const currentTagFires = tagFires.filter(
+    const currentTagFires = journeyTagFires.filter(
       (fire) => fire.document?.mainFrame === true
         && fire.document.generation === currentDocument.generation,
     );
     return {
-      journey: normalizeCapture({ events: journeyEvents, tagFires }),
+      journey: normalizeCapture({ events: journeyEvents, tagFires: journeyTagFires }),
       currentDocument: {
         ...normalizeCapture({ events: currentEvents, tagFires: currentTagFires }),
         document: publicDocument(currentDocument),
