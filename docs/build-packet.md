@@ -867,6 +867,17 @@ Warnings (advisory):
   `data-next-package-toggle`), or one a `*-template-id` attribute points at.
   SDK tokens are single-brace; a template nothing in the SDK reads, including
   a vendor template nested deeper inside SDK chrome, may use any syntax.
+- `PAGE_TYPE_ATTRIBUTE` — `data-next-page-type` on a page with no
+  `<meta name="next-page-type">` and no inline `window.nextConfig.pageType`.
+  The SDK reads the page type only from those, so the page runs as the default
+  `product` step; on an upsell page no upsell page view is recorded. Add the
+  meta tag with the same value.
+- `UPSELL_PAGE_TYPE_MISSING` — a `data-next-upsell` offer on a page whose
+  `next-page-type` meta is missing or is not `upsell` (the SDK has no
+  `downsell` page type). The SDK records the upsell page view only from
+  `<meta name="next-page-type" content="upsell">`, so reports show the
+  purchase with no upsell view before it. Not raised on a receipt, or when
+  `PAGE_TYPE_ATTRIBUTE` already names the page.
 
 Information: `data-next-*` names the vendored attribute index does not list are
 collected on the gate (`unknown_attributes[]`) and printed as one advisory ready

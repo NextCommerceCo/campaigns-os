@@ -739,8 +739,29 @@ test("a stale skill on the installed platform names only that platform in the re
     assert.equal(run.json.skills.scope, "installed_platforms");
     const [action, ...rest] = refreshActions(run);
     assert.deepEqual(rest, []);
-    assert.match(action, /install-skills --platform claude\. Then read/);
+    assert.match(action, /install-skills --platform claude \(for Claude Code; not needed in a session that uses another harness\)\. Then read/);
     assert.doesNotMatch(action, /--platform (all|codex|agents)/);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+// #683: a Claude session read a Codex/agents-only refresh as its own step.
+test("a refresh for other harnesses names them, so a Claude session can tell it is not its step", () => {
+  const home = mkdtempSync(join(tmpdir(), "campaigns-os-tooling-scope-other-"));
+  try {
+    for (const platform of ["claude", "codex", "agents"]) {
+      assert.equal(runInHome(home, ["install-skills", "--platform", platform, "--json"]).status, 0);
+    }
+    for (const dir of [".codex", ".agents"]) {
+      writeFileSync(join(home, dir, "skills", "next-campaigns-qa", "SKILL.md"), "stale bundled skill\n");
+    }
+
+    const run = runInHome(home, ["tooling", "status", "--json"]);
+    const [action, ...rest] = refreshActions(run);
+    assert.deepEqual(rest, []);
+    assert.match(action, /--platform codex and .*--platform agents \(for Codex and Shared agent skills; not needed in a session that uses another harness\)\./);
+    assert.doesNotMatch(action, /--platform claude/);
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
@@ -759,7 +780,7 @@ test("two stale installed platforms get one refresh command each, never --platfo
     assert.equal(run.json.skills.stale_count, 2);
     assert.deepEqual(run.json.skills.not_installed_platforms.map((target) => target.platform), ["agents"]);
     const [action] = refreshActions(run);
-    assert.match(action, /install-skills --platform claude and .*install-skills --platform codex\. Then read/);
+    assert.match(action, /install-skills --platform claude and .*install-skills --platform codex \(for Claude Code and Codex; not needed in a session that uses another harness\)\. Then read/);
     assert.doesNotMatch(action, /--platform (all|agents)/);
   } finally {
     rmSync(home, { recursive: true, force: true });

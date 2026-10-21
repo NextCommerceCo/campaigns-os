@@ -41,7 +41,7 @@ const codeNames = (gate) => [...gate.findings, ...gate.warned].map((item) => ite
 // --- The committed bad/good pairs, one per code ---------------------------------
 
 const BLOCKERS = ["swap-with-add-to-cart", "checkout-not-form", "wrong-field-name", "missing-selector-id-match", "orphaned-upsell-action"];
-const ADVISORIES = ["double-selected", "template-double-brace"];
+const ADVISORIES = ["double-selected", "template-double-brace", "page-type-attribute", "upsell-page-type-missing"];
 // The literal code string, not a SDK_MARKUP_CODES lookup, so a fixture whose
 // code is missing fails on its behavioural assertion rather than a TypeError.
 const codeFor = (name) => `${SDK_MARKUP}.${name.replace(/-/g, "_")}`;
@@ -402,4 +402,29 @@ test("unknown attributes surface as one advisory ready line naming the index ver
     assert.deepEqual(markupCodes(result.warnings), []);
     assert.ok(result.ready.some((note) => note.includes(`Campaign Cart ${SDK_ATTRIBUTE_INDEX_VERSION} attribute index`) && note.includes("data-next-coupon-input")));
   });
+});
+
+// campaigns-os#683: the SDK reads the page type only from the meta tag (or
+// window.nextConfig.pageType), and records the upsell page view only from
+// <meta name="next-page-type" content="upsell">.
+test("page-type advisories: what each one needs and what silences it", () => {
+  const scan = (html) => scanPageMarkup({ page_id: "p", file: "p.html", content: html }).findings.map((item) => item.code_name);
+  const upsell = '<div data-next-upsell="offer"><button data-next-upsell-action="add">Yes</button></div>';
+
+  assert.deepEqual(scan('<html><body data-next-page-type="checkout"><form data-next-checkout></form></body></html>'), ["PAGE_TYPE_ATTRIBUTE"]);
+  assert.match(scanPageMarkup({ page_id: "p", content: `<html><body data-next-page-type="upsell">${upsell}</body></html>` }).findings[0].message,
+    /upsell page view is never recorded/);
+  // One finding for the root cause: the attribute case does not also raise the upsell one.
+  assert.deepEqual(scan(`<html><body data-next-page-type="upsell">${upsell}</body></html>`), ["PAGE_TYPE_ATTRIBUTE"]);
+  // window.nextConfig.pageType is a page type the SDK reads.
+  assert.deepEqual(scan('<html><head><script>window.nextConfig = { pageType: "checkout" };</script></head><body data-next-page-type="checkout"></body></html>'), []);
+  // A meta tag silences the attribute advisory.
+  assert.deepEqual(scan('<html><head><meta name="next-page-type" content="checkout"></head><body data-next-page-type="checkout"></body></html>'), []);
+
+  assert.deepEqual(scan(`<html><body>${upsell}</body></html>`), ["UPSELL_PAGE_TYPE_MISSING"]);
+  assert.deepEqual(scan(`<html><head><meta name="next-page-type" content="Upsell"></head><body>${upsell}</body></html>`), []);
+  // nextConfig.pageType does not drive the upsell page view.
+  assert.deepEqual(scan(`<html><head><script>window.nextConfig = { pageType: "upsell" };</script></head><body>${upsell}</body></html>`), ["UPSELL_PAGE_TYPE_MISSING"]);
+  // No upsell container, no meta: nothing to say here.
+  assert.deepEqual(scan('<html><body><h1>Landing</h1></body></html>'), []);
 });
