@@ -140,6 +140,24 @@ fbq('track', 'PageView');`);
   assert.match(row.actual, /^unmeasured: the page replaced window\.fbq/);
 });
 
+browserTest("a page that deletes window.fbq is unmeasured; a page with no pixel code is a plain absence", async () => {
+  const deleted = await metaRow(`fbq('init', '${PIXEL_ID}'); delete window.fbq;`);
+  assert.equal(deleted.row.evidence.reason, "fbq_observer_disarmed");
+  assert.match(deleted.row.actual, /^unmeasured/);
+
+  const { context } = await metaContext("");
+  await context.route(PAGE, (route) => route.fulfill({ status: 200, contentType: "text/html", body: "<!doctype html><title>No pixel</title>" }));
+  try {
+    const assertions = await hooks.captureAnalyticsCorrectnessInContext(context, PAGE, CONTRACT, ARGS, [], {});
+    const row = assertions.find((item) => item.id === "analytics-correctness:tag:meta");
+    assert.equal(row.status, STATUS.FAIL);
+    assert.equal(row.evidence.reason, undefined);
+    assert.match(row.actual, /^absent/);
+  } finally {
+    await context.close();
+  }
+});
+
 browserTest("the fbq wrapper leaves the pixel's own queue and callMethod working, and an in-page Purchase is not a Meta Purchase fire", async () => {
   const { context } = await metaContext(`fbq('init', '${PIXEL_ID}'); fbq('track', 'Purchase', { value: 1 }, { eventID: 'order-1' });`);
   const page = await context.newPage();

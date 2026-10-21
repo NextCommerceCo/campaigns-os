@@ -145,9 +145,13 @@ export function analyticsInitScript(layers = HOOKED_DATA_LAYERS) {
       });
     };
     let fbqBacking = wrapFbq(window.fbq);
+    // The getter is marked so a read can tell this accessor from one page code
+    // installed, or from a deleted property.
+    const fbqGet = function () { return fbqBacking; };
+    Object.defineProperty(fbqGet, "__nextQaFbqAccessor", { value: true });
     Object.defineProperty(window, "fbq", {
       configurable: true,
-      get() { return fbqBacking; },
+      get: fbqGet,
       set(next) { fbqBacking = wrapFbq(next); },
     });
   })();`;
@@ -301,8 +305,12 @@ export async function attachAnalyticsCapture(page, options = {}) {
         metaCalls: window.__nextQaAnalytics?.metaCalls || [],
         // Whether in-page fbq calls were still observable when read: page code
         // that redefines window.fbq removes the wrapper (#686).
+        // Deleting or redefining the property disarms it too; "absent" means
+        // the QA accessor is still installed and no pixel was ever set.
         metaObserver: (() => {
           if (!window.__nextQaAnalytics) return null;
+          const descriptor = Object.getOwnPropertyDescriptor(window, "fbq");
+          if (!descriptor || !descriptor.get || descriptor.get.__nextQaFbqAccessor !== true) return "disarmed";
           const fbq = window.fbq;
           if (fbq === undefined || fbq === null) return "absent";
           return fbq.__nextQaWrapped === true ? "armed" : "disarmed";
