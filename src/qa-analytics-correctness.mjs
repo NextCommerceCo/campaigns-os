@@ -114,13 +114,25 @@ export function assessAnalyticsInventory(capture = {}, contract = {}, options = 
   if (providers.facebook && providers.facebook.enabled !== false) {
     const id = providers.facebook.pixelId;
     const present = inventoryHas(inventory, "meta", id);
+    // #686: page code replaced window.fbq, so in-page calls after that were
+    // not observed. Without a matching pixel request the row is unmeasured,
+    // not a clean absence.
+    const unmeasured = !present && capture.metaObserver === "disarmed";
     assertions.push(emit({
       id: "analytics-correctness:tag:meta",
       status: present ? STATUS.PASS : STATUS.FAIL,
       severity: SEVERITY.BLOCKER,
       expected: `Meta pixel ${id || ""} fires on the page`.trim(),
-      actual: present ? "present" : `absent (${(inventory.meta || []).length} meta pixel(s) fired, none matching)`,
-      evidence: { declared: id || null, observed_count: (inventory.meta || []).length },
+      actual: present
+        ? "present"
+        : unmeasured
+          ? `unmeasured: the page replaced window.fbq, so in-page pixel calls could not be observed (${(inventory.meta || []).length} meta pixel(s) seen, none matching)`
+          : `absent (${(inventory.meta || []).length} meta pixel(s) fired, none matching)`,
+      evidence: {
+        declared: id || null,
+        observed_count: (inventory.meta || []).length,
+        ...(unmeasured ? { reason: "fbq_observer_disarmed" } : {}),
+      },
     }));
   }
 

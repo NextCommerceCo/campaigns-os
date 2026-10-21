@@ -299,6 +299,14 @@ export async function attachAnalyticsCapture(page, options = {}) {
       const raw = await page.evaluate(() => ({
         events: window.__nextQaAnalytics?.events || [],
         metaCalls: window.__nextQaAnalytics?.metaCalls || [],
+        // Whether in-page fbq calls were still observable when read: page code
+        // that redefines window.fbq removes the wrapper (#686).
+        metaObserver: (() => {
+          if (!window.__nextQaAnalytics) return null;
+          const fbq = window.fbq;
+          if (fbq === undefined || fbq === null) return "absent";
+          return fbq.__nextQaWrapped === true ? "armed" : "disarmed";
+        })(),
         document: window.__nextQaAnalytics?.document || { url: String(location.href || "") },
       }));
       snapshot = Array.isArray(raw) ? { events: raw, document: null } : (raw || snapshot);
@@ -344,10 +352,12 @@ export async function attachAnalyticsCapture(page, options = {}) {
       (fire) => fire.document?.mainFrame === true
         && fire.document.generation === currentDocument.generation,
     );
+    const metaObserver = typeof snapshot.metaObserver === "string" ? snapshot.metaObserver : null;
     return {
-      journey: normalizeCapture({ events: journeyEvents, tagFires: journeyTagFires }),
+      journey: { ...normalizeCapture({ events: journeyEvents, tagFires: journeyTagFires }), metaObserver },
       currentDocument: {
         ...normalizeCapture({ events: currentEvents, tagFires: currentTagFires }),
+        metaObserver,
         document: publicDocument(currentDocument),
       },
     };

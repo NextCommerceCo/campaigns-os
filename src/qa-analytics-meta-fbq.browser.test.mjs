@@ -120,12 +120,24 @@ browserTest("a pixel that initialises but never tracks still fails tag:meta", as
   const { row } = await metaRow(`fbq('init', '${PIXEL_ID}');`);
   assert.equal(row.status, STATUS.FAIL);
   assert.equal(row.evidence.observed_count, 0);
+  assert.equal(row.evidence.reason, undefined, "the wrapper was intact, so this is a measured absence");
+  assert.match(row.actual, /^absent/);
 });
 
 browserTest("a different pixel tracking in-page does not satisfy the declared pixel", async () => {
   const { row } = await metaRow("fbq('init', '1000000000000999'); fbq('track', 'PageView');");
   assert.equal(row.status, STATUS.FAIL);
   assert.equal(row.evidence.observed_count, 1);
+});
+
+browserTest("a page that redefines window.fbq reports tag:meta as unmeasured, not a clean absence", async () => {
+  const { row } = await metaRow(`fbq('init', '${PIXEL_ID}');
+const real = window._fbq;
+Object.defineProperty(window, 'fbq', { configurable: true, writable: true, value: function () { return real.apply(this, arguments); } });
+fbq('track', 'PageView');`);
+  assert.equal(row.status, STATUS.FAIL);
+  assert.equal(row.evidence.reason, "fbq_observer_disarmed");
+  assert.match(row.actual, /^unmeasured: the page replaced window\.fbq/);
 });
 
 browserTest("the fbq wrapper leaves the pixel's own queue and callMethod working, and an in-page Purchase is not a Meta Purchase fire", async () => {
