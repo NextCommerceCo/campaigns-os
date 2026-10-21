@@ -109,18 +109,26 @@ export const SDK_MARKUP_CODES = Object.freeze({
   // information on the gate (unknown_attributes[]) and one advisory ready line.
 });
 
-// The page types the SDK has (v0.4.42 PageType), and the usual other names
-// for them, so a remedy never proposes a value the SDK does not have.
-const SDK_PAGE_TYPES = ["product", "cart", "checkout", "upsell", "receipt"];
-const PAGE_TYPE_ALIASES = {
-  downsell: "upsell", oto: "upsell", "post-purchase": "upsell",
-  thankyou: "receipt", "thank-you": "receipt", confirmation: "receipt",
-  presell: "product", landing: "product", lander: "product", advertorial: "product", listicle: "product",
-};
+// The page types the SDK has (Campaign Cart v0.4.42 `PageType`), so a remedy
+// never proposes a value the SDK does not have.
+export const SDK_PAGE_TYPES = Object.freeze(["product", "cart", "checkout", "upsell", "receipt"]);
+// Campaign page-type names this repository already reads as one of those, and
+// only those; anything else is left for the operator to name. Sources:
+// - downsell: a post-purchase page (POST_PURCHASE_PAGE_TYPES in
+//   upsell-selector-scope.mjs); the SDK records its page view only as upsell.
+// - thank-you, thankyou, confirmation: the receipt role (normalizedPageRole in
+//   design-source-package.mjs).
+// - presell, landing, advertorial: pre-checkout pages whose SDK page type is
+//   product (PRE_CHECKOUT_PAGE_TYPES in doctor/checks.mjs; normalizedPageRole).
+export const SDK_PAGE_TYPE_ALIASES = Object.freeze({
+  downsell: "upsell",
+  "thank-you": "receipt", thankyou: "receipt", confirmation: "receipt",
+  presell: "product", landing: "product", advertorial: "product",
+});
 
 function sdkPageType(value) {
   const key = String(value || "").trim().toLowerCase();
-  return SDK_PAGE_TYPES.includes(key) ? key : PAGE_TYPE_ALIASES[key] || null;
+  return SDK_PAGE_TYPES.includes(key) ? key : SDK_PAGE_TYPE_ALIASES[key] || null;
 }
 
 // Attributes whose value names a <template> by id. The SDK reads the template
@@ -252,16 +260,23 @@ export function scanPageMarkup({ page_id, file = null, content = "", sdk_version
     if (!pageTypeAttribute && a.has("data-next-page-type")) pageTypeAttribute = entry;
     if (!upsellContainer && a.has("data-next-upsell")) upsellContainer = entry;
   });
-  // The meta value the remedy names: an upsell offer page is "upsell"
-  // whatever the attribute says; otherwise the attribute's SDK page type.
+  // The meta value the remedy names: a receipt is "receipt" and an upsell
+  // offer page "upsell", whatever the attribute says; otherwise the
+  // attribute's SDK page type, or none when it has no SDK name.
   let attributeNamesUpsell = false;
   if (pageTypeAttribute && pageTypeMeta === null) {
     const value = (pageTypeAttribute.attrs.get("data-next-page-type") || "").trim();
-    const mapped = upsellContainer && !receiptPage ? "upsell" : sdkPageType(value);
+    const fromValue = sdkPageType(value);
+    const mapped = receiptPage ? "receipt" : upsellContainer ? "upsell" : fromValue;
     attributeNamesUpsell = mapped === "upsell";
+    const note = !mapped || !value || value.toLowerCase() === mapped
+      ? ""
+      : fromValue === mapped
+        ? ` (the SDK's name for "${value}" is "${mapped}")`
+        : ` (this page is ${receiptPage ? "a receipt" : "an upsell offer, with a data-next-upsell container"}, so its SDK page type is "${mapped}")`;
     const remedy = mapped
-      ? `Add <meta name="next-page-type" content="${mapped}"> to the page head${mapped !== value.toLowerCase() ? ` ("${value}" is not an SDK page type; the SDK has ${SDK_PAGE_TYPES.join(", ")})` : ""}.`
-      : `Add <meta name="next-page-type"> to the page head with the SDK page type this page is: one of ${SDK_PAGE_TYPES.join(", ")} ("${value}" is not one).`;
+      ? `Add <meta name="next-page-type" content="${mapped}"> to the page head${note}.`
+      : `Add <meta name="next-page-type"> to the page head with the SDK page type this page is: one of ${SDK_PAGE_TYPES.join(", ")}.`;
     findings.push(finding("PAGE_TYPE_ATTRIBUTE", page_id, where,
       `${describe(pageTypeAttribute)} on ${where} carries data-next-page-type="${value}", which the SDK does not read, and the page has no <meta name="next-page-type">. The SDK takes the page type from that meta tag, so this page runs as the default "product" step${attributeNamesUpsell ? " and the upsell page view is never recorded" : ""}. ${remedy}`,
       { value, suggested: mapped, element: pageTypeAttribute.tag }));

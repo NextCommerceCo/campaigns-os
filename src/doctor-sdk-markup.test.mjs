@@ -12,7 +12,7 @@ import { test } from "node:test";
 
 import { doctorBuiltOutput, doctorPacket } from "./doctor/inspect.mjs";
 import { SDK_ATTRIBUTE_INDEX_VERSION, SDK_CHECKOUT_FIELD_NAMES_SINCE, SDK_DATA_NEXT_ATTRIBUTES, isIndexedSdkAttribute, isKnownCheckoutFieldName } from "./sdk-attribute-index.mjs";
-import { SDK_MARKUP, SDK_MARKUP_CODES, evaluateSdkMarkup, scanPageMarkup } from "./sdk-markup.mjs";
+import { SDK_MARKUP, SDK_MARKUP_CODES, SDK_PAGE_TYPE_ALIASES, evaluateSdkMarkup, scanPageMarkup } from "./sdk-markup.mjs";
 
 const FIXTURE_ROOT = resolve(new URL("../fixtures/sdk-markup", import.meta.url).pathname);
 const SLUG = "example-campaign";
@@ -426,14 +426,38 @@ test("page-type advisories: what each one needs and what silences it", () => {
     assert.match(findings[0].message, /content="upsell"/);
     assert.equal(findings[0].detail.suggested, "upsell");
   }
-  // Without an offer, an alias maps to the SDK page type, and an unknown value is not echoed back.
-  const thankyou = scanned('<html><body data-next-page-type="thankyou"></body></html>')[0];
-  assert.match(thankyou.message, /content="receipt"/);
-  assert.match(thankyou.message, /"thankyou" is not an SDK page type/);
-  const unknown = scanned('<html><body data-next-page-type="vsl"></body></html>')[0];
-  assert.equal(unknown.detail.suggested, null);
-  assert.doesNotMatch(unknown.message, /content="vsl"/);
-  assert.match(unknown.message, /one of product, cart, checkout, upsell, receipt/);
+  // Without an offer, each alias maps to its SDK page type, named as an alias.
+  for (const [alias, type] of Object.entries(SDK_PAGE_TYPE_ALIASES)) {
+    const found = scanned(`<html><body data-next-page-type="${alias}"></body></html>`)[0];
+    assert.equal(found.detail.suggested, type, alias);
+    assert.match(found.message, new RegExp(`content="${type}"> to the page head \\(the SDK's name for "${alias}" is "${type}"\\)`), alias);
+  }
+  assert.deepEqual(Object.entries(SDK_PAGE_TYPE_ALIASES).sort(), [
+    ["advertorial", "product"], ["confirmation", "receipt"], ["downsell", "upsell"], ["landing", "product"],
+    ["presell", "product"], ["thank-you", "receipt"], ["thankyou", "receipt"],
+  ], "an alias change is deliberate: update this list and the sources in sdk-markup.mjs");
+  // An SDK page type in another case, and an empty value, get no note.
+  assert.doesNotMatch(scanned('<html><body data-next-page-type="Checkout"></body></html>')[0].message, /\(the SDK|is not/);
+  const empty = scanned('<html><body data-next-page-type=""></body></html>')[0];
+  assert.equal(empty.detail.suggested, null);
+  assert.doesNotMatch(empty.message, /\(the SDK's name|is not an SDK page type/);
+  // A name with no SDK equivalent is not guessed at or echoed back.
+  for (const value of ["vsl", "listicle", "oto"]) {
+    const unknown = scanned(`<html><body data-next-page-type="${value}"></body></html>`)[0];
+    assert.equal(unknown.detail.suggested, null, value);
+    assert.doesNotMatch(unknown.message, new RegExp(`content="${value}"`));
+    assert.match(unknown.message, /one of product, cart, checkout, upsell, receipt\./);
+  }
+  // On a receipt the remedy is receipt, not upsell, even with an offer container
+  // and an upsell-ish attribute, and no upsell page view is claimed lost.
+  const receipt = scanPageMarkup({ page_id: "r", file: "r.html", page_type: "receipt", content: `<html><body data-next-page-type="downsell">${upsell}</body></html>` }).findings;
+  assert.deepEqual(receipt.map((item) => item.code_name), ["PAGE_TYPE_ATTRIBUTE"]);
+  assert.equal(receipt[0].detail.suggested, "receipt");
+  assert.doesNotMatch(receipt[0].message, /upsell page view/);
+  assert.match(receipt[0].message, /this page is a receipt, so its SDK page type is "receipt"/);
+  // On an offer page with a non-alias attribute, the note says why it is upsell.
+  assert.match(scanned(`<html><body data-next-page-type="checkout">${upsell}</body></html>`)[0].message,
+    /this page is an upsell offer, with a data-next-upsell container, so its SDK page type is "upsell"/);
 
   assert.deepEqual(scan(`<html><body>${upsell}</body></html>`), ["UPSELL_PAGE_TYPE_MISSING"]);
   assert.deepEqual(scan(`<html><head><meta name="next-page-type" content="downsell"></head><body>${upsell}</body></html>`), ["UPSELL_PAGE_TYPE_MISSING"]);
