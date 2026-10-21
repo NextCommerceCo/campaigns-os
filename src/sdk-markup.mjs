@@ -45,6 +45,18 @@
 //   TEMPLATE_DOUBLE_BRACE      `{{` inside an SDK-owned <template>. SDK tokens
 //                              are single-brace and conditions are no-brace;
 //                              a double brace renders literally.
+//   PAGE_TYPE_ATTRIBUTE        data-next-page-type on a page with no
+//                              <meta name="next-page-type"> (campaigns-os#683).
+//                              The SDK never reads the attribute. The meta tag
+//                              is the source every reader uses; a
+//                              window.nextConfig.pageType reaches the config
+//                              store only, not the upsell page view, so it
+//                              does not stand in for the meta here.
+//   UPSELL_PAGE_TYPE_MISSING   a data-next-upsell container on a page whose
+//                              next-page-type meta is not "upsell". The SDK
+//                              records the upsell page view only from that meta
+//                              tag, so reports show the purchase with no upsell
+//                              view before it.
 //
 //   Not a finding: data-next-is-upsell="true" on a checkout order bump. The
 //   selected bump is a line item on the checkout order, tagged as an upsell so
@@ -91,9 +103,33 @@ export const SDK_MARKUP_CODES = Object.freeze({
   RECEIPT_ORDER_ITEMS_CART_VISIBILITY: { code: `${SDK_MARKUP}.receipt_order_items_cart_visibility`, severity: "error" },
   DOUBLE_SELECTED: { code: `${SDK_MARKUP}.double_selected`, severity: "warning" },
   TEMPLATE_DOUBLE_BRACE: { code: `${SDK_MARKUP}.template_double_brace`, severity: "warning" },
+  PAGE_TYPE_ATTRIBUTE: { code: `${SDK_MARKUP}.page_type_attribute`, severity: "warning" },
+  UPSELL_PAGE_TYPE_MISSING: { code: `${SDK_MARKUP}.upsell_page_type_missing`, severity: "warning" },
   // Unknown data-next-* names are not a finding and carry no code: they are
   // information on the gate (unknown_attributes[]) and one advisory ready line.
 });
+
+// The page types the SDK has (Campaign Cart v0.4.42 `PageType`), so a remedy
+// never proposes a value the SDK does not have.
+export const SDK_PAGE_TYPES = Object.freeze(["product", "cart", "checkout", "upsell", "receipt"]);
+// Campaign page-type names this repository already reads as one of those, and
+// only those; anything else is left for the operator to name. Sources:
+// - downsell: a post-purchase page (POST_PURCHASE_PAGE_TYPES in
+//   upsell-selector-scope.mjs); the SDK records its page view only as upsell.
+// - thank-you, thankyou, confirmation: the receipt role (normalizedPageRole in
+//   design-source-package.mjs).
+// - presell, landing, advertorial: pre-checkout pages whose SDK page type is
+//   product (PRE_CHECKOUT_PAGE_TYPES in doctor/checks.mjs; normalizedPageRole).
+export const SDK_PAGE_TYPE_ALIASES = Object.freeze({
+  downsell: "upsell",
+  "thank-you": "receipt", thankyou: "receipt", confirmation: "receipt",
+  presell: "product", landing: "product", advertorial: "product",
+});
+
+function sdkPageType(value) {
+  const key = String(value || "").trim().toLowerCase();
+  return SDK_PAGE_TYPES.includes(key) ? key : SDK_PAGE_TYPE_ALIASES[key] || null;
+}
 
 // Attributes whose value names a <template> by id. The SDK reads the template
 // they point at, so that template is SDK-owned wherever it sits.
@@ -210,9 +246,48 @@ export function scanPageMarkup({ page_id, file = null, content = "", sdk_version
   const templates = []; // { entry, sdkOwned }
   const referencedTemplateIds = new Set();
   let receiptPage = String(page_type || "").trim().toLowerCase() === "receipt";
-  walkElements(document, ({ tag, attrs: a }) => {
-    if (tag === "meta" && a.get("name")?.toLowerCase() === "next-page-type" && a.get("content")?.trim().toLowerCase() === "receipt") receiptPage = true;
+  // The page's own next-page-type meta (first one, as querySelector reads it),
+  // the first data-next-page-type element and the first upsell container.
+  let pageTypeMeta = null;
+  let pageTypeAttribute = null;
+  let upsellContainer = null;
+  walkElements(document, (entry) => {
+    const { tag, attrs: a } = entry;
+    if (tag === "meta" && a.get("name")?.trim().toLowerCase() === "next-page-type") {
+      if (a.get("content")?.trim().toLowerCase() === "receipt") receiptPage = true;
+      if (pageTypeMeta === null) pageTypeMeta = (a.get("content") || "").trim();
+    }
+    if (!pageTypeAttribute && a.has("data-next-page-type")) pageTypeAttribute = entry;
+    if (!upsellContainer && a.has("data-next-upsell")) upsellContainer = entry;
   });
+  // The meta value the remedy names: a receipt is "receipt" and an upsell
+  // offer page "upsell", whatever the attribute says; otherwise the
+  // attribute's SDK page type, or none when it has no SDK name.
+  let attributeNamesUpsell = false;
+  if (pageTypeAttribute && pageTypeMeta === null) {
+    const value = (pageTypeAttribute.attrs.get("data-next-page-type") || "").trim();
+    const fromValue = sdkPageType(value);
+    const mapped = receiptPage ? "receipt" : upsellContainer ? "upsell" : fromValue;
+    attributeNamesUpsell = mapped === "upsell";
+    const note = !mapped || !value || value.toLowerCase() === mapped
+      ? ""
+      : fromValue === mapped
+        ? ` (the SDK's name for "${value}" is "${mapped}")`
+        : ` (this page is ${receiptPage ? "a receipt" : "an upsell offer, with a data-next-upsell container"}, so its SDK page type is "${mapped}")`;
+    const remedy = mapped
+      ? `Add <meta name="next-page-type" content="${mapped}"> to the page head${note}.`
+      : `Add <meta name="next-page-type"> to the page head with the SDK page type this page is: one of ${SDK_PAGE_TYPES.join(", ")}.`;
+    findings.push(finding("PAGE_TYPE_ATTRIBUTE", page_id, where,
+      `${describe(pageTypeAttribute)} on ${where} carries data-next-page-type="${value}", which the SDK does not read, and the page has no <meta name="next-page-type">. The SDK takes the page type from that meta tag, so this page runs as the default "product" step${attributeNamesUpsell ? " and the upsell page view is never recorded" : ""}. ${remedy}`,
+      { value, suggested: mapped, element: pageTypeAttribute.tag }));
+  }
+  // One finding per root cause: skipped only when the attribute finding
+  // above already names the upsell meta.
+  if (upsellContainer && !attributeNamesUpsell && (pageTypeMeta || "").toLowerCase() !== "upsell" && !receiptPage) {
+    findings.push(finding("UPSELL_PAGE_TYPE_MISSING", page_id, where,
+      `${describe(upsellContainer)} on ${where} is an upsell offer (data-next-upsell), but the page's next-page-type meta is ${pageTypeMeta === null ? "missing" : `"${pageTypeMeta}"`}. The SDK records the upsell page view only from <meta name="next-page-type" content="upsell">, so reports show the purchase with no upsell view before it. Add that meta tag to the page head.`,
+      { meta_content: pageTypeMeta }));
+  }
 
   walkElements(document, (entry) => {
     const { tag, attrs: a, ancestors } = entry;

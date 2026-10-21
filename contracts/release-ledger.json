@@ -8672,6 +8672,39 @@
         }
       ],
       "entry_sha256": "6fd5e26ac8593f53e2037590e19dc4bc8e0327e0c162c6919542773ba96fcd8b"
+    },
+    {
+      "id": "RL-0281",
+      "sequence": 269,
+      "date": "2026-10-21",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.60.0+agent.3",
+      "changelog_sha256": "961b0a16ed510921583ca73e05a37ea0eb0dd235dfacab69627ce295e5de532c",
+      "agent_impact": "Doctor may now warn built_output.sdk_markup.page_type_attribute (data-next-page-type with no next-page-type meta) or built_output.sdk_markup.upsell_page_type_missing (a data-next-upsell offer page whose next-page-type meta is not upsell). Fix either by adding <meta name=\"next-page-type\" content=\"<type>\">, with upsell on upsell offer pages. tooling status now names the harnesses a partial skills refresh is for; a refresh named for another harness is not this session's step.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "List the PAGE_TYPE_ATTRIBUTE and UPSELL_PAGE_TYPE_MISSING SDK markup warnings and what silences each."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/campaigns-os-build-flow.md",
+          "surface_entry": "docs/campaigns-os-build-flow.md",
+          "summary": "Name the next-page-type meta rule and the two new SDK markup warning codes."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "tooling status names the harnesses a per-platform skills refresh is for."
+        }
+      ],
+      "entry_sha256": "b2b7c61bf3ba87e1d9f730f33a07335f74230b0ece0b94a0370d4de5af1e7859"
     }
   ]
 }
