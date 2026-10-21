@@ -2,6 +2,18 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.60.0+agent.2] - 2026-10-21
+
+### Fixed
+
+`analytics-correctness:tag:meta` now passes when the declared Meta pixel initialises and tracks in the page, even if the browser never requests `facebook.com/tr` (campaigns-os#686). Headless Chromium can run `fbq('init')` and `fbq('track')` with fbevents.js loaded and still send no pixel request, so `qa run --browser` blocked campaigns whose pixel works in real browsers. QA now also watches `fbq` calls in the page: a pixel id counts once it is initialised and a track call follows on the same page.
+
+If page code replaces `window.fbq` so QA can no longer see its calls, and no matching pixel request was seen, the row still fails but now says `unmeasured` and carries `evidence.reason: fbq_observer_disarmed`, instead of reporting a clean absence.
+
+These are unchanged:
+- A pixel that initialises but never tracks, or a different pixel id, still fails the row.
+- An in-page `fbq('track', 'Purchase')` is not a Meta Purchase fire and supplies no CAPI dedup key; both still need the pixel request.
+
 ## [1.60.0+agent.1] - 2026-10-20
 
 ### Fixed

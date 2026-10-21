@@ -327,3 +327,22 @@ test("Stage A proof 3 (negative control): analytics-declaring spec, flag absent 
   // And with neither flag nor block, nothing runs and nothing is emitted.
   assert.equal(analyticsCorrectnessLegDecision(forced, undefined), "not-applicable");
 });
+
+test("tag:meta: a disarmed fbq observer with no matching pixel is unmeasured; a matching request still passes (#686)", () => {
+  const contract = { providers: { facebook: { enabled: true, pixelId: "998877" } } };
+  const row = (capture) => assessAnalyticsInventory(capture, contract).find((a) => a.id === "analytics-correctness:tag:meta");
+
+  const disarmed = row({ inventory: { meta: [] }, metaObserver: "disarmed" });
+  assert.equal(disarmed.status, STATUS.FAIL);
+  assert.equal(disarmed.severity, SEVERITY.BLOCKER);
+  assert.equal(disarmed.evidence.reason, "fbq_observer_disarmed");
+  assert.match(disarmed.actual, /^unmeasured/);
+
+  const measured = row({ inventory: { meta: [] }, metaObserver: "armed" });
+  assert.equal(measured.evidence.reason, undefined);
+  assert.match(measured.actual, /^absent/);
+
+  const viaRequest = row({ inventory: { meta: ["998877"] }, metaObserver: "disarmed" });
+  assert.equal(viaRequest.status, STATUS.PASS);
+  assert.equal(viaRequest.evidence.reason, undefined);
+});
