@@ -217,10 +217,11 @@ Test orders send real purchase events to every analytics vendor the campaign
 configures unless the vendor beacons are blocked at the network. `qa run` does
 not block them yet. Do not add `?ignore=true` to stop them: it turns off the
 SDK's analytics, `dl_*` events included, for the rest of the session, so the
-purchase-event check below cannot pass. Before asking for test orders, read
-the vendors from `analytics.providers` in the campaign's `nextConfig`
-(`config.js` on Page Kit, inline on a static page) and name them in the
-question.
+purchase-event check below cannot pass. Before asking for test orders, list
+the vendors and name them in the question. On Page Kit, read every non-empty
+vendor id in the slug's `_data/campaigns.json` entry (such as `gtm_id` and
+`fb_pixel_id`) and `analytics.providers` in `config.js`; on a static page,
+read its inline `nextConfig` and the tags it loads.
 Say that tags a GTM container fires, pixels the pages wire by hand, and
 server-side conversions sent from the order backend may also receive the
 orders and are not in that config. Name in the hand-back each vendor that

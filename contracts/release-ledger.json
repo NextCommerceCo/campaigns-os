@@ -8713,7 +8713,7 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.60.0+agent.4",
-      "changelog_sha256": "123a085b51eab9362fba70ada2f5b579f14e716944f47ba60381b088f2d2723b",
+      "changelog_sha256": "ca36481b49829528ff6a39bc926f7039836444064fac7bc30b9006169025404b",
       "agent_impact": "An agent running next-campaigns-sdk-bump reads per-slug live status from the target CLAUDE.md, asks when it is missing or unclear, and places test orders only on the live slugs and orders the developer confirms; names the analytics vendors before asking for test orders; pins the market with ?currency=<main>&country=<main> (not geolocation), confirms the shown market, and passes --currency <main> to qa run; places orders by hand for a non-US main market; never uses ?ignore=true; proves one fresh and five cached loads per SDK page, excluding the receipt and pages with hand-wired purchase pushes from the reloads; runs doctor --built once per bumped slug and qa run --site once per live slug with an exactly matching --family and --slug; covers payment methods the range adds; and asks before the first project-local install, committing its devDependencies change. Doctor now reports sdk_attribute_index_version 0.4.43 and checks cart placeholders on pages pinned to 0.4.43. Re-run tooling status --skills-revision 1.60.0+skills.2 and start a fresh session on mismatch.",
       "compatibility": "compatible",
       "migration": "none",
@@ -8797,7 +8797,7 @@
           "summary": "Name v0.4.43 as the vendored SDK attribute index tag."
         }
       ],
-      "entry_sha256": "1776e5fb8253c7ea9e22359739127bb4c4485ee3a463ace0949399678db22032"
+      "entry_sha256": "4d3c9b7e4b2441d68a54e2e2197bcba437331ffd8f5acd2f0b952892c74ce7ab"
     }
   ]
 }
