@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import {createHash} from 'node:crypto';
 import { buildRunSession, writeRunSession } from './run-session.mjs';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { analyzeStorageJavaScript, scanSdkStorageCompatibility, readStorageManifest } from './sdk-storage-compatibility.mjs';
+import { analyzeStorageJavaScript, scanSdkStorageCompatibility, readStorageManifest, formatStorageCompatibilityReport } from './sdk-storage-compatibility.mjs';
 // Synthetic contract: deliberately not a second production SDK registry.
 const manifest = { schemaVersion: 1, sdkVersion: '0.4.38', supportedSdkVersions: { min: '0.4.38', max: '0.4.38' }, provenance: { extractor: 'synthetic', registry: 'synthetic', inputSha256: 'a'.repeat(64) }, keys: [{ key: 'next-order{__scope}', pattern: 'next-order{}', areas: ['localStorage', 'sessionStorage'], scoped: true, migration: { since: '0.4.34', legacyKey: 'next-order', releaseEvidence: { commit: 'b'.repeat(40), tag: 'v0.4.34' } }, replacement: { kind: 'public-store', export: 'useOrderStore', guide: 'synthetic-guide' } }] };
 const analyze = source => analyzeStorageJavaScript(source, { manifest, targetSdkVersion: '0.4.38' });
@@ -206,6 +206,67 @@ test('a later release manifest may declare an earlier supported range; targets o
   finally {
     rmSync(cwd, { recursive: true, force: true });
   }
+});
+
+test('a target outside the manifest range says so at the top and in the summary, and still exits as unknown', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'storage-outside-range-'));
+  try {
+    const git = args => execFileSync('git', ['-C', cwd, ...args], { stdio: 'pipe' });
+    git(['init']);
+    mkdirSync(join(cwd, 'a'));
+    writeFileSync(join(cwd, 'a/index.js'), `sessionStorage.getItem('merchant-flag');`);
+    git(['add', '.']);
+    const path = join(cwd, 'manifest.json');
+    writeFileSync(path, JSON.stringify({ ...structuredClone(manifest), sdkVersion: '0.4.43' }));
+    const scan = targetSdkVersion => scanSdkStorageCompatibility({ cwd, targetSdkVersion, manifestPath: path, scope: ['a'] });
+    let report = scan('0.4.43');
+    assert.equal(report.targetCovered, false);
+    assert.equal(report.status, 'unknown');
+    let lines = formatStorageCompatibilityReport(report).split('\n');
+    assert.equal(lines[0], 'SDK storage compatibility: unknown (checked against SDK 0.4.38, not the requested target 0.4.43)');
+    assert.equal(lines[1], 'The manifest (Campaign Cart 0.4.43) declares support for SDK 0.4.38 only, so this report does not speak for 0.4.43.');
+    assert.equal(lines[2], '1 tracked source files; 0 incompatible, 1 unknown, 1 unaffected storage accesses (against SDK 0.4.38, not 0.4.43).');
+    report = scan('0.4.38');
+    assert.equal(report.targetCovered, true);
+    lines = formatStorageCompatibilityReport(report).split('\n');
+    assert.equal(lines[0], 'SDK storage compatibility: source-compatible (target 0.4.38)');
+    assert.ok(lines[1].endsWith('unaffected storage accesses.'));
+    const cli = spawnSync(process.execPath, [fileURLToPath(new URL('../bin/campaigns-os.mjs', import.meta.url)), 'sdk', 'storage-check', '--target', cwd, '--target-sdk', '0.4.43', '--manifest', path, '--scope', 'a'], { cwd, encoding: 'utf8', env: { ...process.env, CAMPAIGNS_OS_TELEMETRY: 'off' } });
+    assert.equal(cli.status, 2, cli.stderr);
+    assert.match(cli.stdout, /^SDK storage compatibility: unknown \(checked against SDK 0\.4\.38, not the requested target 0\.4\.43\)/);
+  }
+  finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('prefix loops over scoped SDK keys are named on their unknown lines and in one note, never reclassified', () => {
+  const scoped = structuredClone(manifest);
+  scoped.keys.push({ key: 'next-cart-state{__scope}', pattern: 'next-cart-state{}', areas: ['sessionStorage'], scoped: true, migration: { since: '0.4.34', legacyKey: 'next-cart-state', releaseEvidence: { commit: 'c'.repeat(40), tag: 'v0.4.34' } }, replacement: null });
+  const scan = source => analyzeStorageJavaScript(source, { manifest: scoped, targetSdkVersion: '0.4.38' });
+  const loops = [
+    "for (var i = 0; i < sessionStorage.length; i++) { var k = sessionStorage.key(i); if (k.indexOf('next-cart-state') === 0) JSON.parse(sessionStorage.getItem(k)); }",
+    "for (let i = 0; i < sessionStorage.length; i++) { const k = sessionStorage.key(i); if (k.indexOf('next-cart-state') !== 0) continue; sessionStorage.getItem(k); }",
+    "const PREFIX = 'next-cart-state'; Object.keys(sessionStorage).filter(k => k.startsWith(PREFIX)).forEach(k => sessionStorage.getItem(k));",
+  ];
+  for (const source of loops) {
+    const flagged = scan(source).filter(f => f.prefixScan);
+    assert.ok(flagged.length >= 2, source);
+    assert.ok(flagged.every(f => f.status === 'unknown' && f.prefixScan.prefix === 'next-cart-state' && f.prefixScan.key === 'next-cart-state{__scope}'), source);
+  }
+  for (const source of [
+    "for (var i = 0; i < sessionStorage.length; i++) { var k = sessionStorage.key(i); if (k.indexOf('merchant-') === 0) sessionStorage.getItem(k); }",
+    "for (var i = 0; i < sessionStorage.length; i++) { var k = sessionStorage.key(i); if (k.indexOf('next-cart-state') > -1) sessionStorage.getItem(k); }",
+    "for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (k.indexOf('next-cart-state') === 0) localStorage.getItem(k); }",
+    "if (key.indexOf('next-cart-state') === 0) sessionStorage.getItem(key);",
+  ]) assert.ok(!scan(source).some(f => f.prefixScan), source);
+  const order = scan("for (const k of Object.keys(sessionStorage)) if (k.startsWith('next-order')) sessionStorage.getItem(k);").filter(f => f.prefixScan);
+  assert.equal(order[0].prefixScan.replacement.export, 'useOrderStore');
+  const findings = [...scan(loops[0]), ...order];
+  const text = formatStorageCompatibilityReport({ status: 'unknown', targetSdkVersion: '0.4.38', targetCovered: true, files: [], manifest: { sha256: 'x', sdkVersion: '0.4.38', supportedSdkVersions: { min: '0.4.38', max: '0.4.38' }, source: { verification: 'unverified-local-file' } }, findings, evidenceBoundary: 'boundary' });
+  assert.match(text, /unknown: unsupported-storage-method — .*\[prefix loop: next-cart-state\]|unknown: unsupported-storage-method \[prefix loop: next-cart-state\]/);
+  assert.match(text, /^4 unknown lines are \[prefix loop\]: a loop that matches storage keys starting with next-cart-state, next-order\./m);
+  assert.match(text, /^For next-order, the manifest names the public useOrderStore export instead \(synthetic-guide\)\.$/m);
 });
 
 test('loop and switch lexical declarations preserve outer SDK key bindings', () => {

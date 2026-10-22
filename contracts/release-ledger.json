@@ -8798,6 +8798,27 @@
         }
       ],
       "entry_sha256": "4d3c9b7e4b2441d68a54e2e2197bcba437331ffd8f5acd2f0b952892c74ce7ab"
+    },
+    {
+      "id": "RL-0283",
+      "sequence": 271,
+      "date": "2026-10-22",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.60.0+agent.5",
+      "changelog_sha256": "fa71e27de21240823ff7f7b8184f1e6c031a39dbf9766cb1195edb49b95f4bca",
+      "agent_impact": "An agent reading sdk storage-check output for a target outside the manifest range sees the covered range and the uncovered target in the first line and the count line, and in --json reads targetCovered:false; result and exit status (unknown, 2) are unchanged. Unknown lines inside a prefix loop over a scoped SDK key end in [prefix loop: <prefix>] and carry prefixScan in --json; they remain unknown and are explained by one note under the findings.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/sdk-storage-compatibility.md",
+          "surface_entry": "docs/sdk-storage-compatibility.md",
+          "summary": "Describe the out-of-range header, targetCovered, and the [prefix loop] hint with its prefixScan field."
+        }
+      ],
+      "entry_sha256": "76100c61521de52003ecab5c59e67bd75f2651e09bdf0cadee2b6572910df8bf"
     }
   ]
 }

@@ -49,6 +49,9 @@ function normalizeScope(value) {
     throw new Error('Scope and exclusions must be literal repository-relative files or directories.');
   return value.replace(/^\.\//, '').replace(/\/$/, '') || '.';
 }
+const PREFIX_SCAN_REASONS = new Set(['dynamic-key', 'unsupported-storage-method', 'storage-object-escape']);
+const LOOPS = new Set(['ForStatement', 'ForInStatement', 'ForOfStatement', 'WhileStatement', 'DoWhileStatement']);
+const ITERATION_METHODS = new Set(['forEach', 'filter', 'map', 'flatMap', 'find', 'findIndex', 'some', 'every', 'reduce']);
 const inside = (path, scope) => scope === '.' || path === scope || path.startsWith(scope + '/');
 export function readStorageManifest(path) {
   const bytes = readFileSync(path);
@@ -219,7 +222,38 @@ export function analyzeStorageJavaScript(source, { path = '<source>', lineOffset
       else
         reason = 'literal-unaffected-key';
     }
-    emit(node, { operation, area: storage.name, key, status, reason, replacement });
+    const prefixScan = status === 'unknown' && !storage.shadowed && PREFIX_SCAN_REASONS.has(reason) ? sdkPrefixScan(storage.name) : null;
+    emit(node, { operation, area: storage.name, key, status, reason, replacement, ...(prefixScan && { prefixScan }) });
+  }
+  // A loop that matches storage keys by a scoped SDK key's prefix: its key()/getItem(k) lines stay unknown, but are named.
+  const stack = [];
+  const prefixCache = new WeakMap();
+  function prefixTests(node) {
+    if (prefixCache.has(node)) return prefixCache.get(node);
+    const found = [];
+    const method = (call, name) => call?.type === 'CallExpression' && call.callee.type === 'MemberExpression' && (call.callee.computed ? literal(call.callee.property, scopes.get(call)) : call.callee.property.name) === name;
+    (function walk(n) {
+      if (method(n, 'startsWith'))
+        found.push(literal(n.arguments[0], scopes.get(n)));
+      if (n.type === 'BinaryExpression' && ['===', '==', '!==', '!='].includes(n.operator))
+        for (const [call, zero] of [[n.left, n.right], [n.right, n.left]])
+          if (zero.type === 'Literal' && zero.value === 0 && method(call, 'indexOf') && call.arguments.length === 1)
+            found.push(literal(call.arguments[0], scopes.get(call)));
+      for (const child of children(n)) walk(child);
+    })(node);
+    const prefixes = found.filter(Boolean);
+    prefixCache.set(node, prefixes);
+    return prefixes;
+  }
+  function sdkPrefixScan(storageName) {
+    for (const node of [...stack].reverse()) {
+      const iteration = node.type === 'CallExpression' && node.callee.type === 'MemberExpression' && !node.callee.computed && ITERATION_METHODS.has(node.callee.property.name);
+      if (!LOOPS.has(node.type) && !iteration) continue;
+      const prefixes = prefixTests(node);
+      const entry = manifest.keys.find(e => e.scoped && e.areas.includes(storageName) && e.key.split('{')[0] && prefixes.includes(e.key.split('{')[0]));
+      return entry ? { prefix: entry.key.split('{')[0], key: entry.key, replacement: entry.replacement ?? null } : null;
+    }
+    return null;
   }
   const handled = new WeakSet();
   const aliasInitialization = (node, parent) => parent?.type === 'VariableDeclarator' && parent.init === node && parent.id.type === 'Identifier' && binding(parent.id.name, scopes.get(parent))?.init === node;
@@ -229,6 +263,7 @@ export function analyzeStorageJavaScript(source, { path = '<source>', lineOffset
     (['LabeledStatement', 'BreakStatement', 'ContinueStatement'].includes(parent?.type) && parent.label === node)
   );
   function visit(node, parent) {
+    stack.push(node);
     const scope = scopes.get(node);
     if (node.type === 'CallExpression' && node.callee.type === 'MemberExpression') {
       const member = node.callee, storage = area(member.object, scope), method = member.computed ? literal(member.property, scope) : member.property.name;
@@ -258,6 +293,7 @@ export function analyzeStorageJavaScript(source, { path = '<source>', lineOffset
     }
     for (const child of children(node))
       visit(child, node);
+    stack.pop();
   }
   visit(ast, null);
   return findings;
@@ -314,7 +350,8 @@ export function scanSdkStorageCompatibility({ cwd = process.cwd(), targetSdkVers
   const selected = tracked.filter(p => /\.(?:html?|[cm]?js)$/i.test(p) && scope.some(s => inside(p, s)) && !exclude.some(s => inside(p, s))).sort();
   const files = [], findings = [];
   const unknown = (path, reason, detail, line = 1) => findings.push({ path, line, column: 1, operation: 'unknown', area: null, key: null, status: 'unknown', reason, detail, replacement: null });
-  if (compare(targetSdkVersion, manifest.supportedSdkVersions.min) < 0 || compare(targetSdkVersion, manifest.supportedSdkVersions.max) > 0)
+  const targetCovered = compare(targetSdkVersion, manifest.supportedSdkVersions.min) >= 0 && compare(targetSdkVersion, manifest.supportedSdkVersions.max) <= 0;
+  if (!targetCovered)
     unknown(evidence.path, 'target-outside-manifest-range', targetSdkVersion);
   if (!selected.length)
     unknown('.', 'empty-source-scope', 'No tracked HTML or JavaScript files selected.');
@@ -412,9 +449,28 @@ export function scanSdkStorageCompatibility({ cwd = process.cwd(), targetSdkVers
     html(document);
   }
   const status = findings.some(f => f.status === 'incompatible') ? 'incompatible' : findings.some(f => f.status === 'unknown') ? 'unknown' : 'source-compatible';
-  return { schemaVersion: 1, targetSdkVersion, manifest: evidence, scope, exclude, files, findings, status, evidenceBoundary: 'Static tracked source compatibility only; no browser, order, or analytics proof.' };
+  return { schemaVersion: 1, targetSdkVersion, targetCovered, manifest: evidence, scope, exclude, files, findings, status, evidenceBoundary: 'Static tracked source compatibility only; no browser, order, or analytics proof.' };
 }
+const sdkRange = ({ min, max }) => min === max ? min : `${min} to ${max}`;
 export function formatStorageCompatibilityReport(result) {
   const counts = status => result.findings.filter(f => f.status === status).length;
-  return [`SDK storage compatibility: ${result.status} (target ${result.targetSdkVersion})`, `${result.files.length} tracked source files; ${counts('incompatible')} incompatible, ${counts('unknown')} unknown, ${counts('unaffected')} unaffected storage accesses.`, `Manifest ${result.manifest.sha256} (${result.manifest.source.verification})`, ...result.findings.filter(f => f.status !== 'unaffected').map(f => `${f.path}:${f.line}:${f.column} ${f.status}: ${f.reason}${f.key ? ` (${f.key})` : ''}${f.detail ? ` — ${f.detail}` : ''}`), result.evidenceBoundary].join('\n');
+  const target = result.targetSdkVersion, covered = sdkRange(result.manifest.supportedSdkVersions);
+  const outside = result.targetCovered === false;
+  const header = outside
+    ? [`SDK storage compatibility: ${result.status} (checked against SDK ${covered}, not the requested target ${target})`, `The manifest (Campaign Cart ${result.manifest.sdkVersion}) declares support for SDK ${covered} only, so this report does not speak for ${target}.`]
+    : [`SDK storage compatibility: ${result.status} (target ${target})`];
+  const summary = `${result.files.length} tracked source files; ${counts('incompatible')} incompatible, ${counts('unknown')} unknown, ${counts('unaffected')} unaffected storage accesses${outside ? ` (against SDK ${covered}, not ${target})` : ''}.`;
+  const line = f => `${f.path}:${f.line}:${f.column} ${f.status}: ${f.reason}${f.key ? ` (${f.key})` : ''}${f.detail ? ` — ${f.detail}` : ''}${f.prefixScan ? ` [prefix loop: ${f.prefixScan.prefix}]` : ''}`;
+  return [...header, summary, `Manifest ${result.manifest.sha256} (${result.manifest.source.verification})`, ...result.findings.filter(f => f.status !== 'unaffected').map(line), ...prefixScanNote(result.findings), result.evidenceBoundary].join('\n');
+}
+// One note for every [prefix loop] line, so a reader can tell them from unknowns with no known shape.
+function prefixScanNote(findings) {
+  const scans = findings.filter(f => f.prefixScan);
+  if (!scans.length) return [];
+  const prefixes = [...new Set(scans.map(f => f.prefixScan.prefix))];
+  const replacements = [...new Map(scans.filter(f => f.prefixScan.replacement).map(f => [f.prefixScan.prefix, f.prefixScan.replacement])).entries()];
+  return [
+    `${scans.length} unknown ${scans.length === 1 ? 'line is' : 'lines are'} [prefix loop]: a loop that matches storage keys starting with ${prefixes.join(', ')}. Such a loop finds the SDK key with or without its scope suffix, so the scoping rename alone does not break it. It stays unknown because on an origin shared with another campaign, or another top folder of this one, the same prefix also matches that copy; check which key the loop takes.`,
+    ...replacements.map(([prefix, r]) => `For ${prefix}, the manifest names the public ${r.export} export instead (${r.guide}).`),
+  ];
 }

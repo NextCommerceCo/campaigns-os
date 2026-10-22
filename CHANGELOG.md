@@ -2,6 +2,15 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.60.0+agent.5] - 2026-10-22
+
+### Changed
+
+`sdk storage-check` output, from Sam's findings on campaigns-os#683:
+
+- When `--target-sdk` is outside the manifest's supported range, the human report's first line reads `checked against SDK <range>, not the requested target <x.y.z>`, the next line says the report does not speak for that target, and the count line repeats it. The result is still `unknown` and the exit status still 2. `--json` adds `targetCovered`.
+- An unknown `dynamic-key`, `unsupported-storage-method` or `storage-object-escape` line inside a loop that matches keys by a scoped SDK key's prefix (`k.indexOf('next-cart-state') === 0`, `k.startsWith(...)`) ends in `[prefix loop: <prefix>]`, and `--json` adds `prefixScan` to the finding. One note under the findings explains them: the loop survives the scope suffix, but on a shared origin the prefix also matches another campaign's copy, so the lines stay unknown. Where the manifest names a public store for the key, the note names it.
+
 ## [1.60.0+agent.4] - 2026-10-22
 
 ### Changed
