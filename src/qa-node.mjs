@@ -138,7 +138,7 @@ Usage:
   campaigns-os qa publish --packet <campaign-runtime.build.json> [--verdict <full-verdict.json>] [--republish] [--proxy-base <url>] [--dry-run] [--json]   # post an already-stored verdict to the QA portal; no re-run, no orders
   campaigns-os qa resolve <map-id> --spec <campaign-spec.json> [--base-url <url>]
   campaigns-os qa run <map-id> --spec <campaign-spec.json> --base-url <url>
-  campaigns-os qa run --site <page-kit-target-repo> --base-url <url> --family <family> [--slug <slug>] [--browser]   # L7: QA a built _site/ with no packet/spec
+  campaigns-os qa run --site <page-kit-target-repo> --base-url <url> --family <family> [--slug <slug>] [--currency <code>] [--browser]   # L7: QA a built _site/ with no packet/spec
   campaigns-os qa install-browser [--json]   # one-time: install the package-owned Playwright Chromium (same as npm run qa:install-browser from a checkout)
 
 Options:
@@ -249,6 +249,19 @@ Options:
   --test-exp-year <yyyy>          Test card expiration year. Default: 2030.
   --test-email <email>            Customer email for browser test orders. Env CAMPAIGNS_OS_QA_TEST_EMAIL is also recognized.
   --test-email-prefix <prefix>    Legacy unique email prefix override.
+  --test-first-name <name>        Test customer first name. Default: QA.
+  --test-last-name <name>         Test customer last name. Default: Playwright.
+  --test-phone <phone>            Test customer phone, filled when the checkout has the field. Default: empty.
+  --test-country <code>           Shipping (and billing) country, as the checkout's country select option value
+                                  or label (e.g. GB). Default: US. Changing it does not change the run's currency:
+                                  pair it with --currency <code>, and pass the four address flags below for that
+                                  country, since their defaults are a US address. A non-USD --currency on an
+                                  ordering run with no --test-country prints a warning; the run still goes ahead.
+  --test-address1 <line>          Street address. Default: 1600 Amphitheatre Pkwy.
+  --test-city <city>              City. Default: Mountain View.
+  --test-province <code>          State, province or region, as the province select's option value or label.
+                                  Default: CA. The checkout must show a province select for the country.
+  --test-postal <code>            Postal code. Default: 94043.
   --legacy-api-test-order <off|accept|decline|both>
                                   Diagnostic-only direct Campaigns API order creation; bypasses deployed checkout.
   --api-key <key>                 Campaigns API key for legacy direct API diagnostics. Env QA_CAMPAIGNS_API_KEY is also recognized.
@@ -2179,6 +2192,21 @@ function qaRunCurrency(args) {
   return value.toUpperCase();
 }
 
+// `qa run --currency <code>` pins the market the pages and orders run in, but
+// the order runner's shipping address comes from the --test-* flags and
+// defaults to a US one. A non-USD currency with no --test-country is the
+// likely mismatch, so it is named on stderr. Only the missing flag is judged:
+// a currency such as EUR has many markets, so an explicit --test-country is
+// taken as the operator's choice. The run is never refused.
+function warnCurrencyWithoutTestCountry(args, write = (message) => process.stderr.write(message)) {
+  const currency = qaRunCurrency(args);
+  if (!currency || currency === "USD") return false;
+  if (String(args["test-order"] || "off").toLowerCase() === "off") return false;
+  if (stringArg(args["test-country"])) return false;
+  write(`[qa:test-order] --currency ${currency} with no --test-country: test orders use the default US shipping address. Pass --test-country, --test-address1, --test-city, --test-province and --test-postal for the ${currency} market, or ignore this if a US address is intended.\n`);
+  return true;
+}
+
 async function runParityQa(args) {
   // Checked here as well as on the budget itself: the budget is built after a
   // browser has launched, and a flag the operator typed wrong should cost them
@@ -2257,7 +2285,7 @@ async function runQa(args, options = {}) {
   // Fail-fast before anything resolves or launches. The authoritative check
   // lives on the creation budget itself, which every browser path builds.
   refuseBadOrderCreationLimit(args);
-  qaRunCurrency(args);
+  warnCurrencyWithoutTestCountry(args);
   // Match dispatch: an active browser mode takes precedence over legacy API
   // diagnostics. Only the selected legacy path requires a cart and API mode.
   const browserMode = String(args["test-order"] || "off").toLowerCase();
@@ -4264,6 +4292,7 @@ export const __qaNodeTestHooks = Object.freeze({
   templateBrandContractAssertion,
   deriveEntryUrls,
   qaRunCurrency,
+  warnCurrencyWithoutTestCountry,
   withEntryCurrency,
   derivePageUrls,
   deriveTestedUrlsFromAssertions,

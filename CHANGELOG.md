@@ -2,6 +2,18 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.60.0+agent.5] - 2026-10-22
+
+### Changed
+
+`qa run`'s test customer and shipping address flags are now documented and supported (campaigns-os#683 review). The order runner has always read them; none was in the usage text or the QA docs. `--test-first-name`, `--test-last-name`, `--test-phone`, `--test-country`, `--test-address1`, `--test-city`, `--test-province` and `--test-postal` are listed in `qa help` with their defaults (a US address in Mountain View, CA), and `docs/qa-and-test-orders.md` gains a "Test customer and shipping address" section with a non-US example. The province select is a required step, so a checkout with no province select for the chosen country fails at that field; those orders are placed by hand.
+
+A non-USD `--currency` on a `qa run` that places orders, with no `--test-country`, now prints a warning on stderr naming the address flags. The run is not refused. Only the missing flag is checked, since a currency such as EUR has many markets.
+
+`qa run --site` lists `--currency <code>` in its usage line, and a test now proves it: the slug's entry page is fetched with `?currency=<CODE>` and the verdict records `evidence.currency` on that page's `http:` row.
+
+The `next-campaigns-sdk-bump` skill (1.0.3, bundle `1.60.0+skills.3`) names the address flags in step 6 as the way to run non-US orders through the runner, with ordering by hand as the fallback.
+
 ## [1.60.0+agent.4] - 2026-10-22
 
 ### Changed
