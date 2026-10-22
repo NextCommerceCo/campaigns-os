@@ -2,6 +2,23 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.60.0+agent.4] - 2026-10-22
+
+### Changed
+
+The `next-campaigns-sdk-bump` skill (1.0.2, bundle `1.60.0+skills.2`) takes the second-run findings on campaigns-os#683 and a review of them:
+
+- Step 1 reads each slug's live or retired status from the target repository's `CLAUDE.md`, root first. A missing or unclear status is never read as live or retired: the skill lists those slugs and asks. Before any order, it shows the developer the live slugs and the orders planned on each, and orders only on the list they confirm.
+- The reload bar in step 6 is one fresh load and five cached reloads of every SDK page, upsells included, with the counts in the hand-back. The receipt, and any page with a hand-wired purchase push or `order:completed` listener, is left out of the cached reloads, because upsell pages reload the order and can resend a real purchase on each load; purchase events are counted across the run.
+- The first page carries `?currency=<main>&country=<main>`. The SDK picks the market by IP and never reads browser geolocation, so the geolocation step is gone. The skill says `?country=` needs `currencyBehavior: auto`, and that an unsupported value falls back without failing, so the shown market is confirmed before the first order. `qa run` takes `--currency <main>`, which pins only each funnel's entry page.
+- `qa run`'s own test orders use a US shipping address by default, so for a non-US main market the orders are placed by hand, with both parameters on the first page of every new tab.
+- Test orders send real purchase events to every analytics vendor the campaign configures unless beacons are blocked at the network, and `qa run` does not block them yet. The vendors, read from the slug's `_data/campaigns.json` ids and `config.js` on Page Kit or the page's inline config on a static funnel, are named in the test-order question, with a note that GTM-fired tags, hand-wired pixels and server-side conversions may also receive them, and again in the hand-back. `?ignore=true` is ruled out: it turns off the SDK's analytics, `dl_*` included, for the rest of the session.
+- The install-browser, `--browser` and local-only answers are asked up front, so a no-packet bump does not skip the `qa run --browser` pass by default. `doctor --built` runs once per bumped slug and `qa run --site` once per live slug. `--family` must exactly match a template brand contract shipped in the package or a private family in `contracts/private-template-sources.json` (which needs its repository checked out or `PRIVATE_TEMPLATE_SOURCES_ROOT`), and `--slug` a key in `_data/campaigns.json`; otherwise the skill asks.
+- Step 3 lists payment and express methods the range adds (0.4.43 adds Shop Pay), and step 6 starts and cancels each one the campaign offers.
+- The skill asks before the first project-local install, pins a reviewed version whose bundle revision matches the skill, and says to expect and commit the `devDependencies` and `package-lock.json` change. In a static repo it never installs into the publish root. `tooling status` only reads the pin.
+
+Doctor's SDK attribute index now names Campaign Cart v0.4.43 (`docs/build-packet.md` says so). Regenerated from the source at that tag, it has the same 149 `data-next-*` names as v0.4.42. The cart placeholder renderers are unchanged too, so pages pinned to 0.4.43 pass the placeholder check instead of reading unexercised.
+
 ## [1.60.0+agent.3] - 2026-10-21
 
 ### Added
