@@ -8798,6 +8798,105 @@
         }
       ],
       "entry_sha256": "4d3c9b7e4b2441d68a54e2e2197bcba437331ffd8f5acd2f0b952892c74ce7ab"
+    },
+    {
+      "id": "RL-0283",
+      "sequence": 271,
+      "date": "2026-10-22",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.60.0+agent.5",
+      "changelog_sha256": "692548da2c57bc653684cc367f546188eee7104220c40ac2d72b6119399ec081",
+      "agent_impact": "An agent running qa run test orders for a non-US market can pass --test-country, --test-address1, --test-city, --test-province and --test-postal (and --test-first-name, --test-last-name, --test-phone) as supported flags instead of ordering by hand; the defaults are unchanged (a US address). A non-USD --currency on an ordering run with no --test-country prints a warning and still runs. qa run --site takes --currency as packet QA does. next-campaigns-sdk-bump step 6 names the address flags, with ordering by hand as the fallback. Re-run tooling status --skills-revision 1.60.0+skills.3 and start a fresh session on mismatch.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "The qa run usage line lists --test-email and the --test-country, --test-address1, --test-city, --test-province and --test-postal address flags."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Document the test customer and shipping address flags with their defaults, the non-USD --currency warning, and qa run --site --currency."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance bundle revision to 1.60.0+skills.3 and each skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-sdk-bump/SKILL.md",
+          "surface_entry": null,
+          "summary": "Step 6 names the --test-* address flags for non-US orders through the runner, keeping ordering by hand as the fallback."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Update current bundle revision examples to 1.60.0+skills.3."
+        }
+      ],
+      "entry_sha256": "76a1640cd613f80731dafcb8c44efe421026bdd3f79ca28bab19c538193307ae"
     }
   ]
 }

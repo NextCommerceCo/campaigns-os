@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -11,7 +11,7 @@ import { QA_RUN_CURRENCY, __qaBrowserTestHooks } from "./qa-browser.mjs";
 import { __qaNodeTestHooks, runQaCli } from "./qa-node.mjs";
 import { createTrackingRun } from "./qa-tracking-params.mjs";
 
-const { deriveEntryUrls, qaRunCurrency, runPageChecks, runResolvedQa, withEntryCurrency } = __qaNodeTestHooks;
+const { deriveEntryUrls, qaRunCurrency, runPageChecks, runResolvedQa, warnCurrencyWithoutTestCountry, withEntryCurrency } = __qaNodeTestHooks;
 const { createSelectorProbeCache, enterCartViaLanding, openCheckoutForPath, pathCurrencyLoad, recoverCreatedOrder } = __qaBrowserTestHooks;
 
 // The entry page already carries tracking params: --currency must keep them.
@@ -426,4 +426,68 @@ test("an entry page whose fetch fails still records the currency beside the tran
 
   const { assertions: unreached } = await runPageChecks(page, {}, { sourceLoader: async () => ({ ok: false, error_code: "fetch_failed", error: "connection reset" }), bindingScriptLoader: async () => null, currency: "GBP" });
   assert.deepEqual(unreached.find((entry) => entry.id === "http:landing").evidence, { transport_error: { code: "fetch_failed", message: "connection reset" }, currency: "GBP" });
+});
+
+// `qa run --site`: no packet, the topology comes from the built _site/<slug>/
+// tree, and --currency goes through the same runQa -> resolveQaInputsFromSite
+// -> runResolvedQa path as packet QA.
+test("qa run --site --currency tags the slug's entry page and records evidence.currency", async () => {
+  const repo = mkdtempSync(join(tmpdir(), "campaigns-os-qa-site-currency-"));
+  for (const [route, title] of [["", "Landing"], ["checkout", "Checkout"]]) {
+    const dir = route ? join(repo, "_site", "acme", route) : join(repo, "_site", "acme");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "index.html"), `<!doctype html><html><head><title>${title}</title></head><body><h1>${title}</h1></body></html>`);
+  }
+  const fetched = [];
+  const originalFetch = globalThis.fetch;
+  const originalLog = console.log;
+  const originalExitCode = process.exitCode;
+  globalThis.fetch = async (url) => {
+    fetched.push(String(url));
+    if (String(url).startsWith("https://preview.example.com/acme/")) return new Response("<!doctype html><html><head><title>Acme</title></head><body></body></html>", { status: 200 });
+    throw new Error(`Unexpected fetch: ${String(url)}`);
+  };
+  console.log = () => {};
+  try {
+    const result = await runQaCli(parseArgs([
+      "qa", "run", "--site", repo, "--base-url", "https://preview.example.com", "--family", "olympus", "--slug", "acme",
+      "--currency", "gbp", "--output-dir", join(repo, "qa-output"), "--no-post-verdict", "--no-remit", "--no-live-refs", "--json",
+    ]));
+    const entry = "https://preview.example.com/acme/?currency=GBP";
+    assert.deepEqual(result.entry_urls.map((item) => item.url), [entry]);
+    assert.ok(fetched.includes(entry), "the entry page is fetched with the currency");
+    assert.ok(fetched.includes("https://preview.example.com/acme/checkout/"), "a non-entry page is fetched as built");
+    assert.ok(!fetched.some((url) => url.includes("checkout/?currency")), "only the entry page carries the currency");
+    const persisted = JSON.parse(readFileSync(result.local_path, "utf8"));
+    for (const verdict of [result.verdict, persisted]) {
+      const rows = verdict.assertions.filter((item) => item.evidence?.currency);
+      assert.equal(rows.length, 1, "one row records the currency");
+      assert.match(rows[0].id, /^http:/);
+      assert.equal(rows[0].evidence.currency, "GBP");
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.log = originalLog;
+    process.exitCode = originalExitCode;
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("a non-USD --currency on an ordering run with no --test-country warns, and nothing else does", () => {
+  const warned = (argv) => {
+    const lines = [];
+    const result = warnCurrencyWithoutTestCountry(parseArgs(["qa", "run", ...argv]), (line) => lines.push(line));
+    assert.equal(result, lines.length === 1, argv.join(" "));
+    return lines[0] || null;
+  };
+  const line = warned(["--currency", "gbp", "--test-order", "common"]);
+  assert.match(line, /^\[qa:test-order\] --currency GBP with no --test-country: test orders use the default US shipping address\./);
+  assert.match(line, /--test-country, --test-address1, --test-city, --test-province and --test-postal/);
+  assert.ok(warned(["--currency", "EUR", "--test-order"]), "a bare --test-order places orders");
+  assert.equal(warned(["--currency", "GBP", "--test-order", "common", "--test-country", "GB"]), null);
+  assert.equal(warned(["--currency", "EUR", "--test-order", "common", "--test-country", "US"]), null, "an explicit country is the operator's choice");
+  assert.equal(warned(["--currency", "usd", "--test-order", "common"]), null);
+  assert.equal(warned(["--currency", "GBP"]), null, "no orders, no address");
+  assert.equal(warned(["--currency", "GBP", "--test-order", "off"]), null);
+  assert.equal(warned(["--test-order", "common"]), null);
 });

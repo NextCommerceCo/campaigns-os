@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-sdk-bump
-version: 1.0.2
+version: 1.0.3
 description: Bump a live campaign's Campaign Cart SDK from one 0.4.x release to a later 0.4.x on a page-kit or static repo. Use for any request to bump, upgrade or move a campaign to SDK 0.4.x, including when the repository has its own BUMP.md. Find every pin, check the release diff and storage against the campaign's own code, prove on a preview with approved test orders, and report what is not proven.
 ---
 
-Bundle revision: 1.60.0+skills.2
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.60.0+skills.2`
+Bundle revision: 1.60.0+skills.3
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.60.0+skills.3`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -229,7 +229,12 @@ received test-order events.
 
 - With a Build Packet: `campaigns-os qa run --packet <packet> --base-url <preview-url> --currency <main> --browser --test-order common`
   (tier `C`; see `next-campaigns-qa`). The runner's test orders use a US
-  shipping address by default. For a store whose main market is not the US, run it
+  shipping address by default. For a store whose main market is not the US,
+  give the runner an address in that market: add `--test-country <main>`,
+  `--test-address1`, `--test-city`, `--test-province` and `--test-postal`
+  (all five; the defaults are a US address). The runner warns when a non-USD
+  `--currency` has no `--test-country`. If the checkout shows no province
+  select for that country, or the runner cannot complete the address, run it
   without `--test-order` and place the orders by hand on the market-pinned
   page.
 - A built page-kit repo with no packet: `campaigns-os qa run --site <repo> --base-url <preview-url> --family <family> --slug <slug> --currency <main> --browser`
