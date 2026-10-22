@@ -2,7 +2,8 @@
 // checks (#303).
 //
 // Source: the SDK's own source in NextCommerceCo/campaign-cart at tag
-// v0.4.43: every data-next-* name the SDK's non-test TypeScript names as a
+// v0.4.43; the certified starter families and the SDK support policy still
+// name 0.4.42, whose names are the same: every data-next-* name the SDK's non-test TypeScript names as a
 // string, plus every `dataset.next*` property it reads or writes, turned back
 // into its attribute. Only the data-next-* names are kept: the checks that read this
 // list ask "does the SDK read this data-next-* attribute at all", and the
