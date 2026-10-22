@@ -2,6 +2,21 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.60.0+agent.4] - 2026-10-22
+
+### Changed
+
+The `next-campaigns-sdk-bump` skill (1.0.2, bundle `1.60.0+skills.2`) takes the second-run findings on campaigns-os#683:
+
+- Step 1 reads each slug's live or retired status from the target repository's `CLAUDE.md`. Test orders go only on live slugs. When a slug has no status recorded, the skill says so and asks.
+- The reload bar in step 6 is one fresh load and five cached reloads of every SDK page, upsells included, and the hand-back gives the counts.
+- The first page of the preview run carries `?currency=<main>&country=<main>` as well as the geolocation pin, because the SDK picks the market by IP.
+- Test orders send real purchase events to every analytics vendor the campaign configures unless the beacons are blocked at the network, and `qa run` does not block them yet. The skill says not to use `?ignore=true`, which turns off `dl_*` events for the session from 0.4.42, and the hand-back names each vendor that received test-order events.
+- The install-browser, `--browser` and local-only answers are asked up front, so a no-packet bump does not skip the `qa run --browser` pass by default. `--family` is named as a template brand contract shipped in the package (or a private family in `contracts/private-template-sources.json`), and the skill says to ask instead of guessing it.
+- The first project-local install of the toolkit writes `devDependencies` and `package-lock.json`. The skill says to expect that change and commit it. `tooling status` only reads the pin.
+
+Doctor's SDK attribute index now names Campaign Cart v0.4.43. Regenerated from the source at that tag, it has the same 149 `data-next-*` names as v0.4.42. The cart placeholder renderers are unchanged too, so 0.4.43 joins the verified placeholder pins.
+
 ## [1.60.0+agent.3] - 2026-10-21
 
 ### Added

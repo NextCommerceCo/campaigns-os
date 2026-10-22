@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-sdk-bump
-version: 1.0.1
+version: 1.0.2
 description: Bump a live campaign's Campaign Cart SDK from one 0.4.x release to a later 0.4.x on a page-kit or static repo. Use for any request to bump, upgrade or move a campaign to SDK 0.4.x, including when the repository has its own BUMP.md. Find every pin, check the release diff and storage against the campaign's own code, prove on a preview with approved test orders, and report what is not proven.
 ---
 
-Bundle revision: 1.60.0+skills.1
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.60.0+skills.1`
+Bundle revision: 1.60.0+skills.2
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.60.0+skills.2`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -19,6 +19,12 @@ Use this when someone says "bump this campaign to SDK 0.4.x". The developer
 installs the toolkit, asks for the bump, approves each push, the pull request
 and each test order, then reviews and merges. Everything here uses existing
 commands; there is no new write or order capability.
+
+If the Page Kit folder has no pinned copy yet, install one with
+`npm install --save-dev --save-exact @nextcommerce/campaigns-os@<version>`.
+The install adds the package to `devDependencies` in `package.json` and updates
+`package-lock.json`; `tooling status` only reads that pin and writes neither.
+Expect that change and commit it on the bump branch as its own commit.
 
 If `tooling status` prints `Refresh installed skills` for `--platform codex` or
 `--platform agents` only, that refresh is for those harnesses; it is not
@@ -51,7 +57,16 @@ separate work.
 Ask before every push, before opening the pull request, and before test
 orders. Test orders are real orders in the store that someone may have to
 cancel; follow the `next-campaigns-qa` rule: ask once up front, then follow the
-answer. Never write evidence or notes into the served tree: many static repos
+answer.
+
+Ask these up front, together with test orders, so the runner pass in step 6
+is a choice, not a default skip:
+
+- May I run `campaigns-os qa install-browser` (about 100 MB, once per machine)?
+- May I run `qa run --browser` against the preview?
+- Should the verdict stay local (`--local-only`) or post to the QA portal?
+
+Never write evidence or notes into the served tree: many static repos
 publish from the repository root. The hand-back goes on the ticket or the pull
 request.
 
@@ -66,6 +81,12 @@ check `.gitignore`, and never stage it.
 
 Branch from an up-to-date `main`. List open pull requests that touch the
 campaign folder and ask the developer about merge order before branching.
+
+Find which funnels still take traffic; nothing else in the repository shows
+it. Read the per-slug status line in the repository's `CLAUDE.md` (for example
+`- <slug>: live` or `- <slug>: retired`). Bump every slug in scope, but place
+test orders only on slugs marked live. If a slug has no status line, say so, list those slugs, and
+ask the developer which are live before step 6.
 
 ## 2. Find every pin
 
@@ -157,30 +178,46 @@ remaining old version.
 ## 6. Preview proof
 
 Deploy a preview and prove the bump with browser test orders under the
-approval rule above. `qa run --browser` needs the browser once per machine:
-`campaigns-os qa install-browser` downloads about 100 MB, so ask before running
-it. Pin the browser to the store's main market: a run
-geolocated elsewhere can order in another currency and skip a currency-gated
-upsell.
+approval rule above, using the three answers you asked for up front.
+
+Pin the run to the store's main market in two ways. Set the browser's
+geolocation to that market, and open the first page with
+`?currency=<main>&country=<main>` (for example `?currency=USD&country=US`). The
+SDK picks the market by IP, so geolocation alone can open checkout in another
+country and currency and skip a currency-gated upsell.
+
+Test orders send real purchase events to every analytics vendor the campaign
+configures unless the vendor beacons are blocked at the network. `qa run` does not block them yet. Do not add `?ignore=true` to
+stop them: from 0.4.42 it turns off the SDK's `dl_*` events for the whole
+session, so the purchase-event check below cannot pass. Read the vendors from
+the campaign's analytics config before the first order, and name in the
+hand-back each vendor that received test-order events.
 
 - With a Build Packet: `campaigns-os qa run --packet <packet> --base-url <preview-url> --browser --test-order common`
   (tier `C`; see `next-campaigns-qa`).
-- A built page-kit repo with no packet: `campaigns-os qa run --site <repo> --base-url <preview-url> --family <family> --browser`
+- A built page-kit repo with no packet: `campaigns-os qa run --site <repo> --base-url <preview-url> --family <family> --slug <slug> --browser`
   (tier `C`) checks the served pages. Place the approved test orders in the
-  browser and record each order number.
+  browser and record each order number. `--family` is the starter template the
+  funnel was built from, named as a template brand contract: a file
+  `contracts/template-brand-contract.<family>.v0.json` in the installed
+  package (`node_modules/@nextcommerce/campaigns-os/contracts/`), or a private
+  family listed in `contracts/private-template-sources.json`. If the
+  repository's `CLAUDE.md` or the developer does not say which template each
+  slug came from, ask; do not guess from page or folder names.
 - A static repo: place the approved test orders in the browser on the preview
   and record each order number.
 
 Cover:
 
-- one card order per live checkout;
+- one card order per live checkout (live slugs from step 1 only);
 - PayPal cancelled, then a card order, where PayPal is offered;
 - an upsell at quantity 2 or more on a page that shows a quantity picker;
 - a 3-D Secure card when step 3 found card-field or 3-D Secure changes, and whether it challenged;
 - the coupon path, if the funnel has one;
 - the purchase event fires once, on the page the release says it should;
-- each SDK page on a fresh load and on a cached reload, with every
-  `next:initialized` listener from step 3 running once on both.
+- every SDK page, upsells included, on one fresh load and then five cached
+  reloads, with every `next:initialized` listener from step 3 running once on
+  each load. Count the loads per page for the hand-back.
 
 Read each order back in the store admin (the packet run's verdict under
 `qa-output/` also lists the orders it created) and keep the order numbers for
@@ -189,5 +226,7 @@ the hand-back.
 ## 7. Hand back
 
 On the ticket or the pull request, not in the repository: what changed (pins,
-loader rewrites), the storage-check and doctor results, a table of test orders,
-what is not proven, and which orders to cancel.
+loader rewrites), the storage-check and doctor results, which slugs are live and
+which had no status recorded, a table of test orders, the fresh and cached load
+counts per SDK page, which analytics vendors received test-order events, what
+is not proven, and which orders to cancel.

@@ -2,10 +2,9 @@
 // checks (#303).
 //
 // Source: the SDK's own source in NextCommerceCo/campaign-cart at tag
-// v0.4.42 (the SDK pin every certified starter family ships today): every
-// data-next-* name the SDK's non-test TypeScript names as a string, plus every
-// `dataset.next*` property it reads or writes, turned back into its
-// attribute. Only the data-next-* names are kept: the checks that read this
+// v0.4.43: every data-next-* name the SDK's non-test TypeScript names as a
+// string, plus every `dataset.next*` property it reads or writes, turned back
+// into its attribute. Only the data-next-* names are kept: the checks that read this
 // list ask "does the SDK read this data-next-* attribute at all", and the
 // SDK's other attribute families (data-item-*, data-package-*, plain data-*)
 // are not what an agent kit misspells.
@@ -15,8 +14,8 @@
 // whole from the source at a named tag, never edited by hand.
 //
 //   paths=('src/**/*.ts' ':!src/**/*.test.ts' ':!src/**/tests/**' ':!src/docs/**')
-//   { git -C ../campaign-cart grep -h -oP 'data-next-[a-z0-9]+(?:-[a-z0-9]+)*-?' v0.4.42 -- "${paths[@]}"
-//     git -C ../campaign-cart grep -h -oP 'dataset\.next[A-Z][A-Za-z0-9]*' v0.4.42 -- "${paths[@]}" \
+//   { git -C ../campaign-cart grep -h -oP 'data-next-[a-z0-9]+(?:-[a-z0-9]+)*-?' v0.4.43 -- "${paths[@]}"
+//     git -C ../campaign-cart grep -h -oP 'dataset\.next[A-Z][A-Za-z0-9]*' v0.4.43 -- "${paths[@]}" \
 //       | sed 's/^dataset\.//' | perl -pe 's/([A-Z])/-\L$1/g; s/^/data-/'
 //   } | sort -u
 //
@@ -31,14 +30,14 @@
 // data-next-bump-section, data-next-button-text, the variant option state).
 // At v0.4.41 it returns every name of the v0.4.38 list this replaces, plus
 // those and data-next-phone-e164 / data-next-phone-country. At v0.4.42 it
-// returns the same 149 names as at v0.4.41.
+// returns the same 149 names as at v0.4.41, and at v0.4.43 the same again.
 //
 // A name ending in "-" (data-next-class-) is a prefix the SDK reads with any
 // suffix.
 
 import { RELEASED_SDK_VERSION_PATTERN } from "../campaign-spec/dist/index.js";
 
-export const SDK_ATTRIBUTE_INDEX_VERSION = "0.4.42";
+export const SDK_ATTRIBUTE_INDEX_VERSION = "0.4.43";
 
 export const SDK_DATA_NEXT_ATTRIBUTES = Object.freeze([
   "data-next-accordion",
@@ -365,8 +364,8 @@ export const SDK_TEMPLATE_PLACEHOLDERS = Object.freeze({
 });
 
 // The SDK versions whose renderer files above were verified unchanged from
-// v0.4.38 (git blob ids equal at v0.4.38, v0.4.39, v0.4.40, v0.4.41 and v0.4.42, for
-// the eight renderer files cited above plus cart-item-list.enhancer.ts and
+// v0.4.38 (git blob ids equal at v0.4.38, v0.4.39, v0.4.40, v0.4.41, v0.4.42 and
+// v0.4.43, for the eight renderer files cited above plus cart-item-list.enhancer.ts and
 // order-item-list.enhancer.ts). A page whose loader pins another version
 // cannot pass the placeholder check.
-export const SDK_TEMPLATE_PLACEHOLDERS_VERIFIED_PINS = Object.freeze(["0.4.38", "0.4.39", "0.4.40", "0.4.41", "0.4.42"]);
+export const SDK_TEMPLATE_PLACEHOLDERS_VERIFIED_PINS = Object.freeze(["0.4.38", "0.4.39", "0.4.40", "0.4.41", "0.4.42", "0.4.43"]);

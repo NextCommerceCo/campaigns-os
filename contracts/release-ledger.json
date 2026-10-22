@@ -8705,6 +8705,93 @@
         }
       ],
       "entry_sha256": "b2b7c61bf3ba87e1d9f730f33a07335f74230b0ece0b94a0370d4de5af1e7859"
+    },
+    {
+      "id": "RL-0282",
+      "sequence": 270,
+      "date": "2026-10-22",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.60.0+agent.4",
+      "changelog_sha256": "92f08eaac0c1873bf1dc926baefbe09e700ba53e7d33f18371452fb453cb88cb",
+      "agent_impact": "An agent running next-campaigns-sdk-bump reads per-slug live status from the target CLAUDE.md and places test orders only on live slugs, asking when none is recorded; asks the install-browser, --browser and local-only answers up front; pins the market with ?currency=<main>&country=<main> on the first URL as well as geolocation; never uses ?ignore=true; proves one fresh load and five cached reloads per SDK page; commits the devDependencies change from the first project-local install; and names in the hand-back the load counts and each analytics vendor that received test-order events. Re-run tooling status --skills-revision 1.60.0+skills.2 and start a fresh session on mismatch.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance bundle revision to 1.60.0+skills.2 and each skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-sdk-bump/SKILL.md",
+          "surface_entry": null,
+          "summary": "Add funnel liveness, up-front runner gates, the --family source, the currency/country pin, analytics beacon handling, the 1 fresh + 5 cached reload bar, and the install pin commit."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Update current bundle revision examples to 1.60.0+skills.2."
+        }
+      ],
+      "entry_sha256": "85210a2c616e09b84923cb173b4f20455660357d486325824d47540abcac2095"
     }
   ]
 }
