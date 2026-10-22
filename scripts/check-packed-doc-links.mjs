@@ -1,8 +1,8 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 
-// These are documentation links, not links inside illustrative code. Preserve
-// newlines so failures still identify the installed file and its source line.
+// Check documentation links and local image references, not illustrative code.
+// Preserve newlines so failures identify the installed file and its source line.
 function prose(markdown) {
   let fence = null;
   return markdown.replace(/<!--[\s\S]*?-->/g, (text) => text.replace(/[^\n]/g, " "))
@@ -19,7 +19,7 @@ function prose(markdown) {
 
 function destination(text, offset) {
   let i = offset;
-  while (/\s/.test(text[i] || "") && i < text.length) i += 1;
+  while (i < text.length && /\s/.test(text[i])) i += 1;
   if (text[i] === "<") {
     const end = text.indexOf(">", i + 1);
     return end < 0 ? null : text.slice(i + 1, end);
@@ -38,7 +38,11 @@ function destination(text, offset) {
 }
 
 function links(markdown) {
-  const text = prose(markdown).replace(/(`+)([\s\S]*?)\1(?!`)/g, (code) => code.replace(/[^\n]/g, " "));
+  // Code spans can cross soft line breaks, but cannot cross paragraph breaks.
+  // Match whole, equal-length backtick runs; leave unmatched runs as prose.
+  const text = prose(markdown).split(/(\n[ \t]*\n)/).map((paragraph) =>
+    paragraph.replace(/(?<!`)(`+)(?!`)([\s\S]*?)(?<!`)\1(?!`)/g, (code) => code.replace(/[^\n]/g, " "))
+  ).join("");
   const definitions = new Map();
   const normalize = (label) => label.trim().replace(/\s+/g, " ").toLowerCase();
   for (const match of text.matchAll(/^ {0,3}\[([^\]\n]+)\]:[ \t]*(.*)$/gm)) {
@@ -84,7 +88,7 @@ function anchors(markdown) {
   return ids;
 }
 
-/** Validate prose links in the installed documentation graph, without network reads. */
+/** Validate prose links and local images in installed docs, without network reads. */
 export function checkPackedDocLinks(packageRoot, entryDocs) {
   const root = resolve(packageRoot);
   const errors = [];

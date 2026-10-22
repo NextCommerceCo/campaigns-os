@@ -120,7 +120,7 @@ try {
   }
   // Check the extracted package, not the checkout: a valid source link can
   // still strand installed users when its destination was omitted by files[].
-  const docLinks = checkPackedDocLinks(pkgRoot, ["README.md", "AGENTS.md", "CONTEXT.md", ...packedDocs]);
+  const docLinks = checkPackedDocLinks(pkgRoot, ["README.md", "AGENTS.md", "CONTEXT.md", "CHANGELOG.md", ...packedDocs]);
   if (docLinks.length) fail(`installed documentation links do not resolve:\n${docLinks.join("\n")}`);
   if (pkg.private) fail("package.json is still private: true — npm publish would refuse it");
   if (pkg.dependencies?.playwright) fail("playwright is back in dependencies; it must stay an optionalDependency");

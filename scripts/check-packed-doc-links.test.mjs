@@ -41,3 +41,25 @@ test("code examples and external URLs do not become package dependencies", () =>
     assert.equal(checkPackedDocLinks(root, ["README.md"]).length, 2);
   });
 });
+
+test("local documentation images must be packed, while remote images stay external", () => {
+  fixture({ "README.md": "![diagram](diagram.svg)\n![badge](https://example.com/badge.svg)" }, (root) => {
+    assert.deepEqual(checkPackedDocLinks(root, ["README.md"]), ["README.md:1: diagram.svg is missing from the package"]);
+    writeFileSync(join(root, "diagram.svg"), '<svg xmlns="http://www.w3.org/2000/svg"/>');
+    assert.deepEqual(checkPackedDocLinks(root, ["README.md"]), []);
+  });
+});
+
+test("multiline code spans and embedded shorter backtick runs remain code", () => {
+  fixture({ "README.md": "`multiline\n[example](missing.md)`\n\n``nested `\n[example](also-missing.md)``" }, (root) => {
+    assert.deepEqual(checkPackedDocLinks(root, ["README.md"]), []);
+  });
+});
+
+test("unmatched backticks cannot hide links in later paragraphs or pair unequal runs", () => {
+  fixture({ "README.md": "An unmatched ` marker.\n\n[guide](missing.md)\n\nLater `code`." }, (root) => {
+    assert.deepEqual(checkPackedDocLinks(root, ["README.md"]), ["README.md:3: missing.md is missing from the package"]);
+    writeFileSync(join(root, "README.md"), "Unequal `` [guide](missing.md) ` runs.");
+    assert.deepEqual(checkPackedDocLinks(root, ["README.md"]), ["README.md:1: missing.md is missing from the package"]);
+  });
+});
