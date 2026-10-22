@@ -18,7 +18,7 @@ import {
   SOURCE_HTML_MANIFEST_SCHEMA,
   validateSourceHtmlManifest,
 } from "./source-html-manifest.mjs";
-import { checkoutPathFrom, forwardRouteTarget, isPrePaymentPage } from "../campaign-spec/dist/index.js";
+import { checkoutPathFrom, forwardRouteTarget, isCheckoutFlowPage, isPrePaymentPage, resolveRouteTargetPage } from "../campaign-spec/dist/index.js";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CLI = resolve(ROOT, "bin/campaigns-os.mjs");
@@ -655,6 +655,28 @@ test("no certified fixture silently drops a declared forward edge", () => {
     }
   }
   assert.deepEqual(dropped, []);
+});
+
+test("multi-step example hints agree with the generated next form and post-payment destination", () => {
+  const emitted = corpusFrontmatter();
+  for (const name of ["shop-three-step-dynamic-shipping.json", "olympus-mv-two-step-configurable.json"]) {
+    const spec = readJson(resolve(ROOT, "contracts/fixtures/campaign-specs", name));
+    for (const funnel of spec.funnels) {
+      for (const page of funnel.pages.filter(isCheckoutFlowPage)) {
+        const label = `${name}::${funnel.id}::${page.id}`;
+        const actual = emitted[label];
+        const hints = page.sdk_hints.frontmatter;
+        assert.ok(actual, `${label} must have a Page Kit projection`);
+        for (const field of ["next_url", ...(isPrePaymentPage(page) ? ["next_step"] : [])]) {
+          const target = resolveRouteTargetPage(funnel.pages, hints[field]);
+          assert.ok(target, `${label}.${field} must name a page in this example`);
+          assert.equal(actual[field], `/campaign/${publicRouteForPage(target).replace(/^\/+|\/+$/g, "")}/`, `${label}.${field} differs from the generated route`);
+        }
+        assert.equal(hints.step_number, actual.step_number, `${label} step ordinal differs`);
+        if (!isPrePaymentPage(page)) assert.equal(hints.next_step, undefined, `${label} takes payment, not another form step`);
+      }
+    }
+  }
 });
 
 test("forward-link precedence is specific-before-generic, and wiring proves it end to end", () => {
