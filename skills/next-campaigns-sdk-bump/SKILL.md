@@ -20,8 +20,10 @@ installs the toolkit, asks for the bump, approves each push, the pull request
 and each test order, then reviews and merges. Everything here uses existing
 commands; there is no new write or order capability.
 
-If the Page Kit folder has no pinned copy yet, install one with
-`npm install --save-dev --save-exact @nextcommerce/campaigns-os@<version>`.
+If the Page Kit folder has no pinned copy yet, ask before installing one. Pin
+the package version you reviewed (such as `1.60.0`, not the bundle revision), after
+reviewing its source tag and provenance as `AGENTS.md` describes:
+`npm install --save-dev --save-exact @nextcommerce/campaigns-os@<reviewed-version>`.
 The install adds the package to `devDependencies` in `package.json` and updates
 `package-lock.json`; `tooling status` only reads that pin and writes neither.
 Expect that change and commit it on the bump branch as its own commit.
@@ -85,8 +87,9 @@ campaign folder and ask the developer about merge order before branching.
 Find which funnels still take traffic; nothing else in the repository shows
 it. Read the per-slug status line in the repository's `CLAUDE.md` (for example
 `- <slug>: live` or `- <slug>: retired`). Bump every slug in scope, but place
-test orders only on slugs marked live. If a slug has no status line, say so, list those slugs, and
-ask the developer which are live before step 6.
+test orders only on slugs marked live. If there is no `CLAUDE.md`, or a slug has
+no status line, say so, list those slugs, and ask the developer which are live
+before step 6. Never treat a missing status as live or as retired.
 
 ## 2. Find every pin
 
@@ -184,7 +187,10 @@ Pin the run to the store's main market in two ways. Set the browser's
 geolocation to that market, and open the first page with
 `?currency=<main>&country=<main>` (for example `?currency=USD&country=US`). The
 SDK picks the market by IP, so geolocation alone can open checkout in another
-country and currency and skip a currency-gated upsell.
+country and currency and skip a currency-gated upsell. Both parameters are
+Campaign Cart URL parameters and stay set for the rest of the tab. On `qa run`,
+pass `--currency <main>` instead of editing the URL: it tags each entry page and
+records the currency in the verdict. `qa run` has no country flag.
 
 Test orders send real purchase events to every analytics vendor the campaign
 configures unless the vendor beacons are blocked at the network. `qa run` does not block them yet. Do not add `?ignore=true` to
@@ -193,10 +199,10 @@ session, so the purchase-event check below cannot pass. Read the vendors from
 the campaign's analytics config before the first order, and name in the
 hand-back each vendor that received test-order events.
 
-- With a Build Packet: `campaigns-os qa run --packet <packet> --base-url <preview-url> --browser --test-order common`
+- With a Build Packet: `campaigns-os qa run --packet <packet> --base-url <preview-url> --currency <main> --browser --test-order common`
   (tier `C`; see `next-campaigns-qa`).
-- A built page-kit repo with no packet: `campaigns-os qa run --site <repo> --base-url <preview-url> --family <family> --slug <slug> --browser`
-  (tier `C`) checks the served pages. Place the approved test orders in the
+- A built page-kit repo with no packet: `campaigns-os qa run --site <repo> --base-url <preview-url> --family <family> --slug <slug> --currency <main> --browser`
+  (tier `C`) checks the served pages of one slug; run it once per live slug. Place the approved test orders in the
   browser and record each order number. `--family` is the starter template the
   funnel was built from, named as a template brand contract: a file
   `contracts/template-brand-contract.<family>.v0.json` in the installed
@@ -209,7 +215,7 @@ hand-back each vendor that received test-order events.
 
 Cover:
 
-- one card order per live checkout (live slugs from step 1 only);
+- one card order per live checkout, on every live slug from step 1;
 - PayPal cancelled, then a card order, where PayPal is offered;
 - an upsell at quantity 2 or more on a page that shows a quantity picker;
 - a 3-D Secure card when step 3 found card-field or 3-D Secure changes, and whether it challenged;
@@ -227,6 +233,6 @@ the hand-back.
 
 On the ticket or the pull request, not in the repository: what changed (pins,
 loader rewrites), the storage-check and doctor results, which slugs are live and
-which had no status recorded, a table of test orders, the fresh and cached load
-counts per SDK page, which analytics vendors received test-order events, what
-is not proven, and which orders to cancel.
+which had no status recorded, a table of test orders by slug, the fresh and
+cached load counts per SDK page, which analytics vendors received test-order
+events, what is not proven, and which orders to cancel.
