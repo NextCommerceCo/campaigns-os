@@ -226,32 +226,54 @@ export function analyzeStorageJavaScript(source, { path = '<source>', lineOffset
     emit(node, { operation, area: storage.name, key, status, reason, replacement, ...(prefixScan && { prefixScan }) });
   }
   // A loop that matches storage keys by a scoped SDK key's prefix: its key()/getItem(k) lines stay unknown, but are named.
+  // A prefix test counts only when it tests a key the loop read from storage itself: a `k = storage.key(i)` binding,
+  // a for-of/for-in variable over `Object.keys(storage)` or `storage`, or the first parameter of an array callback
+  // chained on `Object.keys(storage)`. Names are matched within the loop, not resolved through scopes; it is a hint only.
   const stack = [];
   const prefixCache = new WeakMap();
+  const callName = call => call?.type === 'CallExpression' && call.callee.type === 'MemberExpression' ? (call.callee.computed ? literal(call.callee.property, scopes.get(call)) : call.callee.property.name) : null;
+  const keysOf = node => node?.type === 'CallExpression' && node.callee.type === 'MemberExpression' && node.callee.object.type === 'Identifier' && node.callee.object.name === 'Object' && callName(node) === 'keys' ? area(node.arguments[0], scopes.get(node)) : null;
+  function keySource(node) {
+    // Object.keys(storage).filter(...).forEach(...): the chain bottoms out at Object.keys.
+    while (node?.type === 'CallExpression' && ITERATION_METHODS.has(callName(node)))
+      node = node.callee.object;
+    return keysOf(node);
+  }
   function prefixTests(node) {
     if (prefixCache.has(node)) return prefixCache.get(node);
-    const found = [];
-    const method = (call, name) => call?.type === 'CallExpression' && call.callee.type === 'MemberExpression' && (call.callee.computed ? literal(call.callee.property, scopes.get(call)) : call.callee.property.name) === name;
+    const keys = new Map(), tests = [];
+    const bind = (id, storage) => { if (id?.type === 'Identifier' && storage) keys.set(id.name, storage.name); };
+    const loopVariable = left => left?.type === 'VariableDeclaration' ? left.declarations[0]?.id : left;
     (function walk(n) {
-      if (method(n, 'startsWith'))
-        found.push(literal(n.arguments[0], scopes.get(n)));
+      if (n.type === 'VariableDeclarator' && callName(n.init) === 'key')
+        bind(n.id, area(n.init.callee.object, scopes.get(n.init)));
+      if (n.type === 'AssignmentExpression' && n.operator === '=' && callName(n.right) === 'key')
+        bind(n.left, area(n.right.callee.object, scopes.get(n.right)));
+      if (n.type === 'ForOfStatement')
+        bind(loopVariable(n.left), keysOf(n.right));
+      if (n.type === 'ForInStatement')
+        bind(loopVariable(n.left), area(n.right, scopes.get(n.right)));
+      if (n.type === 'CallExpression' && ITERATION_METHODS.has(callName(n)) && ['ArrowFunctionExpression', 'FunctionExpression'].includes(n.arguments[0]?.type))
+        bind(n.arguments[0].params[0], keySource(n.callee.object));
+      if (callName(n) === 'startsWith')
+        tests.push({ receiver: n.callee.object, prefix: literal(n.arguments[0], scopes.get(n)) });
       if (n.type === 'BinaryExpression' && ['===', '==', '!==', '!='].includes(n.operator))
         for (const [call, zero] of [[n.left, n.right], [n.right, n.left]])
-          if (zero.type === 'Literal' && zero.value === 0 && method(call, 'indexOf') && call.arguments.length === 1)
-            found.push(literal(call.arguments[0], scopes.get(call)));
+          if (zero.type === 'Literal' && zero.value === 0 && callName(call) === 'indexOf' && call.arguments.length === 1)
+            tests.push({ receiver: call.callee.object, prefix: literal(call.arguments[0], scopes.get(call)) });
       for (const child of children(n)) walk(child);
     })(node);
-    const prefixes = found.filter(Boolean);
+    const prefixes = tests.filter(t => t.prefix && t.receiver.type === 'Identifier' && keys.has(t.receiver.name)).map(t => ({ prefix: t.prefix, area: keys.get(t.receiver.name) }));
     prefixCache.set(node, prefixes);
     return prefixes;
   }
   function sdkPrefixScan(storageName) {
+    // Nearest matching loop wins; a loop with no matching test (an inner loop, say) passes to the one around it.
     for (const node of [...stack].reverse()) {
-      const iteration = node.type === 'CallExpression' && node.callee.type === 'MemberExpression' && !node.callee.computed && ITERATION_METHODS.has(node.callee.property.name);
-      if (!LOOPS.has(node.type) && !iteration) continue;
-      const prefixes = prefixTests(node);
+      if (!LOOPS.has(node.type) && !(node.type === 'CallExpression' && ITERATION_METHODS.has(callName(node)))) continue;
+      const prefixes = prefixTests(node).filter(t => t.area === storageName).map(t => t.prefix);
       const entry = manifest.keys.find(e => e.scoped && e.areas.includes(storageName) && e.key.split('{')[0] && prefixes.includes(e.key.split('{')[0]));
-      return entry ? { prefix: entry.key.split('{')[0], key: entry.key, replacement: entry.replacement ?? null } : null;
+      if (entry) return { prefix: entry.key.split('{')[0], key: entry.key, replacement: entry.replacement ?? null };
     }
     return null;
   }

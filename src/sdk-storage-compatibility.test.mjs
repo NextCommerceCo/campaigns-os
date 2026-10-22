@@ -259,7 +259,15 @@ test('prefix loops over scoped SDK keys are named on their unknown lines and in 
     "for (var i = 0; i < sessionStorage.length; i++) { var k = sessionStorage.key(i); if (k.indexOf('next-cart-state') > -1) sessionStorage.getItem(k); }",
     "for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (k.indexOf('next-cart-state') === 0) localStorage.getItem(k); }",
     "if (key.indexOf('next-cart-state') === 0) sessionStorage.getItem(key);",
+    // The tested value is not a key the loop read from storage.
+    "for (const item of order.items) { if (item.indexOf('next-cart-state') === 0) {} sessionStorage.getItem(item.id); }",
+    "for (var i = 0; i < sessionStorage.length; i++) { var k = sessionStorage.key(i); if (label.startsWith('next-cart-state')) sessionStorage.getItem(k); }",
   ]) assert.ok(!scan(source).some(f => f.prefixScan), source);
+  const separate = scan("for (const k of Object.keys(sessionStorage)) { if (k.startsWith('next-cart-state')) {} } for (const x of list) sessionStorage.getItem(x);");
+  assert.equal(separate.find(f => f.reason === 'dynamic-key').prefixScan, undefined);
+  // An inner loop with no prefix test passes to the matching loop around it.
+  const nested = scan("for (const k of Object.keys(sessionStorage)) { if (k.startsWith('next-cart-state')) { for (const j of other) sessionStorage.getItem(k); } }");
+  assert.equal(nested.find(f => f.reason === 'dynamic-key').prefixScan?.prefix, 'next-cart-state');
   const order = scan("for (const k of Object.keys(sessionStorage)) if (k.startsWith('next-order')) sessionStorage.getItem(k);").filter(f => f.prefixScan);
   assert.equal(order[0].prefixScan.replacement.export, 'useOrderStore');
   const findings = [...scan(loops[0]), ...order];
