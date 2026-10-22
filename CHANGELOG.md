@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.60.0+agent.5] - 2026-10-22
+## [1.60.0+agent.6] - 2026-10-22
 
 ### Changed
 
@@ -10,6 +10,18 @@ Notable supported-surface changes are recorded here.
 
 - When `--target-sdk` is outside the manifest's supported range, the human report's first line reads `checked against SDK <range>, not the requested target <x.y.z>`, the next line says the report does not speak for that target, and the count line repeats it. The result is still `unknown` and the exit status still 2. `--json` adds `targetCovered`.
 - An unknown `dynamic-key`, `unsupported-storage-method` or `storage-object-escape` line inside a loop that matches keys by a scoped SDK key's prefix (`k.indexOf('next-cart-state') === 0`, `k.startsWith(...)`) ends in `[prefix loop: <prefix>]`, and `--json` adds `prefixScan` to the finding. One note under the findings explains them: the loop survives the scope suffix, but on a shared origin the prefix also matches another campaign's copy, so the lines stay unknown. Where the manifest names a public store for the key, the note names it.
+
+## [1.60.0+agent.5] - 2026-10-22
+
+### Changed
+
+`qa run`'s test customer and shipping address flags are now documented and supported (campaigns-os#683 review). The order runner has always read them; none was in the usage text or the QA docs. `--test-first-name`, `--test-last-name`, `--test-phone`, `--test-country`, `--test-address1`, `--test-city`, `--test-province` and `--test-postal` are listed in `qa help` with their defaults (a US address in Mountain View, CA), and `docs/qa-and-test-orders.md` gains a "Test customer and shipping address" section with a non-US example. The province select is a required step, so a checkout with no province select for the chosen country fails at that field; those orders are placed by hand.
+
+A non-USD `--currency` on a `qa run` that places orders, with no `--test-country`, now prints a warning on stderr naming the address flags. The run is not refused. Only the missing flag is checked, since a currency such as EUR has many markets.
+
+`qa run --site` lists `--currency <code>` in its usage line, and a test now proves it: the slug's entry page is fetched with `?currency=<CODE>` and the verdict records `evidence.currency` on that page's `http:` row.
+
+The `next-campaigns-sdk-bump` skill (1.0.3, bundle `1.60.0+skills.3`) names the address flags in step 6 as the way to run non-US orders through the runner, with ordering by hand as the fallback.
 
 ## [1.60.0+agent.4] - 2026-10-22
 

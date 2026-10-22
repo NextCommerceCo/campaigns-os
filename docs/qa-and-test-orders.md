@@ -381,6 +381,14 @@ default currency. The persisted verdict redacts every URL query, so the
 currency is recorded as `evidence.currency` on the entry page's
 `http:<page_id>` assertion; an entry URL that does not parse gets no currency,
 and its row records `evidence.currency_not_applied` with the reason instead.
+`--currency` sets the currency only. Test orders still ship to the address the
+`--test-*` flags give, a US address by default (see
+[Test customer and shipping address](#test-customer-and-shipping-address)). A
+non-USD `--currency` on a run that places orders, with no `--test-country`,
+prints a warning on stderr and the run goes ahead. Only the missing flag is
+checked: a currency such as EUR covers many countries, so an explicit
+`--test-country` is taken as meant. `qa run --site` takes `--currency` the same
+way and tags the slug's entry page.
 
 ### Automatic commercial parity
 
@@ -1959,6 +1967,41 @@ that died mid-submit. QA reports it on the path's `browser-test-order` row as
 (or `--test-email`), or wait. The shipping address is not part of the match, so
 changing `--test-address1` does not help.
 
+### Test customer and shipping address
+
+The runner fills the checkout as one test customer. Every field has a default,
+and each has a flag:
+
+| Flag | Default | Field |
+|---|---|---|
+| `--test-first-name` | `QA` | first name (shipping and billing) |
+| `--test-last-name` | `Playwright` | last name |
+| `--test-phone` | empty | phone, filled only when the checkout has the field |
+| `--test-email` | see above | email |
+| `--test-country` | `US` | country select (value or label, such as `GB`) |
+| `--test-address1` | `1600 Amphitheatre Pkwy` | street address |
+| `--test-city` | `Mountain View` | city |
+| `--test-province` | `CA` | state, province or region select (value or label) |
+| `--test-postal` | `94043` | postal code |
+
+The billing fields get the same values when the checkout shows them. To order
+in another market, pass `--test-country` and all four address flags for a real
+address in that country, since the address defaults are a US one, and pass
+`--currency` for that market's currency: the country flag does not change the
+currency. A UK run looks like this:
+
+```bash
+npm run campaigns-os -- qa run --packet campaign-runtime.build.json \
+  --currency GBP --browser --test-order common \
+  --test-country GB --test-address1 "<street>" --test-city "<city>" \
+  --test-province "<option from the province select>" --test-postal "<postcode>"
+```
+
+The province select is a required step. A checkout that shows no province
+select for the chosen country fails the path at that field
+(`Missing checkout select: province`); place those orders by hand on the
+market-pinned page (`?currency=<code>&country=<code>`).
+
 The browser driver intentionally behaves like a user:
 
 - package selection uses rendered `[data-next-package-id]` controls when
@@ -2116,6 +2159,9 @@ npm run campaigns-os -- doctor --built ../my-campaign-repo --family arjuna --emi
 
 # QA a built, served campaign with no packet/spec.
 npm run campaigns-os -- qa run --site ../my-campaign-repo --base-url http://localhost:8080 --family arjuna --browser
+
+# The same, entering the slug's first page in GBP.
+npm run campaigns-os -- qa run --site ../my-campaign-repo --base-url http://localhost:8080 --family arjuna --slug my-slug --currency GBP
 ```
 
 `--family` is required (the residue gates need the family's brand contract).
