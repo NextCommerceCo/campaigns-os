@@ -66,8 +66,7 @@
             "template_family": "shop-three-step",
             "frontmatter": {
               "next_url": "upsell-stepper.html",
-              "next_step": "shipping.html",
-              "step_number": 1
+              "next_step": "shipping.html"
             }
           }
         },
@@ -85,8 +84,7 @@
             "frontmatter": {
               "next_url": "upsell-stepper.html",
               "runtime_shipping_source": "window.next.getShippingMethods()",
-              "next_step": "billing.html",
-              "step_number": 2
+              "next_step": "billing.html"
             }
           }
         },

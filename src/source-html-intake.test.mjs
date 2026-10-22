@@ -676,7 +676,10 @@ test("multi-step reference hints describe the same pages as intent-derived Page 
           assert.ok(target, `${label}.${field} must name a page in this example`);
           assert.equal(actual[field], `/campaign/${publicRouteForPage(target).replace(/^\/+|\/+$/g, "")}/`, `${label}.${field} differs from the generated route`);
         }
-        assert.equal(hints.step_number, actual.step_number, `${label} step ordinal differs`);
+        // Stock Shop forms own a fixed 1/2/3 graph; the reference does not
+        // advertise configurable ordinals. Intake still derives step_number
+        // from intent, covered by the unchanged corpus golden above.
+        assert.equal(hints.step_number, undefined, `${label} must not advertise a configurable stock-form ordinal`);
         if (!isPrePaymentPage(page)) assert.equal(hints.next_step, undefined, `${label} takes payment, not another form step`);
       }
     }
