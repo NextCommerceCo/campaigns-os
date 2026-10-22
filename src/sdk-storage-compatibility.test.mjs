@@ -268,6 +268,14 @@ test('prefix loops over scoped SDK keys are named on their unknown lines and in 
   // An inner loop with no prefix test passes to the matching loop around it.
   const nested = scan("for (const k of Object.keys(sessionStorage)) { if (k.startsWith('next-cart-state')) { for (const j of other) sessionStorage.getItem(k); } }");
   assert.equal(nested.find(f => f.reason === 'dynamic-key').prefixScan?.prefix, 'next-cart-state');
+  // ...but not to a line whose key the outer test never checks.
+  const innerKey = scan("for (const k of Object.keys(sessionStorage)) { if (k.startsWith('next-cart-state')) {} for (const j of config.profiles) sessionStorage.getItem(j.id); }");
+  assert.equal(innerKey.find(f => f.reason === 'dynamic-key').prefixScan, undefined);
+  // reduce's element is its second parameter; the accumulator is not a storage key.
+  const reduce = scan("Object.keys(sessionStorage).reduce((acc, k) => { if (k.startsWith('next-cart-state')) sessionStorage.getItem(k); return acc; }, {});");
+  assert.equal(reduce.find(f => f.reason === 'dynamic-key').prefixScan?.prefix, 'next-cart-state');
+  const accumulator = scan("Object.keys(sessionStorage).reduce((acc, k) => { if (acc.indexOf('next-cart-state') === 0) sessionStorage.getItem(acc); return acc; }, '');");
+  assert.ok(!accumulator.some(f => f.prefixScan));
   const order = scan("for (const k of Object.keys(sessionStorage)) if (k.startsWith('next-order')) sessionStorage.getItem(k);").filter(f => f.prefixScan);
   assert.equal(order[0].prefixScan.replacement.export, 'useOrderStore');
   const findings = [...scan(loops[0]), ...order];
