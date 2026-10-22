@@ -276,6 +276,10 @@ test('prefix loops over scoped SDK keys are named on their unknown lines and in 
   assert.equal(reduce.find(f => f.reason === 'dynamic-key').prefixScan?.prefix, 'next-cart-state');
   const accumulator = scan("Object.keys(sessionStorage).reduce((acc, k) => { if (acc.indexOf('next-cart-state') === 0) sessionStorage.getItem(acc); return acc; }, '');");
   assert.ok(!accumulator.some(f => f.prefixScan));
+  // Passing the storage object on is not explained by the key's prefix test.
+  const passed = scan("Object.keys(sessionStorage).forEach(k => { if (k.startsWith('next-cart-state')) persist(sessionStorage); });");
+  assert.equal(passed.filter(f => f.reason === 'storage-object-escape').length, 2);
+  assert.equal(passed.filter(f => f.prefixScan).length, 1);
   const order = scan("for (const k of Object.keys(sessionStorage)) if (k.startsWith('next-order')) sessionStorage.getItem(k);").filter(f => f.prefixScan);
   assert.equal(order[0].prefixScan.replacement.export, 'useOrderStore');
   const findings = [...scan(loops[0]), ...order];
