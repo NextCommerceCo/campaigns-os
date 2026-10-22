@@ -2,13 +2,22 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.60.0+agent.6] - 2026-10-22
+## [1.60.0+agent.7] - 2026-10-22
 
 ### Fixed
 
 The installed package now includes the existing quickstart, access model, entry-point, source-adapter and CampaignSpec authoring guides. Links from the Build Packet and README continue inside the package; repository-only evaluation, architecture and case-study references point to GitHub. The authoring guide links the shipped v5 schema and public multi-step examples, which remain repository test data.
 
 The package check follows relative documentation links and checks destination headings against the extracted tarball, so a source-only guide or renamed anchor cannot leave installed users at a dead end. It ignores illustrative code and does not fetch external links. Runtime requirements and campaign behavior are unchanged.
+
+## [1.60.0+agent.6] - 2026-10-22
+
+### Changed
+
+`sdk storage-check` output, from Sam's findings on campaigns-os#683:
+
+- When `--target-sdk` is outside the manifest's supported range, the human report's first line reads `checked against SDK <range>, not the requested target <x.y.z>`, the next line says the report does not speak for that target, and the count line repeats it. The result is still `unknown` and the exit status still 2. `--json` adds `targetCovered`.
+- An unknown `dynamic-key`, `unsupported-storage-method` or `storage-object-escape` line inside a loop that matches the keys it reads from storage by a scoped SDK key's prefix (`k.indexOf('next-cart-state') === 0`, `k.startsWith(...)`) ends in `[prefix loop: <prefix>]`, and `--json` adds `prefixScan` to the finding. A key read from storage is a `k = sessionStorage.key(i)` variable, a for-of over `Object.keys(sessionStorage)` or for-in over `sessionStorage`, or the element parameter (the second for `reduce`) of a callback chained on `Object.keys(sessionStorage)`. Only the line where that key came from, or a line that reads that key by name, is marked; other storage use in the loop, such as passing `sessionStorage` to a function, is not. One note under the findings explains them: the loop survives the scope suffix, but on a shared origin the prefix also matches another campaign's copy, so the lines stay unknown. Where the manifest names a public store for the key, the note names it.
 
 ## [1.60.0+agent.5] - 2026-10-22
 

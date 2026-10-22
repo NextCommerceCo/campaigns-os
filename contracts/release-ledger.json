@@ -8905,7 +8905,28 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.60.0+agent.6",
-      "changelog_sha256": "6e853f3c61d2e05bf19df519fc509b604339c113f3c0e1b6d06fae0b0be68213",
+      "changelog_sha256": "a03817e639651688a5f17db7e826eaac34bef5002b51a50abd8f5cb31a0e9a4a",
+      "agent_impact": "An agent reading sdk storage-check output for a target outside the manifest range sees the covered range and the uncovered target in the first line and the count line, and in --json reads targetCovered:false; result and exit status (unknown, 2) are unchanged. Unknown lines inside a prefix loop over a scoped SDK key end in [prefix loop: <prefix>] and carry prefixScan in --json; they remain unknown and are explained by one note under the findings.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/sdk-storage-compatibility.md",
+          "surface_entry": "docs/sdk-storage-compatibility.md",
+          "summary": "Describe the out-of-range header, targetCovered, and the [prefix loop] hint with its prefixScan field."
+        }
+      ],
+      "entry_sha256": "0105b7be6bdbdc6e0f8e5a9b2b2a4b5ad3106e9bc7db72029c0cae05d8372fd1"
+    },
+    {
+      "id": "RL-0285",
+      "sequence": 273,
+      "date": "2026-10-22",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.60.0+agent.7",
+      "changelog_sha256": "7096f90073a3bacfa53548a266f0a496d2ecacd4a7de0b92b1b6304cf3fcf80d",
       "agent_impact": "Installed users can continue from the Build Packet into the existing source-intake and CampaignSpec v5 authoring guidance without a source checkout. Repository-only references have explicit public URLs.",
       "compatibility": "additive",
       "migration": "none",
@@ -8923,7 +8944,7 @@
           "summary": "Link the repository-only migration case study by its public URL rather than a missing installed path."
         }
       ],
-      "entry_sha256": "c2c0a1162bdf3adc4f9d4bd58b1c9ff325ab3a427c9472e1c1257f3e06499a00"
+      "entry_sha256": "013f64e2936a0368e8869bc95a7dce1074c6cbcb7243b6b12b237350fea80490"
     }
   ]
 }
