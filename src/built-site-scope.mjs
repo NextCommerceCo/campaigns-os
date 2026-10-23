@@ -96,14 +96,14 @@ function listHtmlFiles(root, links = null) {
   return files.sort();
 }
 
-function routeForFile(campaignDir, file) {
+export function routeForFile(campaignDir, file) {
   const rel = relative(campaignDir, file).split(sep).join("/");
   if (rel === "index.html") return "";
   if (rel.endsWith("/index.html")) return rel.slice(0, -"/index.html".length);
   return rel.replace(/\.html$/i, "");
 }
 
-function pageIdForRoute(route) {
+export function pageIdForRoute(route) {
   if (!route) return "index";
   return route.replace(/\//g, "-").replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "index";
 }

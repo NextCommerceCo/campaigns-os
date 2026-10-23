@@ -8947,8 +8947,83 @@
       "entry_sha256": "013f64e2936a0368e8869bc95a7dce1074c6cbcb7243b6b12b237350fea80490"
     },
     {
-      "id": "RL-0287",
+      "id": "RL-0286",
       "sequence": 274,
+      "date": "2026-10-23",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.60.0+agent.8",
+      "changelog_sha256": "b38963eb35fd2bb130d4709b3cf0c55e3a95e0795cd332b5ad1e3298f6a5af88",
+      "agent_impact": "Read evidence_debt before revising a campaign and renew owed Polish/QA evidence for the current build. Use doctor --ci for a standing PR check, with exits 0 current, 3 owed, 4 unknown and 2 for packet usage errors. The example reports evidence findings by default; enforcement requires CAMPAIGNS_OS_EVIDENCE_CHECK=fail. Installed agent context carries the live-revision procedure, and install-agent-context --dry-run previews destination content without writes.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": "agents/claude/CLAUDE.md",
+          "surface_entry": "agents/claude/CLAUDE.md",
+          "summary": "Add the live-campaign revision procedure and report-only standing evidence check to installed Claude context."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/codex/AGENTS.md",
+          "surface_entry": "agents/codex/AGENTS.md",
+          "summary": "Add the live-campaign revision procedure and report-only standing evidence check to installed Codex context."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/copilot/copilot-instructions.md",
+          "surface_entry": "agents/copilot/copilot-instructions.md",
+          "summary": "Add the live-campaign revision procedure and report-only standing evidence check to installed Copilot context."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/cursor/campaigns-os.mdc",
+          "surface_entry": "agents/cursor/campaigns-os.mdc",
+          "summary": "Add the live-campaign revision procedure and report-only standing evidence check to installed Cursor context."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Document doctor --ci evidence assessment, output, exit codes and --no-live-refs usage."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/campaigns-os-build-flow.md",
+          "surface_entry": "docs/campaigns-os-build-flow.md",
+          "summary": "Document the standing campaign PR workflow, report-only default, enforcement opt-in and evidence renewal."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/readback.md",
+          "surface_entry": "docs/readback.md",
+          "summary": "Document additive evidence_debt, its closed statuses, build bindings and retained-manifest change lists without claiming JSON Schema coverage."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "Expose doctor --ci and preview installed agent-context destinations and full content under --dry-run."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/ci.mjs",
+          "surface_entry": null,
+          "summary": "Assess build-bound Polish/QA debt and format escaped PR reports with current, owed, unknown and usage exit codes."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/inspect.mjs",
+          "surface_entry": null,
+          "summary": "Add the shared CI evidence assessment to packet doctor inspection without changing ordinary doctor behavior."
+        }
+      ],
+      "entry_sha256": "1373ad7544a503609699964287cb7a94e5ab6c4f9032b3c085dd511008a77a87"
+    },
+    {
+      "id": "RL-0287",
+      "sequence": 275,
       "date": "2026-10-23",
       "kind": "release",
       "surface_version": null,
@@ -9055,7 +9130,7 @@
           "summary": "Capture package visual evidence and report its diagnostic summary."
         }
       ],
-      "entry_sha256": "35dcdcc91995c7e0fb13617840c0e35e9bd425ff45e0ddc90bfd7ceab77b5005"
+      "entry_sha256": "6db2be5bbde95ca81448ab4d82212f995536fb2ebbd75008de71a056286df912"
     }
   ]
 }
