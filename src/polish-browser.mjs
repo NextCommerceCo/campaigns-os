@@ -1322,14 +1322,20 @@ export async function createPolishBrowserAdapter({
           if (!timeoutError(error)) throw error;
           result.networkidle = { status: "timeout", duration_ms: Math.max(0, clock.now() - navEnd) };
         }
-        // Every read and its document check share the same bounded steps.
+        // Every read and its document check share the same bounded steps. A
+        // timeout names the bound that ended it, as the readability probe does:
+        // run_budget_exhausted when the run budget was the smaller clock bound
+        // and the cell deadline had not ended it, otherwise probe_timeout.
         const read = async (probe, awaitPromise = false) => {
           const begin = clock.now(), token = { cancelled: false };
-          const boundMs = Math.max(0, Math.min(probe.boundMs, cellLeftMs(),
-            (budget.addedRemainingMs ?? Infinity) - (begin - started)));
-          const out = (status, value = null) => ({ status, value, elapsed_ms: Math.max(0, clock.now() - begin) });
+          const cellLeft = cellLeftMs(), runLeft = (budget.addedRemainingMs ?? Infinity) - (begin - started);
+          const boundMs = Math.max(0, Math.min(probe.boundMs, cellLeft, runLeft));
+          let steps = null;
+          const timedOutBy = () => (!steps?.hardEnded() && runLeft < Math.min(probe.boundMs, cellLeft) ? "run_budget_exhausted" : "probe_timeout");
+          const out = (status, value = null) => ({ status, value, elapsed_ms: Math.max(0, clock.now() - begin),
+            ...(status === "timeout" ? { ended_by: timedOutBy() } : {}) });
           if (!(boundMs > 0)) return out("timeout");
-          const steps = boundedProbeSteps({ clock, session, token, started: begin, boundMs, hardMs: cellLeftMs() });
+          steps = boundedProbeSteps({ clock, session, token, started: begin, boundMs, hardMs: cellLeft });
           try {
             let failure = null;
             const called = await isolatedWorldRead({ steps, mainFrame, worldName: `campaigns-os-visual-${probe.name}`,
@@ -1358,14 +1364,11 @@ export async function createPolishBrowserAdapter({
           result.probes[probe.name] = await read(probe);
           probe.onResult?.(result.probes[probe.name]);
         }
-        const geometryBoundMs = 1500;
-        const geometryTimeoutStatus = (budget.addedRemainingMs ?? Infinity) - (clock.now() - started)
-          <= Math.min(geometryBoundMs, cellLeftMs()) ? "run_budget_exhausted" : "producer_timeout";
-        const layout = await read({ name: "geometry", source: visualGeometry, boundMs: geometryBoundMs });
+        const layout = await read({ name: "geometry", source: visualGeometry, boundMs: 1500 });
         // The document loaded: a geometry probe that could not measure is not a navigation failure.
         if (layout.status !== "measured" || !Number.isFinite(layout.value?.height)) {
           result.status = layout.status === "document_changed" ? "document_changed"
-            : layout.status === "timeout" ? geometryTimeoutStatus : "probe_failed";
+            : layout.status === "timeout" ? layout.ended_by : "probe_failed";
           return finish();
         }
         result.status = "rendered";

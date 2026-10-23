@@ -32,7 +32,7 @@ export const VISUAL_VIEWPORTS = Object.freeze([
 ]);
 export const VISUAL_VOCABULARY = Object.freeze({
   side: ["build", "source_html"], state: [VISUAL_STATE],
-  cell_status: ["rendered", "navigation_failed", "http_error", "probe_failed", "document_changed", "run_budget_exhausted", "producer_timeout", "browser_unavailable", "source_html_missing", "source_root_unavailable"],
+  cell_status: ["rendered", "navigation_failed", "http_error", "probe_failed", "document_changed", "run_budget_exhausted", "producer_timeout", "probe_timeout", "browser_unavailable", "source_html_missing", "source_root_unavailable"],
   shot_status: ["captured", "timeout", "failed", "skipped"], dependency_status: ["available", "missing", "failed"],
   verification_level: ["decoded", "header_checked", "unverifiable"], provenance_class: ["declared_source", "self_referential", "unknown"],
   comparison_status: ["compared", "unsupported", "unavailable", "not_run"],

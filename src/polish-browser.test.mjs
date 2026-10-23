@@ -103,10 +103,12 @@ test("A loaded document whose geometry probe fails or whose document changes is 
     await adapter.close();
   }
 });
-test("Geometry timeouts report the binding run budget or cell deadline through CDP", async () => {
+test("Geometry timeouts name the bound that ended them: the run budget, else probe_timeout", async () => {
   for (const [addedRemainingMs, cellDeadlineMs, status] of [
     [1000, 10000, "run_budget_exhausted"],
-    [5000, 1200, "producer_timeout"],
+    [5000, 1200, "probe_timeout"],
+    [5000, 10000, "probe_timeout"],
+    [240000, 55000, "probe_timeout"],
   ]) {
     const f = visualChromium({ geometry: "timeout" });
     const adapter = await createPolishBrowserAdapter({ chromium: f.chromium, cellDeadlineMs });
