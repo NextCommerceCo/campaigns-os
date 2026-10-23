@@ -8918,6 +8918,33 @@
         }
       ],
       "entry_sha256": "0105b7be6bdbdc6e0f8e5a9b2b2a4b5ad3106e9bc7db72029c0cae05d8372fd1"
+    },
+    {
+      "id": "RL-0285",
+      "sequence": 273,
+      "date": "2026-10-22",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.60.0+agent.7",
+      "changelog_sha256": "7096f90073a3bacfa53548a266f0a496d2ecacd4a7de0b92b1b6304cf3fcf80d",
+      "agent_impact": "Installed users can continue from the Build Packet into the existing source-intake and CampaignSpec v5 authoring guidance without a source checkout. Repository-only references have explicit public URLs.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Include the five existing public continuation guides in the npm package."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Link the repository-only migration case study by its public URL rather than a missing installed path."
+        }
+      ],
+      "entry_sha256": "013f64e2936a0368e8869bc95a7dce1074c6cbcb7243b6b12b237350fea80490"
     }
   ]
 }
