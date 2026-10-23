@@ -72,7 +72,11 @@ test("doctor --ci matching evidence exits 0 despite unrelated spec errors", (t) 
   assert.equal(payload.ok, false, "normal inspection still runs and reports unrelated errors");
   assert.ok(payload.errors.some((issue) => issue.code === "spec.local_path"));
   assert.deepEqual(readFileSync(f.reportPath), before, "CI inspection preserves recorded evidence");
-  assert.match(run(f, "--ci").stdout, /spec\.local_path/);
+  const markdown = run(f, "--ci");
+  assert.equal(markdown.status, 0);
+  assert.match(markdown.stdout, /spec\.local_path/);
+  assert.match(markdown.stdout, /Owed stages: none\./);
+  assert.doesNotMatch(markdown.stdout, /Remedy:/);
 });
 
 test("doctor --ci page edited and rebuilt exits 3 and Markdown names page and remedy", (t) => {
@@ -88,6 +92,7 @@ test("doctor --ci page edited and rebuilt exits 3 and Markdown names page and re
   assert.match(markdown.stdout, /^## Campaign evidence: owed \(exit 3\)/);
   assert.match(markdown.stdout, /Owed stages: polish, qa/);
   assert.match(markdown.stdout, /Changed page: `landing` \(`landing\/index\.html`\)/);
+  assert.match(markdown.stdout, /Remedy:/);
   assert.match(markdown.stdout, /polish capture/);
   assert.match(markdown.stdout, /record polish.*--evidence/);
   assert.match(markdown.stdout, /qa run/);
@@ -127,6 +132,7 @@ test("doctor --ci missing built output exits 4 and reports unknown reasons", (t)
   assert.equal(markdown.status, 4);
   assert.match(markdown.stdout, /Unknown polish: `build_output_missing`/);
   assert.match(markdown.stdout, /Unknown qa: `build_output_missing`/);
+  assert.match(markdown.stdout, /Remedy:/);
 });
 
 for (const missing of ["manifest", "polish fingerprint", "qa fingerprint", "assembly fingerprint", "report"]) {

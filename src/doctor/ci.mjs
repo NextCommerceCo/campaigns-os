@@ -65,7 +65,9 @@ export function formatDoctorCi(result) {
     if (ci[stage].status === "unknown") lines.push(`- Unknown ${stage}: ${code(ci[stage].reason)}`);
   }
   if (ci.changes.status === "unknown") lines.push(`- Unknown page changes: ${code(ci.changes.reason)}`);
-  lines.push("", "Remedy: build and record the current output; re-run `campaigns-os polish capture --packet <packet> --base-url <served-current-build-url>` and record it with `campaigns-os record polish --packet <packet> --evidence <polish-evidence.json>`. Re-run `campaigns-os qa run --packet <packet>` to record QA for this build.");
+  if (ci.status === "owed" || ci.status === "unknown") {
+    lines.push("", "Remedy: build and record the current output; re-run `campaigns-os polish capture --packet <packet> --base-url <served-current-build-url>` and record it with `campaigns-os record polish --packet <packet> --evidence <polish-evidence.json>`. Re-run `campaigns-os qa run --packet <packet>` to record QA for this build.");
+  }
   lines.push("", `Doctor inspection: ${(result.errors || []).length} error(s), ${(result.warnings || []).length} warning(s); CI exit status depends only on evidence debt.`);
   if (result.errors?.length) {
     lines.push(`Doctor errors: ${[...new Set(result.errors.map((issue) => issue.code))].map(code).join(", ")}.`);
