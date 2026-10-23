@@ -27,7 +27,7 @@ export const QC_DISPOSITION = Object.freeze({ OPEN: "open", OPERATOR_ACCEPTED: "
 // full QA verdict, or, on the Polish leg, the package-owned record the
 // accepted check is read from (QC_CHECK_REGISTRY `record`).
 const QC_LEG_SOURCES = Object.freeze({ doctor: "doctor_sidecar", qa: "qa_full_verdict" });
-export const QC_POLISH_RECORD_SOURCES = Object.freeze({ media_weight: "polish_media_weight", readability: "polish_readability" });
+export const QC_POLISH_RECORD_SOURCES = Object.freeze({ media_weight: "polish_media_weight", readability: "polish_readability", captures: "polish_captures" });
 
 const DESIGN_ACCESS_TEXT = Object.freeze({
   design_access_missing: "A design file is recorded for this page, but this version of Campaigns OS cannot read design files. Element parity compares the built page with the page's source HTML export instead, so differences between the export and the design file are not checked. Nothing needs to change to continue. Where it matters, compare the export with the design file by hand.",
@@ -181,9 +181,12 @@ function assessOne(record, currentById, nowMs) {
   if (!(Date.parse(record.accepted_at) > Date.parse(record.measured_at))) return { status: "inert", why: "accepted_not_after_measurement" };
   const current = currentById.get(record.result_id);
   if (!current) return { status: "orphaned", why: "no_current_result" };
-  if (current.result === "unexercised" && [QC_REASON.STALE_BINDING, QC_REASON.EVIDENCE_NOT_REPRODUCIBLE].includes(current.reason_code)) {
+  if (current.result === "unexercised" && [QC_REASON.STALE_BINDING, QC_REASON.EVIDENCE_NOT_REPRODUCIBLE, "capture_file_absent"].includes(current.reason_code)) {
     return { status: "lapsed", why: current.reason_code, current };
   }
+  // Visual references lose their revision-baseline warning when provenance
+  // becomes independent (§6); that disposition precedes fingerprint changes.
+  if (current.check === "visual.reference" && current.result !== "warning") return { status: "inert", why: "target_not_warning", current };
   if (current.state_fingerprint !== record.state_fingerprint
     || current.check !== record.check
     || current.leg !== record.leg
@@ -341,6 +344,21 @@ function readabilityReviewCrop(row) {
   return typeof ref?.path === "string" ? ref.path : undefined;
 }
 
+function visualSummary(row) {
+  const item = row.observation;
+  if (!item || !row.check?.startsWith("visual.")) return null;
+  const label = `${row.subject.page} ${row.subject.viewport || ""}`.trim();
+  if (row.check === "visual.reference" && row.reason_code === "self_referential") {
+    return `${label} reference ${item.ref_id} is the build's own output (${(item.provenance?.reasons || []).join(", ")}); accepting adopts a revision baseline, not design proof`;
+  }
+  if (row.check !== "visual.diff" || row.result !== "review") return null;
+  const percent = (value) => Number.isFinite(value) ? `${(100 * value).toFixed(2)}%` : "unavailable";
+  const delta = (value) => Number.isFinite(value) ? `${value >= 0 ? "+" : ""}${value}px` : "unavailable";
+  const worst = item.bands?.find((band) => band.status === "compared");
+  const heatmap = item.artifacts?.find((a) => a.band_key === worst?.key)?.heatmap?.path || item.artifacts?.[0]?.heatmap?.path;
+  return `${label} vs ${item.basis === "source_html" ? "source HTML" : item.ref_id}: ${percent(item.page?.mismatch_ratio)} differing, ${delta(item.page?.height_delta_px)} height${worst ? `; worst band ${worst.key} (${percent(worst.mismatch_ratio)}, ${delta(worst.height_delta_px)})` : ""}${heatmap ? `; heatmap ${heatmap}` : ""}`;
+}
+
 function handoffEntry(row) {
   const crop = readabilityReviewCrop(row);
   return {
@@ -354,7 +372,7 @@ function handoffEntry(row) {
     reason_code: row.reason_code,
     accept_eligible: row.accept_eligible === true,
     members: Array.isArray(row.members) ? row.members : [],
-    summary: designAccessSummary(row) ?? readabilityPairSummary([row]) ?? `${row.check} ${row.result}${row.reason_code ? ` (${row.reason_code})` : ""} on ${row.subject?.page ?? "(no page)"}${row.subject?.key == null ? "" : `: ${row.subject.key}`}`,
+    summary: designAccessSummary(row) ?? visualSummary(row) ?? readabilityPairSummary([row]) ?? `${row.check} ${row.result}${row.reason_code ? ` (${row.reason_code})` : ""} on ${row.subject?.page ?? "(no page)"}${row.subject?.key == null ? "" : `: ${row.subject.key}`}`,
     ...(crop === undefined ? {} : { crop }),
   };
 }

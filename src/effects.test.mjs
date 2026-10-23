@@ -1,3 +1,4 @@
+import { syntheticCapturesRecord } from "./polish-visual-fixtures.mjs";
 // The effect tests behind contracts/effects.v1.json.
 //
 // Every row in that file is a claim about ONE invocation: these are the files
@@ -418,6 +419,7 @@ function seedPolishReady(seed) {
       routes: plan.routes.map((route) => route.requested_route), viewports: plan.viewports.map((viewport) => viewport.key), captures,
     }) } },
   };
+  report.stages.polish.evidence.visual_review.captures = syntheticCapturesRecord(report, { targetRepo: seed.targetRepo });
   writeJson(seed.reportPath, report);
   cpSync(join(ROOT, "fixtures/stage-record/polish-evidence.json"), join(seed.dir, "polish-evidence.json"));
 }

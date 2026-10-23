@@ -104,7 +104,9 @@
     "yaml": "^2.9.1"
   },
   "optionalDependencies": {
-    "playwright": "^1.63.0"
+    "pixelmatch": "^7.2.0",
+    "playwright": "^1.63.0",
+    "pngjs": "^7.0.0"
   },
   "devDependencies": {
     "typescript": "^5.9.3"
@@ -153,6 +155,11 @@
     "docs/progress-snapshots.md",
     "demo",
     "docs/demo-preview.md",
-    "docs/local-setup.md"
+    "docs/local-setup.md",
+    "docs/quickstart.md",
+    "docs/access-model.md",
+    "docs/entry-points.md",
+    "docs/source-adapters.md",
+    "docs/campaignspec-authoring-examples.md"
   ]
 }

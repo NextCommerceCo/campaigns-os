@@ -35,6 +35,8 @@ export const QC_CHECK_REGISTRY = Object.freeze({
   "policy.availability": Object.freeze({ leg: "qa", unit: "1.4", module: "./qa-policy-links.mjs", rederive: "rederiveQcResult" }),
   // Text readability
   "readability.contrast": Object.freeze({ leg: "polish", unit: "2.4", module: "./polish-readability.mjs", rederive: "READABILITY_QC_RULES", record: "readability" }),
+  "visual.reference": Object.freeze({ leg: "polish", unit: "3.2", module: "./polish-visual.mjs", rederive: "VISUAL_QC_RULES", record: "captures" }),
+  "visual.diff": Object.freeze({ leg: "polish", unit: "3.4", module: "./polish-visual.mjs", rederive: "VISUAL_QC_RULES", record: "captures" }),
   // Cart placeholders
   cart_placeholders: Object.freeze({ leg: "doctor", unit: "1.5", module: "./cart-placeholders.mjs", rederive: "evaluateCartPlaceholders" }),
   // Built-output smoke checks
@@ -80,7 +82,14 @@ export async function loadQcRederivers({ legs = ["qa", "polish"], registry = QC_
     if (outcome.missing) cache[check] = Object.freeze({ status: "missing" });
     else if (outcome.error) cache[check] = Object.freeze({ status: "failed", error: String(outcome.error?.message || outcome.error) });
     else if (outcome.module?.[entry.rederive] == null) cache[check] = Object.freeze({ status: "failed", error: `${entry.module} has no export ${entry.rederive}` });
-    else cache[check] = Object.freeze({ status: "loaded", rederive: outcome.module[entry.rederive] });
+    else {
+      // Load the planner after the QC substrate has initialized: polish-node
+      // itself uses that substrate, so a static import would form a TDZ cycle.
+      const rules = outcome.module[entry.rederive];
+      const rederive = entry.record === "captures"
+        ? { ...rules, plan: (await import("./polish-node.mjs")).planPolishCapture } : rules;
+      cache[check] = Object.freeze({ status: "loaded", rederive });
+    }
   }
   if (useCache) loaded = cache;
   return Object.freeze({ ...cache });

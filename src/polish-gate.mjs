@@ -1,3 +1,4 @@
+import { packageCapturesSatisfy, capturesIntegrity, CAPTURES_SCHEMA, CAPTURES_PRODUCER } from "./polish-captures-record.mjs";
 import { HIDDEN_EAGER_MEDIA_SCOPE } from "./polish-page-load.mjs";
 import { HIDDEN_EAGER_MEDIA_ACTIONS } from "./gate-actions.mjs";
 
@@ -151,7 +152,7 @@ function polishEvidence(stage, report) {
   return null;
 }
 
-function fieldHasEvidence(value, field) {
+function fieldHasEvidence(value, field, report, newEvidence) {
   if (field === "issues") return Array.isArray(value);
   if (field === "commands") {
     if (!Array.isArray(value) || value.length === 0) return false;
@@ -159,6 +160,7 @@ function fieldHasEvidence(value, field) {
   }
   if (field === "visual_review") {
     if (!isObject(value)) return false;
+    if (newEvidence || Object.hasOwn(value, "captures")) return Object.hasOwn(value, "captures") && packageCapturesSatisfy(value.captures, report);
     const screenshots = value.screenshots || value.screenshot_paths || value.paths || value.urls;
     return Array.isArray(screenshots) && screenshots.some(nonEmptyString);
   }
@@ -308,13 +310,27 @@ function brandBleedResidualKinds(value) {
   return kinds;
 }
 
-function evidenceProblems(evidence, report) {
+function captureProblem(record, report) {
+  if (!record || Object.getPrototypeOf(record) !== Object.prototype || record.schema_version !== CAPTURES_SCHEMA || record.performed_by !== CAPTURES_PRODUCER) return "schema or producer";
+  if (record.integrity !== capturesIntegrity(record)) return "integrity";
+  if (record.subject?.build_fingerprint !== currentBuildFingerprint(report)) return "build binding";
+  if (!Array.isArray(record.cells) || !record.cells.length) return "cells";
+  return "cell state, viewport, crop or PNG dimensions";
+}
+
+function evidenceProblems(evidence, report, newEvidence) {
   if (!isObject(evidence)) {
     return ["stages.polish.evidence must be an object with the required polish evidence categories."];
   }
   const problems = [];
   for (const field of POLISH_GATE_REQUIRED_EVIDENCE) {
-    if (!fieldHasEvidence(evidence[field], field)) {
+    if (!fieldHasEvidence(evidence[field], field, report, newEvidence)) {
+      if (field === "visual_review" && (newEvidence || Object.hasOwn(evidence[field] || {}, "captures"))) {
+        problems.push(Object.hasOwn(evidence[field] || {}, "captures")
+          ? `stages.polish.evidence.visual_review.captures is not a current package capture record (${captureProblem(evidence[field].captures, report)}); run polish capture.`
+          : "stages.polish.evidence.visual_review.captures is missing; record polish needs a package capture by this version; run polish capture.");
+        continue;
+      }
       problems.push(`stages.polish.evidence.${field} is missing or incomplete.`);
     }
   }
@@ -355,7 +371,7 @@ function commandMentionsBuild(stage, evidence) {
   return commands.some((entry) => /next-campaigns-build|campaigns-os\s+next\s+build/i.test(String(isObject(entry) ? entry.command || entry.name || "" : entry)));
 }
 
-function evaluateStructuredPolishGate({ report, required = false, now = Date.now(), currentOutputFingerprint = null } = {}) {
+function evaluateStructuredPolishGate({ report, required = false, now = Date.now(), currentOutputFingerprint = null, newEvidence = false } = {}) {
   if (!isObject(report)) {
     return required
       ? {
@@ -599,7 +615,7 @@ function evaluateStructuredPolishGate({ report, required = false, now = Date.now
     };
   }
 
-  const problems = evidenceProblems(evidence, report);
+  const problems = evidenceProblems(evidence, report, newEvidence);
   if (problems.length) {
     return {
       status: "blocked",
@@ -635,6 +651,7 @@ function evaluateStructuredPolishGate({ report, required = false, now = Date.now
     current_source_package_material_fingerprint: currentSourcePackageFingerprint,
     assembly_source_package_material_fingerprint: assemblySourcePackageFingerprint,
     performed_by: producer,
+    screenshot_evidence: Object.hasOwn(evidence.visual_review, "captures") ? "package_captures" : "legacy_paths",
     waiver: sourcePackageFreshnessWaiver,
     warnings,
   };
@@ -679,9 +696,10 @@ export function evaluatePolishGate({
   required = false,
   now = Date.now(),
   hiddenEagerMediaGate = undefined,
+  newEvidence = false,
   currentOutputFingerprint = null,
 } = {}) {
-  const base = evaluateStructuredPolishGate({ report, required, now, currentOutputFingerprint });
+  const base = evaluateStructuredPolishGate({ report, required, now, currentOutputFingerprint, newEvidence });
   if (!terminalAssembly(report)) return base;
   if (hiddenEagerMediaGate === undefined && !required) return base;
 

@@ -322,7 +322,7 @@ test("silence: recorded QA and Polish legs list every applicable check without a
   const handoff = handoffOf(await runNext(f, qcStandIns));
   const tuples = (leg) => [...new Set((handoff.coverage || []).filter((entry) => entry.leg === leg).map((entry) => JSON.stringify([entry.check, entry.result, entry.reason_code])))].map((text) => JSON.parse(text)).sort();
   assert.deepEqual(tuples("qa"), QA_UNIT_CHECKS.map((check) => [check, "unexercised", NOT_CAPTURED]).sort(), `QA coverage: ${JSON.stringify(handoff.coverage)}`);
-  assert.deepEqual(tuples("polish"), [["media.oversize", "unexercised", NOT_CAPTURED], ["readability.contrast", "unexercised", NOT_CAPTURED]], `Polish coverage: ${JSON.stringify(handoff.coverage)}`);
+  assert.deepEqual(tuples("polish"), [["media.oversize", "unexercised", NOT_CAPTURED], ["readability.contrast", "unexercised", NOT_CAPTURED], ["visual.diff", "unexercised", NOT_CAPTURED], ["visual.reference", "unexercised", NOT_CAPTURED]], `Polish coverage: ${JSON.stringify(handoff.coverage)}`);
   assert.ok((handoff.open || []).some((entry) => entry.leg === "polish" && entry.check === "media.weight"), "the Polish media.weight warnings stay open");
 });
 
@@ -435,7 +435,7 @@ test("QA pairing: a qc.* assertion with malformed evidence.qc beside a healthy p
 test("silence: a recorded Polish stage without page_load or media_weight lists 1.3 as not_captured_by_this_version; only a failed module reads evidence_not_reproducible", async (t) => {
   const { handoffCoverage } = await import("./qc-results.mjs");
   const polishTuples = (coverage) => [...new Set(coverage.filter((entry) => entry.leg === "polish").map((entry) => JSON.stringify([entry.check, entry.result, entry.reason_code])))].map((text) => JSON.parse(text)).sort();
-  const everyPolish = (reasonCode) => [["media.oversize", "unexercised", reasonCode], ["media.weight", "unexercised", reasonCode], ["readability.contrast", "unexercised", reasonCode]];
+  const everyPolish = (reasonCode) => [["media.oversize", "unexercised", reasonCode], ["media.weight", "unexercised", reasonCode], ["readability.contrast", "unexercised", reasonCode], ["visual.diff", "unexercised", reasonCode], ["visual.reference", "unexercised", reasonCode]];
   const polishStage = (patch) => ({ stage: "polish", status: "completed", inputs: [], outputs: [], commands: ["campaigns-os polish capture"], blockers: [], warnings: [], ...patch });
 
   const { pageLoad } = twoCellFixture([{ path: HERO, bytes: 600_000 }]);
@@ -458,10 +458,10 @@ test("silence: a recorded Polish stage without page_load or media_weight lists 1
   const report = {
     stages: {
       qa: { stage: "qa", status: "completed", evidence: { qc_results: [] } },
-      polish: polishStage({ evidence: { visual_review: { page_load: {}, media_weight: {}, readability: {} } } }),
+      polish: polishStage({ evidence: { visual_review: { page_load: {}, media_weight: {}, readability: {}, captures: {} } } }),
     },
   };
-  const allChecks = ["tracking.url", "tracking.order", "tracking.tag", "media.weight", "media.oversize", "readability.contrast"];
+  const allChecks = ["tracking.url", "tracking.order", "tracking.tag", "media.weight", "media.oversize", "readability.contrast", "visual.reference", "visual.diff"];
   const reasons = (rederivers) => {
     const coverage = handoffCoverage({ report, spec: {}, results: [], rederivers });
     return [...new Set(coverage.map((entry) => entry.reason_code))];

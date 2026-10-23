@@ -484,6 +484,8 @@ only when filename matching was ambiguous, and is `null` otherwise.)
 
 ### The record shape
 
+Polish now reads these files. Record `scale_factor` (the device pixel ratio the screenshot was taken at) and keep `width`/`height` equal to the image's pixel size: a screenshot is compared with the built page only when its width divided by `scale_factor` equals the capture width, and a screenshot without `scale_factor` is not compared. Link it to its source page (`source_ref_id`, filled in for you) and record `captured_at`, or it is listed for review.
+
 One manifest page entry with its proof, inside the envelope the validator requires
 (the mobile record is elided):
 

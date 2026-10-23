@@ -423,17 +423,17 @@ See [`campaign-spec/README.md`](campaign-spec/README.md).
 - [Campaign Standardization Report](docs/campaign-standardization-report.md)
 - [Entry Points](docs/entry-points.md) — five intake shapes (template-stock, Figma-driven, AI-generated, hand-authored, mixed) and which producer / manifest each one ships with
 - [Source Adapters](docs/source-adapters.md)
-- [Setup Profile Parity](docs/setup-profile-parity.md)
-- [Developer Evaluation](docs/developer-evaluation.md)
+- [Setup Profile Parity](https://github.com/NextCommerceCo/campaigns-os/blob/main/docs/setup-profile-parity.md)
+- [Developer Evaluation](https://github.com/NextCommerceCo/campaigns-os/blob/main/docs/developer-evaluation.md)
 - [QA And Test Orders](docs/qa-and-test-orders.md)
 - [Run-Artifact Readback](docs/readback.md) — `campaigns-os readback`: a read-only projection of one run's emitted artifacts, with per-artifact freshness against the checkout and a versioned JSON contract to gate on
 - [Declared Command Effects](docs/effects.md) — what every supported invocation writes and sends, one row per command and effect-changing flag, each row proved by a test that runs the real CLI in a disposable target
 - [Legacy Migration Contract](docs/legacy-migration.md) — pure inventory, preview-plan, receipt, Offer request/readback, and token-free evidence helpers for bounded SDK 0.3.x shadow migrations
-- [Template Family vs Figma-extraction vs Hybrid](docs/template-vs-extraction-decision.md) — when to mint a template family, when to extract a bespoke design, and when to do both
-- [Small PR Review Path](docs/small-pr-review-path.md)
+- [Template Family vs Figma-extraction vs Hybrid](https://github.com/NextCommerceCo/campaigns-os/blob/main/docs/template-vs-extraction-decision.md) — when to mint a template family, when to extract a bespoke design, and when to do both
+- [Small PR Review Path](https://github.com/NextCommerceCo/campaigns-os/blob/main/docs/small-pr-review-path.md)
 - [Run Telemetry](docs/workflow-findings-sidecar.md) — per-run Run Record (system signal + workflow findings) tagged by improvement surface; captured locally always, remitted to Next Commerce only with up-front opt-out consent
 - [Versioning](docs/versioning.md)
-- [ADR 0002: One shipping path](docs/adr/0002-one-shipping-path-campaigns-agent-fold.md) — decides that the agent surface (skills, charter, declared effects, readback) lives in this repository; Campaigns Agent folds in
+- [ADR 0002: One shipping path](https://github.com/NextCommerceCo/campaigns-os/blob/main/docs/adr/0002-one-shipping-path-campaigns-agent-fold.md) — decides that the agent surface (skills, charter, declared effects, readback) lives in this repository; Campaigns Agent folds in
 
 ## Status
 

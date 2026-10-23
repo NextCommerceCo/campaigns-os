@@ -19,7 +19,7 @@ import {
   SOURCE_HTML_MANIFEST_SCHEMA,
   validateSourceHtmlManifest,
 } from "./source-html-manifest.mjs";
-import { checkoutPathFrom, forwardRouteTarget, isPrePaymentPage } from "../campaign-spec/dist/index.js";
+import { checkoutPathFrom, forwardRouteTarget, isCheckoutFlowPage, isPrePaymentPage, resolveRouteTargetPage } from "../campaign-spec/dist/index.js";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CLI = resolve(ROOT, "bin/campaigns-os.mjs");
@@ -777,6 +777,35 @@ test("no certified fixture silently drops a declared forward edge", () => {
     }
   }
   assert.deepEqual(dropped, []);
+});
+
+test("multi-step reference hints describe the same pages as intent-derived Page Kit routes", () => {
+  const emitted = corpusFrontmatter();
+  for (const name of ["shop-three-step-dynamic-shipping.json", "olympus-mv-two-step-configurable.json"]) {
+    const spec = readJson(resolve(ROOT, "contracts/fixtures/campaign-specs", name));
+    for (const funnel of spec.funnels) {
+      for (const page of funnel.pages.filter(isCheckoutFlowPage)) {
+        const label = `${name}::${funnel.id}::${page.id}`;
+        const actual = emitted[label];
+        const hints = page.sdk_hints.frontmatter;
+        assert.ok(actual, `${label} must have a Page Kit projection`);
+        for (const field of ["next_url", ...(isPrePaymentPage(page) ? ["next_step"] : [])]) {
+          // Intake derives its output from page routing intent; it does not
+          // consume sdk_hints.frontmatter. These reference hints use starter
+          // filenames, so compare their destination pages with the actual
+          // intake output rather than feeding the hints into pageKitFlowUrl.
+          const target = resolveRouteTargetPage(funnel.pages, hints[field]);
+          assert.ok(target, `${label}.${field} must name a page in this example`);
+          assert.equal(actual[field], `/campaign/${publicRouteForPage(target).replace(/^\/+|\/+$/g, "")}/`, `${label}.${field} differs from the generated route`);
+        }
+        // Stock Shop forms own a fixed 1/2/3 graph; the reference does not
+        // advertise configurable ordinals. Intake still derives step_number
+        // from intent, covered by the unchanged corpus golden above.
+        assert.equal(hints.step_number, undefined, `${label} must not advertise a configurable stock-form ordinal`);
+        if (!isPrePaymentPage(page)) assert.equal(hints.next_step, undefined, `${label} takes payment, not another form step`);
+      }
+    }
+  }
 });
 
 test("forward-link precedence is specific-before-generic, and wiring proves it end to end", () => {

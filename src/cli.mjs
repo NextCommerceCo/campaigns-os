@@ -2807,6 +2807,8 @@ export async function polishCaptureCommand(args, options = {}) {
     adapterCloseDeadlineMs: options.adapterCloseDeadlineMs,
     probeClock: options.probeClock,
     targetRepo,
+    visual: { packetPath, targetRepo, ...options.visual },
+    onFrozen: options.onFrozen,
   });
   // Nothing was measured: the held plan error stands.
   if (heldPlanError && !capture.readability) throw heldPlanError;
@@ -2836,6 +2838,7 @@ export async function polishCaptureCommand(args, options = {}) {
       pageLoad: capture.page_load,
       mediaWeight: capture.media_weight,
       readability: capture.readability,
+      captures: capture.captures,
       now: options.now ?? new Date(),
     });
     checkpoint = evaluateRecordedHiddenEagerMediaCheckpoint({
@@ -2881,6 +2884,15 @@ export async function polishCaptureCommand(args, options = {}) {
       route_scope: capture.plan?.route_scope ?? null,
       routes: (capture.plan?.routes ?? []).map((route) => route.requested_route),
       viewports: (capture.plan?.viewports ?? []).map((viewport) => viewport.key),
+      visual: capture.captures ? { cells: capture.captures.cells.length,
+        rendered: capture.captures.cells.filter((cell) => cell.status === "rendered").length,
+        comparisons_compared: capture.captures.comparisons.filter((comparison) => comparison.status === "compared").length,
+        comparisons_unsupported: capture.captures.comparisons.filter((comparison) => comparison.status === "unsupported").length,
+        dependencies: capture.captures.dependencies, adapters: capture.captures.adapters,
+        // A run budget spent: a cell never rendered, or a decode or diff never ran (§2.4).
+        budget_exhausted: capture.captures.cells.some((cell) => cell.status === "run_budget_exhausted")
+          || capture.captures.references.some((reference) => reference.verification?.reason === "verify_budget_exhausted")
+          || capture.captures.comparisons.some((comparison) => comparison.reason === "diff_budget_exhausted") } : null,
     },
   };
 }

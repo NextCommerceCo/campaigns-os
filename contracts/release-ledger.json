@@ -8918,6 +8918,144 @@
         }
       ],
       "entry_sha256": "0105b7be6bdbdc6e0f8e5a9b2b2a4b5ad3106e9bc7db72029c0cae05d8372fd1"
+    },
+    {
+      "id": "RL-0285",
+      "sequence": 273,
+      "date": "2026-10-22",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.60.0+agent.7",
+      "changelog_sha256": "7096f90073a3bacfa53548a266f0a496d2ecacd4a7de0b92b1b6304cf3fcf80d",
+      "agent_impact": "Installed users can continue from the Build Packet into the existing source-intake and CampaignSpec v5 authoring guidance without a source checkout. Repository-only references have explicit public URLs.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Include the five existing public continuation guides in the npm package."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Link the repository-only migration case study by its public URL rather than a missing installed path."
+        }
+      ],
+      "entry_sha256": "013f64e2936a0368e8869bc95a7dce1074c6cbcb7243b6b12b237350fea80490"
+    },
+    {
+      "id": "RL-0287",
+      "sequence": 274,
+      "date": "2026-10-23",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.60.0+agent.9",
+      "changelog_sha256": "3c9f02633961ac35651d465a5079971ced3c7c35c57f2f6af665eac62c66c3ea",
+      "agent_impact": "Run polish capture again after upgrading before recording completed Polish. New writes require current package captures; existing records retain legacy reads. Visual reference warnings and diff diagnostics appear in the QC handoff; pixel scores never decide fidelity.",
+      "compatibility": "compatible",
+      "migration": "Run polish capture before the next completed record polish; never author visual_review.captures by hand.",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/design-source-package.md",
+          "surface_entry": "docs/design-source-package.md",
+          "summary": "Document screenshot pixel ratio, dimensions and declared source lineage."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Update current bundle revision examples to 1.60.0+skills.4."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Pin the optional visual comparison dependency graph."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Add optional PNG decoder and pixel comparison dependencies."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": null,
+          "summary": "Advance the Polish skill to 1.1.49, every other skill one patch, and the bundle to 1.60.0+skills.4."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Require package captures for completed Polish and present diagnostic review findings."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-sdk-bump/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "Capture package visual evidence and report its diagnostic summary."
+        }
+      ],
+      "entry_sha256": "00f8ce1f3f4642aeeef7e4640f563bc228f4f7eeedffdef407ba1bc3c315cf85"
     }
   ]
 }

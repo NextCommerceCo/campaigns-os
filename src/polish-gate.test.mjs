@@ -689,3 +689,55 @@ test("the bundled next-campaigns-polish skill names every required evidence fiel
     assert.ok(skill.includes(`\`${field}\``), `next-campaigns-polish SKILL.md must name required evidence field "${field}"`);
   }
 });
+
+// C3 preserves the direct-read legacy fixture above and closes only new writes.
+import { syntheticCapturesRecord } from "./polish-visual-fixtures.mjs";
+import { capturesIntegrity } from "./polish-captures-record.mjs";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+function captureGateFixture(t) {
+  const targetRepo = mkdtempSync(join(tmpdir(), "c3-gate-"));
+  t.after(() => rmSync(targetRepo, { recursive: true, force: true }));
+  const report = baseReport(validPolish());
+  report.stages.polish.evidence.visual_review = { captures: syntheticCapturesRecord(report, { targetRepo }) };
+  return report;
+}
+test("F3C-W4 package captures satisfy read and write mode without screenshot paths", (t) => {
+  const report = captureGateFixture(t);
+  for (const newEvidence of [false, true]) {
+    const gate = evaluatePolishGate({ report, newEvidence });
+    assert.equal(gate.code, "polish.evidence_current"); assert.equal(gate.screenshot_evidence, "package_captures");
+  }
+});
+test("F3C-W5 direct legacy reads keep their result and name legacy_paths", () => {
+  const gate = evaluatePolishGate({ report: baseReport(validPolish()) });
+  assert.equal(gate.code, "polish.evidence_current"); assert.equal(gate.screenshot_evidence, "legacy_paths");
+});
+test("F3C-B6 invented paths cannot hide stale or broken captures", (t) => {
+  for (const breakRecord of [(r) => { r.subject.build_fingerprint = "another-build"; r.integrity = capturesIntegrity(r); }, (r) => { r.integrity = "broken"; }]) {
+    const report = captureGateFixture(t), visual = report.stages.polish.evidence.visual_review;
+    visual.screenshots = ["/nonexistent/made-up.png"]; breakRecord(visual.captures);
+    for (const newEvidence of [false, true]) {
+      const gate = evaluatePolishGate({ report, newEvidence });
+      assert.equal(gate.code, "polish.evidence_incomplete"); assert.match(gate.problems.join("\n"), /captures is not a current/);
+    }
+  }
+});
+test("F3C-B9 captured metadata at a different pixel width fails the data gate", (t) => {
+  const report = captureGateFixture(t), record = report.stages.polish.evidence.visual_review.captures;
+  record.cells[0].actual.png.width_px = 2880; record.integrity = capturesIntegrity(record);
+  assert.equal(evaluatePolishGate({ report }).code, "polish.evidence_incomplete");
+});
+test("F3C-B16 a fully reconstructed consistent record passes: tamper evidence only", (t) => {
+  const report = captureGateFixture(t);
+  assert.equal(evaluatePolishGate({ report, newEvidence: true }).status, "pass");
+  delete report.stages.polish.evidence.visual_review.captures;
+  report.stages.polish.evidence.visual_review.screenshots = ["invented.png"];
+  assert.equal(evaluatePolishGate({ report }).status, "pass");
+  assert.equal(evaluatePolishGate({ report, newEvidence: true }).code, "polish.evidence_incomplete");
+});
+test("F3C-B19 record half: unknown capture state fails the gate", (t) => {
+  const report = captureGateFixture(t), record = report.stages.polish.evidence.visual_review.captures;
+  record.cells[0].state = "scrolled"; record.integrity = capturesIntegrity(record);
+  assert.equal(evaluatePolishGate({ report }).code, "polish.evidence_incomplete");
+});
