@@ -6,11 +6,12 @@ not a private merchant workflow.
 
 ## Hero Product + Order Bump + Upsell + Receipt
 
-Reference fixture:
+Reference fixture: [single-step checkout, upsell and receipt](https://github.com/NextCommerceCo/campaigns-os/blob/main/contracts/fixtures/campaign-specs/shop-single-step-upsell-receipt.json).
+Fixtures are repository test data and are not included in the installed package.
 
-```text
-contracts/fixtures/campaign-specs/shop-single-step-upsell-receipt.json
-```
+For CampaignSpec 5.0 multi-step shapes, compare the [three-step checkout](https://github.com/NextCommerceCo/campaigns-os/blob/main/contracts/fixtures/campaign-specs/shop-three-step-dynamic-shipping.json)
+and [select-to-checkout](https://github.com/NextCommerceCo/campaigns-os/blob/main/contracts/fixtures/campaign-specs/olympus-mv-two-step-configurable.json) examples.
+Author new specs against the shipped [v5 schema](../schemas/campaign-spec.v5.schema.json).
 
 Canonical page shape:
 
@@ -57,8 +58,8 @@ Authoring guidance:
     to an upsell passes exactly one `checkout`; a campaign may hold several, one
     per split-test path. A 4.2/4.3 spec that chained `checkout → checkout` is
     read as `checkout_step` pages ahead of the last one.
-    See `campaign-spec/routing.ts` (`PAYMENT_BEARING_PAGE_TYPES`,
-    `OFFER_BEARING_PAGE_TYPES`).
+    See the [v5 schema](../schemas/campaign-spec.v5.schema.json) for the
+    authoring fields; runtime routing is projected by Campaigns OS.
 
 - Upsell page:
   - `type: "upsell"` or `type: "downsell"`, with

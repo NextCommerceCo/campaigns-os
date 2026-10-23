@@ -12,6 +12,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { checkPackedDocLinks } from "./check-packed-doc-links.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const fail = (msg) => {
@@ -117,6 +118,10 @@ try {
   if (JSON.stringify(declaredDocs) !== JSON.stringify(packedDocs)) {
     fail(`docs/ in tarball differs from files[]: packed ${packedDocs.length}, declared ${declaredDocs.length}`);
   }
+  // Check the extracted package, not the checkout: a valid source link can
+  // still strand installed users when its destination was omitted by files[].
+  const docLinks = checkPackedDocLinks(pkgRoot, ["README.md", "AGENTS.md", "CONTEXT.md", "CHANGELOG.md", ...packedDocs]);
+  if (docLinks.length) fail(`installed documentation links do not resolve:\n${docLinks.join("\n")}`);
   if (pkg.private) fail("package.json is still private: true — npm publish would refuse it");
   if (pkg.dependencies?.playwright) fail("playwright is back in dependencies; it must stay an optionalDependency");
   if (!pkg.optionalDependencies?.playwright) fail("playwright is missing from optionalDependencies");

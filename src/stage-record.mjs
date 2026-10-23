@@ -23,7 +23,7 @@
 // stylesheets must also match the built output byte for byte).
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import Ajv2020 from "ajv/dist/2020.js";
@@ -514,12 +514,22 @@ const routeKey = (route) => String(route || "").replace(/^\/+|\/+$/g, "");
 // page that loads neither renders the design's own markup and needs no brand
 // layer (docs/brand-theme-bridge.md, "Where next-core.css belongs"). When
 // theme generate wrote brand-fonts.css (the design's own faces), each styled
-// page must load that too, or the families brand-theme.css names fall back to
-// the system font. Any page that breaks the rule is a refusal naming the page.
-function brandLayerFacts(doctor) {
+// page must load the campaign's copy too, or the families brand-theme.css
+// names fall back to the system font. Where it was written is the Build
+// Context's theme.generated.fonts_css_path (theme generate --out-dir moves
+// it); the default path is read only when the context names none. Any page
+// that breaks the rule is a refusal naming the page.
+function brandLayerFacts(doctor, context = null) {
   const derived = doctor.derived || {};
-  const generatedFonts = resolve(derived.target_repo, ".campaign-runtime/theme", BRAND_FONTS_FILENAME);
-  const fontsRequired = existsSync(generatedFonts);
+  const recordedFonts = context?.theme?.generated?.fonts_css_path;
+  const generatedFonts = typeof recordedFonts === "string" && recordedFonts
+    ? resolve(derived.target_repo, recordedFonts)
+    : (context?.theme?.generated ? null : resolve(derived.target_repo, ".campaign-runtime/theme", BRAND_FONTS_FILENAME));
+  const fontsRequired = Boolean(generatedFonts) && existsSync(generatedFonts);
+  const insideSite = (file) => {
+    const rel = relative(site.site_root, file);
+    return Boolean(rel) && !rel.startsWith("..") && !isAbsolute(rel);
+  };
   const commerce = commerceScopeFromScope(derived.scope);
   if (!commerce.all.length) {
     throw refuseRecord("theme", ["The campaign ships no commerce pages, so there is no brand layer to record; the theme gate does not apply."]);
@@ -570,18 +580,29 @@ function brandLayerFacts(doctor) {
       problems.push(`${label}: ${builtRel} links ${hrefs[brand]}, which is not in the built output.`);
       continue;
     }
+    // brand-fonts.css holds only @font-face rules, so unlike the brand layer
+    // its position relative to next-core.css does not matter.
     if (fontsRequired) {
       const fontsHref = hrefs.find((candidate) => hrefName(candidate) === BRAND_FONTS_FILENAME);
-      const fontsFile = fontsHref && !/^(?:[a-z][a-z0-9+.-]*:)?\/\//i.test(fontsHref)
-        ? (fontsHref.startsWith("/") ? join(site.site_root, fontsHref.split(/[?#]/)[0]) : resolve(dirname(built.built_path), fontsHref.split(/[?#]/)[0]))
+      const bare = fontsHref ? fontsHref.split(/[?#]/)[0] : null;
+      const fontsFile = bare && !/^(?:[a-z][a-z0-9+.-]*:)?\/\//i.test(bare)
+        ? (bare.startsWith("/") ? join(site.site_root, bare) : resolve(dirname(built.built_path), bare))
         : null;
-      if (!fontsFile || !existsSync(fontsFile)) {
-        problems.push(fontsHref
-          ? `${label}: ${builtRel} links ${fontsHref}, which is not in the built output.`
-          : `${label}: ${builtRel} links no ${BRAND_FONTS_FILENAME}. Theme generate wrote the design's font faces to .campaign-runtime/theme/${BRAND_FONTS_FILENAME}; copy it into the campaign assets/css folder beside the brand layer, list it in the page's frontmatter styles and rebuild.`);
+      const generatedRel = relative(derived.target_repo, generatedFonts);
+      const problem = !fontsHref
+        ? `${label}: ${builtRel} links no ${BRAND_FONTS_FILENAME}. Theme generate wrote the design's font faces to ${generatedRel}; copy it into the campaign assets/css folder beside the brand layer, list it in the page's frontmatter styles and rebuild.`
+        : !fontsFile || !insideSite(fontsFile)
+          ? `${label}: ${builtRel} links ${fontsHref}, which is not a file in this campaign's built output; link the campaign's own copy of ${generatedRel}.`
+          : !existsSync(fontsFile)
+            ? `${label}: ${builtRel} links ${fontsHref}, which is not in the built output.`
+            : readFileSync(fontsFile, "utf8") !== readFileSync(generatedFonts, "utf8")
+              ? `${label}: ${builtRel} links ${fontsHref}, which differs from the generated ${generatedRel}; copy the generated file and rebuild.`
+              : null;
+      if (problem) {
+        problems.push(problem);
         continue;
       }
-      evidence.push(`${label}: ${builtRel} loads ${relative(derived.target_repo, fontsFile)}.`);
+      evidence.push(`${label}: ${builtRel} loads ${relative(derived.target_repo, fontsFile)}, identical to the generated ${generatedRel}.`);
     }
     layers.push(file);
     styled.push(label);
@@ -1197,7 +1218,7 @@ function recordUnderLock({ stage, packetPath, sidecars, lockedTarget, input, dry
     }
     facts = doctorFacts(stage, doctor, report, packet);
     if (typeof afterDoctorRead === "function") afterDoctorRead();
-    if (stage === "theme") layer = brandLayerFacts(doctor);
+    if (stage === "theme") layer = brandLayerFacts(doctor, readJsonIfExists(contextPath));
     if (stage === "deploy") deployFacts(doctor, packet, input, facts.fingerprint);
     const next = stage === "setup"
       ? composeSetup(report, context, { now: timestamp, recordedBy })

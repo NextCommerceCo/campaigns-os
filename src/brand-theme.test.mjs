@@ -1284,7 +1284,8 @@ test("brand theme maps the design source's heading and body faces and button rad
     const result = inspectBrandTheme({ packet, packetPath });
     const byTarget = new Map(result.context_theme.mappings.map((mapping) => [mapping.target, mapping]));
 
-    assert.equal(byTarget.get("--_text---font-family--heading").value, '"Display", "Text", serif');
+    // The heading's own generic follows it directly, so a face that fails to load degrades as the design asked.
+    assert.equal(byTarget.get("--_text---font-family--heading").value, '"Display", serif');
     assert.equal(byTarget.get("--_text---font-family--primary").value, '"Text", sans-serif');
     assert.equal(byTarget.get("--radius-size--buttons").value, "6px");
     assert.equal(validateGeneratedCss(result.css).ok, true, JSON.stringify(validateGeneratedCss(result.css).errors));
@@ -1321,8 +1322,13 @@ p { font-family: Georgia, serif; }
     assert.equal(result.fonts_css, null);
     assert.equal(result.context_theme.mappings.some((mapping) => mapping.source.startsWith("typography.")), false);
     assert.doesNotMatch(result.css, /font-family|radius/);
-    assert.equal(result.report.typography, undefined);
     assert.equal(result.context_theme.generated.fonts_css_path, undefined);
+    // The fonts that could not ship are reported, so the operator learns why the type did not carry.
+    assert.deepEqual(result.report.typography.unavailable, [{ role: "heading", family: "Hosted" }, { role: "body", family: "Georgia" }]);
+    assert.deepEqual(
+      result.warnings.filter((warning) => warning.code === "theme.typography.face_unavailable").map((warning) => warning.detail.family),
+      ["Hosted", "Georgia"],
+    );
   });
 });
 
@@ -1349,6 +1355,42 @@ test("theme generate writes brand-fonts.css beside brand-theme.css and treats an
     const second = writeThemeArtifacts(inspectBrandTheme({ packet, packetPath }), { writeCss: true, packetPath });
     assert.equal(second.ok, true, JSON.stringify(second.errors));
     assert.equal(second.wrote.fonts_css, false);
+  });
+});
+
+test("brand-fonts.css keeps every format of a face declared once per format, ships swap, and drops a symlink out of the source", () => {
+  withTempDir((dir) => {
+    const { source, packet, packetPath } = makePacket(dir);
+    typographySource(source, `
+@font-face { font-family: "Display"; font-weight: 700; font-display: block; src: url("../fonts/Display-Bold.woff") format("woff"); }
+@font-face { font-family: Text; font-weight: 400; font-style: italic; src: url("../fonts/Linked.woff2") format("woff2"); }
+.cc-import .btn-pill { border-radius: 0; }
+`);
+    writeFileSync(join(source, "assets/fonts/Display-Bold.woff"), "font");
+    writeFileSync(join(dir, "outside.woff2"), "font");
+    symlinkSync(join(dir, "outside.woff2"), join(source, "assets/fonts/Linked.woff2"));
+
+    const result = inspectBrandTheme({ packet, packetPath });
+    const bold = extractFontFaces(result.fonts_css).find((face) => face.family === "Display" && /700/.test(result.fonts_css));
+    assert.deepEqual(
+      extractFontFaces(result.fonts_css).filter((face) => face.descriptors.some(([name, value]) => name === "font-weight" && value === "700")).flatMap((face) => face.srcs.map((src) => src.url)),
+      ["../fonts/Display-Bold.woff2", "../fonts/Display-Bold.woff"],
+    );
+    assert.ok(bold);
+    assert.doesNotMatch(result.fonts_css, /font-display: block/);
+    assert.doesNotMatch(result.fonts_css, /Linked\.woff2/);
+    assert.ok(result.warnings.some((warning) => warning.code === "theme.typography.face_src_dropped" && /outside the source root/.test(warning.message)), JSON.stringify(result.warnings));
+  });
+});
+
+test("brand theme maps a zero or percentage button radius and reports one it cannot carry", () => {
+  withTempDir((dir) => {
+    const { source, packet, packetPath } = makePacket(dir);
+    typographySource(source, ".cc-import .button { border-radius: 50%; }\n.cc-import .button--secondary { border-radius: 10px / 20px; }\n");
+    const result = inspectBrandTheme({ packet, packetPath });
+    const radius = result.context_theme.mappings.find((mapping) => mapping.target === "--radius-size--buttons");
+    assert.ok(["6px", "50%"].includes(radius.value), radius.value);
+    assert.deepEqual(result.report.typography.radius_rejected, ["10px / 20px"]);
   });
 });
 

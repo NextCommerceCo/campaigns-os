@@ -7,6 +7,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   statSync,
@@ -546,8 +547,13 @@ const FONT_FACE_DESCRIPTORS = new Set(["font-family", "font-style", "font-weight
 const FONTS_CSS_SOURCE_DIR = "assets/css";
 export const BRAND_FONTS_FILENAME = "brand-fonts.css";
 
+// A family name as read from source CSS, unquoted and stripped of anything
+// that could not appear in a valid quoted family (control characters, braces,
+// semicolons, at-signs, quotes and backslashes), so generated values stay
+// valid by construction.
 function unquoteFamily(name) {
-  return String(name || "").trim().replace(/^(["'])(.*)\1$/, "$2").trim();
+  return String(name || "").trim().replace(/^(["'])(.*)\1$/, "$2")
+    .replace(/[\u0000-\u001f\u007f{};@"'\\]/g, "").replace(/\s+/g, " ").trim();
 }
 
 // A value with its var() references resolved through the source's :root
@@ -640,12 +646,21 @@ function buttonCompoundWeight(compound) {
   return compound.classes.some((name) => /^(?:btn|button|cta)/i.test(name) || name.toLowerCase().split(/[-_]+/).includes("cta")) ? 1 : 0;
 }
 
+// A border-radius value next-core's --radius-size--buttons can take: 0, or one
+// to four lengths or percentages. Anything else (var() left unresolved,
+// slash syntax, calc()) is reported, not mapped.
+const RADIUS_VALUE = /^(?:0|\d+(?:\.\d+)?(?:px|rem|em|%))(?:\s+(?:0|\d+(?:\.\d+)?(?:px|rem|em|%))){0,3}$/;
+
+function newTypographyUsage() {
+  return { heading: new Map(), body: new Map(), button: new Map(), generics: new Map(), button_radius: new Map(), radius_rejected: new Set() };
+}
+
 // Rule-level font usage by role: { heading, body, button } as Maps of family
 // to weighted rule count, generics as family -> generic, and button radii.
 // An element selector (h1, p, button) weighs 3 against a class's 1, so a
 // `.card-title` cannot outvote the h1 rule.
 function collectTypographyRules(content, usage = null, tokens = {}) {
-  const out = usage || { heading: new Map(), body: new Map(), button: new Map(), generics: new Map(), button_radius: new Map() };
+  const out = usage || newTypographyUsage();
   const bump = (map, key, by = 1) => map.set(key, (map.get(key) || 0) + by);
   const scopeRoot = scopeRootClass(content);
   for (const match of stripCssComments(content).matchAll(/([^{};]+)\{([^{}]+)\}/g)) {
@@ -672,7 +687,10 @@ function collectTypographyRules(content, usage = null, tokens = {}) {
       if (bodyWeight) bump(out.body, stack.family, bodyWeight);
       if (buttonWeight) bump(out.button, stack.family, buttonWeight);
     }
-    if (radius && buttonWeight && /^\d+(?:\.\d+)?(?:px|rem|em)$/.test(radius)) bump(out.button_radius, radius, buttonWeight);
+    if (radius && buttonWeight) {
+      if (RADIUS_VALUE.test(radius)) bump(out.button_radius, radius, buttonWeight);
+      else out.radius_rejected.add(radius);
+    }
   }
   return out;
 }
@@ -695,13 +713,15 @@ function relocateFaceSrcs(face, cssPath, sourceRoot) {
       continue;
     }
     const file = resolve(dirname(cssPath), bare);
-    const inside = relative(resolve(sourceRoot), file);
-    if (!inside || inside.startsWith("..") || isAbsolute(inside)) {
-      dropped.push({ url: src.url, reason: "outside the source root" });
-      continue;
-    }
     if (!existsSync(file)) {
       dropped.push({ url: src.url, reason: "file missing from the source" });
+      continue;
+    }
+    // Containment is checked on real paths, so a symlink (or a symlinked
+    // directory) leading out of the source root is dropped, not shipped.
+    const inside = relative(realpathSync(sourceRoot), realpathSync(file));
+    if (!inside || inside.startsWith("..") || isAbsolute(inside)) {
+      dropped.push({ url: src.url, reason: "outside the source root" });
       continue;
     }
     kept.push({ url: relative(fontsCssDir, file).split("\\").join("/"), format: src.format, source_file: inside.split("\\").join("/") });
@@ -713,7 +733,7 @@ function relocateFaceSrcs(face, cssPath, sourceRoot) {
 // inspection read: the families its headings, body copy and buttons use that
 // it also ships faces for, the button radius, and the faces to ship.
 function inferTypography(candidates, sourceRoot) {
-  const usage = { heading: new Map(), body: new Map(), button: new Map(), generics: new Map(), button_radius: new Map() };
+  const usage = newTypographyUsage();
   const faces = [];
   const seenFiles = new Set();
   const tokens = Object.assign({}, ...candidates.map((candidate) => candidate.root_tokens || {}));
@@ -732,8 +752,14 @@ function inferTypography(candidates, sourceRoot) {
     droppedSrcs.push(...dropped.map((drop) => ({ ...drop, family: face.family })));
     if (!kept.length) continue;
     const descriptors = Object.fromEntries(face.descriptors);
-    const key = [face.family.toLowerCase(), descriptors["font-weight"] || "400", descriptors["font-style"] || "normal", descriptors["unicode-range"] || ""].join("|");
-    if (!shippable.has(key)) shippable.set(key, { family: face.family, descriptors: face.descriptors, srcs: kept, css_path: face.css_path });
+    const key = [face.family.toLowerCase(), descriptors["font-weight"] || "400", descriptors["font-style"] || "normal", descriptors["font-stretch"] || "normal", descriptors["unicode-range"] || ""].join("|");
+    const existing = shippable.get(key);
+    if (!existing) shippable.set(key, { family: face.family, descriptors: face.descriptors, srcs: kept, css_path: face.css_path });
+    else {
+      // The same face declared again (often one rule per format): keep every
+      // file, in source order, so browsers can pick the format they support.
+      for (const src of kept) if (!existing.srcs.some((other) => other.url === src.url)) existing.srcs.push(src);
+    }
   }
   const faceFamilies = new Set([...shippable.values()].map((face) => face.family.toLowerCase()));
   const hasFace = (family) => faceFamilies.has(String(family).toLowerCase());
@@ -744,9 +770,11 @@ function inferTypography(candidates, sourceRoot) {
   const heading = pick("heading");
   const button = pick("button");
   const body = pick("body") || (button && (!heading || button.family !== heading.family) ? { ...button, inferred_from: "button" } : null);
+  const unavailable = [];
   for (const role of ["heading", "body", "button"]) {
     const used = topEntry(usage[role]);
     if (used && !hasFace(used[0])) {
+      unavailable.push({ role, family: used[0] });
       warnings.push(issue("theme.typography.face_unavailable", `The source's ${role} font "${used[0]}" has no @font-face the campaign can ship, so it is not mapped.`, { role, family: used[0] }));
     }
   }
@@ -765,14 +793,16 @@ function inferTypography(candidates, sourceRoot) {
     generics: usage.generics,
     faces: shipped,
     face_css_paths: [...new Set(shipped.map((face) => face.css_path))],
+    unavailable,
+    radius_rejected: [...usage.radius_rejected],
     warnings,
   };
 }
 
-function familyValue(family, generics, extra = []) {
-  const quote = (name) => `"${String(name).replace(/["\\]/g, "")}"`;
-  const names = [family, ...extra].filter((name, index, all) => name && all.findIndex((other) => other.toLowerCase() === name.toLowerCase()) === index);
-  return [...names.map(quote), generics.get(String(family).toLowerCase()) || "sans-serif"].join(", ");
+// The family followed directly by the generic the source declared for it, so
+// a face that fails to load degrades the way the design asked.
+function familyValue(family, generics) {
+  return `"${unquoteFamily(family)}", ${generics.get(String(family).toLowerCase()) || "sans-serif"}`;
 }
 
 // Typography mappings onto the contract's typography targets. Font families
@@ -786,7 +816,7 @@ function mapTypography(typography, targetTokens) {
     if (target && value) mappings.push({ source: `typography.${role}`, target, value, confidence: "high", derivation });
   };
   if (typography.heading) {
-    add("heading", targets.heading_family, familyValue(typography.heading.family, typography.generics, [typography.body?.family]), { method: "design-source-font-face", family: typography.heading.family, rule_weight: typography.heading.rule_weight });
+    add("heading", targets.heading_family, familyValue(typography.heading.family, typography.generics), { method: "design-source-font-face", family: typography.heading.family, rule_weight: typography.heading.rule_weight });
   }
   if (typography.body) {
     add("body", targets.body_family, familyValue(typography.body.family, typography.generics), { method: typography.body.inferred_from ? "design-source-font-face-from-button" : "design-source-font-face", family: typography.body.family, rule_weight: typography.body.rule_weight });
@@ -807,9 +837,11 @@ function renderBrandFontsCss({ sourcePaths, faces }) {
   ];
   for (const face of faces) {
     const descriptors = new Map(face.descriptors);
-    if (!descriptors.has("font-display")) descriptors.set("font-display", "swap");
+    // Shipping policy, not the source's: a block period on a large display
+    // face can hide commerce headings on a slow connection.
+    descriptors.set("font-display", "swap");
     lines.push("@font-face {");
-    lines.push(`  font-family: "${face.family.replace(/["\\]/g, "")}";`);
+    lines.push(`  font-family: "${unquoteFamily(face.family)}";`);
     for (const [name, value] of [...descriptors.entries()].sort((a, b) => a[0].localeCompare(b[0]))) lines.push(`  ${name}: ${value};`);
     lines.push(`  src: ${face.srcs.map((src) => `url("${src.url}")${src.format ? ` format("${src.format}")` : ""}`).join(", ")};`);
     lines.push("}");
@@ -1587,7 +1619,7 @@ export function inspectBrandTheme({ packet, packetPath, context = null, policy =
   const typography = selected ? inferTypography(candidates, sourceRoot) : null;
   if (typography) {
     mapped.mappings.push(...mapTypography(typography, contracts.targetTokens));
-    if (typography.faces.length) warnings.push(...typography.warnings);
+    warnings.push(...typography.warnings);
   }
   const fontsCss = typography?.faces.length && mapped.mappings.some((mapping) => mapping.source.startsWith("typography."))
     ? renderBrandFontsCss({ sourcePaths: typography.face_css_paths.map((path) => relativeArtifactPath(targetRepo, path)), faces: typography.faces })
@@ -1648,7 +1680,7 @@ export function inspectBrandTheme({ packet, packetPath, context = null, policy =
     producer_defaults: defaultMatch,
     conflicts,
     mappings: mapped.mappings,
-    ...(fontsCss ? { typography: typographyReportBlock(typography, targetRepo) } : {}),
+    ...(fontsCss || typography?.unavailable.length || typography?.radius_rejected.length ? { typography: typographyReportBlock(typography, targetRepo) } : {}),
     generated,
     existing_brand_layers: findExistingBrandLayers(targetRepo, cssPath),
     warnings,
@@ -1665,6 +1697,8 @@ function typographyReportBlock(typography, targetRepo) {
     body: typography.body,
     button: typography.button,
     button_radius: typography.button_radius,
+    unavailable: typography.unavailable,
+    radius_rejected: typography.radius_rejected,
     faces: typography.faces.map((face) => ({
       family: face.family,
       weight: Object.fromEntries(face.descriptors)["font-weight"] || "400",

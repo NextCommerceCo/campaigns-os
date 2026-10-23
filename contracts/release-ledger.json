@@ -8922,11 +8922,38 @@
     {
       "id": "RL-0285",
       "sequence": 273,
-      "date": "2026-10-23",
+      "date": "2026-10-22",
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.60.0+agent.7",
-      "changelog_sha256": "08089138d268cbc7b8a662a0501b63308373dd5c829793635edbb13341c080fb",
+      "changelog_sha256": "7096f90073a3bacfa53548a266f0a496d2ecacd4a7de0b92b1b6304cf3fcf80d",
+      "agent_impact": "Installed users can continue from the Build Packet into the existing source-intake and CampaignSpec v5 authoring guidance without a source checkout. Repository-only references have explicit public URLs.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Include the five existing public continuation guides in the npm package."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Link the repository-only migration case study by its public URL rather than a missing installed path."
+        }
+      ],
+      "entry_sha256": "013f64e2936a0368e8869bc95a7dce1074c6cbcb7243b6b12b237350fea80490"
+    },
+    {
+      "id": "RL-0286",
+      "sequence": 274,
+      "date": "2026-10-23",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.60.0+agent.8",
+      "changelog_sha256": "9c3ebefc36f97a9c400fbfed08fdf181bb1a6cad5b39da5f82f99e5fe163d060",
       "agent_impact": "theme generate can now write .campaign-runtime/theme/brand-fonts.css beside brand-theme.css, and brand-theme.css can carry next-core font-family tokens in a `:root, body` block plus --radius-size--buttons. When brand-fonts.css exists, a build agent copies it into the campaign assets/css folder and loads it on the same commerce pages as the brand layer; record theme refuses a styled page that does not. Sources without self-hosted brand faces generate the same CSS as before.",
       "compatibility": "additive",
       "migration": "none",
@@ -9022,7 +9049,7 @@
           "summary": "Carry the advanced bundle revision and matching per-skill version."
         }
       ],
-      "entry_sha256": "8b29ef2bd9f6472d792d56f997de7196d98e1ba054a8ee217bc0bc943174a51c"
+      "entry_sha256": "8fae438f15f7ad106e3a28b70601a5fb2e39ae1bf7f41c88ef6d063a2ab31c64"
     }
   ]
 }

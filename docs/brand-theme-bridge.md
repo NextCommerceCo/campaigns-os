@@ -62,13 +62,17 @@ Inspection reads every CSS file the source pages link:
 and that scope class, where Shopify themes keep `--font-body-family` and
 `--buttons-radius`. A family is mapped only when the source ships a face for
 it: a family the page can't load would only change the fallback, so it is
-reported as `theme.typography.face_unavailable` and left out.
+left out, reported as a `theme.typography.face_unavailable` warning, and
+listed in the theme report's `typography.unavailable`.
 
 | Source | next-core token |
 | --- | --- |
-| heading family (+ body family as fallback) | `--_text---font-family--heading` |
-| body family (else the button family) | `--_text---font-family--primary` |
-| button radius | `--radius-size--buttons` |
+| heading family, then the generic the source gave it | `--_text---font-family--heading` |
+| body family (else the button family), then its generic | `--_text---font-family--primary` |
+| button radius (`0`, or one to four lengths or percentages) | `--radius-size--buttons` |
+
+A button radius in another form (`10px / 20px`, an unresolved `var()`) is not
+mapped and is listed in `typography.radius_rejected`.
 
 The targets are in the `typography` block of
 `contracts/brand-theme-target-tokens.next-core.v0.json`. next-core re-declares
@@ -77,12 +81,15 @@ queries, so a `:root` value alone holds only on desktop. The generator emits
 them in a `:root, body` block. `brand-theme.css` loads after next-core, so its
 `body` declaration wins at every width.
 
-`brand-fonts.css` holds only `@font-face` rules for the mapped families, with
-`font-display: swap`. Its URLs are relative to `assets/css/`, pointing at the
+`brand-fonts.css` holds only `@font-face` rules for the mapped families. It
+always ships `font-display: swap`, whatever the source declared. A face the
+source declares once per format keeps every file, in source order. Its URLs are relative to `assets/css/`, pointing at the
 source's own font files, which build copies into the campaign's `assets/`
 tree with the rest of the source assets. A face whose file is remote, a
 `data:` URL, root-relative, outside the source root or missing is left out with
-`theme.typography.face_src_dropped`. Button radius is mapped only alongside a
+`theme.typography.face_src_dropped`; containment is checked on real paths, so
+a symlink out of the source root is dropped. Family names are stripped of
+characters that could not appear in a quoted family. Button radius is mapped only alongside a
 mapped family, so a source with no brand faces generates exactly what it did
 before.
 
@@ -264,8 +271,10 @@ If a fresh `brand-theme.css` exists:
    page's stylesheet links and records `report.theme.status`, `css_path`,
    `commerce_pages`, `load_order` and evidence. It refuses, writing nothing,
    when a page that loads `next-core.css` does not load the brand layer after
-   it, when theme generate wrote `brand-fonts.css` and a styled page does not
-   load it, or when no built commerce page loads `next-core.css`.
+   it, when theme generate wrote `brand-fonts.css` (at the Build Context's
+   `theme.generated.fonts_css_path`) and a styled page does not load an
+   identical copy from inside the built site, or when no built commerce page
+   loads `next-core.css`.
 
 ### Where next-core.css belongs
 

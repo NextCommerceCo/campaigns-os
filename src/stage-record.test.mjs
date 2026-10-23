@@ -311,11 +311,12 @@ test("record polish binds the evidence file to the current build and next advanc
 // A recorded build whose theme gate is blocked the way a generatable brand
 // theme leaves it, with the stylesheets each commerce page links set by
 // `links`.
-function themeReady(f, links, { fonts = false } = {}) {
+function themeReady(f, links, { fonts = false, builtFonts = null } = {}) {
   scaffold(f);
   recordOk(f, "setup");
   const context = readJson(f.contextPath);
   context.theme.generated.can_generate = true;
+  if (fonts) context.theme.generated.fonts_css_path = ".campaign-runtime/theme/brand-fonts.css";
   writeJson(f.contextPath, context);
   const report = readJson(f.reportPath);
   report.theme = { ...report.theme, status: "needs_review" };
@@ -326,7 +327,7 @@ function themeReady(f, links, { fonts = false } = {}) {
   writeFileSync(join(css, "brand-theme.css"), ":root { --brand--color--primary: #0a2540; }\n");
   if (fonts) {
     const face = '@font-face { font-family: "Brand"; src: url("../fonts/brand.woff2") format("woff2"); }\n';
-    writeFileSync(join(css, "brand-fonts.css"), face);
+    writeFileSync(join(css, "brand-fonts.css"), builtFonts ?? face);
     mkdirSync(join(f.target, ".campaign-runtime/theme"), { recursive: true });
     writeFileSync(join(f.target, ".campaign-runtime/theme/brand-fonts.css"), face);
   }
@@ -391,6 +392,18 @@ test("record theme requires brand-fonts.css on each styled commerce page once th
     assert.equal(theme.status, "applied");
     assert.ok(theme.evidence.some((line) => /^checkout: .* loads .*brand-fonts\.css\.$/.test(line)), theme.evidence.join("\n"));
     assert.equal(doctor(f).derived.theme_gate.code, "theme_gate.applied");
+  });
+});
+
+test("record theme refuses a brand-fonts.css link that leaves the built site or differs from the generated file", () => {
+  withLifecycle((f) => {
+    themeReady(f, (page) => (page.type === "thankyou" ? [] : page.id === "upsell"
+      ? ["next-core.css", `../../../../../../tmp/brand-fonts.css`, "brand-theme.css"]
+      : ["next-core.css", "brand-fonts.css", "brand-theme.css"]), { fonts: true, builtFonts: "@font-face { font-family: \"Other\"; src: url(\"x.woff2\"); }\n" });
+    const result = record(f, "theme");
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /upsell: .* not a file in this campaign's built output/);
+    assert.match(result.stderr, /checkout: .* differs from the generated \.campaign-runtime\/theme\/brand-fonts\.css/);
   });
 });
 
