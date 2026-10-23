@@ -40,7 +40,7 @@ const DESIGN_ACCESS_TEXT = Object.freeze({
 const probeIncomplete = (code) => `The element probe did not complete (${code}); not compared.`;
 const notRendered = (code) => `The source or built page did not render (${code}).`;
 const partlyRead = "Only part of the page was read; findings are not accept-eligible.";
-const textNotRead = "Some page text was not read (long text, closed components or frames); copy is not called missing there.";
+const textNotRead = "Some page text was not read (long text, closed components or frames). On the built page, copy is not called missing there; on the source page, those parts were not compared.";
 const packageMismatch = "The Design Source Package on disk does not match the build's; rerun intake or polish capture.";
 const PARITY_COVERAGE_TEXT = Object.freeze({
   ...Object.fromEntries(["navigation_failed", "http_error", "producer_timeout", "browser_unavailable", "source_html_missing", "source_root_unavailable"].map((code) => [code, notRendered(code)])),
@@ -51,6 +51,8 @@ const PARITY_COVERAGE_TEXT = Object.freeze({
   probe_file_absent: "Probe files are local and not committed; rerun polish capture on this machine.",
   design_elements_unavailable: "The source has no text elements (for example an image-only export); element parity is unavailable.",
   viewport_mismatch: "Source and build rendered at different sizes or pixel ratios; nothing is resized.",
+  probe_output_invalid: "The page measurements could not be read; not compared.",
+  comparator_failed: "The comparison could not run; not compared.",
   element_cap_reached: partlyRead,
   probe_time_cap_reached: partlyRead,
   page_text_truncated: textNotRead,
@@ -110,7 +112,7 @@ function parityMemberText(category, member, reason, result) {
     return `${name} ${value(design)} → ${value(build)}${tolerance}${review}`;
   }
   if (category === "color") {
-    if (property === "color") return `colour not measured (source ${design ?? "measured"}, build ${build ?? "measured"})${review}`;
+    if (property === "color") return `colour not measured (source ${design ?? "unresolved"}, build ${build ?? "unresolved"})${review}`;
     const name = property === "background_color" ? "background colour" : "text colour";
     const tolerance = typeof delta === "number" ? ` (${delta}/255, tolerance ${PARITY_TOLERANCES.color_channel})` : "";
     return `${name} ${rgb(design)} → ${rgb(build)}${tolerance}${review}`;

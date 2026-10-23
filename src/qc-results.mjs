@@ -1601,9 +1601,11 @@ const POLISH_RECORDS = Object.freeze({
   element_parity: Object.freeze({ checks: Object.freeze(qcChecksForRecord("element_parity")), read: readElementParity }),
 });
 // Records whose checks apply only to some campaigns, judged from the packet
-// snapshot; with no packet they do not apply.
+// snapshot. With no packet applicability is unknown: existing evidence still
+// applies, while an absent record keeps the no-packet behaviour.
 const POLISH_RECORD_APPLIES = Object.freeze({ element_parity: parityApplies });
-const polishRecordApplies = (name, packet) => !Object.hasOwn(POLISH_RECORD_APPLIES, name) || (packet != null && POLISH_RECORD_APPLIES[name](packet));
+const polishRecordApplies = (name, packet, visual) => !Object.hasOwn(POLISH_RECORD_APPLIES, name)
+  || (packet != null ? POLISH_RECORD_APPLIES[name](packet) : visual?.[name] != null);
 const STORE_POLICY_FIELDS = Object.freeze(Object.keys(STORE_PAGE_MATCHERS));
 
 // Applicability is decided without the leg running: the tracking checks
@@ -1653,14 +1655,14 @@ export function handoffCoverage({ report, spec, results = [], qcStandIns = null,
   }
 
   const polishStage = report?.stages?.polish;
+  const visual = polishStage?.evidence?.visual_review;
   if (!stageRecorded(polishStage)) {
     for (const check of POLISH_CHECKS) {
-      if (polishRecordApplies(QC_CHECK_REGISTRY[check].record, packet)) entries.push(silence("polish", check, QC_REASON.LEG_NOT_RUN));
+      if (polishRecordApplies(QC_CHECK_REGISTRY[check].record, packet, visual)) entries.push(silence("polish", check, QC_REASON.LEG_NOT_RUN));
     }
   } else {
-    const visual = polishStage.evidence?.visual_review;
     for (const [name, { checks }] of Object.entries(POLISH_RECORDS)) {
-      if (!polishRecordApplies(name, packet)) continue;
+      if (!polishRecordApplies(name, packet, visual)) continue;
       const captured = name === "media_weight" ? isPlainObject(visual?.page_load) && visual.media_weight != null : visual?.[name] != null;
       for (const check of checks) {
         if (hasRow("polish", check)) continue;

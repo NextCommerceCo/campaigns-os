@@ -4,6 +4,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, unlinkSync, readdirSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -120,6 +121,29 @@ const unexercisedAll = (rows, reason) => rows.length > 0 && rows.every((row) => 
 const headingDrift = (side, route, viewport) => ({ status: "measured", elapsed_ms: 5, value: probeOutput(viewport, side === "build"
   ? { elements: [element(0, "Synthetic headline", { font_size_px: 30 }), element(1, "Body copy after hero")] }
   : { elements: [element(0, "Synthetic headline", { font_size_px: 32 }), element(1, "Body copy after hero")] }) });
+
+test("R4-2: a refused 64-cell record compares each cell once per read and preserves refusal bytes", (t) => {
+  const f = fixture(t, { pages: Array.from({ length: 32 }, (_, i) => `page${i}`), probe: headingDrift });
+  assert.equal(f.record.cells.length, 64);
+  let calls = 0, evaluations = 0;
+  const rules = { ...standInRules((design, build) => { calls++; return compareElementParity(design, build); }),
+    evaluate(input) {
+      if (++evaluations === 64) throw new Error("synthetic late reader failure");
+      return ELEMENT_PARITY_QC_RULES.evaluate(input);
+    } };
+  const readRefused = () => read(f, { qcStandIns: { polish: { "parity.element": rules } } });
+  const rows = readRefused();
+  assert.equal(comparisons(rows).length, 64);
+  assert.ok(rows.length > 64, "refusal retains element identities as well as comparison rows");
+  assert.ok(unexercisedAll(rows, "evidence_not_reproducible"));
+  const digest = createHash("sha256").update(JSON.stringify(rows)).digest("hex");
+  assert.equal(digest, "a7ac459ad2d8ca654a83f14672a8e6d775ddc3618f7da2c61d595dead2bf28e5", "refused rows remain byte-identical to the pre-cache reader");
+  assert.equal(calls, 64);
+  evaluations = 0;
+  const again = readRefused();
+  assert.equal(JSON.stringify(again), JSON.stringify(rows));
+  assert.equal(calls, 128, "the cache is local to each read");
+});
 
 test("P2 baseline: matching probes read comparison pass with font_usage_not_observed and no element rows", (t) => {
   const f = fixture(t);

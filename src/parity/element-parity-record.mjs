@@ -356,11 +356,23 @@ function recordProblem(record, { packet, campaignSlug, planned, captures, rules 
 // Every row of a record, re-derived on read. `rules` is ELEMENT_PARITY_QC_RULES
 // as loaded (with plan, readFile, readFileForIdentity, compare). Never throws.
 export function readElementParityRows(context = {}, rules = ELEMENT_PARITY_QC_RULES) {
+  const comparisonCache = new Map();
   try {
-    return readRows(context, rules);
+    return readRows(context, rules, comparisonCache);
   } catch {
-    return refusedRecordRows(context, rules, E, "reader_failed");
+    return refusedRecordRows(context, rules, E, "reader_failed", null, comparisonCache);
   }
+}
+
+// The fallback may revisit cells already compared before a reader failure.
+// Keep successes and failures per cell for this read only.
+function compareCell(cell, design, build, { rules, comparisonCache }) {
+  if (!comparisonCache.has(cell)) {
+    let comparison = null, compareError = false;
+    try { comparison = (rules.compare ?? compareElementParity)(design, build); } catch { compareError = true; }
+    comparisonCache.set(cell, { comparison, compareError });
+  }
+  return comparisonCache.get(cell);
 }
 
 function plannedRoutes(packet, rules) {
@@ -375,7 +387,8 @@ function plannedRoutes(packet, rules) {
 
 // Rows named only to keep their identities: a refused cell keeps the element
 // rows its files name, so an accept lapses instead of orphaning.
-function identityRows(cell, { record, targetRepo, rules, measuredAt, qcAccepts }) {
+function identityRows(cell, env) {
+  const { record, targetRepo, rules, measuredAt, qcAccepts } = env;
   // Accepts supply identity only, never evidence or disposition. When a ref
   // or entire cell is gone there may be no bytes from which to reconstruct a
   // finding. Keep those named subjects on refusal so the accept can lapse.
@@ -390,9 +403,8 @@ function identityRows(cell, { record, targetRepo, rules, measuredAt, qcAccepts }
   const design = rules.readFileForIdentity(cell.source_html?.snapshot_ref, targetRepo)?.probe;
   const build = rules.readFileForIdentity(cell.build?.probe_ref, targetRepo)?.probe;
   if (!isPlainObject(design) || !isPlainObject(build)) return retained;
-  let comparison;
-  try { comparison = (rules.compare ?? compareElementParity)(design, build); } catch { return retained; }
-  if (!comparisonShapeOk(comparison) || comparison.status !== "compared") return retained;
+  const { comparison, compareError } = compareCell(cell, design, build, env);
+  if (compareError || !comparisonShapeOk(comparison) || comparison.status !== "compared") return retained;
   return keep(evaluateElementParityCell({ page_id: cell.page_id, viewport: cell.viewport, design, build, comparison, measured_at: measuredAt ?? record?.measured_at ?? null })
     .filter((row) => row.subject.key !== "comparison"));
 }
@@ -416,8 +428,8 @@ function refusedCellRows(cell, reason, env, { members = [], result = "unexercise
 // (with the failure as its member for evidence_not_reproducible) and the
 // element rows its files/retained accepts name. The expected grid comes from
 // the packet plan and record subject even when only some cells survive.
-function refusedRecordRows(context, rules, reason, detail = null, planned = null) {
-  const env = { record: context.record, targetRepo: context.targetRepo, rules, qcAccepts: context.qcAccepts };
+function refusedRecordRows(context, rules, reason, detail = null, planned = null, comparisonCache) {
+  const env = { record: context.record, targetRepo: context.targetRepo, rules, qcAccepts: context.qcAccepts, comparisonCache };
   const members = reason === E && detail ? [{ key: "evidence", result: "unexercised", reason_code: detail }] : [];
   const cells = (Array.isArray(context.record?.cells) ? context.record.cells : []).filter(cellIdentityOk);
   const grid = (planned ?? plannedRoutes(context.packet, rules) ?? []).flatMap((route) => PARITY_VIEWPORTS.map((viewport) => ({ page_id: route.page_id, route: route.requested_route, viewport })));
@@ -438,23 +450,24 @@ function refusedRecordRows(context, rules, reason, detail = null, planned = null
   return [...new Map(rows.map((row) => [row.id, row])).values()];
 }
 
-function readRows(context, rules) {
+function readRows(context, rules, comparisonCache) {
   const { record, captures, packet, packetPath, currentBuild, currentSource, buildOutput, campaignSlug, targetRepo } = context;
   const planned = plannedRoutes(packet, rules);
-  if (!packet) return refusedRecordRows(context, rules, E, "packet_unavailable");
-  if (!planned) return refusedRecordRows(context, rules, E, "packet_plan_invalid");
+  const refuseRecord = (reason, detail = null) => refusedRecordRows(context, rules, reason, detail, planned, comparisonCache);
+  if (!packet) return refuseRecord(E, "packet_unavailable");
+  if (!planned) return refuseRecord(E, "packet_plan_invalid");
   if (!isPlainObject(rules) || typeof rules.readFile !== "function" || typeof rules.evaluate !== "function") {
-    return refusedRecordRows(context, rules, E, "rules_unavailable", planned);
+    return refuseRecord(E, "rules_unavailable");
   }
   const problem = recordProblem(record, { packet, campaignSlug, planned, captures, rules });
-  if (problem) return refusedRecordRows(context, rules, E, problem, planned);
-  if (record.probe_version !== PARITY_PROBE_VERSION) return refusedRecordRows(context, rules, "not_captured_by_this_version", null, planned);
+  if (problem) return refuseRecord(E, problem);
+  if (record.probe_version !== PARITY_PROBE_VERSION) return refuseRecord("not_captured_by_this_version");
   const measuredAt = record.measured_at;
-  const env = { record, targetRepo, rules, measuredAt, qcAccepts: context.qcAccepts };
+  const env = { record, targetRepo, rules, measuredAt, qcAccepts: context.qcAccepts, comparisonCache };
   const stale = record.subject.build_fingerprint !== currentBuild
     || record.subject.source_package_material_fingerprint !== (currentSource || null)
     || (buildOutput !== undefined && buildOutput?.status !== "pass");
-  if (stale) return refusedRecordRows(context, rules, QC_REASON.STALE_BINDING, null, planned);
+  if (stale) return refuseRecord(QC_REASON.STALE_BINDING);
 
   const rows = [];
   const dsp = readDesignSourcePackage(packet, packetPath);
@@ -535,8 +548,7 @@ function cellRows(cell, env) {
   }
   // Steps 8 to 10.
   const design = snapshot.probe, build = probe.probe;
-  let comparison = null, compareError = false;
-  try { comparison = (rules.compare ?? compareElementParity)(design, build); } catch { compareError = true; }
+  const { comparison, compareError } = compareCell(cell, design, build, env);
   const designOk = isPlainObject(design), buildOk = isPlainObject(build);
   return rules.evaluate({ page_id: cell.page_id, viewport: cell.viewport, design: designOk ? design : null, build: buildOk ? build : null,
     comparison, compareError, designFileRecorded: dspDesignFileRecorded(dsp, surfaceId), measured_at: record.measured_at });

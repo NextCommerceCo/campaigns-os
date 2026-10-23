@@ -284,10 +284,26 @@ import { mkdtempSync, rmSync, writeFileSync, unlinkSync, mkdirSync, realpathSync
 import { tmpdir } from "node:os";
 import { syntheticCapturesRecord, createRgbaPng } from "./polish-visual-fixtures.mjs";
 import { capturesIntegrity, writePolishPng } from "./polish-visual.mjs";
-import { readCaptures, readCurrentQcResults, qcResultRef, buildQcResult, packetCampaignSlug } from "./qc-results.mjs";
+import { readCaptures, readCurrentQcResults, qcResultRef, buildQcResult, packetCampaignSlug, handoffCoverage } from "./qc-results.mjs";
 import { loadQcRederivers } from "./qc-check-registry.mjs";
 import { buildQcHandoff, createQcAccept, qcAcceptAttribution, planQcAccepts, assessQcAccepts } from "./qc-accept.mjs";
 import { evaluatePolishGate } from "./polish-gate.mjs";
+
+test("R4-4: unreadable packet and failing parity reader keep recorded parity in coverage", () => {
+  const record = { cells: [] };
+  const report = { stages: { polish: { status: "completed", evidence: { visual_review: { element_parity: record } } } } };
+  const rederivers = { "parity.element": { status: "failed" } };
+  const current = readCurrentQcResults({ report, doctor: {}, packetPath: "/unreadable-r4-packet.json", rederivers });
+  assert.ok(current.results.some((row) => row.check === "parity.element" && row.reason_code === E));
+  // If no reader row survives, the silence rule must still name the record.
+  const coverage = handoffCoverage({ report, spec: null, results: [], packet: null, rederivers });
+  assert.ok(coverage.some((row) => row.check === "parity.element" && row.reason_code === E));
+  const noRecord = { stages: { polish: { status: "completed", evidence: { visual_review: {} } } } };
+  assert.equal(handoffCoverage({ report: noRecord, spec: null, packet: null }).some((row) => row.check === "parity.element"), false);
+  assert.equal(handoffCoverage({ report: { stages: {} }, spec: null, packet: null }).some((row) => row.check === "parity.element"), false);
+  assert.ok(handoffCoverage({ report: { stages: { polish: { ...report.stages.polish, status: "pending" } } }, spec: null, packet: null })
+    .some((row) => row.check === "parity.element"));
+});
 async function c3Fixture(t) {
   const targetRepo = mkdtempSync(join(tmpdir(), "c3-reader-"));
   t.after(() => rmSync(targetRepo, { recursive: true, force: true }));

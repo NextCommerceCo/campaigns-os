@@ -631,6 +631,42 @@ const parityElement = (index, text, box, extra = {}) => ({ index, selector_path:
   text_transform: "none", fg_srgb: [0.1, 0.1, 0.1], bg_srgb: [1, 1, 1], color_review: null, ...extra });
 const parityProbe = (elements, coverage = {}) => ({ viewport: { width: 1440, height: 1200 }, dpr: 1, elements, page_text: elements.map((e) => e.text).join(" "),
   font_faces: [], coverage: { elements_capped: false, time_capped: false, page_text_truncated: false, font_faces_capped: false, closed_shadow_roots: 0, frames_not_read: 0, ...coverage } });
+
+test("R4-1: A-P7 coverage text distinguishes unread source text from unread built text", async () => {
+  const { buildQcHandoff, qcHandoffTextLines } = await import("./qc-accept.mjs");
+  const text = "Some page text was not read (long text, closed components or frames). On the built page, copy is not called missing there; on the source page, those parts were not compared.";
+  for (const reason_code of ["page_text_truncated", "closed_shadow_root_not_read", "frame_not_read"]) {
+    const handoff = buildQcHandoff({ results: [], accepts: [], coverage: [{ check: "parity.element", leg: "polish", result: "unexercised", reason_code, count: 1, pages: ["landing"] }] });
+    assert.equal(handoff.coverage[0].text, text);
+    assert.ok(qcHandoffTextLines(handoff).some((line) => line.includes(text)));
+  }
+});
+
+test("R4-5: unresolved colour summaries label null review reasons unresolved", async () => {
+  const { parityRowSummary } = await import("./qc-accept.mjs");
+  const { design, build } = heroProbes({ badgeY: 547 });
+  design.elements[0].fg_srgb = null;
+  const color = (await parityRows(design, build)).find((row) => row.subject.key.startsWith("color:"));
+  assert.equal(parityRowSummary(color), "Synthetic headline: colour not measured (source unresolved, build unresolved) (review)");
+  build.elements[0].color_review = "translucent_background";
+  const named = (await parityRows(design, build)).find((row) => row.subject.key.startsWith("color:"));
+  assert.equal(parityRowSummary(named), "Synthetic headline: colour not measured (source unresolved, build translucent_background) (review)");
+});
+
+test("R4-6: invalid measurements and comparator failures have plain coverage explanations", async () => {
+  const { buildQcHandoff, qcHandoffTextLines } = await import("./qc-accept.mjs");
+  const { evaluateElementParityCell } = await import("./parity/element-parity-record.mjs");
+  for (const [input, reason, text] of [
+    [{ comparison: { status: "invalid_input", invalid: "design" } }, "probe_output_invalid", "The page measurements could not be read; not compared."],
+    [{ compareError: true }, "comparator_failed", "The comparison could not run; not compared."],
+  ]) {
+    const results = evaluateElementParityCell({ page_id: "landing", viewport: "desktop", ...input });
+    const handoff = buildQcHandoff({ results, accepts: [] });
+    const entry = handoff.coverage.find((row) => row.reason_code === reason);
+    assert.equal(entry?.text, text);
+    assert.ok(qcHandoffTextLines(handoff).some((line) => line.includes(text)));
+  }
+});
 // The P3-B1 hero: three badges overlaid on the image in the design, in a
 // row below it in the build (+108 px), with the copy after the hero.
 function heroProbes({ badgeY = 655, heading = {} } = {}) {

@@ -6,10 +6,11 @@
 // never to the report.
 import { contrastToolkit } from "../contrast.mjs";
 import { PARITY_MAX_ROUTES, PARITY_PROBE_CELL_MS, PARITY_PROBE_RUN_MS, PARITY_PROBE_WALK_MS } from "../polish-deadline.mjs";
+import { PARITY_PROBE_LIMITS } from "./compare.mjs";
 
 export const PARITY_PROBE_NAME = "element_parity";
 export { PARITY_PROBE_VERSION } from "./element-parity-record.mjs";
-export const PARITY_PROBE_LIMITS_ARG = Object.freeze({ elements: 1500, text_chars: 500, page_text_chars: 262144, font_faces: 200, walk_ms: PARITY_PROBE_WALK_MS });
+export const PARITY_PROBE_LIMITS_ARG = Object.freeze({ ...PARITY_PROBE_LIMITS, walk_ms: PARITY_PROBE_WALK_MS });
 
 // The page-side read. It never clicks, focuses, hovers, scrolls, types or
 // writes, and it never enters a frame's document or a closed shadow root:
@@ -24,7 +25,7 @@ export const PARITY_PROBE_LIMITS_ARG = Object.freeze({ elements: 1500, text_char
 // - The walk covers the document and every open shadow root, entered right
 //   after its host, and stops at limits.elements text-bearing elements or
 //   once limits.walk_ms has passed since the probe started. A selector path
-//   is cut at 2 048 code points (the comparator's selector_path_chars).
+//   is cut at limits.selector_path_chars code points (shared with the comparator).
 // - font_faces are document.fonts in iteration order, at most limits.font_faces.
 export function parityProbe(toolkit, limits, closedRoots) {
   const started = performance.now();
@@ -101,7 +102,7 @@ export function parityProbe(toolkit, limits, closedRoots) {
     const measured = toolkit.measureTextElement(el, win);
     return {
       index,
-      selector_path: cut(toolkit.selectorPath(el), 2048)[0],
+      selector_path: cut(toolkit.selectorPath(el), limits.selector_path_chars)[0],
       text: cut(collapse(directText(el)), limits.text_chars)[0],
       ftext: cut(collapse(subtreeText(el)), limits.text_chars)[0],
       box: { x: round1(rect.left + win.scrollX), y: round1(rect.top + win.scrollY), w: round1(rect.width), h: round1(rect.height) },

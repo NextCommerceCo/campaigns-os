@@ -6,6 +6,17 @@ const A = "https://www.figma.com/design/SYNTHKEYA0001/synthetic-file?node-id=1-2
 const B = "https://www.figma.com/design/SYNTHKEYB0002/synthetic-other";
 const resolve = (pages, entries, mappings = pages.map((page) => ({ page_id: page.id, path: `${page.id}.html` }))) => resolveDesignFileReferences({ activePages: pages, mappings, manifest: { pages: entries } });
 
+test("R4-3: only a valid branch key replaces the file key", () => {
+  for (const kind of ["file", "design", "proto", "board"]) {
+    for (const suffix of ["branch", "branch/", "branch/my-name", "name/branch", "name/branch/my-name"]) {
+      assert.deepEqual(normalizeDesignFileReference({ file_url: `https://www.figma.com/${kind}/KEY1/${suffix}` }).declaration.identity,
+        { type: "figma", file_key: "KEY1" }, `${kind}/${suffix}`);
+    }
+    assert.deepEqual(normalizeDesignFileReference({ file_url: `https://www.figma.com/${kind}/KEY1/name/branch/BRANCH2` }).declaration.identity,
+      { type: "figma", file_key: "BRANCH2" });
+  }
+});
+
 test("design reference normalization: identity, branch, URL fallback, frame nodes and unusable declarations", () => {
   const normal = (value) => normalizeDesignFileReference(value).declaration;
   assert.deepEqual(normal({ file_url: A }).identity, { type: "figma", file_key: "SYNTHKEYA0001" });

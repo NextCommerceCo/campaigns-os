@@ -25,7 +25,7 @@ export function normalizeDesignFileReference(value) {
     const index = parts.findIndex((part) => ["file", "design", "proto", "board"].includes(part));
     let candidate = index < 0 ? null : parts[index + 1];
     const branch = parts.indexOf("branch", index + 2);
-    if (index >= 0 && branch >= 0) candidate = parts[branch + 1];
+    if (index >= 0 && branch >= 0 && /^[A-Za-z0-9]+$/.test(parts[branch + 1] ?? "")) candidate = parts[branch + 1];
     if (typeof candidate === "string" && /^[A-Za-z0-9]+$/.test(candidate)) fileKey = candidate;
   }
   const identity = fileKey == null ? { type, url: url.origin + url.pathname } : { type, file_key: fileKey };
