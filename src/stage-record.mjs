@@ -127,7 +127,7 @@ function typeName(value) {
 
 // visual_review keys only `polish capture` writes. `record polish --evidence`
 // refuses them by name and carries the captured values forward.
-export const PACKAGE_OWNED_VISUAL_REVIEW_KEYS = Object.freeze(["page_load", "media_weight", "readability"]);
+export const PACKAGE_OWNED_VISUAL_REVIEW_KEYS = Object.freeze(["page_load", "media_weight", "readability", "captures"]);
 export const PACKAGE_OWNED_KEY_REFUSAL = "package_owned_key";
 
 export function refuseRecord(stage, problems) {
@@ -903,7 +903,7 @@ function validateRecord(stage, { report, context, packet, fingerprint }) {
     // over the report this record would write. A blocked or skipped Polish is
     // not a pass the gate could grant; doctor keeps QA blocked on it.
     const hiddenEagerMediaGate = evaluateRecordedHiddenEagerMediaCheckpoint({ packet, report });
-    const gate = evaluatePolishGate({ report, hiddenEagerMediaGate, currentOutputFingerprint: fingerprint });
+    const gate = evaluatePolishGate({ report, hiddenEagerMediaGate, currentOutputFingerprint: fingerprint, newEvidence: true });
     if (gate.status === "blocked") {
       problems.push(`${gate.code}: ${gate.reason}`);
       for (const problem of gate.problems || []) problems.push(problem);

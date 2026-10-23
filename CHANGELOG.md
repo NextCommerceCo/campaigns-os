@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.60.0+agent.9] - 2026-10-23
+## [1.60.0+agent.10] - 2026-10-23
 
 ### Changed
 
@@ -11,8 +11,16 @@ Brand theme carries the design source's type onto commerce pages, not only its c
 - `theme inspect` / `theme generate` read the `@font-face` rules the source ships and the families its headings, body copy and buttons use, plus the button `border-radius`. `var()` references resolve through custom properties on `:root`, `html`, `body` and the class a stylesheet scopes itself under (the importer's `.cc-import`). They map to next-core's `--_text---font-family--heading`, `--_text---font-family--primary` and `--radius-size--buttons` (new `typography` block in `contracts/brand-theme-target-tokens.next-core.v0.json`). Each family is followed directly by the generic the source declared for it. A family is mapped only when the source ships a face for it; one that can't ship is a `theme.typography.face_unavailable` warning and is listed in the report's `typography.unavailable`. The radius takes `0` or one to four lengths or percentages, lists any other button radius in `typography.radius_rejected`, and is mapped only alongside a family, so a source without brand faces generates the same CSS as before.
 - The font-family tokens are emitted in a `:root, body` block, because next-core re-declares them on `body` at its 991, 767 and 479px breakpoints and a `:root`-only value held on desktop alone. `validateGeneratedCss` accepts that block.
 - `theme generate` writes `.campaign-runtime/theme/brand-fonts.css` beside `brand-theme.css`: only `@font-face` rules for the mapped families, always with `font-display: swap`, every format of a face kept, and URLs relative to `assets/css/`. Remote, `data:`, root-relative, missing, or outside-root face files (checked on real paths, so symlinks out are caught) are left out with `theme.typography.face_src_dropped`. The theme report gains `typography`, and `generated.fonts_css_path` names the file.
-- `record theme` refuses a styled commerce page that doesn't load a copy of the generated `brand-fonts.css` (found through the Build Context's `theme.generated.fonts_css_path`) from inside the built site, identical to the generated file, naming the page. The theme gate's generate/apply actions, the build guidance, `docs/brand-theme-bridge.md`, and the build (1.0.49) and polish (1.1.49) skills say to copy and load it. Polish now checks font parity at a mobile width as well as desktop.
-- The skills bundle revision advances to `1.60.0+skills.4`, and every bundled skill moves one patch version.
+- `record theme` refuses a styled commerce page that doesn't load a copy of the generated `brand-fonts.css` (found through the Build Context's `theme.generated.fonts_css_path`) from inside the built site, identical to the generated file, naming the page. The theme gate's generate/apply actions, the build guidance, `docs/brand-theme-bridge.md`, and the build (1.0.50) and polish (1.1.50) skills say to copy and load it. Polish now checks font parity at a mobile width as well as desktop.
+- The skills bundle revision advances to `1.60.0+skills.5`, and every bundled skill moves one patch version.
+
+## [1.60.0+agent.9] - 2026-10-23
+
+### Changed
+
+`polish capture` now takes its own full-page captures of each mapped page and of the page's source HTML at desktop and mobile widths, verifies the source screenshots recorded in the Design Source Package, and compares compatible pairs section by section as a review diagnostic with a heatmap. `record polish` now requires these package captures for a completed Polish, including at least one rendered build cell with a captured actual shot for every planned route. Agent-written screenshot paths no longer satisfy the screenshot check for a new record, so run `polish capture` again after upgrading. Polish records written before this version are read as before. The source HTML render runs offline: it reaches only a local read-only server, and requests, WebSocket connections and host-name lookups to anything else are blocked. Source screenshots or pages that are the build's own output are reported as self-referential warnings. Width or pixel-ratio mismatches are reported as unsupported, never resized. The comparison never passes, fails or blocks anything. `pngjs` and `pixelmatch` are new optional dependencies; without them captures are still taken and the comparison is listed as unavailable. Capture images are kept out of the repository by a `.gitignore` inside each capture folder.
+
+The Polish skill is 1.1.49, bundle `1.60.0+skills.4`.
 
 ## [1.60.0+agent.8] - 2026-10-23
 

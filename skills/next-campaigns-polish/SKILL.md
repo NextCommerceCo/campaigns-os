@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-polish
-version: 1.1.49
+version: 1.1.50
 description: Run the visual/runtime polish pass after build and before QA for a Campaigns OS campaign.
 ---
 
-Bundle revision: 1.60.0+skills.4
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.60.0+skills.4`
+Bundle revision: 1.60.0+skills.5
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.60.0+skills.5`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -117,11 +117,7 @@ schema reference; this section is the recording guidance.
 **All seven evidence fields are required** or the gate blocks with
 `polish.evidence_incomplete`:
 
-- `visual_review` — an **object with a `screenshots` array** (aliases:
-  `screenshot_paths`, `paths`, `urls`) holding at least one non-empty
-  path/URL string for the captured desktop+mobile evidence, plus the
-  package-generated `page_load` object. A bare string or a screenshot-less
-  object does NOT pass, no matter how real the review was.
+- `visual_review` — run `campaigns-os polish capture` first: it records the package captures (`captures`) and `page_load`, which satisfy the screenshot requirement, and `record polish` refuses a completed Polish without them. Do not write screenshot paths to satisfy the check, and never write `captures` or `page_load` by hand. Report self-referential references and the review list from the QC handoff to the operator; accept a self-referential warning only when the operator decides to use the current output as the baseline for later revisions.
 - `brand_review` — object; must include the `favicon` attestation and the
   `brand_bleed` attestation (below).
 - `checkout_review` — object; must include `field_labels` (aliases

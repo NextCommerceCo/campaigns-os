@@ -3,6 +3,96 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { createRgbaPng } from "./polish-visual-fixtures.mjs";
+import { readFileSync } from "node:fs";
+import { execFile, execFileSync } from "node:child_process";
+
+test("F3C-W9: freeze isolates every earlier record from normal, close throw/timeout, launch failure and render timeout", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-01-01T00:00:00.000Z") });
+  const root = join(BUILT_REPO, "source-c2"); mkdirSync(root, { recursive: true }); writeFileSync(join(root, "landing.html"), "<!doctype html><p>Synthetic source</p>");
+  const packet = packetWithPages([{ page_id: "landing", path: "landing.html", page_kit: { public_route: "/merchant/landing/", spec_route: "landing/" } }]);
+  packet.source_html.root = "source-c2";
+  const project = (result) => JSON.stringify([result.page_load, result.media_weight, result.readability]);
+  const controlled = () => ({ async close() {}, async probeReadabilityRoute() {}, async captureRoute({ url }) {
+    return { finalDocumentUrl: url, responseCollectionStatus: "complete", networkidle: { status: "settled", duration_ms: 250 }, mediaElements: [],
+      responses: [mainDocumentResponse(url)], imageProbe: { status: "complete", dpr: 1, images: [], spent_ms: 0 },
+      readability: { status: "measured", elements: [], coverage_gaps: [], capped: false, crops: [], probe_ms: 0, crop_ms: 0 } };
+  } });
+  const options = { packet, report: completedReport(), targetRepo: BUILT_REPO, baseUrl: "http://127.0.0.1:4173", now: "2026-01-01T00:00:00.000Z",
+    probeClock: { now: () => 0, sleep: () => new Promise(() => {}) } };
+  // Visual deadlines fire only when a synthetic operation hangs, never on
+  // wall-clock time, so no setup work under load can expire them.
+  const deadlineTimers = () => {
+    const armed = [];
+    return { setTimer(fire) { const handle = { fire }; armed.push(handle); return handle; },
+      clearTimer(handle) { if (armed.includes(handle)) armed.splice(armed.indexOf(handle), 1); },
+      // Armed synchronously after the operation starts, so the latest timer is this operation's.
+      hang: () => new Promise(() => { setImmediate(() => armed.pop()?.fire()); }) };
+  };
+  const control = await capturePolishPageLoad({ ...options, createBrowserAdapter: async () => controlled() });
+  assert.ok(control.media_weight); assert.ok(control.readability);
+  assert.ok(control.readability.cells.every((c) => c.cell_status === "measured"));
+  for (const mode of ["normal", "close_throw", "close_timeout", "launch_failure", "render_timeout"]) {
+    let launches = 0, snapshot;
+    const timers = deadlineTimers();
+    const result = await capturePolishPageLoad({ ...options, visual: { packetPath: BUILT_PACKET_PATH, timers },
+      onFrozen(frozen) { assert.ok(Object.isFrozen(frozen.page_load)); snapshot = project(frozen); },
+      createBrowserAdapter: async () => {
+        const index = launches++;
+        if (!index) return controlled();
+        if (index === 1 && mode === "launch_failure") throw new Error("synthetic launch failure");
+        return { async close() {
+          if (index === 1 && mode === "close_throw") throw new Error("synthetic close failure");
+          if (index === 2 && mode === "close_timeout") return timers.hang();
+        }, async renderForCompare({ viewport }) {
+          if (index === 1 && mode === "render_timeout") return timers.hang();
+          const shot = { status: "captured", bytes: createRgbaPng(viewport.width, viewport.height), full_height_css: viewport.height,
+            crop: { x: 0, y: 0, width: viewport.width, height: viewport.height }, truncated: false };
+          return { status: "rendered", readiness: { fonts: { status: "settled", waited_ms: 0, failed_faces: 0 }, await: { status: "not_present", waited_ms: 0, remaining_count: 0 } },
+            actual: shot, stabilized: { ...shot, treatment: { mask_selectors: "visual-masks/v1", masks: [], mask_cap_reached: false } } };
+        } };
+      } });
+    assert.equal(project(result), snapshot, mode); assert.equal(snapshot, project(control), mode);
+    const merged = mergePolishCaptureEvidence(completedReport(), { pageLoad: result.page_load, mediaWeight: result.media_weight, readability: result.readability, captures: result.captures });
+    const visual = merged.stages.polish.evidence.visual_review;
+    assert.equal(project({ page_load: visual.page_load, media_weight: visual.media_weight, readability: visual.readability }), snapshot, mode);
+    if (mode === "close_throw") assert.equal(result.captures.adapters.build.close, "failed");
+    if (mode === "close_timeout") assert.equal(result.captures.adapters.source.close, "producer_timeout");
+    if (mode === "launch_failure") assert.ok(result.captures.cells.filter((c) => c.side === "build").every((c) => c.status === "browser_unavailable"));
+    if (mode === "render_timeout") assert.ok(result.captures.cells.filter((c) => c.side === "build").every((c) => c.status === "producer_timeout"));
+    if (["normal", "close_throw", "close_timeout"].includes(mode)) assert.ok(result.captures.cells.every((c) => c.status === "rendered"));
+    for (const cell of result.captures.cells) if (cell.actual.png) assert.ok(readFileSync(join(BUILT_REPO, cell.actual.png.path)).length > 0);
+  }
+});
+
+test("C2 capture binding refuses a FIFO or directory Design Source Package without blocking", { skip: process.platform === "win32" }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-dsp-fifo-"));
+  try {
+    execFileSync("mkfifo", [join(dir, "dsp.json")]); mkdirSync(join(dir, "dsp-directory.json"));
+    const packet = packetWithPages([{ page_id: "landing", path: "landing.html", page_kit: { public_route: "/merchant/landing/", spec_route: "landing/" } }]);
+    const args = (path) => ({ packet: { ...packet, design_source_package: { path } }, report: completedReport(),
+      plan: planPolishCapture({ packet, baseUrl: "http://127.0.0.1:4173" }), packetPath: BUILT_PACKET_PATH, targetRepo: BUILT_REPO });
+    const code = `import { createPolishCaptureBinding } from ${JSON.stringify(new URL("./polish-node.mjs", import.meta.url).href)};
+      console.log(JSON.stringify(JSON.parse(process.argv[1]).map((input) => createPolishCaptureBinding(input).report.source_package_on_disk)));`;
+    // A child, so a blocking open fails by the kill timer instead of holding the runner.
+    const stdout = await new Promise((done, reject) => execFile(process.execPath, ["--input-type=module", "-e", code,
+      JSON.stringify([args(join(dir, "dsp.json")), args(join(dir, "dsp-directory.json"))])], { timeout: 60_000 },
+    (error, out) => error ? reject(error) : done(out)));
+    assert.deepEqual(JSON.parse(stdout), ["unavailable", "unavailable"]);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("C2 captures attach/conflict binding and all-stock preservation", () => {
+  const report = completedReport(), packet = packetWithPages([{ page_id: "landing", path: "landing.html", page_kit: { public_route: "/merchant/landing/", spec_route: "landing/" } }]);
+  const plan = planPolishCapture({ packet, baseUrl: "http://127.0.0.1:4173" });
+  report.stages.polish.evidence.visual_review.captures = { synthetic: "before" };
+  const args = { packet, report, plan, packetPath: BUILT_PACKET_PATH, targetRepo: BUILT_REPO };
+  const before = createPolishCaptureBinding(args);
+  report.stages.polish.evidence.visual_review.captures.synthetic = "after";
+  assert.throws(() => assertPolishCaptureBindingUnchanged(before, createPolishCaptureBinding(args)), /attachment refused/);
+  assert.deepEqual(mergePolishCaptureEvidence(report).stages.polish.evidence.visual_review.captures, { synthetic: "after" });
+  assert.throws(() => mergePolishCaptureEvidence(report, { pageLoad: { schema_version: "campaigns-os-polish-page-load/v0", performed_by: "campaigns-os polish capture" }, captures: {} }), /captures/);
+});
 
 import { computeBuildFingerprint } from "./built-site-scope.mjs";
 import { contrastToolkit } from "./contrast.mjs";

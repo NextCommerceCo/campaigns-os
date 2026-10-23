@@ -9028,7 +9028,118 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.60.0+agent.9",
-      "changelog_sha256": "2a11281e76627edc338e170355033cc42c772422b027e766ba2972edf0e0f56f",
+      "changelog_sha256": "79a868508959f46da073ab22d5201bf6726d779c2259c086e6b9dc311176ae9b",
+      "agent_impact": "Run polish capture again after upgrading before recording completed Polish. New writes require current package captures; existing records retain legacy reads. Visual reference warnings and diff diagnostics appear in the QC handoff; pixel scores never decide fidelity.",
+      "compatibility": "compatible",
+      "migration": "Run polish capture before the next completed record polish; never author visual_review.captures by hand.",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/design-source-package.md",
+          "surface_entry": "docs/design-source-package.md",
+          "summary": "Document screenshot pixel ratio, dimensions and declared source lineage."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Update current bundle revision examples to 1.60.0+skills.4."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Pin the optional visual comparison dependency graph."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Add optional PNG decoder and pixel comparison dependencies."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": null,
+          "summary": "Advance the Polish skill to 1.1.49, every other skill one patch, and the bundle to 1.60.0+skills.4."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Require package captures for completed Polish and present diagnostic review findings."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-sdk-bump/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "Capture package visual evidence and report its diagnostic summary."
+        }
+      ],
+      "entry_sha256": "6db2be5bbde95ca81448ab4d82212f995536fb2ebbd75008de71a056286df912"
+    },
+    {
+      "id": "RL-0288",
+      "sequence": 276,
+      "date": "2026-10-23",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.60.0+agent.10",
+      "changelog_sha256": "edca023e7644eebe59a8d52df16cadf8e1fea2dfe3fde6fdb0b74c74b63ee390",
       "agent_impact": "theme generate can now write .campaign-runtime/theme/brand-fonts.css beside brand-theme.css, and brand-theme.css can carry next-core font-family tokens in a `:root, body` block plus --radius-size--buttons. When brand-fonts.css exists, a build agent copies it into the campaign assets/css folder and loads it on the same commerce pages as the brand layer; record theme refuses a styled page that does not. Sources without self-hosted brand faces generate the same CSS as before.",
       "compatibility": "additive",
       "migration": "none",
@@ -9049,7 +9160,7 @@
           "class": "named_surface",
           "path": "docs/skills-revision.md",
           "surface_entry": "docs/skills-revision.md",
-          "summary": "Examples name bundle revision 1.60.0+skills.4."
+          "summary": "Examples name bundle revision 1.60.0+skills.5."
         },
         {
           "class": "cli_surface",
@@ -9061,7 +9172,7 @@
           "class": "skill",
           "path": "skills.json",
           "surface_entry": "skills.json",
-          "summary": "Advance bundle revision to 1.60.0+skills.4 and each skill version one patch."
+          "summary": "Advance bundle revision to 1.60.0+skills.5 and each skill version one patch."
         },
         {
           "class": "skill",
@@ -9124,7 +9235,7 @@
           "summary": "Carry the advanced bundle revision and matching per-skill version."
         }
       ],
-      "entry_sha256": "2e2e7799bee51864ce4931ad38facb9baf9e6fa82f79c9e3fa8c90e727f46332"
+      "entry_sha256": "a3a9fd429e90c43fe9870f9ea92cb8b0abff84f4e2698cba04175337d1d71289"
     }
   ]
 }
