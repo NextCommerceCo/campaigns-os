@@ -22,7 +22,8 @@ const portable = (value) => value.split(sep).join("/");
  * Compare recorded Polish/QA build bindings with bytes under _site/<slug>.
  * `changes` is explicitly against the assembly manifest, which need not be
  * the build an older stage reviewed. We cannot reconstruct an older manifest.
- * Missing inputs remain unknown; a matching binding alone is not a verdict.
+ * Missing build inputs remain unknown; lifecycle-required stages are owed
+ * even without a stage binding. A matching binding alone is not a verdict.
  */
 export function assessEvidenceDebt({ packet = null, packetPath = null, report = null } = {}) {
   const assembly = report?.stages?.assembly;
@@ -65,13 +66,19 @@ export function assessEvidenceDebt({ packet = null, packetPath = null, report = 
   // A missing manifest hides page changes, never a known stage binding.
   const bindingReason = reason || (!recordedBuild ? "assembly_build_fingerprint_missing" : null);
   const changesReason = bindingReason || scopeReason || (!manifestKnown ? "build_manifest_unavailable" : null);
-  const stage = (recorded, matches) => ({
-    status: bindingReason || !recorded ? "unknown" : matches ? "current" : "owed",
-    matches_current_build: recorded && currentBuild ? matches : null,
-    recorded_build_fingerprint: recorded,
-    current_build_fingerprint: currentBuild,
-    reason: bindingReason || (!recorded ? "stage_build_fingerprint_missing" : matches ? null : "build_fingerprint_changed"),
-  });
+  const stage = (stageRecord, recorded, matches) => {
+    // record build resets Polish to required and clears its top-level binding;
+    // input-change demotion can also make Polish/QA required. This is known
+    // lifecycle debt, even when retained evidence still matches the output.
+    const required = stageRecord?.status === "required";
+    return {
+      status: bindingReason ? "unknown" : required ? "owed" : !recorded ? "unknown" : matches ? "current" : "owed",
+      matches_current_build: recorded && currentBuild ? matches : null,
+      recorded_build_fingerprint: recorded,
+      current_build_fingerprint: currentBuild,
+      reason: bindingReason || (required ? "stage_required_by_build" : !recorded ? "stage_build_fingerprint_missing" : matches ? null : "build_fingerprint_changed"),
+    };
+  };
 
   const changes = {
     status: changesReason ? "unknown" : "known",
@@ -103,8 +110,8 @@ export function assessEvidenceDebt({ packet = null, packetPath = null, report = 
     }
   }
   return {
-    polish: stage(polishBuild, Boolean(polishBuild && currentBuild && polishBuild === currentBuild)),
-    qa: stage(qaBuild, qaRecordedForCurrentBuild(report, currentBuild)),
+    polish: stage(report?.stages?.polish, polishBuild, Boolean(polishBuild && currentBuild && polishBuild === currentBuild)),
+    qa: stage(report?.stages?.qa, qaBuild, qaRecordedForCurrentBuild(report, currentBuild)),
     changes,
   };
 }

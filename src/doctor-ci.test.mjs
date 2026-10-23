@@ -10,6 +10,7 @@ import { assessEvidenceDebt } from "./evidence-debt.mjs";
 import { doctorCommand } from "./doctor/inspect.mjs";
 import { doctorCiFailure, formatDoctorCi } from "./doctor/ci.mjs";
 import { openRunSession } from "./run-session.mjs";
+import { recordStageCommand } from "./stage-record.mjs";
 
 const cli = new URL("../bin/campaigns-os.mjs", import.meta.url).pathname;
 
@@ -127,6 +128,41 @@ test("doctor --ci rebuilt assembly cannot refresh older Polish/QA evidence", (t)
   const payload = jsonCi(f, 3);
   assert.equal(payload.ci.polish.status, "owed");
   assert.equal(payload.ci.qa.status, "owed");
+});
+
+test("doctor --ci after record build reports required Polish and old QA as owed", (t) => {
+  const f = fixture(t);
+  writeFileSync(join(f.root, "missing-spec.json"), "{}");
+  mkdirSync(join(f.root, "src", "synthetic-campaign"), { recursive: true });
+  Object.assign(f.report, {
+    schema_version: "campaign-runtime-assembly-report/v0",
+    run_id: "synthetic-run", generated_at: "2026-10-23T00:00:00Z", status: "prepared",
+    identity: { map_id: "synthetic-map", public_route_slug: "synthetic-campaign", campaign_directory: "synthetic-campaign", live_url_path: "/synthetic-campaign/", spec_hash: "synthetic-spec" },
+    inputs: { packet_path: "campaign-runtime.build.json", context_path: ".campaign-runtime/build-context.json", spec_path: "missing-spec.json", source: { kind: "html_funnel", root: "source" }, target_repo: "." },
+    template_family: { value: "olympus", locked: true },
+    decisions: [], evidence: [], blockers: [], warnings: [],
+    next: { stage: "build", owner: "build", action: "Record build" },
+  });
+  for (const key of ["prepare_build", "doctor", "setup", "assembly", "polish", "deploy", "qa"]) {
+    f.report.stages[key] = { stage: key, status: "completed", ...f.report.stages[key] };
+  }
+  f.save();
+  const oldQa = structuredClone(f.report.stages.qa);
+  writeFileSync(join(f.output, "landing", "index.html"), "<main>recorded revision</main>\n");
+  recordStageCommand({ _: ["record", "build"], packet: f.packetPath });
+  Object.assign(f.report, JSON.parse(readFileSync(f.reportPath, "utf8")));
+  assert.equal(f.report.stages.polish.status, "required");
+  assert.equal(f.report.stages.polish.required_by, "build");
+  assert.equal(f.report.stages.polish.source_build_fingerprint, undefined);
+  assert.deepEqual(f.report.stages.qa, oldQa);
+  const payload = jsonCi(f, 3);
+  assert.equal(payload.ci.polish.status, "owed");
+  assert.equal(payload.ci.polish.reason, "stage_required_by_build");
+  assert.equal(payload.ci.qa.status, "owed");
+  const markdown = run(f, "--ci");
+  assert.equal(markdown.status, 3);
+  assert.match(markdown.stdout, /Owed stages: polish, qa/);
+  assert.doesNotMatch(markdown.stdout, /Unknown polish:/);
 });
 
 test("doctor --ci missing built output exits 4 and reports unknown reasons", (t) => {

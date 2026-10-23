@@ -441,8 +441,8 @@ does not rerun doctor, Polish, or QA and does not reinterpret their verdicts.
 - `recorded_build_fingerprint`: the stage's build binding, or `null`;
 - `current_build_fingerprint`: the fingerprint computed from current built
   output with `computeBuildFingerprint`, or `null`;
-- `reason`: `null` for `current`, `build_fingerprint_changed` for `owed`, or an
-  explicit reason for `unknown`.
+- `reason`: `null` for `current`, `build_fingerprint_changed` or
+  `stage_required_by_build` for `owed`, or an explicit reason for `unknown`.
 
 Polish uses `stages.polish.source_build_fingerprint`, falling back to
 `stages.polish.evidence.source_build_fingerprint`, with the same precedence as
@@ -451,11 +451,14 @@ to `source_build_fingerprint`, and the same build-binding comparison as `next`.
 It does not require uncommitted capture files to be present.
 
 `current` means the stage's binding equals the bytes on disk and the assembly
-fingerprint is available. `owed` means that binding differs from the current
-build. Both comparisons work without a manifest, including reports recorded
+fingerprint is available and the stage is not recorded as `required`. `owed`
+means that binding differs from the current build, or the lifecycle recorded
+the stage as `required` (`stage_required_by_build`), even without a stage
+fingerprint. Both comparisons work without a manifest, including reports recorded
 before manifests existed. **`unknown` never means no debt.** Missing or unreadable
-built output, a missing assembly fingerprint, or a missing stage fingerprint
-makes the affected stage explicitly `unknown`. The stage reason codes are
+built output or a missing assembly fingerprint still makes the affected stage
+explicitly `unknown`; a missing stage fingerprint does too unless the stage is
+`required`. The unknown stage reason codes are
 `packet_unavailable`, `build_output_location_unknown`, `build_output_missing`,
 `build_output_unreadable`, `assembly_build_fingerprint_missing`, and
 `stage_build_fingerprint_missing`.
@@ -491,7 +494,8 @@ binding. If a later `record build` replaced that manifest, readback can still
 report older Polish/QA bindings as owed, but cannot reconstruct which pages
 changed from those older builds. An empty **known** list then means only that
 no files differ from the retained assembly manifest. If recording removed a
-stage binding entirely, that stage reads unknown. `current` is a build-binding
+stage binding entirely, that stage reads unknown unless its recorded status is
+`required`, which reports owed. `current` is a build-binding
 assessment only; input currency, stage completion, waivers and verdicts remain
 separate.
 
