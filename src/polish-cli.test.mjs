@@ -9,6 +9,51 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
+import { execFileSync } from "node:child_process";
+import { createRgbaPng } from "./polish-visual-fixtures.mjs";
+
+test("F3C-W10: direct polish capture on an upgraded repo creates ignored captures/diffs and preserves both ignore files", async (t) => {
+  const f = fixture(); t.after(() => rmSync(f.dir, { recursive: true, force: true }));
+  execFileSync("git", ["init", "-q", f.targetRepo]);
+  const rootIgnore = "# BEGIN campaigns-os runtime state\n.campaign-runtime/assembly-report.json\n# END campaigns-os runtime state\n";
+  writeFileSync(join(f.targetRepo, ".gitignore"), rootIgnore);
+  const packet = readJson(f.packetPath);
+  packet.source_html.root = "target-page-kit/source";
+  mkdirSync(join(f.targetRepo, "source"));
+  for (const mapping of packet.source_html.pages) {
+    if (!mapping.path || mapping.skip_reason) continue;
+    mkdirSync(dirname(join(f.targetRepo, "source", mapping.path)), { recursive: true });
+    writeFileSync(join(f.targetRepo, "source", mapping.path), "<!doctype html><p>Synthetic source</p>");
+  }
+  writeJson(f.packetPath, packet);
+  const createBrowserAdapter = async (options) => ({ ...await successfulAdapter()(),
+    async renderForCompare({ viewport }) {
+      const bytes = createRgbaPng(viewport.width, viewport.height, options.seal ? [0, 120, 255, 255] : [255, 255, 255, 255]);
+      const shot = { status: "captured", bytes, full_height_css: viewport.height,
+        crop: { x: 0, y: 0, width: viewport.width, height: viewport.height }, truncated: false };
+      return { status: "rendered", readiness: { fonts: { status: "settled", waited_ms: 0, failed_faces: 0 }, await: { status: "not_present", waited_ms: 0, remaining_count: 0 } },
+        actual: shot, stabilized: { ...shot, treatment: { animations: "disabled", caret: "hide", mask_color: "#ff00ff", mask_selectors: "visual-masks/v1", masks: [], mask_cap_reached: false } } };
+    } });
+  let frozenSnapshot;
+  const result = await polishCaptureCommand(commandArgs(f), { createBrowserAdapter,
+    onFrozen(value) { frozenSnapshot = JSON.stringify(value.page_load); } });
+  assert.equal(result.capture.visual.rendered, packet.source_html.pages.filter((p) => !p.skip_reason).length * 4);
+  const visual = readJson(f.reportPath).stages.polish.evidence.visual_review;
+  const { captured_at, ...pageLoad } = visual.page_load;
+  assert.equal(JSON.stringify(pageLoad), frozenSnapshot);
+  const record = visual.captures;
+  assert.ok(record.comparisons.some((c) => c.artifacts.length > 0));
+  const paths = [...record.cells.flatMap((c) => [c.actual.png.path, c.stabilized.png.path]),
+    ...record.comparisons.flatMap((c) => c.artifacts.flatMap((a) => [a.basis_crop.path, a.build_crop.path, a.heatmap.path])),
+    ".campaign-runtime/polish/captures/.gitignore", ".campaign-runtime/polish/diff/.gitignore"];
+  for (const path of paths) assert.equal(execFileSync("git", ["check-ignore", path], { cwd: f.targetRepo, encoding: "utf8" }).trim(), path);
+  assert.doesNotMatch(execFileSync("git", ["status", "--porcelain", "--untracked-files=all"], { cwd: f.targetRepo, encoding: "utf8" }), /polish\/(captures|diff)/);
+  assert.equal(readFileSync(join(f.targetRepo, ".gitignore"), "utf8"), rootIgnore);
+  const ignorePath = join(f.targetRepo, ".campaign-runtime/polish/captures/.gitignore"); writeFileSync(ignorePath, "*\n# operator content\n");
+  await polishCaptureCommand(commandArgs(f), { createBrowserAdapter });
+  assert.equal(readFileSync(ignorePath, "utf8"), "*\n# operator content\n");
+  assert.equal(readFileSync(join(f.targetRepo, ".gitignore"), "utf8"), rootIgnore);
+});
 
 import { formatPolishCaptureText, main, polishCaptureCommand } from "./cli.mjs";
 import { computeBuildFingerprint } from "./built-site-scope.mjs";

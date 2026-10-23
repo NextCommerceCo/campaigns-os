@@ -1,0 +1,5 @@
+<!doctype html><meta charset="utf-8"><title>Synthetic offline boundary</title>
+<link rel="preconnect" href="RECEIVER">
+<style>@font-face{font-family:Receiver;src:url('RECEIVER/font.woff2')}@font-face{font-family:Invalid;src:url('https://example.invalid/font.woff2')}p{font-family:Receiver,serif}h1{font-family:Invalid,serif}</style>
+<section id="hero"><h1>Offline</h1><p>Synthetic receiver font</p><img alt="synthetic blocked image" src="RECEIVER/image.png"></section>
+<script>fetch('RECEIVER/fetch').catch(()=>{});navigator.sendBeacon('RECEIVER/beacon','synthetic');new WebSocket('RECEIVER_WS/socket');</script>

@@ -3,6 +3,9 @@ import { NO_CAPTURABLE_ROUTES_CODE } from "./local-preview-policy.mjs";
 import { createHash } from "node:crypto";
 import { HIDDEN_EAGER_MEDIA_ACTIONS } from "./gate-actions.mjs";
 import { dirname, join, resolve } from "node:path";
+import { computeDesignSourcePackageMaterialFingerprint } from "./design-source-package.mjs";
+import { runVisualPass, unavailableCapturesRecord, CAPTURES_SCHEMA, CAPTURES_PRODUCER } from "./polish-visual.mjs";
+import { readRegularFileSync } from "./source-html-server.mjs";
 import { computeBuildFingerprint, describeBuildOutputDrift } from "./built-site-scope.mjs";
 import {
   buildPageLoadCapture,
@@ -317,11 +320,13 @@ function conflictToken(visualReview) {
   const hasPageLoad = Object.hasOwn(visualReview, "page_load");
   const hasMediaWeight = Object.hasOwn(visualReview, "media_weight");
   const hasReadability = Object.hasOwn(visualReview, "readability");
-  if (!hasPageLoad && !hasMediaWeight && !hasReadability) return "absent";
+  const hasCaptures = Object.hasOwn(visualReview, "captures");
+  if (!hasPageLoad && !hasMediaWeight && !hasReadability && !hasCaptures) return "absent";
   const value = {
     ...(hasPageLoad ? { value: visualReview.page_load } : {}),
     ...(hasMediaWeight ? { media_weight: visualReview.media_weight } : {}),
     ...(hasReadability ? { readability: visualReview.readability } : {}),
+    ...(hasCaptures ? { captures: visualReview.captures } : {}),
   };
   return `sha256:${createHash("sha256").update(canonicalJson(value)).digest("hex")}`;
 }
@@ -444,6 +449,7 @@ export function createPolishCaptureBinding({ packet, report, plan, packetPath, t
         source_package_material_fingerprint: assemblySourcePackageMaterialFingerprint(report),
       },
       current_source_package_material_fingerprint: currentSourcePackageMaterialFingerprint(report),
+      source_package_on_disk: sourcePackageOnDisk(packet, resolvedPacketPath),
       page_load_conflict_token: conflictToken(visualReview),
     },
     plan: plan === null ? null : bindingPlanProjection(plan),
@@ -509,7 +515,7 @@ export function mergePolishPageLoadEvidence(report, pageLoad) {
 // the current build, whose every shared cell carries the integrity of the
 // matching page_load capture; any other value, or none, removes an earlier
 // one.
-export function mergePolishCaptureEvidence(report, { pageLoad = null, mediaWeight = null, readability = null, now = null } = {}) {
+export function mergePolishCaptureEvidence(report, { pageLoad = null, mediaWeight = null, readability = null, captures, now = null } = {}) {
   let merged;
   if (pageLoad === null || pageLoad === undefined) {
     const { visualReview } = captureReportAncestors(report);
@@ -537,11 +543,27 @@ export function mergePolishCaptureEvidence(report, { pageLoad = null, mediaWeigh
     }
   }
   const visualReview = merged.stages.polish.evidence.visual_review;
+  if (pageLoad && captures !== undefined) {
+    if (!capturesAttach(captures, { report, pageLoad })) throw new Error("polish capture can attach only package-produced captures for the same page_load capture.");
+    visualReview.captures = captures;
+  }
   delete visualReview.readability;
   if (readabilityAttaches(readability, { buildFingerprint: currentBuildFingerprint(report), pageLoad: visualReview.page_load })) {
     visualReview.readability = readability;
   }
   return merged;
+}
+
+function sourcePackageOnDisk(packet, packetPath) {
+  if (!packet.design_source_package?.path) return null;
+  try { return computeDesignSourcePackageMaterialFingerprint(JSON.parse(readRegularFileSync(resolve(dirname(packetPath), packet.design_source_package.path)).toString("utf8"))); }
+  catch { return "unavailable"; }
+}
+
+export function capturesAttach(record, { report, pageLoad }) {
+  return isPlainObject(record) && record.schema_version === CAPTURES_SCHEMA && record.performed_by === CAPTURES_PRODUCER
+    && record.subject?.build_fingerprint === currentBuildFingerprint(report)
+    && ["routes", "route_scope", "viewports"].every((key) => canonicalJson(record.subject?.[key]) === canonicalJson(pageLoad?.subject?.[key]));
 }
 
 function readabilityAttaches(record, { buildFingerprint, pageLoad }) {
@@ -629,7 +651,21 @@ function captureCampaignSlug(packet, report) {
 
 export async function capturePolishPageLoad(options = {}) {
   const plan = planPolishCapture({ packet: options.packet, baseUrl: options.baseUrl });
-  return runPolishCapture({ ...options, plan });
+  const result = await runPolishCapture({ ...options, plan });
+  if (!options.visual) return result;
+  const freeze = (value) => { if (value && typeof value === "object" && !Object.isFrozen(value)) {
+    Object.values(value).forEach(freeze); Object.freeze(value);
+  } return value; };
+  const frozen = freeze(result);
+  options.onFrozen?.(frozen);
+  let captures;
+  try { captures = await runVisualPass({ ...options, ...options.visual, frozen }); }
+  catch {
+    // Even unexpected artifact/dependency failures cannot discard prior work.
+    captures = unavailableCapturesRecord({ plan, subject: { ...frozen.page_load.subject,
+      source_package_material_fingerprint: currentSourcePackageMaterialFingerprint(options.report) }, measuredAt: options.now });
+  }
+  return { ...frozen, captures };
 }
 
 // The readability-only capture of a campaign with no capturable page_load

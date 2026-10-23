@@ -20,7 +20,8 @@
 // installs its Node-side guard before any module under test loads (the CLI is
 // imported dynamically below); every capture runs Chromium through the
 // harness's loopback-watched launcher, the only option given to the command;
-// and the stub origin's complete request log is compared with the setup's.
+// and the stub origin's complete request log up to the frozen measurement is
+// compared with the setup's.
 import assert from "node:assert/strict";
 import { relative } from "node:path";
 import test, { after, afterEach } from "node:test";
@@ -46,7 +47,6 @@ import {
 import {
   NO_IMAGE_KEY,
   VIEWPORTS,
-  assertRequestLog,
   assertResultSet,
   bothCells,
   browserTest,
@@ -100,6 +100,12 @@ async function campaign(t) {
 // One `polish capture` run, counting every write that lands on the Assembly
 // Report. `afterCapture` is the command's own hook, called with the capture
 // once the browser pass ends and before the report commit.
+//
+// The request log is split at the command's `onFrozen` hook, called once the
+// page_load (and media_weight) measurement is frozen. Everything before it is
+// the measurement and must be exactly the setup's requests; the always-on
+// visual pass (contract §2.1) renders the measured routes again afterwards,
+// and those requests may only re-read what page_load measured.
 async function polishCapture({ f, same }, { afterCapture } = {}) {
   const { createPolishBrowserAdapter } = await import("./polish-browser.mjs");
   const guard = loopbackGuard();
@@ -111,10 +117,16 @@ async function polishCapture({ f, same }, { afterCapture } = {}) {
   };
   const args = parseArgs(["polish", "capture", "--packet", f.packetPath, "--base-url", `${same.origin}/`, "--json"]);
   let failure = null;
+  let measured = null;
+  let frozenMediaWeight = null;
   const { value: result, count: reportWrites } = await countReportWrites(f, async () => {
     try {
       return await polishCaptureCommand(args, {
         createBrowserAdapter: (options) => createPolishBrowserAdapter({ ...options, chromium }),
+        onFrozen(frozen) {
+          measured = same.takeLog();
+          frozenMediaWeight = frozen.media_weight === undefined ? undefined : JSON.parse(JSON.stringify(frozen.media_weight));
+        },
         ...(afterCapture ? { afterCapture } : {}),
       });
     } catch (error) {
@@ -124,8 +136,13 @@ async function polishCapture({ f, same }, { afterCapture } = {}) {
   });
   guard.assertLoopbackOnly();
   assertNoNetworkAttempts();
-  assertRequestLog({ same }, { same: requests([LANDING, ...TEXT_ROUTES, BUILT_ROOT, IMAGE_PATH]) }, `setup (the command ${failure ? `threw: ${failure.message}` : "returned"})`);
-  return { result, failure, reportWrites };
+  const label = `setup (the command ${failure ? `threw: ${failure.message}` : "returned"})`;
+  assert.ok(measured, `${label}: the page_load measurement was frozen`);
+  assert.deepEqual(measured, requests([LANDING, ...TEXT_ROUTES, BUILT_ROOT, IMAGE_PATH]), `${label}: up to the freeze, the same origin received exactly the requests the page_load measurement implies, nothing more`);
+  const remeasured = new Set([LANDING, ...TEXT_ROUTES, IMAGE_PATH].map((path) => `GET ${path}`));
+  const afterFreeze = same.takeLog();
+  assert.deepEqual(afterFreeze.filter((line) => !remeasured.has(line)), [], `${label}: after the freeze, the visual pass requests only what page_load measured`);
+  return { result, failure, reportWrites, frozenMediaWeight };
 }
 
 // Every 1.3 result the setup implies, by subject.
@@ -197,6 +214,7 @@ browserTest("polish capture commits media_weight beside page_load in one report 
     `the report carries media_weight beside page_load (visual_review keys ${JSON.stringify(Object.keys(visual))}; the handoff's Polish coverage ${JSON.stringify((handoff.coverage || []).filter((entry) => entry.leg === "polish").map((entry) => [entry.check, entry.result, entry.reason_code]))})`,
   );
   assert.equal(run.reportWrites, 1, "page_load and media_weight reach the report in one write");
+  assert.deepEqual(visual.media_weight, run.frozenMediaWeight, "the committed media_weight is the record frozen with page_load; the visual pass after it changes nothing");
 
   // Bound to the page_load it was committed with: the same subject (the
   // build `record build` measured), and each cell stamped with its page_load
@@ -304,6 +322,7 @@ for (const [label, tamper, message] of [
       },
     });
     assert.ok(produced && typeof produced === "object", "setup: the producer returned a media_weight record");
+    assert.deepEqual(produced, run.frozenMediaWeight, "setup: afterCapture saw the media_weight frozen with page_load");
     assert.ok(run.failure instanceof Error, `polish capture refuses the record (it returned ${JSON.stringify(run.result?.status ?? null)})`);
     assert.match(run.failure.message, message);
     assert.equal(run.reportWrites, 0, "nothing is written to the report: not page_load alone, not either record");

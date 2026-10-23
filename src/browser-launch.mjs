@@ -56,6 +56,7 @@ export async function launchPackageChromium({
   chromium: injectedChromium,
   onMissing,
   signal,
+  launchOptions = {},
 } = {}) {
   if (typeof onMissing !== "function") {
     throw new Error("Campaigns OS browser launch requires an onMissing(kind, error) handler.");
@@ -71,7 +72,7 @@ export async function launchPackageChromium({
   }
   if (signal?.aborted) throw signal.reason ?? new Error("Campaigns OS browser launch was abandoned before launch.");
   try {
-    return await chromium.launch({ headless: headed !== true });
+    return await chromium.launch({ ...launchOptions, headless: headed !== true });
   } catch (error) {
     if (isMissingBrowserError(error)) throw onMissing(MISSING_BROWSER_KINDS.BROWSER, error);
     throw error;

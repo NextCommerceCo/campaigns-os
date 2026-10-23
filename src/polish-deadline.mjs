@@ -19,6 +19,13 @@ export const READABILITY_PROBE_CELL_MS = 1_500;
 export const READABILITY_PROBE_RUN_MS = 120_000;
 export const READABILITY_CROP_RUN_MS = 30_000;
 export const READABILITY_ADDED_RUN_MS = 300_000;
+export const VISUAL_READINESS_FONTS_MS = 3_000;
+export const VISUAL_READINESS_AWAIT_MS = 5_000;
+export const VISUAL_SHOT_MS = 10_000;
+export const VISUAL_CAPTURE_RUN_MS = 240_000;
+export const VISUAL_DIFF_RUN_MS = 60_000;
+export const VISUAL_ADDED_RUN_MS = 300_000;
+export const VISUAL_MAX_CAPTURE_HEIGHT_PX = 12_000;
 
 export function boundedPolishDeadline(value, fallback) {
   return Number.isSafeInteger(value) && value > 0 && value <= fallback ? value : fallback;
