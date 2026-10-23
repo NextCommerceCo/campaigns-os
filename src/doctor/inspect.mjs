@@ -1,5 +1,6 @@
 // Doctor entry points: the doctor command, packet inspection and built-output inspection.
 import { resolveCampaignIdentity } from "../spec-source-identity.mjs";
+import { assessDoctorCi, doctorCiFailure } from "./ci.mjs";
 import { applyLocalPreviewToCheckpoint, applyLocalPreviewToPolishGate, carriedForwardMessage, CARRIED_FORWARD } from "../local-preview-policy.mjs";
 import { withHtmlScanSnapshot } from "../html-scan.mjs";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
@@ -132,6 +133,13 @@ export async function readDoctorLiveCampaign(args, { fetchImpl = globalThis.fetc
 }
 
 export function doctorCommand(args, { runDoctor = doctorPacket, liveCampaign = undefined, qcStandIns = undefined } = {}) {
+  if (args.ci === true) {
+    try {
+      JSON.parse(readFileSync(resolve(requireArg(args, "packet")), "utf8"));
+    } catch (error) {
+      return doctorCiFailure(error, { usage: true });
+    }
+  }
   // Non-packet mode (learnings L7): doctor a `campaign-build`'d page-kit
   // campaign that has only a built _site/ and no full Build Packet. Resolves
   // scope from the built output and runs the built-output residue/text/
@@ -153,6 +161,16 @@ export function doctorCommand(args, { runDoctor = doctorPacket, liveCampaign = u
     ...(qcStandIns !== undefined ? { qcStandIns } : {}),
   };
   const result = runDoctor(packetPath, doctorOptions);
+  if (args.ci === true) {
+    // Use precisely the context/report selection that inspection used,
+    // including explicit sidecar suppression and the context's report binding.
+    const workspace = resolveCampaignWorkspace(packetPath, {
+      contextPath: doctorOptions.contextPath,
+      reportPath: doctorOptions.reportPath,
+      followContextPointer: true,
+    });
+    result.ci = assessDoctorCi({ packet: workspace.packet, packetPath, report: readJsonIfExists(workspace.reportPath) });
+  }
   // Inspection and recording are separate operations. A laptop's untracked
   // built output can be stale while the delivered build's evidence is valid.
   // Only an explicit producer action may replace the retained proof artifacts;

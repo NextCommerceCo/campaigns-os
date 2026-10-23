@@ -8,7 +8,9 @@ most once, plus two fixed Git metadata files (the nearest `.git` entry at the
 target or an ancestor, and that Git directory's `logs/HEAD` reflog) for the
 freshness comparison, and the CampaignSpec and normalized Campaign Build Brief
 the Build Packet names, whose current content decides each stage's effective
-status.
+status. It also reads and hashes regular files in the packet's built output
+at `_site/<public_route_slug>/` to assess build-bound evidence debt. Symlinks
+are skipped by the build fingerprint machinery.
 
 The safety contract is the point of the command. The readback **writes nothing**
 under the target — not even a lifecycle journal entry, which every other command
@@ -21,7 +23,7 @@ For the same reason the readback resolves **no run session** and sweeps no stale
 one. Its `--packet` names the Build Packet to *project*, not a Build Packet to
 act on, so an active run session — here, at the target, or bound to some other
 packet entirely — never changes what this command reads or what it exits with.
-That also keeps every read bounded: the only reader of a `--packet` file is the
+The only reader of a `--packet` file is the
 readback's own 32 MiB-bounded one, which refuses an oversized packet as an
 `unreadable` artifact row rather than loading it.
 
@@ -41,7 +43,8 @@ campaigns-os readback --example [--json]
 The default output is the rendered human view. `--json` emits the same
 projection as one `campaigns-os-readback/v2` object on stdout so a caller can
 gate on it; `schemas/campaigns-os-readback.v2.schema.json` is that object's
-shape, and this document is its prose twin. The two modes share one computation
+shape; the additive `evidence_debt` field is documented here and is not yet
+described by that schema. The two modes share one computation
 path: the JSON serializes what the text view already computes and adds no
 interpretation the text view does not also carry.
 
@@ -118,6 +121,15 @@ STAGES  [assembly report; report status: prepared; effective: prepared]
   deploy         pending
   qa             pending
 
+EVIDENCE DEBT  [the readback's own projection layer: recorded build bindings versus built output]
+  polish: unknown — evidence currency is unknown (build_output_missing); absence of proof is not no debt
+    recorded: unknown; current: unknown
+  qa: unknown — evidence currency is unknown (build_output_missing); absence of proof is not no debt
+    recorded: unknown; current: unknown
+  changes against assembly manifest: unknown (build_output_missing)
+    recorded: unknown; current: unknown
+  Page changes use the assembly baseline; older stage manifests are not reconstructed.
+
 BUILD CONTEXT  [build context; source adapter: html_funnel, status: prepared]
 
 DOCTOR  [doctor output; status: ready_with_warnings]
@@ -182,6 +194,23 @@ STAGES  [assembly report; report status: completed; effective: prepared]
   },
   "skip_cascades": [{ "blocked_by": "polish.evidence_incomplete", "families": ["meta-tags"] }],
   "divergences": [{ "stage": "polish", "assertion_ids": ["polish.evidence_incomplete"] }],
+  "evidence_debt": {
+    "polish": {
+      "status": "unknown", "matches_current_build": null,
+      "recorded_build_fingerprint": null, "current_build_fingerprint": null,
+      "reason": "build_output_missing"
+    },
+    "qa": {
+      "status": "unknown", "matches_current_build": null,
+      "recorded_build_fingerprint": null, "current_build_fingerprint": null,
+      "reason": "build_output_missing"
+    },
+    "changes": {
+      "status": "unknown", "reason": "build_output_missing",
+      "recorded_build_fingerprint": null, "current_build_fingerprint": null,
+      "changed_pages": [], "unmapped_files": [], "extra": [], "missing": [], "changed": []
+    }
+  },
   "clean": false
 }
 ```
@@ -397,6 +426,86 @@ in first-seen order:
 Empty when no QA verdict loaded or none of its assertions were skipped. This
 grouping is the readback's own projection layer.
 
+### `evidence_debt`
+
+An additive top-level object in `campaigns-os-readback/v2`, emitted in JSON and
+as an **EVIDENCE DEBT** text section. This assessment reads built bytes; it uses
+no timestamps or reflog entries, starts no process, and writes nothing. It
+does not rerun doctor, Polish, or QA and does not reinterpret their verdicts.
+
+`polish` and `qa` each carry:
+
+- `status`: the closed set `current`, `owed`, `unknown`;
+- `matches_current_build`: fingerprint equality only (`true` or `false`), or `null`
+  when either fingerprint is absent;
+- `recorded_build_fingerprint`: the stage's build binding, or `null`;
+- `current_build_fingerprint`: the fingerprint computed from current built
+  output with `computeBuildFingerprint`, or `null`;
+- `reason`: `null` for `current`; `build_fingerprint_changed`,
+  `stage_required_by_build`, `stage_required_by_brief`,
+  `stage_required_by_spec`, or `stage_required` for `owed`; or an explicit
+  reason for `unknown`.
+
+Polish uses `stages.polish.source_build_fingerprint`, falling back to
+`stages.polish.evidence.source_build_fingerprint`, with the same precedence as
+the Polish gate. QA uses `stages.qa.evidence.qc_build_fingerprint`, falling back
+to `source_build_fingerprint`, and the same build-binding comparison as `next`.
+It does not require uncommitted capture files to be present.
+
+`current` means the stage's binding equals the bytes on disk and the assembly
+fingerprint is available and the stage is not recorded as `required`. `owed`
+means that binding differs from the current build, or the lifecycle recorded
+the stage as `required`, even without a stage fingerprint. Its `required_by`
+selects `stage_required_by_build`, `stage_required_by_brief`, or
+`stage_required_by_spec`; an absent or unrecognized source gives
+`stage_required`. Both comparisons work without a manifest, including reports recorded
+before manifests existed. **`unknown` never means no debt.** Missing or unreadable
+built output or a missing assembly fingerprint still makes the affected stage
+explicitly `unknown`; a missing stage fingerprint does too unless the stage is
+`required`. The unknown stage reason codes are
+`packet_unavailable`, `build_output_location_unknown`, `build_output_missing`,
+`build_output_unreadable`, `assembly_build_fingerprint_missing`, and
+`stage_build_fingerprint_missing`.
+When both stage and disk fingerprints are available, `matches_current_build`
+reports their equality even if a missing assembly fingerprint makes status unknown.
+`matches_current_build: true` together with `status: owed` means the lifecycle
+requires the stage again over matching evidence. Consumers decide whether
+evidence is owed from `status`, never from `matches_current_build`.
+
+`changes` compares current output to **the retained assembly manifest**, using
+the existing file drift machinery. It carries:
+
+- `status`: `known` or `unknown`, with `reason` (`null` when known);
+- `recorded_build_fingerprint` and `current_build_fingerprint`: the assembly
+  manifest baseline and the disk fingerprint;
+- `extra`, `missing`, `changed`: complete file path lists from the manifest
+  comparison, without the human drift summary's truncation;
+- `changed_pages`: `{ "page_id": "landing", "built_path": "landing/index.html" }`
+  entries for added, removed, or modified HTML in the built-site page map;
+- `unmapped_files`: every differing path outside that map, including shared
+  CSS, scripts and assets. These changes still make build-bound evidence owed.
+
+Paths are relative to `_site/<public_route_slug>/` and sorted; page IDs use
+`resolveBuiltSiteScope`'s route-derived identities (nested routes use hyphens).
+Removed HTML uses that same route/ID projection. Empty lists with
+`changes.status: unknown` do not establish that no pages changed.
+A missing or unusable manifest makes only `changes.status` unknown, with
+`build_manifest_unavailable` as its reason. A manifest is usable only if its
+entries hash to the assembly's recorded fingerprint.
+If the built page map cannot be resolved (for example, output contains assets
+but no HTML), page changes are unknown with `build_output_pages_unresolved`;
+stage bindings still follow the fingerprint comparison.
+
+The assembly baseline is explicit because it need not equal an older stage's
+binding. If a later `record build` replaced that manifest, readback can still
+report older Polish/QA bindings as owed, but cannot reconstruct which pages
+changed from those older builds. An empty **known** list then means only that
+no files differ from the retained assembly manifest. If recording removed a
+stage binding entirely, that stage reads unknown unless its recorded status is
+`required`, which reports owed. `current` is a build-binding
+assessment only; input currency, stage completion, waivers and verdicts remain
+separate.
+
 ### `divergences`
 
 Where two artifacts record different states for the same stage: the assembly
@@ -413,7 +522,7 @@ failure lines up with a completed stage. This too is the readback's own layer.
 
 ## `clean`
 
-`clean` is true if and only if **all five** of the following hold:
+`clean` is true if and only if **all six** of the following hold:
 
 1. **Every artifact the readback found is loaded and recognized.** Formally: no
    artifact is in state `unreadable` or `unrecognized`. An `absent` artifact
@@ -439,6 +548,11 @@ failure lines up with a completed stage. This too is the readback's own layer.
    failed to check.
 4. **`divergences` is empty.**
 5. **`doctor.error_count` is zero.**
+6. **Neither `evidence_debt.polish.status` nor `evidence_debt.qa.status` is
+   `owed`.** Built output that moved since recorded evidence cannot read clean.
+   An `unknown` status does not independently make this integrity flag false;
+   it remains unknown, never a claim that no evidence is owed. Callers must
+   inspect `evidence_debt` even when `clean` is true.
 
 Doctor warnings — of either group — do not affect `clean`. Neither does a
 blocked QA verdict, a blocked assembly report, or a non-empty `skip_cascades`.
@@ -449,7 +563,7 @@ blocked QA verdict, a blocked assembly report, or a non-empty `skip_cascades`.
 campaign. It means: the readback read every artifact that was there, understood
 all of them, can show — for every artifact that recorded an age — that none of
 them is older than the checkout, found no contradiction between them, and saw no
-doctor error. Campaigns OS remains the
+doctor error, and found no known build-bound evidence debt. Campaigns OS remains the
 lifecycle and verdict authority; the readback never reinterprets a verdict.
 
 The practical consequence for a caller: `clean: true` says the artifacts are
