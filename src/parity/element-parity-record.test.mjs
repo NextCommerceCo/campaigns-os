@@ -1,6 +1,6 @@
 // Stream P2 unit rows: the element_parity record, its probe files and the
 // parity.element reader, with C's fake adapters and an injected comparator
-// stand-in (the shipped comparator is the P3 stub). Every page is synthetic.
+// stand-in; rows read through the shipped comparator say so. Every page is synthetic.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -138,11 +138,15 @@ test("P2 baseline: matching probes read comparison pass with font_usage_not_obse
   }
 });
 
-test("P2 stub: the shipped comparator throws, so a compared cell reads comparator_failed until P3", (t) => {
+test("P3 integration: the shipped comparator reads the unchanged pair as comparison pass and never throws", (t) => {
   const f = fixture(t);
-  assert.throws(() => compareElementParity({}, {}));
+  assert.deepEqual([compareElementParity({}, {}).status, compareElementParity({}, {}).invalid], ["invalid_input", "design"]);
   const rows = read(f, { compare: compareElementParity });
-  assert.ok(unexercisedAll(comparisons(rows), "comparator_failed"));
+  assert.equal(rows.length, 4);
+  for (const row of rows) {
+    assert.deepEqual([row.subject.key, row.result, row.reason_code], ["comparison", "pass", null]);
+    assert.deepEqual(row.coverage, { observed: 2, expected: 2, limits: ["font_usage_not_observed"] });
+  }
 });
 
 test("P2-W3: an edited, re-intaken source gives a new snapshot sha and the new intake hash as recorded_sha256", (t) => {
@@ -679,9 +683,10 @@ test("P2 registry: parity.element loads its rules with the plan and the probe fi
   const parity = results.filter((row) => row.check === "parity.element");
   assert.equal(parity.length, 4); assert.ok(parity.every((row) => row.result === "pass"));
   assert.equal(coverage.some((entry) => entry.check === "parity.element"), false);
-  // The shipped rules (comparator stub) read comparator_failed.
+  // The shipped rules (the P3 comparator) read the unchanged pair as pass.
   const shipped = readCurrentQcResults({ report, doctor: { derived: { build_output_fingerprint: { status: "pass" } } }, targetRepo: f.targetRepo, packetPath: f.packetPath });
-  assert.ok(unexercisedAll(shipped.results.filter((row) => row.check === "parity.element"), "comparator_failed"));
+  const shippedParity = shipped.results.filter((row) => row.check === "parity.element");
+  assert.equal(shippedParity.length, 4); assert.ok(shippedParity.every((row) => row.subject.key === "comparison" && row.result === "pass"));
   // This process imported snapshot above; exercise the first mapped read in
   // a cold process too, including the synchronous ESM dependency graph.
   const child = spawnSync(process.execPath, ["--input-type=module", "-e", `
@@ -694,7 +699,7 @@ test("P2 registry: parity.element loads its rules with the plan and the probe fi
   assert.equal(child.status, 0, child.stderr);
   const coldRows = JSON.parse(child.stdout);
   assert.equal(coldRows.length, 4);
-  assert.ok(unexercisedAll(coldRows, "comparator_failed"));
+  assert.ok(coldRows.every((row) => row.subject.key === "comparison" && row.result === "pass"));
   const lines = qcHandoffTextLines(buildQcHandoff({ results: shipped.results, coverage: shipped.coverage, accepts: [] }));
   assert.ok(lines.includes("  - polish parity.element: limit (font_usage_not_observed) x4 on checkout, landing — The font each glyph was drawn with is not read; a web font that loaded is assumed used."), lines.join("\n"));
 });

@@ -621,3 +621,91 @@ test("F1.0-I17 [stand-in: doctor mixed row] warning + unexercised members offere
   assertRefused(await runAccept(f, [entry.result_ref], { qcStandIns }), "members_unresolved");
   assertNothingWritten(f, before);
 });
+
+// ---------------------------------------------------------------------------
+// parityRowSummary (P contract §7): parity.element rows in the handoff, from
+// the shipped comparator's findings on synthetic probe outputs.
+
+const parityElement = (index, text, box, extra = {}) => ({ index, selector_path: `body>div:nth-of-type(${index + 1})`, text, ftext: text, box,
+  font_family: "Synthetic Sans, sans-serif", font_size_px: 16, font_weight: 400, font_style: "normal", line_height: 24, letter_spacing: "normal",
+  text_transform: "none", fg_srgb: [0.1, 0.1, 0.1], bg_srgb: [1, 1, 1], color_review: null, ...extra });
+const parityProbe = (elements, coverage = {}) => ({ viewport: { width: 1440, height: 1200 }, dpr: 1, elements, page_text: elements.map((e) => e.text).join(" "),
+  font_faces: [], coverage: { elements_capped: false, time_capped: false, page_text_truncated: false, font_faces_capped: false, closed_shadow_roots: 0, frames_not_read: 0, ...coverage } });
+// The P3-B1 hero: three badges overlaid on the image in the design, in a
+// row below it in the build (+108 px), with the copy after the hero.
+function heroProbes({ badgeY = 655, heading = {} } = {}) {
+  const side = (y, headingExtra) => parityProbe([
+    parityElement(0, "Synthetic headline", { x: 40, y: 40, w: 600, h: 40 }, headingExtra),
+    ...["Badge one", "Badge two", "Badge three"].map((text, i) => parityElement(i + 1, text, { x: 20 + 120 * i, y, w: 100, h: 40 })),
+    parityElement(4, "Body copy after hero", { x: 40, y: y + 72, w: 600, h: 24 }),
+    parityElement(5, "Synthetic footer", { x: 40, y: y + 153, w: 600, h: 24 }),
+  ]);
+  return { design: side(547, {}), build: side(badgeY, heading) };
+}
+async function parityRows(design, build, viewport = "desktop") {
+  const { compareElementParity } = await import("./parity/compare.mjs");
+  const { evaluateElementParityCell } = await import("./parity/element-parity-record.mjs");
+  return evaluateElementParityCell({ page_id: "landing", viewport, design, build, comparison: compareElementParity(design, build), measured_at: "2026-01-01T00:00:00.000Z" });
+}
+
+test("P3 parityRowSummary: a geometry gap row names the label, the design selector and the signed move; next prints it as the Open warnings line", async () => {
+  const { buildQcHandoff, parityRowSummary, qcHandoffTextLines } = await import("./qc-accept.mjs");
+  const { design, build } = heroProbes();
+  const rows = await parityRows(design, build);
+  const geom = rows.filter((row) => row.subject.key.startsWith("geom:"));
+  assert.equal(geom.length, 1);
+  assert.deepEqual([geom[0].result, geom[0].reason_code, geom[0].accept_eligible], ["warning", "gap_differs", true]);
+  assert.equal(parityRowSummary(geom[0]), "Badge one (body>div:nth-of-type(2)): moved +108px against the element above (gap, tolerance 6px)");
+  const lines = qcHandoffTextLines(buildQcHandoff({ results: rows, accepts: [] }));
+  assert.ok(lines.includes(`  - ${geom[0].id}@${geom[0].state_fingerprint.slice(7, 19)} Badge one (body>div:nth-of-type(2)): moved +108px against the element above (gap, tolerance 6px) [members: gap warning (gap_differs)]`), lines.join("\n"));
+  // Upward moves read with a minus sign.
+  const up = await parityRows(...Object.values(heroProbes({ badgeY: 500 })));
+  assert.match(parityRowSummary(up.find((row) => row.subject.key.startsWith("geom:"))), /^Badge one \(body>div:nth-of-type\(2\)\): moved −47px against the element above/);
+});
+
+test("P3 parityRowSummary: typography members read design → build with the signed delta and tolerance, joined with '; '", async () => {
+  const { parityRowSummary } = await import("./qc-accept.mjs");
+  const { design, build } = heroProbes({ badgeY: 547, heading: { font_size_px: 30, font_weight: 600, line_height: "normal" } });
+  const type = (await parityRows(design, build)).find((row) => row.subject.key.startsWith("type:"));
+  assert.equal(parityRowSummary(type),
+    "Synthetic headline: font-size 16px → 30px (+14px, tolerance 0.6px); font-weight 400 → 600 (+200, tolerance 0); line-height 24px → normal (review)");
+  const two = heroProbes({ badgeY: 547 });
+  two.design.elements[0].font_size_px = 32; two.build.elements[0].font_size_px = 30;
+  assert.equal(parityRowSummary((await parityRows(two.design, two.build)).find((row) => row.subject.key.startsWith("type:"))),
+    "Synthetic headline: font-size 32px → 30px (−2px, tolerance 0.6px)");
+});
+
+test("P3 parityRowSummary: colour and copy rows; the source identity review; other checks and parity rows without findings get none", async () => {
+  const { parityRowSummary } = await import("./qc-accept.mjs");
+  const { design, build } = heroProbes({ badgeY: 547 });
+  build.elements[4].fg_srgb = [30 / 255, 20 / 255, 20 / 255]; design.elements[4].fg_srgb = [20 / 255, 20 / 255, 20 / 255];
+  build.elements[5].text = "Template footer"; build.elements[5].ftext = "Template footer"; build.page_text = build.elements.map((e) => e.text).join(" ");
+  const rows = await parityRows(design, build);
+  assert.equal(parityRowSummary(rows.find((row) => row.subject.key.startsWith("color:"))), "Body copy after hero: text colour rgb(20,20,20) → rgb(30,20,20) (10/255, tolerance 3)");
+  assert.equal(parityRowSummary(rows.find((row) => row.subject.key.startsWith("copy:"))), "Synthetic footer: design copy not found on the built page");
+  // Close wording: copy changed with its similarity; unread build text: review.
+  const fuzzy = heroProbes({ badgeY: 547 });
+  fuzzy.design.elements[4].text = fuzzy.design.elements[4].ftext = "Order now and save twenty percent";
+  fuzzy.build.elements[4].text = fuzzy.build.elements[4].ftext = "Order now and save 20 percent";
+  fuzzy.design.page_text = fuzzy.design.elements.map((e) => e.text).join(" "); fuzzy.build.page_text = fuzzy.build.elements.map((e) => e.text).join(" ");
+  assert.equal(parityRowSummary((await parityRows(fuzzy.design, fuzzy.build)).find((row) => row.subject.key.startsWith("copy:"))), "Order now and save twenty percent: design copy changed (similarity 0.71)");
+  build.coverage.frames_not_read = 1;
+  assert.equal(parityRowSummary((await parityRows(design, build)).find((row) => row.subject.key.startsWith("copy:"))), "Synthetic footer: design copy not found in the readable part of the built page (review)");
+  assert.equal(parityRowSummary({ check: "parity.element", subject: { page: "landing", viewport: "desktop", key: "comparison" }, result: "review", reason_code: "source_identity_mismatch" }),
+    "source on disk differs from the recorded source; element parity not compared");
+  assert.equal(parityRowSummary(rows.find((row) => row.subject.key === "comparison")), null);
+  assert.equal(parityRowSummary({ check: "parity.element", subject: { key: "geom:el-000000000000" }, result: "unexercised", reason_code: "stale_binding", observation: {} }), null);
+  assert.equal(parityRowSummary({ check: "readability.contrast", subject: { key: "pair:x" }, result: "warning", observation: { members: [{ property: "gap", delta: 1 }] } }), null);
+});
+
+test("P3 parityRowSummary: the same element warned at both viewports is one grouped entry whose summary is the first result's", async () => {
+  const { buildQcHandoff, parityRowSummary } = await import("./qc-accept.mjs");
+  const { design, build } = heroProbes();
+  const mobile = (probe) => ({ ...probe, viewport: { width: 390, height: 844 } });
+  const rows = [...await parityRows(design, build), ...await parityRows(mobile(design), mobile(build), "mobile")];
+  const [group] = buildQcHandoff({ results: rows, accepts: [] }).open;
+  assert.equal(group.results.length, 2);
+  assert.deepEqual(group.results.map((entry) => entry.viewport), ["desktop", "mobile"]);
+  assert.equal(group.summary, parityRowSummary(rows.find((row) => row.subject.viewport === "desktop" && row.subject.key.startsWith("geom:"))));
+  assert.match(group.summary, /^Badge one .*moved \+108px/);
+});

@@ -13,6 +13,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { isNamedHuman, validateWaiverAttribution } from "./checkpoint-waiver.mjs";
 import { DOCTOR_SIDECAR_SCHEMA } from "./doctor-sidecar.mjs";
 import { cmd } from "./install-invocation.mjs";
+import { PARITY_TOLERANCES } from "./parity/compare.mjs";
 import { canonicalJson } from "./polish-capture.mjs";
 import { QC_CHECK_REGISTRY } from "./qc-check-registry.mjs";
 import { QC_LEGS, QC_REASON, fingerprint12, qcResultRef } from "./qc-results.mjs";
@@ -71,6 +72,69 @@ export const QC_COVERAGE_LIMIT_TEXT = Object.freeze({ "parity.element": Object.f
 
 export function designAccessSummary(row) {
   return row.check === "design.access" && row.result === "review" ? DESIGN_ACCESS_TEXT[row.reason_code] ?? null : null;
+}
+
+// A parity.element row in words, from its read-time observation: the design
+// element's label, then each comparator member with its measured values and
+// tolerance. Geometry also names the design selector path. Null for any other
+// row, and for a parity row with nothing to say (an unexercised row has no
+// observation members).
+const signed = (value, unit = "") => `${value < 0 ? "−" : "+"}${Math.abs(value)}${unit}`;
+const px = (value) => (typeof value === "number" ? `${value}px` : String(value));
+const rgb = (value) => (Array.isArray(value) ? `rgb(${value.join(",")})` : "not measured");
+const PARITY_GEOMETRY_TEXT = Object.freeze({
+  gap: (delta) => `moved ${signed(delta, "px")} against the element above (gap, tolerance ${PARITY_TOLERANCES.gap_px}px)`,
+  x_position: (delta) => `moved ${signed(delta, "px")} horizontally (x position, tolerance ${PARITY_TOLERANCES.position_px}px)`,
+  width: (delta) => `resized ${signed(delta, "px")} in width (width, tolerance ${PARITY_TOLERANCES.size_px}px)`,
+  height: (delta) => `resized ${signed(delta, "px")} in height (height, tolerance ${PARITY_TOLERANCES.size_px}px)`,
+});
+const PARITY_TYPE_TOLERANCES = Object.freeze({ font_size: `${PARITY_TOLERANCES.font_size_px}px`, line_height: `${PARITY_TOLERANCES.line_height_px}px`,
+  letter_spacing: `${PARITY_TOLERANCES.letter_spacing_px}px`, font_weight: "0" });
+const PARITY_COPY_TEXT = Object.freeze({
+  copy_missing: () => "design copy not found on the built page",
+  copy_changed: (similarity) => `design copy changed (similarity ${similarity})`,
+  page_text_truncated: () => "design copy not found in the readable part of the built page (review)",
+  build_text_not_read: () => "design copy not found in the readable part of the built page (review)",
+});
+
+function parityMemberText(category, member, reason, result) {
+  const { property, design, build, delta } = member;
+  const review = result === "review" ? " (review)" : "";
+  if (category === "geom") return PARITY_GEOMETRY_TEXT[property]?.(delta) ?? `${property} ${signed(delta, "px")}`;
+  if (category === "type") {
+    const name = property === "font_face" ? "web font" : property.replace(/_/g, "-");
+    const units = ["font_size", "line_height", "letter_spacing"].includes(property) ? "px" : "";
+    const tolerance = typeof delta === "number" && Object.hasOwn(PARITY_TYPE_TOLERANCES, property) ? ` (${signed(delta, units)}, tolerance ${PARITY_TYPE_TOLERANCES[property]})` : "";
+    const value = units ? px : String;
+    return `${name} ${value(design)} → ${value(build)}${tolerance}${review}`;
+  }
+  if (category === "color") {
+    if (property === "color") return `colour not measured (source ${design ?? "measured"}, build ${build ?? "measured"})${review}`;
+    const name = property === "background_color" ? "background colour" : "text colour";
+    const tolerance = typeof delta === "number" ? ` (${delta}/255, tolerance ${PARITY_TOLERANCES.color_channel})` : "";
+    return `${name} ${rgb(design)} → ${rgb(build)}${tolerance}${review}`;
+  }
+  return PARITY_COPY_TEXT[reason]?.(delta) ?? null;
+}
+
+export function parityRowSummary(row) {
+  if (row?.check !== "parity.element") return null;
+  const key = String(row.subject?.key ?? "");
+  if (key === "comparison") return row.result === "review" && row.reason_code === "source_identity_mismatch"
+    ? "source on disk differs from the recorded source; element parity not compared" : null;
+  const category = key.split(":")[0];
+  const observation = isPlainObject(row.observation) ? row.observation : {};
+  const members = Array.isArray(observation.members) ? observation.members.filter(isPlainObject) : [];
+  if (!["copy", "type", "color", "geom"].includes(category) || !members.length) return null;
+  const results = new Map((Array.isArray(row.members) ? row.members : []).map((member) => [member?.key, member]));
+  const texts = members.map((member) => {
+    const reported = results.get(member.property);
+    return parityMemberText(category, member, reported?.reason_code ?? row.reason_code, reported?.result ?? row.result);
+  }).filter(Boolean);
+  if (!texts.length) return null;
+  const selector = isNonEmptyString(observation.design_selector_path) ? observation.design_selector_path : null;
+  const label = isNonEmptyString(observation.label) ? observation.label : selector ?? key;
+  return `${label}${category === "geom" && selector && label !== selector ? ` (${selector})` : ""}: ${texts.join("; ")}`;
 }
 
 // Null for a Polish check with no record, or a leg with no source.
@@ -400,7 +464,7 @@ function handoffEntry(row) {
     reason_code: row.reason_code,
     accept_eligible: row.accept_eligible === true,
     members: Array.isArray(row.members) ? row.members : [],
-    summary: designAccessSummary(row) ?? visualSummary(row) ?? readabilityPairSummary([row]) ?? `${row.check} ${row.result}${row.reason_code ? ` (${row.reason_code})` : ""} on ${row.subject?.page ?? "(no page)"}${row.subject?.key == null ? "" : `: ${row.subject.key}`}`,
+    summary: designAccessSummary(row) ?? parityRowSummary(row) ?? visualSummary(row) ?? readabilityPairSummary([row]) ?? `${row.check} ${row.result}${row.reason_code ? ` (${row.reason_code})` : ""} on ${row.subject?.page ?? "(no page)"}${row.subject?.key == null ? "" : `: ${row.subject.key}`}`,
     ...(crop === undefined ? {} : { crop }),
   };
 }
@@ -428,7 +492,8 @@ function groupOpenWarnings(entries, rows = []) {
       pages,
       accept_eligible: results.every((entry) => entry.accept_eligible),
       summary: results.length > 1
-        ? readabilityPairSummary(results.map((entry) => rows.find((row) => qcResultRef(row) === entry.result_ref))) ?? `${lead.check} ${lead.result}${lead.reason_code ? ` (${lead.reason_code})` : ""} on ${pages.join(", ")}${lead.key == null ? "" : `: ${lead.key}`}`
+        ? parityRowSummary(rows.find((row) => qcResultRef(row) === lead.result_ref))
+          ?? readabilityPairSummary(results.map((entry) => rows.find((row) => qcResultRef(row) === entry.result_ref))) ?? `${lead.check} ${lead.result}${lead.reason_code ? ` (${lead.reason_code})` : ""} on ${pages.join(", ")}${lead.key == null ? "" : `: ${lead.key}`}`
         : lead.summary,
       results,
     };
