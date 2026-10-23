@@ -96,7 +96,7 @@
             "owed",
             "unknown"
           ],
-          "description": "current: the stage binding matches current built bytes, the assembly fingerprint is available, and the stage is not required. owed: the binding differs or the lifecycle requires the stage again. unknown: a required input or binding is unavailable; it never means no debt."
+          "description": "current: the stage binding matches current built bytes, the assembly fingerprint is available, and the stage is not required. owed: the binding differs or the lifecycle requires the stage again. unknown: the packet, the built output or the assembly fingerprint is unavailable, which takes precedence over owed even for a required stage, or the stage fingerprint is missing on a stage that is not required; unknown never means no debt."
         },
         "matches_current_build": {
           "type": [

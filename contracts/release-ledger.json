@@ -9139,10 +9139,10 @@
       "kind": "release",
       "surface_version": "1.61.0",
       "changelog_section": "1.61.0",
-      "changelog_sha256": "d21aa55712ed373bce68b6b60af025f5c000d642253f92226015f236e5897eff",
+      "changelog_sha256": "d8504abd5e8e5bce5542c3ade1aa09e00542f6b2e4d357de370f23520f1e94a3",
       "agent_impact": "The 1.61.0 package publishes 1.60.0+agent.7 through agent.9, adds recorded design-file authority and element-level Polish comparisons for operator review, and describes readback evidence debt in the published schema. Refresh bundled skills to 1.61.0+skills.1; unknown design access or evidence debt is not proof that review is complete.",
       "compatibility": "additive",
-      "migration": "Update the pinned package and refresh installed skills to 1.61.0+skills.1. Run polish capture again before the next completed record polish. After changing built output, renew any owed Polish and QA evidence; review or accept element-level warnings explicitly.",
+      "migration": "Update the pinned package and refresh installed skills to 1.61.0+skills.1. Run polish capture again before the next completed record polish. After changing built output, renew any owed Polish and QA evidence.",
       "changes": [
         {
           "class": "compatibility_policy",
@@ -9179,6 +9179,12 @@
           "path": "docs/orientation-contract-reference.md",
           "surface_entry": "docs/orientation-contract-reference.md",
           "summary": "Regenerate the orientation reference at surface 1.61.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/readback.md",
+          "surface_entry": "docs/readback.md",
+          "summary": "State that the readback schema now describes the additive evidence_debt field."
         },
         {
           "class": "named_surface",
@@ -9292,7 +9298,7 @@
           "class": "cli_surface",
           "path": "src/cli.mjs",
           "surface_entry": null,
-          "summary": "Pass recorded design-file references to Polish and report element parity from the capture."
+          "summary": "Record declared design-file references in the drafted Build Brief at prepare-build, and attach the capture's element-parity record to Polish evidence."
         },
         {
           "class": "cli_surface",
@@ -9301,7 +9307,7 @@
           "summary": "Report design.access as unexercised when design-file access is missing and give operator recovery guidance."
         }
       ],
-      "entry_sha256": "fb49c6eee89733d77f2fe08a3331923bca321f9481be07b9d44bc64d4307514a"
+      "entry_sha256": "2a99a6cd8a13a46f43c55b52b5b65d024229660fe11bc4c2b825e40f06981da0"
     }
   ]
 }

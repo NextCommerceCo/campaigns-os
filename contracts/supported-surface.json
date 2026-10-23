@@ -121,7 +121,7 @@
       "sha256": "2e440be6513fe06b351c3a72c35424a04f807792621cb01e89803441fd925e06"
     },
     "schemas/campaigns-os-readback.v2.schema.json": {
-      "sha256": "57960ec8d8925a46a623915afc5c973a459e4d84c180e2da92a4641255d45f72"
+      "sha256": "443676656a7d0db4c8c45301dad5c925cd1b03d4d0e3dccdf0132d9a4e6005f2"
     },
     "contracts/effects.v1.json": {
       "sha256": "9c1d69e44eab7403ca3ff80f850214d89b0a02fdc51544beef37dbd0a653eeaa"
