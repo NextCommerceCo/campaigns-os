@@ -33,9 +33,9 @@ a production render instead. Environment differences also change fingerprints.
 
 | CI status | Exit code | Meaning |
 |---|---|---|
-| `current` | `0` | Polish and QA both bind to the build on disk. |
-| `owed` | `3` | Polish or QA binds to another build; evidence is owed. |
-| `unknown` | `4` | Output or recorded fingerprints are missing, output is unreadable, or inspection throws; debt cannot be determined. |
+| `current` | `0` | Polish and QA both bind to the build on disk and neither is lifecycle-required. |
+| `owed` | `3` | Polish or QA binds to another build or is lifecycle-required; evidence is owed. |
+| `unknown` | `4` | Output or assembly fingerprints are missing, a stage fingerprint is missing without a lifecycle requirement, output is unreadable, or inspection throws; debt cannot be determined. |
 | `usage` | `2` | The packet is missing, unreadable or invalid JSON. |
 
 Any owed stage returns 3; otherwise an unknown stage returns 4. Normal
@@ -48,7 +48,7 @@ usage errors (exit 2) or inspection failures (exit 4). Page changes are compared
 with the retained assembly manifest, so the page list may be empty if that
 manifest was already updated; old Polish/QA bindings still show debt.
 Without a usable manifest, page changes are unknown, but matching stage
-bindings remain current and differing bindings remain owed.
+bindings remain current unless lifecycle-required, and differing bindings remain owed.
 The check reads recorded fingerprints, not machine-local capture files.
 Readback's `evidence_debt` uses the same assessment, showing an agent this debt
 before it edits; its separate time-based staleness assessment is not the CI signal.
@@ -67,9 +67,13 @@ Fork pull requests may lack comment-write permission; comment failures are
 nonfatal and the report remains in the job log. The example uses `pull_request`
 and does not run untrusted code with `pull_request_target` privileges.
 
-To repay debt, rebuild and record the output, re-run `polish capture` against
+To repay fingerprint-drift debt, rebuild and record the output, re-run `polish capture` against
 that served build, record Polish with `record polish --evidence <evidence.json>`,
-then run `qa run` to record QA for the current build. The workflow only inspects;
+then run `qa run` to record QA for the current build. For lifecycle-required
+stages with matching build bindings, re-run the required stages against the
+existing build: `polish capture` and `record polish` when Polish is owed, and
+`qa run` when QA is owed. The CI report names each owed stage's cause and
+selects the remedy accordingly. The workflow only inspects;
 it does not renew evidence or deploy.
 
 ## Partial Builds

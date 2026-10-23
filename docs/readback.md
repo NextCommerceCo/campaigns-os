@@ -436,13 +436,15 @@ does not rerun doctor, Polish, or QA and does not reinterpret their verdicts.
 `polish` and `qa` each carry:
 
 - `status`: the closed set `current`, `owed`, `unknown`;
-- `matches_current_build`: fingerprint equality (`true` or `false`), or `null`
+- `matches_current_build`: fingerprint equality only (`true` or `false`), or `null`
   when either fingerprint is absent;
 - `recorded_build_fingerprint`: the stage's build binding, or `null`;
 - `current_build_fingerprint`: the fingerprint computed from current built
   output with `computeBuildFingerprint`, or `null`;
-- `reason`: `null` for `current`, `build_fingerprint_changed` or
-  `stage_required_by_build` for `owed`, or an explicit reason for `unknown`.
+- `reason`: `null` for `current`; `build_fingerprint_changed`,
+  `stage_required_by_build`, `stage_required_by_brief`,
+  `stage_required_by_spec`, or `stage_required` for `owed`; or an explicit
+  reason for `unknown`.
 
 Polish uses `stages.polish.source_build_fingerprint`, falling back to
 `stages.polish.evidence.source_build_fingerprint`, with the same precedence as
@@ -453,8 +455,10 @@ It does not require uncommitted capture files to be present.
 `current` means the stage's binding equals the bytes on disk and the assembly
 fingerprint is available and the stage is not recorded as `required`. `owed`
 means that binding differs from the current build, or the lifecycle recorded
-the stage as `required` (`stage_required_by_build`), even without a stage
-fingerprint. Both comparisons work without a manifest, including reports recorded
+the stage as `required`, even without a stage fingerprint. Its `required_by`
+selects `stage_required_by_build`, `stage_required_by_brief`, or
+`stage_required_by_spec`; an absent or unrecognized source gives
+`stage_required`. Both comparisons work without a manifest, including reports recorded
 before manifests existed. **`unknown` never means no debt.** Missing or unreadable
 built output or a missing assembly fingerprint still makes the affected stage
 explicitly `unknown`; a missing stage fingerprint does too unless the stage is
@@ -464,6 +468,9 @@ explicitly `unknown`; a missing stage fingerprint does too unless the stage is
 `stage_build_fingerprint_missing`.
 When both stage and disk fingerprints are available, `matches_current_build`
 reports their equality even if a missing assembly fingerprint makes status unknown.
+`matches_current_build: true` together with `status: owed` means the lifecycle
+requires the stage again over matching evidence. Consumers decide whether
+evidence is owed from `status`, never from `matches_current_build`.
 
 `changes` compares current output to **the retained assembly manifest**, using
 the existing file drift machinery. It carries:

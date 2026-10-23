@@ -67,16 +67,18 @@ export function assessEvidenceDebt({ packet = null, packetPath = null, report = 
   const bindingReason = reason || (!recordedBuild ? "assembly_build_fingerprint_missing" : null);
   const changesReason = bindingReason || scopeReason || (!manifestKnown ? "build_manifest_unavailable" : null);
   const stage = (stageRecord, recorded, matches) => {
-    // record build resets Polish to required and clears its top-level binding;
-    // input-change demotion can also make Polish/QA required. This is known
-    // lifecycle debt, even when retained evidence still matches the output.
+    // src/stage-record.mjs writes required_by: build; the dependency map in
+    // src/input-currency.mjs supplies brief/spec for input-change demotions.
+    // This is lifecycle debt even when retained evidence matches the output.
     const required = stageRecord?.status === "required";
+    const requiredReason = ["build", "brief", "spec"].includes(stageRecord?.required_by)
+      ? `stage_required_by_${stageRecord.required_by}` : "stage_required";
     return {
       status: bindingReason ? "unknown" : required ? "owed" : !recorded ? "unknown" : matches ? "current" : "owed",
       matches_current_build: recorded && currentBuild ? matches : null,
       recorded_build_fingerprint: recorded,
       current_build_fingerprint: currentBuild,
-      reason: bindingReason || (required ? "stage_required_by_build" : !recorded ? "stage_build_fingerprint_missing" : matches ? null : "build_fingerprint_changed"),
+      reason: bindingReason || (required ? requiredReason : !recorded ? "stage_build_fingerprint_missing" : matches ? null : "build_fingerprint_changed"),
     };
   };
 

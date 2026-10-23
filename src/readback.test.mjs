@@ -57,10 +57,10 @@ import { test } from "node:test";
 
 import Ajv2020 from "ajv/dist/2020.js";
 
-import { absentBriefMaterial, inputStamps } from "./input-currency.mjs";
+import { absentBriefMaterial, currentPacketInputs, inputStamps } from "./input-currency.mjs";
 import { buildManifestEntries, computeBuildFingerprint } from "./built-site-scope.mjs";
 import { EVIDENCE_DEBT_STATUSES } from "./evidence-debt.mjs";
-import { demoteStages } from "./input-refresh.mjs";
+import { demoteStages, recordBrief, recordSpec } from "./input-refresh.mjs";
 import { recordStageCommand } from "./stage-record.mjs";
 import {
   ARTIFACT_TITLES,
@@ -155,6 +155,34 @@ function evidenceDebtPayload(root) {
   assert.ok(payload.evidence_debt, "readback output must include evidence_debt");
   assertMatchesSchema(payload, "evidence debt payload");
   return payload;
+}
+
+// Real intake supplies the products record brief/spec need. Stage completions
+// are synthetic matching evidence; the input saves and their demotions are real.
+function inputRequiredDebtFixture(t) {
+  const root = tempRoot(t, "readback-input-debt-");
+  const specPath = join(root, "campaignspec.json");
+  const spec = JSON.parse(readFileSync(join(ROOT, "examples/campaignspec.v42.basic.json"), "utf8"));
+  writeFileSync(specPath, JSON.stringify(spec));
+  execFileSync(process.execPath, [CLI, "prepare-build", "--spec", specPath,
+    "--source", join(ROOT, "examples/source-html"), "--target", root,
+    "--template-family", "olympus", "--no-run-session", "--json"], {
+    env: { ...process.env, CAMPAIGNS_OS_TELEMETRY: "off", CAMPAIGNS_OS_LIFECYCLE_LOG: "" },
+  });
+  const packetPath = join(root, "campaign-runtime.build.json");
+  const packet = JSON.parse(readFileSync(packetPath, "utf8"));
+  const reportPath = join(root, ".campaign-runtime/assembly-report.json");
+  const report = JSON.parse(readFileSync(reportPath, "utf8"));
+  const output = join(root, "_site", packet.campaign.public_route_slug);
+  mkdirSync(join(output, "landing"), { recursive: true });
+  writeFileSync(join(output, "landing/index.html"), "<main>matching retained build</main>");
+  const build = computeBuildFingerprint(output);
+  const stamps = inputStamps(currentPacketInputs({ packet, packetPath }));
+  Object.assign(report.stages.assembly, { status: "completed", build_fingerprint: build.fingerprint, build_manifest: buildManifestEntries(build), ...stamps });
+  Object.assign(report.stages.polish, { status: "completed", source_build_fingerprint: build.fingerprint, ...stamps });
+  Object.assign(report.stages.qa, { status: "completed", evidence: { source_build_fingerprint: build.fingerprint }, ...stamps });
+  writeFileSync(reportPath, JSON.stringify(report));
+  return { root, packet, packetPath, spec, specPath, reportPath };
 }
 
 test("evidence debt: matching build keeps both stages current and clean unaffected", (t) => {
@@ -479,7 +507,7 @@ test("evidence debt: record build after a page edit makes Polish explicitly owed
     [{ page_id: "landing", built_path: "landing/index.html" }]);
 });
 
-test("evidence debt: lifecycle-required stages override stage bindings but not missing build inputs", (t) => {
+test("evidence debt: documented true binding with owed status does not satisfy lifecycle-required stages", (t) => {
   const { root, output, report, saveReport } = evidenceDebtFixture(t);
   const demoted = demoteStages(report, {
     causes: ["spec"], by: "record build", now: "2026-10-23T00:00:00Z", only: ["polish", "qa"],
@@ -491,7 +519,7 @@ test("evidence debt: lifecycle-required stages override stage bindings but not m
   for (const name of ["polish", "qa"]) {
     assert.equal(report.stages[name].status, "required");
     assert.equal(debt[name].status, "owed");
-    assert.equal(debt[name].reason, "stage_required_by_build");
+    assert.equal(debt[name].reason, "stage_required_by_spec");
   }
   assert.equal(debt.polish.matches_current_build, true, "retained matching evidence cannot clear required status");
   assert.equal(debt.qa.recorded_build_fingerprint, null, "demotion cleared QA evidence");
@@ -510,6 +538,54 @@ test("evidence debt: lifecycle-required stages override stage bindings but not m
     assert.equal(debt[name].reason, "build_output_missing");
   }
 });
+
+for (const cause of ["brief", "spec"]) {
+  test(`evidence debt: a real ${cause} save reports its lifecycle requirement source`, (t) => {
+    const f = inputRequiredDebtFixture(t);
+    assert.equal(evidenceDebtPayload(f.root).evidence_debt.polish.status, "current");
+    let saved;
+    if (cause === "brief") {
+      const brief = JSON.parse(readFileSync(resolve(f.root, f.packet.build_brief.normalized_path), "utf8"));
+      brief.campaign_intent.audience = "A newly specified audience";
+      const briefPath = join(f.root, "operator-brief.json");
+      writeFileSync(briefPath, JSON.stringify(brief));
+      saved = recordBrief({ packetPath: f.packetPath, briefPath });
+      assert.equal(saved.input_change.reason, "brief_presentation_changed");
+    } else {
+      f.spec.funnels[0].pages.find((page) => page.type === "checkout").packages[0].qty = 2;
+      writeFileSync(f.specPath, JSON.stringify(f.spec));
+      saved = recordSpec({ packetPath: f.packetPath });
+      assert.equal(saved.input_change.reason, "spec_material_changed");
+    }
+    assert.ok(saved.demoted.includes("polish"));
+    assert.ok(saved.demoted.includes("qa"));
+    const report = JSON.parse(readFileSync(f.reportPath, "utf8"));
+    const debt = evidenceDebtPayload(f.root).evidence_debt;
+    for (const name of ["polish", "qa"]) {
+      assert.equal(report.stages[name].required_by, cause);
+      assert.equal(debt[name].status, "owed");
+      assert.equal(debt[name].reason, `stage_required_by_${cause}`);
+    }
+    assert.equal(debt.polish.matches_current_build, true, "fingerprint equality survives lifecycle debt over matching evidence");
+  });
+}
+
+for (const requiredBy of [undefined, "unrecognized", null]) {
+  test(`evidence debt: required_by ${String(requiredBy)} uses the generic lifecycle reason`, (t) => {
+    const { root, report, saveReport } = evidenceDebtFixture(t);
+    for (const name of ["polish", "qa"]) {
+      report.stages[name].status = "required";
+      if (requiredBy !== undefined) report.stages[name].required_by = requiredBy;
+    }
+    saveReport();
+    const debt = evidenceDebtPayload(root).evidence_debt;
+    for (const name of ["polish", "qa"]) {
+      assert.equal(debt[name].reason, "stage_required");
+      assert.equal(debt[name].status, "owed");
+      assert.equal(debt[name].matches_current_build, true);
+    }
+  });
+}
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CLI = join(ROOT, "bin/campaigns-os.mjs");

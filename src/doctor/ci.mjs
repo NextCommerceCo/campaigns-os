@@ -31,6 +31,13 @@ const unavailablePageChanges = new Map([
   ["build_manifest_unavailable", "no usable assembly manifest is available."],
 ]);
 
+const requiredStageReasons = new Map([
+  ["stage_required_by_build", "the build requires this stage again"],
+  ["stage_required_by_brief", "the brief requires this stage again"],
+  ["stage_required_by_spec", "the spec requires this stage again"],
+  ["stage_required", "the lifecycle requires this stage again"],
+]);
+
 export function doctorCiFailure(error, { usage = false } = {}) {
   return {
     ok: false, status: "blocked",
@@ -65,6 +72,12 @@ export function formatDoctorCi(result) {
   const lines = [`## Campaign evidence: ${text(ci.status)} (exit ${ci.exit_code})`, ""];
   const owed = ["polish", "qa"].filter((stage) => ci[stage].status === "owed");
   lines.push(`Owed stages: ${owed.length ? owed.join(", ") : "none"}.`);
+  for (const stage of owed) {
+    const reason = ci[stage].reason === "build_fingerprint_changed"
+      ? "the recorded build fingerprint differs from the current build"
+      : requiredStageReasons.get(ci[stage].reason) ?? "the recorded stage evidence is owed";
+    lines.push(`- Owed ${stage}: ${reason}.`);
+  }
   for (const page of ci.changes.changed_pages) {
     lines.push(`- Changed page: ${code(page.page_id)} (${code(page.built_path)})`);
   }
@@ -78,7 +91,17 @@ export function formatDoctorCi(result) {
   }
   if (ci.changes.status === "unknown") lines.push(`- Unknown page changes: ${code(ci.changes.reason)}`);
   if (ci.status === "owed" || ci.status === "unknown") {
-    lines.push("", "Remedy: rebuild, then run `campaigns-os record build --packet <packet>`, `campaigns-os polish capture --packet <packet> --base-url <served-current-build-url>` for the whole route, and `campaigns-os record polish --packet <packet> --evidence <polish-evidence.json>`, in that order. When QA is owed, run `campaigns-os qa run --packet <packet>` against that build.");
+    const matchingRequired = owed.length > 0
+      && owed.every((stage) => requiredStageReasons.has(ci[stage].reason) && ci[stage].matches_current_build === true)
+      && ["polish", "qa"].every((stage) => ci[stage].status !== "unknown");
+    if (matchingRequired) {
+      const commands = [];
+      if (owed.includes("polish")) commands.push("`campaigns-os polish capture --packet <packet> --base-url <served-current-build-url>` for the whole route", "`campaigns-os record polish --packet <packet> --evidence <polish-evidence.json>`");
+      if (owed.includes("qa")) commands.push("`campaigns-os qa run --packet <packet>`");
+      lines.push("", `Remedy: re-run the required stages against the existing build: ${commands.join(", then ")}.`);
+    } else {
+      lines.push("", "Remedy: rebuild, then run `campaigns-os record build --packet <packet>`, `campaigns-os polish capture --packet <packet> --base-url <served-current-build-url>` for the whole route, and `campaigns-os record polish --packet <packet> --evidence <polish-evidence.json>`, in that order. When QA is owed, run `campaigns-os qa run --packet <packet>` against that build.");
+    }
   }
   lines.push("", `Doctor inspection: ${(result.errors || []).length} error(s), ${(result.warnings || []).length} warning(s); CI exit status depends only on evidence debt.`);
   if (result.errors?.length) {

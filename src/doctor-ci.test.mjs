@@ -92,6 +92,8 @@ test("doctor --ci page edited and rebuilt exits 3 and Markdown names page and re
   assert.equal(markdown.status, 3);
   assert.match(markdown.stdout, /^## Campaign evidence: owed \(exit 3\)/);
   assert.match(markdown.stdout, /Owed stages: polish, qa/);
+  assert.match(markdown.stdout, /Owed polish: the recorded build fingerprint differs from the current build\./);
+  assert.match(markdown.stdout, /Owed qa: the recorded build fingerprint differs from the current build\./);
   assert.match(markdown.stdout, /Changed page: `landing` \(`landing\/index\.html`\)/);
   assert.match(markdown.stdout, /Remedy:/);
   assert.match(markdown.stdout, /polish capture/);
@@ -162,7 +164,49 @@ test("doctor --ci after record build reports required Polish and old QA as owed"
   const markdown = run(f, "--ci");
   assert.equal(markdown.status, 3);
   assert.match(markdown.stdout, /Owed stages: polish, qa/);
+  assert.match(markdown.stdout, /Owed polish: the build requires this stage again\./);
   assert.doesNotMatch(markdown.stdout, /Unknown polish:/);
+});
+
+for (const [requiredBy, words] of [["build", "the build"], ["brief", "the brief"], ["spec", "the spec"], [undefined, "the lifecycle"]]) {
+  for (const owed of [["polish"], ["qa"], ["polish", "qa"]]) {
+    test(`doctor --ci matching ${owed.join(" and ")} required by ${requiredBy ?? "unknown source"} reuses the existing build`, (t) => {
+      const f = fixture(t);
+      for (const stage of owed) Object.assign(f.report.stages[stage], { status: "required", ...(requiredBy ? { required_by: requiredBy } : {}) });
+      f.save();
+      const payload = jsonCi(f, 3);
+      for (const stage of owed) {
+        assert.equal(payload.ci[stage].status, "owed");
+        assert.equal(payload.ci[stage].matches_current_build, true);
+      }
+      const markdown = run(f, "--ci");
+      assert.equal(markdown.status, 3);
+      for (const stage of owed) assert.ok(markdown.stdout.includes(`Owed ${stage}: ${words} requires this stage again.`));
+      const remedy = markdown.stdout.split("Remedy:")[1];
+      assert.match(remedy, /re-run the required stages against the existing build/);
+      assert.doesNotMatch(remedy, /rebuild|record build/);
+      const commands = [...remedy.matchAll(/`(campaigns-os [^`]+)`/g)].map((match) => match[1]);
+      assert.deepEqual(commands, [
+        ...(owed.includes("polish") ? [
+          "campaigns-os polish capture --packet <packet> --base-url <served-current-build-url>",
+          "campaigns-os record polish --packet <packet> --evidence <polish-evidence.json>",
+        ] : []),
+        ...(owed.includes("qa") ? ["campaigns-os qa run --packet <packet>"] : []),
+      ]);
+    });
+  }
+}
+
+test("doctor --ci fingerprint drift still requires recording the build alongside matching lifecycle debt", (t) => {
+  const f = fixture(t);
+  Object.assign(f.report.stages.polish, { status: "required", required_by: "brief" });
+  f.report.stages.qa.evidence.source_build_fingerprint = "older-build";
+  f.save();
+  const markdown = run(f, "--ci");
+  assert.equal(markdown.status, 3);
+  assert.match(markdown.stdout, /Owed polish: the brief requires this stage again\./);
+  assert.match(markdown.stdout, /Owed qa: the recorded build fingerprint differs from the current build\./);
+  assert.match(markdown.stdout, /Remedy: rebuild, then run `campaigns-os record build/);
 });
 
 test("doctor --ci missing built output exits 4 and reports unknown reasons", (t) => {
