@@ -92,7 +92,8 @@ test("F3C-B2: byte equality identifies a capture even inside the source root", a
 test("F3C-B3: source page identity checks campaign targets and built HTML independently", async (t) => {
   const f = fixture(t), path = f.write("page.html", Buffer.from("<p>synthetic</p>"));
   for (const [options, reason] of [
-    [{ pageKitTargets: [path] }, "source_is_campaign_page"],
+    // Page Kit targets are repo-relative output paths, never absolute.
+    [{ pageKitTargets: ["source/page.html"] }, "source_is_campaign_page"],
     [{ builtHtmlHashes: [syntheticHash(Buffer.from("<p>synthetic</p>"))] }, "hash_equals_built_html"],
   ]) {
     const ref = await verifyReference({ ...f, path, kind: "source_html", recorded: {}, ...options });
