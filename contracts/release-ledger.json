@@ -9164,6 +9164,12 @@
         },
         {
           "class": "named_surface",
+          "path": "docs/design-source-package.md",
+          "surface_entry": "docs/design-source-package.md",
+          "summary": "Document naming a design file behind an HTML export, its recorded contribution and derived_from lineage, and that recording one adds no readiness requirement."
+        },
+        {
+          "class": "named_surface",
           "path": "docs/local-setup.md",
           "surface_entry": "docs/local-setup.md",
           "summary": "Pin the documented toolkit installation to 1.61.0."
@@ -9284,12 +9290,18 @@
         },
         {
           "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "Pass recorded design-file references to Polish and report element parity from the capture."
+        },
+        {
+          "class": "cli_surface",
           "path": "src/doctor/checks.mjs",
           "surface_entry": null,
           "summary": "Report design.access as unexercised when design-file access is missing and give operator recovery guidance."
         }
       ],
-      "entry_sha256": "db0653750036042e4bf2183ff23daaf7b4ad73ec3bf0459d6d152823955d8a64"
+      "entry_sha256": "fb49c6eee89733d77f2fe08a3331923bca321f9481be07b9d44bc64d4307514a"
     }
   ]
 }
