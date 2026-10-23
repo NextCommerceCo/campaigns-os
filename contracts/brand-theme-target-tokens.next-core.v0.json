@@ -24,42 +24,112 @@
     "--brand--color--rating-star",
     "--component--color--outline",
     "--system-colors--success",
-    "--system-colors--destructive"
+    "--system-colors--destructive",
+    "--_text---font-family--heading",
+    "--_text---font-family--primary",
+    "--radius-size--buttons"
   ],
   "source_mappings": {
-    "--brand-primary": ["--brand--color--primary"],
-    "--brand-accent": ["--brand--color--accent"],
-    "--brand-secondary": ["--brand--color--secondary"],
-    "--surface-bg": ["--brand--color--background"],
-    "--surface-card": ["--brand--color--surface"],
-    "--text-primary": ["--brand--color--text-primary", "--brand--color--foreground"],
-    "--text-secondary": ["--brand--color--text-secondary"],
-    "--border-default": ["--brand--color--border", "--component--color--outline"],
-    "--rating-star": ["--brand--color--rating-star"],
-    "--state-success": ["--system-colors--success"],
-    "--ui-success": ["--system-colors--success"],
-    "--state-error": ["--system-colors--destructive"],
-    "--ui-danger": ["--system-colors--destructive"],
-    "--brand-cta": ["--brand--color--cta-primary"],
-    "--cta-primary": ["--brand--color--cta-primary"],
-    "--button-primary-bg": ["--brand--color--cta-primary"]
+    "--brand-primary": [
+      "--brand--color--primary"
+    ],
+    "--brand-accent": [
+      "--brand--color--accent"
+    ],
+    "--brand-secondary": [
+      "--brand--color--secondary"
+    ],
+    "--surface-bg": [
+      "--brand--color--background"
+    ],
+    "--surface-card": [
+      "--brand--color--surface"
+    ],
+    "--text-primary": [
+      "--brand--color--text-primary",
+      "--brand--color--foreground"
+    ],
+    "--text-secondary": [
+      "--brand--color--text-secondary"
+    ],
+    "--border-default": [
+      "--brand--color--border",
+      "--component--color--outline"
+    ],
+    "--rating-star": [
+      "--brand--color--rating-star"
+    ],
+    "--state-success": [
+      "--system-colors--success"
+    ],
+    "--ui-success": [
+      "--system-colors--success"
+    ],
+    "--state-error": [
+      "--system-colors--destructive"
+    ],
+    "--ui-danger": [
+      "--system-colors--destructive"
+    ],
+    "--brand-cta": [
+      "--brand--color--cta-primary"
+    ],
+    "--cta-primary": [
+      "--brand--color--cta-primary"
+    ],
+    "--button-primary-bg": [
+      "--brand--color--cta-primary"
+    ]
   },
   "derived_mappings": {
     "--brand-primary": {
-      "--brand--color--primary-dark": { "method": "mix-black", "amount": 0.18 },
-      "--brand--color--primary-light": { "method": "mix-white", "amount": 0.2 },
-      "--brand--color--primary-lighter": { "method": "mix-white", "amount": 0.86 }
+      "--brand--color--primary-dark": {
+        "method": "mix-black",
+        "amount": 0.18
+      },
+      "--brand--color--primary-light": {
+        "method": "mix-white",
+        "amount": 0.2
+      },
+      "--brand--color--primary-lighter": {
+        "method": "mix-white",
+        "amount": 0.86
+      }
     }
   },
   "foreground_derivations": {
     "description": "Foreground/on-color tokens are derived from the luminance of the background they sit on, never copied blindly from a source --text-inverse token (which defaults to white and renders illegible on a light brand, e.g. white-on-yellow CTAs). Each foreground target picks the first paired background that was mapped and emits the readable choice from foreground_choices. next-core .button/.submit-button render their label with --brand--color--text-inverse, so text-inverse pairs with the CTA background first.",
-    "foreground_choices": { "dark": "#0a0a0a", "light": "#ffffff" },
+    "foreground_choices": {
+      "dark": "#0a0a0a",
+      "light": "#ffffff"
+    },
     "min_contrast_ratio": 4.5,
     "derivations": {
-      "--brand--color--cta-foreground": ["--brand--color--cta-primary"],
-      "--brand--color--text-inverse": ["--brand--color--cta-primary", "--brand--color--primary"],
-      "--brand--color--primary-foreground": ["--brand--color--primary"],
-      "--brand--color--accent-foreground": ["--brand--color--accent"]
+      "--brand--color--cta-foreground": [
+        "--brand--color--cta-primary"
+      ],
+      "--brand--color--text-inverse": [
+        "--brand--color--cta-primary",
+        "--brand--color--primary"
+      ],
+      "--brand--color--primary-foreground": [
+        "--brand--color--primary"
+      ],
+      "--brand--color--accent-foreground": [
+        "--brand--color--accent"
+      ]
     }
+  },
+  "typography": {
+    "description": "Typography targets. Font families are mapped only when the design source ships an @font-face for the family; the faces are written to brand-fonts.css beside brand-theme.css. next-core re-declares the font-family tokens on body inside its 991px, 767px and 479px media queries, so those tokens are emitted on `:root, body` to hold at every width.",
+    "targets": {
+      "heading_family": "--_text---font-family--heading",
+      "body_family": "--_text---font-family--primary",
+      "button_radius": "--radius-size--buttons"
+    },
+    "body_scoped_tokens": [
+      "--_text---font-family--heading",
+      "--_text---font-family--primary"
+    ]
   }
 }

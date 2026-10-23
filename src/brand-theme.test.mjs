@@ -20,9 +20,11 @@ import { join, resolve } from "node:path";
 import { test } from "node:test";
 
 import {
+  extractFontFaces,
   inspectBrandTheme,
   validateAssemblyReportThemeBlock,
   validateGeneratedCss,
+  validateGeneratedFontsCss,
   validateThemeContextBlock,
   writeThemeArtifacts,
 } from "./brand-theme.mjs";
@@ -1248,3 +1250,105 @@ test("F2.4-I18 theme parser unchanged, theme packet with an oklch() CTA token (T
     assert.deepEqual(result.warnings, [], "theme warnings equal the BASE_SHA value, []");
   });
 });
+
+// --- Typography ------------------------------------------------------------
+
+// An imported Shopify page in miniature: rules scoped under .cc-import, type
+// and radius variables declared on that scope root, a heading face, a body
+// face set on the scope root, and a third-party icon face nothing reads.
+function typographySource(source, extraCss = "") {
+  mkdirSync(join(source, "assets/css"), { recursive: true });
+  mkdirSync(join(source, "assets/fonts"), { recursive: true });
+  for (const file of ["Display-Bold.woff2", "Display-Semi.woff2", "Text-Regular.woff2"]) writeFileSync(join(source, "assets/fonts", file), "font");
+  writeFileSync(join(source, "landing.html"), `<link rel="stylesheet" href="assets/css/landing.css"><main class="cc-import">Landing</main>`);
+  const scoped = Array.from({ length: 12 }, (_, index) => `.cc-import .filler-${index} { margin: 0; }`).join("\n");
+  writeFileSync(join(source, "assets/css/landing.css"), `${highConfidenceTokens()}
+@font-face { font-family: "Display"; font-weight: 700; src: url("../fonts/Display-Bold.woff2") format("woff2"); }
+@font-face { font-family: "Display"; font-weight: 600; src: url(../fonts/Display-Semi.woff2?v=2) format("woff2"); }
+@font-face { font-family: Text; font-weight: 400; src: url("../fonts/Text-Regular.woff2") format("woff2"); }
+@font-face { font-family: icons; src: url("data:font/woff2;base64,AAAA") format("woff2"); }
+.cc-import { --buttons-radius-outset: 6px; --font-body: Text, Helvetica, sans-serif; font-family: var(--font-body); }
+.cc-import h1, .cc-import h2 { font-family: "Display", serif; }
+.cc-import .product__title { font-family: Display; }
+.cc-import .button, .cc-import .shopify-challenge__button { border-radius: var(--buttons-radius-outset); }
+.cc-import .icon { font-family: icons; }
+${scoped}
+${extraCss}`);
+}
+
+test("brand theme maps the design source's heading and body faces and button radius, and writes the faces to brand-fonts.css", () => {
+  withTempDir((dir) => {
+    const { source, packet, packetPath } = makePacket(dir);
+    typographySource(source);
+
+    const result = inspectBrandTheme({ packet, packetPath });
+    const byTarget = new Map(result.context_theme.mappings.map((mapping) => [mapping.target, mapping]));
+
+    assert.equal(byTarget.get("--_text---font-family--heading").value, '"Display", "Text", serif');
+    assert.equal(byTarget.get("--_text---font-family--primary").value, '"Text", sans-serif');
+    assert.equal(byTarget.get("--radius-size--buttons").value, "6px");
+    assert.equal(validateGeneratedCss(result.css).ok, true, JSON.stringify(validateGeneratedCss(result.css).errors));
+    // next-core re-declares the font tokens on body below 992px; the body block keeps them.
+    assert.match(result.css, /:root,\nbody \{\n  --_text---font-family--heading: [^\n]+\n  --_text---font-family--primary: [^\n]+\n\}/);
+    assert.doesNotMatch(result.css.split(":root,")[0], /--_text---font-family/);
+
+    assert.equal(validateGeneratedFontsCss(result.fonts_css).ok, true, JSON.stringify(validateGeneratedFontsCss(result.fonts_css).errors));
+    const faces = extractFontFaces(result.fonts_css);
+    assert.deepEqual(faces.map((face) => face.family).sort(), ["Display", "Display", "Text"]);
+    assert.deepEqual(faces.flatMap((face) => face.srcs.map((src) => src.url)).sort(), ["../fonts/Display-Bold.woff2", "../fonts/Display-Semi.woff2", "../fonts/Text-Regular.woff2"]);
+    assert.match(result.fonts_css, /font-display: swap;/);
+    assert.equal(result.report.typography.heading.family, "Display");
+    assert.equal(result.report.typography.body.family, "Text");
+    assert.equal(result.context_theme.generated.fonts_css_path, ".campaign-runtime/theme/brand-fonts.css");
+    assert.equal(result.warnings.some((warning) => warning.code.startsWith("theme.typography")), false, JSON.stringify(result.warnings));
+  });
+});
+
+test("brand theme maps no typography when the source ships no face for the fonts it uses, and says so", () => {
+  withTempDir((dir) => {
+    const { source, packet, packetPath } = makePacket(dir);
+    mkdirSync(join(source, "styles"), { recursive: true });
+    writeFileSync(join(source, "landing.html"), `<link rel="stylesheet" href="styles/brand.css"><main>Landing</main>`);
+    writeFileSync(join(source, "styles/brand.css"), `${highConfidenceTokens()}
+@font-face { font-family: "Hosted"; src: url("https://fonts.example.com/hosted.woff2") format("woff2"); }
+h1 { font-family: "Hosted", sans-serif; }
+p { font-family: Georgia, serif; }
+.btn { border-radius: 12px; }
+`);
+
+    const result = inspectBrandTheme({ packet, packetPath });
+
+    assert.equal(result.fonts_css, null);
+    assert.equal(result.context_theme.mappings.some((mapping) => mapping.source.startsWith("typography.")), false);
+    assert.doesNotMatch(result.css, /font-family|radius/);
+    assert.equal(result.report.typography, undefined);
+    assert.equal(result.context_theme.generated.fonts_css_path, undefined);
+  });
+});
+
+test("brand-fonts.css safety rejects selectors, non-descriptors and remote URLs", () => {
+  assert.equal(validateGeneratedFontsCss('@font-face { font-family: "A"; src: url("../fonts/a.woff2"); }').ok, true);
+  assert.equal(validateGeneratedFontsCss('@font-face { font-family: "A"; src: url("https://x.example/a.woff2"); }').ok, false);
+  assert.equal(validateGeneratedFontsCss('@font-face { font-family: "A"; color: red; src: url("a.woff2"); }').ok, false);
+  assert.equal(validateGeneratedFontsCss('@font-face { font-family: "A"; src: url("a.woff2"); }\nbody { font-family: A; }').ok, false);
+  assert.equal(validateGeneratedCss(":root, body { --_text---font-family--primary: A; }").ok, true);
+  assert.equal(validateGeneratedCss("body { --_text---font-family--primary: A; }").ok, false);
+});
+
+test("theme generate writes brand-fonts.css beside brand-theme.css and treats an identical rerun as current", () => {
+  withTempDir((dir) => {
+    const { source, packet, packetPath } = makePacket(dir);
+    typographySource(source);
+
+    const first = writeThemeArtifacts(inspectBrandTheme({ packet, packetPath }), { writeCss: true, packetPath });
+    assert.equal(first.ok, true, JSON.stringify(first.errors));
+    assert.deepEqual(first.wrote, { report: true, css: true, fonts_css: true });
+    const fontsPath = join(dir, "target/.campaign-runtime/theme/brand-fonts.css");
+    assert.equal(readFileSync(fontsPath, "utf8"), first.fonts_css);
+
+    const second = writeThemeArtifacts(inspectBrandTheme({ packet, packetPath }), { writeCss: true, packetPath });
+    assert.equal(second.ok, true, JSON.stringify(second.errors));
+    assert.equal(second.wrote.fonts_css, false);
+  });
+});
+

@@ -28,7 +28,7 @@ import { fileURLToPath } from "node:url";
 
 import Ajv2020 from "ajv/dist/2020.js";
 
-import { BRAND_LAYER_FILENAMES } from "./brand-theme.mjs";
+import { BRAND_FONTS_FILENAME, BRAND_LAYER_FILENAMES } from "./brand-theme.mjs";
 import { ADAPTER_DECISION_SCALAR_VALUES } from "./adapter-decision-contract.mjs";
 import { buildManifestEntries, computeBuildFingerprint, resolveBuiltSiteScope } from "./built-site-scope.mjs";
 import { resolveCampaignWorkspace, targetRepoFor } from "./campaign-workspace.mjs";
@@ -512,10 +512,14 @@ const routeKey = (route) => String(route || "").replace(/^\/+|\/+$/g, "");
 // family components, so it must load a brand layer (brand-theme.css or
 // checkout-brand.css) after it, and that file must be in the built output. A
 // page that loads neither renders the design's own markup and needs no brand
-// layer (docs/brand-theme-bridge.md, "Where next-core.css belongs"). Any page
-// that breaks the rule is a refusal naming the page.
+// layer (docs/brand-theme-bridge.md, "Where next-core.css belongs"). When
+// theme generate wrote brand-fonts.css (the design's own faces), each styled
+// page must load that too, or the families brand-theme.css names fall back to
+// the system font. Any page that breaks the rule is a refusal naming the page.
 function brandLayerFacts(doctor) {
   const derived = doctor.derived || {};
+  const generatedFonts = resolve(derived.target_repo, ".campaign-runtime/theme", BRAND_FONTS_FILENAME);
+  const fontsRequired = existsSync(generatedFonts);
   const commerce = commerceScopeFromScope(derived.scope);
   if (!commerce.all.length) {
     throw refuseRecord("theme", ["The campaign ships no commerce pages, so there is no brand layer to record; the theme gate does not apply."]);
@@ -565,6 +569,19 @@ function brandLayerFacts(doctor) {
     if (!existsSync(file)) {
       problems.push(`${label}: ${builtRel} links ${hrefs[brand]}, which is not in the built output.`);
       continue;
+    }
+    if (fontsRequired) {
+      const fontsHref = hrefs.find((candidate) => hrefName(candidate) === BRAND_FONTS_FILENAME);
+      const fontsFile = fontsHref && !/^(?:[a-z][a-z0-9+.-]*:)?\/\//i.test(fontsHref)
+        ? (fontsHref.startsWith("/") ? join(site.site_root, fontsHref.split(/[?#]/)[0]) : resolve(dirname(built.built_path), fontsHref.split(/[?#]/)[0]))
+        : null;
+      if (!fontsFile || !existsSync(fontsFile)) {
+        problems.push(fontsHref
+          ? `${label}: ${builtRel} links ${fontsHref}, which is not in the built output.`
+          : `${label}: ${builtRel} links no ${BRAND_FONTS_FILENAME}. Theme generate wrote the design's font faces to .campaign-runtime/theme/${BRAND_FONTS_FILENAME}; copy it into the campaign assets/css folder beside the brand layer, list it in the page's frontmatter styles and rebuild.`);
+        continue;
+      }
+      evidence.push(`${label}: ${builtRel} loads ${relative(derived.target_repo, fontsFile)}.`);
     }
     layers.push(file);
     styled.push(label);

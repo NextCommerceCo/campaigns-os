@@ -311,7 +311,7 @@ test("record polish binds the evidence file to the current build and next advanc
 // A recorded build whose theme gate is blocked the way a generatable brand
 // theme leaves it, with the stylesheets each commerce page links set by
 // `links`.
-function themeReady(f, links) {
+function themeReady(f, links, { fonts = false } = {}) {
   scaffold(f);
   recordOk(f, "setup");
   const context = readJson(f.contextPath);
@@ -324,6 +324,12 @@ function themeReady(f, links) {
   mkdirSync(css, { recursive: true });
   writeFileSync(join(css, "next-core.css"), ":root {}\n");
   writeFileSync(join(css, "brand-theme.css"), ":root { --brand--color--primary: #0a2540; }\n");
+  if (fonts) {
+    const face = '@font-face { font-family: "Brand"; src: url("../fonts/brand.woff2") format("woff2"); }\n';
+    writeFileSync(join(css, "brand-fonts.css"), face);
+    mkdirSync(join(f.target, ".campaign-runtime/theme"), { recursive: true });
+    writeFileSync(join(f.target, ".campaign-runtime/theme/brand-fonts.css"), face);
+  }
   const tag = (name) => `<link rel="stylesheet" href="${name.includes("//") ? name : `/${f.slug}/css/${name}`}">`;
   buildSite(f, "", (page) => (page.type === "landing" ? "" : links(page).map(tag).join("")));
   recordOk(f, "build");
@@ -362,6 +368,29 @@ test("record theme refuses, naming each page and writing nothing, when a commerc
     assert.match(result.stderr, /receipt: .* loads its brand layer from another origin/);
     assert.equal(readFileSync(f.reportPath, "utf8"), before);
     assert.equal(doctor(f).derived.theme_gate.code, "theme_gate.generatable_not_applied");
+  });
+});
+
+test("record theme requires brand-fonts.css on each styled commerce page once theme generate wrote one, and records it when every page loads it", () => {
+  withLifecycle((f) => {
+    themeReady(f, (page) => (page.type === "thankyou" ? [] : page.id === "upsell"
+      ? ["next-core.css", "brand-theme.css"]
+      : ["next-core.css", "brand-fonts.css", "brand-theme.css"]), { fonts: true });
+    const before = readFileSync(f.reportPath, "utf8");
+
+    const refusedResult = record(f, "theme");
+    assert.notEqual(refusedResult.status, 0);
+    assert.match(refusedResult.stderr, /upsell: .* links no brand-fonts\.css/);
+    assert.doesNotMatch(refusedResult.stderr, /checkout: /);
+    assert.equal(readFileSync(f.reportPath, "utf8"), before);
+  });
+  withLifecycle((f) => {
+    themeReady(f, (page) => (page.type === "thankyou" ? [] : ["next-core.css", "brand-fonts.css", "brand-theme.css"]), { fonts: true });
+    recordOk(f, "theme");
+    const theme = readJson(f.reportPath).theme;
+    assert.equal(theme.status, "applied");
+    assert.ok(theme.evidence.some((line) => /^checkout: .* loads .*brand-fonts\.css\.$/.test(line)), theme.evidence.join("\n"));
+    assert.equal(doctor(f).derived.theme_gate.code, "theme_gate.applied");
   });
 });
 

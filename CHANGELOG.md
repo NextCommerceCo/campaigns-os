@@ -2,6 +2,18 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.60.0+agent.7] - 2026-10-23
+
+### Changed
+
+Brand theme carries the design source's type onto commerce pages, not only its colours:
+
+- `theme inspect` / `theme generate` read the `@font-face` rules the source ships and the families its headings, body copy and buttons use, plus the button `border-radius`. `var()` references resolve through custom properties on `:root`, `html`, `body` and the class a stylesheet scopes itself under (the importer's `.cc-import`). They map to next-core's `--_text---font-family--heading`, `--_text---font-family--primary` and `--radius-size--buttons` (new `typography` block in `contracts/brand-theme-target-tokens.next-core.v0.json`). A family is mapped only when the source ships a face for it. The radius is mapped only alongside a family, so a source without brand faces generates the same CSS as before.
+- The font-family tokens are emitted in a `:root, body` block, because next-core re-declares them on `body` at its 991, 767 and 479px breakpoints and a `:root`-only value held on desktop alone. `validateGeneratedCss` accepts that block.
+- `theme generate` writes `.campaign-runtime/theme/brand-fonts.css` beside `brand-theme.css`: only `@font-face` rules for the mapped families, with `font-display: swap` and URLs relative to `assets/css/`. Remote, `data:`, root-relative, outside-root or missing face files are left out with `theme.typography.face_src_dropped`. A used family with no shippable face is reported as `theme.typography.face_unavailable`. The theme report gains `typography`, and `generated.fonts_css_path` names the file.
+- `record theme` refuses a styled commerce page that doesn't load `brand-fonts.css` when theme generate wrote one, naming the page. The theme gate's generate/apply actions, the build guidance, `docs/brand-theme-bridge.md`, and the build (1.0.49) and polish (1.1.49) skills say to copy and load it. Polish now checks font parity at a mobile width as well as desktop.
+- The skills bundle revision advances to `1.60.0+skills.4`, and every bundled skill moves one patch version.
+
 ## [1.60.0+agent.6] - 2026-10-22
 
 ### Changed

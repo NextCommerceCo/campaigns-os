@@ -8918,6 +8918,111 @@
         }
       ],
       "entry_sha256": "0105b7be6bdbdc6e0f8e5a9b2b2a4b5ad3106e9bc7db72029c0cae05d8372fd1"
+    },
+    {
+      "id": "RL-0285",
+      "sequence": 273,
+      "date": "2026-10-23",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.60.0+agent.7",
+      "changelog_sha256": "08089138d268cbc7b8a662a0501b63308373dd5c829793635edbb13341c080fb",
+      "agent_impact": "theme generate can now write .campaign-runtime/theme/brand-fonts.css beside brand-theme.css, and brand-theme.css can carry next-core font-family tokens in a `:root, body` block plus --radius-size--buttons. When brand-fonts.css exists, a build agent copies it into the campaign assets/css folder and loads it on the same commerce pages as the brand layer; record theme refuses a styled page that does not. Sources without self-hosted brand faces generate the same CSS as before.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/brand-theme-bridge.md",
+          "surface_entry": "docs/brand-theme-bridge.md",
+          "summary": "New Typography section: what inspection reads, the three next-core targets, the :root, body block, brand-fonts.css, and the record theme requirement."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/campaigns-os-build-flow.md",
+          "surface_entry": "docs/campaigns-os-build-flow.md",
+          "summary": "Build copies and loads brand-fonts.css beside brand-theme.css when theme generate wrote one."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Examples name bundle revision 1.60.0+skills.4."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "Build guidance and the prepare-build theme evidence line name brand-fonts.css alongside brand-theme.css."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance bundle revision to 1.60.0+skills.4 and each skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Copy and load brand-fonts.css with the brand layer when theme generate wrote one."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Check font parity at a mobile width as well as desktop."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-sdk-bump/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        }
+      ],
+      "entry_sha256": "8b29ef2bd9f6472d792d56f997de7196d98e1ba054a8ee217bc0bc943174a51c"
     }
   ]
 }

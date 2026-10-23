@@ -521,6 +521,326 @@ function collectCtaLabelRules(content, rootTokens = {}) {
   return rules;
 }
 
+// --- Typography -----------------------------------------------------------
+// The design source's self-hosted brand faces, and which of them its
+// headings, body copy and buttons use. next-core takes font family and button
+// radius as custom properties (contracts/brand-theme-target-tokens.next-core.v0.json,
+// `typography`), so commerce pages carry the design's type through the same
+// token layer as its colours; the @font-face rules ship beside brand-theme.css
+// in brand-fonts.css. A family is mapped only when the source ships a face for
+// it: naming a font the page cannot load would only change the fallback.
+
+const GENERIC_FONT_FAMILIES = new Set([
+  "serif", "sans-serif", "monospace", "cursive", "fantasy", "system-ui", "ui-sans-serif", "ui-serif",
+  "ui-monospace", "ui-rounded", "math", "emoji", "inherit", "initial", "unset", "revert", "-apple-system",
+  "blinkmacsystemfont",
+]);
+const FALLBACK_GENERICS = new Set(["serif", "sans-serif", "monospace", "cursive", "fantasy"]);
+const HEADING_ELEMENTS = new Set(["h1", "h2", "h3"]);
+const HEADING_NAME_PARTS = new Set(["heading", "headline", "title"]);
+const BODY_ELEMENTS = new Set(["html", "body", "p"]);
+const FONT_FACE_DESCRIPTORS = new Set(["font-family", "font-style", "font-weight", "font-display", "font-stretch", "unicode-range", "src"]);
+// brand-fonts.css is placed in the campaign's assets/css/ beside
+// brand-theme.css, and build copies the source's assets/ tree into the
+// campaign's, so face URLs are written relative to the source's assets/css/.
+const FONTS_CSS_SOURCE_DIR = "assets/css";
+export const BRAND_FONTS_FILENAME = "brand-fonts.css";
+
+function unquoteFamily(name) {
+  return String(name || "").trim().replace(/^(["'])(.*)\1$/, "$2").trim();
+}
+
+// A value with its var() references resolved through the source's :root
+// custom properties (Shopify themes route type through --font-body-family and
+// friends). An unresolved var() takes its fallback, else stays unresolved.
+function resolveCssVars(value, tokens = {}, depth = 0) {
+  const text = String(value || "");
+  if (depth > 5 || !/var\(/i.test(text)) return text;
+  const replaced = text.replace(/var\(\s*(--[A-Za-z0-9_-]+)\s*(?:,\s*([^()]*(?:\([^()]*\)[^()]*)*))?\)/g, (match, name, fallback) => {
+    if (isNonEmptyString(tokens[name])) return tokens[name];
+    return fallback !== undefined ? fallback : match;
+  });
+  return replaced === text ? text : resolveCssVars(replaced, tokens, depth + 1);
+}
+
+// The first named family in a font-family value and the generic it falls
+// back to, if it names one. null for unresolved var() and generic-only stacks.
+function fontStack(value, tokens = {}) {
+  const cleaned = resolveCssVars(value, tokens).replace(/!important/gi, "").trim();
+  if (!cleaned || /var\(/i.test(cleaned)) return null;
+  const names = cleaned.split(",").map(unquoteFamily).filter(Boolean);
+  const family = names.find((name) => !GENERIC_FONT_FAMILIES.has(name.toLowerCase()));
+  if (!family) return null;
+  const generic = names.map((name) => name.toLowerCase()).find((name) => FALLBACK_GENERICS.has(name)) || null;
+  return { family, generic };
+}
+
+export function extractFontFaces(content) {
+  const faces = [];
+  for (const match of stripCssComments(content).matchAll(/@font-face\s*\{([^{}]*)\}/gi)) {
+    const face = { family: null, descriptors: [], srcs: [] };
+    for (const [rawName, rawValue] of splitDeclarations(match[1])) {
+      const name = rawName.trim().toLowerCase();
+      const value = rawValue.trim();
+      if (!FONT_FACE_DESCRIPTORS.has(name) || !value) continue;
+      if (name === "font-family") face.family = unquoteFamily(value);
+      else if (name === "src") {
+        face.srcs = [...value.matchAll(/url\(\s*(["']?)([^"')]+)\1\s*\)(?:\s*format\(\s*(["']?)([^"')]+)\3\s*\))?/gi)]
+          .map((src) => ({ url: src[2].trim(), format: src[4] ? src[4].trim() : null }));
+      } else face.descriptors.push([name, value]);
+    }
+    if (face.family && face.srcs.length) faces.push(face);
+  }
+  return faces;
+}
+
+// The class a stylesheet scopes itself under, such as the importer's
+// `.cc-import`: the leading class of more than half the rules. A rule on that
+// class alone sets the page's base type, as `body` would.
+function scopeRootClass(content) {
+  const leading = new Map();
+  let rules = 0;
+  for (const match of stripCssComments(content).matchAll(/([^{};]+)\{[^{}]+\}/g)) {
+    const selector = match[1].trim();
+    if (!selector || selector.startsWith("@")) continue;
+    rules += 1;
+    const first = selector.match(/^\.([A-Za-z_][\w-]*)(?=[\s>+~,]|$)/);
+    if (first) leading.set(first[1], (leading.get(first[1]) || 0) + 1);
+  }
+  const top = topEntry(leading);
+  return top && rules >= 10 && top[1] > rules / 2 ? top[0] : null;
+}
+
+// Custom properties a stylesheet declares on its page root (html, body or its
+// scope root class), where Shopify themes and the importer keep their type and
+// radius variables, rather than on :root.
+function pageRootCustomProperties(content) {
+  const scopeRoot = scopeRootClass(content);
+  const roots = new Set(["html", "body", ...(scopeRoot ? [`.${scopeRoot}`] : [])]);
+  const tokens = {};
+  for (const match of stripCssComments(content).matchAll(/([^{};]+)\{([^{}]+)\}/g)) {
+    if (!match[1].split(",").some((part) => roots.has(part.trim()))) continue;
+    for (const [rawName, rawValue] of splitDeclarations(match[2])) {
+      const name = rawName.trim();
+      if (name.startsWith("--") && rawValue.trim()) tokens[name] = rawValue.trim();
+    }
+  }
+  return tokens;
+}
+
+// One compound selector that names a button: the element, a submit input, or
+// a class starting btn/button/cta or with a cta part. Unlike isButtonSelector,
+// a list qualifies when any of its selectors does, since type and radius rules
+// group a button with siblings (`.button, .shopify-challenge__button`).
+function buttonCompoundWeight(compound) {
+  if (compound.pseudos.length) return 0;
+  if (compound.type === "button") return compound.classes.length ? 1 : 3;
+  if (compound.type === "input" && compound.attributes.some((attribute) => /^\s*type\s*=\s*(["']?)submit\1\s*(?:i\s*)?$/i.test(attribute))) return 1;
+  if (compound.classes.some((name) => /^(?:btn|button)$/i.test(name))) return 3;
+  return compound.classes.some((name) => /^(?:btn|button|cta)/i.test(name) || name.toLowerCase().split(/[-_]+/).includes("cta")) ? 1 : 0;
+}
+
+// Rule-level font usage by role: { heading, body, button } as Maps of family
+// to weighted rule count, generics as family -> generic, and button radii.
+// An element selector (h1, p, button) weighs 3 against a class's 1, so a
+// `.card-title` cannot outvote the h1 rule.
+function collectTypographyRules(content, usage = null, tokens = {}) {
+  const out = usage || { heading: new Map(), body: new Map(), button: new Map(), generics: new Map(), button_radius: new Map() };
+  const bump = (map, key, by = 1) => map.set(key, (map.get(key) || 0) + by);
+  const scopeRoot = scopeRootClass(content);
+  for (const match of stripCssComments(content).matchAll(/([^{};]+)\{([^{}]+)\}/g)) {
+    const selector = match[1].trim();
+    if (!selector || selector.startsWith("@")) continue;
+    let stack = null;
+    let radius = null;
+    for (const [rawName, rawValue] of splitDeclarations(match[2])) {
+      const name = rawName.trim().toLowerCase();
+      if (name === "font-family") stack = fontStack(rawValue, tokens) || stack;
+      if (name === "border-radius") radius = resolveCssVars(rawValue, tokens).replace(/!important/gi, "").trim();
+    }
+    if (!stack && !radius) continue;
+    const compounds = rightmostCompounds(selector) || [];
+    const parts = (compound) => compound.classes.flatMap((name) => name.toLowerCase().split(/[-_]+/));
+    const headingWeight = compounds.some((compound) => HEADING_ELEMENTS.has(compound.type)) ? 3
+      : compounds.some((compound) => parts(compound).some((part) => HEADING_NAME_PARTS.has(part))) ? 1 : 0;
+    const isScopeRoot = Boolean(scopeRoot) && selector.split(",").some((part) => part.trim() === `.${scopeRoot}`);
+    const bodyWeight = isScopeRoot || compounds.some((compound) => BODY_ELEMENTS.has(compound.type) && !compound.classes.length && !compound.pseudos.length) ? 3 : 0;
+    const buttonWeight = Math.max(0, ...compounds.map(buttonCompoundWeight));
+    if (stack) {
+      if (stack.generic && !out.generics.has(stack.family.toLowerCase())) out.generics.set(stack.family.toLowerCase(), stack.generic);
+      if (headingWeight) bump(out.heading, stack.family, headingWeight);
+      if (bodyWeight) bump(out.body, stack.family, bodyWeight);
+      if (buttonWeight) bump(out.button, stack.family, buttonWeight);
+    }
+    if (radius && buttonWeight && /^\d+(?:\.\d+)?(?:px|rem|em)$/.test(radius)) bump(out.button_radius, radius, buttonWeight);
+  }
+  return out;
+}
+
+function topEntry(map, accept = () => true) {
+  return [...map.entries()].filter(([key]) => accept(key)).sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])))[0] || null;
+}
+
+// A face's src URLs rewritten for brand-fonts.css in the campaign's
+// assets/css/. A remote, data: or root-relative URL, or a file outside the
+// source root or missing from it, is dropped with a reason.
+function relocateFaceSrcs(face, cssPath, sourceRoot) {
+  const kept = [];
+  const dropped = [];
+  const fontsCssDir = resolve(sourceRoot, FONTS_CSS_SOURCE_DIR);
+  for (const src of face.srcs) {
+    const bare = src.url.split(/[?#]/)[0];
+    if (/^(?:[a-z][a-z0-9+.-]*:|\/\/|\/)/i.test(bare)) {
+      dropped.push({ url: src.url, reason: "not a file the source ships (remote, data: or root-relative URL)" });
+      continue;
+    }
+    const file = resolve(dirname(cssPath), bare);
+    const inside = relative(resolve(sourceRoot), file);
+    if (!inside || inside.startsWith("..") || isAbsolute(inside)) {
+      dropped.push({ url: src.url, reason: "outside the source root" });
+      continue;
+    }
+    if (!existsSync(file)) {
+      dropped.push({ url: src.url, reason: "file missing from the source" });
+      continue;
+    }
+    kept.push({ url: relative(fontsCssDir, file).split("\\").join("/"), format: src.format, source_file: inside.split("\\").join("/") });
+  }
+  return { kept, dropped };
+}
+
+// The typography the design source declares, from every CSS file the theme
+// inspection read: the families its headings, body copy and buttons use that
+// it also ships faces for, the button radius, and the faces to ship.
+function inferTypography(candidates, sourceRoot) {
+  const usage = { heading: new Map(), body: new Map(), button: new Map(), generics: new Map(), button_radius: new Map() };
+  const faces = [];
+  const seenFiles = new Set();
+  const tokens = Object.assign({}, ...candidates.map((candidate) => candidate.root_tokens || {}));
+  for (const candidate of candidates) {
+    if (candidate.inline_block_index !== undefined || seenFiles.has(resolve(candidate.path))) continue;
+    seenFiles.add(resolve(candidate.path));
+    const content = readFileSync(candidate.path, "utf8");
+    collectTypographyRules(content, usage, { ...tokens, ...pageRootCustomProperties(content) });
+    for (const face of extractFontFaces(content)) faces.push({ ...face, css_path: candidate.path });
+  }
+  const warnings = [];
+  const shippable = new Map();
+  const droppedSrcs = [];
+  for (const face of faces) {
+    const { kept, dropped } = relocateFaceSrcs(face, face.css_path, sourceRoot);
+    droppedSrcs.push(...dropped.map((drop) => ({ ...drop, family: face.family })));
+    if (!kept.length) continue;
+    const descriptors = Object.fromEntries(face.descriptors);
+    const key = [face.family.toLowerCase(), descriptors["font-weight"] || "400", descriptors["font-style"] || "normal", descriptors["unicode-range"] || ""].join("|");
+    if (!shippable.has(key)) shippable.set(key, { family: face.family, descriptors: face.descriptors, srcs: kept, css_path: face.css_path });
+  }
+  const faceFamilies = new Set([...shippable.values()].map((face) => face.family.toLowerCase()));
+  const hasFace = (family) => faceFamilies.has(String(family).toLowerCase());
+  const pick = (role) => {
+    const entry = topEntry(usage[role], hasFace);
+    return entry ? { family: entry[0], rule_weight: entry[1] } : null;
+  };
+  const heading = pick("heading");
+  const button = pick("button");
+  const body = pick("body") || (button && (!heading || button.family !== heading.family) ? { ...button, inferred_from: "button" } : null);
+  for (const role of ["heading", "body", "button"]) {
+    const used = topEntry(usage[role]);
+    if (used && !hasFace(used[0])) {
+      warnings.push(issue("theme.typography.face_unavailable", `The source's ${role} font "${used[0]}" has no @font-face the campaign can ship, so it is not mapped.`, { role, family: used[0] }));
+    }
+  }
+  const radius = topEntry(usage.button_radius);
+  const used = new Set([heading, body, button].filter(Boolean).map((entry) => entry.family.toLowerCase()));
+  const shipped = [...shippable.values()].filter((face) => used.has(face.family.toLowerCase()));
+  const usedAnywhere = new Set(["heading", "body", "button"].flatMap((role) => [...usage[role].keys()].map((family) => family.toLowerCase())));
+  for (const drop of droppedSrcs.filter((entry) => usedAnywhere.has(entry.family.toLowerCase()))) {
+    warnings.push(issue("theme.typography.face_src_dropped", `A @font-face src for "${drop.family}" was left out of ${BRAND_FONTS_FILENAME}: ${drop.reason}.`, { family: drop.family, url: drop.url }));
+  }
+  return {
+    heading,
+    body,
+    button,
+    button_radius: radius ? { value: radius[0], rule_count: radius[1] } : null,
+    generics: usage.generics,
+    faces: shipped,
+    face_css_paths: [...new Set(shipped.map((face) => face.css_path))],
+    warnings,
+  };
+}
+
+function familyValue(family, generics, extra = []) {
+  const quote = (name) => `"${String(name).replace(/["\\]/g, "")}"`;
+  const names = [family, ...extra].filter((name, index, all) => name && all.findIndex((other) => other.toLowerCase() === name.toLowerCase()) === index);
+  return [...names.map(quote), generics.get(String(family).toLowerCase()) || "sans-serif"].join(", ");
+}
+
+// Typography mappings onto the contract's typography targets. Font families
+// are mapped only with a shippable face; the button radius only alongside
+// them, so a source with no brand faces maps exactly what it did before.
+function mapTypography(typography, targetTokens) {
+  const targets = targetTokens.typography?.targets || {};
+  const mappings = [];
+  if (!typography.faces.length) return mappings;
+  const add = (role, target, value, derivation) => {
+    if (target && value) mappings.push({ source: `typography.${role}`, target, value, confidence: "high", derivation });
+  };
+  if (typography.heading) {
+    add("heading", targets.heading_family, familyValue(typography.heading.family, typography.generics, [typography.body?.family]), { method: "design-source-font-face", family: typography.heading.family, rule_weight: typography.heading.rule_weight });
+  }
+  if (typography.body) {
+    add("body", targets.body_family, familyValue(typography.body.family, typography.generics), { method: typography.body.inferred_from ? "design-source-font-face-from-button" : "design-source-font-face", family: typography.body.family, rule_weight: typography.body.rule_weight });
+  }
+  if (typography.button_radius) {
+    add("button_radius", targets.button_radius, typography.button_radius.value, { method: "design-source-button-radius", rule_count: typography.button_radius.rule_count });
+  }
+  return mappings;
+}
+
+function renderBrandFontsCss({ sourcePaths, faces }) {
+  const lines = [
+    "/*",
+    " * Generated by Campaigns OS brand-theme v0.",
+    ` * Source: ${sourcePaths.join(", ") || "unknown source"}`,
+    ` * The design's brand faces for commerce pages. Load beside ${"brand-theme.css"}; URLs are relative to assets/css/.`,
+    " */",
+  ];
+  for (const face of faces) {
+    const descriptors = new Map(face.descriptors);
+    if (!descriptors.has("font-display")) descriptors.set("font-display", "swap");
+    lines.push("@font-face {");
+    lines.push(`  font-family: "${face.family.replace(/["\\]/g, "")}";`);
+    for (const [name, value] of [...descriptors.entries()].sort((a, b) => a[0].localeCompare(b[0]))) lines.push(`  ${name}: ${value};`);
+    lines.push(`  src: ${face.srcs.map((src) => `url("${src.url}")${src.format ? ` format("${src.format}")` : ""}`).join(", ")};`);
+    lines.push("}");
+  }
+  lines.push("");
+  return lines.join("\n");
+}
+
+export function validateGeneratedFontsCss(css) {
+  const errors = [];
+  if (!isNonEmptyString(css)) return { ok: false, errors: [issue("theme.fonts_css.empty", "Generated brand-fonts.css is empty.")], warnings: [] };
+  if (/<\/?script\b|javascript:/i.test(css)) errors.push(issue("theme.fonts_css.script", "Generated brand-fonts.css contains script-like content."));
+  const withoutComments = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  const blocks = [];
+  const residual = withoutComments.replace(/@font-face\s*\{([^{}]*)\}/g, (_match, body) => {
+    blocks.push(body);
+    return "";
+  }).trim();
+  if (residual) errors.push(issue("theme.fonts_css.selector", "Generated brand-fonts.css must contain only @font-face rules.", { residual }));
+  for (const body of blocks) {
+    for (const [rawName, rawValue] of splitDeclarations(body)) {
+      const name = rawName.trim().toLowerCase();
+      if (!FONT_FACE_DESCRIPTORS.has(name)) errors.push(issue("theme.fonts_css.descriptor", `Generated @font-face declares ${name}, which is not a font descriptor.`));
+      for (const url of String(rawValue).matchAll(/url\(\s*["']?([^"')]+)/gi)) {
+        if (/^(?:[a-z][a-z0-9+.-]*:|\/\/|\/)/i.test(url[1].trim())) errors.push(issue("theme.fonts_css.remote_url", "Generated brand-fonts.css must reference the campaign's own font files by relative URL.", { url: url[1] }));
+      }
+    }
+  }
+  return { ok: errors.length === 0, errors, warnings: [] };
+}
+
 function extractDeclarationColor(value) {
   const cleaned = String(value || "").replace(/!important/gi, "").trim();
   const exact = normalizeColor(cleaned);
@@ -1063,7 +1383,7 @@ function statusFor({ policy, selected, confidence, warnings, errors }) {
   return "ready";
 }
 
-function renderBrandThemeCss({ selected, mappings, confidence }) {
+function renderBrandThemeCss({ selected, mappings, confidence, bodyScoped = new Set() }) {
   const unique = [];
   const seen = new Set();
   for (const mapping of mappings) {
@@ -1081,10 +1401,20 @@ function renderBrandThemeCss({ selected, mappings, confidence }) {
     " */",
     ":root {",
   ];
-  for (const mapping of unique.sort((a, b) => a.target.localeCompare(b.target))) {
+  const sorted = unique.sort((a, b) => a.target.localeCompare(b.target));
+  for (const mapping of sorted.filter((entry) => !bodyScoped.has(entry.target))) {
     lines.push(`  ${mapping.target}: ${mapping.value};`);
   }
   lines.push("}");
+  const scoped = sorted.filter((entry) => bodyScoped.has(entry.target));
+  if (scoped.length) {
+    lines.push("");
+    lines.push("/* next-core re-declares these on body at its 991/767/479px breakpoints; body keeps them at every width. */");
+    lines.push(":root,");
+    lines.push("body {");
+    for (const mapping of scoped) lines.push(`  ${mapping.target}: ${mapping.value};`);
+    lines.push("}");
+  }
   lines.push("");
   return lines.join("\n");
 }
@@ -1105,12 +1435,12 @@ export function validateGeneratedCss(css) {
 
   const withoutComments = css.replace(/\/\*[\s\S]*?\*\//g, "").trim();
   const rootBlocks = [];
-  const residual = withoutComments.replace(/:root\s*\{([\s\S]*?)\}/g, (_match, body) => {
+  const residual = withoutComments.replace(/:root(?:\s*,\s*body)?\s*\{([\s\S]*?)\}/g, (_match, body) => {
     rootBlocks.push(body);
     return "";
   }).trim();
   if (residual) {
-    errors.push(issue("theme.css.selector", "Generated CSS must contain only :root blocks with custom properties.", { residual }));
+    errors.push(issue("theme.css.selector", "Generated CSS must contain only :root (or :root, body) blocks with custom properties.", { residual }));
   }
   if (rootBlocks.length === 0) {
     errors.push(issue("theme.css.root", "Generated CSS must include a :root block."));
@@ -1197,6 +1527,7 @@ export function inspectBrandTheme({ packet, packetPath, context = null, policy =
   const targetRepo = resolveFromFile(packetPath, packet.assembly?.target_repo) || dirname(resolve(packetPath));
   const themeOutDir = outDir ? resolve(outDir) : resolve(targetRepo, ".campaign-runtime/theme");
   const cssPath = resolve(themeOutDir, "brand-theme.css");
+  const fontsCssPath = resolve(themeOutDir, BRAND_FONTS_FILENAME);
   const reportPath = resolve(themeOutDir, "theme-report.json");
 
   if (requestedPolicy === "off") {
@@ -1253,8 +1584,18 @@ export function inspectBrandTheme({ packet, packetPath, context = null, policy =
 
   const mapped = selected ? mapTokens(selected.tokens, contracts.targetTokens, { rootTokens: selected.root_tokens, ctaLabelRules: selected.cta_label_rules }) : { mappings: [], warnings: [] };
   warnings.push(...mapped.warnings);
+  const typography = selected ? inferTypography(candidates, sourceRoot) : null;
+  if (typography) {
+    mapped.mappings.push(...mapTypography(typography, contracts.targetTokens));
+    if (typography.faces.length) warnings.push(...typography.warnings);
+  }
+  const fontsCss = typography?.faces.length && mapped.mappings.some((mapping) => mapping.source.startsWith("typography."))
+    ? renderBrandFontsCss({ sourcePaths: typography.face_css_paths.map((path) => relativeArtifactPath(targetRepo, path)), faces: typography.faces })
+    : null;
+  const fontsSafety = fontsCss ? validateGeneratedFontsCss(fontsCss) : null;
+  if (fontsSafety && !fontsSafety.ok) errors.push(...fontsSafety.errors);
   const confidence = confidenceFor({ selected, defaultMatch, mappings: mapped.mappings, conflicts });
-  const css = selected && mapped.mappings.length > 0 ? renderBrandThemeCss({ selected, mappings: mapped.mappings, confidence }) : null;
+  const css = selected && mapped.mappings.length > 0 ? renderBrandThemeCss({ selected, mappings: mapped.mappings, confidence, bodyScoped: new Set(contracts.targetTokens.typography?.body_scoped_tokens || []) }) : null;
   const safety = css ? validateGeneratedCss(css) : { ok: false, errors: [issue("theme.css.empty", "No generated CSS because no source tokens were selected.")], warnings: [] };
   if (css && !safety.ok) errors.push(...safety.errors);
 
@@ -1270,6 +1611,7 @@ export function inspectBrandTheme({ packet, packetPath, context = null, policy =
   const selectedSource = selected ? sourceFileEntry(selected, targetRepo) : null;
   const generated = {
     css_path: relativeArtifactPath(targetRepo, cssPath),
+    ...(fontsCss ? { fonts_css_path: relativeArtifactPath(targetRepo, fontsCssPath) } : {}),
     report_path: relativeArtifactPath(targetRepo, reportPath),
     safety,
     stale,
@@ -1306,6 +1648,7 @@ export function inspectBrandTheme({ packet, packetPath, context = null, policy =
     producer_defaults: defaultMatch,
     conflicts,
     mappings: mapped.mappings,
+    ...(fontsCss ? { typography: typographyReportBlock(typography, targetRepo) } : {}),
     generated,
     existing_brand_layers: findExistingBrandLayers(targetRepo, cssPath),
     warnings,
@@ -1313,7 +1656,22 @@ export function inspectBrandTheme({ packet, packetPath, context = null, policy =
     next_action: nextActionForTheme({ status, confidence, canGenerate, canAutoGenerate, stale, policy: requestedPolicy }),
   };
 
-  return buildInspectionResponse({ packet, targetRepo, sourceRoot, cssPath, reportPath, contextTheme, report, css, errors, warnings });
+  return buildInspectionResponse({ packet, targetRepo, sourceRoot, cssPath, reportPath, contextTheme, report, css, errors, warnings, fontsCss, fontsCssPath });
+}
+
+function typographyReportBlock(typography, targetRepo) {
+  return {
+    heading: typography.heading,
+    body: typography.body,
+    button: typography.button,
+    button_radius: typography.button_radius,
+    faces: typography.faces.map((face) => ({
+      family: face.family,
+      weight: Object.fromEntries(face.descriptors)["font-weight"] || "400",
+      style: Object.fromEntries(face.descriptors)["font-style"] || "normal",
+      files: face.srcs.map((src) => src.source_file),
+    })),
+  };
 }
 
 function nextActionForTheme({ status, confidence, canGenerate, canAutoGenerate, stale, policy }) {
@@ -1327,7 +1685,7 @@ function nextActionForTheme({ status, confidence, canGenerate, canAutoGenerate, 
   return "Review theme-report.json and decide whether to skip or collect stronger brand inputs.";
 }
 
-function buildInspectionResponse({ packet, targetRepo, sourceRoot, cssPath, reportPath, contextTheme, report, css, errors, warnings }) {
+function buildInspectionResponse({ packet, targetRepo, sourceRoot, cssPath, reportPath, contextTheme, report, css, errors, warnings, fontsCss = null, fontsCssPath = null }) {
   return {
     ok: errors.length === 0,
     status: contextTheme.status,
@@ -1343,12 +1701,14 @@ function buildInspectionResponse({ packet, targetRepo, sourceRoot, cssPath, repo
     },
     absolute_paths: {
       css_path: cssPath,
+      ...(fontsCss ? { fonts_css_path: fontsCssPath } : {}),
       report_path: reportPath,
       out_dir: dirname(cssPath),
     },
     context_theme: contextTheme,
     report,
     css,
+    fonts_css: fontsCss,
     errors,
     warnings,
     ready: contextTheme.status === "ready" ? [`Brand theme artifact can be generated with confidence ${contextTheme.confidence}.`] : [],
@@ -1363,7 +1723,7 @@ function buildInspectionResponse({ packet, targetRepo, sourceRoot, cssPath, repo
 
 export function writeThemeArtifacts(inspection, { writeCss = false, writeReport = true, force = false, packetPath = "<campaign-runtime.build.json>" } = {}) {
   const errors = [...(inspection.errors || [])];
-  const wrote = { report: false, css: false };
+  const wrote = { report: false, css: false, ...(inspection.fonts_css ? { fonts_css: false } : {}) };
   const alreadyCurrent = { css: false };
   const reportPath = resolvePathFromInspection(inspection, "report_path");
   const cssPath = resolvePathFromInspection(inspection, "css_path");
@@ -1393,6 +1753,17 @@ export function writeThemeArtifacts(inspection, { writeCss = false, writeReport 
     } else {
       replaceFileAtomically(cssPath, inspection.css);
       wrote.css = true;
+    }
+    if (!errors.length && inspection.fonts_css) {
+      const fontsPath = resolvePathFromInspection(inspection, "fonts_css_path");
+      const current = existsSync(fontsPath) ? readFileSync(fontsPath, "utf8") : null;
+      if (current !== null && current !== inspection.fonts_css && !force) {
+        const safeCommand = `campaigns-os theme generate --packet ${shellToken(packetPath)} --force`;
+        errors.push(issue("theme.generate.exists", `${BRAND_FONTS_FILENAME} already exists and differs from the current generated output; rerun \`${safeCommand}\` or pass a new --out-dir to overwrite safely.`, { safe_commands: [safeCommand] }));
+      } else if (current !== inspection.fonts_css) {
+        replaceFileAtomically(fontsPath, inspection.fonts_css);
+        wrote.fonts_css = true;
+      }
     }
   }
 

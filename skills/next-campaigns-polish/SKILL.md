@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-polish
-version: 1.1.48
+version: 1.1.49
 description: Run the visual/runtime polish pass after build and before QA for a Campaigns OS campaign.
 ---
 
-Bundle revision: 1.60.0+skills.3
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.60.0+skills.3`
+Bundle revision: 1.60.0+skills.4
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.60.0+skills.4`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -70,7 +70,7 @@ Responsibilities:
 - Treat express wallet presence as browser/device eligible. Record which wallets mounted in the tested browser, but do not fail solely because Apple Pay is absent in a non-eligible browser. Fail or block when the express mount is empty despite supported wallets, or when mounted wallet buttons are visually malformed.
 - For bundle selectors and order bumps, verify active/inactive visual state after interaction, mobile label wrapping, badge placement, and selected/unchecked state. A native hidden input state that disagrees with the SDK class state is a polish blocker. So is a selected/active visual driven by a *non-SDK static attribute the SDK never clears* — e.g. a hardcoded `data-selected="true"` left on the initial card. (The native `selected` attribute on `<option>`/custom selects *is* SDK/browser-managed, so do not flag that.) The selected style must follow the SDK-managed class (e.g. `.next-selected` — see the family's bundle-selector selectors in `contracts/template-brand-contract.<family>.v0.json`) so a single-select swap clears the previous selection. Verify by interaction that the previously-selected item deselects after another is picked — a selector that only ever paints "selected" on click is a blocker.
 - For exit-intent pops and promo-code inputs, polish the wrapper/copy states without breaking SDK coupon/voucher apply hooks or `cart.hasCoupon("CODE")` conditional labels.
-- If `report.theme` or `context.theme` exists, verify brand-theme load order after `next-core.css`, source-token parity for primary color/CTA/surface/text/font/radius when present, and SDK safety. When the brand layer is missing, stale, low-confidence, or unsafe to apply, record the first repair-loop defect or an explicit skipped reason.
+- If `report.theme` or `context.theme` exists, verify brand-theme load order after `next-core.css`, source-token parity for primary color/CTA/surface/text/font/radius when present, and SDK safety. Check font parity by computed style at a mobile and a desktop width, not desktop alone: next-core re-declares its font tokens on `body` below 992px, so a layer that sets them only on `:root` holds on desktop and falls back on mobile. When the brand layer is missing, stale, low-confidence, or unsafe to apply, record the first repair-loop defect or an explicit skipped reason.
 - When at least one mapped page has a design route, before recording a terminal
   Polish status, install the package-owned browser once with
   `npx --no-install campaigns-os qa install-browser`, serve the current build,
