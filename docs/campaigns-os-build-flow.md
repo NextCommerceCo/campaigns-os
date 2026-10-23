@@ -53,7 +53,7 @@ The check reads recorded fingerprints, not machine-local capture files.
 Readback's `evidence_debt` uses the same assessment, showing an agent this debt
 before it edits; its separate time-based staleness assessment is not the CI signal.
 
-Copy the [workflow example](examples/campaign-repo-evidence-check.yml) into the
+Copy the [workflow example](https://github.com/NextCommerceCo/campaigns-os/blob/main/docs/examples/campaign-repo-evidence-check.yml) into the
 campaign repository and adjust the packet path. It posts or updates one PR
 comment using the fixed `<!-- campaign-evidence-check -->` marker. Evidence
 reports use stdout only; stderr stays in the job log. If the command produces
