@@ -89,6 +89,7 @@ import { SCRIPT_SYNTAX, collectBuiltScriptSyntaxInputs, evaluateBuiltScriptSynta
 import { CART_PLACEHOLDERS, CART_PLACEHOLDERS_LIMITS, evaluateCartPlaceholders, isFileReadFailure } from "../cart-placeholders.mjs";
 import { SMOKE_QC, SMOKE_QC_LIMITS, builtFileOf, evaluateSmokeQc, insideRoot, isBuiltPageReadFailure, pageScriptSources, parseBuiltPage, realPathOf } from "../built-smoke-qc.mjs";
 import { recordQcResults } from "../qc-results.mjs";
+import { evaluateDesignAccess } from "../parity/design-access.mjs";
 import { FIGMA_EXPORT_FILE_CODES, SOURCE_PROVENANCE_SCOPE, evaluateSourceProvenanceGates, generatorClaimsFigmaExport, isSourceProvenanceCode } from "./source-provenance.mjs";
 import { validateCampaignBuildBriefArtifact } from "../build-brief.mjs";
 import { briefFileUnusable, deriveInputCurrency, wellFormedBriefMaterial } from "../input-currency.mjs";
@@ -3674,6 +3675,12 @@ function validateSourceCoverage(packet, packetPath, spec, errors, warnings, read
     derived,
   });
   const active = activeSpecPages(spec);
+  const designPackagePath = resolveFromFile(packetPath, packet?.design_source_package?.path);
+  let designSourcePackage = null;
+  try { if (designPackagePath) designSourcePackage = JSON.parse(readFileSync(designPackagePath, "utf8")); } catch { /* Missing or unreadable package is checked separately. */ }
+  const designManifest = isNonEmptyString(sourceRoot) && existsSync(sourceRoot) && statSync(sourceRoot).isDirectory()
+    ? readSourceHtmlManifestFile(sourceRoot, { manifestPath: recordedDesignManifestPath(packet, packetPath) }).manifest : null;
+  recordQcResults({ derived, warnings, results: evaluateDesignAccess({ activePages: active, mappings: pages, manifest: designManifest, designSourcePackage, measured_at: new Date().toISOString() }) });
   const specPartialScope = spec?.build_scope?.mode === "partial";
   const specPartialReasons = Array.isArray(spec?.build_scope?.reasons) ? spec.build_scope.reasons.filter(isNonEmptyString) : [];
   const activeIds = new Set(active.map((page) => page.id));

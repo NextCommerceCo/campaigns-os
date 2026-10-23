@@ -1,5 +1,15 @@
 # Campaign Build Brief
 
+For a page built from an HTML export of a named design file, the drafted brief
+records `design_authority.<page>.source: design_file`, with `reference` set to
+the design file link, `frames` set to the declared frame links, and
+`derived_artifact` naming the export (`provided_design_export` and its HTML
+path). The summary reads "follow the design file, built from its HTML export".
+A value you state in the brief file is kept as you wrote it. This records
+authority; it does not read the design file or compare elements. Doctor's
+`design.access` reports that access as unexercised, with guidance to continue or
+compare the export and file by hand.
+
 The Campaign Build Brief is the merchandising and design-presentation truth for a Campaigns OS build.
 
 CampaignSpec remains the operational truth: packages, offers, shipping, routing, SDK hints, payment/runtime values, and API identity. The Build Brief answers business-owned presentation questions that agents should not infer silently: page authority, palette and CTA treatment, product media rules, pricing display, promo language, payment/trust surfaces, canonical names, residue policy, and QA expectations.

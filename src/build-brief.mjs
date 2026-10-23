@@ -219,6 +219,7 @@ export function createCampaignBuildBriefArtifact({
   spec = null,
   activePages = [],
   pageMappings = [],
+  designFiles = [],
   templateFamily = null,
   sourceAssetCrawl = null,
   commerceZoneFindings = [],
@@ -230,7 +231,7 @@ export function createCampaignBuildBriefArtifact({
   const { mode, source: modeSource } = briefModeFor(loaded, boundReportMode, errors);
   const baseBrief = loaded
     ? cloneJsonOrEmpty(loaded.value)
-    : draftCampaignBuildBrief({ spec, activePages, pageMappings, templateFamily, sourceAssetCrawl });
+    : draftCampaignBuildBrief({ spec, activePages, pageMappings, designFiles, templateFamily, sourceAssetCrawl });
 
   const normalized = normalizeCampaignBuildBrief(baseBrief, {
     mode,
@@ -525,11 +526,17 @@ export function briefMaterialFingerprint(normalized) {
   return { presentation: valueFingerprint(projection.presentation), qa_policy: valueFingerprint(projection.qa_policy) };
 }
 
-function draftCampaignBuildBrief({ spec, activePages, pageMappings, templateFamily, sourceAssetCrawl }) {
+function draftCampaignBuildBrief({ spec, activePages, pageMappings, designFiles, templateFamily, sourceAssetCrawl }) {
   const pageMap = new Map((pageMappings || []).map((page) => [page.page_id, page]));
   // Entry-wise, so a page id named __proto__ stays a page.
   const designAuthority = Object.fromEntries((activePages || []).map((page) => {
     const mapped = pageMap.get(page.id);
+    const design = designFiles.find((entry) => entry.page_id === page.id)?.declaration;
+    if (mapped?.path && design) return [page.id, {
+      source: "design_file", reference: design.file_url,
+      frames: Object.fromEntries(Object.entries(design.frames).map(([viewport, frame]) => [viewport, frame.url])),
+      derived_artifact: { source: "provided_design_export", reference: mapped.path },
+    }];
     return [page.id, {
       source: mapped?.path ? "provided_design_export" : "template",
       reference: mapped?.path || mapped?.skip_reason || `${page.type || "page"} from selected template`,

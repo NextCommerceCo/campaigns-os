@@ -29,6 +29,22 @@ export const QC_DISPOSITION = Object.freeze({ OPEN: "open", OPERATOR_ACCEPTED: "
 const QC_LEG_SOURCES = Object.freeze({ doctor: "doctor_sidecar", qa: "qa_full_verdict" });
 export const QC_POLISH_RECORD_SOURCES = Object.freeze({ media_weight: "polish_media_weight", readability: "polish_readability" });
 
+const DESIGN_ACCESS_TEXT = Object.freeze({
+  design_access_missing: "A design file is recorded for this page, but this version of Campaigns OS cannot read design files. Element parity compares the built page with the page's source HTML export instead, so differences between the export and the design file are not checked. Nothing needs to change to continue. Where it matters, compare the export with the design file by hand.",
+  design_reference_not_recorded: "This page names a design file that the Design Source Package does not record. Rerun intake with `--force` to record it (this resets stage evidence), or continue: element parity still runs against the source HTML.",
+  design_reference_changed: "The design file named for this page differs from the one the Design Source Package records. Rerun intake with `--force` to record the current one.",
+  design_reference_conflict: "The CampaignSpec page and the source-html manifest name different design files or frames for this page (or the manifest's producer file key differs). The package records the CampaignSpec's. Correct the wrong one and rerun intake.",
+});
+export const QC_COVERAGE_TEXT = Object.freeze({ "design.access": Object.freeze({
+  design_access_missing: DESIGN_ACCESS_TEXT.design_access_missing,
+  design_reference_not_recorded: DESIGN_ACCESS_TEXT.design_reference_not_recorded,
+}) });
+export const QC_COVERAGE_LIMIT_TEXT = Object.freeze({});
+
+export function designAccessSummary(row) {
+  return row.check === "design.access" && row.result === "review" ? DESIGN_ACCESS_TEXT[row.reason_code] ?? null : null;
+}
+
 // Null for a Polish check with no record, or a leg with no source.
 export function measuredSourceFor(leg, check) {
   if (leg !== "polish") return Object.hasOwn(QC_LEG_SOURCES, leg) ? QC_LEG_SOURCES[leg] : null;
@@ -338,7 +354,7 @@ function handoffEntry(row) {
     reason_code: row.reason_code,
     accept_eligible: row.accept_eligible === true,
     members: Array.isArray(row.members) ? row.members : [],
-    summary: readabilityPairSummary([row]) ?? `${row.check} ${row.result}${row.reason_code ? ` (${row.reason_code})` : ""} on ${row.subject?.page ?? "(no page)"}${row.subject?.key == null ? "" : `: ${row.subject.key}`}`,
+    summary: designAccessSummary(row) ?? readabilityPairSummary([row]) ?? `${row.check} ${row.result}${row.reason_code ? ` (${row.reason_code})` : ""} on ${row.subject?.page ?? "(no page)"}${row.subject?.key == null ? "" : `: ${row.subject.key}`}`,
     ...(crop === undefined ? {} : { crop }),
   };
 }
@@ -427,6 +443,15 @@ export function buildQcHandoff({ results, coverage = [], accepts, now = new Date
   }
   const grouped = new Map();
   for (const row of results) {
+    for (const limit of new Set(row.coverage?.limits || [])) {
+      const text = QC_COVERAGE_LIMIT_TEXT[row.check]?.[limit];
+      if (!text) continue;
+      const key = JSON.stringify([row.leg, row.check, "limit", limit]);
+      const entry = grouped.get(key) || { check: row.check, leg: row.leg, result: "limit", reason_code: limit, count: 0, pages: [], text };
+      entry.count += 1;
+      if (row.subject?.page != null && !entry.pages.includes(row.subject.page)) entry.pages.push(row.subject.page);
+      grouped.set(key, entry);
+    }
     if (row.result !== "unexercised" && row.result !== "excluded") continue;
     const key = JSON.stringify([row.leg, row.check, row.result, row.reason_code]);
     const entry = grouped.get(key) || { check: row.check, leg: row.leg, result: row.result, reason_code: row.reason_code, count: 0, pages: [] };
@@ -435,7 +460,10 @@ export function buildQcHandoff({ results, coverage = [], accepts, now = new Date
     grouped.set(key, entry);
   }
   const coverageEntries = [...grouped.values(), ...coverage]
-    .map((entry) => ({ ...entry, pages: [...entry.pages].sort(compareText) }))
+    .map((entry) => {
+      const text = entry.text ?? QC_COVERAGE_TEXT[entry.check]?.[entry.reason_code];
+      return { ...entry, pages: [...entry.pages].sort(compareText), ...(text ? { text } : {}) };
+    })
     .sort((a, b) => (LEG_ORDER[a.leg] ?? 9) - (LEG_ORDER[b.leg] ?? 9) || compareText(a.check, b.check) || compareText(a.reason_code, b.reason_code) || compareText(a.result, b.result));
   const openGroups = groupOpenWarnings(open, results);
   review.sort(byCheckKeyPage);
@@ -473,7 +501,7 @@ export function qcHandoffTextLines(handoff) {
     : openLine(entry)));
   section("Review", handoff.review, (entry) => `${entry.result_ref} ${entry.summary}${entry.crop ? ` crop: ${entry.crop}` : ""}${members(entry)}`);
   section("Lapsed accepts", handoff.lapsed, (entry) => `${entry.result_ref} ${entry.summary}; accepted by ${entry.accepted_by} at ${entry.accepted_at}; lapsed: ${entry.why}`);
-  section("Coverage", handoff.coverage, (entry) => `${entry.leg} ${entry.check}: ${entry.result} (${entry.reason_code})${entry.count ? ` x${entry.count}` : ""}${entry.pages.length ? ` on ${entry.pages.join(", ")}` : ""}`);
+  section("Coverage", handoff.coverage, (entry) => `${entry.leg} ${entry.check}: ${entry.result} (${entry.reason_code})${entry.count ? ` x${entry.count}` : ""}${entry.pages.length ? ` on ${entry.pages.join(", ")}` : ""}${entry.text ? ` — ${entry.text}` : ""}`);
   section("Accepted", handoff.accepted, (entry) => `${entry.result_ref} accepted by ${entry.accepted_by} at ${entry.accepted_at}: ${entry.reason}${members(entry)}`);
   section("Inert accepts", handoff.inert_accepts, (entry) => `${entry.result_id ?? "(no result id)"}: ${entry.why}`);
   if (lines.length === 1) lines.push("  (no QC results)");

@@ -20,6 +20,7 @@
 // The table holds only the shipped QC checks. A stand-in check never comes
 // from here: tests pass theirs in-process (qcStandIns).
 export const QC_CHECK_REGISTRY = Object.freeze({
+  "design.access": Object.freeze({ leg: "doctor", unit: "4.1", module: "./parity/design-access.mjs", rederive: "evaluateDesignAccess" }),
   // Tracking params reach the order
   "tracking.url": Object.freeze({ leg: "qa", unit: "1.1", module: "./qa-tracking-params.mjs", rederive: "rederiveQcResult" }),
   "tracking.order": Object.freeze({ leg: "qa", unit: "1.1", module: "./qa-tracking-params.mjs", rederive: "rederiveQcResult" }),

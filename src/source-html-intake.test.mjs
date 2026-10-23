@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
+import Ajv2020 from "ajv/dist/2020.js";
 import {
   createSourceHtmlIntake,
   parseHostPrefixedRoute,
@@ -22,6 +23,127 @@ import { checkoutPathFrom, forwardRouteTarget, isPrePaymentPage } from "../campa
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CLI = resolve(ROOT, "bin/campaigns-os.mjs");
+
+test("P1 schema agreement: identical declaration inputs are accepted by runtime and Ajv, row by row", async (t) => {
+  const { resolveDesignFileReferences } = await import("./design-file-reference.mjs");
+  const schema = JSON.parse(readFileSync(join(ROOT, "schemas/source-html-manifest.v0.schema.json"), "utf8"));
+  const validate = new Ajv2020({ strict: false, allErrors: true }).compile(schema);
+  const url = "https://design.example.test/f";
+  const cases = [
+    ["absent", undefined, false, false],
+    ["null", null, true, false], ["number", 42, true, false], ["string", "invalid", true, false], ["array", [], true, false],
+    ["missing file_url", {}, true, false], ["numeric file_url", { file_url: 42 }, true, false],
+    ["empty file_url", { file_url: "" }, true, false], ["relative URL", { file_url: "/f" }, true, false],
+    ["HTTP", { file_url: "http://design.example.test/f" }, true, false],
+    ["malformed HTTPS", { file_url: "https://" }, true, false],
+    ["HTTPS", { file_url: url }, false, true],
+    ["uppercase HTTPS", { file_url: "HTTPS://design.example.test/f" }, false, true],
+    ["mixed-case HTTPS", { file_url: "hTtPs://design.example.test/f" }, false, true],
+    ["URL whitespace", { file_url: ` ${url} ` }, false, true],
+    ["numeric type", { file_url: url, type: 42 }, false, true],
+    ["null type", { file_url: url, type: null }, false, true],
+    ["empty type", { file_url: url, type: "" }, false, true],
+    ["explicit sketch", { file_url: url, type: "SKETCH" }, false, true],
+    ["numeric breakpoints", { file_url: url, breakpoints: 42 }, false, true],
+    ["null breakpoints", { file_url: url, breakpoints: null }, false, true],
+    ["numeric desktop", { file_url: url, breakpoints: { desktop: 42 } }, true, true],
+    ["invalid mobile", { file_url: url, breakpoints: { mobile: "relative" } }, true, true],
+    ["frame URLs", { file_url: url, breakpoints: { desktop: `${url}?node-id=1-2`, tablet: `${url}?node-id=2-3`, mobile: `${url}?node-id=3-4` } }, false, true],
+    ["additive keys", { file_url: url, extra: 42, breakpoints: { wide: null } }, false, true],
+  ];
+  for (const [name, declaration, warns, recorded] of cases) {
+    await t.test(name, () => {
+      const manifest = { schema_version: SOURCE_HTML_MANIFEST_SCHEMA, pages: [{ page_id: "landing", path: "landing.html", ...(declaration === undefined ? {} : { design_file: declaration }) }] };
+      const runtime = validateSourceHtmlManifest(manifest);
+      assert.equal(runtime.ok, true);
+      assert.equal(runtime.warnings.length > 0, warns);
+      assert.equal(validate(manifest), runtime.ok, JSON.stringify(validate.errors));
+      const resolved = resolveDesignFileReferences({ activePages: [{ id: "landing" }], mappings: [{ page_id: "landing", path: "landing.html" }], manifest });
+      assert.equal(resolved.files.length, recorded ? 1 : 0);
+      if (recorded) assert.equal(resolved.files[0].file_url, declaration.file_url);
+      t.diagnostic(`${name} → runtime accept${warns ? " + warning" : ""}/${recorded ? "recorded" : "ignored"} → schema accept`);
+    });
+  }
+});
+
+test("P1-B4: malformed design_file warns by location and page, without rejecting or changing intake", async (t) => {
+  const { synthesizeHtmlFunnelDesignSourcePackage, serializeDesignSourcePackage } = await import("./design-source-package.mjs");
+  const { resolveDesignFileReferences } = await import("./design-file-reference.mjs");
+  const { evaluateDesignAccess } = await import("./parity/design-access.mjs");
+  const { createCampaignBuildBriefArtifact } = await import("./build-brief.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "design-file-manifest-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, ".campaigns-os"));
+  writeFileSync(join(dir, "landing.html"), "<main>synthetic</main>");
+  const manifest = { schema_version: SOURCE_HTML_MANIFEST_SCHEMA, pages: [{ page_id: "landing", path: "landing.html", design_file: { file_url: 42 } }] };
+  const validation = validateSourceHtmlManifest(manifest);
+  assert.equal(validation.ok, true);
+  assert.deepEqual(validation.warnings, [{ code: "manifest.pages[0].design_file", message: 'manifest.pages[0].design_file (page_id "landing") is ignored as a design-file declaration: file_url must be a non-empty absolute https: URL. The rest of the manifest is used as written.' }]);
+  const args = { activePages: [{ id: "landing", type: "landing" }], mappings: [{ page_id: "landing", path: "landing.html" }], manifest, generatedAt: "2026-08-22T10:00:00.000Z" };
+  assert.deepEqual(resolveDesignFileReferences(args), { pages: [], files: [] });
+  const withInvalid = synthesizeHtmlFunnelDesignSourcePackage(args);
+  assert.deepEqual(evaluateDesignAccess({ ...args, designSourcePackage: withInvalid }), []);
+  const draft = () => createCampaignBuildBriefArtifact({ activePages: args.activePages, pageMappings: args.mappings, designFiles: resolveDesignFileReferences(args).pages }).artifact;
+  const brief = draft();
+  const intake = () => {
+    writeJson(join(dir, ".campaigns-os/source-html-manifest.json"), manifest);
+    return createSourceHtmlIntake({ sourceRoot: dir, specPages: args.activePages, htmlFiles: ["landing.html"], publicRouteSlug: "synthetic", outputDir: "src/synthetic" });
+  };
+  const malformedIntake = intake();
+  delete manifest.pages[0].design_file;
+  const plainIntake = intake();
+  assert.deepEqual(malformedIntake.mappings, plainIntake.mappings);
+  assert.deepEqual(malformedIntake.prompts, plainIntake.prompts);
+  assert.deepEqual(brief.design_authority, draft().design_authority);
+  assert.equal(serializeDesignSourcePackage(withInvalid), serializeDesignSourcePackage(synthesizeHtmlFunnelDesignSourcePackage(args)));
+});
+
+test("P1-B7: duplicate manifest entries keep the BASE duplicate-page prompt", async (t) => {
+  const { synthesizeHtmlFunnelDesignSourcePackage } = await import("./design-source-package.mjs");
+  const { resolveDesignFileReferences } = await import("./design-file-reference.mjs");
+  const { evaluateDesignAccess } = await import("./parity/design-access.mjs");
+  const { createCampaignBuildBriefArtifact } = await import("./build-brief.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "design-file-duplicate-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, ".campaigns-os"));
+  writeFileSync(join(dir, "landing.html"), "<main>synthetic</main>");
+  writeJson(join(dir, ".campaigns-os/source-html-manifest.json"), { schema_version: SOURCE_HTML_MANIFEST_SCHEMA, pages: [
+    { page_id: "landing", path: "landing.html", design_file: { file_url: "https://www.figma.com/design/SYNTHKEYA0001/synthetic-file" } },
+    { page_id: "landing", path: "landing.html", design_file: { file_url: "https://www.figma.com/design/SYNTHKEYB0002/synthetic-other" } },
+  ] });
+  const result = createSourceHtmlIntake({ sourceRoot: dir, specPages: [{ id: "landing", type: "landing" }], htmlFiles: ["landing.html"], publicRouteSlug: "synthetic", outputDir: "src/synthetic" });
+  assert.ok(result.prompts.some((prompt) => prompt.code === "MANIFEST_DUPLICATE_PAGE"));
+  const manifest = readJson(join(dir, ".campaigns-os/source-html-manifest.json"));
+  const args = { activePages: [{ id: "landing", type: "landing" }], mappings: [{ page_id: "landing", path: "landing.html" }], manifest, generatedAt: "2026-08-22T10:00:00.000Z" };
+  const draft = () => createCampaignBuildBriefArtifact({ activePages: args.activePages, pageMappings: args.mappings, designFiles: resolveDesignFileReferences(args).pages }).artifact;
+  // Publication filters ambiguous duplicate groups before the strict DSP
+  // synthesizer; resolution and doctor still receive the raw declarations.
+  const ambiguous = synthesizeHtmlFunnelDesignSourcePackage({ ...args, manifest: { ...manifest, pages: [] } });
+  const ambiguousBrief = draft();
+  assert.deepEqual(ambiguous.contributions.map((entry) => entry.id), ["html-funnel"]);
+  assert.deepEqual(evaluateDesignAccess({ ...args, designSourcePackage: ambiguous }), []);
+  const plainManifest = structuredClone(manifest);
+  plainManifest.pages.forEach((page) => { delete page.design_file; });
+  const plainArgs = { ...args, manifest: plainManifest };
+  assert.deepEqual(ambiguousBrief.design_authority, createCampaignBuildBriefArtifact({ activePages: args.activePages, pageMappings: args.mappings, designFiles: resolveDesignFileReferences(plainArgs).pages }).artifact.design_authority);
+  assert.deepEqual(ambiguous, synthesizeHtmlFunnelDesignSourcePackage({ ...plainArgs, manifest: { ...plainManifest, pages: [] } }));
+  writeJson(join(dir, ".campaigns-os/source-html-manifest.json"), plainManifest);
+  const plainIntake = createSourceHtmlIntake({ sourceRoot: dir, specPages: args.activePages, htmlFiles: ["landing.html"], publicRouteSlug: "synthetic", outputDir: "src/synthetic" });
+  assert.deepEqual(result.prompts, plainIntake.prompts);
+  manifest.pages[1].path = "landing-old.html";
+  const unique = synthesizeHtmlFunnelDesignSourcePackage({ ...args, manifest: { ...manifest, pages: [manifest.pages[0]] } });
+  const sha = createHash("sha256").update('{"file_key":"SYNTHKEYA0001","type":"figma"}').digest("hex");
+  const cid = `design-file-${sha.slice(0, 12)}`;
+  assert.equal(unique.contributions[1].id, cid);
+  assert.deepEqual(unique.contributions[1].source_refs, [{ id: `${cid}-file`, kind: "url", role: "design_file", url: manifest.pages[0].design_file.file_url }]);
+  assert.equal(unique.contributions[0].mappings[0].derived_from, cid);
+  assert.deepEqual(draft().design_authority.landing, { source: "design_file", reference: manifest.pages[0].design_file.file_url, frames: {}, derived_artifact: { source: "provided_design_export", reference: "landing.html" } });
+  const [qc] = evaluateDesignAccess({ ...args, designSourcePackage: unique });
+  assert.equal(qc.result, "unexercised");
+  assert.equal(qc.reason_code, "design_access_missing");
+  assert.equal(qc.accept_eligible, false);
+  assert.deepEqual(qc.state, { reason_code: "design_access_missing", recorded_identity_sha256: sha, declared_identity_sha256: sha, conflict_identities: [], conflict_frames: [] });
+});
 
 function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));
