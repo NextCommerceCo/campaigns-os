@@ -1662,7 +1662,8 @@ export function serializeStaleness(staleness) {
  * OS recorded. docs/readback.md states the rule and its limits for callers
  * gating on it.
  */
-export function computeClean(views, staleness, evidenceDebt = null) {
+export function computeClean(views, staleness, evidenceDebt) {
+  if (evidenceDebt == null) throw new TypeError("computeClean requires an evidence-debt assessment");
   if ([evidenceDebt?.polish, evidenceDebt?.qa].some((stage) => stage?.status === "owed")) return false;
   if (Object.values(views).some((view) => !CLEAN_ARTIFACT_STATES.has(view.state))) return false;
   if (!staleness || !staleness.computable || staleness.stale) return false;
@@ -1698,8 +1699,10 @@ function artifactRowDetail(view, staleness) {
  *
  * `packet_selection` and `staleness` are `null` when a programmatic caller
  * builds a payload without them; the CLI always supplies both.
- * `evidenceDebt` is projectTarget's assessment; when omitted it is explicitly
- * unknown, so this serializer stays pure and does not hash files itself.
+ * `evidenceDebt` is projectTarget's or projectExample's assessment. The default
+ * calls assessEvidenceDebt with no packet inputs, which returns unknown with
+ * packet_unavailable before any filesystem access. Callers with loaded packet
+ * data must supply their computed assessment; this serializer never hashes files.
  */
 export function buildJsonPayload(views, staleness = null, packetSelection = null, evidenceDebt = assessEvidenceDebt()) {
   return {

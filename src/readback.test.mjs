@@ -74,6 +74,7 @@ import {
   classifyDoctorWarning,
   computeDivergences,
   computeDoctorSummary,
+  computeClean,
   computeSkipCascades,
   formatUtc,
   loadArtifact,
@@ -158,6 +159,60 @@ test("evidence debt: matching build keeps both stages current and clean unaffect
   const text = runReadbackCommand({ _: ["readback", root] }).text;
   assert.match(text, /polish: current/);
   assert.match(text, /qa: current/);
+});
+
+test("computeClean requires an explicit evidence-debt assessment", (t) => {
+  const { root } = evidenceDebtFixture(t);
+  const { views, staleness, evidenceDebt } = projectTarget(root);
+  assert.equal(computeClean(views, staleness, evidenceDebt), true, "otherwise clean fixture");
+  assert.throws(() => computeClean(views, staleness), TypeError);
+  for (const missing of [undefined, null]) {
+    assert.throws(() => computeClean(views, staleness, missing), {
+      name: "TypeError", message: /requires an evidence-debt assessment/,
+    });
+  }
+});
+
+test("evidence debt: assets without HTML leave page changes unknown and preserve fingerprint precedence", (t) => {
+  const { root, output, report, saveReport } = evidenceDebtFixture(t);
+  for (const page of ["landing", "checkout"]) rmSync(join(output, page), { recursive: true });
+  const debt = evidenceDebtPayload(root).evidence_debt;
+  assert.equal(debt.changes.status, "unknown");
+  assert.equal(debt.changes.reason, "build_output_pages_unresolved");
+  assert.deepEqual(debt.changes.changed_pages, []);
+  assert.deepEqual(debt.changes.unmapped_files, []);
+  for (const name of ["polish", "qa"]) {
+    assert.equal(debt[name].status, "owed");
+    assert.equal(debt[name].reason, "build_fingerprint_changed");
+  }
+  const current = computeBuildFingerprint(output);
+  report.stages.assembly.build_fingerprint = current.fingerprint;
+  report.stages.assembly.build_manifest = buildManifestEntries(current);
+  report.stages.polish.source_build_fingerprint = current.fingerprint;
+  report.stages.qa.evidence.source_build_fingerprint = current.fingerprint;
+  saveReport();
+  const matching = evidenceDebtPayload(root).evidence_debt;
+  assert.equal(matching.changes.status, "unknown");
+  assert.equal(matching.changes.reason, "build_output_pages_unresolved");
+  assert.equal(matching.polish.status, "current");
+  assert.equal(matching.qa.status, "current");
+});
+
+test("evidence debt: ambiguous nested site slugs cannot claim a resolved page map", (t) => {
+  const { root, output } = evidenceDebtFixture(t);
+  // resolveBuiltSiteScope detects an embedded _site before enumerating pages.
+  for (const slug of ["first", "second"]) {
+    const directory = join(output, "_site", slug);
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(join(directory, "index.html"), `<main>${slug}</main>`);
+  }
+  const debt = evidenceDebtPayload(root).evidence_debt;
+  assert.equal(debt.changes.status, "unknown");
+  assert.equal(debt.changes.reason, "build_output_pages_unresolved");
+  assert.deepEqual(debt.changes.changed_pages, []);
+  assert.deepEqual(debt.changes.unmapped_files, []);
+  assert.equal(debt.polish.status, "owed");
+  assert.equal(debt.qa.status, "owed");
 });
 
 test("evidence debt: page edited and rebuilt owes Polish and QA and names the page", (t) => {
@@ -274,17 +329,43 @@ test("evidence debt: a changed shared asset is unmapped and still owes evidence"
   assert.match(runReadbackCommand({ _: ["readback", root] }).text, /unmapped file: assets\/shared.css/);
 });
 
-test("evidence debt: missing manifest leaves matching bindings unknown", (t) => {
+test("evidence debt: legacy report without a manifest keeps matching bindings current", (t) => {
   const { root, report, saveReport } = evidenceDebtFixture(t);
   delete report.stages.assembly.build_manifest;
   saveReport();
   const payload = evidenceDebtPayload(root);
   for (const name of ["polish", "qa"]) {
-    assert.equal(payload.evidence_debt[name].status, "unknown");
-    assert.equal(payload.evidence_debt[name].reason, "build_manifest_unavailable");
+    assert.equal(payload.evidence_debt[name].status, "current");
+    assert.equal(payload.evidence_debt[name].reason, null);
     assert.equal(payload.evidence_debt[name].matches_current_build, true);
   }
   assert.equal(payload.evidence_debt.changes.status, "unknown");
+  assert.equal(payload.evidence_debt.changes.reason, "build_manifest_unavailable");
+  assert.equal(payload.clean, true);
+});
+
+test("evidence debt: legacy report without a manifest still owes both stages after a rebuild", (t) => {
+  const { root, output, report, original, saveReport } = evidenceDebtFixture(t);
+  delete report.stages.assembly.build_manifest;
+  saveReport();
+  writeFileSync(join(output, "landing", "index.html"), "<main>legacy campaign revised</main>\n");
+  const current = computeBuildFingerprint(output);
+  const payload = evidenceDebtPayload(root);
+  for (const name of ["polish", "qa"]) {
+    assert.deepEqual(payload.evidence_debt[name], {
+      status: "owed", matches_current_build: false,
+      recorded_build_fingerprint: original.fingerprint, current_build_fingerprint: current.fingerprint,
+      reason: "build_fingerprint_changed",
+    });
+  }
+  assert.equal(payload.evidence_debt.changes.status, "unknown");
+  assert.equal(payload.evidence_debt.changes.reason, "build_manifest_unavailable");
+  assert.deepEqual(payload.evidence_debt.changes.changed_pages, []);
+  assert.equal(payload.clean, false);
+  const text = runReadbackCommand({ _: ["readback", root] }).text;
+  assert.match(text, /polish: owed/);
+  assert.match(text, /qa: owed/);
+  assert.match(text, /changes against assembly manifest: unknown \(build_manifest_unavailable\)/);
 });
 
 test("evidence debt: absent recorded fingerprints remain unknown per stage", (t) => {
@@ -2090,8 +2171,13 @@ test("#130: with no HEAD signal no artifact is marked stale", (t) => {
 // ---------------------------------------------------------------------------
 
 test("--example projects the bundled sample as not computable by design", () => {
-  const { views, staleness, packetSelection } = projectExample();
-  const payload = buildJsonPayload(views, staleness, packetSelection);
+  const { views, staleness, packetSelection, evidenceDebt } = projectExample();
+  const payload = buildJsonPayload(views, staleness, packetSelection, evidenceDebt);
+  assert.deepEqual(payload.evidence_debt, evidenceDebt);
+  assert.notEqual(payload.evidence_debt.changes.reason, "packet_unavailable");
+  const { out, code } = runMain(["--example", "--json"]);
+  assert.equal(code, 0);
+  assert.deepEqual(JSON.parse(out).evidence_debt, evidenceDebt);
   assert.equal(payload.schema_version, "campaigns-os-readback/v2");
   assert.deepEqual(states(payload), {
     packet: "loaded",

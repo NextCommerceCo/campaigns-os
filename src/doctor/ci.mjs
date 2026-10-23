@@ -21,6 +21,16 @@ const text = (value) => String(value).replace(/\s/g, " ")
 const code = (value) => `\`${String(value).replace(/\s/g, " ")
   .replace(/[!-/:-@\[-`{-~]/g, (char) => "./_-".includes(char) ? char : `&#${char.charCodeAt(0)};`)}\``;
 
+const unavailablePageChanges = new Map([
+  ["packet_unavailable", "the build packet or its path is unavailable."],
+  ["build_output_location_unknown", "the built output location cannot be determined."],
+  ["build_output_missing", "the built output is missing."],
+  ["build_output_unreadable", "the built output could not be read."],
+  ["assembly_build_fingerprint_missing", "the assembly build fingerprint is missing."],
+  ["build_output_pages_unresolved", "the built output could not be mapped to pages."],
+  ["build_manifest_unavailable", "no usable assembly manifest is available."],
+]);
+
 export function doctorCiFailure(error, { usage = false } = {}) {
   return {
     ok: false, status: "blocked",
@@ -58,15 +68,17 @@ export function formatDoctorCi(result) {
   for (const page of ci.changes.changed_pages) {
     lines.push(`- Changed page: ${code(page.page_id)} (${code(page.built_path)})`);
   }
-  if (!ci.changes.changed_pages.length && owed.length) {
-    lines.push("Changed page ids unavailable: the retained assembly manifest may already describe the rebuilt output.");
+  if (!ci.changes.changed_pages.length && (owed.length || ci.changes.status === "unknown")) {
+    lines.push(ci.changes.status === "unknown"
+      ? `Changed pages unavailable: ${unavailablePageChanges.get(ci.changes.reason) ?? "the page-change reason is unrecognized."}`
+      : "Changed page ids unavailable: the retained assembly manifest may already describe the rebuilt output.");
   }
   for (const stage of ["polish", "qa"]) {
     if (ci[stage].status === "unknown") lines.push(`- Unknown ${stage}: ${code(ci[stage].reason)}`);
   }
   if (ci.changes.status === "unknown") lines.push(`- Unknown page changes: ${code(ci.changes.reason)}`);
   if (ci.status === "owed" || ci.status === "unknown") {
-    lines.push("", "Remedy: build and record the current output; re-run `campaigns-os polish capture --packet <packet> --base-url <served-current-build-url>` and record it with `campaigns-os record polish --packet <packet> --evidence <polish-evidence.json>`. Re-run `campaigns-os qa run --packet <packet>` to record QA for this build.");
+    lines.push("", "Remedy: rebuild, then run `campaigns-os record build --packet <packet>`, `campaigns-os polish capture --packet <packet> --base-url <served-current-build-url>` for the whole route, and `campaigns-os record polish --packet <packet> --evidence <polish-evidence.json>`, in that order. When QA is owed, run `campaigns-os qa run --packet <packet>` against that build.");
   }
   lines.push("", `Doctor inspection: ${(result.errors || []).length} error(s), ${(result.warnings || []).length} warning(s); CI exit status depends only on evidence debt.`);
   if (result.errors?.length) {

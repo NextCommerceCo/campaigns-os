@@ -450,17 +450,17 @@ the Polish gate. QA uses `stages.qa.evidence.qc_build_fingerprint`, falling back
 to `source_build_fingerprint`, and the same build-binding comparison as `next`.
 It does not require uncommitted capture files to be present.
 
-`current` means the stage's binding equals the bytes on disk and a usable
-assembly fingerprint/manifest is available. `owed` means that binding differs
-from the current build. **`unknown` never means no debt.** Missing built
-output, a missing recorded fingerprint, or a missing/unusable assembly manifest
-makes the affected stage explicitly `unknown`. The reason codes are
+`current` means the stage's binding equals the bytes on disk and the assembly
+fingerprint is available. `owed` means that binding differs from the current
+build. Both comparisons work without a manifest, including reports recorded
+before manifests existed. **`unknown` never means no debt.** Missing or unreadable
+built output, a missing assembly fingerprint, or a missing stage fingerprint
+makes the affected stage explicitly `unknown`. The stage reason codes are
 `packet_unavailable`, `build_output_location_unknown`, `build_output_missing`,
-`build_output_unreadable`, `assembly_build_fingerprint_missing`,
-`build_manifest_unavailable`, and `stage_build_fingerprint_missing`. A manifest
-is usable only if its entries hash to the assembly's recorded fingerprint.
+`build_output_unreadable`, `assembly_build_fingerprint_missing`, and
+`stage_build_fingerprint_missing`.
 When both stage and disk fingerprints are available, `matches_current_build`
-still reports their equality even if the missing manifest makes status unknown.
+reports their equality even if a missing assembly fingerprint makes status unknown.
 
 `changes` compares current output to **the retained assembly manifest**, using
 the existing file drift machinery. It carries:
@@ -479,6 +479,12 @@ Paths are relative to `_site/<public_route_slug>/` and sorted; page IDs use
 `resolveBuiltSiteScope`'s route-derived identities (nested routes use hyphens).
 Removed HTML uses that same route/ID projection. Empty lists with
 `changes.status: unknown` do not establish that no pages changed.
+A missing or unusable manifest makes only `changes.status` unknown, with
+`build_manifest_unavailable` as its reason. A manifest is usable only if its
+entries hash to the assembly's recorded fingerprint.
+If the built page map cannot be resolved (for example, output contains assets
+but no HTML), page changes are unknown with `build_output_pages_unresolved`;
+stage bindings still follow the fingerprint comparison.
 
 The assembly baseline is explicit because it need not equal an older stage's
 binding. If a later `record build` replaced that manifest, readback can still

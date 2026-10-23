@@ -96,6 +96,13 @@ test("doctor --ci page edited and rebuilt exits 3 and Markdown names page and re
   assert.match(markdown.stdout, /polish capture/);
   assert.match(markdown.stdout, /record polish.*--evidence/);
   assert.match(markdown.stdout, /qa run/);
+  const remedyCommands = [...markdown.stdout.split("Remedy:")[1].matchAll(/`(campaigns-os [^`]+)`/g)].map((match) => match[1]);
+  assert.deepEqual(remedyCommands, [
+    "campaigns-os record build --packet <packet>",
+    "campaigns-os polish capture --packet <packet> --base-url <served-current-build-url>",
+    "campaigns-os record polish --packet <packet> --evidence <polish-evidence.json>",
+    "campaigns-os qa run --packet <packet>",
+  ], "the remedy must record the rebuilt output before capturing and recording new evidence");
   t.diagnostic(`Observed page-edited stdout (exit ${markdown.status}):\n${markdown.stdout}`);
 });
 
@@ -135,10 +142,71 @@ test("doctor --ci missing built output exits 4 and reports unknown reasons", (t)
   assert.match(markdown.stdout, /Remedy:/);
 });
 
-for (const missing of ["manifest", "polish fingerprint", "qa fingerprint", "assembly fingerprint", "report"]) {
+for (const [reason, sentence] of [
+  ["packet_unavailable", "the build packet or its path is unavailable."],
+  ["build_output_location_unknown", "the built output location cannot be determined."],
+  ["build_output_missing", "the built output is missing."],
+  ["build_output_unreadable", "the built output could not be read."],
+  ["assembly_build_fingerprint_missing", "the assembly build fingerprint is missing."],
+  ["build_output_pages_unresolved", "the built output could not be mapped to pages."],
+  ["build_manifest_unavailable", "no usable assembly manifest is available."],
+]) {
+  test(`CI Markdown explains unknown page changes: ${reason}`, () => {
+    for (const status of ["unknown", "owed"]) {
+      const markdown = formatDoctorCi({ ci: {
+        status, exit_code: status === "owed" ? 3 : 4,
+        polish: { status, reason }, qa: { status, reason },
+        changes: { status: "unknown", reason, changed_pages: [] },
+      } });
+      assert.equal(markdown.split("\n").find((line) => line.startsWith("Changed pages unavailable:")),
+        `Changed pages unavailable: ${sentence}`);
+      assert.ok(markdown.includes(`Unknown page changes: \`${reason}\``));
+    }
+  });
+}
+
+test("doctor --ci assets-only output with a valid manifest explains unresolved pages", (t) => {
+  const f = fixture(t);
+  rmSync(f.output, { recursive: true });
+  mkdirSync(f.output, { recursive: true });
+  writeFileSync(join(f.output, "styles.css"), "body { color: blue; }\n");
+  const payload = jsonCi(f, 3);
+  assert.equal(payload.ci.changes.reason, "build_output_pages_unresolved");
+  assert.ok(payload.ci.changes.missing.includes("landing/index.html"), "the retained manifest is usable");
+  const markdown = run(f, "--ci");
+  assert.equal(markdown.status, 3);
+  assert.match(markdown.stdout, /Changed pages unavailable: the built output could not be mapped to pages\./);
+  assert.doesNotMatch(markdown.stdout, /no usable assembly manifest is available/);
+});
+
+for (const changed of [false, true]) {
+  test(`doctor --ci legacy report without a manifest ${changed ? "owes both stages and exits 3" : "has current bindings and exits 0"}`, (t) => {
+    const f = fixture(t);
+    delete f.report.stages.assembly.build_manifest;
+    f.save();
+    if (changed) writeFileSync(join(f.output, "landing", "index.html"), "<main>legacy campaign revised</main>\n");
+    const exit = changed ? 3 : 0;
+    const status = changed ? "owed" : "current";
+    const payload = jsonCi(f, exit);
+    assert.equal(payload.ci.status, status);
+    for (const name of ["polish", "qa"]) {
+      assert.equal(payload.ci[name].status, status);
+      assert.equal(payload.ci[name].matches_current_build, !changed);
+      assert.equal(payload.ci[name].reason, changed ? "build_fingerprint_changed" : null);
+    }
+    assert.equal(payload.ci.changes.status, "unknown");
+    assert.equal(payload.ci.changes.reason, "build_manifest_unavailable");
+    const markdown = run(f, "--ci");
+    assert.equal(markdown.status, exit);
+    assert.match(markdown.stdout, changed ? /Owed stages: polish, qa\./ : /Owed stages: none\./);
+    assert.match(markdown.stdout, /Unknown page changes: `build_manifest_unavailable`/);
+    if (changed) assert.match(markdown.stdout, /Changed pages unavailable:/);
+  });
+}
+
+for (const missing of ["polish fingerprint", "qa fingerprint", "assembly fingerprint", "report"]) {
   test(`doctor --ci missing ${missing} exits 4`, (t) => {
     const f = fixture(t);
-    if (missing === "manifest") delete f.report.stages.assembly.build_manifest;
     if (missing === "assembly fingerprint") delete f.report.stages.assembly.build_fingerprint;
     if (missing === "polish fingerprint") delete f.report.stages.polish.source_build_fingerprint;
     if (missing === "qa fingerprint") delete f.report.stages.qa.evidence.source_build_fingerprint;

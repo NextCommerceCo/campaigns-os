@@ -6,7 +6,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
 
 concurrency:
   group: campaign-evidence-${{ github.event.pull_request.number }}
@@ -15,6 +14,10 @@ concurrency:
 jobs:
   evidence:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      exit_code: ${{ steps.doctor.outputs.exit_code }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -24,8 +27,7 @@ jobs:
       - run: npm ci
       - name: Build the campaign site
         run: |
-          mkdir -p .campaign-runtime
-          npx --no-install campaign-build --json > .campaign-runtime/page-kit-build-summary.json
+          npx --no-install campaign-build --json > "$RUNNER_TEMP/page-kit-build-summary.json"
         env:
           # Match the environment recorded on the Assembly Report. The
           # documented local-proof flow records a development render.
@@ -39,21 +41,58 @@ jobs:
           # Only formatted stdout belongs in the PR comment; stderr stays in the job log.
           npx --no-install campaigns-os doctor --packet ./campaign-runtime.build.json --ci --no-live-refs > "$RUNNER_TEMP/campaign-evidence.md"
           status=$?
+          status=${status:-1}
           echo "exit_code=$status" >> "$GITHUB_OUTPUT"
           cat "$RUNNER_TEMP/campaign-evidence.md"
           exit "$status"
+      - name: Prepare fallback report
+        if: ${{ !cancelled() && steps.doctor.outputs.exit_code == '' }}
+        run: |
+          printf '%s\n' 'Campaign build failed; evidence not evaluated. See the job log.' > "$RUNNER_TEMP/campaign-evidence.md"
+      - name: Upload evidence report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: campaign-evidence-report
+          path: ${{ runner.temp }}/campaign-evidence.md
+          if-no-files-found: error
+
+  comment:
+    needs: evidence
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Download evidence report
+        uses: actions/download-artifact@v4
+        # A failed evidence job may have been unable to upload a report.
+        continue-on-error: true
+        with:
+          name: campaign-evidence-report
+          path: ${{ runner.temp }}/campaign-evidence-report
       - name: Post or update the evidence comment
-        if: ${{ !cancelled() && steps.doctor.outputs.exit_code != '' }}
+        if: ${{ !cancelled() }}
         # Fork PR tokens may be read-only. Keep the report in the job log and
         # let only the explicit enforcement step fail on evidence findings.
         continue-on-error: true
         uses: actions/github-script@v7
+        env:
+          DOCTOR_EXIT_CODE: ${{ needs.evidence.outputs.exit_code }}
         with:
           script: |
             const fs = require('node:fs');
             const path = require('node:path');
             const marker = '<!-- campaign-evidence-check -->';
-            const report = fs.readFileSync(path.join(process.env.RUNNER_TEMP, 'campaign-evidence.md'), 'utf8') || 'Campaign evidence could not be evaluated. See the job log.';
+            let report = 'Campaign build failed; evidence not evaluated. See the job log.';
+            if (process.env.DOCTOR_EXIT_CODE) {
+              report = 'Campaign evidence could not be evaluated. See the job log.';
+              try {
+                report = fs.readFileSync(path.join(process.env.RUNNER_TEMP, 'campaign-evidence-report', 'campaign-evidence.md'), 'utf8') || report;
+              } catch (error) {
+                if (error.code !== 'ENOENT') throw error;
+              }
+            }
             const body = `${marker}\n${report}`;
             const params = { ...context.repo, issue_number: context.issue.number };
             const comments = await github.paginate(github.rest.issues.listComments, { ...params, per_page: 100 });
@@ -64,5 +103,5 @@ jobs:
               await github.rest.issues.createComment({ ...params, body });
             }
       - name: Optionally enforce evidence debt
-        if: ${{ !cancelled() && vars.CAMPAIGNS_OS_EVIDENCE_CHECK == 'fail' && steps.doctor.outputs.exit_code != '' && steps.doctor.outputs.exit_code != '0' }}
+        if: ${{ !cancelled() && vars.CAMPAIGNS_OS_EVIDENCE_CHECK == 'fail' && needs.evidence.outputs.exit_code != '' && needs.evidence.outputs.exit_code != '0' }}
         run: exit 1

@@ -21,7 +21,7 @@ Pause only for missing inputs, doctor blockers, blocked deploys, out-of-scope ru
 
 Keep a standing pull-request check after launch: install locked dependencies
 with `npm ci`, build the campaign site with
-`CPK_ENV=development npx --no-install campaign-build --json > .campaign-runtime/page-kit-build-summary.json`,
+`CPK_ENV=development npx --no-install campaign-build --json > "$RUNNER_TEMP/page-kit-build-summary.json"`,
 then run `npx --no-install campaigns-os doctor --packet <packet> --ci --no-live-refs`.
 Run these from the Page Kit folder containing the pinned tools and committed
 packet, local CampaignSpec, Build Context and Assembly Report. The site build
@@ -35,7 +35,7 @@ a production render instead. Environment differences also change fingerprints.
 |---|---|---|
 | `current` | `0` | Polish and QA both bind to the build on disk. |
 | `owed` | `3` | Polish or QA binds to another build; evidence is owed. |
-| `unknown` | `4` | Output, fingerprints or the recorded manifest are missing, or inspection throws; debt cannot be determined. |
+| `unknown` | `4` | Output or recorded fingerprints are missing, output is unreadable, or inspection throws; debt cannot be determined. |
 | `usage` | `2` | The packet is missing, unreadable or invalid JSON. |
 
 Any owed stage returns 3; otherwise an unknown stage returns 4. Normal
@@ -47,6 +47,8 @@ an escaped Markdown report, including a "could not evaluate" report for packet
 usage errors (exit 2) or inspection failures (exit 4). Page changes are compared
 with the retained assembly manifest, so the page list may be empty if that
 manifest was already updated; old Polish/QA bindings still show debt.
+Without a usable manifest, page changes are unknown, but matching stage
+bindings remain current and differing bindings remain owed.
 The check reads recorded fingerprints, not machine-local capture files.
 Readback's `evidence_debt` uses the same assessment, showing an agent this debt
 before it edits; its separate time-based staleness assessment is not the CI signal.
@@ -56,6 +58,8 @@ campaign repository and adjust the packet path. It posts or updates one PR
 comment using the fixed `<!-- campaign-evidence-check -->` marker. Evidence
 reports use stdout only; stderr stays in the job log. If the command produces
 no stdout, the comment points to the job log with a fixed fallback message.
+If install or build fails before doctor runs, the comment is updated with
+"Campaign build failed; evidence not evaluated. See the job log."
 Evidence findings are **report-only by default**. Opt in to failing on a nonzero doctor
 exit by setting the repository Actions variable
 `CAMPAIGNS_OS_EVIDENCE_CHECK` to `fail`. Install/build failures still fail normally.

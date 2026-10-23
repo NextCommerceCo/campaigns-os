@@ -1180,8 +1180,9 @@ async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = nul
 
   if (command === "install-agent-context") {
     const target = requireArg(args, "target");
-    const result = installAgentContext(resolve(target), Boolean(args["dry-run"]));
-    if (args["dry-run"] && !args.json) {
+    const dryRun = isDryRun(args);
+    const result = installAgentContext(resolve(target), dryRun);
+    if (dryRun && !args.json) {
       for (const file of result.file_contents) {
         console.log(`Destination: ${file.destination}\n${file.content}`);
       }

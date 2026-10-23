@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdtempSync, rmSync, mkdirSync, copyFileSync, existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -10,23 +10,34 @@ import { parse } from "yaml";
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 const workflow = parse(read("docs/examples/campaign-repo-evidence-check.yml"));
 const steps = workflow.jobs.evidence.steps;
-const comment = steps.find((step) => step.uses?.startsWith("actions/github-script@"));
+const commentSteps = workflow.jobs.comment.steps;
+const comment = commentSteps.find((step) => step.uses?.startsWith("actions/github-script@"));
+const upload = steps.find((step) => step.uses?.startsWith("actions/upload-artifact@"));
+const download = commentSteps.find((step) => step.uses?.startsWith("actions/download-artifact@"));
+const temporaryPath = (path, root) => path.replace("${{ runner.temp }}", root);
+const downloadedReport = (root) => join(temporaryPath(download.with.path, root), "campaign-evidence.md");
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 
-async function postReport(root) {
+// Model Actions' file handoff using the paths in the actual upload/download steps.
+function deliverReport(root) {
+  mkdirSync(temporaryPath(download.with.path, root), { recursive: true });
+  copyFileSync(temporaryPath(upload.with.path, root), downloadedReport(root));
+}
+
+async function postReport(root, { exitCode = "2", existing = false } = {}) {
   const writes = [];
   const github = {
-    paginate: async () => [],
+    paginate: async () => existing ? [{ id: 42, user: { login: "github-actions[bot]" }, body: "<!-- campaign-evidence-check -->\n## Campaign evidence: current (exit 0)" }] : [],
     rest: { issues: {
       listComments: "listComments",
-      createComment: async (args) => writes.push(args),
-      updateComment: async () => assert.fail("no existing comment"),
+      createComment: async (args) => { assert.equal(existing, false); writes.push(args); },
+      updateComment: async (args) => { assert.equal(existing, true); assert.equal(args.comment_id, 42); writes.push(args); },
     } },
   };
   await new AsyncFunction("require", "github", "context", "process", comment.with.script)(
     createRequire(import.meta.url), github,
     { repo: { owner: "placeholder", repo: "placeholder" }, issue: { number: 7 } },
-    { env: { RUNNER_TEMP: root } },
+    { env: { RUNNER_TEMP: root, DOCTOR_EXIT_CODE: exitCode } },
   );
   assert.equal(writes.length, 1);
   return writes[0].body;
@@ -59,6 +70,7 @@ process.exit(result.status ?? 1);
     },
   });
   assert.equal(result.error, undefined);
+  deliverReport(root);
   return { root, result };
 }
 
@@ -92,11 +104,45 @@ test("stderr-only failure stays in the job log and out of the real workflow comm
   assert.equal(body, '<!-- campaign-evidence-check -->\nCampaign evidence could not be evaluated. See the job log.');
 });
 
+test("workflow replaces the sticky all-clear when install or build fails before doctor runs", async (t) => {
+  // GitHub skips doctor and leaves its output empty after either earlier failure.
+  assert.match(comment.if, /!cancelled\(\)/);
+  assert.doesNotMatch(comment.if, /steps\.doctor\.outputs\.exit_code/,
+    "a skipped doctor must not skip the comment step");
+  assert.equal(comment.env.DOCTOR_EXIT_CODE, "${{ needs.evidence.outputs.exit_code }}");
+  const root = mkdtempSync(join(tmpdir(), "doctor-ci-skipped-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  for (const staleFile of [false, true]) {
+    if (staleFile) {
+      writeFileSync(join(root, "campaign-evidence.md"), "## Campaign evidence: current (exit 0)\n![](//a.b)\n");
+      deliverReport(root);
+    }
+    for (const existing of [true, false]) {
+      const body = await postReport(root, { exitCode: "", existing });
+      assert.equal(body, "<!-- campaign-evidence-check -->\nCampaign build failed; evidence not evaluated. See the job log.");
+    }
+  }
+});
+
 test("workflow invokes doctor CI offline, reports by default and gates only on documented opt-in", async () => {
   const { DOCTOR_CI_EXIT_CODES } = await import("./doctor/ci.mjs");
   assert.ok(Object.hasOwn(workflow.on, "pull_request"));
   assert.equal(Object.hasOwn(workflow.on, "pull_request_target"), false);
-  assert.deepEqual(workflow.permissions, { contents: "read", "pull-requests": "write" });
+  assert.deepEqual(workflow.permissions, { contents: "read" });
+  assert.deepEqual(Object.keys(workflow.jobs), ["evidence", "comment"]);
+  assert.deepEqual(workflow.jobs.evidence.permissions, { contents: "read" });
+  assert.deepEqual(workflow.jobs.comment.permissions, { "pull-requests": "write" });
+  assert.equal(workflow.jobs.comment.needs, "evidence");
+  assert.match(workflow.jobs.comment.if, /!cancelled\(\)/, "comment job runs after a failed evidence job");
+  assert.deepEqual(workflow.jobs.evidence.outputs, { exit_code: "${{ steps.doctor.outputs.exit_code }}" });
+  assert.ok(commentSteps.every((step) => !step.uses?.startsWith("actions/checkout@")), "write-scoped job never checks out PR code");
+  assert.ok(commentSteps.every((step) => !step.run || step.run === "exit 1"), "write-scoped job never executes campaign commands");
+  assert.equal(comment.with.script.includes("${{"), false, "PR expressions cannot become JavaScript source");
+  assert.equal(upload.with.name, download.with.name);
+  assert.equal(upload.with["if-no-files-found"], "error");
+  assert.match(upload.if, /!cancelled\(\)/);
+  assert.equal(download["continue-on-error"], true, "missing artifacts must not leave a stale comment");
+  assert.ok(commentSteps.indexOf(download) < commentSteps.indexOf(comment));
   assert.ok(steps.some((step) => step.uses?.startsWith("actions/checkout@")));
   assert.ok(steps.some((step) => step.uses?.startsWith("actions/setup-node@")));
   assert.ok(steps.some((step) => step.run === "npm ci"));
@@ -110,9 +156,9 @@ test("workflow invokes doctor CI offline, reports by default and gates only on d
   assert.match(doctor.run, /echo "exit_code=\$status" >> "\$GITHUB_OUTPUT"/);
   assert.match(doctor.run, /cat "\$RUNNER_TEMP\/campaign-evidence\.md"/);
   assert.match(doctor.run, /exit "\$status"/);
-  const enforcement = steps.at(-1);
+  const enforcement = commentSteps.at(-1);
   assert.match(enforcement.if, /vars\.CAMPAIGNS_OS_EVIDENCE_CHECK == 'fail'/);
-  assert.match(enforcement.if, /steps\.doctor\.outputs\.exit_code != '0'/);
+  assert.match(enforcement.if, /needs\.evidence\.outputs\.exit_code != '0'/);
   assert.equal(enforcement.run, "exit 1");
   const docs = read("docs/campaigns-os-build-flow.md");
   assert.match(docs, /CAMPAIGNS_OS_EVIDENCE_CHECK` to `fail`/);
@@ -123,7 +169,7 @@ test("workflow invokes doctor CI offline, reports by default and gates only on d
 });
 
 test("workflow uses the same sticky marker when searching, updating and creating", async (t) => {
-  const comment = steps.find((step) => step.uses?.startsWith("actions/github-script@"));
+  const comment = commentSteps.find((step) => step.uses?.startsWith("actions/github-script@"));
   assert.match(comment.uses, /^actions\/github-script@v\d+$/);
   assert.equal(comment["continue-on-error"], true, "a read-only fork token must not turn report-only into enforcement");
   const marker = comment.with.script.match(/const marker = '([^']+)'/)[1];
@@ -131,6 +177,7 @@ test("workflow uses the same sticky marker when searching, updating and creating
   const root = mkdtempSync(join(tmpdir(), "doctor-ci-comment-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   writeFileSync(join(root, "campaign-evidence.md"), "## Campaign evidence: owed (exit 3)\n");
+  deliverReport(root);
   const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
   const execute = new AsyncFunction("require", "github", "context", "process", comment.with.script);
   for (const existing of [true, false]) {
@@ -150,11 +197,63 @@ test("workflow uses the same sticky marker when searching, updating and creating
         createComment: async (args) => writes.push({ method: "create", ...args }),
       } },
     };
-    await execute(createRequire(import.meta.url), github, { repo: { owner: "placeholder", repo: "placeholder" }, issue: { number: 7 } }, { env: { RUNNER_TEMP: root } });
+    await execute(createRequire(import.meta.url), github, { repo: { owner: "placeholder", repo: "placeholder" }, issue: { number: 7 } }, { env: { RUNNER_TEMP: root, DOCTOR_EXIT_CODE: "3" } });
     assert.equal(writes.length, 1);
     assert.equal(writes[0].method, existing ? "update" : "create");
     assert.equal(writes[0].body, `${marker}\n## Campaign evidence: owed (exit 3)\n`);
     if (existing) assert.equal(writes[0].comment_id, 42);
     else assert.equal(writes[0].issue_number, 7);
+  }
+});
+
+
+test("workflow stores the build summary under RUNNER_TEMP without checkout residue", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "doctor-ci-build-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const checkout = join(root, "checkout");
+  const runnerTemp = join(root, "runner-temp");
+  for (const path of [checkout, runnerTemp]) mkdirSync(path);
+  writeFileSync(join(root, "npx"), `#!/bin/sh\nprintf '%s\\n' '{"built":true}'\n`, { mode: 0o755 });
+  const build = steps.find((step) => step.run?.includes("npx --no-install campaign-build --json"));
+  const result = spawnSync("/bin/bash", ["-e", "-c", build.run], {
+    cwd: checkout, encoding: "utf8",
+    env: { ...process.env, PATH: `${root}:/usr/bin:/bin`, RUNNER_TEMP: runnerTemp },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(readFileSync(join(runnerTemp, "page-kit-build-summary.json"), "utf8")), { built: true });
+  assert.equal(existsSync(join(checkout, ".campaign-runtime")), false);
+  assert.equal(build["continue-on-error"], undefined, "build failures still fail the evidence job");
+});
+
+test("skipped doctor fallback overwrites an old report and missing artifacts clear the comment", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "doctor-ci-fallback-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const fallback = steps.find((step) => step.name === "Prepare fallback report");
+  assert.match(fallback.if, /!cancelled\(\).*steps\.doctor\.outputs\.exit_code == ''/);
+  writeFileSync(join(root, "campaign-evidence.md"), "old all-clear");
+  const result = spawnSync("/bin/bash", ["-e", "-c", fallback.run], {
+    encoding: "utf8", env: { ...process.env, RUNNER_TEMP: root },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(readFileSync(join(root, "campaign-evidence.md"), "utf8"), "Campaign build failed; evidence not evaluated. See the job log.\n");
+  assert.equal(await postReport(root, { exitCode: "3", existing: true }),
+    "<!-- campaign-evidence-check -->\nCampaign evidence could not be evaluated. See the job log.");
+});
+
+test("workflow defaults an empty or unset doctor status to failure before publishing it", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "doctor-ci-status-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeFileSync(join(root, "campaign-evidence.md"), "report");
+  const doctor = steps.find((step) => step.id === "doctor");
+  const tail = doctor.run.slice(doctor.run.indexOf("status=$?\n") + "status=$?\n".length);
+  for (const status of [undefined, "", "0", "3"]) {
+    const env = { ...process.env, RUNNER_TEMP: root, GITHUB_OUTPUT: join(root, "outputs") };
+    delete env.status;
+    if (status !== undefined) env.status = status;
+    writeFileSync(env.GITHUB_OUTPUT, "");
+    const result = spawnSync("/bin/bash", ["-e", "-c", tail], { encoding: "utf8", env });
+    const expected = status || "1";
+    assert.equal(result.status, Number(expected), result.stderr);
+    assert.equal(readFileSync(env.GITHUB_OUTPUT, "utf8"), `exit_code=${expected}\n`);
   }
 });

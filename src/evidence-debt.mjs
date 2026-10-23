@@ -10,6 +10,7 @@ import {
   routeForFile,
 } from "./built-site-scope.mjs";
 import { normalizePublicRouteSlug } from "./route-identity.mjs";
+import { isFileReadFailure } from "./cart-placeholders.mjs";
 import { qaRecordedBuildFingerprint, qaRecordedForCurrentBuild } from "./stage-ledger.mjs";
 
 export const EVIDENCE_DEBT_STATUSES = Object.freeze(["current", "owed", "unknown"]);
@@ -35,6 +36,7 @@ export function assessEvidenceDebt({ packet = null, packetPath = null, report = 
   let scope = null;
   let outputRoot = null;
   let reason = null;
+  let scopeReason = null;
   const target = fingerprint(packet?.assembly?.target_repo);
   const slug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
   if (!packet || !packetPath) reason = "packet_unavailable";
@@ -47,9 +49,12 @@ export function assessEvidenceDebt({ packet = null, packetPath = null, report = 
       if (!current.ok) reason = "build_output_missing";
       // Resolve only the chosen built directory: never discover another
       // campaign, or fall back to source HTML when _site is absent.
-      else scope = resolveBuiltSiteScope(outputRoot);
+      else {
+        scope = resolveBuiltSiteScope(outputRoot);
+        if (!scope.ok) scopeReason = "build_output_pages_unresolved";
+      }
     } catch (error) {
-      if (typeof error?.code !== "string") throw error;
+      if (!isFileReadFailure(error)) throw error;
       reason = "build_output_unreadable";
       current = null;
     }
@@ -57,19 +62,20 @@ export function assessEvidenceDebt({ packet = null, packetPath = null, report = 
   const currentBuild = current?.ok ? current.fingerprint : null;
   const drift = currentBuild ? describeBuildOutputDrift(assembly, current) : null;
   const manifestKnown = drift?.manifest === "recorded";
-  const sharedReason = reason || (!recordedBuild ? "assembly_build_fingerprint_missing"
-    : !manifestKnown ? "build_manifest_unavailable" : null);
+  // A missing manifest hides page changes, never a known stage binding.
+  const bindingReason = reason || (!recordedBuild ? "assembly_build_fingerprint_missing" : null);
+  const changesReason = bindingReason || scopeReason || (!manifestKnown ? "build_manifest_unavailable" : null);
   const stage = (recorded, matches) => ({
-    status: sharedReason || !recorded ? "unknown" : matches ? "current" : "owed",
+    status: bindingReason || !recorded ? "unknown" : matches ? "current" : "owed",
     matches_current_build: recorded && currentBuild ? matches : null,
     recorded_build_fingerprint: recorded,
     current_build_fingerprint: currentBuild,
-    reason: sharedReason || (!recorded ? "stage_build_fingerprint_missing" : matches ? null : "build_fingerprint_changed"),
+    reason: bindingReason || (!recorded ? "stage_build_fingerprint_missing" : matches ? null : "build_fingerprint_changed"),
   });
 
   const changes = {
-    status: sharedReason ? "unknown" : "known",
-    reason: sharedReason,
+    status: changesReason ? "unknown" : "known",
+    reason: changesReason,
     recorded_build_fingerprint: recordedBuild,
     current_build_fingerprint: currentBuild,
     changed_pages: [],
@@ -78,7 +84,7 @@ export function assessEvidenceDebt({ packet = null, packetPath = null, report = 
     missing: manifestKnown ? drift.missing : [],
     changed: manifestKnown ? drift.changed : [],
   };
-  if (manifestKnown) {
+  if (manifestKnown && scope?.ok) {
     const pages = new Map((scope?.pages || []).map((page) => [
       portable(relative(outputRoot, page.built_path)),
       { page_id: page.page_id, built_path: portable(relative(outputRoot, page.built_path)) },

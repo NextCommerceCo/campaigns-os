@@ -8926,7 +8926,7 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.60.0+agent.8",
-      "changelog_sha256": "fd0011336938684d2159c9cd133f666e36ca4f3c45bf0df2c548020b6dadba44",
+      "changelog_sha256": "215484920e96c9e99d781ba2de4f0038500ffc3050137eae80e33bd157e2a0b1",
       "agent_impact": "Read evidence_debt before revising a campaign and renew owed Polish/QA evidence for the current build. Use doctor --ci for a standing PR check, with exits 0 current, 3 owed, 4 unknown and 2 for packet usage errors. The example reports evidence findings by default; enforcement requires CAMPAIGNS_OS_EVIDENCE_CHECK=fail. Installed agent context carries the live-revision procedure, and install-agent-context --dry-run previews destination content without writes.",
       "compatibility": "additive",
       "migration": "none",
@@ -8992,7 +8992,7 @@
           "summary": "Add the shared CI evidence assessment to packet doctor inspection without changing ordinary doctor behavior."
         }
       ],
-      "entry_sha256": "7dd092d912b8c1f7598c8712eb8bce5065e635a9105d5843a55549741b20798f"
+      "entry_sha256": "4d62cb68b84287c2418ac0052c4d1deef472501f0422687089b974a51eccdc03"
     }
   ]
 }

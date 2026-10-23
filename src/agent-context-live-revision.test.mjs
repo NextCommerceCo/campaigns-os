@@ -14,13 +14,19 @@ const SOURCES = [
   ["copilot-instructions.md", "agents/copilot/copilot-instructions.md"],
 ];
 const HEADING = "## Revising a live campaign";
+const REVISION_COMMANDS = [
+  "npx --no-install campaigns-os record build --packet campaign-runtime.build.json",
+  "npx --no-install campaigns-os polish capture --packet campaign-runtime.build.json --base-url <served-current-build-url>",
+  "npx --no-install campaigns-os record polish --packet campaign-runtime.build.json --evidence <polish-evidence.json>",
+  "npx --no-install campaigns-os qa run --packet campaign-runtime.build.json",
+];
 const STEPS = [
   "1. Before editing, run `npx --no-install campaigns-os readback .` and `npx --no-install campaigns-os next --packet campaign-runtime.build.json`. Readback's `evidence_debt` compares the build on disk with the builds Polish and QA were recorded for. Changed pages are listed against the recorded assembly build manifest; an owed stage with an empty page list still means evidence is owed.",
   "2. For pages built from a provided design, the Design Source Package is the authority, not the punch list's wording.",
-  "3. Before opening the pull request, after the final edit, rebuild and re-run `npx --no-install campaigns-os polish capture --packet campaign-runtime.build.json --base-url <served-current-build-url>` for the changed pages; record Polish and any owed QA against that build.",
+  `3. Before opening the pull request, after the final edit, rebuild, then run \`${REVISION_COMMANDS[0]}\`, \`${REVISION_COMMANDS[1]}\` for the whole route, and \`${REVISION_COMMANDS[2]}\`, in that order. When QA is owed, run \`${REVISION_COMMANDS[3]}\` against that build.`,
   "4. In the pull request body, put the design reference and the preview of each changed page side by side.",
 ];
-const STANDING_CHECK = "The standing pull-request check is `npx --no-install campaigns-os doctor --ci --packet campaign-runtime.build.json`, report-only unless the repo opts in.";
+const STANDING_CHECK = "The standing pull-request check is `npx --no-install campaigns-os doctor --ci --packet campaign-runtime.build.json --no-live-refs`, report-only unless the repo opts in.";
 const normalized = (text) => text.replace(/\s+/g, " ").trim();
 
 // Read the CLI's own usage table, rather than copying its required flags here.
@@ -55,7 +61,13 @@ function matchesUsage(argv, usage) {
   return requiredFlags.every((flag) => supplied.has(flag)) && positional.length === requiredPositionals.length;
 }
 
-test("every live-revision command satisfies the CLI usage table's required arguments", async (t) => {
+test("every live-revision command follows the executable sequence and satisfies the CLI usage table", async (t) => {
+  for (const [, source] of SOURCES) {
+    const section = readFileSync(join(ROOT, source), "utf8").split(HEADING)[1].split(/\n#{1,2} /)[0];
+    const step3 = section.match(/^3\.[\s\S]*?(?=^4\.)/m)?.[0] ?? "";
+    const sequence = [...step3.matchAll(/`([^`]*\bcampaigns-os\s+[^`]+)`/g)].map((match) => match[1]);
+    assert.deepEqual(sequence, REVISION_COMMANDS, `${source}: rebuild, record build, capture the whole route, record Polish, then run owed QA`);
+  }
   const commands = [...[...STEPS, STANDING_CHECK].join("\n").matchAll(/`([^`]*\bcampaigns-os\s+[^`]+)`/g)]
     .map((match) => match[1]);
   assert.ok(commands.length > 0, "extract runnable commands from the single shared source list");
@@ -125,6 +137,23 @@ function snapshot(path) {
       : { content: readFileSync(path).toString("base64") }),
   };
 }
+
+test("install-agent-context refuses a value for --dry-run before previews or writes", (t) => {
+  const f = fixture(t, true);
+  const before = snapshot(f.dir);
+  for (const value of ["false", "true"]) {
+    for (const flags of [[], ["--json"]]) {
+      const run = spawnSync(process.execPath, [join(ROOT, "bin/campaigns-os.mjs"), "install-agent-context", "--target", f.target, "--dry-run", value, ...flags], {
+        cwd: f.dir, encoding: "utf8",
+        env: { ...process.env, CAMPAIGNS_OS_TELEMETRY: "off", CAMPAIGNS_OS_LIFECYCLE_LOG: join(f.dir, "lifecycle.jsonl") },
+      });
+      assert.equal(run.status, 1, run.stdout || run.stderr);
+      assert.match(run.stderr, /--dry-run takes no value/);
+      assert.equal(run.stdout, "", "refusal emits no misleading preview");
+      assert.deepEqual(snapshot(f.dir), before, "refusal leaves files and lifecycle state untouched");
+    }
+  }
+});
 
 test("installed agent contexts share the live-campaign revision steps and preserve root instructions", (t) => {
   const f = fixture(t, true);
