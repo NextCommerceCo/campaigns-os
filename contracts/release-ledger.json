@@ -9298,13 +9298,13 @@
           "class": "cli_surface",
           "path": "src/cli.mjs",
           "surface_entry": null,
-          "summary": "Record declared design-file references in the drafted Build Brief at prepare-build, and attach the capture's element-parity record to Polish evidence. src/qc-accept.mjs distinguishes source-side and build-side unread text, labels unresolved colours and explains invalid measurements and comparator failures (src/qc-accept.test.mjs). src/qc-results.mjs keeps recorded parity applicable when the packet is unavailable (src/qc-results-polish.test.mjs). src/design-file-reference.mjs preserves the file key for a branch segment with no valid key while retaining real branch-key replacement (src/design-file-reference.test.mjs). src/parity/element-parity-record.mjs memoises each cell comparison within a read, including refusal fallback, without changing refused rows (src/parity/element-parity-record.test.mjs). src/parity/probe.mjs takes selector_path_chars from the comparator's shared limits and reads it from the probe argument (src/parity/probe.test.mjs)."
+          "summary": "Record declared design-file references in the drafted Build Brief at prepare-build, and attach the capture's element-parity record to Polish evidence."
         },
         {
           "class": "cli_surface",
           "path": "src/doctor/checks.mjs",
           "surface_entry": null,
-          "summary": "Report nonblocking design.access with separate changed, conflicting and missing declaration reviews; the evaluator passes recorded contribution producers to the resolver so doctor compares recorded spec files even without current manifest provenance; preserve the #534 gate."
+          "summary": "Report nonblocking design.access with separate changed, conflicting and missing declaration reviews; doctor first applies today's intake rule, then falls back to a usable Figma spec only for a page with recorded derived_from design-file lineage, regardless of the shared file's producer; preserve the #534 gate."
         },
         {
           "class": "cli_surface",
@@ -9313,7 +9313,7 @@
           "summary": "Share the existing Figma-export provenance findings with intake so only Figma spec declarations backed by the unwaived check establish design-file lineage; preserve #534 findings and waiver semantics, with imports below the header."
         }
       ],
-      "entry_sha256": "d47b01fee586abb957088bf6615885cc4c58a648e0bb1ea1d3612617f050da07"
+      "entry_sha256": "dcc40a3777056430d4586c2bfa22d9d0cdeda8d3fb5e8ac738745b3f083c4f8f"
     }
   ]
 }

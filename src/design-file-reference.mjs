@@ -46,8 +46,9 @@ export function resolveDesignFileReferences({ activePages = [], mappings = [], m
   const pages = [];
   const files = new Map();
   // Intake records only Figma spec pointers backed by #534's provenance test.
-  // Doctor also compares already-recorded spec contributions, even when today's
-  // manifest or provenance is unavailable. Manifest declarations stand alone.
+  // Doctor first uses today's intake declaration. Only a page with recorded
+  // design-file lineage can fall back to its Figma spec without provenance.
+  // Manifest declarations stand alone; a shared file's producer is not per-page.
   const exportProvenance = manifest != null && !collectFigmaProvenanceFindings(manifest).some((finding) => finding.severity === "provenance");
   const producer = manifest?.producer_provenance;
   const producerKeys = new Set([producer?.figma_file_key, ...(Array.isArray(producer?.figma_file_keys) ? producer.figma_file_keys : [])].filter(nonEmpty));
@@ -57,9 +58,12 @@ export function resolveDesignFileReferences({ activePages = [], mappings = [], m
     const matches = (Array.isArray(manifest?.pages) ? manifest.pages : []).filter((entry) => entry?.page_id === page.id && entry.path === mapping.path);
     const manifestValue = matches.length === 1 ? matches[0].design_file : null;
     const specDeclaration = normalizeDesignFileReference(page.design_source).declaration;
-    const compareRecordedSpec = specChannel.mode === "doctor" && specChannel.recordedProducers?.get(page.id) === "campaign_spec";
-    const fromSpec = compareRecordedSpec || (specDeclaration?.type === "figma" && exportProvenance) ? specDeclaration : null;
     const fromManifest = normalizeDesignFileReference(manifestValue);
+    const intakeSpec = specDeclaration?.type === "figma" && exportProvenance ? specDeclaration : null;
+    const fallbackSpec = !intakeSpec && !fromManifest.declaration
+      && specChannel.mode === "doctor" && specChannel.recordedPageIds?.has(page.id)
+      && specDeclaration?.type === "figma" ? specDeclaration : null;
+    const fromSpec = intakeSpec || fallbackSpec;
     const declaration = fromSpec || fromManifest.declaration;
     if (!declaration) continue;
     const declared_by = fromSpec ? "campaign_spec" : "source_html_manifest";

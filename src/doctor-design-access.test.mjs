@@ -155,17 +155,18 @@ test("P1-I4: a skipped page's design declaration changes no package, brief or QC
   assert.deepEqual(rows(args, dsp), []);
 });
 
-function runGateFixture(t, { manifestFile = null, specFile = A, specFrames = null, producerKey = "SYNTHKEYA0001", valid = true, absent = false, compareBaseline = true } = {}) {
+function runGateFixture(t, { manifestFile = null, specFile = A, specFrames = null, producerKey = "SYNTHKEYA0001", valid = true, absent = false, compareBaseline = true, beforeIntake = null } = {}) {
   const fixture = campaignFixture();
   t.after(fixture.cleanup);
   const packet = readJson(fixture.packetPath);
   const spec = readJson(fixture.specPath);
   const activePages = spec.funnels.flatMap((funnel) => funnel.pages);
   if (specFile) activePages[0].design_source = { type: "figma", file_url: specFile, ...(specFrames ? { breakpoints: specFrames } : {}) };
-  writeJson(fixture.specPath, spec);
   const manifest = { schema_version: "source-html-manifest/v0", generator: valid ? "figma-sections-export" : "synthetic-exporter", producer_provenance: valid ? { source_type: "semantic_figma_export", screenshot_fallback_used: false, semantic_section_count: 1, material_fingerprint: "a".repeat(64), figma_file_key: "SYNTHKEYA0001", section_exports: [{ section: "hero", type: "html", node_ids: { desktop: "1:2" } }] } : {}, files: [{ path: "section.html", role: "partial", sha256: "b".repeat(64) }, { path: "asset.png", role: "asset", sha256: "c".repeat(64) }], pages: packet.source_html.pages.map((page) => ({ page_id: page.page_id, path: page.path, ...(page.page_id === activePages[0].id && manifestFile ? { design_file: manifestFile } : {}) })) };
   const manifestPath = join(fixture.dir, "source-html/.campaigns-os/source-html-manifest.json");
   if (valid) manifest.producer_provenance.figma_file_key = producerKey;
+  beforeIntake?.({ activePages, manifest });
+  writeJson(fixture.specPath, spec);
   if (absent) rmSync(manifestPath, { force: true }); else writeJson(manifestPath, manifest);
   const args = { activePages, mappings: packet.source_html.pages, manifest: absent ? null : manifest, generatedAt: now };
   const dsp = synthesizeHtmlFunnelDesignSourcePackage(args);
@@ -181,6 +182,64 @@ function runGateFixture(t, { manifestFile = null, specFile = A, specFrames = nul
   };
   return { fixture, current: run(validatePacket), baseline: compareBaseline ? baselineOutput(JSON.stringify({ manifestFile, specFile, specFrames, producerKey, valid, absent }), fixture.dir) : null, dsp, args };
 }
+
+test("R5 g′: a manifest-first shared file keeps page b's Figma spec after the manifest disappears", (t) => {
+  const { fixture, dsp } = runGateFixture(t, {
+    specFile: null, manifestFile: { file_url: A }, compareBaseline: false,
+    beforeIntake: ({ activePages }) => { activePages[1].design_source = { type: "figma", file_url: A }; },
+  });
+  const design = dsp.contributions.find((entry) => entry.provenance.source_type === "design_file");
+  assert.equal(design.provenance.producer, "source_html_manifest");
+  assert.equal(dsp.contributions.filter((entry) => entry.provenance.source_type === "design_file").length, 1);
+  assert.deepEqual(dsp.contributions[0].mappings.slice(0, 2).map((mapping) => mapping.derived_from), [design.id, design.id]);
+  rmSync(join(fixture.dir, "source-html/.campaigns-os/source-html-manifest.json"));
+  const doctor = doctorPacket(fixture.packetPath);
+  const designRows = doctor.derived.qc_results.filter((row) => row.check === "design.access");
+  assert.equal(designRows.length, 2);
+  const a = designRows.find((row) => row.subject.page === "landing");
+  assert.equal(a.reason_code, "design_reference_missing");
+  const b = designRows.find((row) => row.subject.page === "checkout");
+  assert.deepEqual([b.result, b.reason_code, b.observation.declared_by], ["unexercised", "design_access_missing", "campaign_spec"]);
+  assert.deepEqual(b.state, { reason_code: "design_access_missing", recorded_identity_sha256: SHA_A, declared_identity_sha256: SHA_A, conflict_identities: [], conflict_frames: [] });
+});
+
+test("R5 h: a spec-first shared file ignores page b's Penpot spec and keeps its manifest declaration", (t) => {
+  const { fixture, dsp } = runGateFixture(t, {
+    compareBaseline: false,
+    beforeIntake: ({ activePages, manifest }) => {
+      activePages[1].design_source = { type: "penpot", file_url: "https://design.example.test/f/synthetic-b" };
+      manifest.pages[1].design_file = { file_url: A };
+    },
+  });
+  const design = dsp.contributions.find((entry) => entry.provenance.source_type === "design_file");
+  assert.equal(design.provenance.producer, "campaign_spec");
+  assert.equal(dsp.contributions.filter((entry) => entry.provenance.source_type === "design_file").length, 1);
+  assert.deepEqual(dsp.contributions[0].mappings.slice(0, 2).map((mapping) => mapping.derived_from), [design.id, design.id]);
+  const doctor = doctorPacket(fixture.packetPath);
+  const designRows = doctor.derived.qc_results.filter((row) => row.check === "design.access");
+  assert.equal(designRows.length, 2);
+  assert.ok(designRows.every((row) => row.result === "unexercised" && row.reason_code === "design_access_missing"));
+  const b = designRows.find((row) => row.subject.page === "checkout");
+  assert.equal(b.observation.declared_by, "source_html_manifest");
+  assert.deepEqual(b.state.conflict_identities, []);
+  assert.deepEqual(doctor.warnings.filter((issue) => issue.code.startsWith("built_output.design.access.")), []);
+});
+
+test("R5: without provenance doctor keeps intake's manifest M over spec F, then falls back only when M is absent", (t) => {
+  const { fixture, dsp } = runGateFixture(t, { manifestFile: { file_url: B }, valid: false, compareBaseline: false });
+  const design = dsp.contributions.find((entry) => entry.provenance.source_type === "design_file");
+  assert.equal(design.provenance.producer, "source_html_manifest");
+  assert.equal(design.source_refs[0].url, B);
+  const access = () => doctorPacket(fixture.packetPath).derived.qc_results.filter((row) => row.check === "design.access");
+  const [unchanged] = access();
+  assert.deepEqual([unchanged.result, unchanged.reason_code, unchanged.observation.declared_by], ["unexercised", "design_access_missing", "source_html_manifest"]);
+  assert.equal(unchanged.state.declared_identity_sha256, unchanged.state.recorded_identity_sha256);
+  rmSync(join(fixture.dir, "source-html/.campaigns-os/source-html-manifest.json"));
+  const [fallback] = access();
+  assert.deepEqual([fallback.result, fallback.reason_code, fallback.observation.declared_by], ["review", "design_reference_changed", "campaign_spec"]);
+  assert.equal(fallback.state.declared_identity_sha256, SHA_A);
+  assert.equal(fallback.state.recorded_identity_sha256, unchanged.state.recorded_identity_sha256);
+});
 
 test("P1-W5: spec contribution records campaign_spec and the provenance gate equals BASE pass", (t) => {
   const { current, baseline, dsp } = runGateFixture(t);

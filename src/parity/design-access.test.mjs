@@ -107,6 +107,11 @@ for (const type of ["figma", "other", "sketch", "ai-generated", "penpot", "hand-
       const changed = structuredClone(input);
       (channel === "manifest" ? changed.manifest.pages[0].design_file : changed.activePages[0].design_source).type = "different-tool";
       const [changedRow] = evaluateDesignAccess({ ...changed, designSourcePackage: dsp, measured_at: NOW });
+      if (channel === "spec") {
+        // A-P5b's fallback, like intake, accepts only usable Figma declarations.
+        assertState(changedRow, { reason: "design_reference_missing", declared: null, declaredBy: null });
+        return;
+      }
       const changedSha = identitySha({ type: "different-tool", url: new URL(file.file_url).origin + new URL(file.file_url).pathname });
       assertState(changedRow, { reason: "design_reference_changed", recorded: sha, declared: changedSha, type: "different-tool", declaredBy });
       assert.equal(changedRow.result, "review");
@@ -144,4 +149,18 @@ test("design access: malformed package collections cannot crash doctor or prove 
     assert.equal(result.result, "unexercised");
     assert.equal(result.reason_code, "design_reference_not_recorded");
   }
+});
+
+test("R5: Figma fallback requires derived_from on this page's surface", () => {
+  const input = inputs({ type: "figma", file_url: A });
+  const dsp = synthesizeHtmlFunnelDesignSourcePackage(input);
+  input.manifest = null;
+  const evaluate = () => evaluateDesignAccess({ ...input, designSourcePackage: dsp, measured_at: NOW });
+  assertState(evaluate()[0], { reason: "design_access_missing" });
+  delete dsp.contributions[0].mappings[0].derived_from;
+  assertState(evaluate()[0], { reason: "design_reference_missing", declared: null, declaredBy: null });
+  dsp.contributions[0].mappings.push({ surface_id: "another-page", derived_from: CID_A });
+  assertState(evaluate()[0], { reason: "design_reference_missing", declared: null, declaredBy: null });
+  dsp.contributions = [];
+  assert.deepEqual(evaluate(), []);
 });

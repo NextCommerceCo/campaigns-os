@@ -14,13 +14,18 @@ function recordedType(contribution, fileRef) {
 export function evaluateDesignAccess({ activePages = [], mappings = [], manifest = null, designSourcePackage = null, measured_at } = {}) {
   const contributions = Array.isArray(designSourcePackage?.contributions) ? designSourcePackage.contributions : [];
   const surfaces = Array.isArray(designSourcePackage?.surface_identity) ? designSourcePackage.surface_identity : [];
+  const recordedPageIds = new Set();
   const recordedByPage = new Map(activePages.map((page) => {
     const surfaceIds = new Set(surfaces.filter((surface) => surface?.kind === "page" && surface.mappings?.campaign_spec_page_id === page.id).map((surface) => surface.id));
-    return [page.id, contributions.find((contribution) => contribution?.provenance?.source_type === "design_file" && array(contribution.mappings).some((mapping) => surfaceIds.has(mapping?.surface_id)))];
+    const recorded = contributions.find((contribution) => contribution?.provenance?.source_type === "design_file" && array(contribution.mappings).some((mapping) => surfaceIds.has(mapping?.surface_id)));
+    if (recorded && contributions.some((contribution) => array(contribution?.mappings).some((mapping) => surfaceIds.has(mapping?.surface_id) && mapping?.derived_from === recorded.id))) {
+      recordedPageIds.add(page.id);
+    }
+    return [page.id, recorded];
   }));
   const resolved = resolveDesignFileReferences({ activePages, mappings, manifest, specChannel: {
     mode: "doctor",
-    recordedProducers: new Map([...recordedByPage].map(([pageId, contribution]) => [pageId, contribution?.provenance?.producer])),
+    recordedPageIds,
   } });
   const rows = [];
   for (const page of activePages) {
