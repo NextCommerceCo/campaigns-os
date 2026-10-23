@@ -21,7 +21,7 @@ Pause only for missing inputs, doctor blockers, blocked deploys, out-of-scope ru
 
 Keep a standing pull-request check after launch: install locked dependencies
 with `npm ci`, build the campaign site with
-`CPK_ENV=development npx --no-install campaign-build --json > "$RUNNER_TEMP/page-kit-build-summary.json"`,
+`CPK_ENV=development npx --no-install campaign-build` (the check does not read the build summary),
 then run `npx --no-install campaigns-os doctor --packet <packet> --ci --no-live-refs`.
 Run these from the Page Kit folder containing the pinned tools and committed
 packet, local CampaignSpec, Build Context and Assembly Report. The site build
