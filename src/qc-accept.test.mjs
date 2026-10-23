@@ -632,9 +632,9 @@ const parityElement = (index, text, box, extra = {}) => ({ index, selector_path:
 const parityProbe = (elements, coverage = {}) => ({ viewport: { width: 1440, height: 1200 }, dpr: 1, elements, page_text: elements.map((e) => e.text).join(" "),
   font_faces: [], coverage: { elements_capped: false, time_capped: false, page_text_truncated: false, font_faces_capped: false, closed_shadow_roots: 0, frames_not_read: 0, ...coverage } });
 
-test("R4-1: A-P7 coverage text distinguishes unread source text from unread built text", async () => {
+test("R4-1: A-P7a coverage text is true whichever side's text was not read", async () => {
   const { buildQcHandoff, qcHandoffTextLines } = await import("./qc-accept.mjs");
-  const text = "Some page text was not read (long text, closed components or frames). On the built page, copy is not called missing there; on the source page, those parts were not compared.";
+  const text = "Some page text was not read (long text, closed components or frames) on the source page, the built page or both. Where the built page's text was not read, copy is not called missing.";
   for (const reason_code of ["page_text_truncated", "closed_shadow_root_not_read", "frame_not_read"]) {
     const handoff = buildQcHandoff({ results: [], accepts: [], coverage: [{ check: "parity.element", leg: "polish", result: "unexercised", reason_code, count: 1, pages: ["landing"] }] });
     assert.equal(handoff.coverage[0].text, text);

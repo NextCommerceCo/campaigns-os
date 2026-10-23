@@ -40,7 +40,7 @@ const DESIGN_ACCESS_TEXT = Object.freeze({
 const probeIncomplete = (code) => `The element probe did not complete (${code}); not compared.`;
 const notRendered = (code) => `The source or built page did not render (${code}).`;
 const partlyRead = "Only part of the page was read; findings are not accept-eligible.";
-const textNotRead = "Some page text was not read (long text, closed components or frames). On the built page, copy is not called missing there; on the source page, those parts were not compared.";
+const textNotRead = "Some page text was not read (long text, closed components or frames) on the source page, the built page or both. Where the built page's text was not read, copy is not called missing.";
 const packageMismatch = "The Design Source Package on disk does not match the build's; rerun intake or polish capture.";
 const PARITY_COVERAGE_TEXT = Object.freeze({
   ...Object.fromEntries(["navigation_failed", "http_error", "producer_timeout", "browser_unavailable", "source_html_missing", "source_root_unavailable"].map((code) => [code, notRendered(code)])),

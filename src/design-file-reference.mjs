@@ -68,11 +68,14 @@ export function resolveDesignFileReferences({ activePages = [], mappings = [], m
     if (!declaration) continue;
     const declared_by = fromSpec ? "campaign_spec" : "source_html_manifest";
     let conflict = null;
-    if (fromSpec && fromManifest.declaration) {
+    // Provenance decides which declaration records lineage, never whether a
+    // Figma spec that disagrees with the manifest is reported.
+    const specNamed = fromSpec || (specDeclaration?.type === "figma" ? specDeclaration : null);
+    if (specNamed && fromManifest.declaration) {
       const other = fromManifest.declaration;
-      const frames = VIEWPORTS.filter((viewport) => fromSpec.frames[viewport] && other.frames[viewport] && fromSpec.frames[viewport].node_id !== other.frames[viewport].node_id).sort();
-      if (fromSpec.file_identity_sha256 !== other.file_identity_sha256 || frames.length) {
-        conflict = { kind: "spec_vs_manifest", identities: [fromSpec.file_identity_sha256, other.file_identity_sha256].sort(), ...(frames.length ? { frames } : {}) };
+      const frames = VIEWPORTS.filter((viewport) => specNamed.frames[viewport] && other.frames[viewport] && specNamed.frames[viewport].node_id !== other.frames[viewport].node_id).sort();
+      if (specNamed.file_identity_sha256 !== other.file_identity_sha256 || frames.length) {
+        conflict = { kind: "spec_vs_manifest", identities: [specNamed.file_identity_sha256, other.file_identity_sha256].sort(), ...(frames.length ? { frames } : {}) };
       }
     }
     if (!conflict && declaration.type === "figma" && declaration.file_key && producerKeys.size && !producerKeys.has(declaration.file_key)) {
@@ -81,7 +84,10 @@ export function resolveDesignFileReferences({ activePages = [], mappings = [], m
     pages.push({ page_id: page.id, declaration, declared_by, conflict, warnings: manifestValue == null ? [] : fromManifest.warnings });
     const sha = declaration.file_identity_sha256;
     if (!files.has(sha)) files.set(sha, { contribution_id: `design-file-${sha.slice(0, 12)}`, identity: declaration.identity, file_url: declaration.file_url, producer: declared_by, pages: [] });
-    files.get(sha).pages.push(page.id);
+    const file = files.get(sha);
+    // A shared file keeps the manifest's provenance if any page declared it there.
+    if (declared_by === "source_html_manifest") file.producer = declared_by;
+    file.pages.push(page.id);
   }
   return { pages, files: [...files.values()] };
 }

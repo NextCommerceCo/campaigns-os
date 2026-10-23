@@ -203,7 +203,7 @@ test("R5 g′: a manifest-first shared file keeps page b's Figma spec after the 
   assert.deepEqual(b.state, { reason_code: "design_access_missing", recorded_identity_sha256: SHA_A, declared_identity_sha256: SHA_A, conflict_identities: [], conflict_frames: [] });
 });
 
-test("R5 h: a spec-first shared file ignores page b's Penpot spec and keeps its manifest declaration", (t) => {
+test("R5 h: a shared file ignores page b's Penpot spec, keeps its manifest declaration and the manifest's provenance (A-P5c)", (t) => {
   const { fixture, dsp } = runGateFixture(t, {
     compareBaseline: false,
     beforeIntake: ({ activePages, manifest }) => {
@@ -212,7 +212,8 @@ test("R5 h: a spec-first shared file ignores page b's Penpot spec and keeps its 
     },
   });
   const design = dsp.contributions.find((entry) => entry.provenance.source_type === "design_file");
-  assert.equal(design.provenance.producer, "campaign_spec");
+  // Page b declared the shared file in the manifest, so the manifest's provenance is kept whatever the page order.
+  assert.equal(design.provenance.producer, "source_html_manifest");
   assert.equal(dsp.contributions.filter((entry) => entry.provenance.source_type === "design_file").length, 1);
   assert.deepEqual(dsp.contributions[0].mappings.slice(0, 2).map((mapping) => mapping.derived_from), [design.id, design.id]);
   const doctor = doctorPacket(fixture.packetPath);
@@ -225,14 +226,14 @@ test("R5 h: a spec-first shared file ignores page b's Penpot spec and keeps its 
   assert.deepEqual(doctor.warnings.filter((issue) => issue.code.startsWith("built_output.design.access.")), []);
 });
 
-test("R5: without provenance doctor keeps intake's manifest M over spec F, then falls back only when M is absent", (t) => {
+test("R5: without provenance the manifest's M records lineage, spec F is still reported as a conflict, and F is the fallback when M is absent (A-P5c)", (t) => {
   const { fixture, dsp } = runGateFixture(t, { manifestFile: { file_url: B }, valid: false, compareBaseline: false });
   const design = dsp.contributions.find((entry) => entry.provenance.source_type === "design_file");
   assert.equal(design.provenance.producer, "source_html_manifest");
   assert.equal(design.source_refs[0].url, B);
   const access = () => doctorPacket(fixture.packetPath).derived.qc_results.filter((row) => row.check === "design.access");
   const [unchanged] = access();
-  assert.deepEqual([unchanged.result, unchanged.reason_code, unchanged.observation.declared_by], ["unexercised", "design_access_missing", "source_html_manifest"]);
+  assert.deepEqual([unchanged.result, unchanged.reason_code, unchanged.observation.declared_by], ["review", "design_reference_conflict", "source_html_manifest"]);
   assert.equal(unchanged.state.declared_identity_sha256, unchanged.state.recorded_identity_sha256);
   rmSync(join(fixture.dir, "source-html/.campaigns-os/source-html-manifest.json"));
   const [fallback] = access();

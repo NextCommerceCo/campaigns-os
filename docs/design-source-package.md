@@ -43,8 +43,11 @@ only with figma-sections-export provenance that passes doctor's
 `source_html.producer_provenance` check without a waiver; then it wins when both
 channels are present. Otherwise, a spec pointer alone adds no contribution or
 lineage at intake, and no `design.access` row unless the package already records
-a spec contribution. File, frame
-or producer-file-key conflicts between eligible declarations are reported for review.
+a spec contribution. A Figma `design_source` that names a different file or
+frames from the manifest's `design_file` is reported as a conflict for review
+even when it records no lineage, as is a file key that differs from the
+exporter's. A file shared by several pages keeps the manifest's provenance if
+any page declared it in the manifest.
 
 Malformed `design_file` values remain non-fatal manifest warnings; the schema
 accepts them so validation agrees with intake. File URL schemes are

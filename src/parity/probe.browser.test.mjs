@@ -248,7 +248,7 @@ browserTest("P2-I10: a closed shadow root with text and a visible same-origin if
     assert.deepEqual([copy.result, copy.reason_code], ["review", "build_text_not_read"]);
   }
   const lines = qcHandoffTextLines(buildQcHandoff({ results: rows, accepts: [] }));
-  assert.ok(lines.includes("  - polish parity.element: unexercised (closed_shadow_root_not_read) x2 on page — Some page text was not read (long text, closed components or frames). On the built page, copy is not called missing there; on the source page, those parts were not compared."), lines.join("\n"));
+  assert.ok(lines.includes("  - polish parity.element: unexercised (closed_shadow_root_not_read) x2 on page — Some page text was not read (long text, closed components or frames) on the source page, the built page or both. Where the built page's text was not read, copy is not called missing."), lines.join("\n"));
 });
 
 browserTest("P2-I11: a build page declaring 250 @font-face rules is capped at 200 faces and reads font_face_cap_reached", async (t) => {
