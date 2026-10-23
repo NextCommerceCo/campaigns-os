@@ -280,7 +280,7 @@ test("F1.0-I20 no Polish capture on the report: handoff coverage lists 1.3 unexe
 });
 
 // Stream C3: stored package captures, never a second browser or decoder run.
-import { mkdtempSync, rmSync, writeFileSync, unlinkSync, mkdirSync, realpathSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, unlinkSync, mkdirSync, realpathSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { syntheticCapturesRecord, createRgbaPng } from "./polish-visual-fixtures.mjs";
 import { capturesIntegrity, writePolishPng } from "./polish-visual.mjs";
@@ -343,6 +343,21 @@ test("F3C-B7 wrong capture bytes and absent capture files never produce metrics"
   const fresh = await c3Fixture(t);
   unlinkSync(join(fresh.targetRepo, fresh.record.cells[2].actual.png.path));
   assertCapturesRefused(fresh.read(), "capture_file_absent");
+});
+test("A capture file replaced by a symlink or a directory names that, not a corrupt PNG or an absent file", async (t) => {
+  for (const replace of [
+    (path, f) => { const real = join(f.targetRepo, "elsewhere.png"); writeFileSync(real, "x"); unlinkSync(path); symlinkSync(real, path); },
+    (path) => { unlinkSync(path); mkdirSync(path); },
+  ]) {
+    const f = await c3Fixture(t);
+    replace(join(f.targetRepo, f.record.cells[0].actual.png.path), f);
+    assertCapturesRefused(f.read(), "capture_file_not_regular");
+  }
+});
+test("A caller that passes no build output reads the captures without the output check", async (t) => {
+  const f = await c3Fixture(t);
+  assert.ok(f.read({ buildOutput: undefined }).every((row) => row.reason_code !== "stale_binding"));
+  assert.ok(f.read({ buildOutput: null }).every((row) => row.reason_code === "stale_binding"));
 });
 for (const [id, mutate, member, detail] of [
   ["F3C-B8", (bytes) => { bytes[45] ^= 1; return bytes; }, "png_structure_invalid", "chunk_crc_mismatch"],

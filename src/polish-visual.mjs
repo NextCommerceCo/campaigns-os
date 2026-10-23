@@ -1,5 +1,5 @@
 import { mkdirSync, writeFileSync, realpathSync, lstatSync, statSync } from "node:fs";
-import { resolve, relative, isAbsolute, sep, dirname } from "node:path";
+import { join, resolve, relative, isAbsolute, sep, dirname } from "node:path";
 import { aggregateQcResults, buildQcResult } from "./qc-results.mjs";
 import { readPngStructure, sha256Hex, boundedDimensions, VISUAL_MAX_DECODE_PIXELS } from "./png-header.mjs";
 import { CAPTURES_SCHEMA, CAPTURES_PRODUCER, capturesIntegrity } from "./polish-captures-record.mjs";
@@ -149,6 +149,13 @@ function addRefusals(external, before, after) {
   return added ? { ...external, blocked_count: external.blocked_count + added, blocked_origins: [...origins].sort() } : external;
 }
 
+// The campaign's own Page Kit pages, relative to the target repo: target_path
+// is relative to the Page Kit output directory, output_path already joins it.
+export function pageKitOutputPaths(packet) {
+  return (packet?.source_html?.pages || []).map(({ page_kit: kit } = {}) => kit?.output_path
+    || (kit?.target_path && packet?.assembly?.output_dir ? join(packet.assembly.output_dir, kit.target_path) : null)).filter(Boolean);
+}
+
 export async function runVisualCells({ buildAdapter, sourceAdapter, pairs, sourceOrigin, sourceRefused = null, sourceRefusedTotal = null, probes = [],
   budget = {}, clock = monotonicClock, writePng, sources = new Map(), now = new Date(), captureCellDeadlineMs, timers = {} } = {}) {
   const cells = [], poisoned = new Set();
@@ -245,7 +252,7 @@ export async function runVisualPass({ createBrowserAdapter, frozen, packet, pack
     try { builtHtmlHashes.push(`sha256:${sha256Hex(readRegularFileSync(resolve(targetRepo, "_site", slug, suffix, "index.html"), { root: targetRepo }))}`); } catch { /* missing or non-regular output */ }
   }
   const contribution = dsp?.contributions?.find((c) => c.kind === "html_funnel");
-  const pageKitTargets = (packet.source_html.pages || []).map((p) => p.page_kit?.target_path).filter(Boolean);
+  const pageKitTargets = pageKitOutputPaths(packet);
   for (const route of plan.routes) {
     const mapping = packet.source_html.pages.find((p) => p.page_id === route.page_id);
     const declared = contribution?.source_refs?.find((ref) => ref.kind === "html_file" && ref.path === mapping.path);
