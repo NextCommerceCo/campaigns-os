@@ -44,12 +44,65 @@
       "description": "Where two artifacts record different states for one stage: the assembly report calls a stage completed while the QA verdict fails an assertion whose id is namespaced to that stage. One record per stage, in the order the failures were seen. The readback reports the disagreement and does not adjudicate it. This too is the readback's own layer.",
       "items": { "$ref": "#/$defs/divergence" }
     },
+    "evidence_debt": {
+      "$ref": "#/$defs/evidence_debt",
+      "description": "Read-only build-binding assessment for Polish and QA plus file drift against the retained assembly manifest. Always emitted by current producers; additive within v2. Independent of timestamp/reflog staleness and of stage verdicts."
+    },
     "clean": {
       "type": "boolean",
-      "description": "True only when every artifact the readback found is loaded or absent (never unreadable or unrecognized), staleness is computable and NO loaded artifact is stale, staleness.unparseable_keys is empty (no loaded artifact recorded an age the readback could not read), divergences is empty, and doctor.error_count is zero. A readback-integrity flag, not a verdict: a blocked QA verdict whose artifacts all read cleanly is still clean, because the readback saw exactly what Campaigns OS recorded. docs/readback.md states the rule and its limits."
+      "description": "True only when every artifact the readback found is loaded or absent (never unreadable or unrecognized), staleness is computable and NO loaded artifact is stale, staleness.unparseable_keys is empty, divergences is empty, doctor.error_count is zero, and neither evidence_debt stage is owed. Unknown evidence debt does not independently make clean false; clean true never establishes that no evidence is owed. A readback-integrity flag, not a verdict. docs/readback.md states the rule and its limits."
     }
   },
   "$defs": {
+    "evidence_debt": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["polish", "qa", "changes"],
+      "properties": {
+        "polish": { "$ref": "#/$defs/evidence_debt_stage" },
+        "qa": { "$ref": "#/$defs/evidence_debt_stage" },
+        "changes": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["status", "reason", "recorded_build_fingerprint", "current_build_fingerprint", "changed_pages", "unmapped_files", "extra", "missing", "changed"],
+          "properties": {
+            "status": { "enum": ["known", "unknown"] },
+            "reason": { "type": ["string", "null"] },
+            "recorded_build_fingerprint": { "type": ["string", "null"], "description": "The assembly manifest baseline, which may differ from an older stage's binding. Older manifests are not reconstructed." },
+            "current_build_fingerprint": { "type": ["string", "null"] },
+            "changed_pages": {
+              "type": "array",
+              "description": "Added, removed or modified HTML pages against assembly's manifest, sorted by built path. IDs use resolveBuiltSiteScope's route-derived page map; paths are relative to _site/<slug>.",
+              "items": {
+                "type": "object",
+                "additionalProperties": true,
+                "required": ["page_id", "built_path"],
+                "properties": {
+                  "page_id": { "type": "string", "minLength": 1 },
+                  "built_path": { "type": "string", "minLength": 1 }
+                }
+              }
+            },
+            "unmapped_files": { "type": "array", "items": { "type": "string" }, "description": "All differing paths outside the page map, including shared assets. A file is not silently dropped because no page maps it." },
+            "extra": { "type": "array", "items": { "type": "string" } },
+            "missing": { "type": "array", "items": { "type": "string" } },
+            "changed": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    },
+    "evidence_debt_stage": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["status", "matches_current_build", "recorded_build_fingerprint", "current_build_fingerprint", "reason"],
+      "properties": {
+        "status": { "enum": ["current", "owed", "unknown"], "description": "current: recorded binding matches disk and the assembly manifest is available. owed: binding differs. unknown: output, binding or assembly manifest unavailable; never evidence of no debt. These statuses concern build binding only, not lifecycle approval." },
+        "matches_current_build": { "type": ["boolean", "null"], "description": "Fingerprint equality, or null if either fingerprint is unavailable. May be true or false while status is unknown because the assembly manifest is unavailable." },
+        "recorded_build_fingerprint": { "type": ["string", "null"] },
+        "current_build_fingerprint": { "type": ["string", "null"] },
+        "reason": { "type": ["string", "null"], "description": "Null for current; otherwise the reason code for owed or unknown. See docs/readback.md." }
+      }
+    },
     "artifact_key": {
       "type": "string",
       "enum": ["packet", "doctor", "context", "report", "qa_verdict", "findings"]

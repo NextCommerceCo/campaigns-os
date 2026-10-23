@@ -49,7 +49,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -58,7 +58,7 @@ import { test } from "node:test";
 import Ajv2020 from "ajv/dist/2020.js";
 
 import { absentBriefMaterial, inputStamps } from "./input-currency.mjs";
-
+import { buildManifestEntries, computeBuildFingerprint } from "./built-site-scope.mjs";
 import {
   ARTIFACT_TITLES,
   DEFAULT_RELATIVE_PATHS,
@@ -91,6 +91,267 @@ import {
   selectPacketPath,
   serializeStaleness,
 } from "./readback.mjs";
+
+// Synthetic live-campaign revisions. All imports and fixture setup work with
+// BASE src/: regressions fail on missing evidence_debt, never a new export.
+function evidenceDebtFixture(t) {
+  const root = tempRoot(t, "readback-debt-");
+  const output = join(root, "_site", "synthetic-campaign");
+  for (const page of ["landing", "checkout"]) {
+    mkdirSync(join(output, page), { recursive: true });
+    writeFileSync(join(output, page, "index.html"), `<main>${page} original</main>\n`);
+  }
+  mkdirSync(join(output, "assets"), { recursive: true });
+  writeFileSync(join(output, "assets", "shared.css"), "main { color: navy; }\n");
+  const original = computeBuildFingerprint(output);
+  assert.equal(original.ok, true, "fixture: built output is fingerprintable");
+  const report = {
+    schema_version: "campaign-runtime-assembly-report/v0",
+    generated_at: "2026-06-23T00:00:00Z",
+    stages: {
+      assembly: { status: "completed", build_fingerprint: original.fingerprint, build_manifest: buildManifestEntries(original) },
+      polish: { status: "completed", source_build_fingerprint: original.fingerprint },
+      qa: { status: "completed", evidence: { source_build_fingerprint: original.fingerprint } },
+    },
+  };
+  const saveReport = () => writeFileSync(join(root, ".campaign-runtime", "assembly-report.json"), JSON.stringify(report));
+  mkdirSync(join(root, ".campaign-runtime"), { recursive: true });
+  writeFileSync(join(root, "campaign-runtime.build.json"), JSON.stringify({
+    schema_version: "campaign-runtime-build-packet/v0",
+    generated_at: report.generated_at,
+    campaign: { public_route_slug: "synthetic-campaign" },
+    spec: { map_id: "synthetic-map" },
+    assembly: { target_repo: ".", output_dir: "src/synthetic-campaign" },
+  }));
+  saveReport();
+  // One fixed checkout entry, just like CI; debt cannot depend on its age.
+  writeReflog(join(root, ".git"), EPOCH_BEFORE_ARTIFACTS);
+  return { root, output, report, original, saveReport };
+}
+
+function evidenceDebtPayload(root) {
+  const result = runReadbackCommand({ _: ["readback", root], json: true });
+  assert.equal(result.exitCode, 0);
+  const payload = JSON.parse(result.text);
+  assert.ok(payload.evidence_debt, "readback output must include evidence_debt");
+  assertMatchesSchema(payload, "evidence debt payload");
+  return payload;
+}
+
+test("evidence debt: matching build keeps both stages current and clean unaffected", (t) => {
+  const { root, original } = evidenceDebtFixture(t);
+  const payload = evidenceDebtPayload(root);
+  for (const name of ["polish", "qa"]) {
+    assert.deepEqual(payload.evidence_debt[name], {
+      status: "current", matches_current_build: true,
+      recorded_build_fingerprint: original.fingerprint, current_build_fingerprint: original.fingerprint, reason: null,
+    });
+  }
+  assert.equal(payload.evidence_debt.changes.status, "known");
+  assert.deepEqual(payload.evidence_debt.changes.changed_pages, []);
+  assert.deepEqual(payload.evidence_debt.changes.unmapped_files, []);
+  assert.equal(payload.clean, true);
+  const invalid = structuredClone(payload);
+  invalid.evidence_debt.polish.status = "fresh";
+  assert.equal(validateReadbackSchema(invalid), false, "stage statuses are a closed set");
+  const text = runReadbackCommand({ _: ["readback", root] }).text;
+  assert.match(text, /polish: current/);
+  assert.match(text, /qa: current/);
+});
+
+test("evidence debt: page edited and rebuilt owes Polish and QA and names the page", (t) => {
+  const { root, output, original } = evidenceDebtFixture(t);
+  const before = evidenceDebtPayload(root);
+  // This is the rebuilt output; no record command updates the old evidence.
+  writeFileSync(join(output, "landing", "index.html"), "<main>landing revised</main>\n");
+  const current = computeBuildFingerprint(output);
+  const payload = evidenceDebtPayload(root);
+  for (const name of ["polish", "qa"]) {
+    assert.equal(payload.evidence_debt[name].status, "owed");
+    assert.equal(payload.evidence_debt[name].matches_current_build, false);
+    assert.equal(payload.evidence_debt[name].recorded_build_fingerprint, original.fingerprint);
+    assert.equal(payload.evidence_debt[name].current_build_fingerprint, current.fingerprint);
+  }
+  assert.deepEqual(payload.evidence_debt.changes.changed_pages, [{ page_id: "landing", built_path: "landing/index.html" }]);
+  assert.deepEqual(payload.evidence_debt.changes.changed, ["landing/index.html"]);
+  assert.deepEqual(payload.evidence_debt.changes.unmapped_files, []);
+  assert.equal(payload.clean, false);
+  assert.deepEqual(payload.staleness, before.staleness, "reflog and artifact ages did not supply this signal");
+  assert.notDeepEqual(payload, before);
+  const reportPath = join(root, ".campaign-runtime", "assembly-report.json");
+  const reportBytes = readFileSync(reportPath);
+  const text = runReadbackCommand({ _: ["readback", root] }).text;
+  assert.match(text, /polish: owed — evidence is owed for the current build/);
+  assert.match(text, /qa: owed/);
+  assert.match(text, /changed page: landing \(landing\/index.html\)/);
+  assert.deepEqual(readFileSync(reportPath), reportBytes, "readback leaves evidence unchanged");
+  t.diagnostic(`page-edited evidence_debt: ${JSON.stringify(payload.evidence_debt)}`);
+});
+
+test("evidence debt: absent built output is explicitly unknown", (t) => {
+  const { root, output } = evidenceDebtFixture(t);
+  rmSync(output, { recursive: true });
+  const payload = evidenceDebtPayload(root);
+  for (const name of ["polish", "qa"]) {
+    assert.equal(payload.evidence_debt[name].status, "unknown");
+    assert.equal(payload.evidence_debt[name].reason, "build_output_missing");
+    assert.equal(payload.evidence_debt[name].current_build_fingerprint, null);
+    assert.equal(payload.evidence_debt[name].matches_current_build, null);
+  }
+  assert.equal(payload.evidence_debt.changes.status, "unknown");
+  assert.match(runReadbackCommand({ _: ["readback", root] }).text, /absence of proof is not no debt/);
+});
+
+test("evidence debt: reflog, artifact dates and file mtimes cannot create or clear debt", (t) => {
+  for (const status of ["current", "owed"]) {
+    const { root, output, report, saveReport } = evidenceDebtFixture(t);
+    if (status === "owed") {
+      writeFileSync(join(output, "landing", "index.html"), "<main>landing revised</main>\n");
+    }
+    const before = evidenceDebtPayload(root).evidence_debt;
+    assert.equal(before.polish.status, status);
+    assert.equal(before.qa.status, status);
+    const assertUnchanged = (signal) => assert.deepEqual(
+      evidenceDebtPayload(root).evidence_debt, before, `${signal} must leave ${status} debt unchanged`,
+    );
+
+    for (const epoch of [EPOCH_AFTER_ARTIFACTS, EPOCH_BEFORE_ARTIFACTS]) {
+      writeReflog(join(root, ".git"), epoch);
+      assertUnchanged(`HEAD reflog at ${epoch}`);
+    }
+
+    const packetPath = join(root, "campaign-runtime.build.json");
+    const packet = JSON.parse(readFileSync(packetPath, "utf8"));
+    for (const generatedAt of ["2020-01-01T00:00:00Z", "2030-01-01T00:00:00Z"]) {
+      packet.generated_at = generatedAt;
+      writeFileSync(packetPath, JSON.stringify(packet));
+      assertUnchanged(`packet generated_at ${generatedAt}`);
+      report.generated_at = generatedAt;
+      saveReport();
+      assertUnchanged(`report generated_at ${generatedAt}`);
+    }
+
+    for (const epoch of [EPOCH_BEFORE_ARTIFACTS, EPOCH_AFTER_ARTIFACTS]) {
+      for (const path of [
+        packetPath,
+        join(root, ".campaign-runtime", "assembly-report.json"),
+        join(root, ".git", "logs", "HEAD"),
+        join(output, "landing", "index.html"),
+        join(output, "checkout", "index.html"),
+        join(output, "assets", "shared.css"),
+      ]) {
+        utimesSync(path, epoch, epoch);
+      }
+      assertUnchanged(`file mtimes at ${epoch}`);
+    }
+  }
+});
+
+test("evidence debt: QA older than a current Polish build is the only owed stage", (t) => {
+  const { root, report, saveReport, original } = evidenceDebtFixture(t);
+  report.stages.qa.evidence = {
+    qc_build_fingerprint: `sha256:${"a".repeat(64)}`,
+    source_build_fingerprint: original.fingerprint,
+  };
+  saveReport();
+  const payload = evidenceDebtPayload(root);
+  assert.equal(payload.evidence_debt.polish.status, "current");
+  assert.equal(payload.evidence_debt.qa.status, "owed", "QC binding takes precedence, as in next");
+  assert.equal(payload.evidence_debt.qa.recorded_build_fingerprint, report.stages.qa.evidence.qc_build_fingerprint);
+  assert.equal(payload.clean, false);
+});
+
+test("evidence debt: a changed shared asset is unmapped and still owes evidence", (t) => {
+  const { root, output } = evidenceDebtFixture(t);
+  writeFileSync(join(output, "assets", "shared.css"), "main { color: green; }\n");
+  const payload = evidenceDebtPayload(root);
+  assert.equal(payload.evidence_debt.polish.status, "owed");
+  assert.equal(payload.evidence_debt.qa.status, "owed");
+  assert.deepEqual(payload.evidence_debt.changes.changed_pages, []);
+  assert.deepEqual(payload.evidence_debt.changes.unmapped_files, ["assets/shared.css"]);
+  assert.equal(payload.clean, false);
+  assert.match(runReadbackCommand({ _: ["readback", root] }).text, /unmapped file: assets\/shared.css/);
+});
+
+test("evidence debt: missing manifest leaves matching bindings unknown", (t) => {
+  const { root, report, saveReport } = evidenceDebtFixture(t);
+  delete report.stages.assembly.build_manifest;
+  saveReport();
+  const payload = evidenceDebtPayload(root);
+  for (const name of ["polish", "qa"]) {
+    assert.equal(payload.evidence_debt[name].status, "unknown");
+    assert.equal(payload.evidence_debt[name].reason, "build_manifest_unavailable");
+    assert.equal(payload.evidence_debt[name].matches_current_build, true);
+  }
+  assert.equal(payload.evidence_debt.changes.status, "unknown");
+});
+
+test("evidence debt: absent recorded fingerprints remain unknown per stage", (t) => {
+  const { root, report, saveReport } = evidenceDebtFixture(t);
+  delete report.stages.polish.source_build_fingerprint;
+  saveReport();
+  let payload = evidenceDebtPayload(root);
+  assert.equal(payload.evidence_debt.polish.status, "unknown");
+  assert.equal(payload.evidence_debt.polish.reason, "stage_build_fingerprint_missing");
+  assert.equal(payload.evidence_debt.qa.status, "current");
+  delete report.stages.assembly.build_fingerprint;
+  saveReport();
+  payload = evidenceDebtPayload(root);
+  assert.equal(payload.evidence_debt.qa.status, "unknown");
+  assert.equal(payload.evidence_debt.qa.reason, "assembly_build_fingerprint_missing");
+});
+
+test("evidence debt: absent QA fingerprint with valid assembly and Polish evidence stays unknown", (t) => {
+  const { root, report, saveReport, original } = evidenceDebtFixture(t);
+  const before = evidenceDebtPayload(root).evidence_debt;
+  assert.equal(before.polish.status, "current");
+  assert.equal(before.qa.status, "current");
+  delete report.stages.qa.evidence.source_build_fingerprint;
+  saveReport();
+
+  const payload = evidenceDebtPayload(root);
+  assert.deepEqual(payload.evidence_debt.qa, {
+    status: "unknown",
+    matches_current_build: null,
+    recorded_build_fingerprint: null,
+    current_build_fingerprint: original.fingerprint,
+    reason: "stage_build_fingerprint_missing",
+  });
+  assert.deepEqual(payload.evidence_debt.polish, before.polish, "missing QA binding leaves Polish current");
+  assert.deepEqual(payload.evidence_debt.changes, before.changes, "assembly evidence remains valid");
+});
+
+test("evidence debt: added and removed pages map through the same route identities", (t) => {
+  const { root, output } = evidenceDebtFixture(t);
+  rmSync(join(output, "checkout", "index.html"));
+  mkdirSync(join(output, "offers", "upsell"), { recursive: true });
+  writeFileSync(join(output, "offers", "upsell", "index.html"), "<main>offer</main>");
+  const payload = evidenceDebtPayload(root);
+  assert.equal(payload.evidence_debt.qa.status, "owed");
+  assert.deepEqual(payload.evidence_debt.changes.changed_pages, [
+    { page_id: "checkout", built_path: "checkout/index.html" },
+    { page_id: "offers-upsell", built_path: "offers/upsell/index.html" },
+  ]);
+  assert.deepEqual(payload.evidence_debt.changes.extra, ["offers/upsell/index.html"]);
+  assert.deepEqual(payload.evidence_debt.changes.missing, ["checkout/index.html"]);
+});
+
+test("evidence debt: rebuilt assembly manifest cannot stand in for an older stage manifest", (t) => {
+  const { root, output, report, saveReport, original } = evidenceDebtFixture(t);
+  writeFileSync(join(output, "landing", "index.html"), "<main>new build</main>");
+  const current = computeBuildFingerprint(output);
+  report.stages.assembly.build_fingerprint = current.fingerprint;
+  report.stages.assembly.build_manifest = buildManifestEntries(current);
+  report.stages.polish.evidence = { source_build_fingerprint: original.fingerprint };
+  delete report.stages.polish.source_build_fingerprint;
+  saveReport();
+  const payload = evidenceDebtPayload(root);
+  assert.equal(payload.evidence_debt.polish.status, "owed", "Polish evidence fallback remains bound to old output");
+  assert.equal(payload.evidence_debt.qa.status, "owed");
+  assert.equal(payload.evidence_debt.changes.recorded_build_fingerprint, current.fingerprint);
+  assert.deepEqual(payload.evidence_debt.changes.changed_pages, [], "page list is only against assembly's retained manifest");
+  assert.equal(payload.clean, false);
+});
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CLI = join(ROOT, "bin/campaigns-os.mjs");
@@ -198,8 +459,8 @@ function writePacket(dir, name, generatedAt, mapId) {
 
 /** Build the payload for a target root through the default layout. */
 function targetPayload(root) {
-  const { views, staleness, packetSelection } = projectTarget(root);
-  return buildJsonPayload(views, staleness, packetSelection);
+  const { views, staleness, packetSelection, evidenceDebt } = projectTarget(root);
+  return buildJsonPayload(views, staleness, packetSelection, evidenceDebt);
 }
 
 function states(payload) {
@@ -1280,8 +1541,8 @@ test("text output is the default and is unchanged by the JSON mode", (t) => {
   const root = tempRoot(t);
   layoutDefaultTarget(root, { epoch: EPOCH_AFTER_ARTIFACTS });
   const { out } = runMain([root]);
-  const { views, staleness, packetSelection } = projectTarget(root);
-  assert.equal(out, projectReadback(views, staleness, packetSelection));
+  const { views, staleness, packetSelection, inputs, evidenceDebt } = projectTarget(root);
+  assert.equal(out, projectReadback(views, staleness, packetSelection, inputs, evidenceDebt));
   assert.ok(out.includes("CAMPAIGNS OS RUN-ARTIFACT READBACK"));
 });
 

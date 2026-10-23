@@ -10,7 +10,9 @@
  * usually subdirectories of their enclosing campaign repository — to locate the
  * Git directory, and that directory's `logs/HEAD` reflog), plus the CampaignSpec
  * and normalized Campaign Build Brief the Build Packet names, whose current
- * content decides each stage's effective status. It writes nothing,
+ * content decides each stage's effective status. It also hashes built output
+ * and maps file drift against the recorded assembly manifest to evidence debt.
+ * It writes nothing,
  * starts no process, and touches no network. That contract is why the CLI
  * exempts `readback` from lifecycle-journal capture the way it exempts doctor
  * inspection: a command declared read-only must not append a journal entry.
@@ -53,6 +55,7 @@ import { fileURLToPath } from "node:url";
 
 import { assessInputCurrency, currentPacketInputs, effectiveStageStatus } from "./input-currency.mjs";
 import { deriveAssemblyReportSummary } from "./stage-ledger.mjs";
+import { assessEvidenceDebt } from "./evidence-debt.mjs";
 
 export const MAX_ARTIFACT_BYTES = 32 * 1024 * 1024;
 export const MAX_GIT_METADATA_BYTES = 64 * 1024;
@@ -942,7 +945,7 @@ function renderStaleness(staleness, lines) {
       for (const key of staleness.stale_keys) {
         lines.push(`    ${ARTIFACT_TITLES[key]} (generated ${formatUtc(staleness.artifacts[key].generated_at)})`);
       }
-      lines.push("  Every section below describes the repository as it was when the artifacts");
+      lines.push("  Recorded artifact sections describe the repository as it was when the artifacts");
       lines.push("  were generated, not necessarily as it is now; a new run must regenerate");
       lines.push("  them before this view is current.");
     } else {
@@ -1284,6 +1287,36 @@ export function readbackInputs(views) {
   return currentPacketInputs({ packet, packetPath: resolve(views.packet.path) });
 }
 
+function readbackEvidenceDebt(views) {
+  return assessEvidenceDebt({
+    packet: artifactData(views, "packet"),
+    packetPath: views.packet?.path,
+    report: artifactData(views, "report"),
+  });
+}
+
+function renderEvidenceDebt(debt, lines) {
+  lines.push("EVIDENCE DEBT  [the readback's own projection layer: recorded build bindings versus built output]");
+  for (const name of ["polish", "qa"]) {
+    const stage = debt[name];
+    const explanation = stage.status === "current" ? "recorded build matches the current build"
+      : stage.status === "owed" ? "evidence is owed for the current build"
+        : `evidence currency is unknown (${stage.reason}); absence of proof is not no debt`;
+    lines.push(`  ${name}: ${stage.status} — ${explanation}`);
+    lines.push(`    recorded: ${stage.recorded_build_fingerprint ?? "unknown"}; current: ${stage.current_build_fingerprint ?? "unknown"}`);
+  }
+  const changes = debt.changes;
+  lines.push(`  changes against assembly manifest: ${changes.status}${changes.reason ? ` (${changes.reason})` : ""}`);
+  lines.push(`    recorded: ${changes.recorded_build_fingerprint ?? "unknown"}; current: ${changes.current_build_fingerprint ?? "unknown"}`);
+  for (const page of changes.changed_pages) lines.push(`    changed page: ${oneLine(page.page_id)} (${oneLine(page.built_path)})`);
+  for (const path of changes.unmapped_files) lines.push(`    unmapped file: ${oneLine(path)}`);
+  for (const kind of ["extra", "missing", "changed"]) {
+    if (changes[kind].length) lines.push(`    ${kind} files: ${changes[kind].map(oneLine).join(", ")}`);
+  }
+  if (changes.status === "known" && !changes.changed_pages.length && !changes.unmapped_files.length) lines.push("    no files differ from the recorded assembly manifest");
+  lines.push("  Page changes use the assembly baseline; older stage manifests are not reconstructed.", "");
+}
+
 // Superseded records shown per stage, newest last (the report keeps five).
 const HISTORY_RENDER_CAP = 5;
 
@@ -1544,7 +1577,7 @@ function renderFindings(views, lines) {
  * `inputs` is readbackInputs(views); when omitted, every input reads as not
  * readable, so a build, Polish or QA record reads unknown.
  */
-export function projectReadback(views, staleness = null, packetSelection = null, inputs = null) {
+export function projectReadback(views, staleness = null, packetSelection = null, inputs = null, evidenceDebt = assessEvidenceDebt()) {
   const lines = [
     "CAMPAIGNS OS RUN-ARTIFACT READBACK",
     "A read-only projection of this run's emitted artifacts. Campaigns OS",
@@ -1557,6 +1590,7 @@ export function projectReadback(views, staleness = null, packetSelection = null,
   renderArtifactTable(views, lines, packetSelection);
   renderIdentity(views, lines);
   renderStages(views, lines, inputs);
+  renderEvidenceDebt(evidenceDebt, lines);
   renderContext(views, lines);
   renderDoctor(views, lines);
   renderVerdict(views, lines);
@@ -1602,13 +1636,15 @@ export function serializeStaleness(staleness) {
 /**
  * Whether this projection shows nothing the readback can call wrong.
  *
- * True only when all five conditions hold: every artifact the readback found is
+ * True only when all six conditions hold: every artifact the readback found is
  * loaded and recognized (absent artifacts are not counted against it — a run
  * that emitted no findings export is not thereby unclean, while an unreadable
  * or unrecognized one always is); the staleness comparison is computable and NO
  * loaded artifact is stale; NO loaded artifact recorded a `generated_at` this
  * readback could not parse; no cross-artifact divergence was found; and the
- * doctor output records zero errors.
+ * doctor output records zero errors; and no evidence-debt stage is owed.
+ * Unknown build binding does not independently change this integrity flag;
+ * callers must read evidence_debt rather than treating clean as no debt.
  *
  * The fourth of those is the unknown-age rule: an artifact whose recorded age
  * did not parse was never shown to be current, and `clean` states that the
@@ -1626,7 +1662,8 @@ export function serializeStaleness(staleness) {
  * OS recorded. docs/readback.md states the rule and its limits for callers
  * gating on it.
  */
-export function computeClean(views, staleness) {
+export function computeClean(views, staleness, evidenceDebt = null) {
+  if ([evidenceDebt?.polish, evidenceDebt?.qa].some((stage) => stage?.status === "owed")) return false;
   if (Object.values(views).some((view) => !CLEAN_ARTIFACT_STATES.has(view.state))) return false;
   if (!staleness || !staleness.computable || staleness.stale) return false;
   if (staleness.unparseable_keys.length) return false;
@@ -1661,8 +1698,10 @@ function artifactRowDetail(view, staleness) {
  *
  * `packet_selection` and `staleness` are `null` when a programmatic caller
  * builds a payload without them; the CLI always supplies both.
+ * `evidenceDebt` is projectTarget's assessment; when omitted it is explicitly
+ * unknown, so this serializer stays pure and does not hash files itself.
  */
-export function buildJsonPayload(views, staleness = null, packetSelection = null) {
+export function buildJsonPayload(views, staleness = null, packetSelection = null, evidenceDebt = assessEvidenceDebt()) {
   return {
     schema_version: JSON_SCHEMA_VERSION,
     artifacts: Object.values(views).map((view) => ({
@@ -1676,7 +1715,8 @@ export function buildJsonPayload(views, staleness = null, packetSelection = null
     doctor: computeDoctorSummary(views),
     skip_cascades: computeSkipCascades(views),
     divergences: computeDivergences(views),
-    clean: computeClean(views, staleness),
+    evidence_debt: evidenceDebt,
+    clean: computeClean(views, staleness, evidenceDebt),
   };
 }
 
@@ -1853,7 +1893,7 @@ export function resolvePaths(root, overrides = {}) {
 export function projectTarget(root, overrides = {}) {
   const { paths, packetSelection, packetView } = resolveProjection(root, overrides);
   const views = loadArtifacts(paths, { packet: packetView });
-  return { views, staleness: assessStaleness(root, views), packetSelection, inputs: readbackInputs(views) };
+  return { views, staleness: assessStaleness(root, views), packetSelection, inputs: readbackInputs(views), evidenceDebt: readbackEvidenceDebt(views) };
 }
 
 // The bundled synthetic sample `--example` projects. It is already on the
@@ -1885,6 +1925,7 @@ export function projectExample() {
   const { paths, packetSelection, packetView } = resolveProjection(EXAMPLE_ROOT, {});
   const views = loadArtifacts(paths, { packet: packetView });
   const inputs = readbackInputs(views);
+  const evidenceDebt = readbackEvidenceDebt(views);
   for (const view of Object.values(views)) {
     const within = view.path.slice(EXAMPLE_ROOT.length).replace(/\\/g, "/").replace(/^\/+/, "");
     view.path = `${EXAMPLE_RELATIVE_ROOT}/${within}`;
@@ -1892,7 +1933,7 @@ export function projectExample() {
   const staleness = assessStaleness(EXAMPLE_ROOT, views, {
     headMovement: { time: null, detail: EXAMPLE_HEAD_DETAIL },
   });
-  return { views, staleness, packetSelection, inputs };
+  return { views, staleness, packetSelection, inputs, evidenceDebt };
 }
 
 const OVERRIDE_FLAGS = {
@@ -1986,9 +2027,9 @@ export function runReadbackCommand(args) {
     if (error instanceof ReadbackUsageError) return { exitCode: 2, text: `${error.message}\n` };
     throw error;
   }
-  const { views, staleness, packetSelection, inputs } = projection;
+  const { views, staleness, packetSelection, inputs, evidenceDebt } = projection;
   const text = request.json
-    ? `${JSON.stringify(buildJsonPayload(views, staleness, packetSelection), null, 2)}\n`
-    : projectReadback(views, staleness, packetSelection, inputs);
+    ? `${JSON.stringify(buildJsonPayload(views, staleness, packetSelection, evidenceDebt), null, 2)}\n`
+    : projectReadback(views, staleness, packetSelection, inputs, evidenceDebt);
   return { exitCode: 0, text };
 }
