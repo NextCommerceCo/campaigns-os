@@ -39,3 +39,16 @@ Core rules:
 - Campaigns OS proof is not merchant launch readiness. Before launch, confirm production storefront URL, live payment methods, shipping markets, legal/support URLs, analytics expectations, and merchant-side configuration.
 
 Current source adapter: prepared HTML/assets (`html_funnel`).
+
+## Revising a live campaign
+
+1. Before editing, run `npx --no-install campaigns-os readback .` and
+   `npx --no-install campaigns-os next --packet campaign-runtime.build.json`.
+   Readback's `evidence_debt` compares the build on disk with the builds Polish and QA were recorded for.
+   Changed pages are listed against the recorded assembly build manifest; an owed stage with an empty page list still means evidence is owed.
+2. For pages built from a provided design, the Design Source Package is the authority, not the punch list's wording.
+3. Before opening the pull request, after the final edit, rebuild and re-run `npx --no-install campaigns-os polish capture --packet campaign-runtime.build.json --base-url <served-current-build-url>`
+   for the changed pages; record Polish and any owed QA against that build.
+4. In the pull request body, put the design reference and the preview of each changed page side by side.
+
+The standing pull-request check is `npx --no-install campaigns-os doctor --ci --packet campaign-runtime.build.json`, report-only unless the repo opts in.

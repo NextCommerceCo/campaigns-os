@@ -352,7 +352,7 @@ Usage:
   campaigns-os logout [--store <subdomain>]
   campaigns-os tooling status [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--skills-revision <bundle-revision|skill-id@version>] [--packet <campaign-runtime.build.json>] [--force] [--json]   # install-mode, git, skill freshness, and local gateway login/store/expiry/reported version. --skills-revision checks the bundle revision the skill you loaded states on its first body line (or that one skill's <skill-id>@<version>) against the bundle THIS CLI ships: revision_check is match, mismatch or unchecked, and a mismatch prints the full status and exits 2 because skill text already in context cannot be refreshed by re-running — start a fresh session. The pin check reports one executable per project: the project pin first — the first exact spec for this package (x.y.z, =x.y.z or vx.y.z) on the walk up from the nearest package.json, devDependencies then dependencies in each, entering a workspace root and stopping there, never peerDependencies or optionalDependencies — then the Build Packet's campaigns_os_version (the project's campaign-runtime.build.json, or --packet <path>); the Pin: line names the key and manifest (or packet) each version came from; pin.status is match, stale_pin (the pin is not the running version), conflicting_pin (the two sources disagree) or unpinned (neither, or only a range; exit 0). stale_pin and conflicting_pin exit 2 with the file to change; --force (bare) overrides them, is reported as pin.forced and lands on the lifecycle journal entry. See docs/skills-revision.md
   campaigns-os tooling diagnose [--packet <packet>] [--platform <claude|codex|agents|all>] [--json]   # read-only redacted support summary
-  campaigns-os install-agent-context --target <page-kit-dir> [--dry-run]
+  campaigns-os install-agent-context --target <page-kit-dir> [--dry-run] [--json]
   campaigns-os next [${NEXT_STAGE_ORDER.join("|")}] --packet <json> [--no-write] [--no-remit] [--proxy-base <url>] [--json]   # no stage self-decides; returns gates[] + next_actions[] alongside the prompt
   campaigns-os next setup --packet <json> [--context <json>] [--report <json>] [--json]
   campaigns-os next build --packet <json> [--context <json>] [--report <json>] [--json]
@@ -1181,7 +1181,13 @@ async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = nul
   if (command === "install-agent-context") {
     const target = requireArg(args, "target");
     const result = installAgentContext(resolve(target), Boolean(args["dry-run"]));
-    writeResult(result, args, 0);
+    if (args["dry-run"] && !args.json) {
+      for (const file of result.file_contents) {
+        console.log(`Destination: ${file.destination}\n${file.content}`);
+      }
+    } else {
+      writeResult(result, args, 0);
+    }
     return;
   }
 
@@ -5474,10 +5480,13 @@ function installAgentContext(targetRepo, dryRun = false) {
     ["copilot-instructions.md", join(ROOT, "agents/copilot/copilot-instructions.md")],
   ];
   const written = [];
+  const fileContents = [];
   if (!dryRun) mkdirSync(outDir, { recursive: true });
   for (const [name, source] of files) {
     const dest = join(outDir, name);
-    if (!dryRun) writeFileSync(dest, readFileSync(source, "utf8"));
+    const content = readFileSync(source, "utf8");
+    if (!dryRun) writeFileSync(dest, content);
+    else fileContents.push({ destination: dest, content });
     written.push(dest);
   }
   const gitignore = ensureRuntimeStateIgnored(targetRepo, { dryRun });
@@ -5487,6 +5496,7 @@ function installAgentContext(targetRepo, dryRun = false) {
     target_repo: targetRepo,
     directory: outDir,
     files: written,
+    ...(dryRun ? { file_contents: fileContents } : {}),
     gitignore,
     note: "Context files are staged under .campaign-runtime/agent-context and do not overwrite root agent files.",
   };
