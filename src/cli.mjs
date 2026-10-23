@@ -2839,6 +2839,7 @@ export async function polishCaptureCommand(args, options = {}) {
       mediaWeight: capture.media_weight,
       readability: capture.readability,
       captures: capture.captures,
+      elementParity: capture.element_parity,
       now: options.now ?? new Date(),
     });
     checkpoint = evaluateRecordedHiddenEagerMediaCheckpoint({

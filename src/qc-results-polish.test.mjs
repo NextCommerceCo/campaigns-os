@@ -265,7 +265,7 @@ test("F1.0-I8 [stand-in: 1.3 media_weight] media_weight bound to an older build 
   assert.equal((handoff.open || []).some((entry) => entry.leg === "polish"), false, "a stale Polish result is never open");
 });
 
-test("F1.0-I20 no Polish capture on the report: handoff coverage lists 1.3 unexercised (leg_not_run)", async (t) => {
+test("F1.0-I20 no Polish capture on the report: handoff coverage lists 1.3 unexercised (leg_not_run); the mapped campaign also lists parity.element", async (t) => {
   const f = campaignFixture();
   t.after(f.cleanup);
   assert.equal(readJson(f.reportPath).stages.polish?.evidence, undefined, "precondition: no Polish capture");
@@ -274,7 +274,7 @@ test("F1.0-I20 no Polish capture on the report: handoff coverage lists 1.3 unexe
   const tuples = [...new Set(coverage.map((entry) => JSON.stringify([entry.check, entry.result, entry.reason_code])))].map((text) => JSON.parse(text)).sort();
   assert.deepEqual(
     tuples,
-    [["media.oversize", "unexercised", "leg_not_run"], ["media.weight", "unexercised", "leg_not_run"], ["readability.contrast", "unexercised", "leg_not_run"], ["visual.diff", "unexercised", "leg_not_run"], ["visual.reference", "unexercised", "leg_not_run"]],
+    [["media.oversize", "unexercised", "leg_not_run"], ["media.weight", "unexercised", "leg_not_run"], ["parity.element", "unexercised", "leg_not_run"], ["readability.contrast", "unexercised", "leg_not_run"], ["visual.diff", "unexercised", "leg_not_run"], ["visual.reference", "unexercised", "leg_not_run"]],
     `qc_handoff.coverage lists both 1.3 checks, each unexercised / leg_not_run, and nothing else for Polish: ${JSON.stringify(handoff.coverage)}`,
   );
 });

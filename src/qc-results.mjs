@@ -1552,6 +1552,38 @@ export function readCaptures({ record, packet, currentBuild, currentSource, buil
   return unique.size ? [...unique.values()] : fail("record_shape_invalid");
 }
 
+// Element parity rows are re-derived by the rules module's reader from the
+// probe files, C's captures record, the packet snapshot, the Design Source
+// Package and the current build. A campaign with no mapped source page has no
+// parity.element row (applicability). A reader that cannot run reads every
+// row of the record evidence_not_reproducible, never pass.
+export const parityApplies = (packet) => Array.isArray(packet?.source_html?.pages) && packet.source_html.pages.some((page) => isNonEmptyString(page?.path));
+
+export function readElementParity({ record, captures = null, packet = null, packetPath = null, currentBuild = null, currentSource = null,
+  buildOutput = null, campaignSlug = null, targetRepo = null, qcAccepts = [], qcStandIns = null, rederivers = null } = {}) {
+  if (packet && !parityApplies(packet)) return [];
+  const resolved = resolvePolishRules({ check: "parity.element", qcStandIns, rederivers });
+  const context = { record, captures, packet, packetPath, currentBuild, currentSource, buildOutput, campaignSlug, targetRepo, qcAccepts };
+  if (resolved.status === "loaded" && typeof resolved.rules.read === "function") {
+    try {
+      const rows = resolved.rules.read(context, resolved.rules);
+      if (Array.isArray(rows)) return rows;
+    } catch { /* fail closed below */ }
+  }
+  const measuredAt = validTime(record?.measured_at) ? record.measured_at : null;
+  const cells = (Array.isArray(record?.cells) ? record.cells : []).filter((cell) => isPlainObject(cell) && isNonEmptyString(cell.page_id) && ["desktop", "mobile"].includes(cell.viewport));
+  const mapped = (Array.isArray(packet?.source_html?.pages) ? packet.source_html.pages : []).filter((page) => isNonEmptyString(page?.path) && isNonEmptyString(page.page_id));
+  const subjects = [...cells.map((cell) => ({ check: "parity.element", page: cell.page_id, viewport: cell.viewport, key: "comparison" })),
+    ...mapped.flatMap((page) => ["desktop", "mobile"].map((viewport) => ({ check: "parity.element", page: page.page_id, viewport, key: "comparison" }))),
+    ...(Array.isArray(qcAccepts) ? qcAccepts : []).filter((accept) => accept?.check === "parity.element" && accept.leg === "polish"
+      && accept.subject?.check === "parity.element" && isNonEmptyString(accept.subject.page) && ["desktop", "mobile"].includes(accept.subject.viewport)
+      && /^(copy|type|color|geom):el-[a-f0-9]{12}$/.test(accept.subject.key)).map((accept) => accept.subject)];
+  if (!subjects.length) subjects.push({ check: "parity.element", page: null, key: "element_parity" });
+  return [...new Map(subjects.map((subject) => [qcResultId(subject), buildQcResult({ check: "parity.element", leg: "polish", subject,
+    result: "unexercised", reason_code: E, members: [{ key: "evidence", result: "unexercised", reason_code: "rules_unavailable" }],
+    state: { reason: "rules_unavailable" }, measured_at: measuredAt })])).values()];
+}
+
 // ---------------------------------------------------------------------------
 // Every current result, per leg, and the silence rule
 
@@ -1566,7 +1598,12 @@ const POLISH_RECORDS = Object.freeze({
   media_weight: Object.freeze({ checks: Object.freeze(qcChecksForRecord("media_weight")), read: readMediaWeight }),
   captures: Object.freeze({ checks: Object.freeze(qcChecksForRecord("captures")), read: readCaptures }),
   readability: Object.freeze({ checks: Object.freeze(qcChecksForRecord("readability")), read: readReadability }),
+  element_parity: Object.freeze({ checks: Object.freeze(qcChecksForRecord("element_parity")), read: readElementParity }),
 });
+// Records whose checks apply only to some campaigns, judged from the packet
+// snapshot; with no packet they do not apply.
+const POLISH_RECORD_APPLIES = Object.freeze({ element_parity: parityApplies });
+const polishRecordApplies = (name, packet) => !Object.hasOwn(POLISH_RECORD_APPLIES, name) || (packet != null && POLISH_RECORD_APPLIES[name](packet));
 const STORE_POLICY_FIELDS = Object.freeze(Object.keys(STORE_PAGE_MATCHERS));
 
 // Applicability is decided without the leg running: the tracking checks
@@ -1598,7 +1635,7 @@ const silence = (leg, check, reasonCode) => ({ check, leg, result: "unexercised"
 // record predates the check, its module is missing or not yet loaded, or the
 // loaded rules gave no row), except that a module that failed to load reads
 // evidence_not_reproducible when the record holds the leg's QC evidence.
-export function handoffCoverage({ report, spec, results = [], qcStandIns = null, rederivers = null }) {
+export function handoffCoverage({ report, spec, results = [], qcStandIns = null, rederivers = null, packet = null }) {
   const entries = [];
   const hasRow = (leg, check) => results.some((row) => row.leg === leg && row.check === check);
   const silentReason = (failed) => (failed ? E : QC_REASON.NOT_CAPTURED);
@@ -1617,10 +1654,13 @@ export function handoffCoverage({ report, spec, results = [], qcStandIns = null,
 
   const polishStage = report?.stages?.polish;
   if (!stageRecorded(polishStage)) {
-    for (const check of POLISH_CHECKS) entries.push(silence("polish", check, QC_REASON.LEG_NOT_RUN));
+    for (const check of POLISH_CHECKS) {
+      if (polishRecordApplies(QC_CHECK_REGISTRY[check].record, packet)) entries.push(silence("polish", check, QC_REASON.LEG_NOT_RUN));
+    }
   } else {
     const visual = polishStage.evidence?.visual_review;
     for (const [name, { checks }] of Object.entries(POLISH_RECORDS)) {
+      if (!polishRecordApplies(name, packet)) continue;
       const captured = name === "media_weight" ? isPlainObject(visual?.page_load) && visual.media_weight != null : visual?.[name] != null;
       for (const check of checks) {
         if (hasRow("polish", check)) continue;
@@ -1652,12 +1692,15 @@ export function readCurrentQcResults({ report, doctor, spec = null, targetRepo, 
   try { if (packetPath) packet = JSON.parse(readRegularFileSync(packetPath, { maxBytes: 16 * 1024 * 1024 }).toString("utf8")); } catch { /* unavailable */ }
   const polishContext = recorded.length ? {
     pageLoad: visual.page_load,
+    captures: visual.captures ?? null,
     packet,
+    packetPath,
     currentBuild,
     currentSource: currentSourcePackageMaterialFingerprint(report),
     buildOutput: doctor?.derived?.build_output_fingerprint ?? null,
     campaignSlug: packetCampaignSlug({ packet, report }),
     targetRepo,
+    qcAccepts: report?.qc_accepts,
     qcStandIns,
     rederivers,
   } : null;
@@ -1675,5 +1718,5 @@ export function readCurrentQcResults({ report, doctor, spec = null, targetRepo, 
     })
     : [];
   const results = [...doctorResults, ...polishResults, ...qaResults];
-  return { results, coverage: handoffCoverage({ report, spec, results, qcStandIns, rederivers }) };
+  return { results, coverage: handoffCoverage({ report, spec, results, qcStandIns, rederivers, packet }) };
 }

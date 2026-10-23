@@ -111,7 +111,10 @@ test("P1-B3: manifest edit follows existing stale refusal and force recovery, wi
   declare(fixture, "manifest", DESIGN_A);
   const declarationEdit = declarationPrepare(fixture);
   assert.equal(declarationEdit.status, 1);
-  assert.equal(declarationEdit.stderr, ordinaryEdit.stderr);
+  // The template certification notice names the vendored SDK record, which
+  // the two runs may read at different revisions; the refusal itself must match.
+  const refusal = (stderr) => stderr.replace(/^\[campaigns-os prepare-build\] Template family .* certification is current: .*\n/m, "");
+  assert.equal(refusal(declarationEdit.stderr), refusal(ordinaryEdit.stderr));
   assert.match(declarationEdit.stderr, /current_html_funnel_material_stale/);
   assert.match(declarationEdit.stderr, /--force/);
   const before = accessOf(fixture);

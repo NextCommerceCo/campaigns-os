@@ -27,7 +27,7 @@ export const QC_DISPOSITION = Object.freeze({ OPEN: "open", OPERATOR_ACCEPTED: "
 // full QA verdict, or, on the Polish leg, the package-owned record the
 // accepted check is read from (QC_CHECK_REGISTRY `record`).
 const QC_LEG_SOURCES = Object.freeze({ doctor: "doctor_sidecar", qa: "qa_full_verdict" });
-export const QC_POLISH_RECORD_SOURCES = Object.freeze({ media_weight: "polish_media_weight", readability: "polish_readability", captures: "polish_captures" });
+export const QC_POLISH_RECORD_SOURCES = Object.freeze({ media_weight: "polish_media_weight", readability: "polish_readability", captures: "polish_captures", element_parity: "polish_element_parity" });
 
 const DESIGN_ACCESS_TEXT = Object.freeze({
   design_access_missing: "A design file is recorded for this page, but this version of Campaigns OS cannot read design files. Element parity compares the built page with the page's source HTML export instead, so differences between the export and the design file are not checked. Nothing needs to change to continue. Where it matters, compare the export with the design file by hand.",
@@ -35,11 +35,39 @@ const DESIGN_ACCESS_TEXT = Object.freeze({
   design_reference_changed: "The design file named for this page differs from the one the Design Source Package records. Rerun intake with `--force` to record the current one.",
   design_reference_conflict: "The CampaignSpec page and the source-html manifest name different design files or frames for this page (or the manifest's producer file key differs). The package records the CampaignSpec's. Correct the wrong one and rerun intake.",
 });
-export const QC_COVERAGE_TEXT = Object.freeze({ "design.access": Object.freeze({
-  design_access_missing: DESIGN_ACCESS_TEXT.design_access_missing,
-  design_reference_not_recorded: DESIGN_ACCESS_TEXT.design_reference_not_recorded,
+const probeIncomplete = (code) => `The element probe did not complete (${code}); not compared.`;
+const notRendered = (code) => `The source or built page did not render (${code}).`;
+const partlyRead = "Only part of the page was read; findings are not accept-eligible.";
+const textNotRead = "Some page text was not read (long text, closed components or frames); copy is not called missing there.";
+const packageMismatch = "The Design Source Package on disk does not match the build's; rerun intake or polish capture.";
+const PARITY_COVERAGE_TEXT = Object.freeze({
+  ...Object.fromEntries(["navigation_failed", "http_error", "producer_timeout", "browser_unavailable", "source_html_missing", "source_root_unavailable"].map((code) => [code, notRendered(code)])),
+  ...Object.fromEntries(["probe_timeout", "probe_failed", "probe_not_run", "document_changed", "run_budget_exhausted"].map((code) => [code, probeIncomplete(code)])),
+  page_not_captured: "Not captured for element parity: beyond the 32-page run limit, or added since the last capture. Rerun polish capture.",
+  readiness_incomplete: "Fonts or awaited content were not ready in time; not compared.",
+  source_identity_unrecorded: "The Design Source Package records no hash for this source file; not compared.",
+  probe_file_absent: "Probe files are local and not committed; rerun polish capture on this machine.",
+  design_elements_unavailable: "The source has no text elements (for example an image-only export); element parity is unavailable.",
+  viewport_mismatch: "Source and build rendered at different sizes or pixel ratios; nothing is resized.",
+  element_cap_reached: partlyRead,
+  probe_time_cap_reached: partlyRead,
+  page_text_truncated: textNotRead,
+  closed_shadow_root_not_read: textNotRead,
+  frame_not_read: textNotRead,
+  font_face_cap_reached: "More than 200 font faces; web-font availability was not fully checked.",
+  source_package_unavailable: packageMismatch,
+  source_package_stale: packageMismatch,
+});
+export const QC_COVERAGE_TEXT = Object.freeze({
+  "design.access": Object.freeze({
+    design_access_missing: DESIGN_ACCESS_TEXT.design_access_missing,
+    design_reference_not_recorded: DESIGN_ACCESS_TEXT.design_reference_not_recorded,
+  }),
+  "parity.element": PARITY_COVERAGE_TEXT,
+});
+export const QC_COVERAGE_LIMIT_TEXT = Object.freeze({ "parity.element": Object.freeze({
+  font_usage_not_observed: "The font each glyph was drawn with is not read; a web font that loaded is assumed used.",
 }) });
-export const QC_COVERAGE_LIMIT_TEXT = Object.freeze({});
 
 export function designAccessSummary(row) {
   return row.check === "design.access" && row.result === "review" ? DESIGN_ACCESS_TEXT[row.reason_code] ?? null : null;

@@ -255,7 +255,15 @@ browserTest("polish capture commits media_weight beside page_load in one report 
       members: [],
     })).sort((a, b) => a.viewport.localeCompare(b.viewport)),
   }], "qc_handoff.open lists exactly the F1.3-B2 warning, in both viewports");
-  assert.deepEqual((handoff.coverage || []).filter((entry) => entry.leg === "polish"), [], "no Polish result is unexercised or excluded");
+  // Element parity is applicable (mapped pages) but this example campaign has
+  // no Design Source Package, so its comparisons read source_package_unavailable.
+  const parityPages = ["checkout", "landing", "receipt", "upsell"];
+  assert.deepEqual((handoff.coverage || []).filter((entry) => entry.leg === "polish"), [
+    { check: "parity.element", leg: "polish", result: "limit", reason_code: "font_usage_not_observed", count: 8, pages: parityPages,
+      text: "The font each glyph was drawn with is not read; a web font that loaded is assumed used." },
+    { check: "parity.element", leg: "polish", result: "unexercised", reason_code: "source_package_unavailable", count: 8, pages: parityPages,
+      text: "The Design Source Package on disk does not match the build's; rerun intake or polish capture." },
+  ], "no other Polish result is unexercised or excluded");
   // Every comparison that ran reads review (visual_diff_diagnostic, contract
   // §5.3): one visual.diff row per captured page and viewport against the
   // build's own source HTML, so the basis is not independent and the fixture's

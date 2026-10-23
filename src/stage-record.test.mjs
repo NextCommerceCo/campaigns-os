@@ -3663,3 +3663,16 @@ test("F3C-B6b F3C-I10 fresh write after unchanged build cannot use pre-C page_lo
     assert.deepEqual(snapshotFiles(f), before);
   });
 });
+
+test("P2-B1 element_parity is package-owned: record polish --evidence carrying it is refused with package_owned_key and writes nothing", async () => {
+  await withLifecycle(async (f) => {
+    scaffold(f); recordOk(f, "setup"); buildSite(f); recordOk(f, "build"); await capture(f);
+    const evidence = readJson(POLISH_EVIDENCE);
+    evidence.evidence.visual_review.element_parity = {};
+    const path = join(f.dir, "owned-element-parity.json"); writeJson(path, evidence);
+    const before = snapshotFiles(f);
+    const refused = record(f, "polish", ["--evidence", path]);
+    assert.notEqual(refused.status, 0); assert.match(refused.stderr, /package_owned_key.*element_parity/);
+    assert.deepEqual(snapshotFiles(f), before);
+  });
+});
