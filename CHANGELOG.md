@@ -10,6 +10,14 @@ Notable supported-surface changes are recorded here.
 
 The Polish skill is 1.1.49, bundle `1.60.0+skills.4`.
 
+## [1.60.0+agent.7] - 2026-10-22
+
+### Fixed
+
+The installed package now includes the existing quickstart, access model, entry-point, source-adapter and CampaignSpec authoring guides. Links from the Build Packet and README continue inside the package; repository-only evaluation, architecture and case-study references point to GitHub. The authoring guide links the shipped v5 schema and public multi-step examples, which remain repository test data.
+
+The package check follows relative documentation links and checks destination headings against the extracted tarball, so a source-only guide or renamed anchor cannot leave installed users at a dead end. It ignores illustrative code and does not fetch external links. Runtime requirements and campaign behavior are unchanged.
+
 ## [1.60.0+agent.6] - 2026-10-22
 
 ### Changed

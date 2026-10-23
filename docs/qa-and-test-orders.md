@@ -1152,7 +1152,7 @@ What the diff asserts (BLOCKER unless noted):
 For a real SDK 0.4 migration example that required typed-card post-purchase
 traversal, persisted-order price verification, receipt-context analytics, and
 independent order readback, see
-[SDK 0.4 Migration Proof Case Study](sdk04-migration-proof-case-study.md).
+[SDK 0.4 Migration Proof Case Study](https://github.com/NextCommerceCo/campaigns-os/blob/main/docs/sdk04-migration-proof-case-study.md).
 
 ## Parity capture (fixture-driven migration proof)
 

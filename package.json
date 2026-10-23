@@ -155,6 +155,11 @@
     "docs/progress-snapshots.md",
     "demo",
     "docs/demo-preview.md",
-    "docs/local-setup.md"
+    "docs/local-setup.md",
+    "docs/quickstart.md",
+    "docs/access-model.md",
+    "docs/entry-points.md",
+    "docs/source-adapters.md",
+    "docs/campaignspec-authoring-examples.md"
   ]
 }
