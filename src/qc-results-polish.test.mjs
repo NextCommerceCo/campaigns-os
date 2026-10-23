@@ -692,14 +692,15 @@ test("Polish records bind to the readable packet's slug (null when it names none
     [{ campaign: { public_route_slug: "packet-slug" } }, "packet-slug"],
     [{ campaign: { public_route_slug: "" } }, null],
     [{ campaign: {} }, null],
-    [null, "sample"],
-  ]) assert.equal(packetCampaignSlug({ packet, report }), expected, JSON.stringify(packet));
+  ]) assert.equal(packetCampaignSlug({ packet, packetRead: true, report }), expected, JSON.stringify(packet));
   // A packet file that was read but did not parse to an object names no slug (main's rule).
   for (const parsed of [[], null, false, 7, "text"]) {
     assert.equal(packetCampaignSlug({ packet: parsed, packetRead: true, report }), null, JSON.stringify(parsed));
   }
   assert.equal(packetCampaignSlug({ packet: null, packetRead: false, report }), "sample");
-  assert.equal(packetCampaignSlug({ packet: { campaign: { public_route_slug: "" } }, report: { identity: { public_route_slug: "" } } }), null);
+  assert.equal(packetCampaignSlug({ packet: null, report }), "sample");
+  assert.equal(packetCampaignSlug({ packet: { campaign: { public_route_slug: "packet-slug" } }, report }), "sample");
+  assert.equal(packetCampaignSlug({ packet: { campaign: { public_route_slug: "" } }, packetRead: true, report: { identity: { public_route_slug: "" } } }), null);
 });
 
 test("F3C-B15 CLI next status is unchanged with a near-zero diagnostic diff present", async (t) => {

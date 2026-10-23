@@ -1636,7 +1636,7 @@ export function handoffCoverage({ report, spec, results = [], qcStandIns = null,
 // packetPath; with no readable packet, the Assembly Report's (which capture
 // requires to equal the packet's). A readable packet without one gives null,
 // as on main. Null when neither names one.
-export function packetCampaignSlug({ packet, packetRead = isPlainObject(packet), report }) {
+export function packetCampaignSlug({ packet, packetRead = false, report }) {
   const slug = packetRead ? packet?.campaign?.public_route_slug : report?.identity?.public_route_slug;
   return isNonEmptyString(slug) ? slug : null;
 }

@@ -1358,10 +1358,14 @@ export async function createPolishBrowserAdapter({
           result.probes[probe.name] = await read(probe);
           probe.onResult?.(result.probes[probe.name]);
         }
-        const layout = await read({ name: "geometry", source: visualGeometry, boundMs: 1500 });
+        const geometryBoundMs = 1500;
+        const geometryTimeoutStatus = (budget.addedRemainingMs ?? Infinity) - (clock.now() - started)
+          <= Math.min(geometryBoundMs, cellLeftMs()) ? "run_budget_exhausted" : "producer_timeout";
+        const layout = await read({ name: "geometry", source: visualGeometry, boundMs: geometryBoundMs });
         // The document loaded: a geometry probe that could not measure is not a navigation failure.
         if (layout.status !== "measured" || !Number.isFinite(layout.value?.height)) {
-          result.status = layout.status === "document_changed" ? "document_changed" : "probe_failed";
+          result.status = layout.status === "document_changed" ? "document_changed"
+            : layout.status === "timeout" ? geometryTimeoutStatus : "probe_failed";
           return finish();
         }
         result.status = "rendered";
