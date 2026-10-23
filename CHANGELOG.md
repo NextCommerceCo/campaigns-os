@@ -2,6 +2,18 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.61.0] - 2026-10-23
+
+### Changed
+
+- Publishes `1.60.0+agent.7`: installed users receive the quickstart, access, source-adapter and CampaignSpec authoring guides, and the package check verifies documentation links and headings inside the installed package.
+- Publishes `1.60.0+agent.8`: readback reports when a changed build requires Polish or QA again, and `doctor --ci` reports that evidence debt for campaign pull requests. Installed agent context describes revising a live campaign and renewing its evidence (campaigns-os#695, campaigns-os#699).
+- Publishes `1.60.0+agent.9`: completed Polish requires current package captures of the built pages and their source renders. The review handoff includes visual reference warnings and image differences for operator review; pixel scores do not decide fidelity (campaigns-os#696).
+- Intake records a named design file as the page's authority and its HTML export as derived from that file. `design.access` reports `unexercised` with `design_access_missing` when access to the file has not been exercised, and explains how to continue or compare the export and file by hand (campaigns-os#697).
+- Polish probes the source and built renders and reports element-level differences in geometry, typography, colour and copy as warnings an operator can review and accept (campaigns-os#697).
+- The readback schema now describes the optional `evidence_debt` field, its `current`, `owed` and `unknown` stage statuses, reasons and changes against the retained assembly manifest. Any owed Polish or QA stage makes `clean` false; unknown debt still needs review when `clean` is true.
+- Bundled skills advance to `1.61.0+skills.1`.
+
 ## [1.60.0+agent.9] - 2026-10-23
 
 ### Changed

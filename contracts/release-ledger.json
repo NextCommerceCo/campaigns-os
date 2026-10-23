@@ -9131,6 +9131,165 @@
         }
       ],
       "entry_sha256": "6db2be5bbde95ca81448ab4d82212f995536fb2ebbd75008de71a056286df912"
+    },
+    {
+      "id": "RL-0288",
+      "sequence": 276,
+      "date": "2026-10-23",
+      "kind": "release",
+      "surface_version": "1.61.0",
+      "changelog_section": "1.61.0",
+      "changelog_sha256": "d21aa55712ed373bce68b6b60af025f5c000d642253f92226015f236e5897eff",
+      "agent_impact": "The 1.61.0 package publishes 1.60.0+agent.7 through agent.9, adds recorded design-file authority and element-level Polish comparisons for operator review, and describes readback evidence debt in the published schema. Refresh bundled skills to 1.61.0+skills.1; unknown design access or evidence debt is not proof that review is complete.",
+      "compatibility": "additive",
+      "migration": "Update the pinned package and refresh installed skills to 1.61.0+skills.1. Run polish capture again before the next completed record polish. After changing built output, renew any owed Polish and QA evidence; review or accept element-level warnings explicitly.",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "compatibility.json",
+          "surface_entry": "compatibility.json",
+          "summary": "Name 1.61.0 as the release package version."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Advance the surface to 1.61.0 and refresh the design-source, source-html manifest and readback schema hashes."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/campaign-build-brief.md",
+          "surface_entry": "docs/campaign-build-brief.md",
+          "summary": "Describe design-file authority with the HTML export recorded as its derived artifact, and unexercised design access."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Pin the documented toolkit installation to 1.61.0."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerate the orientation reference at surface 1.61.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerate runtime readiness at surface 1.61.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Show the 1.61.0+skills.1 bundle identity in preflight examples."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Advance the two root package version stamps to 1.61.0 without changing dependency resolutions."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Advance the package version to 1.61.0."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaign-design-source-package.v0.schema.json",
+          "surface_entry": "schemas/campaign-design-source-package.v0.schema.json",
+          "summary": "Describe the optional design-file type and derived_from contribution lineage."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-readback.v2.schema.json",
+          "surface_entry": "schemas/campaigns-os-readback.v2.schema.json",
+          "summary": "Describe optional evidence_debt stage statuses, reasons and assembly-manifest changes, and make owed evidence explicit in the clean rule."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/source-html-manifest.v0.schema.json",
+          "surface_entry": "schemas/source-html-manifest.v0.schema.json",
+          "summary": "Accept optional design_file declarations while preserving non-fatal warnings for malformed values."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance the bundle to 1.61.0+skills.1 and every bundled skill by one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.61.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.61.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.61.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.61.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.61.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.61.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.61.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.61.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.61.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-sdk-bump/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bump the skill one patch and stamp bundle 1.61.0+skills.1."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": null,
+          "summary": "Report design.access as unexercised when design-file access is missing and give operator recovery guidance."
+        }
+      ],
+      "entry_sha256": "db0653750036042e4bf2183ff23daaf7b4ad73ec3bf0459d6d152823955d8a64"
     }
   ]
 }

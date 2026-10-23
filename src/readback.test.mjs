@@ -2899,6 +2899,35 @@ function assertMatchesSchema(payload, label) {
   assert.ok(valid, `${label}: ${JSON.stringify(validateReadbackSchema.errors, null, 2)}`);
 }
 
+test("the schema describes optional evidence debt and checks emitted stage and change fields", (t) => {
+  const { root } = evidenceDebtFixture(t);
+  const payload = evidenceDebtPayload(root);
+  const { evidence_debt, ...legacy } = payload;
+  assertMatchesSchema(legacy, "older v2 payload without additive evidence debt");
+  assertMatchesSchema({ ...payload, evidence_debt: { ...evidence_debt, future_field: true } }, "additive debt data");
+  for (const [field, value] of [
+    ["status", "passed"], ["matches_current_build", "true"],
+    ["recorded_build_fingerprint", 42], ["current_build_fingerprint", false],
+    ["reason", "invented_reason"],
+  ]) {
+    for (const stage of ["polish", "qa"]) {
+      const invalid = structuredClone(payload);
+      invalid.evidence_debt[stage][field] = value;
+      assert.equal(validateReadbackSchema(invalid), false, `${stage}.${field}`);
+    }
+  }
+  for (const [field, value] of [
+    ["status", "current"], ["reason", "stage_required"],
+    ["recorded_build_fingerprint", 42], ["current_build_fingerprint", false],
+    ["changed_pages", [{ page_id: "landing" }]], ["unmapped_files", [42]],
+    ["extra", null], ["missing", "landing/index.html"], ["changed", [false]],
+  ]) {
+    const invalid = structuredClone(payload);
+    invalid.evidence_debt.changes[field] = value;
+    assert.equal(validateReadbackSchema(invalid), false, `changes.${field}`);
+  }
+});
+
 test("the --example payload validates against the published v2 schema", () => {
   const { code, payload, err } = jsonFor(["--example", "--json"]);
   assert.equal(code, 0, err);
