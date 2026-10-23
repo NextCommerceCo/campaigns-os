@@ -1046,6 +1046,16 @@ Commit durable packet/context/report artifacts when they represent a real build 
 
 Packet-mode `doctor` is inspection-only by default and preserves retained evidence and active run journals, even when lifecycle capture is configured. Use `--write` to intentionally record fresh evidence; `--no-write` takes precedence. Inspection still reports current blockers and keeps the same exit status.
 
+Add `--ci` for the [standing PR evidence check](campaigns-os-build-flow.md#live-campaign-changes):
+`campaigns-os doctor --packet <packet> --ci --no-live-refs`. CI mode assesses the
+same build-bound Polish/QA debt as readback, exits 0 for current evidence, 3 for
+owed evidence, 4 for unknown debt, and 2 for a missing/unreadable packet. Any owed
+stage returns 3; otherwise an unknown stage returns 4. Other doctor errors remain reported but do not
+change the CI exit. It prints Markdown for a PR comment, or adds `ci.status`,
+`ci.exit_code`, `ci.polish`, `ci.qa` and `ci.changes` under `--json`.
+`--ci` adds no writes or network reads; pass `--no-live-refs` in CI to disable
+doctor's existing live campaign read. Without `--ci`, inspection behavior is unchanged.
+
 `campaigns-os doctor --packet <packet> --write` restates its outcome on the Assembly Report's `stages.doctor` (status, command, outputs, blockers, warnings, `checked_at`). A re-run that reaches the same outcome leaves the report's bytes unchanged rather than refreshing the timestamp alone, so a digest taken of the report — a Run Record's `assembly_report` sha256 — keeps verifying across repeated doctor runs; a changed outcome still rewrites the file.
 
 `campaigns-os start` / `campaigns-os prepare-build` writes portable packet, context, report, and generated doctor-output paths. Resolve each path from its reader's base:
