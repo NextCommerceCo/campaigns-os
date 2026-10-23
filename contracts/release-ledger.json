@@ -8965,6 +8965,12 @@
           "summary": "Document screenshot pixel ratio, dimensions and declared source lineage."
         },
         {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Update current bundle revision examples to 1.60.0+skills.4."
+        },
+        {
           "class": "generated_runtime",
           "path": "package-lock.json",
           "surface_entry": null,
@@ -8980,7 +8986,49 @@
           "class": "skill",
           "path": "skills.json",
           "surface_entry": null,
-          "summary": "Advance the Polish skill to 1.1.49 and bundle to 1.60.0+skills.4."
+          "summary": "Advance the Polish skill to 1.1.49, every other skill one patch, and the bundle to 1.60.0+skills.4."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
         },
         {
           "class": "skill",
@@ -8989,13 +9037,25 @@
           "summary": "Require package captures for completed Polish and present diagnostic review findings."
         },
         {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-sdk-bump/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
           "class": "cli_surface",
           "path": "src/cli.mjs",
           "surface_entry": null,
           "summary": "Capture package visual evidence and report its diagnostic summary."
         }
       ],
-      "entry_sha256": "459e31b359d82edcbd5845e687fe71afbdd5007bdc99af0b2b9dd47940c5c066"
+      "entry_sha256": "00f8ce1f3f4642aeeef7e4640f563bc228f4f7eeedffdef407ba1bc3c315cf85"
     }
   ]
 }

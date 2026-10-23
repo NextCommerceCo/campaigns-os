@@ -256,7 +256,64 @@ browserTest("polish capture commits media_weight beside page_load in one report 
     })).sort((a, b) => a.viewport.localeCompare(b.viewport)),
   }], "qc_handoff.open lists exactly the F1.3-B2 warning, in both viewports");
   assert.deepEqual((handoff.coverage || []).filter((entry) => entry.leg === "polish"), [], "no Polish result is unexercised or excluded");
-  assert.deepEqual((handoff.review || []).filter((entry) => entry.leg === "polish"), [], "no Polish result is under review");
+  // Every comparison that ran reads review (visual_diff_diagnostic, contract
+  // §5.3): one visual.diff row per captured page and viewport against the
+  // build's own source HTML, so the basis is not independent and the fixture's
+  // pages carry no section keys.
+  const polishReview = (handoff.review || []).filter((entry) => entry.leg === "polish");
+  assert.deepEqual(
+    polishReview.filter((entry) => entry.check === "visual.diff").map((entry) => ({
+      result_ref: entry.result_ref.replace(/@[0-9a-f]+$/, "@"),
+      page: entry.page,
+      viewport: entry.viewport,
+      key: entry.key,
+      result: entry.result,
+      reason_code: entry.reason_code,
+      accept_eligible: entry.accept_eligible,
+      members: entry.members,
+    })).sort((a, b) => a.result_ref.localeCompare(b.result_ref)),
+    [LANDING, ...TEXT_ROUTES].flatMap((path) => VIEWPORTS.map((viewport) => ({
+      result_ref: `visual.diff:${path}:${viewport}:source_html@`,
+      page: path,
+      viewport,
+      key: "source_html",
+      result: "review",
+      reason_code: "visual_diff_diagnostic",
+      accept_eligible: false,
+      members: [
+        { key: "sections", result: "unexercised", reason_code: "no_section_keys" },
+        { key: "basis", result: "review", reason_code: "basis_not_independent" },
+      ],
+    }))).sort((a, b) => a.result_ref.localeCompare(b.result_ref)),
+    "qc_handoff.review lists one visual.diff diagnostic per captured page and viewport",
+  );
+  // The fixture's source-HTML reference records no sha256, so each page's
+  // reference verifies but its provenance is unknown (contract §5.2).
+  assert.deepEqual(
+    polishReview.filter((entry) => entry.check === "visual.reference").map((entry) => ({
+      result_ref: entry.result_ref.replace(/@[0-9a-f]+$/, "@"),
+      page: entry.page,
+      key: entry.key,
+      result: entry.result,
+      reason_code: entry.reason_code,
+      accept_eligible: entry.accept_eligible,
+      members: entry.members,
+    })).sort((a, b) => a.result_ref.localeCompare(b.result_ref)),
+    [LANDING, ...TEXT_ROUTES].map((path) => ({
+      result_ref: `visual.reference:${path}:source_html@`,
+      page: path,
+      key: "source_html",
+      result: "review",
+      reason_code: "provenance_unknown",
+      accept_eligible: false,
+      members: [
+        { key: "verification", result: "pass", reason_code: null },
+        { key: "provenance", result: "review", reason_code: "provenance_unknown" },
+      ],
+    })).sort((a, b) => a.result_ref.localeCompare(b.result_ref)),
+    "qc_handoff.review lists one visual.reference provenance_unknown row per captured page",
+  );
+  assert.deepEqual(polishReview.filter((entry) => entry.check !== "visual.diff" && entry.check !== "visual.reference"), [], "no other Polish result is under review");
   assert.equal(JSON.stringify(handoff).includes("not_captured_by_this_version"), false, "the handoff never reads not_captured_by_this_version");
 });
 
