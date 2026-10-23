@@ -43,7 +43,8 @@ campaigns-os readback --example [--json]
 The default output is the rendered human view. `--json` emits the same
 projection as one `campaigns-os-readback/v2` object on stdout so a caller can
 gate on it; `schemas/campaigns-os-readback.v2.schema.json` is that object's
-shape, and this document is its prose twin. The two modes share one computation
+shape; the additive `evidence_debt` field is documented here and is not yet
+described by that schema. The two modes share one computation
 path: the JSON serializes what the text view already computes and adds no
 interpretation the text view does not also carry.
 

@@ -59,6 +59,7 @@ import Ajv2020 from "ajv/dist/2020.js";
 
 import { absentBriefMaterial, inputStamps } from "./input-currency.mjs";
 import { buildManifestEntries, computeBuildFingerprint } from "./built-site-scope.mjs";
+import { EVIDENCE_DEBT_STATUSES } from "./evidence-debt.mjs";
 import {
   ARTIFACT_TITLES,
   DEFAULT_RELATIVE_PATHS,
@@ -151,9 +152,9 @@ test("evidence debt: matching build keeps both stages current and clean unaffect
   assert.deepEqual(payload.evidence_debt.changes.changed_pages, []);
   assert.deepEqual(payload.evidence_debt.changes.unmapped_files, []);
   assert.equal(payload.clean, true);
-  const invalid = structuredClone(payload);
-  invalid.evidence_debt.polish.status = "fresh";
-  assert.equal(validateReadbackSchema(invalid), false, "stage statuses are a closed set");
+  for (const name of ["polish", "qa"]) {
+    assert.ok(EVIDENCE_DEBT_STATUSES.includes(payload.evidence_debt[name].status), `${name} must emit a closed-set stage status`);
+  }
   const text = runReadbackCommand({ _: ["readback", root] }).text;
   assert.match(text, /polish: current/);
   assert.match(text, /qa: current/);

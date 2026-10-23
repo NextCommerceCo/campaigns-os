@@ -12,6 +12,8 @@ import {
 import { normalizePublicRouteSlug } from "./route-identity.mjs";
 import { qaRecordedBuildFingerprint, qaRecordedForCurrentBuild } from "./stage-ledger.mjs";
 
+export const EVIDENCE_DEBT_STATUSES = Object.freeze(["current", "owed", "unknown"]);
+
 const fingerprint = (value) => typeof value === "string" && value.trim() ? value.trim() : null;
 const portable = (value) => value.split(sep).join("/");
 
