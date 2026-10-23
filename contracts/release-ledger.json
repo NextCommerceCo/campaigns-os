@@ -8953,7 +8953,7 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.60.0+agent.9",
-      "changelog_sha256": "3c9f02633961ac35651d465a5079971ced3c7c35c57f2f6af665eac62c66c3ea",
+      "changelog_sha256": "79a868508959f46da073ab22d5201bf6726d779c2259c086e6b9dc311176ae9b",
       "agent_impact": "Run polish capture again after upgrading before recording completed Polish. New writes require current package captures; existing records retain legacy reads. Visual reference warnings and diff diagnostics appear in the QC handoff; pixel scores never decide fidelity.",
       "compatibility": "compatible",
       "migration": "Run polish capture before the next completed record polish; never author visual_review.captures by hand.",
@@ -9055,7 +9055,7 @@
           "summary": "Capture package visual evidence and report its diagnostic summary."
         }
       ],
-      "entry_sha256": "00f8ce1f3f4642aeeef7e4640f563bc228f4f7eeedffdef407ba1bc3c315cf85"
+      "entry_sha256": "35dcdcc91995c7e0fb13617840c0e35e9bd425ff45e0ddc90bfd7ceab77b5005"
     }
   ]
 }

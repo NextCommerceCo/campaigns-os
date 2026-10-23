@@ -32,7 +32,7 @@ export const VISUAL_VIEWPORTS = Object.freeze([
 ]);
 export const VISUAL_VOCABULARY = Object.freeze({
   side: ["build", "source_html"], state: [VISUAL_STATE],
-  cell_status: ["rendered", "navigation_failed", "http_error", "run_budget_exhausted", "producer_timeout", "browser_unavailable", "source_html_missing", "source_root_unavailable"],
+  cell_status: ["rendered", "navigation_failed", "http_error", "probe_failed", "document_changed", "run_budget_exhausted", "producer_timeout", "browser_unavailable", "source_html_missing", "source_root_unavailable"],
   shot_status: ["captured", "timeout", "failed", "skipped"], dependency_status: ["available", "missing", "failed"],
   verification_level: ["decoded", "header_checked", "unverifiable"], provenance_class: ["declared_source", "self_referential", "unknown"],
   comparison_status: ["compared", "unsupported", "unavailable", "not_run"],
@@ -237,9 +237,10 @@ export async function runVisualPass({ createBrowserAdapter, frozen, packet, pack
       dspReason = computeDesignSourcePackageMaterialFingerprint(dsp) === currentSourcePackageMaterialFingerprint(report) ? null : "source_package_stale";
     }
   } catch { /* unavailable, never fetch */ }
-  const builtHtmlHashes = [];
-  for (const route of plan.routes) {
-    const slug = report.identity.public_route_slug;
+  // A report without a slug names no built output: S2 has nothing to hash,
+  // and every route still gets its cells and rows.
+  const builtHtmlHashes = [], slug = report?.identity?.public_route_slug;
+  for (const route of typeof slug === "string" && slug ? plan.routes : []) {
     const suffix = route.requested_route.replace(new RegExp(`^/${slug}/?`), "");
     try { builtHtmlHashes.push(`sha256:${sha256Hex(readRegularFileSync(resolve(targetRepo, "_site", slug, suffix, "index.html"), { root: targetRepo }))}`); } catch { /* missing or non-regular output */ }
   }
@@ -300,7 +301,10 @@ export async function runVisualPass({ createBrowserAdapter, frozen, packet, pack
   dependencies ||= await loadVisualDependencies();
   const captureHashes = cells.flatMap((c) => [c.actual?.png?.sha256, c.stabilized?.png?.sha256]).filter(Boolean);
   for (const route of plan.routes) {
-    const surface = dsp?.surface_identity?.find((s) => [s.mappings?.campaign_spec_page_id, s.mappings?.source_page_id].includes(route.page_id));
+    // A route's page id is its CampaignSpec page id. Another surface's
+    // source_page_id never stands in: a page with no CampaignSpec surface has
+    // no declared image references (§3.1), only its source_html rows.
+    const surface = dsp?.surface_identity?.find((s) => object(s) && s.mappings?.campaign_spec_page_id === route.page_id);
     const coverage = contribution?.mappings?.find((m) => m.surface_id === surface?.id);
     const refs = (coverage?.screenshot_refs || []).map((id) => contribution.screenshot_refs?.find((r) => r.id === id)).filter(Boolean);
     const counts = new Map();
@@ -345,7 +349,7 @@ export async function runVisualPass({ createBrowserAdapter, frozen, packet, pack
       const ref = reference || references.find((r) => r.ref_id === "source_html" && r.route === build.route);
       const context = { record: { dependencies }, build, basis, reference: ref, budgetExhausted: diffLeft() <= 0 };
       const decision = evaluateVisualDiff(comparison, context);
-      if (["visual_diff_diagnostic", "comparison_unsupported"].includes(decision.reason_code) || (decision.reason_code === "comparison_unsupported" && !reference)) {
+      if (["visual_diff_diagnostic", "comparison_unsupported"].includes(decision.reason_code)) {
         try {
           if (diffLeft() <= 0) { comparison.status = "unavailable"; comparison.reason = "diff_budget_exhausted"; }
           else if (build[comparison.build_shot]?.png && (reference || basis?.stabilized?.png)) {
@@ -465,6 +469,8 @@ export function evaluateVisualReference(reference) {
   members.push(reference.provenance?.class === "self_referential" ? member("provenance", "self_referential", "warning")
     : reference.provenance?.class === "declared_source" ? member("provenance", null, "pass") : member("provenance", "provenance_unknown", "review"));
   if (reference.reference_cap_reached) members.push(member("reference_cap", "reference_cap_reached"));
+  // A file refused for where it is, not what it is, names that location.
+  if (level !== "decoded" && reference.verification?.reason === "path_outside_source_root") members.push(member("location", "path_outside_source_root"));
   return aggregateQcResults(members);
 }
 
@@ -485,7 +491,7 @@ export function evaluateVisualDiff(comparison, { record, reference, build, basis
   const missing = needed.filter(([, cell, shot]) => cell?.status !== "rendered" || own(cell, shot)?.status !== "captured");
   if (missing.length) return stop("capture_unavailable", missing.map(([side, cell, shot]) => member(side, cell?.status !== "rendered" ? cell?.status || "cell_missing" : own(cell, shot)?.status || "shot_missing")));
   const ref = evaluateVisualReference(reference || {});
-  if (ref.members.find((m) => m.key === "verification")?.result !== "pass") return stop("reference_not_usable");
+  if (ref.members.find((m) => m.key === "verification")?.result !== "pass") return stop("reference_not_usable", ref.members.filter((m) => m.key === "location"));
   const pair = pairCompatibility(build, image ? reference : basis, { reference: image });
   if (!pair.ok) return stop("comparison_unsupported", [member("pair", pair.reason)]);
   if (fileAbsent) return stop("capture_file_absent");

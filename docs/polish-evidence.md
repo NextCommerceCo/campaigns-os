@@ -54,7 +54,7 @@ per-field problem line.
 
 | Field | Accepted shape (presence check) |
 |---|---|
-| `visual_review` | **Object.** `record polish` needs the package capture record `captures`, which every `polish capture` run at this version writes. That record must be package-produced, bound to the current build and intact, and every image it claims must be a full-page capture at the capture's own viewport width at pixel ratio 1. Screenshot paths written by an agent are not read. After upgrading, run `polish capture` again before `record polish`. A Polish record written by an earlier version, without `captures`, is still read as before: a `screenshots` array (aliases `screenshot_paths`, `paths`, `urls`) with at least one non-empty string. Never hand-author `page_load` or `captures`. |
+| `visual_review` | **Object.** `record polish` needs the package capture record `captures`, which every `polish capture` run at this version writes. That record must be package-produced, bound to the current build and intact, and every image it claims must be a full-page capture at the capture's own viewport width at pixel ratio 1. Every planned route must have at least one rendered build cell with a captured actual shot; an all-skipped or all-failed build side does not qualify. Screenshot paths written by an agent are not read. After upgrading, run `polish capture` again before `record polish`. A Polish record written by an earlier version, without `captures`, is still read as before: a `screenshots` array (aliases `screenshot_paths`, `paths`, `urls`) with at least one non-empty string. Never hand-author `page_load` or `captures`. |
 | `brand_review` | Non-empty object (semantic checks in §3 apply: `favicon`, `brand_bleed`). |
 | `checkout_review` | Non-empty object (semantic checks in §3 apply: `field_labels`, `bump_compare_price_rule`). |
 | `template_residue_review` | Non-empty object/array/string (semantic check on `starter_favicon` in §3). |
@@ -129,7 +129,7 @@ After its existing page-load and readability work has finished and been recorded
 
 The source is served read-only from a local address, in a browser instance that can reach only that address. Requests and WebSocket connections to anything else are blocked and counted, other connections are refused by the local server, and no host name is looked up. Nothing from the source render leaves the machine.
 
-Each render is captured twice. The first capture is unchanged. The second is stabilized: it waits for web fonts (up to 3 seconds) and for `[data-next-await]` elements to clear (up to 5 seconds), stops animations and transitions, and masks SDK timers and prices. Timeouts are recorded, never hidden.
+Each render waits for web fonts (up to 3 seconds) and for `[data-next-await]` elements to clear (up to 5 seconds) before either capture. The first capture is unchanged. The second differs only by its stabilization treatment: it stops animations and transitions, hides the caret, and masks SDK timers and prices. Timeouts are recorded, never hidden.
 
 Images are stored under `.campaign-runtime/polish/captures/` and `.campaign-runtime/polish/diff/`, named by their SHA-256. Each folder gets its own `.gitignore` the first time an image is written, so the images stay out of the repository even in a campaign set up by an earlier version. Old images are not deleted.
 

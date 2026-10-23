@@ -1488,7 +1488,7 @@ export function readCaptures({ record, packet, currentBuild, currentSource, buil
       : actual.bytes !== ref.bytes || actual.structure.ihdr.width_px !== ref.width_px || actual.structure.ihdr.height_px !== ref.height_px
         ? { failure: "png_dimensions_mismatch" } : {};
   };
-  const descriptors = cells.flatMap((c) => [c.actual, c.stabilized].filter((s) => s.status === "captured").map((s) => s.png));
+  const descriptors = cells.flatMap((c) => [c?.actual, c?.stabilized].filter((s) => s?.status === "captured").map((s) => s.png));
   for (const comparison of comparisons.filter(comparisonIdentity)) {
     const subject = subjectOf("visual.diff", comparison);
     const matching = (side) => cells.filter(cellIdentity).filter((c) => c.route === comparison.route && c.viewport === comparison.viewport && c.side === side);
@@ -1674,9 +1674,10 @@ export function handoffCoverage({ report, spec, results = [], qcStandIns = null,
 
 // The campaign slug the Polish records bind to: the packet's, read from
 // packetPath; with no readable packet, the Assembly Report's (which capture
-// requires to equal the packet's). Null when neither names one.
-function packetCampaignSlug({ packet, report }) {
-  const slug = packet?.campaign?.public_route_slug ?? report?.identity?.public_route_slug;
+// requires to equal the packet's). A readable packet without one gives null,
+// as on main. Null when neither names one.
+export function packetCampaignSlug({ packet, packetRead = isPlainObject(packet), report }) {
+  const slug = packetRead ? packet?.campaign?.public_route_slug : report?.identity?.public_route_slug;
   return isNonEmptyString(slug) ? slug : null;
 }
 
@@ -1688,8 +1689,8 @@ export function readCurrentQcResults({ report, doctor, spec = null, targetRepo, 
   const doctorResults = (Array.isArray(doctor?.derived?.qc_results) ? doctor.derived.qc_results : []).filter((row) => isPlainObject(row) && row.leg === "doctor");
   const visual = report?.stages?.polish?.evidence?.visual_review;
   const recorded = isPlainObject(visual) ? Object.entries(POLISH_RECORDS).filter(([name]) => visual[name] != null) : [];
-  let packet = null;
-  try { if (packetPath) packet = JSON.parse(readRegularFileSync(packetPath, { maxBytes: 16 * 1024 * 1024 }).toString("utf8")); } catch { /* unavailable */ }
+  let packet = null, packetRead = false;
+  try { if (packetPath) { packet = JSON.parse(readRegularFileSync(packetPath, { maxBytes: 16 * 1024 * 1024 }).toString("utf8")); packetRead = true; } } catch { /* unavailable */ }
   const polishContext = recorded.length ? {
     pageLoad: visual.page_load,
     captures: visual.captures ?? null,
@@ -1698,7 +1699,7 @@ export function readCurrentQcResults({ report, doctor, spec = null, targetRepo, 
     currentBuild,
     currentSource: currentSourcePackageMaterialFingerprint(report),
     buildOutput: doctor?.derived?.build_output_fingerprint ?? null,
-    campaignSlug: packetCampaignSlug({ packet, report }),
+    campaignSlug: packetCampaignSlug({ packet, packetRead, report }),
     targetRepo,
     qcAccepts: report?.qc_accepts,
     qcStandIns,

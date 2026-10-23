@@ -235,6 +235,18 @@ test("Source HTML hash disagreement is provenance review beside successful read/
   const row = decision(ref, "review", "provenance_unknown");
   assert.equal(row.members[0].result, "pass"); assert.deepEqual(ref.provenance.reasons, ["source_hash_mismatch"]);
 });
+test("Source HTML with no recorded sha256 reads source_hash_unrecorded whether or not it was read (§5.2)", async (t) => {
+  const f = fixture(t), recorded = `sha256:${"0".repeat(64)}`;
+  for (const [path, sha256, reasons] of [
+    ["page.html", undefined, ["source_hash_unrecorded"]],
+    ["absent.html", undefined, ["source_hash_unrecorded"]],
+    // A recorded ref whose own file was not read keeps the missing-file reason.
+    ["absent.html", recorded, ["linked_source_missing"]],
+  ]) {
+    const ref = await verifyReference({ ...f, path, kind: "source_html", recorded: sha256 ? { sha256 } : {} });
+    assert.equal(ref.provenance.class, "unknown", path); assert.deepEqual(ref.provenance.reasons, reasons, `${path} ${sha256}`);
+  }
+});
 test("Recorded-field and decoder lookups ignore inherited values and tolerate null metadata", async (t) => {
   const f = fixture(t), bytes = createRgbaPng(1440, 900);
   for (const recorded of [null, Object.create(f.recorded)]) {
@@ -246,4 +258,22 @@ test("Recorded-field and decoder lookups ignore inherited values and tolerate nu
   const ref = await verify(f, bytes, { decoder: Object.create({ status: "available", decode() { decodes++; } }) });
   assert.equal(decodes, 0); assert.equal(ref.verification.level, "header_checked"); decision(ref, "unexercised", "decoder_unavailable");
   assert.doesNotThrow(() => classifyProvenance({ recorded: null }));
+});
+
+test("panel diff-folder build crop and its source-root copy remain self-referential", async (t) => {
+  const f = fixture(t), bytes = createRgbaPng(1440, 900);
+  // This is the page-level build_crop stored by onComparison, not a capture hash supplied by the caller.
+  const file = writePolishPng(f.targetRepo, "diff", bytes);
+  for (const [path, reasons] of [
+    [resolve(f.targetRepo, file.path), ["path_in_runtime_dir", "hash_equals_package_capture"]],
+    [f.write("updated-reference.png", bytes), ["hash_equals_package_capture"]],
+  ]) {
+    const ref = { ...await verifyReference({ ...f, path, decoder: dependencies.decoder }), viewport: "desktop" };
+    assert.equal(ref.verification.level, "decoded");
+    assert.deepEqual(ref.provenance, { class: "self_referential", reasons });
+    decision(ref, "warning", "self_referential");
+    diffDecision(ref, "review", "visual_diff_diagnostic", "basis_not_independent");
+  }
+  assert.deepEqual(classifyProvenance({ ...f, path: resolve(f.targetRepo, file.path), recorded: f.recorded }),
+    { class: "self_referential", reasons: ["path_in_runtime_dir"] }, "path classification also covers diff without a hash");
 });

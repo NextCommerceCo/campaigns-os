@@ -1,4 +1,4 @@
-import { packageCapturesSatisfy, capturesIntegrity, CAPTURES_SCHEMA, CAPTURES_PRODUCER } from "./polish-captures-record.mjs";
+import { packageCapturesSatisfy, capturedBuildForEveryRoute, capturesIntegrity, CAPTURES_SCHEMA, CAPTURES_PRODUCER } from "./polish-captures-record.mjs";
 import { HIDDEN_EAGER_MEDIA_SCOPE } from "./polish-page-load.mjs";
 import { HIDDEN_EAGER_MEDIA_ACTIONS } from "./gate-actions.mjs";
 
@@ -315,6 +315,7 @@ function captureProblem(record, report) {
   if (record.integrity !== capturesIntegrity(record)) return "integrity";
   if (record.subject?.build_fingerprint !== currentBuildFingerprint(report)) return "build binding";
   if (!Array.isArray(record.cells) || !record.cells.length) return "cells";
+  if (!capturedBuildForEveryRoute(record)) return "no captured build screenshot for every planned route";
   return "cell state, viewport, crop or PNG dimensions";
 }
 

@@ -38,7 +38,7 @@ export function classifyProvenance({ path, sourceRoot, targetRepo, kind = "sourc
   } else {
     const hex = String(sha256 || "").replace(/^sha256:/, "");
     if (sha256 && (new Set(buildCaptureHashes).has(sha256) || (targetRepo && /^[a-f0-9]{64}$/.test(hex)
-        && ["captures", "readability"].some((dir) => existsSync(resolve(targetRepo, `.campaign-runtime/polish/${dir}/${hex}.png`)))))) reasons.push("hash_equals_package_capture");
+        && ["captures", "readability", "diff"].some((dir) => existsSync(resolve(targetRepo, `.campaign-runtime/polish/${dir}/${hex}.png`)))))) reasons.push("hash_equals_package_capture");
     if (linkedSource?.provenance?.class === "self_referential") reasons.push("linked_source_self_referential");
   }
   if (reasons.length) return { class: "self_referential", reasons };
@@ -46,7 +46,11 @@ export function classifyProvenance({ path, sourceRoot, targetRepo, kind = "sourc
   if (!html && (!source_ref_id || !linkedSource || !["html_file", "source_html"].includes(linkedSource.kind))) reasons.push("source_link_missing");
   else {
     const identity = html ? { sha256, sha256_recorded: own(recorded, "sha256") } : own(linkedSource, "identity");
-    if (!identity?.sha256) reasons.push(html ? "linked_source_missing" : "linked_source_missing");
+    // The source HTML applies the hash rules to its own html_file ref (§5.2):
+    // a ref that records no sha256 is unrecorded whether or not the file was
+    // read; a recorded ref whose file was not read is missing.
+    if (html && !identity.sha256_recorded) reasons.push("source_hash_unrecorded");
+    else if (!identity?.sha256) reasons.push("linked_source_missing");
     else if (!identity.sha256_recorded) reasons.push("source_hash_unrecorded");
     else if (identity.sha256_recorded !== identity.sha256) reasons.push("source_hash_mismatch");
   }

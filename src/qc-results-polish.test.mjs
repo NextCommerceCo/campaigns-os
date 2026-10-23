@@ -284,7 +284,7 @@ import { mkdtempSync, rmSync, writeFileSync, unlinkSync, mkdirSync, realpathSync
 import { tmpdir } from "node:os";
 import { syntheticCapturesRecord, createRgbaPng } from "./polish-visual-fixtures.mjs";
 import { capturesIntegrity, writePolishPng } from "./polish-visual.mjs";
-import { readCaptures, readCurrentQcResults, qcResultRef, buildQcResult } from "./qc-results.mjs";
+import { readCaptures, readCurrentQcResults, qcResultRef, buildQcResult, packetCampaignSlug } from "./qc-results.mjs";
 import { loadQcRederivers } from "./qc-check-registry.mjs";
 import { buildQcHandoff, createQcAccept, qcAcceptAttribution, planQcAccepts, assessQcAccepts } from "./qc-accept.mjs";
 import { evaluatePolishGate } from "./polish-gate.mjs";
@@ -630,6 +630,76 @@ test("F3C-R1 accept becomes inert/target_not_warning when self-reference disappe
   assert.deepEqual(assessQcAccepts(accepts, rows, { now }), [{ status: "inert", why: "target_not_warning", applied: false }]);
   const handoff = buildQcHandoff({ results: rows, accepts, now });
   assert.ok(handoff.inert_accepts.some((r) => r.result_id === warning.id && r.why === "target_not_warning"));
+});
+
+// §6: the target_not_warning rule fires only when the current row is not a
+// warning. A reference that is still self-referential stays a warning, so a
+// changed identity reaches the fingerprint comparison and lapses.
+test("F3C-R1 accept lapses with state_changed when a still self-referential reference changes identity", async (t) => {
+  const f = await c3Fixture(t);
+  f.record.references[0].provenance = { class: "self_referential", reasons: ["hash_equals_built_html"] };
+  const warning = f.read().find((r) => r.check === "visual.reference");
+  const now = "2026-10-23T00:00:00.000Z";
+  const attribution = qcAcceptAttribution({ reason: "Use this output as the revision baseline", acceptedBy: "Casey Morgan", now });
+  const ref = qcResultRef(warning), [id, prefix] = ref.split("@");
+  const accepts = planQcAccepts({ refs: [{ ref, id, prefix }], results: f.read(), now, attribution });
+  assert.equal(assessQcAccepts(accepts, f.read(), { now })[0].status, "active");
+  for (const change of [
+    (r) => { r.identity.sha256 = OTHER_BUILD_FP; },
+    (r) => { r.provenance.reasons = ["hash_equals_built_html", "path_in_runtime_dir"]; },
+  ]) {
+    const original = structuredClone(f.record.references[0]);
+    change(f.record.references[0]);
+    const rows = f.read(), current = rows.find((r) => r.id === warning.id);
+    assert.deepEqual([current.result, current.reason_code], ["warning", "self_referential"]);
+    assert.notEqual(current.state_fingerprint, warning.state_fingerprint);
+    assert.deepEqual(assessQcAccepts(accepts, rows, { now }), [{ status: "lapsed", why: "state_changed", applied: false }]);
+    f.record.references[0] = original;
+  }
+});
+
+test("Reader: the source HTML's source_hash_unrecorded is in the closed provenance vocabulary", async (t) => {
+  const f = await c3Fixture(t);
+  f.record.references[0].provenance = { class: "unknown", reasons: ["source_hash_unrecorded"] };
+  const row = f.read().find((r) => r.check === "visual.reference");
+  assert.deepEqual([row.result, row.reason_code], ["review", "provenance_unknown"]);
+});
+
+test("Reader: a loaded cell whose probe failed or whose document changed reads its own status, not navigation_failed", async (t) => {
+  for (const status of ["probe_failed", "document_changed"]) {
+    const f = await c3Fixture(t);
+    const cell = f.record.cells.find((c) => c.side === "build" && c.viewport === "desktop");
+    cell.status = status;
+    for (const key of ["actual", "stabilized"]) Object.assign(cell[key], { status: "skipped", png: null, full_height_css: null, crop: null, truncated: false });
+    const rows = f.read();
+    const desktop = c3Diffs(rows).find((r) => r.subject.viewport === "desktop");
+    assert.deepEqual([desktop.result, desktop.reason_code, desktop.members], ["unexercised", "capture_unavailable", [{ key: "build", result: "unexercised", reason_code: status }]], status);
+    assert.equal(c3Diffs(rows).find((r) => r.subject.viewport === "mobile").result, "review", status);
+  }
+});
+
+test("Reader: a cell with a missing shot object reads cell_shape_invalid, never a thrown read", async (t) => {
+  for (const key of ["actual", "stabilized"]) {
+    const f = await c3Fixture(t);
+    f.record.cells[0][key] = null;
+    assertCapturesRefused(f.read(), "cell_shape_invalid");
+  }
+});
+
+test("Polish records bind to the readable packet's slug (null when it names none), else to the report's", () => {
+  const report = { identity: { public_route_slug: "sample" } };
+  for (const [packet, expected] of [
+    [{ campaign: { public_route_slug: "packet-slug" } }, "packet-slug"],
+    [{ campaign: { public_route_slug: "" } }, null],
+    [{ campaign: {} }, null],
+    [null, "sample"],
+  ]) assert.equal(packetCampaignSlug({ packet, report }), expected, JSON.stringify(packet));
+  // A packet file that was read but did not parse to an object names no slug (main's rule).
+  for (const parsed of [[], null, false, 7, "text"]) {
+    assert.equal(packetCampaignSlug({ packet: parsed, packetRead: true, report }), null, JSON.stringify(parsed));
+  }
+  assert.equal(packetCampaignSlug({ packet: null, packetRead: false, report }), "sample");
+  assert.equal(packetCampaignSlug({ packet: { campaign: { public_route_slug: "" } }, report: { identity: { public_route_slug: "" } } }), null);
 });
 
 test("F3C-B15 CLI next status is unchanged with a near-zero diagnostic diff present", async (t) => {

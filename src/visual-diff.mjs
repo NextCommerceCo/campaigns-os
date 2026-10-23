@@ -231,9 +231,16 @@ function insideCapture(source, band, dpr) {
   return band.top >= 0 && left >= 0
     && (band.top + band.height) * dpr <= source.height && (left + width) * dpr <= source.width;
 }
-function crop(source, { top, left, width, height }, memory) {
+// A rectangle not wholly inside the decoded image is refused before any copy,
+// so no zero-filled pixel is ever presented as image data.
+export function crop(source, { top, left, width, height }, memory) {
   boundedArea(width, height);
   const image = readRgba(source, memory);
+  if (![top, left].every(Number.isSafeInteger) || top < 0 || left < 0
+      || left + width > image.width || top + height > image.height) {
+    release(image, memory);
+    throw new RangeError("invalid_image_geometry");
+  }
   const data = allocate(width * height * 4, memory);
   for (let row = 0; row < height; row++) data.set(image.data.subarray(((row + top) * image.width + left) * 4,
     ((row + top) * image.width + left + width) * 4), row * width * 4);

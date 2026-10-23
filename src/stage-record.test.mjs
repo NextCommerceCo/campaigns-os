@@ -22,6 +22,7 @@ import { buildReadabilityRecord } from "./polish-readability.mjs";
 import { recordCommand, recordStageCommand } from "./stage-record.mjs";
 import { withTargetLockSync } from "./target-lock.mjs";
 import { readdirSync } from "node:fs";
+import { unavailableCapturesRecord, VISUAL_VIEWPORTS } from "./polish-visual.mjs";
 import {
   INPUT_WARNING_CODES,
   STAGE_KEYS,
@@ -3673,6 +3674,20 @@ test("P2-B1 element_parity is package-owned: record polish --evidence carrying i
     const before = snapshotFiles(f);
     const refused = record(f, "polish", ["--evidence", path]);
     assert.notEqual(refused.status, 0); assert.match(refused.stderr, /package_owned_key.*element_parity/);
+    assert.deepEqual(snapshotFiles(f), before);
+  });
+});
+test("A-C4 real record polish CLI refuses all-skipped package captures without changing stage files", async () => {
+  await withLifecycle(async (f) => {
+    scaffold(f); recordOk(f, "setup"); buildSite(f); recordOk(f, "build"); await capture(f);
+    mutateJson(f.reportPath, (report) => {
+      const visual = report.stages.polish.evidence.visual_review, subject = visual.captures.subject;
+      visual.captures = unavailableCapturesRecord({ subject, plan: { routes: subject.routes, viewports: VISUAL_VIEWPORTS } });
+    });
+    const before = snapshotFiles(f), refused = record(f, "polish", ["--evidence", POLISH_EVIDENCE]);
+    assert.equal(refused.status, 1);
+    assert.match(refused.stderr, /polish.evidence_incomplete/);
+    assert.match(refused.stderr, /captures is not a current package capture record/);
     assert.deepEqual(snapshotFiles(f), before);
   });
 });
