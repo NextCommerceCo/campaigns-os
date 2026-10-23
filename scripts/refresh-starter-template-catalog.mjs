@@ -412,12 +412,20 @@ export function adaptFixtureForCampaignsOs(sourcePath, text) {
           page.next_page = "upsell-stepper.html";
           changed = true;
         }
-        if (family === "shop-three-step" && page.sdk_hints?.template_family === family
-          && page.sdk_hints?.sdk_page_type === "checkout"
-          && page.sdk_hints?.frontmatter?.next_url === "upsell-bundle-stepper.html") {
-          page.sdk_hints.frontmatter.next_url = "upsell-stepper.html";
-          changed = true;
-        }
+      }
+      // The pre-payment forms use the same post-payment destination for
+      // express checkout. Translate their source filename independently of
+      // the form-navigation edge, while leaving next_step and any distinct
+      // upstream success destination untouched.
+      if (family === "shop-three-step" && target
+        && ["information", "shipping", "billing"].includes(page.id)
+        && page.type === (page.id === "billing" ? "checkout" : "checkout_step")
+        && page.template === `src/${family}/${page.id}.html`
+        && page.sdk_hints?.template_family === family
+        && page.sdk_hints?.sdk_page_type === "checkout"
+        && page.sdk_hints?.frontmatter?.next_url === "upsell-bundle-stepper.html") {
+        page.sdk_hints.frontmatter.next_url = "upsell-stepper.html";
+        changed = true;
       }
     }
   }

@@ -38,7 +38,7 @@
     "source": "campaign-cart-starter-templates agent fixture"
   },
   "global_config": {
-    "sdk_version": "0.4.42"
+    "sdk_version": "0.4.43"
   },
   "funnels": [
     {
@@ -65,7 +65,8 @@
             "sdk_page_type": "checkout",
             "template_family": "shop-three-step",
             "frontmatter": {
-              "next_url": "shipping.html"
+              "next_url": "upsell-stepper.html",
+              "next_step": "shipping.html"
             }
           }
         },
@@ -81,8 +82,9 @@
             "sdk_page_type": "checkout",
             "template_family": "shop-three-step",
             "frontmatter": {
-              "next_url": "billing.html",
-              "runtime_shipping_source": "window.next.getShippingMethods()"
+              "next_url": "upsell-stepper.html",
+              "runtime_shipping_source": "window.next.getShippingMethods()",
+              "next_step": "billing.html"
             }
           }
         },

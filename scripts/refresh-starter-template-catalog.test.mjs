@@ -92,14 +92,49 @@ test("fixture refresh keeps known forward edges on their authored routes without
       assert.equal(adaptFixtureForCampaignsOs(path, future), future);
     }
     for (const next_page of [undefined, "new-upsell.html"]) {
-      const future = JSON.stringify({ ...source, funnels: [{ pages: [{ ...page, next_page }, target] }] });
-      assert.equal(adaptFixtureForCampaignsOs(path, future), future);
+      const futurePage = { ...page, next_page };
+      const future = JSON.stringify({ ...source, funnels: [{ pages: [futurePage, target] }] });
+      const actual = JSON.parse(adaptFixtureForCampaignsOs(path, future)).funnels[0].pages[0];
+      const expected = JSON.parse(JSON.stringify(futurePage));
+      if (expected.sdk_hints) expected.sdk_hints.frontmatter.next_url = "upsell-stepper.html";
+      assert.deepEqual(actual, expected, "success hint normalization must leave the forward edge unchanged");
     }
     if (page.sdk_hints) {
       const future = JSON.stringify({ ...source, funnels: [{ pages: [{ ...page, next_page: "upsell-stepper.html", sdk_hints: { ...page.sdk_hints, frontmatter: { next_url: "new-upsell.html" } } }, target] }] });
       assert.equal(adaptFixtureForCampaignsOs(path, future), future, "distinct frontmatter edge stays source-owned");
     }
   }
+});
+
+test("three-step fixture refresh keeps express success separate from form navigation", () => {
+  const path = "docs/fixtures/campaign-specs/shop-three-step-dynamic-shipping.json";
+  const steps = ["information", "shipping"].map((id, index) => ({
+    id, type: "checkout_step", template: `src/shop-three-step/${id}.html`,
+    next_page: index === 0 ? "shipping.html" : "billing.html",
+    sdk_hints: {
+      template_family: "shop-three-step", sdk_page_type: "checkout",
+      frontmatter: { next_url: "upsell-bundle-stepper.html", next_step: index === 0 ? "shipping.html" : "billing.html", step_number: index + 1 },
+    },
+  }));
+  const target = { id: "upsell-stepper", type: "upsell", template: "src/shop-three-step/upsell-bundle-stepper.html", page_url: "/upsell-stepper/" };
+  const text = JSON.stringify({ funnels: [{ pages: [...steps, target] }] });
+  const adapted = adaptFixtureForCampaignsOs(path, text);
+  const pages = JSON.parse(adapted).funnels[0].pages;
+  assert.deepEqual(pages.slice(0, 2), steps.map((page) => ({ ...page, sdk_hints: { ...page.sdk_hints, frontmatter: { ...page.sdk_hints.frontmatter, next_url: "upsell-stepper.html" } } })));
+  assert.deepEqual(pages[2], target);
+  assert.equal(adaptFixtureForCampaignsOs(path, adapted), adapted);
+  const rerouted = { ...steps[0], next_page: "billing.html", sdk_hints: { ...steps[0].sdk_hints, frontmatter: { ...steps[0].sdk_hints.frontmatter, next_step: "billing.html" } } };
+  const reroutedText = JSON.stringify({ funnels: [{ pages: [rerouted, target] }] });
+  assert.deepEqual(JSON.parse(adaptFixtureForCampaignsOs(path, reroutedText)).funnels[0].pages[0], {
+    ...rerouted,
+    sdk_hints: { ...rerouted.sdk_hints, frontmatter: { ...rerouted.sdk_hints.frontmatter, next_url: "upsell-stepper.html" } },
+  }, "skipping the shipping form still repairs express success without changing form navigation");
+  for (const change of [{ type: "landing" }, { template: "src/custom/information.html" }]) {
+    const future = JSON.stringify({ funnels: [{ pages: [{ ...steps[0], ...change }, target] }] });
+    assert.equal(adaptFixtureForCampaignsOs(path, future), future, "a different source contract stays untouched");
+  }
+  const differentSuccess = JSON.stringify({ funnels: [{ pages: [{ ...steps[0], sdk_hints: { ...steps[0].sdk_hints, frontmatter: { ...steps[0].sdk_hints.frontmatter, next_url: "different.html" } } }, target] }] });
+  assert.equal(adaptFixtureForCampaignsOs(path, differentSuccess), differentSuccess, "a distinct success destination stays source-owned");
 });
 
 test("dispatch provenance SHA also pins the content fetch without resolving a moving ref", async () => {
