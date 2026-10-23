@@ -8918,6 +8918,57 @@
         }
       ],
       "entry_sha256": "0105b7be6bdbdc6e0f8e5a9b2b2a4b5ad3106e9bc7db72029c0cae05d8372fd1"
+    },
+    {
+      "id": "RL-0287",
+      "sequence": 274,
+      "date": "2026-10-23",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.60.0+agent.9",
+      "changelog_sha256": "3c9f02633961ac35651d465a5079971ced3c7c35c57f2f6af665eac62c66c3ea",
+      "agent_impact": "Run polish capture again after upgrading before recording completed Polish. New writes require current package captures; existing records retain legacy reads. Visual reference warnings and diff diagnostics appear in the QC handoff; pixel scores never decide fidelity.",
+      "compatibility": "compatible",
+      "migration": "Run polish capture before the next completed record polish; never author visual_review.captures by hand.",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/design-source-package.md",
+          "surface_entry": "docs/design-source-package.md",
+          "summary": "Document screenshot pixel ratio, dimensions and declared source lineage."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Pin the optional visual comparison dependency graph."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Add optional PNG decoder and pixel comparison dependencies."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": null,
+          "summary": "Advance the Polish skill to 1.1.49 and bundle to 1.60.0+skills.4."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Require package captures for completed Polish and present diagnostic review findings."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "Capture package visual evidence and report its diagnostic summary."
+        }
+      ],
+      "entry_sha256": "459e31b359d82edcbd5845e687fe71afbdd5007bdc99af0b2b9dd47940c5c066"
     }
   ]
 }
