@@ -109,6 +109,140 @@ test("C2 declared inputs: a FIFO or directory at a source, reference, built page
   assert.equal(run.error, null); assert.ok(run.result.elapsed_ms < budget.addedMs);
   assert.deepEqual(run.result.record.references.map((r) => r.ref_id), ["source_html"]);
 });
+const hasMemberReason = (row, reason) => Boolean(row?.members.some((m) => m.reason_code === reason));
+// The example packet layout: the packet folder holds target/ and, beside it,
+// the source root. f.targetRepo is that packet folder here.
+function besideTargetInputs(f) {
+  const input = visualInputs(f), targetRepo = resolve(f.targetRepo, "target");
+  mkdirSync(resolve(targetRepo, ".campaign-runtime/evidence"), { recursive: true });
+  writeFileSync(resolve(targetRepo, ".campaign-runtime/evidence/self.png"), createRgbaPng(1440, 1200));
+  const dsp = JSON.parse(readFileSync(resolve(f.targetRepo, "dsp.json"), "utf8")), [contribution] = dsp.contributions;
+  // A self-referential reference is declared against the source root too.
+  contribution.screenshot_refs.push({ id: "self", viewport: "desktop", path: "../target/.campaign-runtime/evidence/self.png", scale_factor: 1,
+    captured_at: "2026-01-01T00:00:00.000Z", source_ref_id: "html" });
+  contribution.mappings[0].screenshot_refs.push("self");
+  writeFileSync(resolve(f.targetRepo, "dsp.json"), JSON.stringify(dsp));
+  return { ...input, targetRepo, report: { ...input.report, design_source_package: { material_fingerprint: computeDesignSourcePackageMaterialFingerprint(dsp) } } };
+}
+test("Image references under a source root beside the target compare; a reference read that fails keeps its reason", async (t) => {
+  const f = syntheticVisualFixture(); t.after(f.cleanup); const input = besideTargetInputs(f);
+  const record = await runVisualPass({ ...input, createBrowserAdapter: async () => fakeVisualAdapter() });
+  assert.match(record.references.find((r) => r.ref_id === "desktop").path_rel, /^\.\.\//);
+  const images = record.comparisons.filter((c) => c.basis === "reference");
+  assert.deepEqual(images.map((c) => c.ref_id).sort(), ["desktop", "mobile", "self"]);
+  for (const comparison of images) {
+    assert.deepEqual([comparison.status, comparison.reason], ["compared", null], comparison.ref_id);
+    assert.equal(comparison.page.mismatch_ratio, 0, comparison.ref_id);
+  }
+  const rows = VISUAL_QC_RULES.evaluate(record).filter((r) => r.check === "visual.diff" && r.subject.key !== "source_html");
+  assert.equal(rows.length, 3);
+  assert.ok(rows.every((r) => r.result === "review" && r.reason_code === "visual_diff_diagnostic"), JSON.stringify(rows.map((r) => [r.id, r.reason_code])));
+  assert.ok(hasMemberReason(rows.find((r) => r.subject.key === "ref:self"), "basis_not_independent"));
+
+  // The desktop reference vanishes after verification decoded it: the diff is
+  // unavailable and names the missing file, never an unexplained comparison_unsupported.
+  const g = syntheticVisualFixture(); t.after(g.cleanup); const second = besideTargetInputs(g);
+  const real = await loadVisualDependencies(), desktop = resolve(g.sourceRoot, "desktop.png"), desktopBytes = readFileSync(desktop);
+  const dependencies = { diff: real.diff, decoder: { ...real.decoder, decode(bytes) {
+    if (Buffer.compare(bytes, desktopBytes) === 0) rmSync(desktop, { force: true });
+    return real.decoder.decode(bytes);
+  } } };
+  const vanished = await runVisualPass({ ...second, dependencies, createBrowserAdapter: async () => fakeVisualAdapter() });
+  const comparison = vanished.comparisons.find((c) => c.ref_id === "desktop");
+  assert.deepEqual([comparison.status, comparison.reason], ["unavailable", "file_missing"]);
+  const row = VISUAL_QC_RULES.evaluate(vanished).find((r) => r.check === "visual.diff" && r.subject.key === "ref:desktop");
+  assert.deepEqual([row.result, row.reason_code, row.members], ["unexercised", "diff_unavailable", [{ key: "diff", result: "unexercised", reason_code: "file_missing" }]]);
+  assert.equal(vanished.comparisons.find((c) => c.ref_id === "mobile").status, "compared");
+});
+test("Proxy refusals during a source render count as blocked for that cell and limit its comparisons", async (t) => {
+  const f = syntheticVisualFixture(); t.after(f.cleanup); const input = visualInputs(f);
+  const { request } = await import("node:http");
+  // What a SharedWorker fetch looks like to the sealed browser's proxy: an absolute-form request.
+  const proxied = (port) => new Promise((done) => request({ host: "127.0.0.1", port, path: "http://127.0.0.1:9/shared-worker" }, (res) => {
+    res.resume(); res.on("end", () => done(res.statusCode));
+  }).on("error", () => done(null)).end());
+  const statuses = [];
+  const record = await runVisualPass({ ...input, createBrowserAdapter: async ({ seal }) => {
+    const adapter = fakeVisualAdapter();
+    return !seal ? adapter : { ...adapter, async renderForCompare(options) { statuses.push(await proxied(seal.port)); return adapter.renderForCompare(options); } };
+  } });
+  assert.deepEqual(statuses, [403, 403]);
+  const sources = record.cells.filter((c) => c.side === "source_html");
+  assert.deepEqual(sources.map((c) => c.external), sources.map(() => ({ blocked_count: 1, blocked_websocket_count: 0, blocked_origins: ["http://127.0.0.1:9"] })));
+  assert.ok(record.cells.filter((c) => c.side === "build").every((c) => c.external === null));
+  const html = record.comparisons.filter((c) => c.basis === "source_html");
+  assert.equal(html.length, 2);
+  assert.ok(html.every((c) => c.status === "compared" && c.limits.includes("source_external_blocked")), JSON.stringify(html.map((c) => c.limits)));
+});
+test("Reference read roots: pre-placed output-root symlinks outside the target are refused before decoding", async (t) => {
+  for (const component of ["_site", ".campaign-runtime"]) await t.test(component, async (t) => {
+    const f = syntheticVisualFixture(), outside = syntheticVisualFixture(); t.after(f.cleanup); t.after(outside.cleanup);
+    const input = visualInputs(f), bytes = createRgbaPng(1440, 1200, [10, 20, 30, 255]);
+    writeFileSync(resolve(outside.targetRepo, "reference.png"), bytes);
+    symlinkSync(outside.targetRepo, resolve(f.targetRepo, component));
+    const dspPath = resolve(f.targetRepo, "dsp.json"), dsp = JSON.parse(readFileSync(dspPath, "utf8"));
+    dsp.contributions[0].screenshot_refs[0].path = `../${component}/reference.png`;
+    writeFileSync(dspPath, JSON.stringify(dsp));
+    input.report.design_source_package.material_fingerprint = computeDesignSourcePackageMaterialFingerprint(dsp);
+    const real = await loadVisualDependencies(); let outsideDecodes = 0;
+    const dependencies = { ...real, decoder: { ...real.decoder, decode(data) {
+      if (Buffer.compare(data, bytes) === 0) outsideDecodes++;
+      return real.decoder.decode(data);
+    } } };
+    const record = await runVisualPass({ ...input, dependencies, createBrowserAdapter: async () => fakeVisualAdapter() });
+    const reference = record.references.find((r) => r.ref_id === "desktop");
+    assert.equal(reference.verification.reason, "path_outside_source_root");
+    assert.equal(reference.identity.sha256, null);
+    assert.equal(outsideDecodes, 0, "outside bytes must never reach verification or diff decode");
+    const comparison = record.comparisons.find((c) => c.ref_id === "desktop");
+    assert.equal(comparison.status, "unavailable");
+    if (component === "_site") assert.equal(comparison.reason, "path_outside_source_root");
+  });
+});
+test("Reference read roots: source links cannot escape, while contained output and declared real source roots compare", async (t) => {
+  const f = syntheticVisualFixture(), outside = syntheticVisualFixture(); t.after(f.cleanup); t.after(outside.cleanup);
+  const input = visualInputs(f), dspPath = resolve(f.targetRepo, "dsp.json"), dsp = JSON.parse(readFileSync(dspPath, "utf8"));
+  writeFileSync(resolve(outside.targetRepo, "reference.png"), createRgbaPng(1440, 1200));
+  rmSync(resolve(f.sourceRoot, "desktop.png"));
+  symlinkSync(resolve(outside.targetRepo, "reference.png"), resolve(f.sourceRoot, "desktop.png"));
+  const escaped = await runVisualPass({ ...input, createBrowserAdapter: async () => fakeVisualAdapter() });
+  assert.equal(escaped.references.find((r) => r.ref_id === "desktop").verification.reason, "path_outside_source_root");
+  mkdirSync(resolve(f.targetRepo, "_site"));
+  writeFileSync(resolve(f.targetRepo, "_site/reference.png"), createRgbaPng(1440, 1200));
+  dsp.contributions[0].screenshot_refs[0].path = "../_site/reference.png";
+  writeFileSync(dspPath, JSON.stringify(dsp));
+  input.report.design_source_package.material_fingerprint = computeDesignSourcePackageMaterialFingerprint(dsp);
+  const contained = await runVisualPass({ ...input, createBrowserAdapter: async () => fakeVisualAdapter() });
+  assert.equal(contained.comparisons.find((c) => c.ref_id === "desktop").status, "compared");
+  symlinkSync(f.sourceRoot, resolve(f.targetRepo, "source-alias"));
+  input.packet.source_html.root = "source-alias";
+  const alias = await runVisualPass({ ...input, createBrowserAdapter: async () => fakeVisualAdapter() });
+  assert.equal(alias.comparisons.find((c) => c.ref_id === "mobile").status, "compared");
+});
+test("Proxy refusal totals survive 32 desktop origins and count a new mobile origin", async (t) => {
+  const f = syntheticVisualFixture(); t.after(f.cleanup); const input = visualInputs(f);
+  const { request } = await import("node:http");
+  const statuses = [];
+  const record = await runVisualPass({ ...input, createBrowserAdapter: async ({ seal }) => {
+    const adapter = fakeVisualAdapter();
+    return !seal ? adapter : { ...adapter, async renderForCompare(options) {
+      const origins = options.viewport.key === "desktop" ? Array.from({ length: 32 }, (_, i) => i) : [32];
+      for (const i of origins) statuses.push(await new Promise((done, reject) => {
+        request({ host: "127.0.0.1", port: seal.port, path: `http://blocked-${i}.invalid/worker` }, (res) => {
+          res.resume(); res.on("end", () => done(res.statusCode));
+        }).on("error", reject).end();
+      }));
+      return adapter.renderForCompare(options);
+    } };
+  } });
+  assert.deepEqual(statuses, Array(33).fill(403));
+  const sources = record.cells.filter((c) => c.side === "source_html");
+  assert.deepEqual(sources.map((c) => c.external.blocked_count), [32, 1]);
+  assert.ok(sources.every((c) => c.external.blocked_origins.length <= 32));
+  const comparisons = record.comparisons.filter((c) => c.basis === "source_html");
+  assert.equal(comparisons.length, 2);
+  assert.ok(comparisons.every((c) => c.status === "compared" && c.limits.includes("source_external_blocked")));
+});
 // A report whose gate reads the Polish evidence (polish.evidence_current), so
 // gate invariance is not vacuous.
 function completedPolishReport(report) {

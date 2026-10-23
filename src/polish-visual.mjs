@@ -91,12 +91,38 @@ function blankCell(cell, status) {
     stabilized: { ...shot(), treatment: { animations: "disabled", caret: "hide", mask_color: "#ff00ff", mask_selectors: VISUAL_MASKS, masks: [], mask_cap_reached: false } }, captured_at: null };
 }
 
+const insideRoot = (root, path) => {
+  const rel = relative(root, path);
+  return !isAbsolute(rel) && rel !== ".." && !rel.startsWith(`..${sep}`);
+};
+// The declared source root owns its realpath. Output roots are exceptions only
+// while their own realpaths remain beneath the target's realpath (A-C3).
+function referenceReadRoot({ sourceRoot, targetRepo }, path) {
+  try {
+    const source = realpathSync(sourceRoot || ".");
+    if (insideRoot(source, path)) return source;
+  } catch { /* absent source root */ }
+  if (targetRepo) for (const component of ["_site", ".campaign-runtime"]) {
+    try {
+      const target = realpathSync(targetRepo), output = realpathSync(resolve(targetRepo, component));
+      if (insideRoot(target, output) && insideRoot(output, path)) return output;
+    } catch { /* absent output root */ }
+  }
+  return null;
+}
+
 // verifyReference opens its path with a blocking open. A declared path whose
 // realpath is a FIFO, socket, device or directory is refused here, without
 // blocking, as the read step's file_missing (the reason a directory reads).
 async function verifyDeclared(args) {
   let resolved = null;
   try { resolved = realpathSync(resolve(args.sourceRoot || ".", args.path)); } catch { /* verifyReference reads file_missing */ }
+  if (resolved && !referenceReadRoot(args, resolved)) {
+    const refused = await verifyReference({ ...args, path: null, url: undefined });
+    return { ...refused, path_rel: relative(args.targetRepo || args.sourceRoot || ".", resolved), url_present: Boolean(args.url),
+      verification: { ...refused.verification, reason: "path_outside_source_root" },
+      provenance: classifyProvenance({ ...args, path: resolved, sha256: null }) };
+  }
   if (!args.path || !resolved || isRegularFileSync(resolved)) return verifyReference(args);
   const refused = await verifyReference({ ...args, path: null, url: undefined });
   return { ...refused, path_rel: relative(args.targetRepo || args.sourceRoot || ".", resolved), url_present: Boolean(args.url),
@@ -107,7 +133,23 @@ export function unavailableCapturesRecord({ plan, subject, measuredAt } = {}) {
   return buildCapturesRecord({ subject, cells: planVisualCapture(plan).cells.map((cell) => blankCell(cell, "browser_unavailable")), measuredAt });
 }
 
-export async function runVisualCells({ buildAdapter, sourceAdapter, pairs, sourceOrigin, probes = [],
+// Proxy refusals are connections the per-context routes never saw (a
+// SharedWorker fetch, for example). The source server refuses them; the ones
+// made during a source render count as blocked for that cell (§2.3, §3.2).
+const refusalCounts = (refused, total) => ({ total: typeof total === "function" ? total() : 0,
+  origins: new Map((typeof refused === "function" ? refused() : []).map(({ origin, count }) => [origin, count])) });
+function addRefusals(external, before, after) {
+  const added = after.total - before.total;
+  const origins = new Set(external.blocked_origins);
+  for (const [origin, count] of after.origins) {
+    const delta = count - (before.origins.get(origin) || 0);
+    if (!(delta > 0)) continue;
+    if (origins.size < 32) origins.add(origin);
+  }
+  return added ? { ...external, blocked_count: external.blocked_count + added, blocked_origins: [...origins].sort() } : external;
+}
+
+export async function runVisualCells({ buildAdapter, sourceAdapter, pairs, sourceOrigin, sourceRefused = null, sourceRefusedTotal = null, probes = [],
   budget = {}, clock = monotonicClock, writePng, sources = new Map(), now = new Date(), captureCellDeadlineMs, timers = {} } = {}) {
   const cells = [], poisoned = new Set();
   const remaining = () => typeof budget.remaining === "function" ? budget.remaining() : VISUAL_CAPTURE_RUN_MS;
@@ -126,6 +168,7 @@ export async function runVisualCells({ buildAdapter, sourceAdapter, pairs, sourc
         select: probe.select ? () => probe.select(identity) : undefined,
         onResult: probe.onResult ? (result) => probe.onResult(identity, result) : undefined }));
       const controller = new AbortController();
+      const refusedBefore = cell.side === "source_html" ? refusalCounts(sourceRefused, sourceRefusedTotal) : null;
       try {
         const result = await runWithPolishProducerDeadline(() => adapter.renderForCompare({
           url: cell.side === "build" ? route?.url : new URL(source.url_path, sourceOrigin).href,
@@ -156,6 +199,7 @@ export async function runVisualCells({ buildAdapter, sourceAdapter, pairs, sourc
         cell.status = timedOut(error) ? "producer_timeout" : "navigation_failed";
         if (timedOut(error)) poisoned.add(cell.side);
       }
+      if (refusedBefore && cell.external) cell.external = addRefusals(cell.external, refusedBefore, refusalCounts(sourceRefused, sourceRefusedTotal));
     }
     cells.push(cell);
   }
@@ -238,7 +282,7 @@ export async function runVisualPass({ createBrowserAdapter, frozen, packet, pack
       } catch (error) { adapters[side].startup = timedOut(error) ? "producer_timeout" : "failed"; }
     }
     cells = await runVisualCells({ buildAdapter: instances.build, sourceAdapter: instances.source, pairs: plan,
-      sourceOrigin: server?.origin, sources, probes, clock, now, captureCellDeadlineMs, timers,
+      sourceOrigin: server?.origin, sourceRefused: server?.refused, sourceRefusedTotal: server?.refusedTotal, sources, probes, clock, now, captureCellDeadlineMs, timers,
       budget: { remaining: captureLeft }, writePng: (bytes) => writePolishPng(targetRepo, "captures", bytes) });
   } catch {
     // A source listener/setup failure must still yield the complete grid.
@@ -279,6 +323,16 @@ export async function runVisualPass({ createBrowserAdapter, frozen, packet, pack
   }
   const imageSource = (png) => ({ width: png.width_px, height: png.height_px,
     load: () => dependencies.decoder.decode(readRegularFileSync(resolve(targetRepo, png.path), { maxBytes: png.bytes, root: targetRepo, noFollow: true })) });
+  // A declared reference is read beneath the root verification accepted it
+  // under: the source root, which may sit inside or outside the target (§3.1),
+  // or for a self-referential file the target's _site or .campaign-runtime.
+  // Never the whole target repo.
+  const referenceSource = (ref) => ({ width: ref.verification.png.width_px, height: ref.verification.png.height_px, load: () => {
+    const path = resolve(targetRepo, ref.path_rel);
+    const readRoot = referenceReadRoot({ sourceRoot: root || targetRepo, targetRepo }, realpathSync(path));
+    if (!readRoot) throw Object.assign(new Error("outside_root"), { code: "outside_root" });
+    return dependencies.decoder.decode(readRegularFileSync(path, { root: readRoot }));
+  } });
   for (const build of cells.filter((c) => c.side === "build")) {
     const basis = cells.find((c) => c.side === "source_html" && c.route === build.route && c.viewport === build.viewport);
     const refs = references.filter((r) => r.route === build.route && r.ref_id !== "source_html" && (r.viewport === build.viewport
@@ -298,8 +352,7 @@ export async function runVisualPass({ createBrowserAdapter, frozen, packet, pack
             const artifacts = [];
             comparison = compareVisualPair({ build, basis, reference,
               buildImage: imageSource(build[comparison.build_shot].png),
-              basisImage: reference ? { width: ref.verification.png.width_px, height: ref.verification.png.height_px,
-                load: () => dependencies.decoder.decode(readRegularFileSync(resolve(targetRepo, ref.path_rel), { root: targetRepo })) } : imageSource(basis.stabilized.png),
+              basisImage: reference ? referenceSource(ref) : imageSource(basis.stabilized.png),
               diff: dependencies.diff, onComparison: (part) => {
                 if (diffLeft() <= 0) throw new Error("diff_budget_exhausted");
                 // Keep at most three encoded triples; ranking is independent of QC.
@@ -315,8 +368,9 @@ export async function runVisualPass({ createBrowserAdapter, frozen, packet, pack
             comparison.artifacts = artifacts.map((artifact) => ({ band_key: artifact.key,
               ...Object.fromEntries(["basis_crop", "build_crop", "heatmap"].map((name, i) => [name, writePolishPng(targetRepo, "diff", artifact.images[i])])) }));
           }
-        } catch (error) { comparison.status = "unavailable"; comparison.reason = error.message === "diff_budget_exhausted" ? error.message : "decode_failed"; }
+        } catch (error) { comparison.status = "unavailable"; comparison.reason = diffFailure(error); }
       } else { comparison.status = "unavailable"; comparison.reason = decision.reason_code;
+        if (decision.reason_code === "reference_not_usable" && ref?.verification.reason === "path_outside_source_root") comparison.reason = "path_outside_source_root";
         if (decision.reason_code === "diff_unavailable" && diffLeft() <= 0) comparison.reason = "diff_budget_exhausted"; }
       if (reference) comparison.viewport = reference.viewport;
       comparisons.push(comparison);
@@ -391,6 +445,15 @@ export function writePolishPng(targetRepo, dir, bytes) {
 }
 
 const member = (key, reason_code, result = "unexercised", extra = {}) => ({ key, result, reason_code, ...extra });
+// A diff that could not run keeps its own reason: the row reads
+// diff_unavailable with that reason as its member (§5.3 step 11).
+export const VISUAL_DIFF_FAILURES = Object.freeze(["diff_budget_exhausted", "image_too_large", "decode_failed", "file_missing", "path_outside_source_root", "too_large"]);
+function diffFailure(error) {
+  if (error?.message === "diff_budget_exhausted") return "diff_budget_exhausted";
+  if (["ENOENT", "not_regular_file"].includes(error?.code)) return "file_missing";
+  if (error?.code === "outside_root") return "path_outside_source_root";
+  return error?.code === "too_large" ? "too_large" : "decode_failed";
+}
 export function evaluateVisualReference(reference) {
   if (!object(reference)) return { result: "unexercised", reason_code: "evidence_not_reproducible", members: [], accept_eligible: false };
   if (["source_root_unavailable", "source_html_missing", "source_package_unavailable", "source_package_stale"].includes(reference.input_reason)) {
@@ -431,7 +494,7 @@ export function evaluateVisualDiff(comparison, { record, reference, build, basis
     ...(cell.readiness?.await?.status === "timeout" ? [member(side, "await_timeout")] : []),
   ]);
   if (readiness.length) return stop("readiness_incomplete", readiness);
-  if (budgetExhausted || ["diff_budget_exhausted", "image_too_large"].includes(comparison.reason)) return stop("diff_unavailable", [member("diff", budgetExhausted ? "diff_budget_exhausted" : comparison.reason)]);
+  if (budgetExhausted || VISUAL_DIFF_FAILURES.includes(comparison.reason)) return stop("diff_unavailable", [member("diff", budgetExhausted ? "diff_budget_exhausted" : comparison.reason)]);
   const members = [...(comparison.members || []).map((m) => member(m.key, m.reason_code ?? m.reason, m.result || "unexercised"))];
   const add = (key, reason) => { if (!members.some((m) => m.key === key && m.reason_code === reason)) members.push(member(key, reason)); };
   if (comparison.page?.status === "unsupported") add("page", comparison.page.reason);

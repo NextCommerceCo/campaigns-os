@@ -80,7 +80,9 @@ export async function startSourceHtmlServer({ root, signal, maxBytes = DECLARED_
   if (!(await stat(base)).isDirectory()) throw new Error("source_root_unavailable");
   if (signal?.aborted) throw signal.reason;
   const refusals = new Map();
+  let totalRefusals = 0;
   const record = (target, connect = false) => {
+    totalRefusals++;
     try {
       const origin = new URL(connect ? `https://${target}` : target).origin;
       if (refusals.has(origin) || refusals.size < 32) refusals.set(origin, (refusals.get(origin) || 0) + 1);
@@ -122,5 +124,6 @@ export async function startSourceHtmlServer({ root, signal, maxBytes = DECLARED_
   if (signal?.aborted) { await close(); throw signal.reason; }
   const port = server.address().port;
   return { origin: `http://127.0.0.1:${port}`, port,
+    refusedTotal: () => totalRefusals,
     refused: () => [...refusals].sort(([a], [b]) => a.localeCompare(b)).map(([origin, count]) => ({ origin, count })), close };
 }

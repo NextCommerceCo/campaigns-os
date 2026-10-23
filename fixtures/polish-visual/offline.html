@@ -2,4 +2,9 @@
 <link rel="preconnect" href="RECEIVER">
 <style>@font-face{font-family:Receiver;src:url('RECEIVER/font.woff2')}@font-face{font-family:Invalid;src:url('https://example.invalid/font.woff2')}p{font-family:Receiver,serif}h1{font-family:Invalid,serif}</style>
 <section id="hero"><h1>Offline</h1><p>Synthetic receiver font</p><img alt="synthetic blocked image" src="RECEIVER/image.png"></section>
-<script>fetch('RECEIVER/fetch').catch(()=>{});navigator.sendBeacon('RECEIVER/beacon','synthetic');new WebSocket('RECEIVER_WS/socket');</script>
+<div id="workers" data-next-await hidden></div>
+<script>fetch('RECEIVER/fetch').catch(()=>{});navigator.sendBeacon('RECEIVER/beacon','synthetic');new WebSocket('RECEIVER_WS/socket');
+// Readiness settles only once both workers report their fetch settled, so a worker that never ran reads await_timeout.
+let pending=2;const settled=()=>{if(--pending===0)document.getElementById('workers').removeAttribute('data-next-await');};
+new Worker('offline-worker.js?kind=dedicated').onmessage=settled;
+const shared=new SharedWorker('offline-worker.js?kind=shared');shared.port.onmessage=settled;shared.port.start();</script>

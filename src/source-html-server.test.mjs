@@ -45,6 +45,20 @@ test("F3C-I12 proxy refusal: CONNECT and absolute-form requests forward zero TCP
   assert.equal(connections, 0);
   assert.deepEqual(server.refused(), [{ origin: `http://${destination}`, count: 1 }, { origin: `https://${destination}`, count: 1 }]);
 });
+test("Proxy refusal total is independent of the bounded origin list, including malformed targets", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "source-proxy-total-")); t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const server = await startSourceHtmlServer({ root: dir }); t.after(() => server.close());
+  assert.equal(server.refusedTotal(), 0);
+  for (let i = 0; i < 33; i++) assert.equal((await get(server.port, `http://blocked-${i}.invalid/path?discard=yes`)).status, 403);
+  assert.equal(server.refusedTotal(), 33);
+  assert.equal(server.refused().length, 32);
+  assert.equal((await get(server.port, "http://blocked-0.invalid/repeat")).status, 403);
+  assert.equal((await get(server.port, "//malformed-target")).status, 403);
+  assert.equal((await get(server.port, "blocked-34.invalid:443", "CONNECT")).status, 403);
+  assert.equal(server.refusedTotal(), 36);
+  assert.equal(server.refused().length, 32);
+  assert.equal(server.refused().find((r) => r.origin === "http://blocked-0.invalid").count, 2);
+});
 test("Declared input reader: FIFO, socket, device and directory are refused before any read; size is bounded", { skip: process.platform === "win32", timeout: 30_000 }, async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "declared-input-")); t.after(() => rmSync(dir, { recursive: true, force: true }));
   execFileSync("mkfifo", [join(dir, "fifo.html")]);

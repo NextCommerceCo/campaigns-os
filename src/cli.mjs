@@ -2884,7 +2884,13 @@ export async function polishCaptureCommand(args, options = {}) {
       viewports: (capture.plan?.viewports ?? []).map((viewport) => viewport.key),
       visual: capture.captures ? { cells: capture.captures.cells.length,
         rendered: capture.captures.cells.filter((cell) => cell.status === "rendered").length,
-        dependencies: capture.captures.dependencies, adapters: capture.captures.adapters } : null,
+        comparisons_compared: capture.captures.comparisons.filter((comparison) => comparison.status === "compared").length,
+        comparisons_unsupported: capture.captures.comparisons.filter((comparison) => comparison.status === "unsupported").length,
+        dependencies: capture.captures.dependencies, adapters: capture.captures.adapters,
+        // A run budget spent: a cell never rendered, or a decode or diff never ran (§2.4).
+        budget_exhausted: capture.captures.cells.some((cell) => cell.status === "run_budget_exhausted")
+          || capture.captures.references.some((reference) => reference.verification?.reason === "verify_budget_exhausted")
+          || capture.captures.comparisons.some((comparison) => comparison.reason === "diff_budget_exhausted") } : null,
     },
   };
 }

@@ -43,6 +43,22 @@ test("F3C-W10: direct polish capture on an upgraded repo creates ignored capture
   assert.equal(JSON.stringify(pageLoad), frozenSnapshot);
   const record = visual.captures;
   assert.ok(record.comparisons.some((c) => c.artifacts.length > 0));
+  // §7: the JSON summary counts the record's comparisons and names the installed dependency versions.
+  const summary = result.capture.visual, installed = (name) => readJson(join(import.meta.dirname, "..", "node_modules", name, "package.json")).version;
+  assert.deepEqual(Object.keys(summary).sort(), ["adapters", "budget_exhausted", "cells", "comparisons_compared", "comparisons_unsupported", "dependencies", "rendered"]);
+  assert.equal(summary.comparisons_compared, record.comparisons.filter((c) => c.status === "compared").length);
+  assert.ok(summary.comparisons_compared > 0);
+  assert.equal(summary.comparisons_unsupported, record.comparisons.filter((c) => c.status === "unsupported").length);
+  assert.equal(summary.budget_exhausted, false);
+  assert.deepEqual([summary.dependencies.decoder.version, summary.dependencies.diff.version], [installed("pngjs"), installed("pixelmatch")]);
+  assert.ok([summary.dependencies.decoder.version, summary.dependencies.diff.version].every((v) => /^\d+\.\d+\.\d+/.test(v)));
+  // A spent visual run budget is reported as such; the exit status is still the checkpoint's.
+  let calls = 0;
+  const spent = await polishCaptureCommand(commandArgs(f), { createBrowserAdapter, visual: { clock: { now: () => (calls++ ? 1e9 : 0) } } });
+  assert.equal(spent.capture.visual.budget_exhausted, true);
+  assert.equal(spent.capture.visual.comparisons_compared, 0);
+  assert.equal(spent.capture.visual.rendered, 0);
+  assert.equal(spent.status, result.status);
   const paths = [...record.cells.flatMap((c) => [c.actual.png.path, c.stabilized.png.path]),
     ...record.comparisons.flatMap((c) => c.artifacts.flatMap((a) => [a.basis_crop.path, a.build_crop.path, a.heatmap.path])),
     ".campaign-runtime/polish/captures/.gitignore", ".campaign-runtime/polish/diff/.gitignore"];

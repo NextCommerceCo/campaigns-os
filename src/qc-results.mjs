@@ -1223,9 +1223,16 @@ export function readCaptures({ record, packet, currentBuild, currentSource, buil
   try { if (packet && rules?.plan) plan = rules.plan({ packet, baseUrl: "http://127.0.0.1" }); } catch { /* fail closed below */ }
   const planned = Array.isArray(plan?.routes) ? plan.routes : [];
   const measuredAt = validTime(record?.measured_at) ? record.measured_at : null;
-  const failureRow = (subject, reason) => buildQcResult({ check: subject.check, leg: "polish", subject,
-    result: "unexercised", reason_code: E, members: [{ key: "evidence", result: "unexercised", reason_code: reason }],
-    state: { reason }, measured_at: measuredAt });
+  // A changed build (§5.5 step 2) and a capture file not on this machine (step
+  // 4.1, a fresh clone) are the row's own reason (§5.3 steps 2 and 9), as in
+  // the sibling readers. Every other reader failure is evidence_not_reproducible
+  // with the failure as its member. Either way every row of the record reads it.
+  const failureRow = (subject, reason) => ["stale_binding", "capture_file_absent"].includes(reason)
+    ? buildQcResult({ check: subject.check, leg: "polish", subject, result: "unexercised", reason_code: reason,
+      state: { reason }, coverage: { observed: 1, expected: 1, limits: [reason] }, measured_at: measuredAt })
+    : buildQcResult({ check: subject.check, leg: "polish", subject,
+      result: "unexercised", reason_code: E, members: [{ key: "evidence", result: "unexercised", reason_code: reason }],
+      state: { reason }, measured_at: measuredAt });
   const subjectOf = (check, item) => ({ check, page: item.route,
     ...(item.viewport == null ? {} : { viewport: item.viewport }),
     key: item.ref_id === "source_html" || item.basis === "source_html" ? "source_html" : `ref:${item.ref_id}` });
@@ -1346,7 +1353,7 @@ export function readCaptures({ record, packet, currentBuild, currentSource, buil
   };
   const provenanceReasons = ["path_in_build_output", "path_in_runtime_dir", "hash_equals_package_capture", "linked_source_self_referential", "hash_equals_built_html", "source_is_campaign_page", "source_link_missing", "linked_source_missing", "source_hash_unrecorded", "source_hash_mismatch", "capture_time_unrecorded"];
   const inputReasons = ["source_root_unavailable", "source_html_missing", "source_package_unavailable", "source_package_stale"];
-  const comparisonReasons = [...vocab.part_reason, "width_unknown", "dpr_unknown", "width_mismatch", "dpr_mismatch", "mask_cap_reached", "diff_budget_exhausted", "image_too_large", "decode_failed", "diff_unavailable", "capture_unavailable", "reference_not_usable", "comparison_unsupported", "readiness_incomplete"];
+  const comparisonReasons = [...vocab.part_reason, "width_unknown", "dpr_unknown", "width_mismatch", "dpr_mismatch", "mask_cap_reached", "diff_budget_exhausted", "image_too_large", "decode_failed", "file_missing", "path_outside_source_root", "too_large", "diff_unavailable", "capture_unavailable", "reference_not_usable", "comparison_unsupported", "readiness_incomplete"];
   const validateReference = (ref) => {
     if (!isPlainObject(ref) || !isNonEmptyString(ref.page_id) || !isPlainObject(ref.verification)
       || !isPlainObject(ref.provenance) || !isPlainObject(ref.identity)
@@ -1534,11 +1541,12 @@ export function readCaptures({ record, packet, currentBuild, currentSource, buil
     if (descriptorsByPath.has(ref.path) && !sameJson(descriptorsByPath.get(ref.path), ref)) return fail("png_dimensions_mismatch");
     descriptorsByPath.set(ref.path, ref);
   }
-  for (const ref of descriptorsByPath.values()) {
-    const file = checkFile(ref);
-    if (file.failure) return fail(file.failure, file.detail);
-    if (file.absent) return fail("capture_file_absent");
-  }
+  // A file that is present but wrong outranks one that is absent (§5.3 step 1
+  // before step 9), whichever is read first.
+  const files = [...descriptorsByPath.values()].map(checkFile);
+  const wrong = files.find((file) => file.failure);
+  if (wrong) return fail(wrong.failure, wrong.detail);
+  if (files.some((file) => file.absent)) return fail("capture_file_absent");
   const unique = new Map();
   for (const row of rows) if (!unique.has(row.id) || row.reason_code === E) unique.set(row.id, row);
   return unique.size ? [...unique.values()] : fail("record_shape_invalid");

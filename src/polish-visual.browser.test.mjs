@@ -247,23 +247,34 @@ browserTest("F3C-I2: stalled loopback font exposes fonts_timeout within three se
     assert.deepEqual(row.members.map((m) => [m.key, m.reason_code]), [["build", "fonts_timeout"]]);
   }
 });
-browserTest("F3C-I12: source fetch, beacon, image, fonts, WebSocket and preconnect reach zero receiver TCP connections", async (t) => {
+browserTest("F3C-I12: source fetch, beacon, image, fonts, WebSocket, preconnect and worker fetches reach zero receiver TCP connections", async (t) => {
   let connections = 0, frames = 0;
   const receiver = await listen(t, (req, res) => { frames++; res.end(); });
   receiver.server.on("connection", () => { connections++; });
   receiver.server.on("upgrade", (req, socket) => { frames++; socket.destroy(); });
   const f = await scenario(t);
-  f.write("page.html", fixtureBytes("offline.html").toString().replaceAll("RECEIVER_WS", receiver.origin.replace("http:", "ws:")).replaceAll("RECEIVER", receiver.origin));
+  const offline = (name) => fixtureBytes(name).toString().replaceAll("RECEIVER_WS", receiver.origin.replace("http:", "ws:")).replaceAll("RECEIVER", receiver.origin);
+  f.write("page.html", offline("offline.html"));
+  // A SharedWorker's fetch is outside the per-context routes: only the launch proxy refuses it.
+  f.write("offline-worker.js", offline("offline-worker.js"));
   const server = await startSourceHtmlServer({ root: f.sourceRoot }); t.after(() => server.close());
   const adapter = await createPolishBrowserAdapter({ seal: { origin: server.origin, port: server.port }, networkIdleTimeoutMs: 100 }); t.after(() => adapter.close());
   const result = await adapter.renderForCompare({ url: `${server.origin}/page.html`, viewport: { key: "desktop", width: 1440, height: 1200 } });
+  // Both workers ran and their fetches settled before the shots: the page's
+  // static [data-next-await] marker is gone (a worker that never ran reads timeout).
+  const workersSettled = (readiness) => ["settled", "not_present"].includes(readiness.await.status);
+  assert.ok(workersSettled(result.readiness), JSON.stringify(result.readiness));
   assert.equal(result.status, "rendered"); assert.equal(connections, 0); assert.equal(frames, 0);
   assert.equal(result.external.blocked_websocket_count, 1); assert.ok(result.external.blocked_count >= 5);
   assert.ok(result.external.blocked_origins.includes(receiver.origin)); assert.ok(result.external.blocked_origins.includes("https://example.invalid"));
   assert.ok(server.refused().every((r) => r.count > 0 && !r.origin.includes("?")));
+  assert.ok(server.refused().some((r) => r.origin === receiver.origin), JSON.stringify(server.refused()));
   const record = await runVisualPass(f.input);
-  // Blocked requests are recorded as a limit; both viewport comparisons still run to a result.
-  assert.ok(record.cells.filter((c) => c.side === "source_html").every((c) => c.status === "rendered" && c.external.blocked_count > 0));
+  // Blocked requests and proxy refusals are recorded as a limit; both viewport comparisons still run to a result.
+  const sources = record.cells.filter((c) => c.side === "source_html");
+  assert.ok(sources.every((c) => c.status === "rendered" && workersSettled(c.readiness) && c.external.blocked_origins.includes(receiver.origin)));
+  // The cell's count is the routed blocks plus the refusals (the SharedWorker fetch) of that render.
+  assert.ok(sources.every((c) => c.external.blocked_count > result.external.blocked_count), JSON.stringify(sources.map((c) => c.external)));
   assert.deepEqual(record.comparisons.map((c) => [c.viewport, c.basis]).sort(), [["desktop", "source_html"], ["mobile", "source_html"]]);
   for (const comparison of record.comparisons) {
     assert.equal(comparison.status, "compared", comparison.viewport); assert.equal(comparison.reason, null);

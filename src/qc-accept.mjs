@@ -165,7 +165,7 @@ function assessOne(record, currentById, nowMs) {
   if (!(Date.parse(record.accepted_at) > Date.parse(record.measured_at))) return { status: "inert", why: "accepted_not_after_measurement" };
   const current = currentById.get(record.result_id);
   if (!current) return { status: "orphaned", why: "no_current_result" };
-  if (current.result === "unexercised" && [QC_REASON.STALE_BINDING, QC_REASON.EVIDENCE_NOT_REPRODUCIBLE].includes(current.reason_code)) {
+  if (current.result === "unexercised" && [QC_REASON.STALE_BINDING, QC_REASON.EVIDENCE_NOT_REPRODUCIBLE, "capture_file_absent"].includes(current.reason_code)) {
     return { status: "lapsed", why: current.reason_code, current };
   }
   // Visual references lose their revision-baseline warning when provenance

@@ -318,6 +318,12 @@ test("F3C-B7 wrong capture bytes and absent capture files never produce metrics"
   writeFileSync(join(f.targetRepo, f.record.cells[0].actual.png.path), "changed");
   unlinkSync(join(f.targetRepo, f.record.cells[2].actual.png.path));
   assertCapturesRefused(f.read(), "png_hash_mismatch");
+  // Wrong bytes outrank an absent file whichever is read first (§5.3 step 1 before step 9).
+  const reversed = await c3Fixture(t);
+  unlinkSync(join(reversed.targetRepo, reversed.record.cells[0].actual.png.path));
+  writeFileSync(join(reversed.targetRepo, reversed.record.cells[2].actual.png.path), "changed");
+  assertCapturesRefused(reversed.read(), "png_hash_mismatch");
+  // A clone without the git-ignored captures reads capture_file_absent, not tampering.
   const fresh = await c3Fixture(t);
   unlinkSync(join(fresh.targetRepo, fresh.record.cells[2].actual.png.path));
   assertCapturesRefused(fresh.read(), "capture_file_absent");
@@ -472,6 +478,10 @@ test("F3C-B16 fully reconstructed consistent records read as recorded: A1 residu
 });
 
 // Reader failures invalidate every row, including sibling diffs and references.
+// A changed build and an absent capture file are the row's own reason (§5.3
+// steps 2 and 9); every other failure is evidence_not_reproducible with a member.
+const OWN_READER_REASONS = ["stale_binding", "capture_file_absent"];
+const readerReasonCode = (reason) => OWN_READER_REASONS.includes(reason) ? reason : E;
 function assertCapturesRefused(rows, reason) {
   assert.ok(rows.length > 0);
   assert.ok(rows.some((r) => r.check === "visual.reference"));
@@ -479,8 +489,9 @@ function assertCapturesRefused(rows, reason) {
   assert.ok(c3Diffs(rows).some((r) => r.subject.viewport === "mobile"));
   for (const row of rows) {
     assert.equal(row.result, "unexercised", row.id);
-    assert.equal(row.reason_code, E, row.id);
-    assert.ok(hasMember(row, reason), `${row.id}: ${reason}`);
+    assert.equal(row.reason_code, readerReasonCode(reason), row.id);
+    if (OWN_READER_REASONS.includes(reason)) assert.deepEqual(row.members, [], row.id);
+    else assert.ok(hasMember(row, reason), `${row.id}: ${reason}`);
     assert.equal(row.accept_eligible, false, row.id);
   }
 }
@@ -546,10 +557,31 @@ test("F3C-R2 every reader failure preserves HTML and image identities and lapses
     const rows = f.read({ record, ...extra });
     assertCapturesRefused(rows, reason);
     assert.deepEqual(rows.map((r) => r.id).sort(), originalRows.map((r) => r.id).sort(), `${label}: identities survive`);
-    assert.deepEqual(assessQcAccepts(accepts, rows, { now }), accepts.map(() => ({ status: "lapsed", why: E, applied: false })), label);
+    assert.deepEqual(assessQcAccepts(accepts, rows, { now }), accepts.map(() => ({ status: "lapsed", why: readerReasonCode(reason), applied: false })), label);
     assert.throws(() => planQcAccepts({ refs, results: rows, now, attribution }), label);
     assert.equal(rows.some((r) => r.subject.page === "/unplanned/"), false);
   }
+});
+
+test("F3C-B7 a capture file absent on this machine reads capture_file_absent on every row; the baseline is not applied until the file is back", async (t) => {
+  const f = await c3Fixture(t);
+  f.record.references[0].provenance = { class: "self_referential", reasons: ["hash_equals_built_html"] };
+  const rows = f.read(), warning = rows.find((r) => r.check === "visual.reference");
+  const now = "2026-10-23T00:00:00.000Z";
+  const attribution = qcAcceptAttribution({ reason: "Use this output as the revision baseline", acceptedBy: "Casey Morgan", now });
+  const ref = qcResultRef(warning), [id, prefix] = ref.split("@");
+  const accepts = planQcAccepts({ refs: [{ ref, id, prefix }], results: rows, now, attribution });
+  assert.equal(assessQcAccepts(accepts, rows, { now })[0].status, "active");
+  const path = join(f.targetRepo, f.record.cells[2].actual.png.path);
+  unlinkSync(path);
+  const absent = f.read();
+  assertCapturesRefused(absent, "capture_file_absent");
+  assert.deepEqual(absent.map((r) => r.id).sort(), rows.map((r) => r.id).sort());
+  const [assessment] = assessQcAccepts(accepts, absent, { now });
+  assert.equal(assessment.applied, false); assert.equal(assessment.status, "lapsed"); assert.equal(assessment.why, "capture_file_absent");
+  assert.throws(() => planQcAccepts({ refs: [{ ref, id, prefix }], results: absent, now, attribution }));
+  writeFileSync(path, createRgbaPng(390, 844));
+  assert.equal(assessQcAccepts(accepts, f.read(), { now })[0].status, "active", "the same bytes back restore the baseline");
 });
 
 test("F3C-R2 CLI refuses a new accept and lapses accepted image and HTML references after tampering", async (t) => {

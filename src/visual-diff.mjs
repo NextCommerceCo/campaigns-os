@@ -1,3 +1,6 @@
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { boundedDimensions, VISUAL_MAX_DECODE_PIXELS } from "./png-header.mjs";
 
 const own = (value, key) => value !== null && ["object", "function"].includes(typeof value) && Object.hasOwn(value, key) ? value[key] : undefined;
@@ -36,12 +39,29 @@ export function releaseComparison(part, memory) {
 }
 
 export const DIFF_OPTIONS = Object.freeze({ threshold: 0.1, include_aa: false, alpha: 0.1 });
-export async function loadVisualDependencies({ importer = (name) => import(name) } = {}) {
+// Neither package exports its version: read it from the package.json above the
+// resolved entry whose name is the package's. Unknown is null, never a guess.
+export function installedPackageVersion(name, { resolveEntry = (specifier) => import.meta.resolve(specifier) } = {}) {
+  try {
+    let directory = dirname(fileURLToPath(resolveEntry(name)));
+    for (;;) {
+      const file = join(directory, "package.json");
+      if (existsSync(file)) {
+        const manifest = JSON.parse(readFileSync(file, "utf8"));
+        if (manifest?.name === name) return typeof manifest.version === "string" ? manifest.version : null;
+      }
+      const parent = dirname(directory);
+      if (parent === directory) return null;
+      directory = parent;
+    }
+  } catch { return null; }
+}
+export async function loadVisualDependencies({ importer = (name) => import(name), versionOf = installedPackageVersion } = {}) {
   async function load(name, type) {
     try {
       const module = await importer(name);
       const api = own(module, "default") || module;
-      const result = { status: "available", version: own(module, "version") ?? own(api, "version") ?? null, package: name };
+      const result = { status: "available", version: own(module, "version") ?? own(api, "version") ?? versionOf(name), package: name };
       if (type === "decoder") {
         const PNG = own(module, "PNG") || own(api, "PNG");
         const sync = own(PNG, "sync");

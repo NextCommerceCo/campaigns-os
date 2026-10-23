@@ -45,6 +45,40 @@ test("Padding preserves every original pixel, counts added area as difference, a
   assert.throws(() => padRgba(basis, 100000, 100000), /image_too_large/);
   assert.throws(() => compareImages({ width: 100000, height: 100000 }, basis, { diff: dependencies.diff }), /image_too_large/);
 });
+// Four distinct columns from x = 0, then black: any resample of a narrower side
+// moves or repeats a column, so its crop and its mismatch count would change.
+const PALETTE = [[255, 0, 0, 255], [0, 255, 0, 255], [0, 0, 255, 255], [255, 255, 0, 255]];
+function columns(width, height) {
+  const image = createRgba(width, height, [0, 0, 0, 255]);
+  for (let y = 0; y < height; y++) for (let x = 0; x < Math.min(width, PALETTE.length); x++) image.data.set(PALETTE[x], (y * width + x) * 4);
+  return image;
+}
+function assertPaddedNotResized(part, { basis, build }, label) {
+  const narrow = Math.min(basis.width, build.width), wide = Math.max(basis.width, build.width);
+  assert.deepEqual(part.canvas, { width: wide, height: 2 }, label);
+  assert.equal(part.width_delta_px, build.width - basis.width, label);
+  // §4.3 step 2: only the padded columns differ; the shared columns are identical.
+  assert.equal(part.compared_pixels, wide * 2, label); assert.equal(part.mismatch_pixels, (wide - narrow) * 2, label);
+  for (let y = 0; y < 2; y++) for (let x = 0; x < wide; x++) assert.equal(part.mismatches[y * wide + x], x >= narrow ? 1 : 0, `${label} (${x},${y})`);
+  // Each crop holds exactly its own side's original pixels.
+  for (const [name, original] of [["basis_crop", basis], ["build_crop", build]]) {
+    assert.deepEqual([part[name].width, part[name].height], [original.width, original.height], `${label} ${name}`);
+    assert.deepEqual(Buffer.from(part[name].data), Buffer.from(original.data), `${label} ${name}`);
+  }
+}
+for (const narrowSide of ["build", "source_html"]) test(`Different widths are padded, never resized, at page and band level (narrow ${narrowSide})`, () => {
+  const narrow = () => columns(4, 2), wide = () => columns(8, 2);
+  const originals = narrowSide === "build" ? { basis: wide(), build: narrow() } : { basis: narrow(), build: wide() };
+  const direct = compareImages(copyImage(originals.basis), copyImage(originals.build), { diff: dependencies.diff });
+  assertPaddedNotResized(direct, originals, "compareImages");
+  const basis = cell("source_html", [band("#band", 0, 2, originals.basis.width)]);
+  const build = cell("build", [band("#band", 0, 2, originals.build.width)]);
+  const parts = [];
+  const comparison = compareVisualPair({ basis, build, basisImage: source(copyImage(originals.basis)), buildImage: source(copyImage(originals.build)),
+    diff: dependencies.diff, onComparison(part) { assertPaddedNotResized(part, originals, part.key ?? "page"); parts.push(part.key ?? "page"); } });
+  assert.deepEqual(parts, ["page", "#band"]);
+  assert.equal(comparison.page.mismatch_pixels, 8); assert.equal(comparison.bands[0].mismatch_pixels, 8);
+});
 test("Mask union counts overlap once and clips to its canvas", () => {
   const images = [createRgba(8, 8), createRgba(8, 8)];
   const union = paintMaskUnion(images, [{ x: -2, y: 0, width: 6, height: 4 }], [{ x: 2, y: 2, width: 4, height: 4 }]);
