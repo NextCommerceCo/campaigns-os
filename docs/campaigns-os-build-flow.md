@@ -17,6 +17,57 @@ The happy path is intentionally tight:
 
 Pause only for missing inputs, doctor blockers, blocked deploys, out-of-scope runtime pages that block checkout proof, or merchant-specific uncertainty. The default path should not branch into external browser skills or hand-built backend order creation.
 
+## Live-campaign changes
+
+Keep a standing pull-request check after launch: install locked dependencies
+with `npm ci`, build the campaign site with
+`CPK_ENV=development npx --no-install campaign-build --json > .campaign-runtime/page-kit-build-summary.json`,
+then run `npx --no-install campaigns-os doctor --packet <packet> --ci --no-live-refs`.
+Run these from the Page Kit folder containing the pinned tools and committed
+packet, local CampaignSpec, Build Context and Assembly Report. The site build
+must produce `_site/<public_route_slug>/`; `campaigns-os build` prepares inputs
+and does not build the site. Do not record a new build merely to clear the check.
+Match the Assembly Report's build environment: the documented local-proof flow
+uses `development`; set `CPK_ENV=production` when the recorded evidence reviewed
+a production render instead. Environment differences also change fingerprints.
+
+| CI status | Exit code | Meaning |
+|---|---|---|
+| `current` | `0` | Polish and QA both bind to the build on disk. |
+| `owed` | `3` | Polish or QA binds to another build; evidence is owed. |
+| `unknown` | `4` | Output, fingerprints or the recorded manifest are missing, or inspection throws; debt cannot be determined. |
+| `usage` | `2` | The packet is missing, unreadable or invalid JSON. |
+
+Any owed stage returns 3; otherwise an unknown stage returns 4. Normal
+doctor errors remain visible but do not determine the CI exit code. Without
+`--ci`, doctor retains its usual inspection output and 0/2 result. `--json`
+adds a `ci` object containing `status`, `exit_code`, `polish`, `qa`, and
+`changes` when assessment completes. Without `--json`, every CI outcome prints
+an escaped Markdown report, including a "could not evaluate" report for packet
+usage errors (exit 2) or inspection failures (exit 4). Page changes are compared
+with the retained assembly manifest, so the page list may be empty if that
+manifest was already updated; old Polish/QA bindings still show debt.
+The check reads recorded fingerprints, not machine-local capture files.
+Readback's `evidence_debt` uses the same assessment, showing an agent this debt
+before it edits; its separate time-based staleness assessment is not the CI signal.
+
+Copy the [workflow example](examples/campaign-repo-evidence-check.yml) into the
+campaign repository and adjust the packet path. It posts or updates one PR
+comment using the fixed `<!-- campaign-evidence-check -->` marker. Evidence
+reports use stdout only; stderr stays in the job log. If the command produces
+no stdout, the comment points to the job log with a fixed fallback message.
+Evidence findings are **report-only by default**. Opt in to failing on a nonzero doctor
+exit by setting the repository Actions variable
+`CAMPAIGNS_OS_EVIDENCE_CHECK` to `fail`. Install/build failures still fail normally.
+Fork pull requests may lack comment-write permission; comment failures are
+nonfatal and the report remains in the job log. The example uses `pull_request`
+and does not run untrusted code with `pull_request_target` privileges.
+
+To repay debt, rebuild and record the output, re-run `polish capture` against
+that served build, record Polish with `record polish --evidence <evidence.json>`,
+then run `qa run` to record QA for the current build. The workflow only inspects;
+it does not renew evidence or deploy.
+
 ## Partial Builds
 
 Partial builds are valid campaign work. A pass may build only new presell pages,

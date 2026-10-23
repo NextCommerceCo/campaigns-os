@@ -1,4 +1,5 @@
 import { campaignSpecIdentity, resolveCampaignIdentity, campaignIdentitiesMatch, localSpecIdentityFields } from "./spec-source-identity.mjs";
+import { withDoctorCiReport } from "./doctor/ci.mjs";
 import { createHash, randomUUID } from "node:crypto";
 import { withDesignSourcePublication } from "./design-source-publication.mjs";
 import { createDemo, demoArguments } from "./demo.mjs";
@@ -320,7 +321,7 @@ Usage:
                      [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>] [--design-manifest <path>]
                      [--allow-uncertified-template "<reason>"] [--order-path-depth <off|common|full>]
                      [--deploy-target <target>] [--preview-url <url>] [--production-url <url>] [--no-run-session] [--force]   # intake alias for prepare-build + doctor
-  campaigns-os doctor --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--strip-paths] [--write] [--no-write] [--doctor-out <path>] [--proxy-base <url>] [--no-live-refs] [--json]   # inspection by default; --doctor-out requires --write; --no-write wins. When the packet's built _site/<route>/ exists and a public Campaigns API key resolves (packet, its local CampaignSpec, or the declared campaign-key env var), doctor makes one read-only GET of {proxy-base}/api/campaign under X-Campaign-Key to check each built page's shipping and package refs against the live campaign; --proxy-base overrides the canonical proxy (https, or a loopback host over http). --no-live-refs skips the read and records not_run with reason disabled. No key, no built page, or a failed read records derived.live_campaign_refs as not_run with its reason. Only doctor and qa run make this read; other commands that run doctor record not_read
+  campaigns-os doctor --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--strip-paths] [--write] [--no-write] [--doctor-out <path>] [--proxy-base <url>] [--no-live-refs] [--ci] [--json]   # inspection by default; --doctor-out requires --write; --no-write wins. --ci: Markdown (or JSON ci object), exits 0 current / 3 owed / 4 unknown / 2 packet usage error; other doctor errors do not affect the CI exit. Without --ci: 0 ok / 2 errors. When the packet's built _site/<route>/ exists and a public Campaigns API key resolves (packet, its local CampaignSpec, or the declared campaign-key env var), doctor makes one read-only GET of {proxy-base}/api/campaign under X-Campaign-Key to check each built page's shipping and package refs against the live campaign; --proxy-base overrides the canonical proxy (https, or a loopback host over http). --no-live-refs skips the read and records not_run with reason disabled. No key, no built page, or a failed read records derived.live_campaign_refs as not_run with its reason. Only doctor and qa run make this read; other commands that run doctor record not_read
   campaigns-os doctor --built <page-kit-target-repo> --family <family> [--slug <slug>] [--base-url <url>] [--emit-packet [path]] [--json]   # L7: doctor a built _site/ with no Build Packet. Reads the local files only: --base-url is not fetched, it fills deploy.preview_url in the minimal packet (check served pages with qa run --site)
   campaigns-os bundle check --packet <campaign-runtime.build.json> [--require-qa] [--json]   # validate the canonical migration/readback JSON bundle; never substitutes markdown
   campaigns-os sdk storage-check --target <git-root> --target-sdk <x.y.z> --manifest <SDK-manifest.json> --scope <dir,file> [--exclude <dir,file>] [--json]
@@ -484,14 +485,14 @@ export async function main(argv, { authentication, qcStandIns } = {}) {
     console.log(packageVersion());
     return;
   }
-  return runInvocation(parseArgs(argv), {
+  return withDoctorCiReport(parseArgs(argv), (args) => runInvocation(args, {
     dispatch: (command, args, context) => dispatch(command, args, { ...context, argv, authentication, qcStandIns }),
     closeOutStaleRunSessions,
     ambientRunSession,
     lifecycleIdentity,
     persistLifecycle: persistLifecycleIfRequested,
     autoEndAfterQa: autoEndRunSessionAfterTerminalQa,
-  });
+  }));
 }
 
 // The lifecycle entry's identity (T6): its argv shape and its run_id. Ambient
@@ -1049,8 +1050,15 @@ async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = nul
     const liveCampaign = await readDoctorLiveCampaign(args);
     const result = doctorCommand(args, { liveCampaign, qcStandIns });
     if (!result.ok) recorder.recordFindingCodes(result.errors?.map((issue) => issue.code));
-    writeResult(result, args, result.ok ? 0 : 2);
-    printDoctorTinyPrompt(result, args);
+    if (args.ci === true) {
+      const { formatDoctorCi, DOCTOR_CI_EXIT_CODES } = await import("./doctor/ci.mjs");
+      if (!args.json) console.log(formatDoctorCi(result));
+      else writeResult(result, args, 0);
+      process.exitCode = result.ci?.exit_code ?? result.exit_code ?? DOCTOR_CI_EXIT_CODES.usage;
+    } else {
+      writeResult(result, args, result.ok ? 0 : 2);
+      printDoctorTinyPrompt(result, args);
+    }
     return;
   }
 
