@@ -18,6 +18,7 @@
 // validity, wrapper policy, screenshot proof) is evaluated elsewhere and is
 // untouched by this gate.
 
+import { SOURCE_HASH_PATTERN } from "../source-html-manifest.mjs";
 import {
   assessCheckpointWaivers,
   checkpointStateFingerprint,
@@ -181,4 +182,77 @@ export function evaluateSourceProvenanceGates({ pages = [], blockingCodes = [], 
     .filter(Boolean))].sort();
 
   return { gates, inert: { counts, pages: inertPages } };
+}
+
+// Returns every Figma-provenance finding in emission order, each tagged with
+// its severity: "provenance" (the waivable source_html.producer_provenance*
+// and source_html.files.partial/asset blockers) or "warning".
+export function collectFigmaProvenanceFindings(manifest, provenance = manifest?.producer_provenance || {}, rawProvenance = manifest?.producer_provenance) {
+  const findings = [];
+  const add = (severity, code, message) => findings.push({ severity, code, message });
+  if (!rawProvenance) {
+    add(
+      "provenance",
+      "source_html.producer_provenance",
+      "Figma source manifest is missing producer_provenance. Re-run figma-sections-export handoff so Campaigns OS can gate semantic exporter provenance before assembly."
+    );
+  }
+
+  if (provenance.source_type !== "semantic_figma_export") {
+    add(
+      "provenance",
+      "source_html.producer_provenance.source_type",
+      `Figma source manifest source_type is "${provenance.source_type || "missing"}"; expected "semantic_figma_export". Screenshot or hand-authored fallback output cannot satisfy the Figma provenance gate.`
+    );
+  }
+  if (provenance.screenshot_fallback_used !== false) {
+    add(
+      "provenance",
+      "source_html.producer_provenance.screenshot_fallback_used",
+      "Figma source manifest reports screenshot_fallback_used=true. Re-run semantic figma-sections-export before assembly."
+    );
+  }
+  if (!Number.isInteger(provenance.semantic_section_count) || provenance.semantic_section_count <= 0) {
+    add(
+      "provenance",
+      "source_html.producer_provenance.semantic_section_count",
+      "Figma source manifest must report semantic_section_count > 0."
+    );
+  }
+  if (!SOURCE_HASH_PATTERN.test(String(provenance.material_fingerprint || ""))) {
+    add(
+      "provenance",
+      "source_html.producer_provenance.material_fingerprint",
+      "Figma source manifest must include a 64-character material_fingerprint over the handed-off source package."
+    );
+  }
+
+  const files = Array.isArray(manifest?.files) ? manifest.files : [];
+  if (!files.some((entry) => entry.role === "partial")) {
+    add("provenance", "source_html.files.partial", "Figma source manifest files[] must include section partials.");
+  }
+  if (!files.some((entry) => entry.role === "asset")) {
+    add("provenance", "source_html.files.asset", "Figma source manifest files[] must include exported assets.");
+  }
+
+  const sectionExports = Array.isArray(provenance.section_exports) ? provenance.section_exports : [];
+  if (!sectionExports.length) {
+    add("provenance", "source_html.producer_provenance.section_exports", "Figma source manifest must include section_exports with Figma node IDs and extraction commands.");
+  } else {
+    const withoutNodeIds = sectionExports
+      .filter((entry) => {
+        const nodeIds = isPlainObject(entry?.node_ids) ? entry.node_ids : null;
+        return !nodeIds || !Object.keys(nodeIds).length;
+      })
+      .map((entry) => entry?.section || "unknown");
+    if (withoutNodeIds.length) {
+      add(
+        "warning",
+        "source_html.producer_provenance.section_exports.node_ids",
+        `Some Figma section exports do not list node_ids: ${withoutNodeIds.slice(0, 6).join(", ")}${withoutNodeIds.length > 6 ? ", ..." : ""}.`
+      );
+    }
+  }
+
+  return findings;
 }

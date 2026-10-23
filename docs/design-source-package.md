@@ -38,9 +38,13 @@ holds optional desktop, tablet and mobile frame links. Intake records a separate
 non-renderable contribution (`figma_frames` with native trust for Figma, otherwise
 `other` with opaque trust), with `reference_only` coverage. The page's
 `html_funnel` mapping links to it through `derived_from`. Pages sharing a file
-share one contribution. A CampaignSpec page's `design_source` is also read and
-wins when both channels are present. File, frame or producer-file-key conflicts
-are reported for review.
+share one contribution. A CampaignSpec page's Figma `design_source` records lineage
+only with figma-sections-export provenance that passes doctor's
+`source_html.producer_provenance` check without a waiver; then it wins when both
+channels are present. Otherwise, a spec pointer alone adds no contribution or
+lineage at intake, and no `design.access` row unless the package already records
+a spec contribution. File, frame
+or producer-file-key conflicts between eligible declarations are reported for review.
 
 Malformed `design_file` values remain non-fatal manifest warnings; the schema
 accepts them so validation agrees with intake. File URL schemes are
@@ -53,10 +57,19 @@ source-reference `notes` remain nonmaterial, including on `design_file` refs.
 Recording a file adds no readiness requirement, Source TODO or blocker. A
 manifest edit, including `design_file`, follows the existing stale-package rule:
 rerun intake with `--force`. A later spec declaration leaves the package current;
-doctor reports the unrecorded reference with the same recovery guidance.
+when eligible under the Figma provenance rule above, doctor reports the
+unrecorded file with the same recovery guidance.
 `design.access` reports `unexercised` / `design_access_missing` when the recorded
-file agrees with the declaration. This version cannot read design files. This
-records authority only; element parity is not implemented by this intake change.
+file agrees with the declaration. For a recorded spec contribution, doctor
+compares the current spec declaration even if today's manifest or provenance is
+unavailable. This version cannot read design files. This
+records authority only; Polish element parity compares the built page with its
+source HTML, not the design file (see [Polish evidence](polish-evidence.md)).
+A changed design file is listed for review; changing only breakpoint frames on
+that file does not change its identity. If the package records a file but the
+current declaration is absent, `design.access` reports `review` /
+`design_reference_missing`: restore the declaration, or rerun intake with
+`--force` to drop the recorded file.
 
 Each `contributions[]` record identifies one source contribution and records:
 

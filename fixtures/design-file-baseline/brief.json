@@ -1,0 +1,197 @@
+{
+  "artifact": {
+    "schema_version": "campaigns-os-build-brief/v1",
+    "campaign_intent": {
+      "audience": null,
+      "conversion_goal": "direct response funnel with post-purchase offers",
+      "tone": "clear, practical, benefit-led"
+    },
+    "design_authority": {
+      "landing": {
+        "source": "provided_design_export",
+        "reference": "landing.html"
+      },
+      "checkout": {
+        "source": "provided_design_export",
+        "reference": "checkout.html"
+      },
+      "upsell": {
+        "source": "provided_design_export",
+        "reference": "upsell.html"
+      },
+      "receipt": {
+        "source": "provided_design_export",
+        "reference": "receipt.html"
+      }
+    },
+    "brand": {
+      "commerce_palette_source": "landing",
+      "primary_accent": null,
+      "cta_style": null,
+      "avoid": [
+        "template-default brand colors"
+      ]
+    },
+    "media": {
+      "sold_variants": [],
+      "allow_other_variant_colors": null,
+      "prefer": [
+        "clean product renders",
+        "lifestyle images without embedded text"
+      ],
+      "avoid": [
+        "wrong product variant",
+        "blurry stock-like crops"
+      ]
+    },
+    "offer_presentation": {
+      "bundle_cards": {
+        "primary_price": null,
+        "show_total": "multi_pack_only",
+        "show_compare_price": false,
+        "savings_badge": "rounded_percentage",
+        "hide_duplicate_discount_copy": true
+      },
+      "post_purchase": {
+        "show_voucher_code": "when_customer_needs_to_see_it",
+        "show_retail_price": true,
+        "show_shipping": "if_charged"
+      }
+    },
+    "promo_urgency": {
+      "header_claim_source": "none",
+      "timer_label": "none",
+      "show_promo_code_in_timer": false,
+      "exit_pop": {
+        "enabled": false,
+        "code_source": null
+      },
+      "forbid_placeholders": true
+    },
+    "commerce_surfaces": {
+      "payment_methods_allowed": [
+        "card"
+      ],
+      "hidden_payment_methods": [],
+      "order_bump": {
+        "enabled": false,
+        "display_style": null
+      },
+      "guarantees": {
+        "use_campaign_or_merchant_policy_copy": true
+      }
+    },
+    "canonical_display": {
+      "product_name_source": "campaign_spec",
+      "allow_runtime_name_override": false,
+      "manual_overrides": {}
+    },
+    "template_residue_policy": {
+      "block_placeholders": true,
+      "block_template_favicon": true,
+      "block_demo_payment_methods": true,
+      "block_lorem_ipsum": true,
+      "block_unapproved_tracking_claims": true
+    },
+    "qa_policy": {
+      "enforcement": {
+        "status": "documented_expectation",
+        "enforced_by": "qa.proof_policy and report.proof_policy",
+        "note": "Build Brief qa_policy records business QA expectations; doctor and QA enforce the Build Packet qa.proof_policy and Assembly Report report.proof_policy contract."
+      },
+      "require_desktop_mobile_screenshots": true,
+      "require_checkout_flow": true,
+      "require_post_purchase_flow": true,
+      "fail_on_visible_placeholders": true,
+      "compare_live_runtime_data_to_spec": true
+    },
+    "confidence": {
+      "campaign_intent": "low",
+      "design_authority": "medium",
+      "brand": "low",
+      "media": "low",
+      "offer_presentation": "low",
+      "promo_urgency": "medium",
+      "commerce_surfaces": "medium",
+      "template_family": "olympus"
+    },
+    "_meta": {
+      "generated_at": "2026-10-23T16:33:49.163Z",
+      "mode": "guided_draft",
+      "mode_source": "generated",
+      "input_path": null,
+      "input_format": "generated",
+      "input_source": null,
+      "normalized_by": "campaigns-os prepare-build",
+      "field_sources": {
+        "campaign_intent.conversion_goal": {
+          "kind": "default",
+          "value_fingerprint": "sha256:37557df20325d47b7884e3c2ebba8f5004905f170f14f791fc95b8470c5bbbe5"
+        },
+        "campaign_intent.tone": {
+          "kind": "default",
+          "value_fingerprint": "sha256:c06327153b1b772dabda6323a797629314905c99c809e5106f9b9aa7a3fc7794"
+        },
+        "brand.commerce_palette_source": {
+          "kind": "default",
+          "value_fingerprint": "sha256:ee624f84b941f78a4ca71d78ace6fb892643f084847ed18824c593a82dde3a22"
+        },
+        "brand.avoid": {
+          "kind": "default",
+          "value_fingerprint": "sha256:ab716391a7e3154de83ba4b6f07d43ab8f3ba2c8aa55afbd3f05a2efa7129b69"
+        },
+        "design_authority.landing.source": {
+          "kind": "default",
+          "value_fingerprint": "sha256:9619134e869b288e543ddd05e92b397287a189553b817aa82df537dc2ad20d2a"
+        },
+        "design_authority.checkout.source": {
+          "kind": "default",
+          "value_fingerprint": "sha256:9619134e869b288e543ddd05e92b397287a189553b817aa82df537dc2ad20d2a"
+        },
+        "design_authority.upsell.source": {
+          "kind": "default",
+          "value_fingerprint": "sha256:9619134e869b288e543ddd05e92b397287a189553b817aa82df537dc2ad20d2a"
+        },
+        "design_authority.receipt.source": {
+          "kind": "default",
+          "value_fingerprint": "sha256:9619134e869b288e543ddd05e92b397287a189553b817aa82df537dc2ad20d2a"
+        },
+        "template_residue_policy.block_placeholders": {
+          "kind": "default",
+          "value_fingerprint": "sha256:b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b"
+        }
+      }
+    },
+    "status": "needs_answers",
+    "questions": [
+      {
+        "id": "brand_palette_cta",
+        "priority": 2,
+        "field": "brand",
+        "question": "Which palette and CTA style should commerce pages use?",
+        "reason": "Commerce pages need a business-approved brand layer instead of silent template defaults. Missing brand.commerce_palette_source or brand.cta_style.",
+        "options": [
+          "landing palette + matched CTA",
+          "shared token file",
+          "template palette"
+        ],
+        "blocking": true
+      },
+      {
+        "id": "bundle_pricing_presentation",
+        "priority": 4,
+        "field": "offer_presentation.bundle_cards",
+        "question": "How should bundle cards present pricing: simple unit price, savings-led, or full accounting?",
+        "reason": "CampaignSpec owns prices; the brief owns which shopper-facing price story is appropriate. Missing offer_presentation.bundle_cards.primary_price.",
+        "options": [
+          "discounted unit price",
+          "savings-led",
+          "full accounting"
+        ],
+        "blocking": true
+      }
+    ],
+    "gates": []
+  },
+  "summary": "Purpose: not stated.\nAudience: not stated.\nJourney: landing → checkout → upsell → receipt (CampaignSpec).\nVisual authority: landing, checkout, upsell, receipt follow the supplied design [default].\nPalette and buttons: palette source not stated; button style not stated; accent not stated.\nTone: \"clear, practical, benefit-led\" [default].\nPreserve: avoid \"template-default brand colors\" [default]; template placeholders removed: yes [default].\nCommerce: products, prices and offers come from CampaignSpec/API values; cart, checkout and post-purchase behaviour stay with the SDK.\nOpen brief questions: brand_palette_cta, bundle_pricing_presentation."
+}

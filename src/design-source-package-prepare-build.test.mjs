@@ -19,7 +19,7 @@ import {
 import { createServer } from "node:http";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
-import test, { after } from "node:test";
+import test from "node:test";
 import { fileURLToPath } from "node:url";
 import Ajv2020 from "ajv/dist/2020.js";
 
@@ -62,20 +62,17 @@ const DESIGN_B = "https://www.figma.com/design/SYNTHKEYB0002/synthetic-other";
 const NOT_RECORDED_TEXT = "This page names a design file that the Design Source Package does not record. Rerun intake with `--force` to record it (this resets stage evidence), or continue: element parity still runs against the source HTML.";
 const CHANGED_TEXT = "The design file named for this page differs from the one the Design Source Package records. Rerun intake with `--force` to record the current one.";
 const MISSING_TEXT = "A design file is recorded for this page, but this version of Campaigns OS cannot read design files. Element parity compares the built page with the page's source HTML export instead, so differences between the export and the design file are not checked. Nothing needs to change to continue. Where it matters, compare the export with the design file by hand.";
-const BASE = "505aada92c94cecf9106bb1fb1e818d9dadee46d";
-let baseRuntime;
-after(() => { if (baseRuntime) rmSync(baseRuntime, { recursive: true, force: true }); });
+// Baseline outputs captured once from 505aada92c94cecf9106bb1fb1e818d9dadee46d.
 function basePrepare(fixture) {
-  if (!baseRuntime) {
-    baseRuntime = mkdtempSync(join(tmpdir(), "campaigns-os-p1-reviewed-base-"));
-    // Exact Git objects, with no checkout, hooks, install or lifecycle scripts.
-    const archive = execFileSync("git", ["archive", BASE], { cwd: ROOT, maxBuffer: 64 * 1024 * 1024 });
-    execFileSync("tar", ["-x", "-C", baseRuntime], { input: archive });
-    symlinkSync(join(ROOT, "node_modules"), join(baseRuntime, "node_modules"));
-    symlinkSync(join(ROOT, "campaign-spec/dist"), join(baseRuntime, "campaign-spec/dist"));
+  const manifest = readJson(manifestAt(fixture));
+  const key = sha256(JSON.stringify(manifest));
+  const output = JSON.parse(readFileSync(join(ROOT, `fixtures/design-file-baseline/prepare-${key.slice(0, 16)}.json`), "utf8").replaceAll("<fixture>", fixture.dir));
+  assert.deepEqual(output.manifest, manifest);
+  for (const [path, bytes] of Object.entries(output.files)) {
+    mkdirSync(dirname(join(fixture.target, path)), { recursive: true });
+    writeFileSync(join(fixture.target, path), bytes);
   }
-  const result = spawnSync(process.execPath, [join(baseRuntime, "bin/campaigns-os.mjs"), "prepare-build", "--spec", fixture.specPath, "--source", fixture.source, "--target", fixture.target, "--template-family", "olympus", "--no-run-session", "--no-remit", "--json"], { cwd: fixture.dir, encoding: "utf8", env: { ...process.env, CAMPAIGNS_OS_TELEMETRY: "off" } });
-  return { ...result, json: result.status === 0 ? JSON.parse(result.stdout) : null };
+  return { status: output.status, stdout: output.stdout, stderr: output.stderr, json: output.status === 0 ? JSON.parse(output.stdout) : null };
 }
 function nextDesignLines(fixture) {
   const next = runCli(["next", "--packet", join(fixture.target, "campaign-runtime.build.json"), "--no-write", "--no-remit"], fixture.dir);
@@ -126,17 +123,7 @@ test("P1-B3: manifest edit follows existing stale refusal and force recovery, wi
 }));
 
 test("P1-B3b: a later spec declaration reuses exact package bytes and reports the force remedy", () => withFixture((fixture) => {
-  const manifest = readJson(manifestAt(fixture));
-  const section = "<section>synthetic section</section>";
-  writeFileSync(join(fixture.source, "section.html"), section);
-  manifest.generator = "figma-sections-export";
-  manifest.producer_provenance = {
-    source_type: "semantic_figma_export", screenshot_fallback_used: false,
-    semantic_section_count: 1, material_fingerprint: "a".repeat(64), figma_file_key: "SYNTHKEYA0001",
-    section_exports: [{ section: "hero", type: "html", node_ids: { desktop: "1:2" } }],
-  };
-  manifest.files.push({ path: "section.html", role: "partial", sha256: sha256(section) });
-  writeJson(manifestAt(fixture), manifest);
+  supplyFigmaProvenance(fixture);
   const base = basePrepare(fixture);
   assert.equal(base.status, 0, base.stderr);
   const path = join(fixture.target, DSP_REL_PATH);
@@ -154,8 +141,24 @@ test("P1-B3b: a later spec declaration reuses exact package bytes and reports th
   assert.deepEqual(nextDesignLines(fixture), [`  - doctor design.access: unexercised (design_reference_not_recorded) x1 on landing — ${NOT_RECORDED_TEXT}`]);
 }));
 
+function supplyFigmaProvenance(fixture, includeFileKey = true) {
+  const manifest = readJson(manifestAt(fixture));
+  const section = "<section>synthetic section</section>";
+  writeFileSync(join(fixture.source, "section.html"), section);
+  manifest.generator = "figma-sections-export";
+  manifest.producer_provenance = {
+    source_type: "semantic_figma_export", screenshot_fallback_used: false,
+    semantic_section_count: 1, material_fingerprint: "a".repeat(64), figma_file_key: "SYNTHKEYA0001",
+    section_exports: [{ section: "hero", type: "html", node_ids: { desktop: "1:2" } }],
+  };
+  if (!includeFileKey) delete manifest.producer_provenance.figma_file_key;
+  manifest.files.push({ path: "section.html", role: "partial", sha256: sha256(section) });
+  writeJson(manifestAt(fixture), manifest);
+}
+
 for (const [id, channel] of [["P1-B6", "spec"], ["P1-B6b", "manifest"]]) {
   test(`${id}: changed design identity preserves existing currency rules and renders the review remedy`, () => withFixture((fixture) => {
+    if (channel === "spec") supplyFigmaProvenance(fixture, false);
     declare(fixture, channel, DESIGN_A);
     assert.equal(declarationPrepare(fixture).status, 0);
     const original = readFileSync(join(fixture.target, DSP_REL_PATH));

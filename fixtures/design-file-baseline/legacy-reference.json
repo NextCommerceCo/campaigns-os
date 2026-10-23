@@ -1,0 +1,285 @@
+{
+  "artifact": {
+    "schema_version": "campaign-design-source-package/v0",
+    "package_id": "design-source-package",
+    "source_kind": "html_funnel",
+    "generated_at": "2026-08-22T10:00:00.000Z",
+    "material_fingerprint": "sha256:b5453760eb0dc27cc359e5db56cf513c79618324b8cc33213b4a58d4b29fe718",
+    "surface_identity": [
+      {
+        "id": "campaign",
+        "kind": "campaign",
+        "label": "Campaign",
+        "aliases": [],
+        "mappings": {}
+      },
+      {
+        "id": "landing",
+        "kind": "page",
+        "label": "landing",
+        "aliases": [
+          "landing",
+          "landing.html"
+        ],
+        "mappings": {
+          "campaign_spec_page_id": "landing",
+          "map_builder_label": null,
+          "map_builder_custom_name": null,
+          "public_route": null,
+          "producer_page_type": null,
+          "source_page_id": "landing",
+          "source_path": "landing.html",
+          "page_kit": null
+        }
+      }
+    ],
+    "contributions": [
+      {
+        "id": "html-funnel",
+        "kind": "html_funnel",
+        "trust": "rendered",
+        "renderable": true,
+        "provenance": {
+          "source_type": "html_funnel",
+          "adapter": "source-html-intake",
+          "producer": null,
+          "generator": null,
+          "generator_version": null,
+          "source_root": null,
+          "manifest_schema_version": null,
+          "manifest_path": null,
+          "manifest_sha256": null,
+          "producer_material_fingerprint": null,
+          "asset_crawl_schema_version": null
+        },
+        "presentation_intent": {
+          "summary": "Preserve the provided source HTML composition and presentation intent while CampaignSpec and Page Kit retain commerce/runtime authority."
+        },
+        "source_refs": [
+          {
+            "id": "source-landing-html",
+            "kind": "html_file",
+            "path": "landing.html",
+            "role": "page"
+          },
+          {
+            "id": "manual-design-reference",
+            "kind": "url",
+            "url": "https://design.example.test/f",
+            "role": "design_file",
+            "notes": "Operator supplied reference"
+          }
+        ],
+        "screenshot_refs": [],
+        "reference_refs": [],
+        "mappings": [
+          {
+            "id": "html-landing-coverage",
+            "surface_id": "landing",
+            "coverage_role": "primary_design",
+            "confidence": "medium",
+            "source_refs": [
+              "source-landing-html"
+            ],
+            "screenshot_refs": [],
+            "reference_refs": []
+          }
+        ]
+      }
+    ],
+    "source_gaps": [],
+    "source_todos": [
+      {
+        "id": "capture-landing-desktop",
+        "kind": "missing_source_screenshot",
+        "scope": "source_screenshot",
+        "applies_to": [
+          "landing"
+        ],
+        "description": "Capture an explicit desktop source screenshot for renderable primary design surface \"landing\".",
+        "status": "blocked",
+        "owner": "source_preparation",
+        "required_viewports": [
+          "desktop"
+        ],
+        "source_ref_ids": [
+          "source-landing-html"
+        ]
+      },
+      {
+        "id": "capture-landing-mobile",
+        "kind": "missing_source_screenshot",
+        "scope": "source_screenshot",
+        "applies_to": [
+          "landing"
+        ],
+        "description": "Capture an explicit mobile source screenshot for renderable primary design surface \"landing\".",
+        "status": "blocked",
+        "owner": "source_preparation",
+        "required_viewports": [
+          "mobile"
+        ],
+        "source_ref_ids": [
+          "source-landing-html"
+        ]
+      }
+    ],
+    "waivers": [],
+    "divergences": [],
+    "proposed_exceptions": [],
+    "notes": [],
+    "readiness": {
+      "status": "blocked",
+      "blocking_reasons": [
+        "Renderable primary_design surface \"landing\" has no qualifying claim with linked desktop and mobile source_screenshot proof.",
+        "Source TODO \"capture-landing-desktop\" is blocked.",
+        "Source TODO \"capture-landing-mobile\" is blocked."
+      ],
+      "gap_count": 0,
+      "todo_count": 2,
+      "waiver_count": 0,
+      "generated_at": "2026-08-22T10:00:00.000Z"
+    },
+    "readback": {
+      "summary": "Design Source Package is blocked; 1 contribution(s), 1 coverage mapping(s), 0 gap(s), 2 TODO(s), and 0 waiver(s).",
+      "included_sources": [
+        "html-funnel (html_funnel)"
+      ],
+      "handled": [
+        "landing: primary_design (medium) via html-funnel"
+      ],
+      "blockers": [
+        "Renderable primary_design surface \"landing\" has no qualifying claim with linked desktop and mobile source_screenshot proof.",
+        "Source TODO \"capture-landing-desktop\" is blocked.",
+        "Source TODO \"capture-landing-mobile\" is blocked."
+      ],
+      "gaps": [],
+      "todos": [
+        "capture-landing-desktop: Capture an explicit desktop source screenshot for renderable primary design surface \"landing\".",
+        "capture-landing-mobile: Capture an explicit mobile source screenshot for renderable primary design surface \"landing\"."
+      ],
+      "waivers": [],
+      "next_actions": [
+        "Resolve: Renderable primary_design surface \"landing\" has no qualifying claim with linked desktop and mobile source_screenshot proof.",
+        "Resolve: Source TODO \"capture-landing-desktop\" is blocked.",
+        "Resolve: Source TODO \"capture-landing-mobile\" is blocked."
+      ]
+    }
+  },
+  "projection": {
+    "schema_version": "campaign-design-source-package/v0",
+    "source_kind": "html_funnel",
+    "surface_identity": [
+      {
+        "id": "campaign",
+        "kind": "campaign",
+        "label": "Campaign",
+        "aliases": [],
+        "mappings": {}
+      },
+      {
+        "id": "landing",
+        "kind": "page",
+        "label": "landing",
+        "aliases": [
+          "landing",
+          "landing.html"
+        ],
+        "mappings": {
+          "campaign_spec_page_id": "landing",
+          "map_builder_label": null,
+          "map_builder_custom_name": null,
+          "public_route": null,
+          "producer_page_type": null,
+          "source_page_id": "landing",
+          "source_path": "landing.html",
+          "page_kit": null
+        }
+      }
+    ],
+    "contributions": [
+      {
+        "id": "html-funnel",
+        "kind": "html_funnel",
+        "trust": "rendered",
+        "renderable": true,
+        "provenance": {
+          "source_type": "html_funnel",
+          "adapter": "source-html-intake"
+        },
+        "presentation_intent": {
+          "summary": "Preserve the provided source HTML composition and presentation intent while CampaignSpec and Page Kit retain commerce/runtime authority."
+        },
+        "source_refs": [
+          {
+            "id": "manual-design-reference",
+            "kind": "url",
+            "url": "https://design.example.test/f",
+            "role": "design_file"
+          },
+          {
+            "id": "source-landing-html",
+            "kind": "html_file",
+            "path": "landing.html",
+            "role": "page"
+          }
+        ],
+        "screenshot_refs": [],
+        "reference_refs": [],
+        "mappings": [
+          {
+            "id": "html-landing-coverage",
+            "surface_id": "landing",
+            "coverage_role": "primary_design",
+            "confidence": "medium",
+            "source_refs": [
+              "source-landing-html"
+            ],
+            "screenshot_refs": [],
+            "reference_refs": []
+          }
+        ]
+      }
+    ],
+    "source_gaps": [],
+    "source_todos": [
+      {
+        "id": "capture-landing-desktop",
+        "kind": "missing_source_screenshot",
+        "scope": "source_screenshot",
+        "description": "Capture an explicit desktop source screenshot for renderable primary design surface \"landing\".",
+        "status": "blocked",
+        "owner": "source_preparation",
+        "applies_to": [
+          "landing"
+        ],
+        "required_viewports": [
+          "desktop"
+        ],
+        "source_ref_ids": [
+          "source-landing-html"
+        ]
+      },
+      {
+        "id": "capture-landing-mobile",
+        "kind": "missing_source_screenshot",
+        "scope": "source_screenshot",
+        "description": "Capture an explicit mobile source screenshot for renderable primary design surface \"landing\".",
+        "status": "blocked",
+        "owner": "source_preparation",
+        "applies_to": [
+          "landing"
+        ],
+        "required_viewports": [
+          "mobile"
+        ],
+        "source_ref_ids": [
+          "source-landing-html"
+        ]
+      }
+    ],
+    "accepted_waivers": [],
+    "readiness_affecting_divergences": [],
+    "readiness_affecting_exceptions": []
+  }
+}

@@ -1,0 +1,221 @@
+{
+  "key": "{\"manifestFile\":null,\"specFile\":\"https://www.figma.com/design/SYNTHKEYA0001/synthetic-file?node-id=1-2\",\"specFrames\":null,\"producerKey\":\"SYNTHKEYA0001\",\"valid\":false,\"absent\":true}",
+  "errors": [],
+  "checkpoint_gates": [
+    {
+      "id": "page_kit.sdk_version",
+      "scope": "page_kit.sdk_version",
+      "status": "pass",
+      "code": "page_kit.sdk_version.pass",
+      "reason": "Target SDK version exactly matches the CampaignSpec (0.4.18).",
+      "waivable": false,
+      "subject": {
+        "public_route_slug": "runtime-packet-demo",
+        "target_path": "_data/campaigns.json"
+      },
+      "state": {
+        "expected": "0.4.18",
+        "observed": "0.4.18"
+      },
+      "state_fingerprint": null,
+      "expected_sdk_version": "0.4.18",
+      "observed_sdk_version": "0.4.18",
+      "expected_source": "global_config.sdk_version",
+      "waiver": null,
+      "waiver_assessment": {
+        "active": null,
+        "inert_counts": {
+          "stale": 0,
+          "foreign": 0,
+          "malformed": 0,
+          "expired": 0
+        }
+      },
+      "required_actions": []
+    },
+    {
+      "id": "page_kit.store_profile",
+      "scope": "page_kit.store_profile",
+      "status": "pass",
+      "code": "page_kit.store_profile.pass",
+      "reason": "Target Store Profile exactly matches the CampaignSpec for all nine governed fields.",
+      "waivable": false,
+      "subject": {
+        "public_route_slug": "runtime-packet-demo",
+        "target_path": "_data/campaigns.json"
+      },
+      "state": {
+        "discrepancies": []
+      },
+      "state_fingerprint": "sha256:744eb5d132a003fdc6b56dce6b84304e5c42f899e597e886e354c95a11aae160",
+      "matrix": [
+        {
+          "field": "store_name",
+          "kind": "match",
+          "spec": "Example Store",
+          "target": "Example Store",
+          "severity": "clean"
+        },
+        {
+          "field": "store_url",
+          "kind": "match",
+          "spec": "https://store.example.org",
+          "target": "https://store.example.org",
+          "severity": "clean"
+        },
+        {
+          "field": "store_terms",
+          "kind": "match",
+          "spec": "https://store.example.com/terms",
+          "target": "https://store.example.com/terms",
+          "severity": "clean"
+        },
+        {
+          "field": "store_privacy",
+          "kind": "match",
+          "spec": "https://store.example.com/privacy",
+          "target": "https://store.example.com/privacy",
+          "severity": "clean"
+        },
+        {
+          "field": "store_contact",
+          "kind": "match",
+          "spec": "https://store.example.com/contact",
+          "target": "https://store.example.com/contact",
+          "severity": "clean"
+        },
+        {
+          "field": "store_returns",
+          "kind": "match",
+          "spec": "https://store.example.com/returns",
+          "target": "https://store.example.com/returns",
+          "severity": "clean"
+        },
+        {
+          "field": "store_shipping",
+          "kind": "match",
+          "spec": "https://store.example.com/shipping",
+          "target": "https://store.example.com/shipping",
+          "severity": "clean"
+        },
+        {
+          "field": "store_phone",
+          "kind": "match",
+          "spec": "1-800-555-0100",
+          "target": "1-800-555-0100",
+          "severity": "clean"
+        },
+        {
+          "field": "store_phone_tel",
+          "kind": "match",
+          "spec": "tel:+18005550100",
+          "target": "tel:+18005550100",
+          "severity": "clean"
+        }
+      ],
+      "blocker_fields": [],
+      "warning_fields": [],
+      "waiver": null,
+      "waiver_assessment": {
+        "active": null,
+        "inert_counts": {
+          "stale": 0,
+          "foreign": 0,
+          "malformed": 0,
+          "expired": 0
+        }
+      },
+      "required_actions": []
+    },
+    {
+      "id": "built_output.upsell_selector_scope",
+      "scope": "built_output.upsell_selector_scope",
+      "status": "not_applicable",
+      "code": "built_output.upsell_selector_scope.not_applicable",
+      "reason": "No built upsell or downsell page was available to scan; selector scope becomes mandatory once one is built.",
+      "waivable": false,
+      "subject": {
+        "public_route_slug": "runtime-packet-demo",
+        "site_root": "./_site/runtime-packet-demo"
+      },
+      "state": {
+        "findings": [],
+        "warned": []
+      },
+      "state_fingerprint": null,
+      "findings": [],
+      "warned": [],
+      "pages_scanned": 0,
+      "selectors_scanned": 0,
+      "waiver": null,
+      "waiver_assessment": {
+        "active": null,
+        "inert_counts": {
+          "stale": 0,
+          "foreign": 0,
+          "malformed": 0,
+          "expired": 0
+        }
+      },
+      "required_actions": []
+    },
+    {
+      "id": "built_output.campaign_identity",
+      "scope": "built_output.campaign_identity",
+      "waivable": false,
+      "subject": {
+        "public_route_slug": "runtime-packet-demo",
+        "site_root": "./_site/runtime-packet-demo"
+      },
+      "waiver": null,
+      "status": "not_applicable",
+      "code": "built_output.campaign_identity.not_applicable",
+      "reason": "No built page was available to scan; campaign identity becomes mandatory once pages are built.",
+      "findings": [],
+      "pages_scanned": 0,
+      "pages_skipped": [],
+      "identity": null,
+      "required_actions": []
+    },
+    {
+      "id": "built_output.sdk_markup",
+      "scope": "built_output.sdk_markup",
+      "waivable": false,
+      "subject": {
+        "public_route_slug": "runtime-packet-demo",
+        "site_root": "./_site/runtime-packet-demo"
+      },
+      "waiver": null,
+      "sdk_attribute_index_version": "0.4.43",
+      "campaign_sdk_version": "0.4.18",
+      "status": "not_applicable",
+      "code": "built_output.sdk_markup.not_applicable",
+      "reason": "No built page was available to scan; SDK markup checks become mandatory once pages are built.",
+      "findings": [],
+      "warned": [],
+      "unknown_attributes": [],
+      "pages_scanned": 0,
+      "required_actions": []
+    },
+    {
+      "id": "built_output.script_syntax",
+      "scope": "built_output.script_syntax",
+      "waivable": false,
+      "subject": {
+        "public_route_slug": "runtime-packet-demo",
+        "site_root": "./_site/runtime-packet-demo"
+      },
+      "waiver": null,
+      "status": "not_applicable",
+      "code": "built_output.script_syntax.not_applicable",
+      "reason": "No built page was available to scan; script syntax is checked once pages are built.",
+      "findings": [],
+      "scripts_scanned": 0,
+      "scripts_unresolved": [],
+      "scripts_outside_site": [],
+      "warned": [],
+      "pages_scanned": 0,
+      "required_actions": []
+    }
+  ]
+}

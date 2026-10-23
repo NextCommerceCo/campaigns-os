@@ -9139,8 +9139,8 @@
       "kind": "release",
       "surface_version": "1.61.0",
       "changelog_section": "1.61.0",
-      "changelog_sha256": "d8504abd5e8e5bce5542c3ade1aa09e00542f6b2e4d357de370f23520f1e94a3",
-      "agent_impact": "The 1.61.0 package publishes 1.60.0+agent.7 through agent.9, adds recorded design-file authority and element-level Polish comparisons for operator review, and describes readback evidence debt in the published schema. Refresh bundled skills to 1.61.0+skills.1; unknown design access or evidence debt is not proof that review is complete.",
+      "changelog_sha256": "ccd9eee0a96a82c8dfd1941cc6551044b124e4d1c22e89cdbd90ab13a55b32bf",
+      "agent_impact": "The 1.61.0 package publishes 1.60.0+agent.7 through agent.9, adds manifest-declared or Figma-spec export-provenance-backed design-file authority and element-level Polish comparisons for operator review, and describes readback evidence debt in the published schema. Refresh bundled skills to 1.61.0+skills.1; unknown design access or evidence debt is not proof that review is complete.",
       "compatibility": "additive",
       "migration": "Update the pinned package and refresh installed skills to 1.61.0+skills.1. Run polish capture again before the next completed record polish. After changing built output, renew any owed Polish and QA evidence.",
       "changes": [
@@ -9160,13 +9160,13 @@
           "class": "named_surface",
           "path": "docs/campaign-build-brief.md",
           "surface_entry": "docs/campaign-build-brief.md",
-          "summary": "Describe design-file authority with the HTML export recorded as its derived artifact, and unexercised design access."
+          "summary": "Describe design-file authority under its own section after the brief definition, with Figma-only spec lineage requiring doctor's provenance check to pass without a waiver and unexercised design access."
         },
         {
           "class": "named_surface",
           "path": "docs/design-source-package.md",
           "surface_entry": "docs/design-source-package.md",
-          "summary": "Document naming a design file behind an HTML export, its recorded contribution and derived_from lineage, and that recording one adds no readiness requirement."
+          "summary": "Document manifest design-file declarations, Figma-only provenance-gated intake, comparison of recorded spec files regardless of current manifest availability, source-HTML element parity, file-only identity and missing-declaration recovery."
         },
         {
           "class": "named_surface",
@@ -9274,13 +9274,13 @@
           "class": "skill",
           "path": "skills/next-campaigns-os/SKILL.md",
           "surface_entry": null,
-          "summary": "Bump the skill one patch and stamp bundle 1.61.0+skills.1."
+          "summary": "Bump the skill one patch, stamp bundle 1.61.0+skills.1, and give the manifest design_file object shape and the design-source package documentation for Figma-only spec lineage."
         },
         {
           "class": "skill",
           "path": "skills/next-campaigns-polish/SKILL.md",
           "surface_entry": null,
-          "summary": "Bump the skill one patch and stamp bundle 1.61.0+skills.1."
+          "summary": "Bump the skill one patch, stamp bundle 1.61.0+skills.1, and explain parity.element review, unexercised design.access and changed, missing or conflicting file recovery in the nonblocking Polish handoff."
         },
         {
           "class": "skill",
@@ -9304,10 +9304,16 @@
           "class": "cli_surface",
           "path": "src/doctor/checks.mjs",
           "surface_entry": null,
-          "summary": "Report design.access as unexercised when design-file access is missing and give operator recovery guidance."
+          "summary": "Report nonblocking design.access with separate changed, conflicting and missing declaration reviews; the evaluator passes recorded contribution producers to the resolver so doctor compares recorded spec files even without current manifest provenance; preserve the #534 gate."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/source-provenance.mjs",
+          "surface_entry": null,
+          "summary": "Share the existing Figma-export provenance findings with intake so only Figma spec declarations backed by the unwaived check establish design-file lineage; preserve #534 findings and waiver semantics, with imports below the header."
         }
       ],
-      "entry_sha256": "2a99a6cd8a13a46f43c55b52b5b65d024229660fe11bc4c2b825e40f06981da0"
+      "entry_sha256": "a38fb5d2f77f0baf2229c231bafcd4fc61350837f59dc692dfa2e31443889400"
     }
   ]
 }

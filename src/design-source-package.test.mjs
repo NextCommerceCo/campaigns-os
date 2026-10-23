@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -34,39 +33,27 @@ const validateSchema = new Ajv2020({ strict: true, allErrors: true }).compile(sc
 const GENERATED_AT = "2026-08-22T10:00:00.000Z";
 const NOW = Date.parse(GENERATED_AT);
 
-const BASE = "505aada92c94cecf9106bb1fb1e818d9dadee46d";
-const baseSource = execFileSync("git", ["show", `${BASE}:src/design-source-package.mjs`], { cwd: ROOT, encoding: "utf8" });
-const basePackage = await import(`data:text/javascript;base64,${Buffer.from(baseSource).toString("base64")}`);
+// Baseline outputs captured once from 505aada92c94cecf9106bb1fb1e818d9dadee46d.
+const baselineOutput = (name) => JSON.parse(readFileSync(resolve(ROOT, `fixtures/design-file-baseline/${name}.json`), "utf8"));
 
 test("P1-W2: existing fixture package bytes and fingerprint equal the reviewed BASE implementation", () => {
   const current = readyHtmlPackage();
-  const baseline = readyHtmlPackage({}, basePackage.synthesizeHtmlFunnelDesignSourcePackage);
-  assert.equal(serializeDesignSourcePackage(current), basePackage.serializeDesignSourcePackage(baseline));
+  const baseline = baselineOutput("package");
+  assert.equal(serializeDesignSourcePackage(current), readFileSync(resolve(ROOT, "fixtures/design-file-baseline/package.json"), "utf8"));
   assert.equal(current.material_fingerprint, baseline.material_fingerprint);
 });
 
 test("P1-W4: a BASE-produced existing package verifies its unchanged material fingerprint", () => {
-  const baseline = readyHtmlPackage({}, basePackage.synthesizeHtmlFunnelDesignSourcePackage);
+  const baseline = baselineOutput("package");
   assert.equal(validateDesignSourcePackage(baseline, { verifyFingerprint: true, now: NOW }).ok, true);
   assert.equal(computeDesignSourcePackageMaterialFingerprint(baseline), baseline.material_fingerprint);
 });
 
 test("P1-W4: reviewer's legacy design_file reference with prose notes keeps its BASE fingerprint", () => {
-  const value = basePackage.synthesizeHtmlFunnelDesignSourcePackage({
-    activePages: [{ id: "landing", type: "landing" }],
-    mappings: [{ page_id: "landing", path: "landing.html" }],
-    generatedAt: GENERATED_AT,
-  });
-  value.contributions[0].source_refs.push({
-    id: "manual-design-reference", kind: "url",
-    url: "https://design.example.test/f", role: "design_file",
-    notes: "Operator supplied reference",
-  });
-  value.material_fingerprint = basePackage.computeDesignSourcePackageMaterialFingerprint(value);
-  assert.equal(basePackage.validateDesignSourcePackage(value, { verifyFingerprint: true }).ok, true);
+  const { artifact: value, projection } = baselineOutput("legacy-reference");
   assert.equal(validateDesignSourcePackage(value, { verifyFingerprint: true }).ok, true);
   assert.equal(computeDesignSourcePackageMaterialFingerprint(value), value.material_fingerprint);
-  assert.deepEqual(designSourcePackageMaterialProjection(value), basePackage.designSourcePackageMaterialProjection(value));
+  assert.deepEqual(designSourcePackageMaterialProjection(value), projection);
   for (const notes of [undefined, null, "", "Changed prose, not a tool type."]) {
     if (notes === undefined) delete value.contributions[0].source_refs.at(-1).notes;
     else value.contributions[0].source_refs.at(-1).notes = notes;
@@ -76,23 +63,11 @@ test("P1-W4: reviewer's legacy design_file reference with prose notes keeps its 
 });
 
 test("P1 fingerprint audit: each newly projected field is forbidden by BASE", () => {
-  const baseSchema = JSON.parse(execFileSync("git", ["show", `${BASE}:schemas/campaign-design-source-package.v0.schema.json`], { cwd: ROOT, encoding: "utf8" }));
-  const validateBaseSchema = new Ajv2020({ strict: true, allErrors: true }).compile(baseSchema);
-  for (const [definition, field, addField] of [
-    ["sourceReference", "design_file_type", (value) => {
-      value.contributions[0].source_refs.push({ id: "manual-design-reference", kind: "url", url: "https://design.example.test/f", role: "design_file", design_file_type: "sketch" });
-    }],
-    ["coverageMapping", "derived_from", (value) => { value.contributions[0].mappings[0].derived_from = "design-file-synthetic"; }],
-  ]) {
-    assert.equal(baseSchema.$defs[definition].additionalProperties, false);
-    assert.equal(Object.hasOwn(baseSchema.$defs[definition].properties, field), false);
-    const value = readyHtmlPackage({}, basePackage.synthesizeHtmlFunnelDesignSourcePackage);
-    assert.equal(validateBaseSchema(value), true, JSON.stringify(validateBaseSchema.errors));
-    addField(value);
-    value.material_fingerprint = basePackage.computeDesignSourcePackageMaterialFingerprint(value);
-    assert.equal(validateBaseSchema(value), false, field);
-    assert.ok(basePackage.validateDesignSourcePackage(value).errors.some((error) => error.path.endsWith(`.${field}`)), field);
-    assert.notEqual(computeDesignSourcePackageMaterialFingerprint(value), value.material_fingerprint, field);
+  for (const field of ["design_file_type", "derived_from"]) {
+    const { artifact, errors, schema_errors } = baselineOutput(`forbidden-${field}`);
+    assert.ok(errors.some((error) => error.path.endsWith(`.${field}`)), field);
+    assert.ok(schema_errors.some((error) => error.keyword === "additionalProperties" && error.params.additionalProperty === field), field);
+    assert.notEqual(computeDesignSourcePackageMaterialFingerprint(artifact), artifact.material_fingerprint, field);
   }
 });
 
@@ -115,7 +90,8 @@ test("P1 schema agreement: design_file_type syntax and role restriction match ru
 
 test("P1-I2: custom design tool type is material while design-file notes remain administrative", () => {
   const value = synthesizeHtmlFunnelDesignSourcePackage({
-    activePages: [{ id: "landing", type: "landing", design_source: { type: "sketch", file_url: "https://design.example.test/f" } }],
+    activePages: [{ id: "landing", type: "landing" }],
+    manifest: { pages: [{ page_id: "landing", path: "landing.html", design_file: { type: "sketch", file_url: "https://design.example.test/f" } }] },
     mappings: [{ page_id: "landing", path: "landing.html" }], generatedAt: GENERATED_AT,
   });
   const ref = value.contributions.find((entry) => entry.provenance.source_type === "design_file").source_refs[0];

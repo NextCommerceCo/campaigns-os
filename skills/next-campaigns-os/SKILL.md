@@ -74,6 +74,7 @@ to author a spec or fabricate a Map ID. Verify store/campaign binding and real
 package/offer references. Store contact and policy details can come from the
 brief; gateway access is optional. Current authoring is v4.3+ while preserving
 the v4.2 `funnels[]` topology as the compatibility shape.
+When the HTML was exported from a design file, name it as `design_file: {file_url, type?, breakpoints?}` on the source-html manifest page; see `docs/design-source-package.md` for the shape and the Figma-only spec `design_source` provenance rule.
 2. Run `campaigns-os start` or `campaigns-os prepare-build` (tier `A`: they write the
 Build Packet, Build Context, assembly report, run session and `.gitignore` under
 the target plus a Run Record under the working directory, and they contact the

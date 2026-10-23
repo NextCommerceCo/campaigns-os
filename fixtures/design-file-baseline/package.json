@@ -1,0 +1,207 @@
+{
+  "contributions": [
+    {
+      "id": "html-funnel",
+      "kind": "html_funnel",
+      "mappings": [
+        {
+          "confidence": "high",
+          "coverage_role": "primary_design",
+          "id": "html-landing-coverage",
+          "reference_refs": [],
+          "screenshot_refs": [
+            "landing-desktop",
+            "landing-mobile"
+          ],
+          "source_refs": [
+            "asset-assets-hero-jpg",
+            "manifest-pages-landing-html"
+          ],
+          "surface_id": "landing"
+        }
+      ],
+      "presentation_intent": {
+        "brand": [
+          "Use supplied warm neutral palette"
+        ],
+        "composition": [
+          "Hero before product proof"
+        ],
+        "content_hierarchy": [
+          "Offer before long-form details"
+        ],
+        "copy": [
+          "Retain supplied headline hierarchy"
+        ],
+        "imagery": [
+          "Use supplied product photography"
+        ],
+        "responsive_behavior": [
+          "Stack proof cards on mobile"
+        ],
+        "summary": "Preserve the agency-authored editorial landing composition."
+      },
+      "provenance": {
+        "adapter": "source-html-intake",
+        "asset_crawl_schema_version": "source-asset-crawl/v0",
+        "generator": "agency-exporter@2.1.0",
+        "generator_version": "2.1.0",
+        "manifest_path": ".campaigns-os/source-html-manifest.json",
+        "manifest_schema_version": "source-html-manifest/v0",
+        "manifest_sha256": null,
+        "producer": "agency_html_export",
+        "producer_material_fingerprint": "9999999999999999999999999999999999999999999999999999999999999999",
+        "source_root": "/prepared-source",
+        "source_type": "html_funnel"
+      },
+      "reference_refs": [],
+      "renderable": true,
+      "screenshot_refs": [
+        {
+          "availability": "available",
+          "browser": "chromium",
+          "captured_at": "2026-08-22T08:00:00.000Z",
+          "device_profile": "Desktop 1440",
+          "height": 900,
+          "id": "landing-desktop",
+          "kind": "source_screenshot",
+          "path": "source-screens/landing-desktop.png",
+          "sha256": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "source_ref_id": "manifest-pages-landing-html",
+          "url": "https://source.example.test/landing?viewport=desktop",
+          "viewport": "desktop",
+          "width": 1440
+        },
+        {
+          "availability": "available",
+          "browser": "chromium",
+          "captured_at": "2026-08-22T08:01:00.000Z",
+          "device_profile": "Mobile 390",
+          "height": 844,
+          "id": "landing-mobile",
+          "kind": "source_screenshot",
+          "path": "source-screens/landing-mobile.png",
+          "sha256": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "source_ref_id": "manifest-pages-landing-html",
+          "url": "https://source.example.test/landing?viewport=mobile",
+          "viewport": "mobile",
+          "width": 390
+        }
+      ],
+      "source_refs": [
+        {
+          "id": "asset-assets-hero-jpg",
+          "kind": "asset",
+          "path": "assets/hero.jpg",
+          "role": "image"
+        },
+        {
+          "id": "manifest-assets-logo-svg",
+          "kind": "asset",
+          "path": "assets/logo.svg",
+          "role": "asset",
+          "sha256": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        },
+        {
+          "id": "manifest-pages-landing-html",
+          "kind": "html_file",
+          "path": "pages/landing.html",
+          "role": "page",
+          "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "id": "source-html-manifest",
+          "kind": "manifest",
+          "path": ".campaigns-os/source-html-manifest.json",
+          "role": "producer_manifest"
+        }
+      ],
+      "trust": "structured"
+    }
+  ],
+  "divergences": [],
+  "generated_at": "2026-08-22T10:00:00.000Z",
+  "material_fingerprint": "sha256:dbc2acdae790ad65036626ac6fd3a26da871b62298d1557cf77658c0a20ba3fe",
+  "notes": [
+    "Operator-visible administrative note."
+  ],
+  "package_id": "map-demo:design-source",
+  "proposed_exceptions": [],
+  "readback": {
+    "blockers": [],
+    "gaps": [],
+    "handled": [
+      "landing: primary_design (high) via html-funnel"
+    ],
+    "included_sources": [
+      "html-funnel (html_funnel)"
+    ],
+    "next_actions": [
+      "Proceed to Build with this Design Source Package material fingerprint."
+    ],
+    "summary": "Design Source Package is ready; 1 contribution(s), 1 coverage mapping(s), 0 gap(s), 0 TODO(s), and 0 waiver(s).",
+    "todos": [],
+    "waivers": []
+  },
+  "readiness": {
+    "blocking_reasons": [],
+    "gap_count": 0,
+    "generated_at": "2026-08-22T10:00:00.000Z",
+    "status": "ready",
+    "todo_count": 0,
+    "waiver_count": 0
+  },
+  "schema_version": "campaign-design-source-package/v0",
+  "source_gaps": [],
+  "source_kind": "html_funnel",
+  "source_todos": [],
+  "surface_identity": [
+    {
+      "aliases": [
+        "map-demo",
+        "demo"
+      ],
+      "id": "campaign",
+      "kind": "campaign",
+      "label": "Campaign",
+      "mappings": {
+        "campaign_map_id": "map-demo",
+        "campaign_slug": "demo"
+      }
+    },
+    {
+      "aliases": [
+        "landing",
+        "Offer Landing",
+        "Summer Offer",
+        "producer_landing",
+        "pages/landing.html",
+        "/demo/",
+        "product",
+        "index.html",
+        "campaigns/demo/index.html"
+      ],
+      "id": "landing",
+      "kind": "page",
+      "label": "Offer Landing",
+      "mappings": {
+        "campaign_spec_page_id": "landing",
+        "map_builder_custom_name": "Summer Offer",
+        "map_builder_label": "Offer Landing",
+        "page_kit": {
+          "output_path": "campaigns/demo/index.html",
+          "page_type": "product",
+          "permalink_required": false,
+          "public_route": "/demo/",
+          "spec_route": "",
+          "target_path": "index.html"
+        },
+        "producer_page_type": "producer_landing",
+        "public_route": "/demo/",
+        "source_page_id": "landing",
+        "source_path": "pages/landing.html"
+      }
+    }
+  ],
+  "waivers": []
+}

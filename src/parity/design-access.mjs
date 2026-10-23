@@ -12,23 +12,30 @@ function recordedType(contribution, fileRef) {
 // Recomputed from declarations and package records; a named file never proves
 // access. In particular this evaluator has no pass or accept-eligible path.
 export function evaluateDesignAccess({ activePages = [], mappings = [], manifest = null, designSourcePackage = null, measured_at } = {}) {
-  const resolved = resolveDesignFileReferences({ activePages, mappings, manifest });
   const contributions = Array.isArray(designSourcePackage?.contributions) ? designSourcePackage.contributions : [];
   const surfaces = Array.isArray(designSourcePackage?.surface_identity) ? designSourcePackage.surface_identity : [];
+  const recordedByPage = new Map(activePages.map((page) => {
+    const surfaceIds = new Set(surfaces.filter((surface) => surface?.kind === "page" && surface.mappings?.campaign_spec_page_id === page.id).map((surface) => surface.id));
+    return [page.id, contributions.find((contribution) => contribution?.provenance?.source_type === "design_file" && array(contribution.mappings).some((mapping) => surfaceIds.has(mapping?.surface_id)))];
+  }));
+  const resolved = resolveDesignFileReferences({ activePages, mappings, manifest, specChannel: {
+    mode: "doctor",
+    recordedProducers: new Map([...recordedByPage].map(([pageId, contribution]) => [pageId, contribution?.provenance?.producer])),
+  } });
   const rows = [];
   for (const page of activePages) {
     const current = resolved.pages.find((entry) => entry.page_id === page.id);
-    const surfaceIds = new Set(surfaces.filter((surface) => surface?.kind === "page" && surface.mappings?.campaign_spec_page_id === page.id).map((surface) => surface.id));
-    const recorded = contributions.find((contribution) => contribution?.provenance?.source_type === "design_file" && array(contribution.mappings).some((mapping) => surfaceIds.has(mapping?.surface_id)));
+    const recorded = recordedByPage.get(page.id);
     if (!current && !recorded) continue;
     const fileRef = array(recorded?.source_refs).find((ref) => ref?.role === "design_file");
     const previous = normalizeDesignFileReference({ type: recordedType(recorded, fileRef), file_url: fileRef?.url }).declaration;
     const declaredSha = current?.declaration.file_identity_sha256 ?? null;
     const recordedSha = previous?.file_identity_sha256 ?? null;
     const reason_code = current?.conflict ? "design_reference_conflict"
-      : recorded && declaredSha !== recordedSha ? "design_reference_changed"
+      : recorded && !current ? "design_reference_missing"
+        : recorded && declaredSha !== recordedSha ? "design_reference_changed"
         : !recorded ? "design_reference_not_recorded" : "design_access_missing";
-    const result = ["design_reference_conflict", "design_reference_changed"].includes(reason_code) ? "review" : "unexercised";
+    const result = ["design_reference_conflict", "design_reference_missing", "design_reference_changed"].includes(reason_code) ? "review" : "unexercised";
     const state = { reason_code, recorded_identity_sha256: recordedSha, declared_identity_sha256: declaredSha, conflict_identities: [...(current?.conflict?.identities || [])].sort(), conflict_frames: [...(current?.conflict?.frames || [])].sort() };
     const observation = {
       type: current?.declaration.type ?? previous?.type ?? null,

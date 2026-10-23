@@ -33,8 +33,9 @@ export const QC_POLISH_RECORD_SOURCES = Object.freeze({ media_weight: "polish_me
 const DESIGN_ACCESS_TEXT = Object.freeze({
   design_access_missing: "A design file is recorded for this page, but this version of Campaigns OS cannot read design files. Element parity compares the built page with the page's source HTML export instead, so differences between the export and the design file are not checked. Nothing needs to change to continue. Where it matters, compare the export with the design file by hand.",
   design_reference_not_recorded: "This page names a design file that the Design Source Package does not record. Rerun intake with `--force` to record it (this resets stage evidence), or continue: element parity still runs against the source HTML.",
+  design_reference_missing: "The Design Source Package records a design file, but this page no longer has a design-file declaration. Restore the declaration, or rerun intake with `--force` to drop the recorded file.",
   design_reference_changed: "The design file named for this page differs from the one the Design Source Package records. Rerun intake with `--force` to record the current one.",
-  design_reference_conflict: "The CampaignSpec page and the source-html manifest name different design files or frames for this page (or the manifest's producer file key differs). The package records the CampaignSpec's. Correct the wrong one and rerun intake.",
+  design_reference_conflict: "The CampaignSpec page and the source-html manifest name different design files or frames for this page (or the manifest's producer file key differs). The package records the CampaignSpec's. Correct the wrong one and rerun intake with `--force`.",
 });
 const probeIncomplete = (code) => `The element probe did not complete (${code}); not compared.`;
 const notRendered = (code) => `The source or built page did not render (${code}).`;

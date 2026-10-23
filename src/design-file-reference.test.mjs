@@ -27,3 +27,28 @@ test("P1-B7: duplicate matching paths are ambiguous; a distinct second path keep
 test("P1-I4: skipped declarations create no resolved page or file", () => {
   assert.deepEqual(resolve([{ id: "landing" }], [{ page_id: "landing", skip_reason: "template stock", design_file: { file_url: A } }], [{ page_id: "landing", skip_reason: "template stock" }]), { pages: [], files: [] });
 });
+
+const exportManifest = () => ({
+  producer_provenance: { source_type: "semantic_figma_export", screenshot_fallback_used: false, semantic_section_count: 1, material_fingerprint: "a".repeat(64), section_exports: [{ section: "hero", node_ids: { desktop: "1:2" } }] },
+  files: [{ role: "partial" }, { role: "asset" }],
+});
+test("A-P5: spec lineage uses all of the existing provenance gate's blockers", () => {
+  const args = { activePages: [{ id: "landing", design_source: { file_url: A } }], mappings: [{ page_id: "landing", path: "landing.html" }], manifest: exportManifest() };
+  assert.equal(resolveDesignFileReferences(args).files.length, 1);
+  for (const invalidate of [
+    (m) => { delete m.producer_provenance; },
+    (m) => { m.producer_provenance.source_type = "hand_authored"; },
+    (m) => { m.producer_provenance.screenshot_fallback_used = true; },
+    (m) => { m.producer_provenance.semantic_section_count = 0; },
+    (m) => { m.producer_provenance.material_fingerprint = "invalid"; },
+    (m) => { m.producer_provenance.section_exports = []; },
+    (m) => { m.files = [{ role: "asset" }]; },
+    (m) => { m.files = [{ role: "partial" }]; },
+  ]) {
+    const input = structuredClone(args);
+    invalidate(input.manifest);
+    assert.deepEqual(resolveDesignFileReferences(input), { pages: [], files: [] });
+    input.manifest.pages = [{ page_id: "landing", path: "landing.html", design_file: { file_url: B } }];
+    assert.equal(resolveDesignFileReferences(input).files[0].file_url, B, "manifest channel remains its own evidence");
+  }
+});

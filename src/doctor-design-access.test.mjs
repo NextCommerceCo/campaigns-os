@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { rmSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, test } from "node:test";
 import { assertNoNetworkAttempts, campaignFixture, readJson, writeJson, ROOT } from "./qc-test-factories.mjs";
@@ -15,10 +15,12 @@ const { buildQcHandoff, qcHandoffTextLines } = await import("./qc-accept.mjs");
 const { validatePacket } = await import("./doctor/checks.mjs");
 const { doctorPacket } = await import("./doctor/inspect.mjs");
 afterEach(assertNoNetworkAttempts);
-const BASE = "505aada92c94cecf9106bb1fb1e818d9dadee46d";
-let source = execFileSync("git", ["show", `${BASE}:src/doctor/checks.mjs`], { cwd: ROOT, encoding: "utf8", maxBuffer: 2 ** 22 });
-source = source.replace(/from "(\.[^\"]+)"/g, (_, specifier) => `from ${JSON.stringify(new URL(specifier, new URL("./doctor/checks.mjs", import.meta.url)).href)}`);
-const baseDoctor = await import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`);
+// Baseline outputs captured once from 505aada92c94cecf9106bb1fb1e818d9dadee46d.
+const baselineOutput = (key, dir) => {
+  const output = JSON.parse(readFileSync(join(ROOT, "fixtures/design-file-baseline", `doctor-${hash(key).slice(0, 16)}.json`), "utf8").replaceAll("<fixture>", dir));
+  assert.equal(output.key, key);
+  return { errors: output.errors, derived: { checkpoint_gates: output.checkpoint_gates } };
+};
 const A = "https://www.figma.com/design/SYNTHKEYA0001/synthetic-file?node-id=1-2";
 const B = "https://www.figma.com/design/SYNTHKEYB0002/synthetic-other";
 const MISSING = "A design file is recorded for this page, but this version of Campaigns OS cannot read design files. Element parity compares the built page with the page's source HTML export instead, so differences between the export and the design file are not checked. Nothing needs to change to continue. Where it matters, compare the export with the design file by hand.";
@@ -153,7 +155,7 @@ test("P1-I4: a skipped page's design declaration changes no package, brief or QC
   assert.deepEqual(rows(args, dsp), []);
 });
 
-function runGateFixture(t, { manifestFile = null, specFile = A, specFrames = null, producerKey = "SYNTHKEYA0001", valid = true, absent = false } = {}) {
+function runGateFixture(t, { manifestFile = null, specFile = A, specFrames = null, producerKey = "SYNTHKEYA0001", valid = true, absent = false, compareBaseline = true } = {}) {
   const fixture = campaignFixture();
   t.after(fixture.cleanup);
   const packet = readJson(fixture.packetPath);
@@ -177,7 +179,7 @@ function runGateFixture(t, { manifestFile = null, specFile = A, specFrames = nul
     fn(packet, fixture.packetPath, errors, warnings, ready, derived, state);
     return { errors, warnings, ready, derived };
   };
-  return { fixture, current: run(validatePacket), baseline: run(baseDoctor.validatePacket), dsp, args };
+  return { fixture, current: run(validatePacket), baseline: compareBaseline ? baselineOutput(JSON.stringify({ manifestFile, specFile, specFrames, producerKey, valid, absent }), fixture.dir) : null, dsp, args };
 }
 
 test("P1-W5: spec contribution records campaign_spec and the provenance gate equals BASE pass", (t) => {
@@ -187,13 +189,15 @@ test("P1-W5: spec contribution records campaign_spec and the provenance gate equ
   assert.ok(current.derived.checkpoint_gates.some((gate) => gate.id === "source_html.producer_provenance" && gate.status === "pass"));
 });
 
-test("P1-W6: filesystem mapping records spec authority without changing BASE provenance gates", (t) => {
+test("P1-W6: filesystem mapping without export provenance records no spec lineage and preserves BASE gates", (t) => {
   const { current, baseline, dsp, args } = runGateFixture(t, { valid: false, absent: true });
-  assert.equal(dsp.contributions[1].provenance.producer, "campaign_spec");
+  assert.equal(dsp.contributions.some((entry) => entry.provenance?.source_type === "design_file"), false);
+  assert.equal(dsp.contributions[0].mappings[0].derived_from, undefined);
   assert.deepEqual(current.derived.checkpoint_gates, baseline.derived.checkpoint_gates);
   assert.deepEqual(current.errors, baseline.errors);
   assert.deepEqual(current.derived.checkpoint_gates.filter((gate) => gate.id === "source_html.producer_provenance"), [], "BASE has no provenance checkpoint row when there is no manifest; retain that boundary");
-  assertMissing(args, dsp);
+  assert.deepEqual(rows(args, dsp), []);
+  assert.deepEqual(qcHandoffTextLines(buildQcHandoff({ results: rows(args, dsp) })).filter((line) => line.includes("design.access")), []);
 });
 
 test("P1-B1: doctor wires one conflict warning and leaves errors and provenance gate equal to BASE", (t) => {
@@ -227,5 +231,86 @@ for (const [id, options] of [
     assert.deepEqual(after.doctor.errors, before.doctor.errors);
     assert.deepEqual(after.doctor.derived.checkpoint_gates, before.doctor.derived.checkpoint_gates);
     assert.deepEqual(after.doctor.warnings.filter((issue) => issue.code.startsWith("built_output.design.access.")).map((issue) => issue.code), ["built_output.design.access.design_reference_conflict"]);
+  });
+}
+
+test("A-P5: hand-written HTML with a named-human waiver has no design contribution, lineage or Coverage", async (t) => {
+  const { fixture, dsp, args } = runGateFixture(t, { valid: false, compareBaseline: false });
+  const { checkpointWaive } = await import("./cli.mjs");
+  const waived = checkpointWaive({ _: ["checkpoint", "waive"], packet: fixture.packetPath, gate: "source_html.producer_provenance", page: "landing", reason: "The approved source is hand-written HTML; the design file only renders it.", "waived-by": "Jordan Lee", "review-condition": "The approved source changes." });
+  assert.equal(waived.ok, true);
+  const doctor = doctorPacket(fixture.packetPath);
+  assert.ok(doctor.derived.checkpoint_gates.some((gate) => gate.id === "source_html.producer_provenance" && gate.status === "waived"));
+  assert.equal(dsp.contributions.some((entry) => entry.provenance?.source_type === "design_file"), false);
+  assert.ok(dsp.contributions[0].mappings.every((mapping) => !Object.hasOwn(mapping, "derived_from")));
+  assert.notEqual(draft(args).design_authority.landing.source, "design_file");
+  const designRows = doctor.derived.qc_results.filter((row) => row.check === "design.access");
+  assert.deepEqual(designRows, []);
+  assert.deepEqual(qcHandoffTextLines(buildQcHandoff({ results: designRows })).filter((line) => line.includes("design.access")), []);
+});
+for (const manifestState of ["absent", "without provenance"]) {
+  for (const [declaration, reason, result] of [
+    ["same file", "design_access_missing", "unexercised"],
+    ["another file", "design_reference_changed", "review"],
+    ["removed", "design_reference_missing", "review"],
+  ]) {
+    test(`A-P5a doctor: recorded spec ${declaration}, manifest ${manifestState}`, (t) => {
+      const { fixture, dsp } = runGateFixture(t, { compareBaseline: false });
+      assert.equal(dsp.contributions[1].provenance.producer, "campaign_spec");
+      const manifestPath = join(fixture.dir, "source-html/.campaigns-os/source-html-manifest.json");
+      if (manifestState === "absent") rmSync(manifestPath);
+      else {
+        const manifest = readJson(manifestPath);
+        delete manifest.producer_provenance;
+        writeJson(manifestPath, manifest);
+      }
+      const spec = readJson(fixture.specPath);
+      const page = spec.funnels.flatMap((funnel) => funnel.pages)[0];
+      if (declaration === "another file") page.design_source.file_url = B;
+      if (declaration === "removed") delete page.design_source;
+      writeJson(fixture.specPath, spec);
+      const doctor = doctorPacket(fixture.packetPath);
+      const designRows = doctor.derived.qc_results.filter((row) => row.check === "design.access");
+      assert.equal(designRows.length, 1);
+      assert.equal(designRows[0].reason_code, reason);
+      assert.equal(designRows[0].result, result);
+      assert.equal(designRows[0].accept_eligible, false);
+      if (declaration === "same file") {
+        assert.equal(designRows[0].observation.declared_by, "campaign_spec");
+        assert.deepEqual(doctor.warnings.filter((issue) => issue.code.startsWith("built_output.design.access.")), []);
+      }
+    });
+  }
+}
+
+test("A-P5a: a Penpot spec with Figma provenance records no contribution or lineage", (t) => {
+  const { fixture, args } = runGateFixture(t, { compareBaseline: false });
+  args.activePages[0].design_source = { type: "penpot", file_url: "https://design.example.test/f/synthetic-b" };
+  const dsp = synthesizeHtmlFunnelDesignSourcePackage(args);
+  assert.equal(dsp.contributions.some((entry) => entry.provenance?.source_type === "design_file"), false);
+  assert.ok(dsp.contributions[0].mappings.every((mapping) => !Object.hasOwn(mapping, "derived_from")));
+  assert.deepEqual(rows(args, dsp), []);
+  const spec = readJson(fixture.specPath);
+  spec.funnels.flatMap((funnel) => funnel.pages)[0].design_source = args.activePages[0].design_source;
+  writeJson(fixture.specPath, spec);
+  writeFileSync(join(fixture.dir, "design-source-package.json"), serializeDesignSourcePackage(dsp));
+  const packet = readJson(fixture.packetPath);
+  packet.design_source_package.material_fingerprint = dsp.material_fingerprint;
+  writeJson(fixture.packetPath, packet);
+  assert.deepEqual(doctorPacket(fixture.packetPath).derived.qc_results.filter((row) => row.check === "design.access"), []);
+});
+
+for (const shape of ["manifest absent", "declaration removed"]) {
+  test(`A-P6 doctor: ${shape} reports design_reference_missing`, (t) => {
+    const { fixture } = runGateFixture(t, { specFile: null, manifestFile: { file_url: A }, producerKey: "SYNTHKEYZ9999" });
+    const path = join(fixture.dir, "source-html/.campaigns-os/source-html-manifest.json");
+    if (shape === "manifest absent") rmSync(path);
+    else { const manifest = readJson(path); delete manifest.pages[0].design_file; writeJson(path, manifest); }
+    const doctor = doctorPacket(fixture.packetPath);
+    const [row] = doctor.derived.qc_results.filter((row) => row.check === "design.access");
+    assert.equal(row.result, "review");
+    assert.equal(row.reason_code, "design_reference_missing");
+    assert.equal(row.accept_eligible, false);
+    assert.equal(buildQcHandoff({ results: [row] }).review[0].summary, "The Design Source Package records a design file, but this page no longer has a design-file declaration. Restore the declaration, or rerun intake with `--force` to drop the recorded file.");
   });
 }

@@ -1,3 +1,4 @@
+import { collectFigmaProvenanceFindings } from "./doctor/source-provenance.mjs";
 import { createHash } from "node:crypto";
 import { canonicalJson } from "./polish-capture.mjs";
 
@@ -41,9 +42,13 @@ export function normalizeDesignFileReference(value) {
   return { declaration: { type, file_url: value.file_url, file_key: fileKey, identity, file_identity_sha256, frames }, warnings };
 }
 
-export function resolveDesignFileReferences({ activePages = [], mappings = [], manifest = null } = {}) {
+export function resolveDesignFileReferences({ activePages = [], mappings = [], manifest = null, specChannel = { mode: "intake" } } = {}) {
   const pages = [];
   const files = new Map();
+  // Intake records only Figma spec pointers backed by #534's provenance test.
+  // Doctor also compares already-recorded spec contributions, even when today's
+  // manifest or provenance is unavailable. Manifest declarations stand alone.
+  const exportProvenance = manifest != null && !collectFigmaProvenanceFindings(manifest).some((finding) => finding.severity === "provenance");
   const producer = manifest?.producer_provenance;
   const producerKeys = new Set([producer?.figma_file_key, ...(Array.isArray(producer?.figma_file_keys) ? producer.figma_file_keys : [])].filter(nonEmpty));
   for (const page of activePages) {
@@ -51,7 +56,9 @@ export function resolveDesignFileReferences({ activePages = [], mappings = [], m
     if (!nonEmpty(mapping?.path)) continue;
     const matches = (Array.isArray(manifest?.pages) ? manifest.pages : []).filter((entry) => entry?.page_id === page.id && entry.path === mapping.path);
     const manifestValue = matches.length === 1 ? matches[0].design_file : null;
-    const fromSpec = normalizeDesignFileReference(page.design_source).declaration;
+    const specDeclaration = normalizeDesignFileReference(page.design_source).declaration;
+    const compareRecordedSpec = specChannel.mode === "doctor" && specChannel.recordedProducers?.get(page.id) === "campaign_spec";
+    const fromSpec = compareRecordedSpec || (specDeclaration?.type === "figma" && exportProvenance) ? specDeclaration : null;
     const fromManifest = normalizeDesignFileReference(manifestValue);
     const declaration = fromSpec || fromManifest.declaration;
     if (!declaration) continue;
