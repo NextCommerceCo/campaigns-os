@@ -235,6 +235,18 @@ test("Source HTML hash disagreement is provenance review beside successful read/
   const row = decision(ref, "review", "provenance_unknown");
   assert.equal(row.members[0].result, "pass"); assert.deepEqual(ref.provenance.reasons, ["source_hash_mismatch"]);
 });
+test("Source HTML with no recorded sha256 reads source_hash_unrecorded whether or not it was read (§5.2)", async (t) => {
+  const f = fixture(t), recorded = `sha256:${"0".repeat(64)}`;
+  for (const [path, sha256, reasons] of [
+    ["page.html", undefined, ["source_hash_unrecorded"]],
+    ["absent.html", undefined, ["source_hash_unrecorded"]],
+    // A recorded ref whose own file was not read keeps the missing-file reason.
+    ["absent.html", recorded, ["linked_source_missing"]],
+  ]) {
+    const ref = await verifyReference({ ...f, path, kind: "source_html", recorded: sha256 ? { sha256 } : {} });
+    assert.equal(ref.provenance.class, "unknown", path); assert.deepEqual(ref.provenance.reasons, reasons, `${path} ${sha256}`);
+  }
+});
 test("Recorded-field and decoder lookups ignore inherited values and tolerate null metadata", async (t) => {
   const f = fixture(t), bytes = createRgbaPng(1440, 900);
   for (const recorded of [null, Object.create(f.recorded)]) {

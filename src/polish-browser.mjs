@@ -1359,7 +1359,11 @@ export async function createPolishBrowserAdapter({
           probe.onResult?.(result.probes[probe.name]);
         }
         const layout = await read({ name: "geometry", source: visualGeometry, boundMs: 1500 });
-        if (layout.status !== "measured" || !Number.isFinite(layout.value?.height)) return finish();
+        // The document loaded: a geometry probe that could not measure is not a navigation failure.
+        if (layout.status !== "measured" || !Number.isFinite(layout.value?.height)) {
+          result.status = layout.status === "document_changed" ? "document_changed" : "probe_failed";
+          return finish();
+        }
         result.status = "rendered";
         const fullHeight = Math.max(viewport.height, Math.ceil(layout.value.height));
         const crop = { x: 0, y: 0, width: viewport.width, height: Math.min(fullHeight, captureHeightPx / deviceScaleFactor) };

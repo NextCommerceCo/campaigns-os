@@ -17,7 +17,7 @@ import { sha256Hex } from "./png-header.mjs";
 function visualInputs(f) {
   const packet = { source_html: { root: "source", pages: [{ page_id: "page", path: "page.html", page_kit: { public_route: "/sample/page/", spec_route: "page/" } }] },
     design_source_package: { path: "dsp.json" } };
-  const dsp = { surface_identity: [{ id: "page", mappings: { source_page_id: "page" } }], contributions: [{ kind: "html_funnel",
+  const dsp = { surface_identity: [{ id: "page", mappings: { campaign_spec_page_id: "page", source_page_id: "page" } }], contributions: [{ kind: "html_funnel",
     source_refs: [{ id: "html", kind: "html_file", path: "page.html", sha256: f.linkedSource.identity.sha256 }],
     mappings: [{ surface_id: "page", screenshot_refs: ["desktop", "mobile"] }], screenshot_refs: ["desktop", "mobile"].map((viewport) => ({
       id: viewport, viewport, path: `${viewport}.png`, scale_factor: 1, captured_at: "2026-01-01T00:00:00.000Z", source_ref_id: "html" })) }] };
@@ -110,6 +110,8 @@ test("C2 declared inputs: a FIFO or directory at a source, reference, built page
   assert.deepEqual(run.result.record.references.map((r) => r.ref_id), ["source_html"]);
 });
 const hasMemberReason = (row, reason) => Boolean(row?.members.some((m) => m.reason_code === reason));
+const OUTSIDE_LOCATION = { key: "location", result: "unexercised", reason_code: "path_outside_source_root" };
+const locationMembers = (row) => row.members.filter((m) => m.key === "location");
 // The example packet layout: the packet folder holds target/ and, beside it,
 // the source root. f.targetRepo is that packet folder here.
 function besideTargetInputs(f) {
@@ -154,6 +156,35 @@ test("Image references under a source root beside the target compare; a referenc
   assert.deepEqual([row.result, row.reason_code, row.members], ["unexercised", "diff_unavailable", [{ key: "diff", result: "unexercised", reason_code: "file_missing" }]]);
   assert.equal(vanished.comparisons.find((c) => c.ref_id === "mobile").status, "compared");
 });
+test("A report without identity degrades the self-reference hash check, not the visual pass", async (t) => {
+  const f = syntheticVisualFixture(); t.after(f.cleanup); const input = visualInputs(f);
+  for (const report of [{ ...input.report, identity: undefined }, { ...input.report, identity: { public_route_slug: 7 } }]) {
+    const record = await runVisualPass({ ...input, report, createBrowserAdapter: async () => fakeVisualAdapter() });
+    assert.equal(record.cells.length, 4);
+    assert.ok(record.cells.every((c) => c.status === "rendered"), JSON.stringify(record.cells.map((c) => c.status)));
+    assert.equal(record.comparisons.filter((c) => c.status === "compared").length, 4);
+  }
+});
+test("A page with no CampaignSpec surface never borrows another surface's references through source_page_id", async (t) => {
+  const f = syntheticVisualFixture(); t.after(f.cleanup); const input = visualInputs(f);
+  f.write("checkout.html", "<!doctype html><p>synthetic checkout</p>");
+  input.packet.source_html.pages.push({ page_id: "checkout", path: "checkout.html", page_kit: { public_route: "/sample/checkout/", spec_route: "checkout/" } });
+  input.frozen.plan = planPolishCapture({ packet: input.packet, baseUrl: "http://127.0.0.1:1234" });
+  input.frozen.page_load.subject.routes = input.frozen.plan.routes.map((r) => r.requested_route);
+  const dspPath = resolve(f.targetRepo, "dsp.json"), dsp = JSON.parse(readFileSync(dspPath, "utf8"));
+  // Checkout's surface also claims "page" as its source page; "page" has no CampaignSpec surface.
+  dsp.surface_identity = [{ id: "checkout-surface", mappings: { campaign_spec_page_id: "checkout", source_page_id: "page" } }];
+  dsp.contributions[0].mappings = [{ surface_id: "checkout-surface", screenshot_refs: ["desktop", "mobile"] }];
+  writeFileSync(dspPath, JSON.stringify(dsp));
+  input.report.design_source_package.material_fingerprint = computeDesignSourcePackageMaterialFingerprint(dsp);
+  const record = await runVisualPass({ ...input, createBrowserAdapter: async () => fakeVisualAdapter() });
+  const refsOf = (route) => record.references.filter((r) => r.route === route).map((r) => r.ref_id).sort();
+  assert.deepEqual(refsOf("/sample/page/"), ["source_html"]);
+  assert.deepEqual(refsOf("/sample/checkout/"), ["desktop", "mobile", "source_html"]);
+  const rows = VISUAL_QC_RULES.evaluate(record).filter((r) => r.subject.page === "/sample/page/");
+  assert.deepEqual(rows.map((r) => [r.check, r.subject.key]).sort(),
+    [["visual.diff", "source_html"], ["visual.diff", "source_html"], ["visual.reference", "source_html"]]);
+});
 test("Proxy refusals during a source render count as blocked for that cell and limit its comparisons", async (t) => {
   const f = syntheticVisualFixture(); t.after(f.cleanup); const input = visualInputs(f);
   const { request } = await import("node:http");
@@ -197,6 +228,17 @@ test("Reference read roots: pre-placed output-root symlinks outside the target a
     const comparison = record.comparisons.find((c) => c.ref_id === "desktop");
     assert.equal(comparison.status, "unavailable");
     if (component === "_site") assert.equal(comparison.reason, "path_outside_source_root");
+    // Both rows name the location reason as a member (the reference row is also
+    // self-referential by its _site/.campaign-runtime path). Under
+    // .campaign-runtime the build captures cannot be written, so the diff
+    // stops earlier (§5.3 step 6).
+    const rows = VISUAL_QC_RULES.evaluate(record);
+    const row = (check) => rows.find((r) => r.check === check && r.subject.key === "ref:desktop");
+    assert.ok(hasMemberReason(row("visual.reference"), "reference_unverifiable"));
+    assert.deepEqual(locationMembers(row("visual.reference")), [OUTSIDE_LOCATION]);
+    if (component === "_site") {
+      assert.deepEqual([row("visual.diff").reason_code, locationMembers(row("visual.diff"))], ["reference_not_usable", [OUTSIDE_LOCATION]]);
+    }
   });
 });
 test("Reference read roots: source links cannot escape, while contained output and declared real source roots compare", async (t) => {
@@ -207,6 +249,13 @@ test("Reference read roots: source links cannot escape, while contained output a
   symlinkSync(resolve(outside.targetRepo, "reference.png"), resolve(f.sourceRoot, "desktop.png"));
   const escaped = await runVisualPass({ ...input, createBrowserAdapter: async () => fakeVisualAdapter() });
   assert.equal(escaped.references.find((r) => r.ref_id === "desktop").verification.reason, "path_outside_source_root");
+  const escapedRows = VISUAL_QC_RULES.evaluate(escaped).filter((r) => r.subject.key === "ref:desktop");
+  assert.deepEqual(escapedRows.map((r) => [r.check, r.result, r.reason_code, locationMembers(r)]).sort(), [
+    ["visual.diff", "unexercised", "reference_not_usable", [OUTSIDE_LOCATION]],
+    ["visual.reference", "unexercised", "reference_unverifiable", [OUTSIDE_LOCATION]]]);
+  // A file refused for what it is, not where it is, names no location.
+  const notPng = evaluateVisualReference({ verification: { level: "unverifiable", reason: "not_png" }, provenance: { class: "declared_source", reasons: [] } });
+  assert.deepEqual([notPng.reason_code, locationMembers(notPng)], ["reference_unverifiable", []]);
   mkdirSync(resolve(f.targetRepo, "_site"));
   writeFileSync(resolve(f.targetRepo, "_site/reference.png"), createRgbaPng(1440, 1200));
   dsp.contributions[0].screenshot_refs[0].path = "../_site/reference.png";

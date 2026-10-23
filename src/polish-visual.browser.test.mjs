@@ -47,7 +47,7 @@ async function scenario(t, sourceName = "identical-source.html", buildName = "id
   const packet = { campaign: { public_route_slug: "sample", route_root: "/sample/" }, source_html: { root: "source", pages: [
     { page_id: "page", path: "page.html", page_kit: { public_route: "/sample/page/", spec_route: "page/", target_path: "src/different.html" } },
   ] }, design_source_package: { path: "dsp.json" } };
-  const dsp = { surface_identity: [{ id: "page", mappings: { source_page_id: "page" } }], contributions: [{ kind: "html_funnel",
+  const dsp = { surface_identity: [{ id: "page", mappings: { campaign_spec_page_id: "page", source_page_id: "page" } }], contributions: [{ kind: "html_funnel",
     source_refs: [{ id: "html", kind: "html_file", path: "page.html", sha256: `sha256:${sha256Hex(sourceBytes)}` }],
     mappings: [{ surface_id: "page", source_refs: ["html"], screenshot_refs: [] }], screenshot_refs: [] }] };
   writeFileSync(resolve(f.targetRepo, "dsp.json"), JSON.stringify(dsp));

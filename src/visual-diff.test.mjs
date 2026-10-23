@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { loadVisualDependencies, padRgba, paintMaskUnion, compareImages, compareBands, worstTiles, encodeHeatmap, releaseComparison, readRgba } from "./visual-diff.mjs";
+import { loadVisualDependencies, padRgba, paintMaskUnion, compareImages, compareBands, worstTiles, encodeHeatmap, releaseComparison, readRgba, crop } from "./visual-diff.mjs";
 import { compareVisualPair, evaluateVisualDiff, evaluateVisualReference, VISUAL_MASKS, writePolishPng } from "./polish-visual.mjs";
 import { verifyReference } from "./visual-reference.mjs";
 import { readPngStructure, VISUAL_MAX_DECODE_PIXELS } from "./png-header.mjs";
@@ -296,6 +296,18 @@ test("Missing transitive module is failed rather than an absent optional package
     const error = new Error("Cannot find package 'transitive-module'"); error.code = "ERR_MODULE_NOT_FOUND"; throw error;
   } });
   assert.equal(deps.decoder.status, "failed"); assert.equal(deps.diff.status, "failed");
+});
+test("crop refuses a rectangle outside the decoded image before copying, and releases what it read", () => {
+  const image = createRgba(8, 6, [10, 20, 30, 255]);
+  for (const rect of [{ top: 0, left: 4, width: 5, height: 6 }, { top: 1, left: 0, width: 8, height: 6 },
+    { top: -1, left: 0, width: 2, height: 2 }, { top: 0, left: -1, width: 2, height: 2 }, { top: 0.5, left: 0, width: 2, height: 2 }]) {
+    const memory = bufferObserver([]);
+    assert.throws(() => crop(source(copyImage(image)), rect, memory), { name: "RangeError", message: "invalid_image_geometry" }, JSON.stringify(rect));
+    assert.equal(memory.size, 0, JSON.stringify(rect));
+  }
+  const inside = crop(source(copyImage(image)), { top: 2, left: 4, width: 4, height: 4 });
+  assert.deepEqual([inside.width, inside.height, inside.data.length], [4, 4, 64]);
+  assert.deepEqual([...inside.data.subarray(60, 64)], [10, 20, 30, 255]);
 });
 test("Every diff fixture row is review or unexercised, never pass or warning", () => {
   assert.ok(decisions.length >= 9);

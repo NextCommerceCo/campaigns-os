@@ -1,3 +1,7 @@
+// Containment is tested for escapes as they exist when a run starts (pre-placed
+// links, `..`, non-regular files, in-root aliases); concurrent replacement inside
+// the root during a run is out of scope under amendment A-C3 (Node has no
+// race-free beneath-root open), so no test asserts an outcome under it.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:net";
@@ -7,7 +11,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startSourceHtmlServer, readRegularFileSync, isRegularFileSync } from "./source-html-server.mjs";
 import { execFileSync } from "node:child_process";
-import { Worker } from "node:worker_threads";
 
 const get = (port, path, method = "GET") => new Promise((resolve, reject) => {
   const req = request({ host: "127.0.0.1", port, path, method }, (res) => {
@@ -84,58 +87,37 @@ test("Declared input reader: FIFO, socket, device and directory are refused befo
   }
   assert.equal((await get(server.port, "/page.html")).bytes.toString(), "12345");
 });
-// A worker keeps replacing page.html, alternately with an inside file and a
-// link to an outside marker, while the server and the reader open it.
-const swapper = (root, stop) => new Worker(`
-  const { workerData, parentPort } = require("node:worker_threads");
-  const fs = require("node:fs"), path = require("node:path");
-  const stop = new Int32Array(workerData.stop), p = path.join(workerData.root, "page.html");
-  parentPort.postMessage("ready");
-  const end = Date.now() + 15000;
-  while (!Atomics.load(stop, 0) && Date.now() < end) {
-    fs.writeFileSync(p + ".next", "inside synthetic marker"); fs.renameSync(p + ".next", p);
-    fs.symlinkSync("../marker.html", p + ".next"); fs.renameSync(p + ".next", p);
-  }
-`, { eval: true, workerData: { root, stop } });
-const swapping = async (t) => {
-  const dir = mkdtempSync(join(tmpdir(), "source-swap-")); t.after(() => rmSync(dir, { recursive: true, force: true }));
+// A path replaced by an outside link before it is requested or read: the
+// static form of the escape. Replacement while a read is in flight is out of
+// scope (see the header).
+const replaced = (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "source-replaced-")); t.after(() => rmSync(dir, { recursive: true, force: true }));
   const root = join(dir, "source"); mkdirSync(root);
   writeFileSync(join(root, "page.html"), "inside synthetic marker");
   writeFileSync(join(dir, "marker.html"), "outside-root synthetic marker");
-  const stop = new SharedArrayBuffer(4), worker = swapper(root, stop);
-  const exited = new Promise((done) => worker.once("exit", done));
-  const halt = async () => { Atomics.store(new Int32Array(stop), 0, 1); await exited; };
-  t.after(halt);
-  await new Promise((done, reject) => { worker.once("message", done); worker.once("error", reject); });
-  return { root, halt };
+  const toOutside = () => { rmSync(join(root, "page.html")); symlinkSync("../marker.html", join(root, "page.html")); };
+  const toInside = () => { rmSync(join(root, "page.html")); writeFileSync(join(root, "page.html"), "inside synthetic marker"); };
+  return { root, toOutside, toInside };
 };
-test("Source server: a path replaced by an outside link between open and check is never served", { skip: process.platform === "win32", timeout: 30_000 }, async (t) => {
-  const { root, halt } = await swapping(t);
+test("Source server: a path replaced by an outside link is never served, and is served again once restored", { skip: process.platform === "win32" }, async (t) => {
+  const { root, toOutside, toInside } = replaced(t);
   const server = await startSourceHtmlServer({ root }); t.after(() => server.close());
-  const served = new Set();
-  for (let i = 0; i < 400; i++) {
-    for (const method of ["GET", "HEAD"]) {
-      const response = await get(server.port, "/page.html", method);
-      assert.notEqual(response.bytes.toString(), "outside-root synthetic marker", `request ${i + 1}: outside-root bytes served`);
-      if (method === "HEAD" && response.status === 200) assert.equal(response.bytes.length, 0);
-      served.add(`${method} ${response.status}`);
-    }
+  assert.equal((await get(server.port, "/page.html")).bytes.toString(), "inside synthetic marker");
+  toOutside();
+  for (const method of ["GET", "HEAD"]) {
+    const response = await get(server.port, "/page.html", method);
+    assert.equal(response.status, 404, method);
+    assert.notEqual(response.bytes.toString(), "outside-root synthetic marker", method);
   }
-  await halt();
-  assert.ok(served.has("GET 200"), "the inside file is still served between swaps");
+  toInside();
+  assert.equal((await get(server.port, "/page.html")).bytes.toString(), "inside synthetic marker");
+  const head = await get(server.port, "/page.html", "HEAD");
+  assert.equal(head.status, 200); assert.equal(head.bytes.length, 0);
 });
-test("Declared input reader: with a root, a path replaced by an outside link is refused, never read", { skip: process.platform === "win32", timeout: 30_000 }, async (t) => {
-  const { root, halt } = await swapping(t);
-  let read = 0;
-  for (let i = 0; i < 4000; i++) {
-    try {
-      assert.equal(readRegularFileSync(join(root, "page.html"), { root }).toString(), "inside synthetic marker", `read ${i + 1}`);
-      read++;
-    } catch (error) { if (error instanceof assert.AssertionError) throw error; }
-  }
-  await halt();
-  assert.ok(read > 0);
-  rmSync(join(root, "page.html")); symlinkSync("../marker.html", join(root, "page.html"));
+test("Declared input reader: with a root, a path replaced by an outside link is refused, never read", { skip: process.platform === "win32" }, async (t) => {
+  const { root, toOutside } = replaced(t);
+  assert.equal(readRegularFileSync(join(root, "page.html"), { root }).toString(), "inside synthetic marker");
+  toOutside();
   assert.throws(() => readRegularFileSync(join(root, "page.html"), { root }), { code: "outside_root" });
   assert.equal(isRegularFileSync(join(root, "page.html"), { root }), false);
   assert.equal(readRegularFileSync(join(root, "page.html")).toString(), "outside-root synthetic marker");
