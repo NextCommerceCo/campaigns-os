@@ -8920,8 +8920,35 @@
       "entry_sha256": "0105b7be6bdbdc6e0f8e5a9b2b2a4b5ad3106e9bc7db72029c0cae05d8372fd1"
     },
     {
-      "id": "RL-0286",
+      "id": "RL-0285",
       "sequence": 273,
+      "date": "2026-10-22",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.60.0+agent.7",
+      "changelog_sha256": "7096f90073a3bacfa53548a266f0a496d2ecacd4a7de0b92b1b6304cf3fcf80d",
+      "agent_impact": "Installed users can continue from the Build Packet into the existing source-intake and CampaignSpec v5 authoring guidance without a source checkout. Repository-only references have explicit public URLs.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Include the five existing public continuation guides in the npm package."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Link the repository-only migration case study by its public URL rather than a missing installed path."
+        }
+      ],
+      "entry_sha256": "013f64e2936a0368e8869bc95a7dce1074c6cbcb7243b6b12b237350fea80490"
+    },
+    {
+      "id": "RL-0286",
+      "sequence": 274,
       "date": "2026-10-23",
       "kind": "release",
       "surface_version": null,
@@ -8992,7 +9019,7 @@
           "summary": "Add the shared CI evidence assessment to packet doctor inspection without changing ordinary doctor behavior."
         }
       ],
-      "entry_sha256": "4d62cb68b84287c2418ac0052c4d1deef472501f0422687089b974a51eccdc03"
+      "entry_sha256": "ad13261375838f01d88960e02a3df8c3a74a6c91d5d1c6c933d69473938da123"
     }
   ]
 }

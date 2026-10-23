@@ -259,6 +259,7 @@
         "show_apple_pay",
         "show_google_pay",
         "show_link",
+        "show_shop_pay",
         "show_affirm",
         "show_twint",
         "show_bancontact",
@@ -848,9 +849,9 @@
         }
       },
       "verification": {
-        "sdk_version": "0.4.42",
-        "verified_at": "2026-10-16T23:13:26Z",
-        "evidence": "sdk-0.4.42-2026-10-16.2",
+        "sdk_version": "0.4.43",
+        "verified_at": "2026-10-21T04:05:46Z",
+        "evidence": "sdk-0.4.43-2026-10-21.2",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -861,7 +862,7 @@
         "id": "template-reference-apollo",
         "family": "apollo",
         "version": "sdk-0.4.38-composable-upsells-2026-09-25",
-        "source_commit": "ac529485f0a728cf9c6ac8dbcde81041bd1c6ba8",
+        "source_commit": "03f5982d703e07f8dc6beaedc121d55093373e4d",
         "provenance_url": "https://raw.githubusercontent.com/NextCommerceCo/campaign-cart-starter-templates/main/docs/template-references/apollo/README.md",
         "contract_path": "contracts/commerce-surface-catalog.json",
         "standard_viewport_refs": [
@@ -1272,9 +1273,9 @@
         }
       },
       "verification": {
-        "sdk_version": "0.4.42",
-        "verified_at": "2026-10-16T23:13:26Z",
-        "evidence": "sdk-0.4.42-2026-10-16.2",
+        "sdk_version": "0.4.43",
+        "verified_at": "2026-10-21T04:05:46Z",
+        "evidence": "sdk-0.4.43-2026-10-21.2",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -1583,9 +1584,9 @@
         }
       },
       "verification": {
-        "sdk_version": "0.4.42",
-        "verified_at": "2026-10-16T23:13:26Z",
-        "evidence": "sdk-0.4.42-2026-10-16.2",
+        "sdk_version": "0.4.43",
+        "verified_at": "2026-10-21T04:05:46Z",
+        "evidence": "sdk-0.4.43-2026-10-21.2",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -1886,9 +1887,9 @@
         }
       },
       "verification": {
-        "sdk_version": "0.4.42",
-        "verified_at": "2026-10-16T23:13:26Z",
-        "evidence": "sdk-0.4.42-2026-10-16.2",
+        "sdk_version": "0.4.43",
+        "verified_at": "2026-10-21T04:05:46Z",
+        "evidence": "sdk-0.4.43-2026-10-21.2",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -2227,9 +2228,9 @@
         }
       },
       "verification": {
-        "sdk_version": "0.4.42",
-        "verified_at": "2026-10-16T23:13:26Z",
-        "evidence": "sdk-0.4.42-2026-10-16.2",
+        "sdk_version": "0.4.43",
+        "verified_at": "2026-10-21T04:05:46Z",
+        "evidence": "sdk-0.4.43-2026-10-21.2",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -2666,9 +2667,9 @@
         }
       },
       "verification": {
-        "sdk_version": "0.4.42",
-        "verified_at": "2026-10-16T23:13:26Z",
-        "evidence": "sdk-0.4.42-2026-10-16.2",
+        "sdk_version": "0.4.43",
+        "verified_at": "2026-10-21T04:05:46Z",
+        "evidence": "sdk-0.4.43-2026-10-21.2",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -3022,9 +3023,9 @@
         }
       },
       "verification": {
-        "sdk_version": "0.4.42",
-        "verified_at": "2026-10-16T23:13:26Z",
-        "evidence": "sdk-0.4.42-2026-10-16.2",
+        "sdk_version": "0.4.43",
+        "verified_at": "2026-10-21T04:05:46Z",
+        "evidence": "sdk-0.4.43-2026-10-21.2",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -3312,9 +3313,9 @@
         }
       },
       "verification": {
-        "sdk_version": "0.4.42",
-        "verified_at": "2026-10-16T23:13:26Z",
-        "evidence": "sdk-0.4.42-2026-10-16.2",
+        "sdk_version": "0.4.43",
+        "verified_at": "2026-10-21T04:05:46Z",
+        "evidence": "sdk-0.4.43-2026-10-21.2",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -3504,5 +3505,5 @@
   },
   "_synced_from_repo": "NextCommerceCo/campaign-cart-starter-templates",
   "_synced_from_ref": "main",
-  "_synced_from_sha": "3987b18a356cb961b06c94b2035622bafe938316"
+  "_synced_from_sha": "b38343e85a05ec2fe949e13e783057d4c717a8d6"
 }
