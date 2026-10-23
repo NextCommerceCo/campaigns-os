@@ -1,4 +1,5 @@
 import { campaignSpecIdentity, resolveCampaignIdentity, campaignIdentitiesMatch, localSpecIdentityFields } from "./spec-source-identity.mjs";
+import { withDoctorCiReport } from "./doctor/ci.mjs";
 import { createHash, randomUUID } from "node:crypto";
 import { withDesignSourcePublication } from "./design-source-publication.mjs";
 import { createDemo, demoArguments } from "./demo.mjs";
@@ -320,7 +321,7 @@ Usage:
                      [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>] [--design-manifest <path>]
                      [--allow-uncertified-template "<reason>"] [--order-path-depth <off|common|full>]
                      [--deploy-target <target>] [--preview-url <url>] [--production-url <url>] [--no-run-session] [--force]   # intake alias for prepare-build + doctor
-  campaigns-os doctor --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--strip-paths] [--write] [--no-write] [--doctor-out <path>] [--proxy-base <url>] [--no-live-refs] [--json]   # inspection by default; --doctor-out requires --write; --no-write wins. When the packet's built _site/<route>/ exists and a public Campaigns API key resolves (packet, its local CampaignSpec, or the declared campaign-key env var), doctor makes one read-only GET of {proxy-base}/api/campaign under X-Campaign-Key to check each built page's shipping and package refs against the live campaign; --proxy-base overrides the canonical proxy (https, or a loopback host over http). --no-live-refs skips the read and records not_run with reason disabled. No key, no built page, or a failed read records derived.live_campaign_refs as not_run with its reason. Only doctor and qa run make this read; other commands that run doctor record not_read
+  campaigns-os doctor --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--strip-paths] [--write] [--no-write] [--doctor-out <path>] [--proxy-base <url>] [--no-live-refs] [--ci] [--json]   # inspection by default; --doctor-out requires --write; --no-write wins. --ci: Markdown (or JSON ci object), exits 0 current / 3 owed / 4 unknown / 2 packet usage error; other doctor errors do not affect the CI exit. Without --ci: 0 ok / 2 errors. When the packet's built _site/<route>/ exists and a public Campaigns API key resolves (packet, its local CampaignSpec, or the declared campaign-key env var), doctor makes one read-only GET of {proxy-base}/api/campaign under X-Campaign-Key to check each built page's shipping and package refs against the live campaign; --proxy-base overrides the canonical proxy (https, or a loopback host over http). --no-live-refs skips the read and records not_run with reason disabled. No key, no built page, or a failed read records derived.live_campaign_refs as not_run with its reason. Only doctor and qa run make this read; other commands that run doctor record not_read
   campaigns-os doctor --built <page-kit-target-repo> --family <family> [--slug <slug>] [--base-url <url>] [--emit-packet [path]] [--json]   # L7: doctor a built _site/ with no Build Packet. Reads the local files only: --base-url is not fetched, it fills deploy.preview_url in the minimal packet (check served pages with qa run --site)
   campaigns-os bundle check --packet <campaign-runtime.build.json> [--require-qa] [--json]   # validate the canonical migration/readback JSON bundle; never substitutes markdown
   campaigns-os sdk storage-check --target <git-root> --target-sdk <x.y.z> --manifest <SDK-manifest.json> --scope <dir,file> [--exclude <dir,file>] [--json]
@@ -351,7 +352,7 @@ Usage:
   campaigns-os logout [--store <subdomain>]
   campaigns-os tooling status [--platform <claude|codex|agents|all>] [--target <skills-dir>] [--skills-revision <bundle-revision|skill-id@version>] [--packet <campaign-runtime.build.json>] [--force] [--json]   # install-mode, git, skill freshness, and local gateway login/store/expiry/reported version. --skills-revision checks the bundle revision the skill you loaded states on its first body line (or that one skill's <skill-id>@<version>) against the bundle THIS CLI ships: revision_check is match, mismatch or unchecked, and a mismatch prints the full status and exits 2 because skill text already in context cannot be refreshed by re-running — start a fresh session. The pin check reports one executable per project: the project pin first — the first exact spec for this package (x.y.z, =x.y.z or vx.y.z) on the walk up from the nearest package.json, devDependencies then dependencies in each, entering a workspace root and stopping there, never peerDependencies or optionalDependencies — then the Build Packet's campaigns_os_version (the project's campaign-runtime.build.json, or --packet <path>); the Pin: line names the key and manifest (or packet) each version came from; pin.status is match, stale_pin (the pin is not the running version), conflicting_pin (the two sources disagree) or unpinned (neither, or only a range; exit 0). stale_pin and conflicting_pin exit 2 with the file to change; --force (bare) overrides them, is reported as pin.forced and lands on the lifecycle journal entry. See docs/skills-revision.md
   campaigns-os tooling diagnose [--packet <packet>] [--platform <claude|codex|agents|all>] [--json]   # read-only redacted support summary
-  campaigns-os install-agent-context --target <page-kit-dir> [--dry-run]
+  campaigns-os install-agent-context --target <page-kit-dir> [--dry-run] [--json]
   campaigns-os next [${NEXT_STAGE_ORDER.join("|")}] --packet <json> [--no-write] [--no-remit] [--proxy-base <url>] [--json]   # no stage self-decides; returns gates[] + next_actions[] alongside the prompt
   campaigns-os next setup --packet <json> [--context <json>] [--report <json>] [--json]
   campaigns-os next build --packet <json> [--context <json>] [--report <json>] [--json]
@@ -484,14 +485,14 @@ export async function main(argv, { authentication, qcStandIns } = {}) {
     console.log(packageVersion());
     return;
   }
-  return runInvocation(parseArgs(argv), {
+  return withDoctorCiReport(parseArgs(argv), (args) => runInvocation(args, {
     dispatch: (command, args, context) => dispatch(command, args, { ...context, argv, authentication, qcStandIns }),
     closeOutStaleRunSessions,
     ambientRunSession,
     lifecycleIdentity,
     persistLifecycle: persistLifecycleIfRequested,
     autoEndAfterQa: autoEndRunSessionAfterTerminalQa,
-  });
+  }));
 }
 
 // The lifecycle entry's identity (T6): its argv shape and its run_id. Ambient
@@ -1049,8 +1050,15 @@ async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = nul
     const liveCampaign = await readDoctorLiveCampaign(args);
     const result = doctorCommand(args, { liveCampaign, qcStandIns });
     if (!result.ok) recorder.recordFindingCodes(result.errors?.map((issue) => issue.code));
-    writeResult(result, args, result.ok ? 0 : 2);
-    printDoctorTinyPrompt(result, args);
+    if (args.ci === true) {
+      const { formatDoctorCi, DOCTOR_CI_EXIT_CODES } = await import("./doctor/ci.mjs");
+      if (!args.json) console.log(formatDoctorCi(result));
+      else writeResult(result, args, 0);
+      process.exitCode = result.ci?.exit_code ?? result.exit_code ?? DOCTOR_CI_EXIT_CODES.usage;
+    } else {
+      writeResult(result, args, result.ok ? 0 : 2);
+      printDoctorTinyPrompt(result, args);
+    }
     return;
   }
 
@@ -1172,8 +1180,15 @@ async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = nul
 
   if (command === "install-agent-context") {
     const target = requireArg(args, "target");
-    const result = installAgentContext(resolve(target), Boolean(args["dry-run"]));
-    writeResult(result, args, 0);
+    const dryRun = isDryRun(args);
+    const result = installAgentContext(resolve(target), dryRun);
+    if (dryRun && !args.json) {
+      for (const file of result.file_contents) {
+        console.log(`Destination: ${file.destination}\n${file.content}`);
+      }
+    } else {
+      writeResult(result, args, 0);
+    }
     return;
   }
 
@@ -5466,10 +5481,13 @@ function installAgentContext(targetRepo, dryRun = false) {
     ["copilot-instructions.md", join(ROOT, "agents/copilot/copilot-instructions.md")],
   ];
   const written = [];
+  const fileContents = [];
   if (!dryRun) mkdirSync(outDir, { recursive: true });
   for (const [name, source] of files) {
     const dest = join(outDir, name);
-    if (!dryRun) writeFileSync(dest, readFileSync(source, "utf8"));
+    const content = readFileSync(source, "utf8");
+    if (!dryRun) writeFileSync(dest, content);
+    else fileContents.push({ destination: dest, content });
     written.push(dest);
   }
   const gitignore = ensureRuntimeStateIgnored(targetRepo, { dryRun });
@@ -5479,6 +5497,7 @@ function installAgentContext(targetRepo, dryRun = false) {
     target_repo: targetRepo,
     directory: outDir,
     files: written,
+    ...(dryRun ? { file_contents: fileContents } : {}),
     gitignore,
     note: "Context files are staged under .campaign-runtime/agent-context and do not overwrite root agent files.",
   };

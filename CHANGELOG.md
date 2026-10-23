@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.60.0+agent.8] - 2026-10-23
+## [1.60.0+agent.9] - 2026-10-23
 
 ### Changed
 
@@ -13,6 +13,20 @@ Brand theme carries the design source's type onto commerce pages, not only its c
 - `theme generate` writes `.campaign-runtime/theme/brand-fonts.css` beside `brand-theme.css`: only `@font-face` rules for the mapped families, always with `font-display: swap`, every format of a face kept, and URLs relative to `assets/css/`. Remote, `data:`, root-relative, missing, or outside-root face files (checked on real paths, so symlinks out are caught) are left out with `theme.typography.face_src_dropped`. The theme report gains `typography`, and `generated.fonts_css_path` names the file.
 - `record theme` refuses a styled commerce page that doesn't load a copy of the generated `brand-fonts.css` (found through the Build Context's `theme.generated.fonts_css_path`) from inside the built site, identical to the generated file, naming the page. The theme gate's generate/apply actions, the build guidance, `docs/brand-theme-bridge.md`, and the build (1.0.49) and polish (1.1.49) skills say to copy and load it. Polish now checks font parity at a mobile width as well as desktop.
 - The skills bundle revision advances to `1.60.0+skills.4`, and every bundled skill moves one patch version.
+
+## [1.60.0+agent.8] - 2026-10-23
+
+### Added
+
+Readback's additive `evidence_debt` field and text section show whether Polish and QA bind to the build on disk: `current`, `owed`, or `unknown`. Changed pages and other changed files are listed against the retained assembly manifest. An empty page list does not clear an owed stage. Missing or unreadable output or a missing assembly fingerprint leaves stage debt unknown. Otherwise a lifecycle-recorded `required` stage is owed (reason `stage_required_by_build`, `stage_required_by_brief`, or `stage_required_by_spec` from `required_by`, and `stage_required` for an absent or unrecognized source), even without a stage fingerprint; other missing stage fingerprints leave debt unknown. A missing or unusable manifest leaves only page changes unknown; matching stage bindings remain current unless required, and differing bindings remain owed. This build comparison is independent of readback's time-based staleness. Either owed stage makes `clean` false (campaigns-os#699).
+
+`doctor --ci --packet <packet> --no-live-refs` reports the same evidence debt as Markdown for a PR comment, or under `ci` with `--json`. It exits 0 when both stages are current, 3 when either is owed, 4 when debt cannot be determined, and 2 when the packet is missing or unreadable. Other doctor findings remain visible without changing the CI exit code. The check does not renew evidence or deploy (campaigns-os#695).
+
+The workflow example at `docs/examples/campaign-repo-evidence-check.yml` installs locked dependencies, builds the campaign, runs the check and posts or updates one PR comment. Evidence findings are report-only by default; set the repository Actions variable `CAMPAIGNS_OS_EVIDENCE_CHECK` to `fail` to enforce them. Install and build failures still fail normally and replace the comment with a fixed "build failed; evidence not evaluated" message when doctor did not run. A comment-permission failure leaves the report in the job log (campaigns-os#695).
+
+### Changed
+
+The installed agent context for all four supported harnesses gains a live-campaign revision section: read readback and `next` before editing, follow the Design Source Package, rebuild and record the build before capturing and recording Polish, run QA when owed, and show each changed page's design reference beside its preview in the PR. `install-agent-context --dry-run` previews each destination and its full content without writing files; `--json` carries the same preview (campaigns-os#699).
 
 ## [1.60.0+agent.7] - 2026-10-22
 
