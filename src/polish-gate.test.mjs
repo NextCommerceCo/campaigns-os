@@ -741,3 +741,26 @@ test("F3C-B19 record half: unknown capture state fails the gate", (t) => {
   record.cells[0].state = "scrolled"; record.integrity = capturesIntegrity(record);
   assert.equal(evaluatePolishGate({ report }).code, "polish.evidence_incomplete");
 });
+
+import { unavailableCapturesRecord, VISUAL_VIEWPORTS } from "./polish-visual.mjs";
+test("A-C4 all-skipped package record fails write mode; legacy evidence still reads as before", (t) => {
+  const report = captureGateFixture(t), visual = report.stages.polish.evidence.visual_review;
+  const subject = visual.captures.subject;
+  visual.captures = unavailableCapturesRecord({ subject, plan: { routes: subject.routes, viewports: VISUAL_VIEWPORTS } });
+  const gate = evaluatePolishGate({ report, newEvidence: true });
+  assert.equal(gate.code, "polish.evidence_incomplete");
+  assert.match(gate.problems.join("\n"), /captures is not a current package capture record \(no captured build screenshot for every planned route\)/);
+  delete visual.captures; visual.screenshots = ["legacy.png"];
+  assert.equal(evaluatePolishGate({ report }).code, "polish.evidence_current");
+});
+test("A-C4 one route with only failed build shots fails write mode despite another captured route", (t) => {
+  const report = captureGateFixture(t), visual = report.stages.polish.evidence.visual_review;
+  const record = visual.captures;
+  record.subject.routes.push({ page_id: "second", requested_route: "/second/" });
+  record.cells.push(...structuredClone(record.cells).map((cell) => ({ ...cell, page_id: "second", route: "/second/",
+    ...(cell.side === "build" ? { actual: { status: "failed" }, stabilized: { status: "failed" } } : {}) })));
+  record.integrity = capturesIntegrity(record);
+  const gate = evaluatePolishGate({ report, newEvidence: true });
+  assert.equal(gate.code, "polish.evidence_incomplete");
+  assert.match(gate.problems.join("\n"), /no captured build screenshot for every planned route/);
+});

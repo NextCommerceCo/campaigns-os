@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readPngStructure, rawImageBytes, boundedInflate } from "./png-header.mjs";
+import { crc32, readPngStructure, rawImageBytes, boundedInflate } from "./png-header.mjs";
 import { createRgbaPng, pngChunk } from "./polish-visual-fixtures.mjs";
 
 test("PNG structure walks the full file, validates CRCs and rejects missing or trailing data", () => {
@@ -40,4 +40,23 @@ test("Raw-size and inflate exports reject invalid dimensions and inherited colou
   for (const maxBytes of [Infinity, NaN, -1]) assert.equal(readPngStructure(null, { maxBytes }).reason, "too_large");
   const png = createRgbaPng(1, 1);
   for (const maxBytes of [png.length + 0.5, 67108865]) assert.equal(readPngStructure(png, { maxBytes }).ok, true);
+});
+
+test("CRC32 matches standard known vectors and the bitwise algorithm across all byte values", () => {
+  for (const [input, expected] of [["", 0x00000000], ["123456789", 0xcbf43926], ["The quick brown fox jumps over the lazy dog", 0x414fa339]]) {
+    assert.equal(crc32(Buffer.from(input)), expected);
+  }
+  assert.equal(crc32(Buffer.from("IEND")), 0xae426082);
+  const bitwise = (bytes) => {
+    let crc = 0xffffffff;
+    for (const byte of bytes) {
+      crc ^= byte;
+      for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0);
+    }
+    return (crc ^ 0xffffffff) >>> 0;
+  };
+  const bytes = Buffer.from(Array.from({ length: 65536 }, (_, i) => (i * 73 + (i >>> 8)) & 0xff));
+  for (const length of [1, 2, 255, 256, 257, 4096, bytes.length]) {
+    assert.equal(crc32(bytes.subarray(0, length)), bitwise(bytes.subarray(0, length)));
+  }
 });

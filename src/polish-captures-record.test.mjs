@@ -42,7 +42,7 @@ test("Package capture gate is pure data and checks current binding, crop, DPR an
   const failed = structuredClone(record);
   for (const cell of failed.cells) { cell.status = "browser_unavailable"; cell.actual = { status: "skipped", png: null }; cell.stabilized = { status: "skipped", png: null }; }
   failed.integrity = capturesIntegrity(failed);
-  assert.equal(packageCapturesSatisfy(failed, f.report), true);
+  assert.equal(packageCapturesSatisfy(failed, f.report), false);
   const absent = structuredClone(record);
   for (const cell of absent.cells) for (const shot of [cell.actual, cell.stabilized]) shot.png.path = "missing-on-this-machine.png";
   absent.integrity = capturesIntegrity(absent);
@@ -53,4 +53,34 @@ test("Capture leaf imports no QC, gate, node runner or browser module", () => {
   const source = readFileSync(new URL("./polish-captures-record.mjs", import.meta.url), "utf8");
   const imports = [...source.matchAll(/from\s+"([^"]+)"/g)].map((match) => match[1]);
   assert.deepEqual(imports, ["node:crypto", "./polish-capture.mjs"]);
+});
+
+test("A-C4 requires a rendered actual build capture for every planned route, at either viewport", (t) => {
+  const f = syntheticVisualFixture(); t.after(f.cleanup);
+  const routes = [{ page_id: "first", requested_route: "/first/" }, { page_id: "second", requested_route: "/second/" }];
+  const record = syntheticCapturesRecord(f.report, { targetRepo: f.targetRepo, routes });
+  const satisfies = (mutate) => {
+    const copy = structuredClone(record); mutate(copy); copy.integrity = capturesIntegrity(copy);
+    return packageCapturesSatisfy(copy, f.report);
+  };
+  assert.equal(packageCapturesSatisfy(record, f.report), true);
+  assert.equal(satisfies((r) => { r.subject.routes = routes.map((route) => route.requested_route); }), true,
+    "production page-load subjects list routes as strings");
+  for (const status of ["failed", "timeout", "skipped"]) {
+    assert.equal(satisfies((r) => {
+      for (const cell of r.cells.filter((c) => c.side === "build" && c.page_id === "second")) {
+        cell.actual = { status }; cell.stabilized = { status };
+      }
+    }), false, `one route with only ${status} build shots must refuse, even with source captures`);
+  }
+  assert.equal(satisfies((r) => {
+    for (const cell of r.cells.filter((c) => c.side === "build")) cell.status = "browser_unavailable";
+  }), false, "a captured shot in a cell that was not rendered cannot qualify");
+  assert.equal(satisfies((r) => {
+    for (const cell of r.cells.filter((c) => c.side === "build" && c.viewport === "desktop")) {
+      cell.actual = { status: "failed" }; cell.stabilized = { status: "failed" };
+    }
+  }), true, "one captured mobile actual per route suffices");
+  assert.equal(satisfies((r) => { r.subject.routes.push({ page_id: "missing", requested_route: "/missing/" }); }), false);
+  assert.equal(satisfies((r) => { r.subject.routes = []; }), false);
 });

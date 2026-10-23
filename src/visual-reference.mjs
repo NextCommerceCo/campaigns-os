@@ -38,7 +38,7 @@ export function classifyProvenance({ path, sourceRoot, targetRepo, kind = "sourc
   } else {
     const hex = String(sha256 || "").replace(/^sha256:/, "");
     if (sha256 && (new Set(buildCaptureHashes).has(sha256) || (targetRepo && /^[a-f0-9]{64}$/.test(hex)
-        && ["captures", "readability"].some((dir) => existsSync(resolve(targetRepo, `.campaign-runtime/polish/${dir}/${hex}.png`)))))) reasons.push("hash_equals_package_capture");
+        && ["captures", "readability", "diff"].some((dir) => existsSync(resolve(targetRepo, `.campaign-runtime/polish/${dir}/${hex}.png`)))))) reasons.push("hash_equals_package_capture");
     if (linkedSource?.provenance?.class === "self_referential") reasons.push("linked_source_self_referential");
   }
   if (reasons.length) return { class: "self_referential", reasons };

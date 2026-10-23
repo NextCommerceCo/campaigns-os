@@ -3663,3 +3663,19 @@ test("F3C-B6b F3C-I10 fresh write after unchanged build cannot use pre-C page_lo
     assert.deepEqual(snapshotFiles(f), before);
   });
 });
+
+import { unavailableCapturesRecord, VISUAL_VIEWPORTS } from "./polish-visual.mjs";
+test("A-C4 real record polish CLI refuses all-skipped package captures without changing stage files", async () => {
+  await withLifecycle(async (f) => {
+    scaffold(f); recordOk(f, "setup"); buildSite(f); recordOk(f, "build"); await capture(f);
+    mutateJson(f.reportPath, (report) => {
+      const visual = report.stages.polish.evidence.visual_review, subject = visual.captures.subject;
+      visual.captures = unavailableCapturesRecord({ subject, plan: { routes: subject.routes, viewports: VISUAL_VIEWPORTS } });
+    });
+    const before = snapshotFiles(f), refused = record(f, "polish", ["--evidence", POLISH_EVIDENCE]);
+    assert.equal(refused.status, 1);
+    assert.match(refused.stderr, /polish.evidence_incomplete/);
+    assert.match(refused.stderr, /captures is not a current package capture record/);
+    assert.deepEqual(snapshotFiles(f), before);
+  });
+});

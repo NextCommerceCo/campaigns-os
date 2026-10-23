@@ -12,6 +12,18 @@ export function capturesIntegrity(record) {
   return `sha256:${createHash("sha256").update(canonicalJson(rest)).digest("hex")}`;
 }
 
+// A-C4: one actual build capture per planned route; either viewport may supply it.
+export function capturedBuildForEveryRoute(record) {
+  const routes = record?.subject?.routes;
+  return Array.isArray(routes) && routes.length > 0 && Array.isArray(record?.cells)
+    && routes.every((route) => {
+      const path = typeof route === "string" ? route : own(route, "requested_route") ?? own(route, "route");
+      return typeof path === "string" && record.cells.some((cell) => object(cell) && cell.side === "build"
+        && cell.route === path && (typeof route === "string" || cell.page_id === route.page_id)
+        && cell.status === "rendered" && cell.actual?.status === "captured");
+    });
+}
+
 // Data only: ignored PNG files are deliberately not opened by the gate.
 export function packageCapturesSatisfy(record, report) {
   if (!record || Object.getPrototypeOf(record) !== Object.prototype
@@ -20,7 +32,7 @@ export function packageCapturesSatisfy(record, report) {
       || !record.subject?.build_fingerprint
       || record.subject.build_fingerprint !== report?.stages?.assembly?.build_fingerprint
       || !Array.isArray(record.cells) || !record.cells.length) return false;
-  return record.cells.every((cell) => {
+  return capturedBuildForEveryRoute(record) && record.cells.every((cell) => {
     if (!object(cell)) return false;
     const viewport = viewports.get(own(cell, "viewport"));
     if (cell.state !== "default_load" || cell.device_scale_factor !== 1

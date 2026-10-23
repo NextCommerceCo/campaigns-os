@@ -247,3 +247,21 @@ test("Recorded-field and decoder lookups ignore inherited values and tolerate nu
   assert.equal(decodes, 0); assert.equal(ref.verification.level, "header_checked"); decision(ref, "unexercised", "decoder_unavailable");
   assert.doesNotThrow(() => classifyProvenance({ recorded: null }));
 });
+
+test("panel diff-folder build crop and its source-root copy remain self-referential", async (t) => {
+  const f = fixture(t), bytes = createRgbaPng(1440, 900);
+  // This is the page-level build_crop stored by onComparison, not a capture hash supplied by the caller.
+  const file = writePolishPng(f.targetRepo, "diff", bytes);
+  for (const [path, reasons] of [
+    [resolve(f.targetRepo, file.path), ["path_in_runtime_dir", "hash_equals_package_capture"]],
+    [f.write("updated-reference.png", bytes), ["hash_equals_package_capture"]],
+  ]) {
+    const ref = { ...await verifyReference({ ...f, path, decoder: dependencies.decoder }), viewport: "desktop" };
+    assert.equal(ref.verification.level, "decoded");
+    assert.deepEqual(ref.provenance, { class: "self_referential", reasons });
+    decision(ref, "warning", "self_referential");
+    diffDecision(ref, "review", "visual_diff_diagnostic", "basis_not_independent");
+  }
+  assert.deepEqual(classifyProvenance({ ...f, path: resolve(f.targetRepo, file.path), recorded: f.recorded }),
+    { class: "self_referential", reasons: ["path_in_runtime_dir"] }, "path classification also covers diff without a hash");
+});

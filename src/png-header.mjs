@@ -12,12 +12,15 @@ export function boundedDimensions(width, height) {
 }
 export const sha256Hex = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
+const crcTable = Uint32Array.from({ length: 256 }, (_, byte) => {
+  let crc = byte;
+  for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0);
+  return crc >>> 0;
+});
+
 export function crc32(bytes) {
   let crc = 0xffffffff;
-  for (const byte of bytes) {
-    crc ^= byte;
-    for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0);
-  }
+  for (let i = 0; i < bytes.length; i++) crc = (crc >>> 8) ^ crcTable[(crc ^ bytes[i]) & 0xff];
   return (crc ^ 0xffffffff) >>> 0;
 }
 
