@@ -18,7 +18,9 @@ function visualChromium({ changed = false, destroyed = false, exception = false,
       if (params.functionDeclaration.includes("syntheticProbe") && protocolError) throw new Error("Invalid parameters");
       if (params.functionDeclaration.includes("syntheticProbe") && exception) return { exceptionDetails: { text: "Uncaught", exception: { description: "Error: synthetic probe defect" } } };
       if (params.functionDeclaration.includes("visualGeometry") && geometry === "destroyed") throw new Error("Execution context was destroyed");
+      if (params.functionDeclaration.includes("visualGeometry") && geometry === "protocolError") throw new Error("Invalid parameters");
       if (params.functionDeclaration.includes("visualGeometry") && geometry === "exception") return { exceptionDetails: { text: "Uncaught", exception: { description: "Error: synthetic geometry defect" } } };
+      if (params.functionDeclaration.includes("visualGeometry") && geometry === "timeout") tick += 2000;
       let value = { synthetic: true };
       if (params.functionDeclaration.includes("visualReady")) value = params.arguments[0].value === "fonts"
         ? { status: "settled", failed_faces: 0, waited_ms: 0 } : { status: "not_present", remaining_count: 0, waited_ms: 0 };
@@ -91,7 +93,7 @@ test("RC-4: an ordinary probe exception or protocol error with the same frame an
 });
 
 test("A loaded document whose geometry probe fails or whose document changes is never navigation_failed", async () => {
-  for (const [geometry, status] of [["exception", "probe_failed"], ["destroyed", "document_changed"]]) {
+  for (const [geometry, status] of [["exception", "probe_failed"], ["protocolError", "probe_failed"], ["destroyed", "document_changed"]]) {
     const f = visualChromium({ geometry }), adapter = await createPolishBrowserAdapter({ chromium: f.chromium });
     const result = await adapter.renderForCompare({ url: "http://127.0.0.1:1234/", viewport: { width: 1440, height: 1200 }, budget: { clock: f.clock } });
     assert.equal(result.status, status, geometry);
@@ -99,6 +101,24 @@ test("A loaded document whose geometry probe fails or whose document changes is 
     assert.deepEqual([result.actual.status, result.stabilized.status], ["skipped", "skipped"], geometry);
     assert.equal(f.shotOptions.length, 0, geometry);
     await adapter.close();
+  }
+});
+test("Geometry timeouts report the binding run budget or cell deadline through CDP", async () => {
+  for (const [addedRemainingMs, cellDeadlineMs, status] of [
+    [1000, 10000, "run_budget_exhausted"],
+    [5000, 1200, "producer_timeout"],
+  ]) {
+    const f = visualChromium({ geometry: "timeout" });
+    const adapter = await createPolishBrowserAdapter({ chromium: f.chromium, cellDeadlineMs });
+    try {
+      const result = await adapter.renderForCompare({ url: "http://127.0.0.1:1234/", viewport: { width: 1440, height: 1200 },
+        budget: { clock: f.clock, addedRemainingMs } });
+      assert.ok(f.calls.some(([name, params]) => name === "Runtime.callFunctionOn" && params.functionDeclaration.includes("visualGeometry")));
+      assert.equal(result.status, status);
+      assert.equal(result.networkidle.status, "settled");
+      assert.deepEqual([result.actual.status, result.stabilized.status], ["skipped", "skipped"]);
+      assert.equal(f.shotOptions.length, 0);
+    } finally { await adapter.close(); }
   }
 });
 test("C2: visual height is hard-capped and the capture API refuses a different DPR", async () => {
