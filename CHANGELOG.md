@@ -2,6 +2,18 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.61.0+agent.1] - 2026-10-24
+
+### Changed
+
+The vendored starter catalog is re-synced to campaign-cart-starter-templates `5711e22` (was `b38343e`). That range carries:
+- campaign-cart-starter-templates#246: tiered offers use one shipping method plus a free-shipping card coupon, in place of a separate free-shipping method. The CampaignSpec fixtures follow.
+- campaign-cart-starter-templates#248: the Apollo Template Reference is re-stamped `sdk-0.4.43-shipping-coupon-tiers-2026-10-23`.
+- campaign-cart-starter-templates#250: the MV families' `removeWhenUnsupported` names `variant_slots[].vouchers` for the tier coupon, as the bundle families do, in place of the removed free-shipping row.
+- #247, #249 and #251: recorded SDK 0.4.43 verification evidence.
+
+The certified-family fixtures are regenerated at the pin with page-kit 0.3.0, which is what the starter repository now pins. They were last rendered at `3987b18` with page-kit 0.2.0. The payment-chrome `asset_pin` moves to `5711e22`. Its five images have the same bytes there, so no hash changed. Two test files no longer depend on starter data that moved: the live-campaign drift tests give their saved Map its own second shipping method, and the Apollo Template Reference test reads the expected stamp from the catalog. The two payment-chrome tests pass again because the pin moved. The SDK pin and the support policy do not change.
+
 ## [1.61.0] - 2026-10-23
 
 ### Changed

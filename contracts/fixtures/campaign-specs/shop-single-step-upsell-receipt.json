@@ -135,13 +135,7 @@
       "key": "standard",
       "ref_id": 20,
       "name": "Standard Shipping",
-      "price": "4.95"
-    },
-    {
-      "key": "free",
-      "ref_id": 21,
-      "name": "Free Shipping",
-      "price": "0.00"
+      "price": "9.99"
     }
   ],
   "offers": [

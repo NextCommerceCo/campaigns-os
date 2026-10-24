@@ -78,7 +78,6 @@
             "frontmatter": {
               "packages.main_package": 10,
               "shipping_methods.standard": 20,
-              "shipping_methods.free": 21,
               "variant_slots": [
                 {
                   "id": "buy1",
@@ -89,12 +88,14 @@
                 {
                   "id": "buy2",
                   "quantity": 2,
-                  "shipping_method": "standard"
+                  "shipping_method": "standard",
+                  "vouchers": "FREESHIP"
                 },
                 {
                   "id": "buy3",
                   "quantity": 3,
-                  "shipping_method": "free"
+                  "shipping_method": "standard",
+                  "vouchers": "FREESHIP"
                 }
               ]
             }
@@ -297,13 +298,7 @@
       "key": "standard",
       "ref_id": 20,
       "name": "Standard Shipping",
-      "price": "4.95"
-    },
-    {
-      "key": "free",
-      "ref_id": 21,
-      "name": "Free Shipping",
-      "price": "0.00"
+      "price": "9.99"
     }
   ],
   "offers": [
@@ -388,6 +383,27 @@
       "packages": [
         {
           "package_id": 30
+        }
+      ]
+    },
+    {
+      "ref_id": "5",
+      "name": "Free shipping on 2+",
+      "type": "offer",
+      "code": "FREESHIP",
+      "condition": {
+        "type": "count",
+        "value": 2,
+        "description": "Minimum purchase of 2 selected packages"
+      },
+      "benefit": {
+        "type": "shipping_percentage",
+        "value": "100.00",
+        "description": "100% off shipping cost"
+      },
+      "packages": [
+        {
+          "package_id": 10
         }
       ]
     }

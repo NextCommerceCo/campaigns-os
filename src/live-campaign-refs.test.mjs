@@ -51,13 +51,18 @@ function jsonFetch(body, { status = 200, calls = [] } = {}) {
   };
 }
 
-// A saved Map (the Olympus fixture spec: shipping 20/21, packages 10/17/19/30)
+// A saved Map (the Olympus fixture spec, packages 10/17/19/30, plus shipping 20/21)
 // and a built campaign whose pages render the given markup. The live campaign
 // is whatever the test hands doctor.
 async function withBuiltCampaign({ checkoutHtml, upsellHtml = null, specEdit = null }, run) {
   const repo = mkdtempSync(join(tmpdir(), "campaigns-os-live-refs-"));
   try {
     const spec = JSON.parse(readFileSync(new URL("../contracts/fixtures/campaign-specs/olympus-tiered-standard-free.json", import.meta.url), "utf8"));
+    // The starter's Olympus fixture ships one method and a free-shipping coupon
+    // (starter-templates #246). These tests are about Map-vs-live drift, so the
+    // Map carries its own second method rather than the starter's shipping model.
+    spec.shipping_methods = [...spec.shipping_methods.filter((method) => method.ref_id !== 21),
+      { key: "free", ref_id: 21, name: "Free Shipping", price: "0.00" }];
     spec.campaign.campaigns_api_key = "pk_fixture_public_key";
     if (specEdit) specEdit(spec);
     writeFileSync(join(repo, "spec.json"), JSON.stringify(spec));
