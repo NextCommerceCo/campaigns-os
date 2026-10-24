@@ -37,12 +37,66 @@ the accent fallback and the warning asks the operator to confirm it.
 ```text
 .campaign-runtime/theme/theme-report.json
 .campaign-runtime/theme/brand-theme.css
+.campaign-runtime/theme/brand-fonts.css   (only when the source ships brand faces)
 ```
 
 The generated CSS is v0 root-variable-only. It can override next-core custom
 properties such as `--brand--color--primary` and
 `--brand--color--cta-primary`, but it must not emit selectors, `data-next`
 selectors, payment/package/cart selectors, JavaScript, or remote URL fetches.
+The one exception is a `:root, body` block for the font-family tokens (see
+Typography below).
+
+### Typography
+
+Commerce pages keep the design's type, not the template's system stack.
+Inspection reads every CSS file the source pages link:
+
+- the `@font-face` rules the source ships;
+- which family its headings use (`h1`–`h3`, then `heading`/`title` classes);
+- which family its body copy uses (`html`, `body`, `p`, or the class a
+  stylesheet scopes itself under, such as the importer's `.cc-import`);
+- which family its buttons use, and the button `border-radius`.
+
+`var()` references resolve through custom properties on `:root`, `html`, `body`
+and that scope class, where Shopify themes keep `--font-body-family` and
+`--buttons-radius`. A family is mapped only when the source ships a face for
+it: a family the page can't load would only change the fallback, so it is
+left out, reported as a `theme.typography.face_unavailable` warning, and
+listed in the theme report's `typography.unavailable`.
+
+| Source | next-core token |
+| --- | --- |
+| heading family, then the generic the source gave it | `--_text---font-family--heading` |
+| body family (else the button family), then its generic | `--_text---font-family--primary` |
+| button radius (`0`, or one to four lengths or percentages) | `--radius-size--buttons` |
+
+A button radius in another form (`10px / 20px`, an unresolved `var()`) is not
+mapped and is listed in `typography.radius_rejected`.
+
+The targets are in the `typography` block of
+`contracts/brand-theme-target-tokens.next-core.v0.json`. next-core re-declares
+both font-family tokens on `body` inside its 991px, 767px and 479px media
+queries, so a `:root` value alone holds only on desktop. The generator emits
+them in a `:root, body` block. `brand-theme.css` loads after next-core, so its
+`body` declaration wins at every width.
+
+`brand-fonts.css` holds only `@font-face` rules for the mapped families. It
+always ships `font-display: swap`, whatever the source declared. A face the
+source declares once per format keeps every file, in source order. Its URLs are relative to `assets/css/`, pointing at the
+source's own font files, which build copies into the campaign's `assets/`
+tree with the rest of the source assets. A face whose file is remote, a
+`data:` URL, root-relative, outside the source root or missing is left out with
+`theme.typography.face_src_dropped`; containment is checked on real paths, so
+a symlink out of the source root is dropped. Family names are stripped of
+characters that could not appear in a quoted family. Button radius is mapped only alongside a
+mapped family, so a source with no brand faces generates exactly what it did
+before.
+
+Typography covers family and button radius only, because those are the only
+type and shape tokens next-core exposes. Heading weight, letter-spacing and
+text-transform stay at next-core's values: next-core renders headings at 700,
+so a design that sets headings at 600 shows its bold face on commerce pages.
 
 ### Foreground tokens are derived from background luminance
 
@@ -205,8 +259,10 @@ downsell, or receipt pages.
 
 If a fresh `brand-theme.css` exists:
 
-1. Copy it into the campaign asset tree.
-2. Add it to commerce page frontmatter styles after `next-core.css`.
+1. Copy it into the campaign asset tree (`assets/css/`), with
+   `brand-fonts.css` beside it when theme generate wrote one.
+2. Add it to commerce page frontmatter styles after `next-core.css`. List
+   `brand-fonts.css` on the same pages; its position does not matter.
 3. Preserve SDK-owned runtime surfaces: `data-next-*`, package selectors,
    payment fields, totals, submit controls, receipt templates, route meta tags,
    and SDK JavaScript.
@@ -215,7 +271,10 @@ If a fresh `brand-theme.css` exists:
    page's stylesheet links and records `report.theme.status`, `css_path`,
    `commerce_pages`, `load_order` and evidence. It refuses, writing nothing,
    when a page that loads `next-core.css` does not load the brand layer after
-   it, or when no built commerce page loads `next-core.css`.
+   it, when theme generate wrote `brand-fonts.css` (at the Build Context's
+   `theme.generated.fonts_css_path`) and a styled page does not load an
+   identical copy from inside the built site, or when no built commerce page
+   loads `next-core.css`.
 
 ### Where next-core.css belongs
 

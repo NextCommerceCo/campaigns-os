@@ -2302,7 +2302,7 @@ function assemblyThemeFromContext(theme) {
     load_order: "unknown",
     commerce_pages: [],
     evidence: wroteCss
-      ? ["prepare-build auto-generated .campaign-runtime/theme/brand-theme.css; build should copy that existing artifact into campaign assets and load it after next-core.css on commerce pages."]
+      ? ["prepare-build auto-generated .campaign-runtime/theme/brand-theme.css; build should copy that existing artifact (and brand-fonts.css, when written) into campaign assets and load it after next-core.css on commerce pages."]
       : theme.generated?.can_generate
         ? ["theme inspect found a generatable brand theme; run theme generate or explicit auto policy before applying."]
         : ["theme inspect completed; no generated brand theme was applied during prepare-build."],
@@ -5101,7 +5101,7 @@ Rules:
 - Prepared AI/exported HTML must be converted into page-kit-ready source first: keep page-owned body markup, strip document wrappers, add YAML frontmatter, move shared CSS/assets into the campaign structure, and use Liquid helpers only for page-kit links/assets/includes. Page Kit publishes src/<slug>/assets/config.js as /<slug>/config.js and src/<slug>/assets/products/foo.png as /<slug>/products/foo.png; do not leave raw /assets/... or /<slug>/assets/... references in rendered pages.
 - Preserve prepared source HTML for landing/presell pages when it is a real standalone design.
 - For checkout/upsell/downsell/receipt, use the starter template as the SDK contract reference only: preserve required data-next controls and runtime wiring, but let the campaign/source own visual chrome, copy hierarchy, imagery, and brand layer.
-- Read context.theme and .campaign-runtime/theme/theme-report.json when present. If a fresh brand-theme.css exists, copy it into the campaign assets/css folder and list it after next-core.css in checkout/upsell/downsell/receipt frontmatter styles; if policy is inspect_only, generate or skip explicitly before applying a new brand layer.
+- Read context.theme and .campaign-runtime/theme/theme-report.json when present. If a fresh brand-theme.css exists, copy it into the campaign assets/css folder and list it after next-core.css in checkout/upsell/downsell/receipt frontmatter styles; when theme generate also wrote brand-fonts.css (the design's own faces), copy it beside brand-theme.css and list it on the same pages; if policy is inspect_only, generate or skip explicitly before applying a new brand layer.
 - Generated brand-theme.css v0 is root-variable-only. Do not edit SDK-owned selectors, package controls, payment fields, totals, submit controls, receipt templates, route meta tags, or SDK JavaScript as part of theme application.
 - If you copy starter-template files, copy the selected family atomically with dependent pages, _includes, _layouts, assets/css, and assets/js; do not copy only checkout.html and receipt.html.
 - Resolve SDK routing meta tags to campaign-root paths such as ${campaignRouteRoot(packet) || `/${packet.campaign.public_route_slug}/`}upsell/, not source filenames or unrooted spec literals.

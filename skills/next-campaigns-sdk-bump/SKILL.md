@@ -1,6 +1,6 @@
 ---
 name: next-campaigns-sdk-bump
-version: 1.0.5
+version: 1.0.6
 description: Bump a live campaign's Campaign Cart SDK from one 0.4.x release to a later 0.4.x on a page-kit or static repo. Use for any request to bump, upgrade or move a campaign to SDK 0.4.x, including when the repository has its own BUMP.md. Find every pin, check the release diff and storage against the campaign's own code, prove on a preview with approved test orders, and report what is not proven.
 ---
 
