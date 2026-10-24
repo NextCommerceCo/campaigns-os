@@ -851,8 +851,8 @@
       },
       "verification": {
         "sdk_version": "0.4.43",
-        "verified_at": "2026-10-23T23:04:23Z",
-        "evidence": "sdk-0.4.43-2026-10-23.2",
+        "verified_at": "2026-10-24T04:58:52Z",
+        "evidence": "sdk-0.4.43-2026-10-24",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -1276,8 +1276,8 @@
       },
       "verification": {
         "sdk_version": "0.4.43",
-        "verified_at": "2026-10-23T23:04:23Z",
-        "evidence": "sdk-0.4.43-2026-10-23.2",
+        "verified_at": "2026-10-24T04:58:52Z",
+        "evidence": "sdk-0.4.43-2026-10-24",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -1588,8 +1588,8 @@
       },
       "verification": {
         "sdk_version": "0.4.43",
-        "verified_at": "2026-10-23T23:04:23Z",
-        "evidence": "sdk-0.4.43-2026-10-23.2",
+        "verified_at": "2026-10-24T04:58:52Z",
+        "evidence": "sdk-0.4.43-2026-10-24",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -1891,8 +1891,8 @@
       },
       "verification": {
         "sdk_version": "0.4.43",
-        "verified_at": "2026-10-23T23:04:23Z",
-        "evidence": "sdk-0.4.43-2026-10-23.2",
+        "verified_at": "2026-10-24T04:58:52Z",
+        "evidence": "sdk-0.4.43-2026-10-24",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -2017,7 +2017,7 @@
           ],
           "removeWhenUnsupported": [
             "variant slot rows unsupported by the target spec/API",
-            "free shipping row if no free method exists",
+            "variant_slots[].vouchers when no tier-specific shipping price exists",
             "upsell pages not present in the funnel"
           ]
         },
@@ -2233,8 +2233,8 @@
       },
       "verification": {
         "sdk_version": "0.4.43",
-        "verified_at": "2026-10-23T23:04:23Z",
-        "evidence": "sdk-0.4.43-2026-10-23.2",
+        "verified_at": "2026-10-24T04:58:52Z",
+        "evidence": "sdk-0.4.43-2026-10-24",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -2386,7 +2386,7 @@
           "removeWhenUnsupported": [
             "variant slot rows unsupported by the target spec/API",
             "selector_order_bump_variant when no selector-area bump package exists",
-            "free shipping row if no free method exists",
+            "variant_slots[].vouchers when no tier-specific shipping price exists",
             "upsell pages not present in the funnel"
           ]
         },
@@ -2673,8 +2673,8 @@
       },
       "verification": {
         "sdk_version": "0.4.43",
-        "verified_at": "2026-10-23T23:04:23Z",
-        "evidence": "sdk-0.4.43-2026-10-23.2",
+        "verified_at": "2026-10-24T04:58:52Z",
+        "evidence": "sdk-0.4.43-2026-10-24",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -2800,7 +2800,7 @@
           ],
           "removeWhenUnsupported": [
             "variant slot rows unsupported by the target spec/API",
-            "free shipping row if no free method exists",
+            "variant_slots[].vouchers when no tier-specific shipping price exists",
             "upsell pages not present in the funnel"
           ]
         },
@@ -3030,8 +3030,8 @@
       },
       "verification": {
         "sdk_version": "0.4.43",
-        "verified_at": "2026-10-23T23:04:23Z",
-        "evidence": "sdk-0.4.43-2026-10-23.2",
+        "verified_at": "2026-10-24T04:58:52Z",
+        "evidence": "sdk-0.4.43-2026-10-24",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -3320,8 +3320,8 @@
       },
       "verification": {
         "sdk_version": "0.4.43",
-        "verified_at": "2026-10-23T23:04:23Z",
-        "evidence": "sdk-0.4.43-2026-10-23.2",
+        "verified_at": "2026-10-24T04:58:52Z",
+        "evidence": "sdk-0.4.43-2026-10-24",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -3511,5 +3511,5 @@
   },
   "_synced_from_repo": "NextCommerceCo/campaign-cart-starter-templates",
   "_synced_from_ref": "main",
-  "_synced_from_sha": "637e1c96caca5ef1d77346636f759c7dd51506ec"
+  "_synced_from_sha": "5711e22345756c655f41c0ae71444478e4a8999e"
 }

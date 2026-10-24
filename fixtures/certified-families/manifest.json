@@ -1,7 +1,7 @@
 {
   "schema_version": "certified-family-fixtures/v0",
   "source_repo": "NextCommerceCo/campaign-cart-starter-templates",
-  "source_sha": "637e1c96caca5ef1d77346636f759c7dd51506ec",
+  "source_sha": "5711e22345756c655f41c0ae71444478e4a8999e",
   "source_note": "catalog pin (_synced_from_sha)",
   "page_kit_version": "0.3.0",
   "rendered_with": "campaign-build (CPK_ENV=production)",
