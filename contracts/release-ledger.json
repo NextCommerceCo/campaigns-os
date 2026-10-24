@@ -9430,7 +9430,7 @@
       "surface_version": null,
       "changelog_section": "1.61.0",
       "changelog_sha256": "7a17f07adc73539981842f2b18fe9bbe20f5062a1e9690326bbbc124f5b18194",
-      "agent_impact": "Disregard RL-0289 where it says the 1.61.0 package publishes 1.60.0+agent.7 through agent.10 only: a 1.61.0 install carries 1.60.0+agent.1 through agent.10. The six earlier sections are the qa run --site slug fix, the in-page Meta pixel observation, the page-type doctor advisories, the sdk-bump skill round-two changes with the v0.4.43 attribute index, the documented qa run test-address flags, and the sdk storage-check report wording. Read those sections when reconciling behaviour against 1.60.0. RL-0289 is otherwise unchanged.",
+      "agent_impact": "RL-0289's publish list is incomplete: it starts at 1.60.0+agent.7 and omits agent.1 through agent.6. Read it as superseded on that point: a 1.61.0 install carries 1.60.0+agent.1 through agent.10. The six earlier sections are the qa run --site slug fix, the in-page Meta pixel observation, the page-type doctor advisories, the sdk-bump skill round-two changes with the v0.4.43 attribute index, the documented qa run test-address flags, and the sdk storage-check report wording. Read those sections when reconciling behaviour against 1.60.0. RL-0289 is otherwise unchanged.",
       "compatibility": "compatible",
       "migration": "none",
       "changes": [
@@ -9441,7 +9441,7 @@
           "summary": "List 1.60.0+agent.1 through agent.6 in the 1.61.0 release section as published sections; the section bytes change, the entry it amends does not."
         }
       ],
-      "entry_sha256": "66dd68c8b07d671544f94b66289609364396362ea848dd0ce48af85984ac84c8"
+      "entry_sha256": "9d23c21ceafc7503647f80368a13d30b3d074566bd6d7bcd7a4e07fb482a569b"
     }
   ]
 }
