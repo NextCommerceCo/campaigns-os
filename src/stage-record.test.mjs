@@ -168,6 +168,11 @@ async function capture(f) {
     }),
   });
   assert.equal(result.ok, true, JSON.stringify(result.problems || result, null, 2));
+  // Completed record fixtures use the shared package-shaped capture factory;
+  // the page-load checkpoint above remains the real capture command's output.
+  mutateJson(f.reportPath, (report) => {
+    report.stages.polish.evidence.visual_review.captures = syntheticCapturesRecord(report, { targetRepo: f.target });
+  });
 }
 
 function snapshotFiles(f) {
@@ -264,6 +269,7 @@ test("an all-template zero-cell capture keeps the local deploy path open", async
     mutateJson(f.reportPath, (report) => {
       report.stages.polish.evidence = { visual_review: {
         readability: buildReadabilityRecord({ buildFingerprint: report.stages.assembly.build_fingerprint, slug: f.slug, routes: [`/${f.slug}/`], cells: [] }),
+        captures: syntheticCapturesRecord(report, { targetRepo: f.target }),
       } };
     });
     assert.equal(nextStage(f).stage, "deploy");
@@ -3619,3 +3625,57 @@ for (const [label, replace] of NOT_A_READABLE_FILE) {
     });
   });
 }
+
+import { syntheticCapturesRecord } from "./polish-visual-fixtures.mjs";
+import { evaluatePolishGate } from "./polish-gate.mjs";
+test("F3C-W8 captures is package-owned; carried captures permit F3C-W4 completed write", async () => {
+  await withLifecycle(async (f) => {
+    scaffold(f); recordOk(f, "setup"); buildSite(f); recordOk(f, "build"); await capture(f);
+    const evidence = readJson(POLISH_EVIDENCE);
+    evidence.evidence.visual_review.captures = {};
+    const path = join(f.dir, "owned-captures.json"); writeJson(path, evidence);
+    const before = snapshotFiles(f);
+    const refused = record(f, "polish", ["--evidence", path]);
+    assert.notEqual(refused.status, 0); assert.match(refused.stderr, /package_owned_key.*captures/);
+    assert.deepEqual(snapshotFiles(f), before);
+    delete evidence.evidence.visual_review.captures;
+    delete evidence.evidence.visual_review.screenshots;
+    writeJson(path, evidence);
+    recordOk(f, "polish", ["--evidence", path]);
+    assert.equal(evaluatePolishGate({ report: readJson(f.reportPath) }).screenshot_evidence, "package_captures");
+  });
+});
+test("F3C-B6b F3C-I10 fresh write after unchanged build cannot use pre-C page_load and invented paths", async () => {
+  await withLifecycle(async (f) => {
+    scaffold(f); recordOk(f, "setup"); buildSite(f); recordOk(f, "build"); await capture(f);
+    recordOk(f, "polish", ["--evidence", POLISH_EVIDENCE]);
+    mutateJson(f.reportPath, (report) => { delete report.stages.polish.evidence.visual_review.captures; });
+    recordOk(f, "build");
+    const report = readJson(f.reportPath);
+    assert.equal(evaluatePolishGate({ report }).screenshot_evidence, "legacy_paths");
+    assert.equal(evaluateRecordedHiddenEagerMediaCheckpoint({ packet: readJson(f.packetPath), report }).status, "pass");
+    const evidence = readJson(POLISH_EVIDENCE); evidence.evidence.visual_review.screenshots = ["/nonexistent/made-up.png"];
+    const path = join(f.dir, "invented.json"); writeJson(path, evidence);
+    const before = snapshotFiles(f), refused = record(f, "polish", ["--evidence", path]);
+    assert.notEqual(refused.status, 0);
+    assert.match(refused.stderr, /polish.evidence_incomplete/);
+    assert.match(refused.stderr, /captures is missing; record polish needs a package capture by this version; run polish capture\./);
+    assert.deepEqual(snapshotFiles(f), before);
+  });
+});
+
+import { unavailableCapturesRecord, VISUAL_VIEWPORTS } from "./polish-visual.mjs";
+test("A-C4 real record polish CLI refuses all-skipped package captures without changing stage files", async () => {
+  await withLifecycle(async (f) => {
+    scaffold(f); recordOk(f, "setup"); buildSite(f); recordOk(f, "build"); await capture(f);
+    mutateJson(f.reportPath, (report) => {
+      const visual = report.stages.polish.evidence.visual_review, subject = visual.captures.subject;
+      visual.captures = unavailableCapturesRecord({ subject, plan: { routes: subject.routes, viewports: VISUAL_VIEWPORTS } });
+    });
+    const before = snapshotFiles(f), refused = record(f, "polish", ["--evidence", POLISH_EVIDENCE]);
+    assert.equal(refused.status, 1);
+    assert.match(refused.stderr, /polish.evidence_incomplete/);
+    assert.match(refused.stderr, /captures is not a current package capture record/);
+    assert.deepEqual(snapshotFiles(f), before);
+  });
+});

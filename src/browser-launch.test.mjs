@@ -1,6 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+test("C2 launch options pass the source seal through without changing headless defaults", async () => {
+  const options = { proxy: { server: "http://127.0.0.1:1234", bypass: "<-loopback>,127.0.0.1:1234" }, args: ["--host-resolver-rules=MAP * ~NOTFOUND"] };
+  let received;
+  await launchPackageChromium({ chromium: { async launch(value) { received = value; return {}; } },
+    launchOptions: options, onMissing: () => new Error("missing") });
+  assert.deepEqual(received, { ...options, headless: true });
+});
+
 import {
   MISSING_BROWSER_KINDS,
   isMissingBrowserError,

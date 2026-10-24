@@ -2,6 +2,137 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
 
+// Small protocol adapter for the visual API: no real browser or page script.
+function visualChromium({ changed = false, destroyed = false, exception = false, protocolError = false, height = 1200, geometry = null } = {}) {
+  const calls = [], shotOptions = [];
+  let tick = 0, frames = 0;
+  const clock = { now: () => tick, sleep: () => new Promise(() => {}) };
+  const session = { async detach() {}, async send(method, params) {
+    calls.push([method, params]); tick += 2;
+    if (method === "Page.getFrameTree") return { frameTree: { frame: { id: "main", loaderId: changed && ++frames > 3 ? "changed" : "original" } } };
+    if (method === "Page.createIsolatedWorld") return { executionContextId: 7 };
+    if (method === "DOM.getDocument") return { root: { shadowRoots: [{ shadowRootType: "closed", backendNodeId: 42 }] } };
+    if (method === "DOM.resolveNode") return { object: { objectId: "closed-root" } };
+    if (method === "Runtime.callFunctionOn") {
+      if (params.functionDeclaration.includes("syntheticProbe") && destroyed) throw new Error("Execution context was destroyed");
+      if (params.functionDeclaration.includes("syntheticProbe") && protocolError) throw new Error("Invalid parameters");
+      if (params.functionDeclaration.includes("syntheticProbe") && exception) return { exceptionDetails: { text: "Uncaught", exception: { description: "Error: synthetic probe defect" } } };
+      if (params.functionDeclaration.includes("visualGeometry") && geometry === "destroyed") throw new Error("Execution context was destroyed");
+      if (params.functionDeclaration.includes("visualGeometry") && geometry === "protocolError") throw new Error("Invalid parameters");
+      if (params.functionDeclaration.includes("visualGeometry") && geometry === "exception") return { exceptionDetails: { text: "Uncaught", exception: { description: "Error: synthetic geometry defect" } } };
+      if (params.functionDeclaration.includes("visualGeometry") && geometry === "timeout") tick += 2000;
+      let value = { synthetic: true };
+      if (params.functionDeclaration.includes("visualReady")) value = params.arguments[0].value === "fonts"
+        ? { status: "settled", failed_faces: 0, waited_ms: 0 } : { status: "not_present", remaining_count: 0, waited_ms: 0 };
+      if (params.functionDeclaration.includes("visualGeometry")) value = { height, masks: [], mask_cap_reached: false };
+      return { result: { value } };
+    }
+  } };
+  const page = { async goto() { return { status: () => 200 }; }, async waitForLoadState() {},
+    locator: (selector) => selector, async screenshot(options) { shotOptions.push(options); return Buffer.from("synthetic"); } };
+  const chromium = { async launch(options) { calls.push(["launch", options]); return {
+    version: () => "synthetic", async close() {}, async newContext(options) { calls.push(["newContext", options]); return {
+      async close() {}, async route(pattern, handler) { calls.push(["route", pattern, handler]); },
+      async routeWebSocket(pattern, handler) { calls.push(["routeWebSocket", pattern, handler]); },
+      async newPage() { return page; }, async newCDPSession() { return session; },
+    }; },
+  }; } };
+  return { chromium, clock, calls, shotOptions };
+}
+
+test("F3C-I12 sealed launch and routes cover WebSockets before navigation; fresh DPR 1 contexts", async () => {
+  const f = visualChromium();
+  const seal = { origin: "http://127.0.0.1:1234", port: 1234 };
+  const adapter = await createPolishBrowserAdapter({ chromium: f.chromium, seal });
+  const result = await adapter.renderForCompare({ url: `${seal.origin}/page.html`, viewport: { width: 1440, height: 1200 }, budget: { clock: f.clock } });
+  const options = f.calls.find(([name]) => name === "launch")[1];
+  assert.deepEqual(options.proxy, { server: seal.origin, bypass: "<-loopback>,127.0.0.1:1234" });
+  assert.deepEqual(options.args, ["--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1", "--force-webrtc-ip-handling-policy=disable_non_proxied_udp"]);
+  assert.equal(f.calls.find(([name]) => name === "newContext")[1].deviceScaleFactor, 1);
+  const route = f.calls.find(([name]) => name === "route")[2];
+  await route({ request: () => ({ url: () => "https://example.invalid/private?token=discard" }), abort: async () => {}, continue: () => assert.fail() });
+  const websocket = f.calls.find(([name]) => name === "routeWebSocket")[2];
+  websocket({ url: () => "ws://127.0.0.1:5678/private", close() {} });
+  assert.equal(result.external.blocked_count, 2); assert.equal(result.external.blocked_websocket_count, 1);
+  assert.deepEqual(result.external.blocked_origins, ["http://127.0.0.1:5678", "https://example.invalid"]);
+  assert.equal(f.shotOptions[0].animations, "allow"); assert.equal(f.shotOptions[0].mask, undefined);
+  assert.equal(f.shotOptions[1].animations, "disabled");
+  await adapter.close();
+});
+test("RC-2 and RC-3: isolated probe receives args then closed roots, and elapsed_ms on C's clock", async () => {
+  const f = visualChromium(), adapter = await createPolishBrowserAdapter({ chromium: f.chromium });
+  const result = await adapter.renderForCompare({ url: "http://127.0.0.1:1234/", viewport: { width: 1440, height: 1200 },
+    probes: [{ name: "parity", source: "function syntheticProbe(options, ...roots) { return roots.length; }", args: [{ cap: 10 }], closedRoots: true, boundMs: 100 }], budget: { clock: f.clock } });
+  const call = f.calls.find(([name, params]) => name === "Runtime.callFunctionOn" && params.functionDeclaration.includes("syntheticProbe"))[1];
+  assert.deepEqual(call.arguments, [{ value: { cap: 10 } }, { objectId: "closed-root" }]);
+  assert.equal(result.probes.parity.status, "measured"); assert.equal(result.probes.parity.elapsed_ms, 10);
+  await adapter.close();
+});
+test("RC-4: changed main document and destroyed execution context report document_changed", async () => {
+  for (const scenario of [{ changed: true }, { destroyed: true }]) {
+    const f = visualChromium(scenario), adapter = await createPolishBrowserAdapter({ chromium: f.chromium });
+    const result = await adapter.renderForCompare({ url: "http://127.0.0.1:1234/", viewport: { width: 1440, height: 1200 },
+      probes: [{ name: "parity", source: "function syntheticProbe() {}", args: [], boundMs: 100 }], budget: { clock: f.clock } });
+    assert.equal(result.probes.parity.status, "document_changed"); assert.equal(result.probes.parity.value, null);
+    await adapter.close();
+  }
+});
+test("RC-4: an ordinary probe exception or protocol error with the same frame and loader reads failed, not document_changed", async () => {
+  for (const scenario of [{ exception: true }, { protocolError: true }, { exception: true, changed: true }]) {
+    const f = visualChromium(scenario), adapter = await createPolishBrowserAdapter({ chromium: f.chromium });
+    const result = await adapter.renderForCompare({ url: "http://127.0.0.1:1234/", viewport: { width: 1440, height: 1200 },
+      probes: [{ name: "parity", source: "function syntheticProbe() { throw new Error('synthetic'); }", args: [], boundMs: 100 }], budget: { clock: f.clock } });
+    // The frame re-read inside the bound is the only evidence of a document change.
+    const frames = f.calls.filter(([name]) => name === "Page.getFrameTree").length;
+    assert.ok(frames >= 4, JSON.stringify(scenario));
+    assert.equal(result.probes.parity.status, scenario.changed ? "document_changed" : "failed", JSON.stringify(scenario));
+    assert.equal(result.probes.parity.value, null);
+    if (!scenario.changed) assert.equal(result.status, "rendered");
+    await adapter.close();
+  }
+});
+
+test("A loaded document whose geometry probe fails or whose document changes is never navigation_failed", async () => {
+  for (const [geometry, status] of [["exception", "probe_failed"], ["protocolError", "probe_failed"], ["destroyed", "document_changed"]]) {
+    const f = visualChromium({ geometry }), adapter = await createPolishBrowserAdapter({ chromium: f.chromium });
+    const result = await adapter.renderForCompare({ url: "http://127.0.0.1:1234/", viewport: { width: 1440, height: 1200 }, budget: { clock: f.clock } });
+    assert.equal(result.status, status, geometry);
+    assert.equal(result.networkidle.status, "settled", geometry);
+    assert.deepEqual([result.actual.status, result.stabilized.status], ["skipped", "skipped"], geometry);
+    assert.equal(f.shotOptions.length, 0, geometry);
+    await adapter.close();
+  }
+});
+test("Geometry timeouts name the bound that ended them: the run budget, else probe_timeout", async () => {
+  for (const [addedRemainingMs, cellDeadlineMs, status] of [
+    [1000, 10000, "run_budget_exhausted"],
+    [5000, 1200, "probe_timeout"],
+    [5000, 10000, "probe_timeout"],
+    [240000, 55000, "probe_timeout"],
+  ]) {
+    const f = visualChromium({ geometry: "timeout" });
+    const adapter = await createPolishBrowserAdapter({ chromium: f.chromium, cellDeadlineMs });
+    try {
+      const result = await adapter.renderForCompare({ url: "http://127.0.0.1:1234/", viewport: { width: 1440, height: 1200 },
+        budget: { clock: f.clock, addedRemainingMs } });
+      assert.ok(f.calls.some(([name, params]) => name === "Runtime.callFunctionOn" && params.functionDeclaration.includes("visualGeometry")));
+      assert.equal(result.status, status);
+      assert.equal(result.networkidle.status, "settled");
+      assert.deepEqual([result.actual.status, result.stabilized.status], ["skipped", "skipped"]);
+      assert.equal(f.shotOptions.length, 0);
+    } finally { await adapter.close(); }
+  }
+});
+test("C2: visual height is hard-capped and the capture API refuses a different DPR", async () => {
+  const f = visualChromium({ height: 20000 }), adapter = await createPolishBrowserAdapter({ chromium: f.chromium });
+  const options = { url: "http://127.0.0.1:1234/", viewport: { width: 1440, height: 1200 }, budget: { clock: f.clock }, maxHeightPx: 99999 };
+  const result = await adapter.renderForCompare(options);
+  assert.equal(result.actual.crop.height, 12000); assert.equal(result.stabilized.crop.height, 12000);
+  assert.equal(result.actual.truncated, true); assert.equal(result.stabilized.full_height_css, 20000);
+  await assert.rejects(adapter.renderForCompare({ ...options, deviceScaleFactor: 2 }), /deviceScaleFactor 1/);
+  await adapter.close();
+});
+
 import { createPolishBrowserAdapter } from "./polish-browser.mjs";
 import { POLISH_PRODUCER_TIMEOUT_ERROR_CODE } from "./polish-deadline.mjs";
 import {

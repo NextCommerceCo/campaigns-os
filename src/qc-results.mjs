@@ -30,6 +30,8 @@ import { currentBuildFingerprint, currentSourcePackageMaterialFingerprint } from
 import { sidecarPathForPacket } from "./qa-sidecar.mjs";
 import { QA_ASSERTION_FAMILY_VOCABULARY, QA_SCHEMA_VERSION, SEVERITY, STATUS } from "./qa-verdict.mjs";
 import { QC_CHECK_REGISTRY, loadedQcRederivers, qcChecksForLeg, qcChecksForRecord } from "./qc-check-registry.mjs";
+import { readPngStructure } from "./png-header.mjs";
+import { readRegularFileSync } from "./source-html-server.mjs";
 import { STORE_PAGE_MATCHERS } from "./spec-derive-store.mjs";
 
 export const QC_RESULT_SCHEMA = "campaigns-os-qc-result/v0";
@@ -831,6 +833,10 @@ const PAGE_NOT_CAPTURED = "page_not_captured";
 // output under _site/<slug>/ is the one `record build` recorded. Any other
 // value, null included, is drift. A caller that passes no value (undefined)
 // reads without the output check.
+// A capture file that is there but cannot be read as a regular file names
+// why; only a missing file is capture_file_absent.
+const captureReadFailure = (code) => code === "too_large" ? "capture_file_too_large"
+  : ["ELOOP", "EISDIR", "ENOTDIR", "not_regular_file", "outside_root"].includes(code) ? "capture_file_not_regular" : "capture_file_unreadable";
 const outputDrifted = (buildOutput) => buildOutput !== undefined && buildOutput?.status !== "pass";
 
 export function readMediaWeight({ record, pageLoad, currentBuild = null, buildOutput = undefined, qcStandIns = null, rederivers = null } = {}) {
@@ -1210,6 +1216,346 @@ export function readReadability({ record, pageLoad = null, currentBuild = null, 
   return results;
 }
 
+// Captures are re-derived from one caller-selected packet snapshot. Neither
+// the stored route set nor a stored decision can supply the capture plan.
+export function readCaptures({ record, packet, currentBuild, currentSource, buildOutput,
+  campaignSlug, targetRepo, qcStandIns, rederivers } = {}) {
+  const resolved = resolvePolishRules({ check: "visual.diff", qcStandIns, rederivers });
+  if (resolved.status === "missing") return [];
+  const rules = resolved.rules;
+  let plan = null;
+  try { if (packet && rules?.plan) plan = rules.plan({ packet, baseUrl: "http://127.0.0.1" }); } catch { /* fail closed below */ }
+  const planned = Array.isArray(plan?.routes) ? plan.routes : [];
+  const measuredAt = validTime(record?.measured_at) ? record.measured_at : null;
+  // A changed build (§5.5 step 2) and a capture file not on this machine (step
+  // 4.1, a fresh clone) are the row's own reason (§5.3 steps 2 and 9), as in
+  // the sibling readers. Every other reader failure is evidence_not_reproducible
+  // with the failure as its member. Either way every row of the record reads it.
+  const failureRow = (subject, reason) => ["stale_binding", "capture_file_absent"].includes(reason)
+    ? buildQcResult({ check: subject.check, leg: "polish", subject, result: "unexercised", reason_code: reason,
+      state: { reason }, coverage: { observed: 1, expected: 1, limits: [reason] }, measured_at: measuredAt })
+    : buildQcResult({ check: subject.check, leg: "polish", subject,
+      result: "unexercised", reason_code: E, members: [{ key: "evidence", result: "unexercised", reason_code: reason }],
+      state: { reason }, measured_at: measuredAt });
+  const subjectOf = (check, item) => ({ check, page: item.route,
+    ...(item.viewport == null ? {} : { viewport: item.viewport }),
+    key: item.ref_id === "source_html" || item.basis === "source_html" ? "source_html" : `ref:${item.ref_id}` });
+  const fallback = (reason, detail = null) => {
+    const checks = qcChecksForRecord("captures");
+    const subjects = planned.flatMap((route) => [
+      { check: "visual.reference", page: route.requested_route, key: "source_html" },
+      ...["desktop", "mobile"].map((viewport) => ({ check: "visual.diff", page: route.requested_route, viewport, key: "source_html" })),
+    ]);
+    // Read identity only, even when integrity/schema validation failed. These
+    // names preserve accept disposition; they never authorize evidence or a route.
+    const readableIdentity = (item) => isPlainObject(item) && isNonEmptyString(item.route)
+      && (!plan || planned.some((route) => route.requested_route === item.route));
+    for (const ref of Array.isArray(record?.references) ? record.references : []) {
+      if (!readableIdentity(ref) || !isNonEmptyString(ref.ref_id)
+        || !(ref.viewport == null || isNonEmptyString(ref.viewport))) continue;
+      subjects.push(subjectOf("visual.reference", ref));
+      if (ref.ref_id !== "source_html" && isNonEmptyString(ref.viewport)) subjects.push(subjectOf("visual.diff", ref));
+    }
+    for (const comparison of Array.isArray(record?.comparisons) ? record.comparisons : []) {
+      if (!readableIdentity(comparison) || !isNonEmptyString(comparison.viewport)
+        || !["source_html", "reference"].includes(comparison.basis)
+        || (comparison.basis === "reference" && !isNonEmptyString(comparison.ref_id))) continue;
+      subjects.push(subjectOf("visual.diff", comparison));
+      subjects.push(subjectOf("visual.reference", { ...comparison,
+        ref_id: comparison.basis === "source_html" ? "source_html" : comparison.ref_id,
+        viewport: comparison.basis === "source_html" ? null : comparison.viewport }));
+    }
+    if (!subjects.length) for (const check of checks) subjects.push({ check, page: null, key: "captures" });
+    return [...new Map(subjects.map((subject) => [qcResultId(subject),
+      { ...failureRow(subject, reason), observation: { reader_detail: detail } }])).values()];
+  };
+  // Never ask the evaluator to traverse malformed evidence, even to report a
+  // failure. Its input is a validated reference or one validated dependency set.
+  const derive = (subset, context = {}) => {
+    try { return rules.evaluate({ ...record, ...subset }, context); } catch { return []; }
+  };
+  const fail = (reason, detail) => fallback(reason, detail);
+  if (!packet) return fail("packet_unavailable");
+  if (!plan) return fail("packet_plan_invalid");
+  if (resolved.status !== "loaded") return fail("rules_unavailable");
+  const vocab = rules.vocabulary;
+  const inVocab = (key, value) => Array.isArray(vocab[key]) && vocab[key].includes(value);
+  const finite = (n) => typeof n === "number" && Number.isFinite(n);
+  const nonnegative = (n) => finite(n) && n >= 0;
+  const integer = (n) => Number.isSafeInteger(n) && n >= 0;
+  const canonicalTime = (s) => validTime(s) && new Date(s).toISOString() === s;
+  const nullable = (value, test) => value === null || test(value);
+  const optional = (object, key, test) => !Object.hasOwn(object, key) || test(object[key]);
+  const strings = (value) => Array.isArray(value) && value.every(isNonEmptyString);
+  const fingerprint = (value) => typeof value === "string" && FINGERPRINT.test(value);
+  const rect = (r) => isPlainObject(r) && ["x", "y", "width", "height"].every((k) => finite(r[k])) && r.width >= 0 && r.height >= 0;
+  const png = (p, dir) => isPlainObject(p) && fingerprint(p.sha256)
+    && p.path === `.campaign-runtime/polish/${dir}/${p.sha256.slice(7)}.png`
+    && integer(p.bytes) && p.bytes > 0 && integer(p.width_px) && p.width_px > 0
+    && integer(p.height_px) && p.height_px > 0 && p.width_px * p.height_px <= rules.limits.decode_pixels;
+  if (!isPlainObject(record) || record.schema_version !== rules.schema_version
+    || record.performed_by !== QC_PRODUCERS.polish || record.integrity !== polishRecordIntegrity(record)
+    || record.treatment_version !== "visual-treatment/v1" || !canonicalTime(record.measured_at)
+    || !isPlainObject(record.limits) || !sameJson(record.limits, rules.limits)
+    || !isPlainObject(record.environment) || record.environment.device_scale_factor !== 1
+    || !isPlainObject(record.subject) || !isNonEmptyString(packet.campaign?.public_route_slug)
+    || record.subject.campaign_slug !== packet.campaign.public_route_slug || record.subject.campaign_slug !== campaignSlug
+    || !fingerprint(record.subject.build_fingerprint)
+    || !nullable(record.subject.source_package_material_fingerprint, fingerprint)
+    || !sameJson(record.subject.viewports, rules.viewports) || !["all", "selected"].includes(record.subject.route_scope)
+    || !strings(record.subject.routes) || new Set(record.subject.routes).size !== record.subject.routes.length
+    || !isPlainObject(record.dependencies) || !["decoder", "diff"].every((key) => isPlainObject(record.dependencies[key])
+      && inVocab("dependency_status", record.dependencies[key].status))
+    || !isPlainObject(record.adapters) || !["build", "source"].every((side) => isPlainObject(record.adapters[side])
+      && inVocab("startup", record.adapters[side].startup) && inVocab("close", record.adapters[side].close))
+    || record.adapters.source.sealed !== true || !isPlainObject(record.source)
+    || !inVocab("source_status", record.source.status) || record.source.server !== "loopback_read_only") return fail("record_shape_invalid");
+  const routes = record.subject.routes;
+  const cells = Array.isArray(record.cells) ? record.cells : [];
+  const references = Array.isArray(record.references) ? record.references : [];
+  const comparisons = Array.isArray(record.comparisons) ? record.comparisons : [];
+  const cellIdentity = (cell) => isPlainObject(cell) && isNonEmptyString(cell.route) && rules.viewports.includes(cell.viewport) && inVocab("side", cell.side);
+  const refIdentity = (ref) => isPlainObject(ref) && isNonEmptyString(ref.route) && isNonEmptyString(ref.ref_id)
+    && (ref.viewport === null || isNonEmptyString(ref.viewport));
+  const comparisonIdentity = (c) => isPlainObject(c) && isNonEmptyString(c.route) && isNonEmptyString(c.viewport)
+    && ["source_html", "reference"].includes(c.basis) && (c.basis === "source_html" ? c.ref_id === null : isNonEmptyString(c.ref_id));
+  const validateCell = (cell) => {
+    if (!isPlainObject(cell)) return "cell_shape_invalid";
+    if (!isNonEmptyString(cell.page_id) || !isPlainObject(cell.networkidle) || !isPlainObject(cell.readiness)
+      || !isPlainObject(cell.readiness.fonts) || !isPlainObject(cell.readiness.await) || !isPlainObject(cell.sections)
+      || !isPlainObject(cell.actual) || !isPlainObject(cell.stabilized)) return "cell_shape_invalid";
+    if (!optional(cell.sections, "duplicated_keys", strings) || !optional(cell.sections, "capped", (v) => typeof v === "boolean")) return "cell_shape_invalid";
+    if (!routes.includes(cell.route) || !inVocab("side", cell.side)
+      || !rules.viewports.includes(cell.viewport) || !inVocab("cell_status", cell.status)
+      || !inVocab("networkidle_status", cell.networkidle?.status)
+      || !inVocab("fonts_status", cell.readiness?.fonts?.status) || !inVocab("await_status", cell.readiness?.await?.status)
+      || !inVocab("section_status", cell.sections?.status) || !Array.isArray(cell.sections?.bands)
+      || cell.sections.bands.length > rules.limits.bands_per_page
+      || cell.sections.bands.some((b) => !isPlainObject(b) || !isNonEmptyString(b.key) || ![b.top, b.left, b.width, b.height].every(finite))) return "cell_shape_invalid";
+
+    if (cell.state !== "default_load" || cell.device_scale_factor !== 1) return "treatment_invalid";
+    const fixed = cell.viewport === "desktop" ? [1440, 1200] : [390, 844];
+    if (cell.width !== fixed[0] || cell.height !== fixed[1]) return "png_dimensions_mismatch";
+    const treatment = cell.stabilized.treatment;
+    if (!isPlainObject(treatment)) return "treatment_invalid";
+    if (treatment?.mask_selectors !== "visual-masks/v1" || treatment.animations !== "disabled" || treatment.caret !== "hide"
+      || treatment.mask_color !== "#ff00ff" || typeof treatment.mask_cap_reached !== "boolean" || !Array.isArray(treatment.masks)
+      || treatment.masks.some((m) => !isPlainObject(m) || !inVocab("mask_group", m.group) || !integer(m.count) || !Array.isArray(m.rects) || !m.rects.every(rect))) return "treatment_invalid";
+    for (const shot of [cell.actual, cell.stabilized]) {
+      if (!inVocab("shot_status", shot?.status)) return "shot_shape_invalid";
+      if (shot.status !== "captured") {
+        if (!nullable(shot.png, (p) => png(p, "captures")) || !nullable(shot.crop, rect)
+          || !nullable(shot.full_height_css, nonnegative) || typeof shot.truncated !== "boolean") return "shot_shape_invalid";
+        continue;
+      }
+      if (!finite(shot.full_height_css) || shot.full_height_css <= 0 || !sameJson(shot.crop,
+        { x: 0, y: 0, width: cell.width, height: Math.min(shot.full_height_css, 12000) })
+        || shot.truncated !== (shot.full_height_css > 12000)) return "crop_not_full_page";
+      if (!png(shot.png, "captures") || shot.png.width_px !== shot.crop.width || shot.png.height_px !== shot.crop.height) return "png_dimensions_mismatch";
+    }
+    return null;
+  };
+  const provenanceReasons = ["path_in_build_output", "path_in_runtime_dir", "hash_equals_package_capture", "linked_source_self_referential", "hash_equals_built_html", "source_is_campaign_page", "source_link_missing", "linked_source_missing", "source_hash_unrecorded", "source_hash_mismatch", "capture_time_unrecorded"];
+  const inputReasons = ["source_root_unavailable", "source_html_missing", "source_package_unavailable", "source_package_stale"];
+  const comparisonReasons = [...vocab.part_reason, "width_unknown", "dpr_unknown", "width_mismatch", "dpr_mismatch", "mask_cap_reached", "diff_budget_exhausted", "image_too_large", "decode_failed", "file_missing", "path_outside_source_root", "too_large", "diff_unavailable", "capture_unavailable", "reference_not_usable", "comparison_unsupported", "readiness_incomplete"];
+  const validateReference = (ref) => {
+    if (!isPlainObject(ref) || !isNonEmptyString(ref.page_id) || !isPlainObject(ref.verification)
+      || !isPlainObject(ref.provenance) || !isPlainObject(ref.identity)
+      || !nullable(ref.identity.sha256, fingerprint)
+      || !optional(ref.verification, "png", (p) => nullable(p, (v) => isPlainObject(v) && integer(v.width_px) && v.width_px > 0 && integer(v.height_px) && v.height_px > 0))
+      || !optional(ref, "css_width", (v) => nullable(v, nonnegative)) || !optional(ref, "dpr", (v) => nullable(v, nonnegative))
+      || !optional(ref, "reference_cap_reached", (v) => typeof v === "boolean") || !routes.includes(ref.route) || !isNonEmptyString(ref.ref_id)
+      || (ref.ref_id === "source_html" && ref.viewport !== null)
+      || !inVocab("verification_level", ref.verification?.level) || !inVocab("provenance_class", ref.provenance?.class)
+      || !["html_file", "source_html", "source_screenshot"].includes(ref.kind)
+      || !Array.isArray(ref.provenance.reasons) || ref.provenance.reasons.some((r) => !provenanceReasons.includes(r))
+      || (ref.input_reason != null && !inputReasons.includes(ref.input_reason))
+      || (ref.verification.reason != null && !inVocab("verification_reason", ref.verification.reason))) return "reference_shape_invalid";
+    return null;
+  };
+  const validateComparison = (comparison, build, basis, reference) => {
+    if (!isPlainObject(comparison) || !isNonEmptyString(comparison.page_id)
+      || !Array.isArray(comparison.members) || comparison.members.some((m) => !isPlainObject(m) || !isNonEmptyString(m.key)
+        || !QC_RESULTS.includes(m.result) || (m.result !== "pass" && !isNonEmptyString(m.reason_code ?? m.reason)))
+      || !isPlainObject(comparison.diff_options) || !routes.includes(comparison.route) || !["source_html", "reference"].includes(comparison.basis)
+      || (comparison.basis === "source_html" && !rules.viewports.includes(comparison.viewport))
+      || !inVocab("comparison_status", comparison.status)
+      || (comparison.reason != null && !comparisonReasons.includes(comparison.reason))
+      || !sameJson(comparison.diff_options, { threshold: 0.1, include_aa: false, alpha: 0.1 })
+      || !Array.isArray(comparison.limits) || comparison.limits.some((limit) => !["source_external_blocked", "reference_viewport_height_unrecorded", "top_anchored", "js_animation_not_frozen", "masks_unioned"].includes(limit))
+      || (comparison.page === null && (comparison.status === "compared"
+        || (comparison.status === "unsupported" && !["width_unknown", "dpr_unknown", "width_mismatch", "dpr_mismatch", "mask_cap_reached"].includes(comparison.reason))))
+      || !Array.isArray(comparison.bands) || comparison.bands.some((b) => !isPlainObject(b)) || !Array.isArray(comparison.artifacts)) return "comparison_shape_invalid";
+    if (comparison.build_shot !== (comparison.basis === "reference" ? "actual" : "stabilized")
+      || comparison.basis_shot !== (comparison.basis === "reference" ? "image" : "stabilized")) return "comparison_shape_invalid";
+
+    if (comparison.basis === "source_html" && (!build || !basis)) return "comparison_shape_invalid";
+    for (const part of [...(comparison.page === null ? [] : [comparison.page]), ...comparison.bands]) {
+      if (!isPlainObject(part) || (part !== comparison.page && !isNonEmptyString(part.key))) return "metrics_invalid";
+      if (Object.hasOwn(part, "worst_tiles") && !Array.isArray(part.worst_tiles)) return "metrics_invalid";
+      if (!["compared", "unsupported"].includes(part.status)) return "metrics_invalid";
+      if (!optional(part, "height_delta_px", finite)) return "metrics_invalid";
+      if (part.status !== "compared") { if (!inVocab("part_reason", part.reason)) return "metrics_invalid"; continue; }
+      if (!nonnegative(part.mismatch_ratio) || part.mismatch_ratio > 1 || !integer(part.mismatch_pixels)
+        || !integer(part.compared_pixels) || part.mismatch_pixels > part.compared_pixels
+        || !integer(part.masked_pixels) || !isPlainObject(part.canvas) || !integer(part.canvas?.width) || !integer(part.canvas?.height)
+        || part.canvas.width <= 0 || part.canvas.height <= 0
+        || part.compared_pixels + part.masked_pixels > part.canvas.width * part.canvas.height
+        || part.canvas.width * part.canvas.height > rules.limits.decode_pixels) return "metrics_invalid";
+      for (const tile of part.worst_tiles ?? []) if (!rect(tile) || tile.x < 0 || tile.y < 0
+        || tile.x + tile.width > part.canvas.width || tile.y + tile.height > part.canvas.height
+        || !nonnegative(tile.mismatch_ratio) || tile.mismatch_ratio > 1) return "metrics_invalid";
+    }
+    const pixelSize = (cell, key) => {
+      const boxes = (Array.isArray(cell?.sections?.bands) ? cell.sections.bands : []).filter((b) => b.key === key);
+      if (boxes.length !== 1) return null;
+      const [b] = boxes;
+      if (b.top < 0 || b.left < 0 || b.top + b.height > cell.stabilized?.png?.height_px || b.left + b.width > cell.width) return null;
+      return [Math.ceil(b.left + b.width) - Math.floor(b.left), Math.ceil(b.top + b.height) - Math.floor(b.top)];
+    };
+    for (const part of comparison.bands.filter((b) => b.status === "compared")) {
+      const a = pixelSize(basis, part.key), b = pixelSize(build, part.key);
+      if (!a || !b || !sameJson([part.canvas.width, part.canvas.height], [Math.max(a[0], b[0]), Math.max(a[1], b[1])])) return "band_geometry_invalid";
+    }
+    for (const artifact of comparison.artifacts) {
+      if (!isPlainObject(artifact) || !isNonEmptyString(artifact.band_key)) return "artifact_geometry_invalid";
+      const part = artifact.band_key === "page" ? comparison.page : comparison.bands.find((b) => b.key === artifact.band_key);
+      if (!part || part.status !== "compared") return "artifact_geometry_invalid";
+      const source = reference;
+      const basisSize = artifact.band_key === "page" ? (comparison.basis === "reference" ? source?.verification?.png : basis?.stabilized?.png) : null;
+      const sizes = { basis_crop: basisSize ? [basisSize.width_px, basisSize.height_px] : pixelSize(basis, part.key),
+        build_crop: artifact.band_key === "page" ? [build?.[comparison.build_shot]?.png?.width_px, build?.[comparison.build_shot]?.png?.height_px] : pixelSize(build, part.key),
+        heatmap: [part.canvas?.width, part.canvas?.height] };
+      for (const name of Object.keys(sizes)) if (!png(artifact[name], "diff")
+        || !sameJson([artifact[name].width_px, artifact[name].height_px], sizes[name])) return "artifact_geometry_invalid";
+    }
+    return null;
+  };
+  const cellErrors = new Map(cells.filter(cellIdentity).map((c) => [c, validateCell(c)]));
+  const refErrors = new Map(references.filter(refIdentity).map((r) => [r, validateReference(r)]));
+  const cellGridInvalid = !Array.isArray(record.cells) || cells.length !== routes.length * 4
+    || cells.some((c) => !cellIdentity(c))
+    || new Set(cells.filter(cellIdentity).map((c) => JSON.stringify([c.route, c.viewport, c.side]))).size !== cells.length;
+  const unknownReferences = !Array.isArray(record.references) || references.some((r) => !refIdentity(r));
+  const unknownComparisons = !Array.isArray(record.comparisons) || comparisons.some((c) => !comparisonIdentity(c));
+  if (cellGridInvalid) return fail("cell_grid_invalid");
+  const cellFailure = [...cellErrors.values()].find(Boolean);
+  if (cellFailure) return fail(cellFailure);
+  if (unknownReferences) return fail("reference_shape_invalid");
+  if (unknownComparisons) return fail("comparison_shape_invalid");
+  if ([...refErrors.values()].some(Boolean)) return fail("reference_shape_invalid");
+  const referenceKey = (ref) => JSON.stringify([ref.route, ref.viewport, ref.ref_id]);
+  if (new Set(references.map(referenceKey)).size !== references.length) return fail("reference_shape_invalid");
+  const stale = record.subject.build_fingerprint !== currentBuild
+    || record.subject.source_package_material_fingerprint !== (currentSource || null) || outputDrifted(buildOutput);
+  const outsidePlan = routes.some((route) => !planned.some((p) => p.requested_route === route))
+    || cells.some((c) => !planned.some((p) => p.requested_route === c.route && p.page_id === c.page_id));
+  const context = stale ? { staleBinding: true } : {};
+  const rows = [];
+  const referenceGroups = new Map(), cappedReferences = new Set();
+  for (const ref of references.filter(refIdentity)) if (ref.ref_id !== "source_html") {
+    const group = JSON.stringify([ref.page_id, ref.route, ref.viewport]);
+    const items = referenceGroups.get(group) || [];
+    if (items.length >= rules.limits.references_per_cell) cappedReferences.add(referenceKey(ref));
+    items.push(ref); referenceGroups.set(group, items);
+  }
+  const safeReferences = references.filter((r) => refIdentity(r) && !refErrors.get(r) && !cappedReferences.has(referenceKey(r)))
+    .map((ref) => referenceGroups.get(JSON.stringify([ref.page_id, ref.route, ref.viewport]))?.length > rules.limits.references_per_cell
+      ? { ...ref, reference_cap_reached: true } : ref);
+  const referenceRows = derive({ cells: [], references: safeReferences, comparisons: [] }, context);
+  for (const ref of references.filter(refIdentity)) {
+    if (cappedReferences.has(referenceKey(ref))) continue;
+    const subject = subjectOf("visual.reference", ref);
+    const duplicates = references.filter(refIdentity).filter((r) => r.route === ref.route && r.viewport === ref.viewport && r.ref_id === ref.ref_id).length > 1;
+    const failure = refErrors.get(ref) || (duplicates ? "reference_shape_invalid" : null);
+    const row = referenceRows.find((r) => r.id === qcResultId(subject));
+    if (failure || !row) return fail(failure || "reference_shape_invalid");
+    rows.push({ ...row, state_fingerprint: qcStateFingerprint({ subject: row.subject,
+      state: { kind: ref.kind, sha256: ref.identity.sha256, provenance_reasons: [...ref.provenance.reasons].sort() } }) });
+  }
+  const checked = new Map();
+  const checkFile = (ref) => {
+    // Read each file once, then compare every descriptor against those bytes.
+    if (!checked.has(ref.path)) {
+      let actual;
+      try {
+        const bytes = readRegularFileSync(resolve(targetRepo, ref.path), { root: targetRepo, noFollow: true, maxBytes: rules.limits.reference_bytes });
+        actual = { hash: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
+          bytes: bytes.length, structure: readPngStructure(bytes) };
+      } catch (error) { actual = error.code === "ENOENT" ? { absent: true } : { failure: captureReadFailure(error.code) }; }
+      checked.set(ref.path, actual);
+    }
+    const actual = checked.get(ref.path);
+    if (actual.absent || actual.failure) return actual;
+    return actual.hash !== ref.sha256 ? { failure: "png_hash_mismatch" }
+      : !actual.structure.ok ? { failure: "png_structure_invalid", detail: actual.structure.reason }
+      : actual.bytes !== ref.bytes || actual.structure.ihdr.width_px !== ref.width_px || actual.structure.ihdr.height_px !== ref.height_px
+        ? { failure: "png_dimensions_mismatch" } : {};
+  };
+  const descriptors = cells.flatMap((c) => [c?.actual, c?.stabilized].filter((s) => s?.status === "captured").map((s) => s.png));
+  for (const comparison of comparisons.filter(comparisonIdentity)) {
+    const subject = subjectOf("visual.diff", comparison);
+    const matching = (side) => cells.filter(cellIdentity).filter((c) => c.route === comparison.route && c.viewport === comparison.viewport && c.side === side);
+    const builds = matching("build"), bases = matching("source_html"), build = builds[0], basis = bases[0];
+    const refs = references.filter(refIdentity).filter((ref) => ref.route === comparison.route && (comparison.basis === "source_html"
+      ? ref.ref_id === "source_html" : ref.ref_id === comparison.ref_id && ref.viewport === comparison.viewport));
+    const needed = comparison.basis === "source_html" ? [build, basis] : [build].filter(Boolean);
+    const duplicates = comparisons.filter(comparisonIdentity).filter((c) => c.route === comparison.route && c.viewport === comparison.viewport && c.basis === comparison.basis && c.ref_id === comparison.ref_id).length > 1;
+    const failure = (cellGridInvalid || builds.length > 1 || bases.length > 1 || needed.some((c) => !c) ? "cell_grid_invalid" : null)
+      || needed.map((c) => cellErrors.get(c)).find(Boolean)
+      || (refs.length !== 1 ? "reference_shape_invalid" : refErrors.get(refs[0]))
+      || (duplicates ? "comparison_shape_invalid" : null)
+      || validateComparison(comparison, build, comparison.basis === "reference" ? null : basis, refs[0]);
+    if (failure) return fail(failure);
+    descriptors.push(...comparison.artifacts.flatMap((a) => [a.basis_crop, a.build_crop, a.heatmap]));
+    if (comparison.basis === "reference" && cappedReferences.has(referenceKey(comparison))) continue;
+    const subset = { cells: needed, references: safeReferences, comparisons: [comparison] };
+    const row = derive(subset, context).find((r) => r.check === "visual.diff");
+    if (!row) return fail("comparison_shape_invalid");
+    rows.push(row);
+  }
+  // Every reader check invalidates the record, preserving all readable keys.
+  for (const comparison of comparisons.filter(comparisonIdentity)) {
+    if (comparison.basis === "reference" && cappedReferences.has(referenceKey(comparison))) continue;
+    const subject = subjectOf("visual.reference", { ...comparison, ref_id: comparison.basis === "source_html" ? "source_html" : comparison.ref_id,
+      viewport: comparison.basis === "source_html" ? null : comparison.viewport });
+    if (!rows.some((r) => r.id === qcResultId(subject))) return fail("reference_shape_invalid");
+  }
+  for (const ref of references.filter(refIdentity)) if (ref.ref_id !== "source_html" && !cappedReferences.has(referenceKey(ref))) {
+    const subject = subjectOf("visual.diff", { ...ref, basis: "reference" });
+    if (!rows.some((r) => r.id === qcResultId(subject))) return fail("comparison_shape_invalid");
+  }
+  for (const route of planned) {
+    if (routes.includes(route.requested_route) && !rows.some((r) => r.check === "visual.reference" && r.subject.page === route.requested_route && r.subject.key === "source_html")) {
+      return fail("comparison_grid_invalid");
+    }
+    for (const viewport of rules.viewports) {
+      if (rows.some((r) => r.check === "visual.diff" && r.subject.page === route.requested_route && r.subject.viewport === viewport && r.subject.key === "source_html")) continue;
+      const subject = { check: "visual.diff", page: route.requested_route, viewport, key: "source_html" };
+      if (routes.includes(route.requested_route)) return fail("comparison_grid_invalid");
+      rows.push(buildQcResult({ check: subject.check, leg: "polish", subject, result: "unexercised", reason_code: "page_not_captured", state: { subject }, measured_at: measuredAt }));
+    }
+  }
+  if (stale) return fail("stale_binding");
+  if (outsidePlan) return fail("route_outside_plan");
+  // Structural checks precede binding/plan and files. No failure can leave an
+  // independently acceptable reference or a sibling comparison behind.
+  const descriptorsByPath = new Map();
+  for (const ref of descriptors) {
+    if (descriptorsByPath.has(ref.path) && !sameJson(descriptorsByPath.get(ref.path), ref)) return fail("png_dimensions_mismatch");
+    descriptorsByPath.set(ref.path, ref);
+  }
+  // A file that is present but wrong outranks one that is absent (§5.3 step 1
+  // before step 9), whichever is read first.
+  const files = [...descriptorsByPath.values()].map(checkFile);
+  const wrong = files.find((file) => file.failure);
+  if (wrong) return fail(wrong.failure, wrong.detail);
+  if (files.some((file) => file.absent)) return fail("capture_file_absent");
+  const unique = new Map();
+  for (const row of rows) if (!unique.has(row.id) || row.reason_code === E) unique.set(row.id, row);
+  return unique.size ? [...unique.values()] : fail("record_shape_invalid");
+}
+
 // ---------------------------------------------------------------------------
 // Every current result, per leg, and the silence rule
 
@@ -1222,6 +1568,7 @@ const POLISH_CHECKS = Object.freeze(qcChecksForLeg("polish"));
 // on its own.
 const POLISH_RECORDS = Object.freeze({
   media_weight: Object.freeze({ checks: Object.freeze(qcChecksForRecord("media_weight")), read: readMediaWeight }),
+  captures: Object.freeze({ checks: Object.freeze(qcChecksForRecord("captures")), read: readCaptures }),
   readability: Object.freeze({ checks: Object.freeze(qcChecksForRecord("readability")), read: readReadability }),
 });
 const STORE_POLICY_FIELDS = Object.freeze(Object.keys(STORE_PAGE_MATCHERS));
@@ -1291,17 +1638,10 @@ export function handoffCoverage({ report, spec, results = [], qcStandIns = null,
 
 // The campaign slug the Polish records bind to: the packet's, read from
 // packetPath; with no readable packet, the Assembly Report's (which capture
-// requires to equal the packet's). Null when neither names one.
-function packetCampaignSlug({ packetPath, report }) {
-  if (isNonEmptyString(packetPath)) {
-    try {
-      const slug = JSON.parse(readFileSync(packetPath, "utf8"))?.campaign?.public_route_slug;
-      return isNonEmptyString(slug) ? slug : null;
-    } catch {
-      // No readable packet: fall through to the report.
-    }
-  }
-  const slug = report?.identity?.public_route_slug;
+// requires to equal the packet's). A readable packet without one gives null,
+// as on main. Null when neither names one.
+export function packetCampaignSlug({ packet, packetRead = false, report }) {
+  const slug = packetRead ? packet?.campaign?.public_route_slug : report?.identity?.public_route_slug;
   return isNonEmptyString(slug) ? slug : null;
 }
 
@@ -1313,12 +1653,15 @@ export function readCurrentQcResults({ report, doctor, spec = null, targetRepo, 
   const doctorResults = (Array.isArray(doctor?.derived?.qc_results) ? doctor.derived.qc_results : []).filter((row) => isPlainObject(row) && row.leg === "doctor");
   const visual = report?.stages?.polish?.evidence?.visual_review;
   const recorded = isPlainObject(visual) ? Object.entries(POLISH_RECORDS).filter(([name]) => visual[name] != null) : [];
+  let packet = null, packetRead = false;
+  try { if (packetPath) { packet = JSON.parse(readRegularFileSync(packetPath, { maxBytes: 16 * 1024 * 1024 }).toString("utf8")); packetRead = true; } } catch { /* unavailable */ }
   const polishContext = recorded.length ? {
     pageLoad: visual.page_load,
+    packet,
     currentBuild,
     currentSource: currentSourcePackageMaterialFingerprint(report),
     buildOutput: doctor?.derived?.build_output_fingerprint ?? null,
-    campaignSlug: packetCampaignSlug({ packetPath, report }),
+    campaignSlug: packetCampaignSlug({ packet, packetRead, report }),
     targetRepo,
     qcStandIns,
     rederivers,

@@ -2,6 +2,14 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.60.0+agent.9] - 2026-10-23
+
+### Changed
+
+`polish capture` now takes its own full-page captures of each mapped page and of the page's source HTML at desktop and mobile widths, verifies the source screenshots recorded in the Design Source Package, and compares compatible pairs section by section as a review diagnostic with a heatmap. `record polish` now requires these package captures for a completed Polish, including at least one rendered build cell with a captured actual shot for every planned route. Agent-written screenshot paths no longer satisfy the screenshot check for a new record, so run `polish capture` again after upgrading. Polish records written before this version are read as before. The source HTML render runs offline: it reaches only a local read-only server, and requests, WebSocket connections and host-name lookups to anything else are blocked. Source screenshots or pages that are the build's own output are reported as self-referential warnings. Width or pixel-ratio mismatches are reported as unsupported, never resized. The comparison never passes, fails or blocks anything. `pngjs` and `pixelmatch` are new optional dependencies; without them captures are still taken and the comparison is listed as unavailable. Capture images are kept out of the repository by a `.gitignore` inside each capture folder.
+
+The Polish skill is 1.1.49, bundle `1.60.0+skills.4`.
+
 ## [1.60.0+agent.8] - 2026-10-23
 
 ### Added

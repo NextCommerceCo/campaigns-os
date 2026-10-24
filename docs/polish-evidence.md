@@ -54,7 +54,7 @@ per-field problem line.
 
 | Field | Accepted shape (presence check) |
 |---|---|
-| `visual_review` | **Object** with a `screenshots` array (accepted aliases for the array key: `screenshot_paths`, `paths`, `urls`) containing at least one non-empty string, plus package-generated `page_load`. A bare string, an object without a screenshot array, or an empty array all fail. The gate's shape check accepts a single screenshot entry; the `next-campaigns-polish` responsibility bar is desktop **and** mobile captures of the key commerce anchors — record both. Never hand-author `page_load`. |
+| `visual_review` | **Object.** `record polish` needs the package capture record `captures`, which every `polish capture` run at this version writes. That record must be package-produced, bound to the current build and intact, and every image it claims must be a full-page capture at the capture's own viewport width at pixel ratio 1. Every planned route must have at least one rendered build cell with a captured actual shot; an all-skipped or all-failed build side does not qualify. Screenshot paths written by an agent are not read. After upgrading, run `polish capture` again before `record polish`. A Polish record written by an earlier version, without `captures`, is still read as before: a `screenshots` array (aliases `screenshot_paths`, `paths`, `urls`) with at least one non-empty string. Never hand-author `page_load` or `captures`. |
 | `brand_review` | Non-empty object (semantic checks in §3 apply: `favicon`, `brand_bleed`). |
 | `checkout_review` | Non-empty object (semantic checks in §3 apply: `field_labels`, `bump_compare_price_rule`). |
 | `template_residue_review` | Non-empty object/array/string (semantic check on `starter_favicon` in §3). |
@@ -120,6 +120,38 @@ It warns when a video, or an image over 500,000 transfer bytes, comes from the p
 The size check covers `<img>` elements in the page, including those inside open and closed shadow roots; images inside an iframe, `<input type=image>`, `<object>`, SVG `<image>` and CSS background images are not checked for size, and only their transfer bytes are weighed.
 
 **Readability.** `polish capture` also measures text contrast on every page under `_site/<slug>/` (up to 128 pages per run), at desktop (1440×1200) and mobile (390×844) widths, device pixel ratio 1, including campaigns whose pages are all template stock: the Polish route plan now covers the mapped pages plus every built page, while the page-load capture keeps its own page set. On a campaign with no mapped pages, `polish capture` measures readability, prints the page-load message as a warning, and exits successfully. The text it reads: purchase, accept and decline controls; submit buttons and submit-type inputs; SDK action controls; bundle cards (names, prices, badges and the card selected at load); order bumps; prices; checkout labels and placeholder hints; and other body text. Ratios follow WCAG 2.x and are compared unrounded: 4.5:1 for normal text, 3:1 for large text (at least 24 CSS px, or at least 18.66 CSS px at weight 700 or more; semibold does not qualify). Colours in any CSS Color 4 form the browser reports are converted to sRGB; values outside sRGB are clipped and marked. Backgrounds are composited through transparent layers. SVG text is measured with its fill colour, and placeholder hints with their own colour, size and weight. Gradients, background images, pseudo-element backgrounds, a `::first-line` or `::first-letter` style that changes the text's colour, background or opacity, overlapping positioned layers or images (and the shapes of an SVG drawing under its text), text clipped to a background, colours that cannot be read (including a text fill colour, and an SVG fill that is not a plain colour or is combined with a stroke), and controls marked disabled only by the SDK's `next-disabled` class produce a review result with a reason and a crop; so do opacity, filters, blend modes and masks on the text or on any element around it. `clip-path` is ignored. Disabled controls (`disabled` or `aria-disabled="true"`) are listed as excluded (inactive control) and are never accepted; `readonly` is not disabled. Polish measures the states present when the page loads — default, selected, active, and open panels — without clicking, scrolling or typing. Text that has not rendered, controls still loading, controls hidden at load, text supplied by CSS `content`, selection states and collapsed panels not present at load, text inside closed shadow roots or cross-origin frames, pages measured before the SDK, stylesheets or fonts were ready, and pages not captured are listed as unexercised. Overlapping layers are detected by box intersection: a layer the page paints over text in another way is not detected. A ratio under the requirement is a warning. Warnings never block Polish or change readiness. The probe reads the page without changing it, and adds at most about five minutes of work per run; pages it could not reach in that time are listed as unexercised. The stored measurements are re-derived on every read, and the page set, widths and campaign are checked against the current build; but the colours the browser reported are tamper-evident only, like other Polish captures. Readability and media weight results read as stale when the built output differs from the recorded build, even before a new `record build`.
+
+### Package captures and design comparison
+
+After its existing page-load and readability work has finished and been recorded, `polish capture` takes full-page captures of every mapped page at desktop (1440×1200) and mobile (390×844), device pixel ratio 1, in a freshly loaded state with no scrolling or interaction. It also renders each page's source HTML from the source folder with the same browser at the same size. This visual pass uses its own browser instances, so its failures never change page-load or readability evidence.
+
+The source is served read-only from a local address, in a browser instance that can reach only that address. Requests and WebSocket connections to anything else are blocked and counted, other connections are refused by the local server, and no host name is looked up. Nothing from the source render leaves the machine.
+
+Each render waits for web fonts (up to 3 seconds) and for `[data-next-await]` elements to clear (up to 5 seconds) before either capture. The first capture is unchanged. The second differs only by its stabilization treatment: it stops animations and transitions, hides the caret, and masks SDK timers and prices. Timeouts are recorded, never hidden.
+
+Images are stored under `.campaign-runtime/polish/captures/` and `.campaign-runtime/polish/diff/`, named by their SHA-256. Each folder gets its own `.gitignore` the first time an image is written, so the images stay out of the repository even in a campaign set up by an earlier version. Old images are not deleted.
+
+Source screenshots recorded in the Design Source Package are opened and checked. The PNG structure is read without dependencies, and the image is fully decoded when the optional `pngjs` package is installed. An image whose declared size exceeds 17.28 million pixels (1440 × 12,000) is not decoded and is reported as not verifiable. Each screenshot is recorded as header-checked, decoded, or not verifiable, with its SHA-256 (computed when none was recorded) and identity.
+
+A reference or source page that is the build's own output is reported as self-referential. That means a file inside `_site/` or `.campaign-runtime/`, a file identical to a Polish capture or a built page, or the campaign's own Page Kit page. Accepting that warning records the output as a revision baseline, not as proof that the page matches the design. A self-referential file that also fails verification cannot be accepted. A reference whose origin cannot be established is listed for review.
+
+Compatible pairs are compared with the optional `pixelmatch` package:
+- images are padded, never resized;
+- width and height differences are reported;
+- a heatmap is written;
+- the most different areas are listed per section.
+
+Sections are elements marked with `data-section`, or, when a page has none, `section`, `header` and `footer` elements with an `id`. Each section is cut from each image at its own position, so a taller section above it does not shift the comparison. A section missing or repeated on one side is reported as not comparable. Areas masked on either side are excluded from both sides. When a page is taller than the 12,000-pixel capture limit, the whole-page figure is not computed, and only sections inside both captures are compared.
+
+Source screenshots are compared as whole images only, and only when their width and recorded `scale_factor` match the capture. Otherwise the comparison is reported as not supported. Their stabilization, state, crop and viewport height are not recorded, and each comparison says so.
+
+The comparison is a diagnostic for a reviewer: it is listed for review, it never passes or fails Polish, and it never changes readiness. When `pngjs` or `pixelmatch` is not installed, captures are still taken and the comparison is listed as unavailable. Animations driven by script and content below the fold that loads on scroll are limits of the comparison. The visual pass adds at most five minutes per run, and pages it could not reach in that time are listed as unexercised.
+
+The stored comparison figures are tamper-evident only, like other Polish captures. The images are re-checked on every read against their SHA-256 and against the pixel size recorded for them.
+
+Template-stock pages are outside the mapped capture plan and produce no visual rows.
+
+Hand-deleting `captures` reverts later reads to the legacy rule, but a new completed `record polish` still refuses. A fully reconstructed, internally consistent record can pass; the checksum is tamper evidence, not authorship proof. Pixel metrics and geometry are range-checked rather than recomputed on every read.
 
 ### Collector response records (the producer's wire form)
 
@@ -469,6 +501,8 @@ deliberately). Waived runs pass with status `waived`, never silently.
 
 ## 6. Complete passing example
 
+Run `polish capture` first to attach `page_load` and `captures`; the example omits these package-owned records. Screenshot paths below document review locations and cannot satisfy a new completed record.
+
 The hand-authored portion below is completed first. Run `campaigns-os polish
 capture` to attach the versioned `visual_review.page_load` object; that package
 artifact is intentionally not reproduced as editable JSON here.
@@ -520,6 +554,8 @@ stack).
 
 ## 7. Recording with `record polish`
 
+After upgrading, run `polish capture` again. A completed record requires its current `captures` record; leave it out of the evidence file so the captured value is carried forward. Existing records without `captures` retain the legacy read rule.
+
 ```bash
 campaigns-os record polish --packet <campaign-runtime.build.json> --evidence <polish-evidence.json> [--report <json>] [--dry-run] [--json]
 ```
@@ -531,7 +567,7 @@ any other key is refused:
 | Key | Required | Written to |
 |---|---|---|
 | `status` | no (default `completed`) | `stages.polish.status`; `completed`, `completed_with_warnings`, `blocked` or `skipped` |
-| `evidence` | for `completed*` | `stages.polish.evidence`, the seven categories of §2. Leave out `visual_review.page_load`: the value `polish capture` recorded is kept, and a file that carries one is refused. Without it, a `blocked` or `skipped` record keeps the evidence already on the report. |
+| `evidence` | for `completed*` | `stages.polish.evidence`, the seven categories of §2. Leave out `visual_review.page_load` and `visual_review.captures`: the value `polish capture` recorded is kept, and a file that carries one is refused. Without it, a `blocked` or `skipped` record keeps the evidence already on the report. |
 | `blockers` | for `blocked` only | `stages.polish.blockers`: a non-empty array of `{"code", "message"}` objects. |
 | `skip_reason` | for `skipped` only | `stages.polish.skip_reason`: a non-empty string. |
 | `repair_loop_defect` | no | `report.theme.repair_loop_defect`: `null`, or the first brand-layer repair-loop defect as an object (`code`, `message`, `path`, `detail`). A non-null defect needs a recorded `report.theme`. |
