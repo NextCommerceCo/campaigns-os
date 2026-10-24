@@ -166,13 +166,13 @@ export function evaluateThemeGate({ reportTheme = null, contextTheme = null, sco
         id: "theme_generate",
         kind: "command",
         command: `campaigns-os theme generate --packet ${packetArg}`,
-        description: "Generate .campaign-runtime/theme/brand-theme.css from the inspected source tokens.",
+        description: "Generate .campaign-runtime/theme/brand-theme.css from the inspected source tokens, and brand-fonts.css beside it when the design source ships the faces its headings, body copy or buttons use.",
       },
       {
         id: "apply_brand_layer",
         kind: "manual",
         command: null,
-        description: `Copy brand-theme.css into the campaign assets/css folder, list it after next-core.css in the frontmatter styles of the commerce pages that render family components, rebuild, run campaigns-os record build, then campaigns-os record theme --packet ${packetArg}, which records report.theme from the built pages.`,
+        description: `Copy brand-theme.css (and brand-fonts.css, when theme generate wrote one) into the campaign assets/css folder, list brand-theme.css after next-core.css, and brand-fonts.css anywhere, in the frontmatter styles of the commerce pages that render family components, rebuild, run campaigns-os record build, then campaigns-os record theme --packet ${packetArg}, which records report.theme from the built pages.`,
       },
       {
         id: "waive_theme",
