@@ -93,20 +93,18 @@
       "agentRule": "Replace starter refs from the target CampaignSpec/API. Remove optional bump surfaces when the referenced prepurchase package is absent."
     },
     "shipping_methods": {
-      "purpose": "Named Campaigns App shipping method ref_ids used by checkout selector cards.",
+      "purpose": "Named Campaigns App shipping method ref_ids used by checkout selector cards. Starter checkouts use ONE method (the campaign's single storefront method, priced at the highest tier rate) on every card.",
       "canonicalKeys": [
-        "standard",
-        "free"
+        "standard"
       ],
       "sourceOfTruth": [
         "CampaignSpec shipping_methods[]",
         "Campaigns API shipping_options[].ref_id"
       ],
       "demoOnlyValues": [
-        2,
         1
       ],
-      "agentRule": "Use only on checkout/cart selector surfaces. Do not carry starter refs between campaigns; remove shipping_method rows when the target campaign has no matching method."
+      "agentRule": "Use only on checkout/cart selector surfaces. Do not carry starter refs between campaigns. A campaign lists each storefront shipping method once: price differences between tiers are shipping coupons on the cards (bundles[].vouchers / variant_slots[].vouchers), not a second method. Map a second key only to a genuinely different storefront method (e.g. Express)."
     },
     "bundles": {
       "purpose": "Checkout bundle-card rows for package quantity tiers.",
@@ -114,6 +112,7 @@
         "id",
         "quantity",
         "shipping_method",
+        "vouchers",
         "selected",
         "title_prefix",
         "badge_text",
@@ -123,7 +122,7 @@
         "CampaignSpec checkout page packages/offers",
         "Campaigns API package and shipping refs"
       ],
-      "agentRule": "Prefer package_id plus quantity. Use explicit items_json only for genuinely custom item sets."
+      "agentRule": "Prefer package_id plus quantity. Use explicit items_json only for genuinely custom item sets. `vouchers` (string or list) renders data-next-bundle-vouchers: the coupon applied while that card is selected — use a shipping_percentage Code Offer for tier shipping price."
     },
     "variant_slots": {
       "purpose": "MV/configurable bundle slots for selector rows and later variant choice stages.",
@@ -131,6 +130,7 @@
         "id",
         "quantity",
         "shipping_method",
+        "vouchers",
         "selected",
         "title",
         "label_text",
@@ -608,7 +608,7 @@
           ],
           "optionalWhenSupported": [
             "cart_summary_variant",
-            "shipping_methods.free",
+            "bundles[].vouchers",
             "order_bump_variant",
             "order_bump",
             "packages.prepurchase_1",
@@ -623,8 +623,8 @@
             "packages.main_package=1",
             "packages.prepurchase_1=7",
             "packages.prepurchase_2=9",
-            "shipping_methods.standard=2",
-            "shipping_methods.free=1",
+            "shipping_methods.standard=1",
+            "bundles[].vouchers=FREESHIP",
             "upsell_offer.package_id=3",
             "upsell_offer.vouchers_json=[\"UP50\"]",
             "upsell_bundle_tiers packageId=3"
@@ -633,13 +633,14 @@
             "packages.*",
             "shipping_methods.*",
             "bundles[].shipping_method",
+            "bundles[].vouchers",
             "order_bump.*.package_id",
             "upsell_offer.*",
             "upsell_bundle_tiers[].items_json",
             "upsell_bundle_tiers[].vouchers_json"
           ],
           "removeWhenUnsupported": [
-            "bundles[].shipping_method when no tier-specific shipping exists",
+            "bundles[].vouchers when no tier-specific shipping price exists",
             "bump includes when prepurchase packages are absent",
             "unsupported payment method rows",
             "upsell pages not present in the funnel"
@@ -850,8 +851,8 @@
       },
       "verification": {
         "sdk_version": "0.4.43",
-        "verified_at": "2026-10-21T04:05:46Z",
-        "evidence": "sdk-0.4.43-2026-10-21.2",
+        "verified_at": "2026-10-23T23:04:23Z",
+        "evidence": "sdk-0.4.43-2026-10-23.2",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -861,8 +862,8 @@
       "templateReference": {
         "id": "template-reference-apollo",
         "family": "apollo",
-        "version": "sdk-0.4.38-composable-upsells-2026-09-25",
-        "source_commit": "03f5982d703e07f8dc6beaedc121d55093373e4d",
+        "version": "sdk-0.4.43-shipping-coupon-tiers-2026-10-23",
+        "source_commit": "11af184434963340df74bee96a1f8559fcbf9028",
         "provenance_url": "https://raw.githubusercontent.com/NextCommerceCo/campaign-cart-starter-templates/main/docs/template-references/apollo/README.md",
         "contract_path": "contracts/commerce-surface-catalog.json",
         "standard_viewport_refs": [
@@ -872,10 +873,10 @@
             "url": "https://raw.githubusercontent.com/NextCommerceCo/campaign-cart-starter-templates/main/docs/template-references/apollo/checkout-desktop.png",
             "width": 1440,
             "height": 1491,
-            "sha256": "7595630f9e3dd4da09c395f7681c1ff546011141d3981412d5f76a1ffe2d5c90",
+            "sha256": "3a619d34f9fc8507b3a606db50218936c4d44bd1c2a21a2e8f87af3efa545fa7",
             "device_profile": "Desktop 1440",
             "browser": "chromium",
-            "captured_at": "2026-09-25T00:10:12.000Z"
+            "captured_at": "2026-10-23T22:04:21.000Z"
           },
           {
             "id": "apollo-checkout-mobile",
@@ -883,10 +884,10 @@
             "url": "https://raw.githubusercontent.com/NextCommerceCo/campaign-cart-starter-templates/main/docs/template-references/apollo/checkout-mobile.png",
             "width": 390,
             "height": 2648,
-            "sha256": "1d797be266beefb10cf7ec4502d8f8c97286a0861b969695986ebfc1ac29ce63",
+            "sha256": "5a8dc7560c89e7c9e162ed41a64af94a2324b0b725ff1c167719dc259ebf59a6",
             "device_profile": "Mobile 390",
             "browser": "chromium",
-            "captured_at": "2026-09-25T00:10:12.000Z"
+            "captured_at": "2026-10-23T22:04:21.000Z"
           }
         ]
       },
@@ -977,7 +978,7 @@
           "optionalWhenSupported": [
             "bundle_card_style",
             "cart_summary_variant",
-            "shipping_methods.free",
+            "bundles[].vouchers",
             "selector_order_bump_variant",
             "order_bump_variant",
             "order_bump",
@@ -1010,8 +1011,8 @@
             "packages.main_package=1",
             "packages.prepurchase_1=7",
             "packages.prepurchase_2=9",
-            "shipping_methods.standard=2",
-            "shipping_methods.free=1",
+            "shipping_methods.standard=1",
+            "bundles[].vouchers=FREESHIP",
             "bundle_card_style=product",
             "selector_order_bump_variant=check03",
             "order_bump_variant=check01+switch01",
@@ -1024,13 +1025,14 @@
             "packages.*",
             "shipping_methods.*",
             "bundles[].shipping_method",
+            "bundles[].vouchers",
             "order_bump.*.package_id",
             "upsell_offer.*",
             "upsell_bundle_tiers[].items_json",
             "upsell_bundle_tiers[].vouchers_json"
           ],
           "removeWhenUnsupported": [
-            "bundles[].shipping_method when no tier-specific shipping exists",
+            "bundles[].vouchers when no tier-specific shipping price exists",
             "selector_order_bump_variant when no selector-area bump package exists",
             "bump includes when prepurchase packages are absent",
             "unsupported payment method rows",
@@ -1274,8 +1276,8 @@
       },
       "verification": {
         "sdk_version": "0.4.43",
-        "verified_at": "2026-10-21T04:05:46Z",
-        "evidence": "sdk-0.4.43-2026-10-21.2",
+        "verified_at": "2026-10-23T23:04:23Z",
+        "evidence": "sdk-0.4.43-2026-10-23.2",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -1366,7 +1368,7 @@
             "bundles[].shipping_method"
           ],
           "optionalWhenSupported": [
-            "shipping_methods.free",
+            "bundles[].vouchers",
             "cart_summary_variant",
             "order_bump_variant",
             "upsell_offer",
@@ -1375,8 +1377,8 @@
           ],
           "demoOnlyValues": [
             "packages.main_package=1",
-            "shipping_methods.standard=2",
-            "shipping_methods.free=1",
+            "shipping_methods.standard=1",
+            "bundles[].vouchers=FREESHIP",
             "packages.prepurchase_1=7",
             "packages.prepurchase_2=9"
           ],
@@ -1384,12 +1386,13 @@
             "packages.*",
             "shipping_methods.*",
             "bundles[].shipping_method",
+            "bundles[].vouchers",
             "order_bump.*.package_id",
             "upsell_offer.package_id",
             "upsell_bundle_tiers[].items_json"
           ],
           "removeWhenUnsupported": [
-            "bundles[].shipping_method when no tier-specific shipping exists",
+            "bundles[].vouchers when no tier-specific shipping price exists",
             "order bump variants when prepurchase packages are absent"
           ]
         },
@@ -1585,8 +1588,8 @@
       },
       "verification": {
         "sdk_version": "0.4.43",
-        "verified_at": "2026-10-21T04:05:46Z",
-        "evidence": "sdk-0.4.43-2026-10-21.2",
+        "verified_at": "2026-10-23T23:04:23Z",
+        "evidence": "sdk-0.4.43-2026-10-23.2",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -1888,8 +1891,8 @@
       },
       "verification": {
         "sdk_version": "0.4.43",
-        "verified_at": "2026-10-21T04:05:46Z",
-        "evidence": "sdk-0.4.43-2026-10-21.2",
+        "verified_at": "2026-10-23T23:04:23Z",
+        "evidence": "sdk-0.4.43-2026-10-23.2",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -1980,7 +1983,7 @@
             "variant_slots[].shipping_method"
           ],
           "optionalWhenSupported": [
-            "shipping_methods.free",
+            "variant_slots[].vouchers",
             "checkout_step.selector_layout",
             "swiper_slides",
             "swiper_thumbs",
@@ -1993,8 +1996,8 @@
           ],
           "demoOnlyValues": [
             "packages.main_package=1",
-            "shipping_methods.standard=2",
-            "shipping_methods.free=1",
+            "shipping_methods.standard=1",
+            "variant_slots[].vouchers=FREESHIP",
             "upsell_offer.package_id=1",
             "upsell_offer.package_id=3",
             "upsell_mv_tiers vouchers_json=[\"UP80TSHIRT\"]",
@@ -2005,6 +2008,7 @@
             "packages.main_package",
             "shipping_methods.*",
             "variant_slots[].shipping_method",
+            "variant_slots[].vouchers",
             "upsell_offer.*",
             "upsell_mv_tiers[].vouchers_json",
             "slot_personalization",
@@ -2229,8 +2233,8 @@
       },
       "verification": {
         "sdk_version": "0.4.43",
-        "verified_at": "2026-10-21T04:05:46Z",
-        "evidence": "sdk-0.4.43-2026-10-21.2",
+        "verified_at": "2026-10-23T23:04:23Z",
+        "evidence": "sdk-0.4.43-2026-10-23.2",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -2334,7 +2338,7 @@
             "variant_slots[].shipping_method"
           ],
           "optionalWhenSupported": [
-            "shipping_methods.free",
+            "variant_slots[].vouchers",
             "checkout_step.selector_layout",
             "selector_order_bump_variant",
             "order_bump_variant",
@@ -2357,8 +2361,8 @@
           ],
           "demoOnlyValues": [
             "packages.main_package=1",
-            "shipping_methods.standard=2",
-            "shipping_methods.free=1",
+            "shipping_methods.standard=1",
+            "variant_slots[].vouchers=FREESHIP",
             "checkout_step.selector_layout=grid",
             "selector_order_bump_variant=check03",
             "order_bump_variant=check01",
@@ -2372,6 +2376,7 @@
             "packages.main_package",
             "shipping_methods.*",
             "variant_slots[].shipping_method",
+            "variant_slots[].vouchers",
             "upsell_offer.*",
             "upsell_mv_tiers[].vouchers_json",
             "slot_personalization",
@@ -2668,8 +2673,8 @@
       },
       "verification": {
         "sdk_version": "0.4.43",
-        "verified_at": "2026-10-21T04:05:46Z",
-        "evidence": "sdk-0.4.43-2026-10-21.2",
+        "verified_at": "2026-10-23T23:04:23Z",
+        "evidence": "sdk-0.4.43-2026-10-23.2",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -2761,7 +2766,7 @@
             "select_step.selector_id"
           ],
           "optionalWhenSupported": [
-            "shipping_methods.free",
+            "variant_slots[].vouchers",
             "checkout_step.selector_id",
             "select_step.selector_layout",
             "swiper_slides",
@@ -2774,8 +2779,8 @@
           ],
           "demoOnlyValues": [
             "packages.main_package=1",
-            "shipping_methods.standard=2",
-            "shipping_methods.free=1",
+            "shipping_methods.standard=1",
+            "variant_slots[].vouchers=FREESHIP",
             "upsell_offer.package_id=1",
             "upsell_offer.package_id=3",
             "upsell_mv_tiers vouchers_json=[\"UP80TSHIRT\"]",
@@ -2786,6 +2791,7 @@
             "packages.main_package",
             "shipping_methods.*",
             "variant_slots[].shipping_method",
+            "variant_slots[].vouchers",
             "upsell_offer.*",
             "upsell_mv_tiers[].vouchers_json",
             "slot_personalization",
@@ -3024,8 +3030,8 @@
       },
       "verification": {
         "sdk_version": "0.4.43",
-        "verified_at": "2026-10-21T04:05:46Z",
-        "evidence": "sdk-0.4.43-2026-10-21.2",
+        "verified_at": "2026-10-23T23:04:23Z",
+        "evidence": "sdk-0.4.43-2026-10-23.2",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -3314,8 +3320,8 @@
       },
       "verification": {
         "sdk_version": "0.4.43",
-        "verified_at": "2026-10-21T04:05:46Z",
-        "evidence": "sdk-0.4.43-2026-10-21.2",
+        "verified_at": "2026-10-23T23:04:23Z",
+        "evidence": "sdk-0.4.43-2026-10-23.2",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -3504,6 +3510,6 @@
     }
   },
   "_synced_from_repo": "NextCommerceCo/campaign-cart-starter-templates",
-  "_synced_from_ref": "main",
-  "_synced_from_sha": "b38343e85a05ec2fe949e13e783057d4c717a8d6"
+  "_synced_from_ref": "637e1c96caca5ef1d77346636f759c7dd51506ec",
+  "_synced_from_sha": "637e1c96caca5ef1d77346636f759c7dd51506ec"
 }

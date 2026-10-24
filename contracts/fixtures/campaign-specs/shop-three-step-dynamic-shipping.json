@@ -162,13 +162,13 @@
       "key": "standard",
       "ref_id": 20,
       "name": "Standard Shipping",
-      "price": "4.95"
+      "price": "9.99"
     },
     {
-      "key": "free",
+      "key": "express",
       "ref_id": 21,
-      "name": "Free Shipping",
-      "price": "0.00"
+      "name": "Express Shipping",
+      "price": "20.00"
     }
   ],
   "offers": [

@@ -7,7 +7,7 @@
 /**
  * Each [data-payment-logo="<code>"] is shown when its code is in the campaign's
  * available_payment_methods + available_express_payment_methods (platform payment-source codes:
- * bankcard, paypal, apple_pay, google_pay, klarna, affirm, link, twint, bancontact, ideal, sepa_debit …).
+ * bankcard, paypal, apple_pay, google_pay, klarna, affirm, link, shop_pay, twint, bancontact, ideal, sepa_debit …).
  * Card brand tiles carry data-payment-logo="bankcard" plus data-card-brand="<platform card code>"; they follow
  * the bankcard method (the campaign payload carries no per-brand list — see payment-logos.html).
  * data-payment-force="show|hide" (frontmatter payment_flags.show_*) wins over the campaign.
