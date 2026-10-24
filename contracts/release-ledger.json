@@ -9419,6 +9419,29 @@
         }
       ],
       "entry_sha256": "8c2fc5103b4e74c10d0e9b9ff62369ee7eeb1821a7cc9f0912090fa46ede6165"
+    },
+    {
+      "id": "RL-0290",
+      "sequence": 278,
+      "date": "2026-10-24",
+      "kind": "amendment",
+      "amends": "RL-0289",
+      "amendment_reason": "The 1.61.0 section listed only the 1.60.0+agent.7 to agent.10 sections it publishes. The tag also carries 1.60.0+agent.1 through agent.6, released on main after 1.60.0 and never named in a release section. The section now lists all ten; this amendment carries the corrected section hash. RL-0289 is otherwise unchanged.",
+      "surface_version": null,
+      "changelog_section": "1.61.0",
+      "changelog_sha256": "7a17f07adc73539981842f2b18fe9bbe20f5062a1e9690326bbbc124f5b18194",
+      "agent_impact": "A 1.61.0 install also carries 1.60.0+agent.1 through agent.6: the qa run --site slug fix, the in-page Meta pixel observation, the page-type doctor advisories, the sdk-bump skill round-two changes with the v0.4.43 attribute index, the documented qa run test-address flags, and the sdk storage-check report wording. Read those sections when reconciling behaviour against 1.60.0.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": null,
+          "surface_entry": "CHANGELOG.md",
+          "summary": "List 1.60.0+agent.1 through agent.6 in the 1.61.0 release section as published sections; the section bytes change, the entry it amends does not."
+        }
+      ],
+      "entry_sha256": "1186871c80161d5cd20ed26228f0f1be5d79840b9bda9fcc3a8561087b93fd53"
     }
   ]
 }

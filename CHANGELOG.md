@@ -6,6 +6,12 @@ Notable supported-surface changes are recorded here.
 
 ### Changed
 
+- Publishes `1.60.0+agent.1`: `qa run --site` requests the campaign's pages under `/<slug>/` instead of joining each route straight onto `--base-url` (campaigns-os#683).
+- Publishes `1.60.0+agent.2`: `analytics-correctness:tag:meta` passes when the declared Meta pixel initialises and tracks in the page even if no `facebook.com/tr` request is seen; a replaced `fbq` reads `unmeasured` (campaigns-os#686).
+- Publishes `1.60.0+agent.3`: doctor's SDK markup check gains the `PAGE_TYPE_ATTRIBUTE` and `UPSELL_PAGE_TYPE_MISSING` advisories, because the SDK reads the page type only from `<meta name="next-page-type">` (campaigns-os#683).
+- Publishes `1.60.0+agent.4`: the `next-campaigns-sdk-bump` skill takes the second-run findings on campaigns-os#683 (per-slug live status, the reload bar, the market pin, vendor beacon disclosure, up-front gate answers), and doctor's SDK attribute index moves to Campaign Cart v0.4.43.
+- Publishes `1.60.0+agent.5`: `qa run`'s test customer and shipping address flags are documented and supported, and a non-USD `--currency` with no `--test-country` warns (campaigns-os#683).
+- Publishes `1.60.0+agent.6`: `sdk storage-check` names an out-of-range `--target-sdk` up front and marks SDK prefix loops in its report (campaigns-os#683).
 - Publishes `1.60.0+agent.7`: installed users receive the quickstart, access, source-adapter and CampaignSpec authoring guides, and the package check verifies documentation links and headings inside the installed package.
 - Publishes `1.60.0+agent.8`: readback reports when a changed build requires Polish or QA again, and `doctor --ci` reports that evidence debt for campaign pull requests. Installed agent context describes revising a live campaign and renewing its evidence (campaigns-os#695, campaigns-os#699).
 - Publishes `1.60.0+agent.9`: completed Polish requires current package captures, with a captured build screenshot for every planned route; source renders are captured beside them for comparison. The review handoff includes visual reference warnings and image differences for operator review; pixel scores do not decide fidelity (campaigns-os#696).
