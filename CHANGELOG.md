@@ -4,6 +4,8 @@ Notable supported-surface changes are recorded here.
 
 ## [1.61.0] - 2026-10-23
 
+This release gathers the whole 1.60.0 line into one installable version and adds two things of its own. Intake now records a declared design file as the authority for a page, and Polish reports element-level differences between the source render and the built page as warnings an operator can review. To take it, pin `@nextcommerce/campaigns-os@1.61.0`, refresh the installed skills to `1.61.0+skills.1`, and run `polish capture` again before the next completed Polish record. Doctor cannot open design files yet, so a recorded file reads `unexercised` rather than verified.
+
 ### Changed
 
 - Publishes `1.60.0+agent.1`: `qa run --site` requests the campaign's pages under `/<slug>/` instead of joining each route straight onto `--base-url` (campaigns-os#683).
@@ -23,6 +25,8 @@ Notable supported-surface changes are recorded here.
 
 ## [1.60.0+agent.10] - 2026-10-23
 
+The generated brand theme now carries the design source's fonts and button radius onto the commerce pages, where before it carried only the colours. `theme generate` writes a second file, `brand-fonts.css`, beside `brand-theme.css`. Copy it into the campaign's `assets/css/` and load it on the same pages, because `record theme` refuses a styled commerce page that does not load it. A source that ships no font files of its own gets the same CSS as before.
+
 ### Changed
 
 Brand theme carries the design source's type onto commerce pages, not only its colours:
@@ -35,6 +39,8 @@ Brand theme carries the design source's type onto commerce pages, not only its c
 
 ## [1.60.0+agent.9] - 2026-10-23
 
+`polish capture` now takes its own screenshots of every mapped page and of its source HTML, at desktop and mobile widths, and compares the pairs section by section as a review aid. A completed Polish record needs those captures, so after upgrading run `polish capture` again before `record polish`; screenshot paths written by hand no longer count. The comparison is a diagnostic only. It never passes, fails or blocks anything, and older Polish records are read as before.
+
 ### Changed
 
 `polish capture` now takes its own full-page captures of each mapped page and of the page's source HTML at desktop and mobile widths, verifies the source screenshots recorded in the Design Source Package, and compares compatible pairs section by section as a review diagnostic with a heatmap. `record polish` now requires these package captures for a completed Polish, including at least one rendered build cell with a captured actual shot for every planned route. Agent-written screenshot paths no longer satisfy the screenshot check for a new record, so run `polish capture` again after upgrading. Polish records written before this version are read as before. The source HTML render runs offline: it reaches only a local read-only server, and requests, WebSocket connections and host-name lookups to anything else are blocked. Source screenshots or pages that are the build's own output are reported as self-referential warnings. Width or pixel-ratio mismatches are reported as unsupported, never resized. The comparison never passes, fails or blocks anything. `pngjs` and `pixelmatch` are new optional dependencies; without them captures are still taken and the comparison is listed as unavailable. Capture images are kept out of the repository by a `.gitignore` inside each capture folder.
@@ -42,6 +48,8 @@ Brand theme carries the design source's type onto commerce pages, not only its c
 The Polish skill is 1.1.49, bundle `1.60.0+skills.4`.
 
 ## [1.60.0+agent.8] - 2026-10-23
+
+Readback now tells you whether the Polish and QA records still match the build on disk, in a new `evidence_debt` field: `current`, `owed` or `unknown`. `doctor --ci` reports the same debt as Markdown or JSON for a pull request check, with an example workflow under `docs/examples/`, and exits 3 when a stage is owed. Before revising a live campaign, read readback and renew any owed stage; the installed agent context now describes that procedure.
 
 ### Added
 
@@ -57,6 +65,8 @@ The installed agent context for all four supported harnesses gains a live-campai
 
 ## [1.60.0+agent.7] - 2026-10-22
 
+The npm package now ships the quickstart, access model, entry-point, source-adapter and CampaignSpec authoring guides, so links from the Build Packet and the README resolve inside an installed copy instead of pointing at files that are not there. The package check follows those links and their headings, so a guide missing from the package now fails the check. Runtime behaviour is unchanged.
+
 ### Fixed
 
 The installed package now includes the existing quickstart, access model, entry-point, source-adapter and CampaignSpec authoring guides. Links from the Build Packet and README continue inside the package; repository-only evaluation, architecture and case-study references point to GitHub. The authoring guide links the shipped v5 schema and public multi-step examples, which remain repository test data.
@@ -64,6 +74,8 @@ The installed package now includes the existing quickstart, access model, entry-
 The package check follows relative documentation links and checks destination headings against the extracted tarball, so a source-only guide or renamed anchor cannot leave installed users at a dead end. It ignores illustrative code and does not fetch external links. Runtime requirements and campaign behavior are unchanged.
 
 ## [1.60.0+agent.6] - 2026-10-22
+
+`sdk storage-check` is clearer about two things. When the `--target-sdk` you ask about is outside the manifest's supported range, the report says so in its first line and the result stays `unknown`, so you know the scan did not speak for that version. Unknown findings inside a loop that scans storage keys by an SDK prefix are marked `[prefix loop: <prefix>]`, with one note explaining why they stay unknown. Exit codes and the commands you run are unchanged.
 
 ### Changed
 
@@ -73,6 +85,8 @@ The package check follows relative documentation links and checks destination he
 - An unknown `dynamic-key`, `unsupported-storage-method` or `storage-object-escape` line inside a loop that matches the keys it reads from storage by a scoped SDK key's prefix (`k.indexOf('next-cart-state') === 0`, `k.startsWith(...)`) ends in `[prefix loop: <prefix>]`, and `--json` adds `prefixScan` to the finding. A key read from storage is a `k = sessionStorage.key(i)` variable, a for-of over `Object.keys(sessionStorage)` or for-in over `sessionStorage`, or the element parameter (the second for `reduce`) of a callback chained on `Object.keys(sessionStorage)`. Only the line where that key came from, or a line that reads that key by name, is marked; other storage use in the loop, such as passing `sessionStorage` to a function, is not. One note under the findings explains them: the loop survives the scope suffix, but on a shared origin the prefix also matches another campaign's copy, so the lines stay unknown. Where the manifest names a public store for the key, the note names it.
 
 ## [1.60.0+agent.5] - 2026-10-22
+
+`qa run` has always accepted flags for the test customer and shipping address; they are now in `qa help` and the QA docs. Use `--test-country`, `--test-address1`, `--test-city`, `--test-province` and `--test-postal`, plus the name and phone flags, to place test orders against a non-US market; the default is a US address. A non-USD `--currency` with no `--test-country` now warns on stderr but still runs. A checkout with no province select for the chosen country still fails at that field, so those orders are placed by hand.
 
 ### Changed
 
@@ -85,6 +99,8 @@ A non-USD `--currency` on a `qa run` that places orders, with no `--test-country
 The `next-campaigns-sdk-bump` skill (1.0.3, bundle `1.60.0+skills.3`) names the address flags in step 6 as the way to run non-US orders through the runner, with ordering by hand as the fallback.
 
 ## [1.60.0+agent.4] - 2026-10-22
+
+The `next-campaigns-sdk-bump` skill (1.0.2) takes the findings from its second live run. It now reads each slug's live or retired status from the target's `CLAUDE.md` and asks when that is unclear, confirms the market before the first order, names the analytics vendors that will receive real purchase events from test orders, and asks its browser and install questions up front. Refresh installed skills with `install-skills` to get it. Doctor's SDK attribute index moves to Campaign Cart 0.4.43, which has the same `data-next-*` names as 0.4.42, so pages pinned to 0.4.43 pass the placeholder check.
 
 ### Changed
 
@@ -103,6 +119,8 @@ Doctor's SDK attribute index now names Campaign Cart v0.4.43 (`docs/build-packet
 
 ## [1.60.0+agent.3] - 2026-10-21
 
+Doctor now warns when a page sets `data-next-page-type` but has no `<meta name="next-page-type">`, and when an upsell page's meta is missing or is not `upsell`. The SDK reads the page type only from the meta tag, so without it an upsell page runs as a product page and records no upsell page view. Both are warnings and block nothing; add the meta tag the message names. `tooling status` also names which harnesses a skills refresh is for.
+
 ### Added
 
 Doctor's SDK markup check gains two advisories about the page type (campaigns-os#683), on both `doctor --built` and packet doctor:
@@ -118,6 +136,8 @@ When `tooling status` asks for a skills refresh on some installed harnesses only
 
 ## [1.60.0+agent.2] - 2026-10-21
 
+`qa run --browser` no longer fails a working Meta pixel. Headless Chromium can run `fbq('init')` and `fbq('track')` without ever sending the `facebook.com/tr` request, so QA now also watches the `fbq` calls in the page and passes the `analytics-correctness:tag:meta` row when the declared pixel initialises and tracks. If page code replaces `window.fbq` so QA cannot see the calls, the row fails as `unmeasured` instead of reporting a clean absence. A Meta Purchase still needs the real pixel request.
+
 ### Fixed
 
 `analytics-correctness:tag:meta` now passes when the declared Meta pixel initialises and tracks in the page, even if the browser never requests `facebook.com/tr` (campaigns-os#686). Headless Chromium can run `fbq('init')` and `fbq('track')` with fbevents.js loaded and still send no pixel request, so `qa run --browser` blocked campaigns whose pixel works in real browsers. QA now also watches `fbq` calls in the page: a pixel id counts once it is initialised and a track call follows on the same page.
@@ -130,11 +150,15 @@ These are unchanged:
 
 ## [1.60.0+agent.1] - 2026-10-20
 
+`qa run --site` now requests a campaign's pages under `/<slug>/`, as the deployed site serves them. Before this fix it joined each route straight onto `--base-url`, so every page returned 404. If a site QA run on 1.60.0 showed nothing but 404s, run it again on this version. The flags are unchanged.
+
 ### Fixed
 
 `qa run --site <repo> --base-url <site origin> --slug <slug>` now requests the campaign's pages under `/<slug>/` (campaigns-os#683). Before, it joined each page route straight onto `--base-url`, so it requested `/checkout/` rather than `/<slug>/checkout/` and every page returned 404. The slug is added the same way packet QA adds it: a base URL that already ends in the slug is used as given, and a slug found from the single campaign under `_site/` is added too.
 
 ## [1.60.0] - 2026-10-20
+
+This release packages the ten `1.59.0+agent` sections below. The largest change for a campaign folder is next-campaign-page-kit 0.3.0: the first build on it can change the build fingerprint with no source change, so run `record build` again and expect Polish, deploy and QA to be owed. `install-skills` now also installs `next-campaigns-sdk-bump`, the procedure for moving a campaign to a later 0.4.x Campaign Cart, and that skill takes the lessons from its first live bump. Pin `@nextcommerce/campaigns-os@1.60.0` and refresh skills to `1.60.0+skills.1`.
 
 ### Changed
 
@@ -152,6 +176,8 @@ These are unchanged:
 
 ## [1.59.0+agent.13] - 2026-10-19
 
+A CampaignSpec-only change no longer throws away a Polish review of pages it did not touch. When you re-record the build with `record build --deviation-reason` and the output is identical to what Polish reviewed, the completed Polish record is restored instead of staying owed. QA is still owed, because the spec changed. A presentation change or a different build still owes a new Polish.
+
 ### Fixed
 
 A CampaignSpec-only change no longer throws away a Polish review of pages it did not change (campaigns-os#668). Before, `record build --deviation-reason` recorded the build, but Polish stayed owed after the re-intake (or `record spec`). The next `qa run` then stopped on `polish.evidence_missing`, and the agent had to retake the same screenshots and re-record the same findings.
@@ -168,6 +194,8 @@ These are unchanged:
 
 ## [1.59.0+agent.12] - 2026-10-19
 
+`install-skills` now installs a new skill, `next-campaigns-sdk-bump`: the procedure for moving a campaign from one 0.4.x Campaign Cart version to a later one, on page-kit and static repos. It finds every pin, reads the release diff against the campaign's code, runs `sdk storage-check` and doctor, and proves the bump on a preview with approved test orders. It stops at a 0.3.x pin or the legacy Campaigns script, because those are migration work. Run `install-skills` to get it; the bundle is `1.59.0+skills.4`.
+
 ### Added
 
 `install-skills` now installs `next-campaigns-sdk-bump`, so an agent told "bump this campaign to SDK 0.4.x" has a shipped procedure to follow instead of one written into the ticket (campaigns-os#677). It covers a 0.4.x to later 0.4.x Campaign Cart bump on page-kit and static repos, and it stops at a 0.3.x pin or the legacy Campaigns script, because moving those is migration work. The steps:
@@ -183,17 +211,23 @@ It adds no write, send or order capability. Bundled skills advance to `1.59.0+sk
 
 ## [1.59.0+agent.11] - 2026-10-19
 
+Repository CI workflows move to newer versions of three GitHub Actions. This changes nothing in the published package, and there is nothing to do.
+
 ### Changed
 
 Repository workflows move `actions/create-github-app-token` from 3.2.0 to 3.3.0, `actions/upload-artifact` from 7.0.1 to 7.0.2 and `actions/download-artifact` from 8.0.1 to 8.0.2 (campaigns-os#679). This changes repository CI only, and the published package is unchanged.
 
 ## [1.59.0+agent.10] - 2026-10-19
 
+The lockfile moves Playwright to 1.64.1 and acorn to 8.19.0, both inside the ranges `package.json` already declared, so a fresh install resolves the same versions. Playwright drives `qa run --browser` and `polish capture`; acorn parses page scripts for doctor's script-syntax check and now rejects one more malformed async arrow-function shape. There is nothing to do unless doctor newly reports a syntax error in a page script.
+
 ### Changed
 
 The lockfile moves Playwright from 1.63.0 to 1.64.1 and acorn from 8.18.0 to 8.19.0 (campaigns-os#675). Both stay within the ranges `package.json` already declares, so an installed toolkit resolves the same versions on a fresh install. Playwright drives `qa run --browser` and polish capture. acorn parses page scripts for doctor's `built_output.script_syntax` check, and 8.19.0 now rejects additional subscripts before the arrow in async arrow functions.
 
 ## [1.59.0+agent.9] - 2026-10-19
+
+The vendored starter-template catalog moves to campaign-cart-starter-templates `3987b18`. Step and select pages prefetch `next_step` instead of the post-payment URL, and the promo banner is rendered at build time from frontmatter, so the `<promo-banner>` web component and its layout shift are gone. The SDK pin stays 0.4.42 and the CampaignSpec fixtures do not change.
 
 ### Changed
 
@@ -205,6 +239,8 @@ The vendored starter catalog is re-synced to campaign-cart-starter-templates `39
 The certified-family fixtures are regenerated at the pin with page-kit 0.2.0, which is what the starter repository still pins. The payment-chrome `asset_pin` moves to `3987b18`. Its five images have the same bytes there, so no hash changed. The SDK pin (0.4.42), the support policy and the CampaignSpec fixtures do not change.
 
 ## [1.59.0+agent.8] - 2026-10-19
+
+Campaigns OS now works with next-campaign-page-kit 0.3.0 and keeps 0.2.x targets working. The setup docs pin `next-campaign-page-kit@0.3.0`, and doctor reads 0.3.0's new `assetWarnings`, so an `.html` file under a campaign's `assets/` that page-kit no longer builds is reported instead of 404ing silently on the built site. The first build on 0.3.0 can change the build fingerprint with unchanged source: run `record build` again afterwards and expect Polish, deploy and QA to be owed.
 
 ### Changed
 
@@ -220,6 +256,8 @@ The first build on page-kit 0.3.0 can change the build fingerprint with unchange
 
 ## [1.59.0+agent.7] - 2026-10-15
 
+`run status` now always points to `next` as the next command, so a finished-looking report no longer sends you to `run end` before `next` has reached done. `next` decides when the campaign is done and names `run end` itself. The output of `next` and doctor is otherwise unchanged.
+
 ### Fixed
 
 `run status` now always names `next` as the next command: `progress.next_command` is `campaigns-os next --packet <packet> --json`. Before, once every stage status the Assembly Report records read completed or skipped, it named `run end` even when `next` had not reached done: after a CampaignSpec edit with no `record spec` (`next` answers build), on a report written before input stamps existed, and after a rebuild with no `record build`. `next` decides whether the campaign is done, and once it is, with a run session active, it names `run end` as a required action. `run status` stays read-only, and `progress.incomplete_stages` still lists the recorded statuses (campaigns-os#673).
@@ -229,6 +267,8 @@ The first build on page-kit 0.3.0 can change the build fingerprint with unchange
 `next` returns a blocked or unavailable prepare-build gate's recovery-only answer from one branch, whether the stage was named or picked; `requested_stage` still appears only when a stage was named. Doctor's status, `next`'s status and doctor's `next` block read one readiness ladder (`blocked`, then `ready_with_waivers`, `ready_with_warnings`, `ready`), each over its own errors and warnings. The output of `next` and doctor is unchanged.
 
 ## [1.59.0+agent.6] - 2026-10-15
+
+Two fixes to how the toolkit binds QA and Polish to a build. The progress snapshot now reads the QA record's `qc_build_fingerprint`, so a `qa run` without `--browser` no longer shows `qa.binding: unconfirmed` for a build it did test. The polish gate reads the recorded build only from `stages.assembly.build_fingerprint`, and a report that carries only a legacy fingerprint field now gets a clear `polish.build_fingerprint_missing` from doctor instead of contradictory messages. `npm run smoke:polish-capture` passes again.
 
 ### Fixed
 
@@ -240,17 +280,23 @@ The polish gate reads the recorded build only from `stages.assembly.build_finger
 
 ## [1.59.0+agent.5] - 2026-10-15
 
+The hosted preview path is now documented the way `next` has run it since 1.59.0: record the hosted deploy with `record deploy --base-url <route root>` before QA, for both deploy targets. The Polish skill, the Build Packet doc and the README no longer say a hosted preview URL satisfies the deploy stage on its own. A forced `next deploy` or `next qa` on a hosted packet whose preview URL is loopback or production now asks for `qa policy set --preview-url` first. Bundled skills advance to `1.59.0+skills.2`.
+
 ### Fixed
 
 The hosted all-template guidance now matches what `next` has done since 1.59.0, where a hosted preview records its deploy with `record deploy` before QA. The Campaign Polish skill, `docs/build-packet.md` and the README no longer say that the hosted preview URL satisfies the deploy stage or that `record deploy` takes only a loopback route root; they name `record deploy --base-url <route root>` for both deploy targets and leave the order to `next`. A forced `next deploy` or `next qa` on an all-template hosted packet whose preview URL is loopback or the production page now prompts for `qa policy set --preview-url`, as its next actions and doctor already did and as an unset preview URL already did, instead of the generic deploy prompt or a QA command against that URL; the QA prompt then sends the agent to `next`, which records the deploy before QA. The done prompt names `record deploy` for both deploy targets in place of an instruction to record the hosted URL by hand. Bundled skills advance to `1.59.0+skills.2`.
 
 ## [1.59.0+agent.4] - 2026-10-14
 
+The build-flow doc and the quickstart now describe campaign setup in the Campaigns App the way the dashboard does it: create the campaign, then add Offers on its Offers tab. Selecting store products in an Offer creates the campaign's products (packages in the API) at their store price, and the Packages tab is now called Products. Do not create separate `1x`, `2x` and `3x` packages for tier pricing. This is documentation only.
+
 ### Changed
 
 The build-flow doc and the quickstart describe the Campaigns App's offer-first setup: Create Campaign, then Add Offer on the campaign's Offers tab. Selecting store products in an Offer creates one campaign product (a package in the API) per variant at its store price when the Offer is saved, and later Offers reuse it. The dashboard's Packages tab is now Products. The rule against separate `1x` / `2x` / `3x` packages for tier pricing is unchanged, and campaigns set up over the Admin API still create packages before Offers.
 
 ## [1.59.0] - 2026-10-09
+
+This release publishes the 1.58.0 line and adds hosted deploy recording. `record deploy --base-url <https route root>` now works for a hosted preview: it requests every built page, requires HTTP 200, and checks that every script and stylesheet the pages load is byte-identical to the built output. The hosted all-template path no longer skips the deploy stage; `next` hands you `record deploy` and then QA. Pin `@nextcommerce/campaigns-os@1.59.0` and refresh skills to `1.59.0+skills.1`.
 
 ### Changed
 

@@ -9442,6 +9442,466 @@
         }
       ],
       "entry_sha256": "66dd68c8b07d671544f94b66289609364396362ea848dd0ce48af85984ac84c8"
+    },
+    {
+      "id": "RL-0291",
+      "sequence": 279,
+      "date": "2026-10-24",
+      "kind": "amendment",
+      "amends": "RL-0290",
+      "amendment_reason": "The 1.61.0 section gained a short plain-language summary above its existing content, for readers skimming the changelog. Its heading, date and bullets are unchanged. This amendment carries the section's new hash; RL-0290 is otherwise unchanged.",
+      "surface_version": null,
+      "changelog_section": "1.61.0",
+      "changelog_sha256": "1528cc028bdd57c2fd8e77df165a1dddfb6ba02b9ed8b9d0bdbec7fb88397372",
+      "agent_impact": "None. The 1.61.0 section now opens with a summary paragraph; the changes RL-0290 records, and everything it says about them, stand as written.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": null,
+          "surface_entry": "CHANGELOG.md",
+          "summary": "Add a plain-language summary at the top of the 1.61.0 changelog section; the section bytes change, the entry it amends does not."
+        }
+      ],
+      "entry_sha256": "836066c2bf381f911682ea7e4f0c5410d5a4a140a36b1e40a8ffb819b3d890d5"
+    },
+    {
+      "id": "RL-0292",
+      "sequence": 280,
+      "date": "2026-10-24",
+      "kind": "amendment",
+      "amends": "RL-0288",
+      "amendment_reason": "The 1.60.0+agent.10 section gained a short plain-language summary above its existing content, for readers skimming the changelog. Its heading, date and bullets are unchanged. This amendment carries the section's new hash; RL-0288 is otherwise unchanged.",
+      "surface_version": null,
+      "changelog_section": "1.60.0+agent.10",
+      "changelog_sha256": "854116099e7c29be864a51f30fa79088a206394e9dfbff00cd836e8656704399",
+      "agent_impact": "None. The 1.60.0+agent.10 section now opens with a summary paragraph; the changes RL-0288 records, and everything it says about them, stand as written.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": null,
+          "surface_entry": "CHANGELOG.md",
+          "summary": "Add a plain-language summary at the top of the 1.60.0+agent.10 changelog section; the section bytes change, the entry it amends does not."
+        }
+      ],
+      "entry_sha256": "637ef794bd2a4076ad180bc5c3a530f228673f74d1ea51bed44bb26b8b2f857a"
+    },
+    {
+      "id": "RL-0293",
+      "sequence": 281,
+      "date": "2026-10-24",
+      "kind": "amendment",
+      "amends": "RL-0287",
+      "amendment_reason": "The 1.60.0+agent.9 section gained a short plain-language summary above its existing content, for readers skimming the changelog. Its heading, date and bullets are unchanged. This amendment carries the section's new hash; RL-0287 is otherwise unchanged.",
+      "surface_version": null,
+      "changelog_section": "1.60.0+agent.9",
+      "changelog_sha256": "ca8f5a76467b73cd95a67cd97ff50a278ce6667a28391776e2c8b0ad752f14ea",
+      "agent_impact": "None. The 1.60.0+agent.9 section now opens with a summary paragraph; the changes RL-0287 records, and everything it says about them, stand as written.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": null,
+          "surface_entry": "CHANGELOG.md",
+          "summary": "Add a plain-language summary at the top of the 1.60.0+agent.9 changelog section; the section bytes change, the entry it amends does not."
+        }
+      ],
+      "entry_sha256": "7f9ac243a700d14ac0bc98ba544d7c27092047791130cee38b3936cb487bdbd1"
+    },
+    {
+      "id": "RL-0294",
+      "sequence": 282,
+      "date": "2026-10-24",
+      "kind": "amendment",
+      "amends": "RL-0286",
+      "amendment_reason": "The 1.60.0+agent.8 section gained a short plain-language summary above its existing content, for readers skimming the changelog. Its heading, date and bullets are unchanged. This amendment carries the section's new hash; RL-0286 is otherwise unchanged.",
+      "surface_version": null,
+      "changelog_section": "1.60.0+agent.8",
+      "changelog_sha256": "316e1ed7542dd196fa09c8f666fe938fb7be473644a9d9168d4b8df0e4af972a",
+      "agent_impact": "None. The 1.60.0+agent.8 section now opens with a summary paragraph; the changes RL-0286 records, and everything it says about them, stand as written.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": null,
+          "surface_entry": "CHANGELOG.md",
+          "summary": "Add a plain-language summary at the top of the 1.60.0+agent.8 changelog section; the section bytes change, the entry it amends does not."
+        }
+      ],
+      "entry_sha256": "76a710ca5a0cbf082499affcd2642e8fd891500c4272633246ed8a31820aaa68"
+    },
+    {
+      "id": "RL-0295",
+      "sequence": 283,
+      "date": "2026-10-24",
+      "kind": "amendment",
+      "amends": "RL-0285",
+      "amendment_reason": "The 1.60.0+agent.7 section gained a short plain-language summary above its existing content, for readers skimming the changelog. Its heading, date and bullets are unchanged. This amendment carries the section's new hash; RL-0285 is otherwise unchanged.",
+      "surface_version": null,
+      "changelog_section": "1.60.0+agent.7",
+      "changelog_sha256": "63df77cb934d392e050167889a41882fdf58c21e099f901e917563e7f8ac3bc7",
+      "agent_impact": "None. The 1.60.0+agent.7 section now opens with a summary paragraph; the changes RL-0285 records, and everything it says about them, stand as written.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": null,
+          "surface_entry": "CHANGELOG.md",
+          "summary": "Add a plain-language summary at the top of the 1.60.0+agent.7 changelog section; the section bytes change, the entry it amends does not."
+        }
+      ],
+      "entry_sha256": "2420fc39ca5d8bbe7a7fc0d434089d52a5ae75d03fee32192dde12b931c0b7df"
+    },
+    {
+      "id": "RL-0296",
+      "sequence": 284,
+      "date": "2026-10-24",
+      "kind": "amendment",
+      "amends": "RL-0284",
+      "amendment_reason": "The 1.60.0+agent.6 section gained a short plain-language summary above its existing content, for readers skimming the changelog. Its heading, date and bullets are unchanged. This amendment carries the section's new hash; RL-0284 is otherwise unchanged.",
+      "surface_version": null,
+      "changelog_section": "1.60.0+agent.6",
+      "changelog_sha256": "25cca79158a80db7fe61967b1622693892fb26490387f773f0bc01eebf762d1d",
+      "agent_impact": "None. The 1.60.0+agent.6 section now opens with a summary paragraph; the changes RL-0284 records, and everything it says about them, stand as written.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": null,
+          "surface_entry": "CHANGELOG.md",
+          "summary": "Add a plain-language summary at the top of the 1.60.0+agent.6 changelog section; the section bytes change, the entry it amends does not."
+        }
+      ],
+      "entry_sha256": "1b3531e5a696060f50319e87a7bc25cde0ac2ea0d2df49b2bfab60d2c875bf65"
+    },
+    {
+      "id": "RL-0297",
+      "sequence": 285,
+      "date": "2026-10-24",
+      "kind": "amendment",
+      "amends": "RL-0283",
+      "amendment_reason": "The 1.60.0+agent.5 section gained a short plain-language summary above its existing content, for readers skimming the changelog. Its heading, date and bullets are unchanged. This amendment carries the section's new hash; RL-0283 is otherwise unchanged.",
+      "surface_version": null,
+      "changelog_section": "1.60.0+agent.5",
+      "changelog_sha256": "d614ad57b22133a6a5c76f79edc1c0dffc776ebe81eff4b2a05872392fadd324",
+      "agent_impact": "None. The 1.60.0+agent.5 section now opens with a summary paragraph; the changes RL-0283 records, and everything it says about them, stand as written.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": null,
+          "surface_entry": "CHANGELOG.md",
+          "summary": "Add a plain-language summary at the top of the 1.60.0+agent.5 changelog section; the section bytes change, the entry it amends does not."
+        }
+      ],
+      "entry_sha256": "3b9f1a02ed5447a0ea3171beef9cd7e16533746d4c8766c4e79f39d90296afdf"
+    },
+    {
+      "id": "RL-0298",
+      "sequence": 286,
+      "date": "2026-10-24",
+      "kind": "amendment",
+      "amends": "RL-0282",
+      "amendment_reason": "The 1.60.0+agent.4 section gained a short plain-language summary above its existing content, for readers skimming the changelog. Its heading, date and bullets are unchanged. This amendment carries the section's new hash; RL-0282 is otherwise unchanged.",
+      "surface_version": null,
+      "changelog_section": "1.60.0+agent.4",
+      "changelog_sha256": "c60dd68995d3fec5388efe3e0e96015eff60ec6a3c6f037a25dc647b69919336",
+      "agent_impact": "None. The 1.60.0+agent.4 section now opens with a summary paragraph; the changes RL-0282 records, and everything it says about them, stand as written.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": null,
+          "surface_entry": "CHANGELOG.md",
+          "summary": "Add a plain-language summary at the top of the 1.60.0+agent.4 changelog section; the section bytes change, the entry it amends does not."
+        }
+      ],
+      "entry_sha256": "13920b10cac21e22b8a0e85de715ba4beb930a741d66d4eb5e46383382b55b5f"
+    },
+    {
+      "id": "RL-0299",
+      "sequence": 287,
+      "date": "2026-10-24",
+      "kind": "amendment",
+      "amends": "RL-0281",
+      "amendment_reason": "The 1.60.0+agent.3 section gained a short plain-language summary above its existing content, for readers skimming the changelog. Its heading, date and bullets are unchanged. This amendment carries the section's new hash; RL-0281 is otherwise unchanged.",
+      "surface_version": null,
+      "changelog_section": "1.60.0+agent.3",
+      "changelog_sha256": "23565203a748876f2ee5167c8e965028023a73ac374bff8580580112376d0bc8",
+      "agent_impact": "None. The 1.60.0+agent.3 section now opens with a summary paragraph; the changes RL-0281 records, and everything it says about them, stand as written.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": null,
+          "surface_entry": "CHANGELOG.md",
+          "summary": "Add a plain-language summary at the top of the 1.60.0+agent.3 changelog section; the section bytes change, the entry it amends does not."
+        }
+      ],
+      "entry_sha256": "720519bb93f0691aa542a256918abfb89cd17323eb0c570542ed8994ac9341ec"
+    },
+    {
+      "id": "RL-0300",
+      "sequence": 288,
+      "date": "2026-10-24",
+      "kind": "amendment",
+      "amends": "RL-0280",
+      "amendment_reason": "The 1.60.0+agent.1 section gained a short plain-language summary above its existing content, for readers skimming the changelog. Its heading, date and bullets are unchanged. This amendment carries the section's new hash; RL-0280 is otherwise unchanged.",
+      "surface_version": null,
+      "changelog_section": "1.60.0+agent.1",
+      "changelog_sha256": "387d37541874a61284c07206762053088e7bd428a316667e2fcc7f3179b6271b",
+      "agent_impact": "None. The 1.60.0+agent.1 section now opens with a summary paragraph; the changes RL-0280 records, and everything it says about them, stand as written.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": null,
+          "surface_entry": "CHANGELOG.md",
+          "summary": "Add a plain-language summary at the top of the 1.60.0+agent.1 changelog section; the section bytes change, the entry it amends does not."
+        }
+      ],
+      "entry_sha256": "113f4693437cbab35a309242675e1ab79b6471e3540a5bbe03e5e7f86a2578d3"
+    },
+    {
+      "id": "RL-0301",
+      "sequence": 289,
+      "date": "2026-10-24",
+      "kind": "amendment",
+      "amends": "RL-0279",
+      "amendment_reason": "The 1.60.0 section gained a short plain-language summary above its existing content, for readers skimming the changelog. Its heading, date and bullets are unchanged. This amendment carries the section's new hash; RL-0279 is otherwise unchanged.",
+      "surface_version": null,
+      "changelog_section": "1.60.0",
+      "changelog_sha256": "1a7e4c8f6a723d2ea7cef5bc19d5aa556c046eb5af58fd8732d5769db6ddcd98",
+      "agent_impact": "None. The 1.60.0 section now opens with a summary paragraph; the changes RL-0279 records, and everything it says about them, stand as written.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": null,
+          "surface_entry": "CHANGELOG.md",
+          "summary": "Add a plain-language summary at the top of the 1.60.0 changelog section; the section bytes change, the entry it amends does not."
+        }
+      ],
+      "entry_sha256": "a2bd9bd9cd1ef6d0234815957e121f24c5c4f9fe997fac1b9d987baf10f666ca"
+    },
+    {
+      "id": "RL-0302",
+      "sequence": 290,
+      "date": "2026-10-24",
+      "kind": "amendment",
+      "amends": "RL-0278",
+      "amendment_reason": "The 1.59.0+agent.13 section gained a short plain-language summary above its existing content, for readers skimming the changelog. Its heading, date and bullets are unchanged. This amendment carries the section's new hash; RL-0278 is otherwise unchanged.",
+      "surface_version": null,
+      "changelog_section": "1.59.0+agent.13",
+      "changelog_sha256": "5a99271a0f9a70dd6fb37e5884e9c0c356c8c62f1196c1c1e786074867ea80ca",
+      "agent_impact": "None. The 1.59.0+agent.13 section now opens with a summary paragraph; the changes RL-0278 records, and everything it says about them, stand as written.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": null,
+          "surface_entry": "CHANGELOG.md",
+          "summary": "Add a plain-language summary at the top of the 1.59.0+agent.13 changelog section; the section bytes change, the entry it amends does not."
+        }
+      ],
+      "entry_sha256": "f9ca1652ee8eacec61153a379eff3b85e28fa70addcd28d2727dad04961940c2"
+    },
+    {
+      "id": "RL-0303",
+      "sequence": 291,
+      "date": "2026-10-24",
+      "kind": "amendment",
+      "amends": "RL-0277",
+      "amendment_reason": "The 1.59.0+agent.12 section gained a short plain-language summary above its existing content, for readers skimming the changelog. Its heading, date and bullets are unchanged. This amendment carries the section's new hash; RL-0277 is otherwise unchanged.",
+      "surface_version": null,
+      "changelog_section": "1.59.0+agent.12",
+      "changelog_sha256": "ebe67d12ac2ac604b63228b7a7fdf2fe601d1d937ab7865a74dd908ecb73c42e",
+      "agent_impact": "None. The 1.59.0+agent.12 section now opens with a summary paragraph; the changes RL-0277 records, and everything it says about them, stand as written.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": null,
+          "surface_entry": "CHANGELOG.md",
+          "summary": "Add a plain-language summary at the top of the 1.59.0+agent.12 changelog section; the section bytes change, the entry it amends does not."
+        }
+      ],
+      "entry_sha256": "c11bfa088e4823d1920084cfdbd6bbc374d97291f706baab0dce43e0c5e403b9"
+    },
+    {
+      "id": "RL-0304",
+      "sequence": 292,
+      "date": "2026-10-24",
+      "kind": "amendment",
+      "amends": "RL-0276",
+      "amendment_reason": "The 1.59.0+agent.11 section gained a short plain-language summary above its existing content, for readers skimming the changelog. Its heading, date and bullets are unchanged. This amendment carries the section's new hash; RL-0276 is otherwise unchanged.",
+      "surface_version": null,
+      "changelog_section": "1.59.0+agent.11",
+      "changelog_sha256": "68cf1cc90720fb53626ca0ba18b09f94d842d09f49937912f44dea95979f5dd8",
+      "agent_impact": "None. The 1.59.0+agent.11 section now opens with a summary paragraph; the changes RL-0276 records, and everything it says about them, stand as written.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": null,
+          "surface_entry": "CHANGELOG.md",
+          "summary": "Add a plain-language summary at the top of the 1.59.0+agent.11 changelog section; the section bytes change, the entry it amends does not."
+        }
+      ],
+      "entry_sha256": "a1f319b383e2b001769bc263b93c0d3ed04741f80759471d6b714fbf557321b2"
+    },
+    {
+      "id": "RL-0305",
+      "sequence": 293,
+      "date": "2026-10-24",
+      "kind": "amendment",
+      "amends": "RL-0275",
+      "amendment_reason": "The 1.59.0+agent.10 section gained a short plain-language summary above its existing content, for readers skimming the changelog. Its heading, date and bullets are unchanged. This amendment carries the section's new hash; RL-0275 is otherwise unchanged.",
+      "surface_version": null,
+      "changelog_section": "1.59.0+agent.10",
+      "changelog_sha256": "f06ca5efaecf49c030a6b74942341bb4a3d5b490610ca1b7d4d7cd149b09ff91",
+      "agent_impact": "None. The 1.59.0+agent.10 section now opens with a summary paragraph; the changes RL-0275 records, and everything it says about them, stand as written.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": null,
+          "surface_entry": "CHANGELOG.md",
+          "summary": "Add a plain-language summary at the top of the 1.59.0+agent.10 changelog section; the section bytes change, the entry it amends does not."
+        }
+      ],
+      "entry_sha256": "d2b6cc5cec06b0201bd28be543c8dc26f1eda4cce80d0202686a35438ded5e1d"
+    },
+    {
+      "id": "RL-0306",
+      "sequence": 294,
+      "date": "2026-10-24",
+      "kind": "amendment",
+      "amends": "RL-0274",
+      "amendment_reason": "The 1.59.0+agent.8 section gained a short plain-language summary above its existing content, for readers skimming the changelog. Its heading, date and bullets are unchanged. This amendment carries the section's new hash; RL-0274 is otherwise unchanged.",
+      "surface_version": null,
+      "changelog_section": "1.59.0+agent.8",
+      "changelog_sha256": "53741122f9f4bff029290f0895dcaf8c3bf0ad3d08122c866b32e14ba0c30172",
+      "agent_impact": "None. The 1.59.0+agent.8 section now opens with a summary paragraph; the changes RL-0274 records, and everything it says about them, stand as written.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": null,
+          "surface_entry": "CHANGELOG.md",
+          "summary": "Add a plain-language summary at the top of the 1.59.0+agent.8 changelog section; the section bytes change, the entry it amends does not."
+        }
+      ],
+      "entry_sha256": "7eddcc548059f6c967aeabedb66b82768b6d17c74cfc95d6811d69d9d07c94f8"
+    },
+    {
+      "id": "RL-0307",
+      "sequence": 295,
+      "date": "2026-10-24",
+      "kind": "amendment",
+      "amends": "RL-0272",
+      "amendment_reason": "The 1.59.0+agent.7 section gained a short plain-language summary above its existing content, for readers skimming the changelog. Its heading, date and bullets are unchanged. This amendment carries the section's new hash; RL-0272 is otherwise unchanged.",
+      "surface_version": null,
+      "changelog_section": "1.59.0+agent.7",
+      "changelog_sha256": "1c40a51c1bffa89ddc3a1af8ddfd497797617c39e285a3e5901cc349044d7818",
+      "agent_impact": "None. The 1.59.0+agent.7 section now opens with a summary paragraph; the changes RL-0272 records, and everything it says about them, stand as written.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": null,
+          "surface_entry": "CHANGELOG.md",
+          "summary": "Add a plain-language summary at the top of the 1.59.0+agent.7 changelog section; the section bytes change, the entry it amends does not."
+        }
+      ],
+      "entry_sha256": "dbd86d414921da3d1134ba76a5d5c205683750c6e3e5d0477483f73f4dd31cf8"
+    },
+    {
+      "id": "RL-0308",
+      "sequence": 296,
+      "date": "2026-10-24",
+      "kind": "amendment",
+      "amends": "RL-0271",
+      "amendment_reason": "The 1.59.0+agent.5 section gained a short plain-language summary above its existing content, for readers skimming the changelog. Its heading, date and bullets are unchanged. This amendment carries the section's new hash; RL-0271 is otherwise unchanged.",
+      "surface_version": null,
+      "changelog_section": "1.59.0+agent.5",
+      "changelog_sha256": "7d6ddb073f430ebf7d2c70b0affaebaf183eb114403cad04f4740ae9e12c0df9",
+      "agent_impact": "None. The 1.59.0+agent.5 section now opens with a summary paragraph; the changes RL-0271 records, and everything it says about them, stand as written.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": null,
+          "surface_entry": "CHANGELOG.md",
+          "summary": "Add a plain-language summary at the top of the 1.59.0+agent.5 changelog section; the section bytes change, the entry it amends does not."
+        }
+      ],
+      "entry_sha256": "d824a4bc616390176ce6117c7c2903df7505bd4c8bb36cbcdc528da94d62bb3e"
+    },
+    {
+      "id": "RL-0309",
+      "sequence": 297,
+      "date": "2026-10-24",
+      "kind": "amendment",
+      "amends": "RL-0273",
+      "amendment_reason": "The 1.59.0+agent.4 section gained a short plain-language summary above its existing content, for readers skimming the changelog. Its heading, date and bullets are unchanged. This amendment carries the section's new hash; RL-0273 is otherwise unchanged.",
+      "surface_version": null,
+      "changelog_section": "1.59.0+agent.4",
+      "changelog_sha256": "842645813edaacc08319ea929356e31b750d0479cab9a979acf5bb095d5099f7",
+      "agent_impact": "None. The 1.59.0+agent.4 section now opens with a summary paragraph; the changes RL-0273 records, and everything it says about them, stand as written.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": null,
+          "surface_entry": "CHANGELOG.md",
+          "summary": "Add a plain-language summary at the top of the 1.59.0+agent.4 changelog section; the section bytes change, the entry it amends does not."
+        }
+      ],
+      "entry_sha256": "3c86339dbb6d472ed5294c1836a2a9b97ad4b32c02a2b67a025a9d5169cacc65"
+    },
+    {
+      "id": "RL-0310",
+      "sequence": 298,
+      "date": "2026-10-24",
+      "kind": "amendment",
+      "amends": "RL-0268",
+      "amendment_reason": "The 1.59.0 section gained a short plain-language summary above its existing content, for readers skimming the changelog. Its heading, date and bullets are unchanged. This amendment carries the section's new hash; RL-0268 is otherwise unchanged.",
+      "surface_version": null,
+      "changelog_section": "1.59.0",
+      "changelog_sha256": "3df95b7dfbb190b6190c0265ec8edf0b0cc1ae59be3a1332185cc38ed2dbc475",
+      "agent_impact": "None. The 1.59.0 section now opens with a summary paragraph; the changes RL-0268 records, and everything it says about them, stand as written.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": null,
+          "surface_entry": "CHANGELOG.md",
+          "summary": "Add a plain-language summary at the top of the 1.59.0 changelog section; the section bytes change, the entry it amends does not."
+        }
+      ],
+      "entry_sha256": "c8d911144e956c791867afb9cc014bbbbf54be8e3faee6448bafea4a588f618c"
     }
   ]
 }
