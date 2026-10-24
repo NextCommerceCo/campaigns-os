@@ -11,7 +11,7 @@ The vendored starter catalog is re-synced to campaign-cart-starter-templates `63
 - campaign-cart-starter-templates#248: the Apollo Template Reference is re-stamped `sdk-0.4.43-shipping-coupon-tiers-2026-10-23`.
 - #247 and #249: recorded SDK 0.4.43 verification evidence.
 
-The certified-family fixtures are regenerated at the pin with page-kit 0.3.0, which is what the starter repository now pins. They were last rendered at `3987b18` with page-kit 0.2.0. The payment-chrome `asset_pin` moves to `637e1c9`. Its five images have the same bytes there, so no hash changed. Three test files no longer depend on starter data that moved: the live-campaign drift tests give their saved Map its own second shipping method, and the Apollo Template Reference test reads the expected stamp from the catalog. The SDK pin and the support policy do not change.
+The certified-family fixtures are regenerated at the pin with page-kit 0.3.0, which is what the starter repository now pins. They were last rendered at `3987b18` with page-kit 0.2.0. The payment-chrome `asset_pin` moves to `637e1c9`. Its five images have the same bytes there, so no hash changed. Two test files no longer depend on starter data that moved: the live-campaign drift tests give their saved Map its own second shipping method, and the Apollo Template Reference test reads the expected stamp from the catalog. The two payment-chrome tests pass again because the pin moved. The SDK pin and the support policy do not change.
 
 ## [1.61.0] - 2026-10-23
 
