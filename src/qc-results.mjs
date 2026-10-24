@@ -833,6 +833,10 @@ const PAGE_NOT_CAPTURED = "page_not_captured";
 // output under _site/<slug>/ is the one `record build` recorded. Any other
 // value, null included, is drift. A caller that passes no value (undefined)
 // reads without the output check.
+// A capture file that is there but cannot be read as a regular file names
+// why; only a missing file is capture_file_absent.
+const captureReadFailure = (code) => code === "too_large" ? "capture_file_too_large"
+  : ["ELOOP", "EISDIR", "ENOTDIR", "not_regular_file", "outside_root"].includes(code) ? "capture_file_not_regular" : "capture_file_unreadable";
 const outputDrifted = (buildOutput) => buildOutput !== undefined && buildOutput?.status !== "pass";
 
 export function readMediaWeight({ record, pageLoad, currentBuild = null, buildOutput = undefined, qcStandIns = null, rederivers = null } = {}) {
@@ -1443,7 +1447,7 @@ export function readCaptures({ record, packet, currentBuild, currentSource, buil
   const referenceKey = (ref) => JSON.stringify([ref.route, ref.viewport, ref.ref_id]);
   if (new Set(references.map(referenceKey)).size !== references.length) return fail("reference_shape_invalid");
   const stale = record.subject.build_fingerprint !== currentBuild
-    || record.subject.source_package_material_fingerprint !== (currentSource || null) || outputDrifted(buildOutput ?? null);
+    || record.subject.source_package_material_fingerprint !== (currentSource || null) || outputDrifted(buildOutput);
   const outsidePlan = routes.some((route) => !planned.some((p) => p.requested_route === route))
     || cells.some((c) => !planned.some((p) => p.requested_route === c.route && p.page_id === c.page_id));
   const context = stale ? { staleBinding: true } : {};
@@ -1478,7 +1482,7 @@ export function readCaptures({ record, packet, currentBuild, currentSource, buil
         const bytes = readRegularFileSync(resolve(targetRepo, ref.path), { root: targetRepo, noFollow: true, maxBytes: rules.limits.reference_bytes });
         actual = { hash: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
           bytes: bytes.length, structure: readPngStructure(bytes) };
-      } catch (error) { actual = error.code === "ENOENT" ? { absent: true } : { failure: "png_structure_invalid" }; }
+      } catch (error) { actual = error.code === "ENOENT" ? { absent: true } : { failure: captureReadFailure(error.code) }; }
       checked.set(ref.path, actual);
     }
     const actual = checked.get(ref.path);

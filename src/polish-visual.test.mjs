@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync, mkdirSync, symlinkSync, readdirSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { VISUAL_QC_RULES, planVisualCapture, buildCapturesRecord, capturesIntegrity, writePolishPng,
-  evaluateVisualReference, evaluateVisualDiff, VISUAL_VIEWPORTS, compareVisualPair } from "./polish-visual.mjs";
+  evaluateVisualReference, evaluateVisualDiff, VISUAL_VIEWPORTS, compareVisualPair, pageKitOutputPaths } from "./polish-visual.mjs";
 import { createRgbaPng, createRgba, syntheticCapturesRecord, syntheticVisualFixture } from "./polish-visual-fixtures.mjs";
 import { loadVisualDependencies } from "./visual-diff.mjs";
 import { runVisualPass, runVisualCells } from "./polish-visual.mjs";
@@ -539,4 +539,11 @@ test("Record-valued null cells and inherited dependency/shot names produce refus
   assert.equal(evaluateVisualDiff(original.comparisons[0], { record: original, build: inheritedShot, basis, reference }).reason_code, "evidence_not_reproducible");
   const invalidMask = structuredClone(build); invalidMask.stabilized.treatment.masks = [{ group: "__proto__", rects: [] }];
   assert.equal(compareVisualPair({ build: invalidMask, basis }).reason, "evidence_not_reproducible");
+});
+
+test("The campaign's own Page Kit pages are repo-relative output paths, not bare target paths", () => {
+  const page = (kit) => ({ page_id: "landing", page_kit: kit });
+  assert.deepEqual(pageKitOutputPaths({ assembly: { output_dir: "src/sample" }, source_html: { pages: [page({ target_path: "index.html" })] } }), ["src/sample/index.html"]);
+  assert.deepEqual(pageKitOutputPaths({ assembly: { output_dir: "src/sample" }, source_html: { pages: [page({ target_path: "index.html", output_path: "src/other/index.html" })] } }), ["src/other/index.html"]);
+  assert.deepEqual(pageKitOutputPaths({ source_html: { pages: [page({ target_path: "index.html" })] } }), []);
 });
