@@ -32,6 +32,48 @@ Unknown top-level fields are rejected.
 
 ## Contributions and coverage
 
+**A design file behind an HTML export.** Name it on the page's source-html
+manifest entry as `design_file: {type, file_url, breakpoints}`. `breakpoints`
+holds optional desktop, tablet and mobile frame links. Intake records a separate,
+non-renderable contribution (`figma_frames` with native trust for Figma, otherwise
+`other` with opaque trust), with `reference_only` coverage. The page's
+`html_funnel` mapping links to it through `derived_from`. Pages sharing a file
+share one contribution. A CampaignSpec page's Figma `design_source` records lineage
+only with figma-sections-export provenance that passes doctor's
+`source_html.producer_provenance` check without a waiver; then it wins when both
+channels are present. Otherwise, a spec pointer alone adds no contribution or
+lineage at intake, and no `design.access` row unless the package already records
+a spec contribution. A Figma `design_source` that names a different file or
+frames from the manifest's `design_file` is reported as a conflict for review
+even when it records no lineage, as is a file key that differs from the
+exporter's. A file shared by several pages keeps the manifest's provenance if
+any page declared it in the manifest.
+
+Malformed `design_file` values remain non-fatal manifest warnings; the schema
+accepts them so validation agrees with intake. File URL schemes are
+case-insensitive. Explicit tool types are lowercased for identity. For a type
+other than `figma` or `other`, the design-file source ref's optional
+`design_file_type` string preserves the type doctor needs to reconstruct the
+recorded identity even after a declaration edit. This new field is material;
+source-reference `notes` remain nonmaterial, including on `design_file` refs.
+
+Recording a file adds no readiness requirement, Source TODO or blocker. A
+manifest edit, including `design_file`, follows the existing stale-package rule:
+rerun intake with `--force`. A later spec declaration leaves the package current;
+when eligible under the Figma provenance rule above, doctor reports the
+unrecorded file with the same recovery guidance.
+`design.access` reports `unexercised` / `design_access_missing` when the recorded
+file agrees with the declaration. For a recorded spec contribution, doctor
+compares the current spec declaration even if today's manifest or provenance is
+unavailable. This version cannot read design files. This
+records authority only; Polish element parity compares the built page with its
+source HTML, not the design file (see [Polish evidence](polish-evidence.md)).
+A changed design file is listed for review; changing only breakpoint frames on
+that file does not change its identity. If the package records a file but the
+current declaration is absent, `design.access` reports `review` /
+`design_reference_missing`: restore the declaration, or rerun intake with
+`--force` to drop the recorded file.
+
 Each `contributions[]` record identifies one source contribution and records:
 
 - `id`, `kind`, `trust`, and whether it is `renderable`;
@@ -275,10 +317,10 @@ The projected fields are explicit:
 | Contribution core | `id`, `kind`, `trust`, `renderable`. |
 | Provenance | `source_type`, `adapter`, `producer`, `generator`, `generator_version`, `source_root`, `manifest_schema_version`, `manifest_path`, `manifest_sha256`, `producer_material_fingerprint`, `asset_crawl_schema_version`. |
 | Presentation intent | `summary`, `composition`, `content_hierarchy`, `imagery`, `copy`, `brand`, `responsive_behavior`. |
-| Source reference | `id`, `kind`, `path`, `url`, `sha256`, `role`, `media_type`. |
+| Source reference | `id`, `kind`, `path`, `url`, `sha256`, `role`, `media_type`, optional `design_file_type` (only on `design_file` refs). |
 | Visual reference | `id`, `kind`, `viewport`, `availability`, `url`, `path`, `sha256`, `width`, `height`, `device_profile`, `scale_factor`, `browser`, `source_ref_id`, `unavailable_reason`. |
 | Template Reference | `id`, `family`, `version`, `contract_path`, `artifact_path`, `sha256`, `standard_viewport_refs` using the visual projection above. |
-| Coverage mapping | `id`, `surface_id`, `coverage_role`, `confidence`, `source_refs`, `screenshot_refs`, `reference_refs`, `template_reference_id`. |
+| Coverage mapping | `id`, `surface_id`, `coverage_role`, `confidence`, `source_refs`, `screenshot_refs`, `reference_refs`, `template_reference_id`, optional `derived_from`. |
 | Source Gap | `id`, `kind`, `scope`, `applies_to`, `reason`, `status`, `attributed_by`, `attributed_at`, `evidence_refs`. |
 | Source TODO | `id`, `kind`, `scope`, `applies_to`, `description`, `status`, `owner`, `required_viewports`, `source_ref_ids`. |
 | Approved waiver | `id`, `scope`, `applies_to`, `reason`, `status`, `waived_by`, `waived_at`, `expires_at`, `review_condition`, `evidence_refs`. |

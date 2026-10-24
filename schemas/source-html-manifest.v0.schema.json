@@ -139,6 +139,9 @@
             "minLength": 1,
             "description": "Active CampaignSpec page id. This is the primary join key."
           },
+          "design_file": {
+            "description": "Optional design-file authority behind this page's HTML export, normally {type?, file_url, breakpoints?: {desktop?, tablet?, mobile?}}. Deliberately unconstrained: the runtime accepts every JSON value here, warns on unusable declarations or frame links and ignores them without rejecting the manifest. Usable file_url values parse as absolute HTTPS URLs (scheme case-insensitive)."
+          },
           "path": {
             "type": "string",
             "minLength": 1,

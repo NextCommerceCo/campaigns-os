@@ -272,8 +272,15 @@
         "sha256": { "$ref": "#/$defs/sha256" },
         "role": { "type": "string", "minLength": 1 },
         "media_type": { "type": "string", "minLength": 1 },
+        "design_file_type": { "type": "string", "minLength": 1, "pattern": "\\S" },
         "notes": { "type": ["string", "null"] }
       },
+      "allOf": [
+        {
+          "if": { "properties": { "design_file_type": true }, "required": ["design_file_type"] },
+          "then": { "properties": { "role": { "const": "design_file" } }, "required": ["role"] }
+        }
+      ],
       "anyOf": [
         { "properties": { "path": true }, "required": ["path"] },
         { "properties": { "url": true }, "required": ["url"] }
@@ -460,6 +467,7 @@
         "screenshot_refs": { "$ref": "#/$defs/stringList" },
         "reference_refs": { "$ref": "#/$defs/stringList" },
         "template_reference_id": { "type": "string", "minLength": 1 },
+        "derived_from": { "type": "string", "minLength": 1, "pattern": "\\S" },
         "notes": { "type": ["string", "null"] }
       },
       "allOf": [

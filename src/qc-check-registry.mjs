@@ -19,7 +19,12 @@
 //
 // The table holds only the shipped QC checks. A stand-in check never comes
 // from here: tests pass theirs in-process (qcStandIns).
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+
 export const QC_CHECK_REGISTRY = Object.freeze({
+  "design.access": Object.freeze({ leg: "doctor", unit: "4.1", module: "./parity/design-access.mjs", rederive: "evaluateDesignAccess" }),
   // Tracking params reach the order
   "tracking.url": Object.freeze({ leg: "qa", unit: "1.1", module: "./qa-tracking-params.mjs", rederive: "rederiveQcResult" }),
   "tracking.order": Object.freeze({ leg: "qa", unit: "1.1", module: "./qa-tracking-params.mjs", rederive: "rederiveQcResult" }),
@@ -36,6 +41,8 @@ export const QC_CHECK_REGISTRY = Object.freeze({
   "readability.contrast": Object.freeze({ leg: "polish", unit: "2.4", module: "./polish-readability.mjs", rederive: "READABILITY_QC_RULES", record: "readability" }),
   "visual.reference": Object.freeze({ leg: "polish", unit: "3.2", module: "./polish-visual.mjs", rederive: "VISUAL_QC_RULES", record: "captures" }),
   "visual.diff": Object.freeze({ leg: "polish", unit: "3.4", module: "./polish-visual.mjs", rederive: "VISUAL_QC_RULES", record: "captures" }),
+  // Element parity against the source HTML
+  "parity.element": Object.freeze({ leg: "polish", unit: "4.3", module: "./parity/element-parity-record.mjs", rederive: "ELEMENT_PARITY_QC_RULES", record: "element_parity" }),
   // Cart placeholders
   cart_placeholders: Object.freeze({ leg: "doctor", unit: "1.5", module: "./cart-placeholders.mjs", rederive: "evaluateCartPlaceholders" }),
   // Built-output smoke checks
@@ -59,6 +66,24 @@ function isMissingModule(error, href) {
 }
 
 let loaded = null;
+
+async function elementParityRules(rules) {
+  const { planPolishCapture } = await import("./polish-node.mjs");
+  return { ...rules, plan: planPolishCapture,
+    read(context, activeRules) {
+      // QC reads are synchronous. Node >=20.19 supports synchronous loading
+      // of this ESM graph; defer it until a selected packet has a mapped
+      // route. Loading the registry alone must never load snapshot/probe.
+      let applicable = false;
+      if (rules.applies(context?.packet)) {
+        try { applicable = planPolishCapture({ packet: context.packet, baseUrl: "http://127.0.0.1" })?.routes?.length > 0; } catch { /* reader refuses the invalid plan */ }
+      }
+      if (!applicable) return rules.read(context, activeRules);
+      const { readParityFile, readParityFileForIdentity } = require("./parity/snapshot.mjs");
+      return rules.read(context, { ...activeRules, readFile: readParityFile, readFileForIdentity: readParityFileForIdentity });
+    },
+  };
+}
 
 // Loads every registered module of the given legs once per process and
 // returns { "<check>": {status: "loaded", rederive} | {status: "missing"} |
@@ -84,9 +109,11 @@ export async function loadQcRederivers({ legs = ["qa", "polish"], registry = QC_
     else {
       // Load the planner after the QC substrate has initialized: polish-node
       // itself uses that substrate, so a static import would form a TDZ cycle.
+      // Element parity also reads its probe files through the file module,
+      // which the capture node imports only when a plan has a route.
       const rules = outcome.module[entry.rederive];
-      const rederive = entry.record === "captures"
-        ? { ...rules, plan: (await import("./polish-node.mjs")).planPolishCapture } : rules;
+      const rederive = entry.record === "captures" ? { ...rules, plan: (await import("./polish-node.mjs")).planPolishCapture }
+        : entry.record === "element_parity" ? await elementParityRules(rules) : rules;
       cache[check] = Object.freeze({ status: "loaded", rederive });
     }
   }

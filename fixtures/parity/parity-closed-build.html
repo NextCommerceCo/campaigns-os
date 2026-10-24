@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Synthetic parity closed build</title><link rel="stylesheet" href="parity.css"></head>
+<body>
+  <header><h1>Synthetic headline</h1></header>
+  <main>
+    <p>Body copy after hero.</p>
+    <button type="button">Synthetic action</button>
+    <div id="host"></div>
+    <iframe src="parity-frame.html" width="320" height="120" title="Synthetic frame"></iframe>
+    <p>Synthetic footer line.</p>
+  </main>
+  <script>document.getElementById("host").attachShadow({ mode: "closed" }).innerHTML = "<p>Closed synthetic text</p>";</script>
+</body>
+</html>

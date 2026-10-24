@@ -13,6 +13,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { isNamedHuman, validateWaiverAttribution } from "./checkpoint-waiver.mjs";
 import { DOCTOR_SIDECAR_SCHEMA } from "./doctor-sidecar.mjs";
 import { cmd } from "./install-invocation.mjs";
+import { PARITY_TOLERANCES } from "./parity/compare.mjs";
 import { canonicalJson } from "./polish-capture.mjs";
 import { QC_CHECK_REGISTRY } from "./qc-check-registry.mjs";
 import { QC_LEGS, QC_REASON, fingerprint12, qcResultRef } from "./qc-results.mjs";
@@ -27,7 +28,117 @@ export const QC_DISPOSITION = Object.freeze({ OPEN: "open", OPERATOR_ACCEPTED: "
 // full QA verdict, or, on the Polish leg, the package-owned record the
 // accepted check is read from (QC_CHECK_REGISTRY `record`).
 const QC_LEG_SOURCES = Object.freeze({ doctor: "doctor_sidecar", qa: "qa_full_verdict" });
-export const QC_POLISH_RECORD_SOURCES = Object.freeze({ media_weight: "polish_media_weight", readability: "polish_readability", captures: "polish_captures" });
+export const QC_POLISH_RECORD_SOURCES = Object.freeze({ media_weight: "polish_media_weight", readability: "polish_readability", captures: "polish_captures", element_parity: "polish_element_parity" });
+
+const DESIGN_ACCESS_TEXT = Object.freeze({
+  design_access_missing: "A design file is recorded for this page, but this version of Campaigns OS cannot read design files. Element parity compares the built page with the page's source HTML export instead, so differences between the export and the design file are not checked. Nothing needs to change to continue. Where it matters, compare the export with the design file by hand.",
+  design_reference_not_recorded: "This page names a design file that the Design Source Package does not record. Rerun intake with `--force` to record it (this resets stage evidence), or continue: element parity still runs against the source HTML.",
+  design_reference_missing: "The Design Source Package records a design file, but this page no longer has a design-file declaration. Restore the declaration, or rerun intake with `--force` to drop the recorded file.",
+  design_reference_changed: "The design file named for this page differs from the one the Design Source Package records. Rerun intake with `--force` to record the current one.",
+  design_reference_conflict: "The CampaignSpec page and the source-html manifest name different design files or frames for this page (or the manifest's producer file key differs). The package records the CampaignSpec's. Correct the wrong one and rerun intake with `--force`.",
+});
+const probeIncomplete = (code) => `The element probe did not complete (${code}); not compared.`;
+const notRendered = (code) => `The source or built page did not render (${code}).`;
+const partlyRead = "Only part of the page was read; findings are not accept-eligible.";
+const textNotRead = "Some page text was not read (long text, closed components or frames) on the source page, the built page or both. Where the built page's text was not read, copy is not called missing.";
+const packageMismatch = "The Design Source Package on disk does not match the build's; rerun intake or polish capture.";
+const PARITY_COVERAGE_TEXT = Object.freeze({
+  ...Object.fromEntries(["navigation_failed", "http_error", "producer_timeout", "browser_unavailable", "source_html_missing", "source_root_unavailable"].map((code) => [code, notRendered(code)])),
+  ...Object.fromEntries(["probe_timeout", "probe_failed", "probe_not_run", "document_changed", "run_budget_exhausted"].map((code) => [code, probeIncomplete(code)])),
+  page_not_captured: "Not captured for element parity: beyond the 32-page run limit, or added since the last capture. Rerun polish capture.",
+  readiness_incomplete: "Fonts or awaited content were not ready in time; not compared.",
+  source_identity_unrecorded: "The Design Source Package records no hash for this source file; not compared.",
+  probe_file_absent: "Probe files are local and not committed; rerun polish capture on this machine.",
+  design_elements_unavailable: "The source has no text elements (for example an image-only export); element parity is unavailable.",
+  viewport_mismatch: "Source and build rendered at different sizes or pixel ratios; nothing is resized.",
+  probe_output_invalid: "The page measurements could not be read; not compared.",
+  comparator_failed: "The comparison could not run; not compared.",
+  element_cap_reached: partlyRead,
+  probe_time_cap_reached: partlyRead,
+  page_text_truncated: textNotRead,
+  closed_shadow_root_not_read: textNotRead,
+  frame_not_read: textNotRead,
+  font_face_cap_reached: "More than 200 font faces; web-font availability was not fully checked.",
+  source_package_unavailable: packageMismatch,
+  source_package_stale: packageMismatch,
+});
+export const QC_COVERAGE_TEXT = Object.freeze({
+  "design.access": Object.freeze({
+    design_access_missing: DESIGN_ACCESS_TEXT.design_access_missing,
+    design_reference_not_recorded: DESIGN_ACCESS_TEXT.design_reference_not_recorded,
+  }),
+  "parity.element": PARITY_COVERAGE_TEXT,
+});
+export const QC_COVERAGE_LIMIT_TEXT = Object.freeze({ "parity.element": Object.freeze({
+  font_usage_not_observed: "The font each glyph was drawn with is not read; a web font that loaded is assumed used.",
+}) });
+
+export function designAccessSummary(row) {
+  return row.check === "design.access" && row.result === "review" ? DESIGN_ACCESS_TEXT[row.reason_code] ?? null : null;
+}
+
+// A parity.element row in words, from its read-time observation: the design
+// element's label, then each comparator member with its measured values and
+// tolerance. Geometry also names the design selector path. Null for any other
+// row, and for a parity row with nothing to say (an unexercised row has no
+// observation members).
+const signed = (value, unit = "") => `${value < 0 ? "−" : "+"}${Math.abs(value)}${unit}`;
+const px = (value) => (typeof value === "number" ? `${value}px` : String(value));
+const rgb = (value) => (Array.isArray(value) ? `rgb(${value.join(",")})` : "not measured");
+const PARITY_GEOMETRY_TEXT = Object.freeze({
+  gap: (delta) => `moved ${signed(delta, "px")} against the element above (gap, tolerance ${PARITY_TOLERANCES.gap_px}px)`,
+  x_position: (delta) => `moved ${signed(delta, "px")} horizontally (x position, tolerance ${PARITY_TOLERANCES.position_px}px)`,
+  width: (delta) => `resized ${signed(delta, "px")} in width (width, tolerance ${PARITY_TOLERANCES.size_px}px)`,
+  height: (delta) => `resized ${signed(delta, "px")} in height (height, tolerance ${PARITY_TOLERANCES.size_px}px)`,
+});
+const PARITY_TYPE_TOLERANCES = Object.freeze({ font_size: `${PARITY_TOLERANCES.font_size_px}px`, line_height: `${PARITY_TOLERANCES.line_height_px}px`,
+  letter_spacing: `${PARITY_TOLERANCES.letter_spacing_px}px`, font_weight: "0" });
+const PARITY_COPY_TEXT = Object.freeze({
+  copy_missing: () => "design copy not found on the built page",
+  copy_changed: (similarity) => `design copy changed (similarity ${similarity})`,
+  page_text_truncated: () => "design copy not found in the readable part of the built page (review)",
+  build_text_not_read: () => "design copy not found in the readable part of the built page (review)",
+});
+
+function parityMemberText(category, member, reason, result) {
+  const { property, design, build, delta } = member;
+  const review = result === "review" ? " (review)" : "";
+  if (category === "geom") return PARITY_GEOMETRY_TEXT[property]?.(delta) ?? `${property} ${signed(delta, "px")}`;
+  if (category === "type") {
+    const name = property === "font_face" ? "web font" : property.replace(/_/g, "-");
+    const units = ["font_size", "line_height", "letter_spacing"].includes(property) ? "px" : "";
+    const tolerance = typeof delta === "number" && Object.hasOwn(PARITY_TYPE_TOLERANCES, property) ? ` (${signed(delta, units)}, tolerance ${PARITY_TYPE_TOLERANCES[property]})` : "";
+    const value = units ? px : String;
+    return `${name} ${value(design)} → ${value(build)}${tolerance}${review}`;
+  }
+  if (category === "color") {
+    if (property === "color") return `colour not measured (source ${design ?? "unresolved"}, build ${build ?? "unresolved"})${review}`;
+    const name = property === "background_color" ? "background colour" : "text colour";
+    const tolerance = typeof delta === "number" ? ` (${delta}/255, tolerance ${PARITY_TOLERANCES.color_channel})` : "";
+    return `${name} ${rgb(design)} → ${rgb(build)}${tolerance}${review}`;
+  }
+  return PARITY_COPY_TEXT[reason]?.(delta) ?? null;
+}
+
+export function parityRowSummary(row) {
+  if (row?.check !== "parity.element") return null;
+  const key = String(row.subject?.key ?? "");
+  if (key === "comparison") return row.result === "review" && row.reason_code === "source_identity_mismatch"
+    ? "source on disk differs from the recorded source; element parity not compared" : null;
+  const category = key.split(":")[0];
+  const observation = isPlainObject(row.observation) ? row.observation : {};
+  const members = Array.isArray(observation.members) ? observation.members.filter(isPlainObject) : [];
+  if (!["copy", "type", "color", "geom"].includes(category) || !members.length) return null;
+  const results = new Map((Array.isArray(row.members) ? row.members : []).map((member) => [member?.key, member]));
+  const texts = members.map((member) => {
+    const reported = results.get(member.property);
+    return parityMemberText(category, member, reported?.reason_code ?? row.reason_code, reported?.result ?? row.result);
+  }).filter(Boolean);
+  if (!texts.length) return null;
+  const selector = isNonEmptyString(observation.design_selector_path) ? observation.design_selector_path : null;
+  const label = isNonEmptyString(observation.label) ? observation.label : selector ?? key;
+  return `${label}${category === "geom" && selector && label !== selector ? ` (${selector})` : ""}: ${texts.join("; ")}`;
+}
 
 // Null for a Polish check with no record, or a leg with no source.
 export function measuredSourceFor(leg, check) {
@@ -356,7 +467,7 @@ function handoffEntry(row) {
     reason_code: row.reason_code,
     accept_eligible: row.accept_eligible === true,
     members: Array.isArray(row.members) ? row.members : [],
-    summary: visualSummary(row) ?? readabilityPairSummary([row]) ?? `${row.check} ${row.result}${row.reason_code ? ` (${row.reason_code})` : ""} on ${row.subject?.page ?? "(no page)"}${row.subject?.key == null ? "" : `: ${row.subject.key}`}`,
+    summary: designAccessSummary(row) ?? parityRowSummary(row) ?? visualSummary(row) ?? readabilityPairSummary([row]) ?? `${row.check} ${row.result}${row.reason_code ? ` (${row.reason_code})` : ""} on ${row.subject?.page ?? "(no page)"}${row.subject?.key == null ? "" : `: ${row.subject.key}`}`,
     ...(crop === undefined ? {} : { crop }),
   };
 }
@@ -384,7 +495,8 @@ function groupOpenWarnings(entries, rows = []) {
       pages,
       accept_eligible: results.every((entry) => entry.accept_eligible),
       summary: results.length > 1
-        ? readabilityPairSummary(results.map((entry) => rows.find((row) => qcResultRef(row) === entry.result_ref))) ?? `${lead.check} ${lead.result}${lead.reason_code ? ` (${lead.reason_code})` : ""} on ${pages.join(", ")}${lead.key == null ? "" : `: ${lead.key}`}`
+        ? parityRowSummary(rows.find((row) => qcResultRef(row) === lead.result_ref))
+          ?? readabilityPairSummary(results.map((entry) => rows.find((row) => qcResultRef(row) === entry.result_ref))) ?? `${lead.check} ${lead.result}${lead.reason_code ? ` (${lead.reason_code})` : ""} on ${pages.join(", ")}${lead.key == null ? "" : `: ${lead.key}`}`
         : lead.summary,
       results,
     };
@@ -445,6 +557,15 @@ export function buildQcHandoff({ results, coverage = [], accepts, now = new Date
   }
   const grouped = new Map();
   for (const row of results) {
+    for (const limit of new Set(row.coverage?.limits || [])) {
+      const text = QC_COVERAGE_LIMIT_TEXT[row.check]?.[limit];
+      if (!text) continue;
+      const key = JSON.stringify([row.leg, row.check, "limit", limit]);
+      const entry = grouped.get(key) || { check: row.check, leg: row.leg, result: "limit", reason_code: limit, count: 0, pages: [], text };
+      entry.count += 1;
+      if (row.subject?.page != null && !entry.pages.includes(row.subject.page)) entry.pages.push(row.subject.page);
+      grouped.set(key, entry);
+    }
     if (row.result !== "unexercised" && row.result !== "excluded") continue;
     const key = JSON.stringify([row.leg, row.check, row.result, row.reason_code]);
     const entry = grouped.get(key) || { check: row.check, leg: row.leg, result: row.result, reason_code: row.reason_code, count: 0, pages: [] };
@@ -453,7 +574,10 @@ export function buildQcHandoff({ results, coverage = [], accepts, now = new Date
     grouped.set(key, entry);
   }
   const coverageEntries = [...grouped.values(), ...coverage]
-    .map((entry) => ({ ...entry, pages: [...entry.pages].sort(compareText) }))
+    .map((entry) => {
+      const text = entry.text ?? QC_COVERAGE_TEXT[entry.check]?.[entry.reason_code];
+      return { ...entry, pages: [...entry.pages].sort(compareText), ...(text ? { text } : {}) };
+    })
     .sort((a, b) => (LEG_ORDER[a.leg] ?? 9) - (LEG_ORDER[b.leg] ?? 9) || compareText(a.check, b.check) || compareText(a.reason_code, b.reason_code) || compareText(a.result, b.result));
   const openGroups = groupOpenWarnings(open, results);
   review.sort(byCheckKeyPage);
@@ -491,7 +615,7 @@ export function qcHandoffTextLines(handoff) {
     : openLine(entry)));
   section("Review", handoff.review, (entry) => `${entry.result_ref} ${entry.summary}${entry.crop ? ` crop: ${entry.crop}` : ""}${members(entry)}`);
   section("Lapsed accepts", handoff.lapsed, (entry) => `${entry.result_ref} ${entry.summary}; accepted by ${entry.accepted_by} at ${entry.accepted_at}; lapsed: ${entry.why}`);
-  section("Coverage", handoff.coverage, (entry) => `${entry.leg} ${entry.check}: ${entry.result} (${entry.reason_code})${entry.count ? ` x${entry.count}` : ""}${entry.pages.length ? ` on ${entry.pages.join(", ")}` : ""}`);
+  section("Coverage", handoff.coverage, (entry) => `${entry.leg} ${entry.check}: ${entry.result} (${entry.reason_code})${entry.count ? ` x${entry.count}` : ""}${entry.pages.length ? ` on ${entry.pages.join(", ")}` : ""}${entry.text ? ` — ${entry.text}` : ""}`);
   section("Accepted", handoff.accepted, (entry) => `${entry.result_ref} accepted by ${entry.accepted_by} at ${entry.accepted_at}: ${entry.reason}${members(entry)}`);
   section("Inert accepts", handoff.inert_accepts, (entry) => `${entry.result_id ?? "(no result id)"}: ${entry.why}`);
   if (lines.length === 1) lines.push("  (no QC results)");

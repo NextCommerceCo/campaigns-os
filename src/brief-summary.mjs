@@ -43,6 +43,7 @@ const STRENGTH = Object.freeze([NOT_RECORDED, "default", "source", "stated"]);
 // design_authority.<page>.source values the generator writes; any other
 // non-null value is shown verbatim in its own group.
 const SUPPLIED_DESIGN = "provided_design_export";
+const DESIGN_FILE = "design_file";
 const TEMPLATE = "template";
 
 const VALUE_WORDS = 12;
@@ -124,6 +125,7 @@ function statedOnly({ value, provenance }) {
 function authorityGroups(brief, pageIds) {
   const authority = own(brief, "design_authority");
   const supplied = { kind: "supplied", source: SUPPLIED_DESIGN, pages: [], provenances: [] };
+  const designFile = { kind: "design_file", source: DESIGN_FILE, pages: [], provenances: [] };
   const template = { kind: "template", source: TEMPLATE, pages: [], provenances: [] };
   const others = new Map();
   const unstated = { kind: "not_stated", source: null, pages: [], provenances: [] };
@@ -132,7 +134,8 @@ function authorityGroups(brief, pageIds) {
     const source = notStated(recorded) ? null : recorded;
     const provenance = pageId == null ? null : provenanceOf(brief, pageSourceField(pageId), source);
     let group = unstated;
-    if (source === SUPPLIED_DESIGN) group = supplied;
+    if (source === DESIGN_FILE) group = designFile;
+    else if (source === SUPPLIED_DESIGN) group = supplied;
     else if (source === TEMPLATE) group = template;
     else if (source != null) {
       const key = canonicalJson(source);
@@ -142,7 +145,7 @@ function authorityGroups(brief, pageIds) {
     group.pages.push(pageId);
     group.provenances.push(provenance);
   }
-  return [supplied, template, ...others.values(), unstated]
+  return [designFile, supplied, template, ...others.values(), unstated]
     .filter((group) => group.pages.length)
     .map(({ provenances, ...group }) => ({ ...group, provenance: weakest(provenances) }));
 }
@@ -178,6 +181,7 @@ function renderLines(model, cuts, valueWords) {
   const value = (item, fallback) => (item.value == null ? fallback : marked(item.value, item.provenance, valueWords, cut));
   const group = (entry) => {
     const ids = listItems(entry.pages, cuts[4], pageIdText, cut).join(", ");
+    if (entry.kind === "design_file") return `${ids} follow the design file, built from its HTML export ${MARKERS[entry.provenance]}`;
     if (entry.kind === "supplied") return `${ids} follow the supplied design ${MARKERS[entry.provenance]}`;
     if (entry.kind === "template") return `${ids} follow the template ${MARKERS[entry.provenance]}`;
     if (entry.kind === "other") return `${ids} use ${marked(entry.source, entry.provenance, VALUE_WORDS, cut)}`;

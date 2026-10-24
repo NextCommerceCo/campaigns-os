@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   chmodSync,
@@ -29,6 +29,200 @@ import {
   generateDesignSourcePackageReadback,
 } from "./design-source-package.mjs";
 import { portableArtifactPaths } from "./cli-helpers.mjs";
+import { doctorPacket } from "./doctor/inspect.mjs";
+import { buildQcHandoff, qcHandoffTextLines } from "./qc-accept.mjs";
+import { resultTextLines } from "./cli.mjs";
+
+test("P1-W1: start and next preserve doctor status and stage while rendering design access coverage", () => withFixture((fixture) => {
+  const manifest = readJson(manifestAt(fixture));
+  manifest.pages.forEach((page) => { page.screenshot_refs = ["desktop", "mobile"].map((viewport) => ({ viewport, path: "assets/product.png", width: viewport === "desktop" ? 1440 : 390, height: 900, sha256: "a".repeat(64) })); });
+  writeJson(manifestAt(fixture), manifest);
+  assert.equal(declarationPrepare(fixture).status, 0);
+  const packetPath = join(fixture.target, "campaign-runtime.build.json");
+  const baselineDoctor = doctorPacket(packetPath);
+  const baselineNext = runCli(["next", "--packet", packetPath, "--no-write", "--no-remit"], fixture.dir).json;
+  declare(fixture, "manifest", DESIGN_A);
+  const started = runCli(["start", "--spec", fixture.specPath, "--source", fixture.source, "--target", fixture.target, "--template-family", "olympus", "--force", "--no-run-session", "--no-remit"], fixture.dir);
+  assert.ok(started.json, started.stderr);
+  const currentDoctor = doctorPacket(packetPath);
+  assert.equal(currentDoctor.status, baselineDoctor.status);
+  assert.deepEqual(currentDoctor.errors, baselineDoctor.errors);
+  assert.deepEqual(currentDoctor.derived.checkpoint_gates, baselineDoctor.derived.checkpoint_gates);
+  const next = runCli(["next", "--packet", packetPath, "--no-write", "--no-remit"], fixture.dir).json;
+  assert.equal(next.status, baselineNext.status);
+  assert.equal(typeof next.stage, "string");
+  assert.equal(next.stage, baselineNext.stage);
+  assert.deepEqual(resultTextLines(next).filter((line) => line.includes("design.access")), [`  - doctor design.access: unexercised (design_access_missing) x1 on landing — ${MISSING_TEXT}`]);
+  const brief = readJson(join(fixture.target, ".campaign-runtime/input/campaign-build-brief.normalized.json"));
+  assert.equal(brief.design_authority.landing.source, "design_file");
+}));
+
+const DESIGN_A = "https://www.figma.com/design/SYNTHKEYA0001/synthetic-file?node-id=1-2";
+const DESIGN_B = "https://www.figma.com/design/SYNTHKEYB0002/synthetic-other";
+const NOT_RECORDED_TEXT = "This page names a design file that the Design Source Package does not record. Rerun intake with `--force` to record it (this resets stage evidence), or continue: element parity still runs against the source HTML.";
+const CHANGED_TEXT = "The design file named for this page differs from the one the Design Source Package records. Rerun intake with `--force` to record the current one.";
+const MISSING_TEXT = "A design file is recorded for this page, but this version of Campaigns OS cannot read design files. Element parity compares the built page with the page's source HTML export instead, so differences between the export and the design file are not checked. Nothing needs to change to continue. Where it matters, compare the export with the design file by hand.";
+// Baseline outputs captured once from 505aada92c94cecf9106bb1fb1e818d9dadee46d.
+function basePrepare(fixture) {
+  const manifest = readJson(manifestAt(fixture));
+  const key = sha256(JSON.stringify(manifest));
+  const output = JSON.parse(readFileSync(join(ROOT, `fixtures/design-file-baseline/prepare-${key.slice(0, 16)}.json`), "utf8").replaceAll("<fixture>", fixture.dir));
+  assert.deepEqual(output.manifest, manifest);
+  for (const [path, bytes] of Object.entries(output.files)) {
+    mkdirSync(dirname(join(fixture.target, path)), { recursive: true });
+    writeFileSync(join(fixture.target, path), bytes);
+  }
+  return { status: output.status, stdout: output.stdout, stderr: output.stderr, json: output.status === 0 ? JSON.parse(output.stdout) : null };
+}
+function nextDesignLines(fixture) {
+  const next = runCli(["next", "--packet", join(fixture.target, "campaign-runtime.build.json"), "--no-write", "--no-remit"], fixture.dir);
+  assert.ok(next.json, next.stderr);
+  return resultTextLines(next.json).filter((line) => line.includes("design.access"));
+}
+const declarationPrepare = (fixture, force = false) => runPrepare(fixture, { extraArgs: force ? ["--force"] : [], env: { CAMPAIGNS_OS_TELEMETRY: "off" } });
+const manifestAt = (fixture) => join(fixture.source, ".campaigns-os/source-html-manifest.json");
+function declare(fixture, channel, url) {
+  const path = channel === "spec" ? fixture.specPath : manifestAt(fixture);
+  const value = readJson(path);
+  const page = channel === "spec" ? value.funnels[0].pages[0] : value.pages[0];
+  page[channel === "spec" ? "design_source" : "design_file"] = { type: "figma", file_url: url };
+  writeJson(path, value);
+}
+function accessOf(fixture) {
+  const doctor = doctorPacket(join(fixture.target, "campaign-runtime.build.json"));
+  const row = doctor.derived.qc_results.find((row) => row.check === "design.access");
+  const handoff = buildQcHandoff({ results: [row] });
+  return { doctor, row, handoff, text: qcHandoffTextLines(handoff).join("\n") };
+}
+
+test("P1-B3: manifest edit follows existing stale refusal and force recovery, with unrecorded Coverage text", () => withFixture((fixture) => {
+  const base = basePrepare(fixture);
+  assert.equal(base.status, 0, base.stderr);
+  const original = readJson(manifestAt(fixture));
+  const edited = structuredClone(original);
+  edited.pages[0].page_url = "changed/";
+  writeJson(manifestAt(fixture), edited);
+  const ordinaryEdit = basePrepare(fixture);
+  assert.equal(ordinaryEdit.status, 1);
+  writeJson(manifestAt(fixture), original);
+  declare(fixture, "manifest", DESIGN_A);
+  const declarationEdit = declarationPrepare(fixture);
+  assert.equal(declarationEdit.status, 1);
+  // The template certification notice names the vendored SDK record, which
+  // the two runs may read at different revisions; the refusal itself must match.
+  const refusal = (stderr) => stderr.replace(/^\[campaigns-os prepare-build\] Template family .* certification is current: .*\n/m, "");
+  assert.equal(refusal(declarationEdit.stderr), refusal(ordinaryEdit.stderr));
+  assert.match(declarationEdit.stderr, /current_html_funnel_material_stale/);
+  assert.match(declarationEdit.stderr, /--force/);
+  const before = accessOf(fixture);
+  assert.equal(before.row.result, "unexercised");
+  assert.equal(before.row.reason_code, "design_reference_not_recorded");
+  assert.deepEqual(nextDesignLines(fixture), [`  - doctor design.access: unexercised (design_reference_not_recorded) x1 on landing — ${NOT_RECORDED_TEXT}`]);
+  assert.equal(declarationPrepare(fixture, true).status, 0);
+  assert.equal(accessOf(fixture).row.reason_code, "design_access_missing");
+}));
+
+test("P1-B3b: a later spec declaration reuses exact package bytes and reports the force remedy", () => withFixture((fixture) => {
+  supplyFigmaProvenance(fixture);
+  const base = basePrepare(fixture);
+  assert.equal(base.status, 0, base.stderr);
+  const path = join(fixture.target, DSP_REL_PATH);
+  const original = readFileSync(path);
+  assert.equal(readJson(path).contributions.some((entry) => entry.provenance?.source_type === "design_file"), false);
+  declare(fixture, "spec", DESIGN_A);
+  const result = declarationPrepare(fixture);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.json.designSourcePackageMode, "reused");
+  assert.deepEqual(readFileSync(path), original);
+  const access = accessOf(fixture);
+  assert.equal(access.row.result, "unexercised");
+  assert.equal(access.row.reason_code, "design_reference_not_recorded");
+  assert.ok(access.doctor.derived.checkpoint_gates.some((gate) => gate.id === "source_html.producer_provenance" && gate.status === "pass"));
+  assert.deepEqual(nextDesignLines(fixture), [`  - doctor design.access: unexercised (design_reference_not_recorded) x1 on landing — ${NOT_RECORDED_TEXT}`]);
+}));
+
+function supplyFigmaProvenance(fixture, includeFileKey = true) {
+  const manifest = readJson(manifestAt(fixture));
+  const section = "<section>synthetic section</section>";
+  writeFileSync(join(fixture.source, "section.html"), section);
+  manifest.generator = "figma-sections-export";
+  manifest.producer_provenance = {
+    source_type: "semantic_figma_export", screenshot_fallback_used: false,
+    semantic_section_count: 1, material_fingerprint: "a".repeat(64), figma_file_key: "SYNTHKEYA0001",
+    section_exports: [{ section: "hero", type: "html", node_ids: { desktop: "1:2" } }],
+  };
+  if (!includeFileKey) delete manifest.producer_provenance.figma_file_key;
+  manifest.files.push({ path: "section.html", role: "partial", sha256: sha256(section) });
+  writeJson(manifestAt(fixture), manifest);
+}
+
+for (const [id, channel] of [["P1-B6", "spec"], ["P1-B6b", "manifest"]]) {
+  test(`${id}: changed design identity preserves existing currency rules and renders the review remedy`, () => withFixture((fixture) => {
+    if (channel === "spec") supplyFigmaProvenance(fixture, false);
+    declare(fixture, channel, DESIGN_A);
+    assert.equal(declarationPrepare(fixture).status, 0);
+    const original = readFileSync(join(fixture.target, DSP_REL_PATH));
+    declare(fixture, channel, DESIGN_B);
+    const result = declarationPrepare(fixture);
+    assert.equal(result.status, channel === "spec" ? 0 : 1, result.stderr);
+    assert.deepEqual(readFileSync(join(fixture.target, DSP_REL_PATH)), original);
+    const access = accessOf(fixture);
+    assert.equal(access.row.result, "review");
+    assert.equal(access.row.reason_code, "design_reference_changed");
+    assert.equal(access.handoff.review[0].summary, CHANGED_TEXT);
+    assert.deepEqual(qcHandoffTextLines(access.handoff).filter((line) => line.includes("design.access:")), [`  - design.access:landing:file@${access.row.state_fingerprint.slice(7, 19)} ${CHANGED_TEXT}`]);
+    const hashIdentity = (key) => sha256(JSON.stringify({ file_key: key, type: "figma" }));
+    assert.deepEqual(access.row.state, { reason_code: "design_reference_changed", recorded_identity_sha256: hashIdentity("SYNTHKEYA0001"), declared_identity_sha256: hashIdentity("SYNTHKEYB0002"), conflict_identities: [], conflict_frames: [] });
+    if (channel === "manifest") {
+      assert.match(result.stderr, /current_html_funnel_material_stale/);
+      assert.equal(declarationPrepare(fixture, true).status, 0);
+      assert.equal(accessOf(fixture).row.reason_code, "design_access_missing");
+    }
+  }));
+}
+
+for (const [id, variant] of [["P1-B4", "malformed"], ["P1-B7", "ambiguous"], ["P1-B7", "unique-path"]]) {
+  test(`${id}: prepare-build publishes exact package, brief and QC behavior for ${variant}`, () => withFixture((fixture) => {
+    const manifest = readJson(manifestAt(fixture));
+    const file = { file_url: DESIGN_A };
+    manifest.pages[0].design_file = variant === "malformed" ? { file_url: 42 } : file;
+    if (variant !== "malformed") manifest.pages.push({ ...manifest.pages[0], path: variant === "ambiguous" ? "landing.html" : "landing-old.html", design_file: { file_url: DESIGN_B } });
+    const baseManifest = structuredClone(manifest);
+    if (variant === "unique-path") baseManifest.pages.forEach((page) => { delete page.design_file; });
+    writeJson(manifestAt(fixture), baseManifest);
+    const base = basePrepare(fixture);
+    assert.equal(base.status, 0, base.stderr);
+    const baselineDsp = readJson(join(fixture.target, DSP_REL_PATH));
+    const briefPath = join(fixture.target, ".campaign-runtime/input/campaign-build-brief.normalized.json");
+    const baselineBrief = readJson(briefPath);
+    writeJson(manifestAt(fixture), manifest);
+    const current = declarationPrepare(fixture, true);
+    assert.equal(current.status, 0, current.stderr);
+    const dsp = readJson(join(fixture.target, DSP_REL_PATH));
+    const brief = readJson(briefPath);
+    const doctor = doctorPacket(join(fixture.target, "campaign-runtime.build.json"));
+    const rows = doctor.derived.qc_results.filter((row) => row.check === "design.access");
+    assert.deepEqual(current.json.context.prompts_required.filter((prompt) => prompt.code === "MANIFEST_DUPLICATE_PAGE"), base.json.context.prompts_required.filter((prompt) => prompt.code === "MANIFEST_DUPLICATE_PAGE"));
+    if (variant !== "unique-path") {
+      assert.deepEqual(dsp.contributions, baselineDsp.contributions);
+      assert.equal(dsp.material_fingerprint, baselineDsp.material_fingerprint);
+      assert.deepEqual(brief.design_authority, baselineBrief.design_authority);
+      assert.deepEqual(rows, []);
+      assert.deepEqual(nextDesignLines(fixture), []);
+    } else {
+      const sha = sha256('{"file_key":"SYNTHKEYA0001","type":"figma"}');
+      const cid = `design-file-${sha.slice(0, 12)}`;
+      assert.deepEqual(dsp.contributions.filter((entry) => entry.provenance.source_type === "design_file").map((entry) => ({ id: entry.id, source_refs: entry.source_refs, mappings: entry.mappings })), [{ id: cid, source_refs: [{ id: `${cid}-file`, kind: "url", url: DESIGN_A, role: "design_file" }], mappings: [{ id: `${cid}-landing-coverage`, surface_id: "landing", coverage_role: "reference_only", confidence: "high", source_refs: [`${cid}-file`], screenshot_refs: [], reference_refs: [] }] }]);
+      assert.equal(dsp.contributions[0].mappings[0].derived_from, cid);
+      assert.deepEqual(brief.design_authority.landing, { source: "design_file", reference: DESIGN_A, frames: {}, derived_artifact: { source: "provided_design_export", reference: "landing.html" } });
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0].result, "unexercised");
+      assert.equal(rows[0].reason_code, "design_access_missing");
+      assert.deepEqual(rows[0].state, { reason_code: "design_access_missing", recorded_identity_sha256: sha, declared_identity_sha256: sha, conflict_identities: [], conflict_frames: [] });
+      assert.deepEqual(nextDesignLines(fixture), [`  - doctor design.access: unexercised (design_access_missing) x1 on landing — ${MISSING_TEXT}`]);
+    }
+  }));
+}
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CLI = resolve(ROOT, "bin/campaigns-os.mjs");

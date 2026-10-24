@@ -26,6 +26,13 @@ export const VISUAL_CAPTURE_RUN_MS = 240_000;
 export const VISUAL_DIFF_RUN_MS = 60_000;
 export const VISUAL_ADDED_RUN_MS = 300_000;
 export const VISUAL_MAX_CAPTURE_HEIGHT_PX = 12_000;
+// Element parity bounds, spent inside the visual cells above: the routes a
+// run probes, one probe's bound per side, the probe's own in-page walk, and
+// every parity probe of a run.
+export const PARITY_MAX_ROUTES = 32;
+export const PARITY_PROBE_CELL_MS = 2_000;
+export const PARITY_PROBE_WALK_MS = 1_500;
+export const PARITY_PROBE_RUN_MS = 60_000;
 
 export function boundedPolishDeadline(value, fallback) {
   return Number.isSafeInteger(value) && value > 0 && value <= fallback ? value : fallback;

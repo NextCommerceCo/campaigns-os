@@ -18,6 +18,23 @@ import {
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CLI = resolve(ROOT, "bin/campaigns-os.mjs");
 
+test("P1-W2: no declaration keeps existing fixture brief and summary byte-identical to BASE", async () => {
+  // Baseline outputs captured once from 505aada92c94cecf9106bb1fb1e818d9dadee46d.
+  const baseline = readJson(resolve(ROOT, "fixtures/design-file-baseline/brief.json"));
+  const { summarizeCampaignBrief } = await import("./brief-summary.mjs");
+  const spec = readJson(resolve(ROOT, "examples/campaignspec.v42.basic.json"));
+  const activePages = spec.funnels.flatMap((funnel) => funnel.pages);
+  const args = { spec, activePages, pageMappings: activePages.map((page) => ({ page_id: page.id, path: `${page.id}.html` })), templateFamily: "olympus" };
+  const current = createCampaignBuildBriefArtifact(args).artifact;
+  const previous = baseline.artifact;
+  // generated_at is administrative wall-clock output; bind both calls to the
+  // same instant before comparing the serialized artifacts.
+  current._meta.generated_at = previous._meta.generated_at;
+  assert.equal(JSON.stringify(current), JSON.stringify(previous));
+  const activePageIds = activePages.map((page) => page.id);
+  assert.equal(summarizeCampaignBrief({ brief: current, activePageIds }).text, baseline.summary);
+});
+
 function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));
 }

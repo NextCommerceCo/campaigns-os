@@ -1,6 +1,7 @@
 import { campaignSpecIdentity, resolveCampaignIdentity, campaignIdentitiesMatch, localSpecIdentityFields } from "./spec-source-identity.mjs";
 import { withDoctorCiReport } from "./doctor/ci.mjs";
 import { createHash, randomUUID } from "node:crypto";
+import { resolveDesignFileReferences } from "./design-file-reference.mjs";
 import { withDesignSourcePublication } from "./design-source-publication.mjs";
 import { createDemo, demoArguments } from "./demo.mjs";
 import { execFileSync } from "node:child_process";
@@ -1860,6 +1861,7 @@ function prepareBuildUnderLock({
   // campaign's report), and the previous brief carries field provenance.
   const priorBriefInputs = priorBriefInputsForIntake({ reportPath, briefPath, identity: { spec: { map_id: mapId, ...(localSpecId ? { local_spec_id: localSpecId } : {}) }, campaign: { public_route_slug: publicRouteSlug } } });
   const buildBrief = createCampaignBuildBriefArtifact({
+    designFiles: resolveDesignFileReferences({ activePages, mappings: matched.mappings, manifest: manifestResult.manifest }).pages,
     inputPath: briefDiscovery?.path || null,
     inputSource: briefDiscovery?.source || null,
     spec,
@@ -2852,6 +2854,7 @@ export async function polishCaptureCommand(args, options = {}) {
       mediaWeight: capture.media_weight,
       readability: capture.readability,
       captures: capture.captures,
+      elementParity: capture.element_parity,
       now: options.now ?? new Date(),
     });
     checkpoint = evaluateRecordedHiddenEagerMediaCheckpoint({

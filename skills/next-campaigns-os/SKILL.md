@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-os
-version: 1.0.65
+version: 1.0.66
 description: Coordinate Campaigns OS lifecycle workflows from CampaignSpec, Build Packet, starter-template contracts, stage reports, deploy evidence, and QA proof depth.
 ---
 
-Bundle revision: 1.60.0+skills.5
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.60.0+skills.5`
+Bundle revision: 1.61.0+skills.1
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.61.0+skills.1`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -74,6 +74,7 @@ to author a spec or fabricate a Map ID. Verify store/campaign binding and real
 package/offer references. Store contact and policy details can come from the
 brief; gateway access is optional. Current authoring is v4.3+ while preserving
 the v4.2 `funnels[]` topology as the compatibility shape.
+When the HTML was exported from a design file, name it as `design_file: {file_url, type?, breakpoints?}` on the source-html manifest page; see `docs/design-source-package.md` for the shape and the Figma-only spec `design_source` provenance rule.
 2. Run `campaigns-os start` or `campaigns-os prepare-build` (tier `A`: they write the
 Build Packet, Build Context, assembly report, run session and `.gitignore` under
 the target plus a Run Record under the working directory, and they contact the

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { normalizeDesignFileReference } from "./design-file-reference.mjs";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -165,6 +166,12 @@ function validateManifestPage(entry, index, add, addWarning = () => {}) {
     }
   }
   warnOnUnusableScreenshotRecords(entry, location, addWarning);
+  if (Object.hasOwn(entry, "design_file")) {
+    const { declaration, warnings } = normalizeDesignFileReference(entry.design_file);
+    for (const detail of warnings) {
+      addWarning(`${location}.design_file`, `${location}.design_file (page_id ${JSON.stringify(entry.page_id)}) ${declaration ? "has an ignored frame" : "is ignored as a design-file declaration"}: ${detail}. The rest of the manifest is used as written.`);
+    }
+  }
 }
 
 // Screenshot records are optional proof, so a malformed one is not a reason to

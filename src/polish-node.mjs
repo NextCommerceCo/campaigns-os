@@ -6,6 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import { computeDesignSourcePackageMaterialFingerprint } from "./design-source-package.mjs";
 import { runVisualPass, unavailableCapturesRecord, CAPTURES_SCHEMA, CAPTURES_PRODUCER } from "./polish-visual.mjs";
 import { readRegularFileSync } from "./source-html-server.mjs";
+import { buildElementParityRecord, ELEMENT_PARITY_PRODUCER, ELEMENT_PARITY_SCHEMA } from "./parity/element-parity-record.mjs";
 import { computeBuildFingerprint, describeBuildOutputDrift } from "./built-site-scope.mjs";
 import {
   buildPageLoadCapture,
@@ -313,20 +314,22 @@ function canonicalJson(value) {
   return JSON.stringify(canonicalize(value));
 }
 
-// Covers every package-owned capture key: a page_load, media_weight or
-// readability record that changes during the browser pass refuses the
-// attachment.
+// Covers every package-owned capture key: a page_load, media_weight,
+// readability, captures or element_parity record that changes during the
+// browser pass refuses the attachment.
 function conflictToken(visualReview) {
   const hasPageLoad = Object.hasOwn(visualReview, "page_load");
   const hasMediaWeight = Object.hasOwn(visualReview, "media_weight");
   const hasReadability = Object.hasOwn(visualReview, "readability");
   const hasCaptures = Object.hasOwn(visualReview, "captures");
-  if (!hasPageLoad && !hasMediaWeight && !hasReadability && !hasCaptures) return "absent";
+  const hasElementParity = Object.hasOwn(visualReview, "element_parity");
+  if (!hasPageLoad && !hasMediaWeight && !hasReadability && !hasCaptures && !hasElementParity) return "absent";
   const value = {
     ...(hasPageLoad ? { value: visualReview.page_load } : {}),
     ...(hasMediaWeight ? { media_weight: visualReview.media_weight } : {}),
     ...(hasReadability ? { readability: visualReview.readability } : {}),
     ...(hasCaptures ? { captures: visualReview.captures } : {}),
+    ...(hasElementParity ? { element_parity: visualReview.element_parity } : {}),
   };
   return `sha256:${createHash("sha256").update(canonicalJson(value)).digest("hex")}`;
 }
@@ -514,8 +517,11 @@ export function mergePolishPageLoadEvidence(report, pageLoad) {
 // readability attaches on its own: only a package-produced record bound to
 // the current build, whose every shared cell carries the integrity of the
 // matching page_load capture; any other value, or none, removes an earlier
-// one.
-export function mergePolishCaptureEvidence(report, { pageLoad = null, mediaWeight = null, readability = null, captures, now = null } = {}) {
+// one. element_parity attaches under its own rule (elementParityAttaches),
+// beside the captures record this call attaches; with a pageLoad, any other
+// value, or none, removes an earlier one, and with no pageLoad it stays as it
+// is.
+export function mergePolishCaptureEvidence(report, { pageLoad = null, mediaWeight = null, readability = null, captures, elementParity, now = null } = {}) {
   let merged;
   if (pageLoad === null || pageLoad === undefined) {
     const { visualReview } = captureReportAncestors(report);
@@ -547,6 +553,10 @@ export function mergePolishCaptureEvidence(report, { pageLoad = null, mediaWeigh
     if (!capturesAttach(captures, { report, pageLoad })) throw new Error("polish capture can attach only package-produced captures for the same page_load capture.");
     visualReview.captures = captures;
   }
+  if (pageLoad) {
+    delete visualReview.element_parity;
+    if (elementParityAttaches(elementParity, { report, captures })) visualReview.element_parity = elementParity;
+  }
   delete visualReview.readability;
   if (readabilityAttaches(readability, { buildFingerprint: currentBuildFingerprint(report), pageLoad: visualReview.page_load })) {
     visualReview.readability = readability;
@@ -564,6 +574,15 @@ export function capturesAttach(record, { report, pageLoad }) {
   return isPlainObject(record) && record.schema_version === CAPTURES_SCHEMA && record.performed_by === CAPTURES_PRODUCER
     && record.subject?.build_fingerprint === currentBuildFingerprint(report)
     && ["routes", "route_scope", "viewports"].every((key) => canonicalJson(record.subject?.[key]) === canonicalJson(pageLoad?.subject?.[key]));
+}
+
+// A package-produced element_parity record bound to the current build and to
+// the captures record attached in the same merge. Readability plays no part.
+export function elementParityAttaches(record, { report, captures }) {
+  const buildFingerprint = currentBuildFingerprint(report);
+  return isPlainObject(record) && record.schema_version === ELEMENT_PARITY_SCHEMA && record.performed_by === ELEMENT_PARITY_PRODUCER
+    && Boolean(buildFingerprint) && record.subject?.build_fingerprint === buildFingerprint
+    && isPlainObject(captures) && typeof captures.integrity === "string" && record.subject?.captures_integrity === captures.integrity;
 }
 
 function readabilityAttaches(record, { buildFingerprint, pageLoad }) {
@@ -658,14 +677,33 @@ export async function capturePolishPageLoad(options = {}) {
   } return value; };
   const frozen = freeze(result);
   options.onFrozen?.(frozen);
+  // Element parity rides C's visual cells (its probe on both sides of each);
+  // its modules load only here, where the plan has a route.
+  let parity = null;
+  try {
+    const importer = options.visual.parityImporter ?? (() => Promise.all([import("./parity/probe.mjs"), import("./parity/snapshot.mjs")]));
+    const [probe, snapshot] = await importer();
+    parity = { snapshot, run: probe.createParityProbeRun({ routes: plan.routes }) };
+  } catch { /* no parity probe: no element_parity record, so the merge removes an earlier one */ }
   let captures;
-  try { captures = await runVisualPass({ ...options, ...options.visual, frozen }); }
+  try { captures = await runVisualPass({ ...options, ...options.visual, frozen, probes: parity ? [parity.run.probe] : [] }); }
   catch {
     // Even unexpected artifact/dependency failures cannot discard prior work.
     captures = unavailableCapturesRecord({ plan, subject: { ...frozen.page_load.subject,
       source_package_material_fingerprint: currentSourcePackageMaterialFingerprint(options.report) }, measuredAt: options.now });
   }
-  return { ...frozen, captures };
+  let elementParity = null;
+  if (parity) {
+    // Probe files are written after both visual browsers have closed.
+    const targetRepo = options.visual.targetRepo ?? options.targetRepo;
+    try {
+      elementParity = buildElementParityRecord({ plan, captures, run: parity.run, packet: options.packet,
+        packetPath: options.visual.packetPath ?? options.packetPath, buildFingerprint: currentBuildFingerprint(options.report),
+        sourceFingerprint: currentSourcePackageMaterialFingerprint(options.report),
+        writeFile: (value) => parity.snapshot.writeParityFile(targetRepo, value), measuredAt: options.now ?? new Date() });
+    } catch { elementParity = null; }
+  }
+  return { ...frozen, captures, ...(elementParity ? { element_parity: elementParity } : {}) };
 }
 
 // The readability-only capture of a campaign with no capturable page_load

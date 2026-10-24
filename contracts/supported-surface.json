@@ -1,6 +1,6 @@
 {
   "_note": "The downstream contract manifest. Everything listed here is SUPPORTED SURFACE: consumers (campaigns-agent, campaign-builder, the private ops repo, page-kit campaign repos) may depend on it, and changing it is a deliberate act — hashed entries require a surface_version bump in the same change (check-supported-surface.mjs --base, mirroring the skills.json bump gate), named entries must keep existing at their path, cli_commands must keep resolving in the CLI dispatch, package_exports must stay exported, and every entry must ship in the npm pack (files[] coverage). Anything NOT listed here — src/** internals, scripts/** checkers, examples/**, prompts/**, contracts/** other than this file and the entries named[] below (the orientation contract, the release ledger, and the consumer-facing orientation fixtures) — is implementation: consumers may read it for context but must not build on it, and it can change without notice. Rationale and the compatibility promise: docs/supported-surface.md.",
-  "surface_version": "1.60.0",
+  "surface_version": "1.61.0",
   "package_exports": [
     "./commercial-journey",
     "./commercial-parity",
@@ -58,7 +58,7 @@
       "sha256": "d524003184131398dc15fdb84385af1be0de0c69d6c5ede7278689a5b6101b81"
     },
     "schemas/campaign-design-source-package.v0.schema.json": {
-      "sha256": "65bcd8b5f41f1e9ecfc36f3b8838cd4ed531bd74c5a318ee5147131f6c9b4a1c"
+      "sha256": "ecb8fd534977826541aa7110dad3483b7b9215dd60ed30b6370083848b957f13"
     },
     "schemas/campaign-runtime-assembly-report.v0.schema.json": {
       "sha256": "625a6f2ed6bee726f9cddad750e64a54a7e03744c777f5a70afe4a39afdd9848"
@@ -112,7 +112,7 @@
       "sha256": "41ff370de4395149781d7e8c4ad6d7d4e2f896eb2030944399d36f1237726a20"
     },
     "schemas/source-html-manifest.v0.schema.json": {
-      "sha256": "841c1f884260ce3eb3ddb518960a127bc915992a9539c818e5986ce156acff1f"
+      "sha256": "58bc98b3fd07c87c6ba92d29b26941ca97200ea433d73f7418966f679841df49"
     },
     "schemas/campaigns-os-progress-snapshot.v0.schema.json": {
       "sha256": "ef31b4f20e39dfc1614dd4b45e4cf1692a51760b008cb51d133659307bd2a954"
@@ -121,7 +121,7 @@
       "sha256": "2e440be6513fe06b351c3a72c35424a04f807792621cb01e89803441fd925e06"
     },
     "schemas/campaigns-os-readback.v2.schema.json": {
-      "sha256": "dfc9abed38d456969e47a21f606d308a03bdf036f3466f7d6e47a602747dacf4"
+      "sha256": "443676656a7d0db4c8c45301dad5c925cd1b03d4d0e3dccdf0132d9a4e6005f2"
     },
     "contracts/effects.v1.json": {
       "sha256": "9c1d69e44eab7403ca3ff80f850214d89b0a02fdc51544beef37dbd0a653eeaa"

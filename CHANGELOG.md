@@ -2,6 +2,19 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.61.0] - 2026-10-23
+
+### Changed
+
+- Publishes `1.60.0+agent.7`: installed users receive the quickstart, access, source-adapter and CampaignSpec authoring guides, and the package check verifies documentation links and headings inside the installed package.
+- Publishes `1.60.0+agent.8`: readback reports when a changed build requires Polish or QA again, and `doctor --ci` reports that evidence debt for campaign pull requests. Installed agent context describes revising a live campaign and renewing its evidence (campaigns-os#695, campaigns-os#699).
+- Publishes `1.60.0+agent.9`: completed Polish requires current package captures, with a captured build screenshot for every planned route; source renders are captured beside them for comparison. The review handoff includes visual reference warnings and image differences for operator review; pixel scores do not decide fidelity (campaigns-os#696).
+- Publishes `1.60.0+agent.10`: the brand theme carries the design source's fonts and button radius onto commerce pages. `theme generate` writes `brand-fonts.css` beside `brand-theme.css`, and `record theme` refuses a styled commerce page that doesn't load it (campaigns-os#703).
+- Intake records a manifest `design_file` as the page's authority and its HTML export as derived from that file; a Figma spec `design_source` records that lineage only with figma-sections-export provenance that passes doctor's `source_html.producer_provenance` check without a waiver. This version cannot read design files, so `design.access` reports `unexercised` with `design_access_missing` for a recorded file and explains how to continue or compare the export and file by hand; a changed design file or conflicting declaration is listed for review; an absent declaration reports `design_reference_missing`, with recovery by restoring it or rerunning intake with `--force` to drop the recorded file (campaigns-os#697).
+- Polish probes the source and built renders and reports element-level differences in geometry, typography, colour and copy as warnings an operator can review and accept; they never block Polish or change readiness (campaigns-os#697).
+- The readback schema now describes the optional `evidence_debt` field, its `current`, `owed` and `unknown` stage statuses, reasons and changes against the retained assembly manifest. Any owed Polish or QA stage makes `clean` false; unknown debt still needs review when `clean` is true.
+- Bundled skills advance to `1.61.0+skills.1`.
+
 ## [1.60.0+agent.10] - 2026-10-23
 
 ### Changed

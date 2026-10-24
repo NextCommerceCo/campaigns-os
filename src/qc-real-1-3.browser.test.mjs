@@ -454,6 +454,7 @@ browserTest("F1.0-I8 [real: 1.3] media_weight bound to an older build fingerprin
   assert.deepEqual(handoff.coverage, [
     { check: "media.oversize", leg: "polish", result: "unexercised", reason_code: "stale_binding", count: count("media.oversize"), pages },
     { check: "media.weight", leg: "polish", result: "unexercised", reason_code: "stale_binding", count: count("media.weight"), pages },
+    { check: "parity.element", leg: "polish", result: "unexercised", reason_code: "not_captured_by_this_version", count: 0, pages: [] },
     { check: "readability.contrast", leg: "polish", result: "unexercised", reason_code: "not_captured_by_this_version", count: 0, pages: [] },
     { check: "visual.diff", leg: "polish", result: "unexercised", reason_code: "not_captured_by_this_version", count: 0, pages: [] },
     { check: "visual.reference", leg: "polish", result: "unexercised", reason_code: "not_captured_by_this_version", count: 0, pages: [] },

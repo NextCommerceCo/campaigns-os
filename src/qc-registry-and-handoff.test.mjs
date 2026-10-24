@@ -50,7 +50,7 @@ test("registry load classification: only the exact missing specifier reads not_c
     if (source != null) writeFileSync(path, source);
     return pathToFileURL(path).href;
   };
-  const exportsBoth = "export const VISUAL_QC_RULES = { thresholds: {}, vocabulary: {}, evaluate: () => [] };\nexport const rederiveQcResult = () => null;\nexport const MEDIA_WEIGHT_QC_RULES = { thresholds: {}, vocabulary: {}, evaluate: () => [] };\nexport const READABILITY_QC_RULES = { thresholds: {}, vocabulary: {}, evaluate: () => [] };\n";
+  const exportsBoth = "export const VISUAL_QC_RULES = { thresholds: {}, vocabulary: {}, evaluate: () => [] };\nexport const rederiveQcResult = () => null;\nexport const MEDIA_WEIGHT_QC_RULES = { thresholds: {}, vocabulary: {}, evaluate: () => [] };\nexport const READABILITY_QC_RULES = { thresholds: {}, vocabulary: {}, evaluate: () => [] };\nexport const ELEMENT_PARITY_QC_RULES = { thresholds: {}, vocabulary: {}, evaluate: () => [] };\n";
   const cases = [
     ["exact specifier missing", moduleAt("absent.mjs", null), "missing", NOT_CAPTURED],
     ["throws at load", moduleAt("throws.mjs", `throw new Error("synthetic load failure");\n${exportsBoth}`), "failed", E],

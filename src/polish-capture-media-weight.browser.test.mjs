@@ -34,6 +34,7 @@ import {
   campaignFixture,
   countReportWrites,
   delay,
+  doctorOf,
   handoffOf,
   mutateReport,
   readBytes,
@@ -177,6 +178,22 @@ const polishOpen = (handoff) => (handoff.open || []).filter((entry) => entry.leg
   })),
 }));
 
+// Every parity.element row as `next` reads it: readCurrentQcResults with the
+// registry's real rules and the real doctor run.
+async function parityRowsOf(f) {
+  const { loadQcRederivers } = await import("./qc-check-registry.mjs");
+  const { readCurrentQcResults } = await import("./qc-results.mjs");
+  const { results } = readCurrentQcResults({
+    report: readJson(f.reportPath),
+    doctor: doctorOf(f.packetPath),
+    spec: readJson(f.specPath),
+    targetRepo: f.targetRepo,
+    packetPath: f.packetPath,
+    rederivers: await loadQcRederivers(),
+  });
+  return results.filter((row) => row?.check === "parity.element");
+}
+
 // The shared run: one capture on a fresh campaign, and what the report and
 // `next` show right after it. T2 continues on the same campaign; this
 // snapshot is taken before it changes anything.
@@ -192,7 +209,7 @@ function capturedCampaign() {
     const run = await polishCapture(state);
     const report = readJson(state.f.reportPath);
     const handoff = handoffOf(await runNext(state.f));
-    return { ...state, before, run, report, handoff };
+    return { ...state, before, run, report, handoff, parityRows: await parityRowsOf(state.f) };
   })();
   return shared;
 }
@@ -255,7 +272,33 @@ browserTest("polish capture commits media_weight beside page_load in one report 
       members: [],
     })).sort((a, b) => a.viewport.localeCompare(b.viewport)),
   }], "qc_handoff.open lists exactly the F1.3-B2 warning, in both viewports");
-  assert.deepEqual((handoff.coverage || []).filter((entry) => entry.leg === "polish"), [], "no Polish result is unexercised or excluded");
+  // Element parity is applicable (mapped pages) but this example campaign has
+  // no Design Source Package, so its comparisons read source_package_unavailable;
+  // the element rows the probe files name are refused with them (identities kept).
+  // How many element rows there are depends on rendering (font metrics), so
+  // only their shape is pinned: one comparison row per page and viewport,
+  // and every other row a copy/type/color/geom identity, all refused.
+  const parityPages = ["checkout", "landing", "receipt", "upsell"];
+  const { parityRows } = state;
+  const comparisonRows = parityRows.filter((row) => row.subject?.key === "comparison");
+  const elementRows = parityRows.filter((row) => row.subject?.key !== "comparison");
+  assert.deepEqual(
+    comparisonRows.map((row) => [row.subject.page, row.subject.viewport, row.result, row.reason_code]).sort(),
+    parityPages.flatMap((pageId) => VIEWPORTS.map((viewport) => [pageId, viewport, "unexercised", "source_package_unavailable"])).sort(),
+    "one comparison row per page and viewport, each source_package_unavailable",
+  );
+  for (const row of elementRows) {
+    assert.match(row.subject?.key ?? "", /^(copy|type|color|geom):el-[a-f0-9]{12}$/, "every other parity row is an element identity row");
+    assert.deepEqual([row.result, row.reason_code], ["unexercised", "source_package_unavailable"], `${row.subject.key} is refused with its comparison`);
+  }
+  // Comparison and type rows carry the font-usage limit.
+  const typeRows = elementRows.filter((row) => row.subject.key.startsWith("type:")).length;
+  assert.deepEqual((handoff.coverage || []).filter((entry) => entry.leg === "polish"), [
+    { check: "parity.element", leg: "polish", result: "limit", reason_code: "font_usage_not_observed", count: comparisonRows.length + typeRows, pages: parityPages,
+      text: "The font each glyph was drawn with is not read; a web font that loaded is assumed used." },
+    { check: "parity.element", leg: "polish", result: "unexercised", reason_code: "source_package_unavailable", count: parityRows.length, pages: parityPages,
+      text: "The Design Source Package on disk does not match the build's; rerun intake or polish capture." },
+  ], "no other Polish result is unexercised or excluded");
   // Every comparison that ran reads review (visual_diff_diagnostic, contract
   // §5.3): one visual.diff row per captured page and viewport against the
   // build's own source HTML, so the basis is not independent and the fixture's

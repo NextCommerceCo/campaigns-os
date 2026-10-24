@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-polish
-version: 1.1.50
+version: 1.1.51
 description: Run the visual/runtime polish pass after build and before QA for a Campaigns OS campaign.
 ---
 
-Bundle revision: 1.60.0+skills.5
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.60.0+skills.5`
+Bundle revision: 1.61.0+skills.1
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.61.0+skills.1`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -93,6 +93,7 @@ Responsibilities:
   <preview route root>`, then `campaigns-os qa run --packet <packet>
   --base-url <preview-url> --browser --test-order common`, then closeout. QA
   against the packet's production URL keeps the checkpoint blocked.
+- In the handoff, `parity.element` rows are element differences to review or accept. `design.access` unexercised means the file was not read: compare by hand. A `design.access` review row means a changed, missing or conflicting design file: fix the declaration or rerun intake with `--force`. These rows never block Polish.
 - When a readability warning appears, report it with its colours, ratio, requirement and pages. Offer the operator options inside the brand palette (a darker or lighter shade of the same hue, the palette's text colour, or a larger, bold label where the design allows). Do not recolour the merchant's design until the operator chooses. Accept a warning only with the refs, reason and name the operator gives you at the QC handoff.
 - Record Polish as `completed`, `skipped`, or `blocked` with
   `campaigns-os record polish --packet <packet> --evidence <polish-evidence.json>`

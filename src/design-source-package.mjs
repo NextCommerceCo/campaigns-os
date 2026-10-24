@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { resolveDesignFileReferences } from "./design-file-reference.mjs";
 
 export const DESIGN_SOURCE_PACKAGE_SCHEMA = "campaign-design-source-package/v0";
 export const DESIGN_SOURCE_PACKAGE_REL_PATH = ".campaign-runtime/input/design-source-package.json";
@@ -166,7 +167,7 @@ const PRESENTATION_INTENT_FIELDS = new Set([
   "brand",
   "responsive_behavior",
 ]);
-const SOURCE_REF_FIELDS = new Set(["id", "kind", "path", "url", "sha256", "role", "media_type", "notes"]);
+const SOURCE_REF_FIELDS = new Set(["id", "kind", "path", "url", "sha256", "role", "media_type", "notes", "design_file_type"]);
 const VISUAL_REF_FIELDS = new Set([
   "id",
   "kind",
@@ -195,6 +196,7 @@ const TEMPLATE_REFERENCE_FIELDS = new Set([
   "standard_viewport_refs",
 ]);
 const COVERAGE_MAPPING_FIELDS = new Set([
+  "derived_from",
   "id",
   "surface_id",
   "coverage_role",
@@ -337,6 +339,7 @@ export function synthesizeHtmlFunnelDesignSourcePackage({
   });
 
   const manifestInput = normalizeManifestInput(manifest, manifestPath);
+  const designFiles = resolveDesignFileReferences({ activePages, mappings: resolvedMappings, manifest: manifestInput.value });
   const crawl = isObject(sourceAssetCrawl) ? sourceAssetCrawl : isObject(assetCrawl) ? assetCrawl : null;
   const crawlInputName = isObject(sourceAssetCrawl) ? "sourceAssetCrawl" : "assetCrawl";
   assertOptionalInputArray(manifestInput.value?.files, "manifest.files");
@@ -480,6 +483,9 @@ export function synthesizeHtmlFunnelDesignSourcePackage({
     htmlCoverage.push({
       id: `html-${surfaceId}-coverage`,
       surface_id: surfaceId,
+      ...(designFiles.pages.some((entry) => entry.page_id === page.pageId) ? {
+        derived_from: designFiles.files.find((file) => file.pages.includes(page.pageId)).contribution_id,
+      } : {}),
       coverage_role: explicitRole || "primary_design",
       confidence: normalizeConfidence(mapping?.confidence)
         || confidenceForHtmlMapping(mapping, manifestPage),
@@ -525,6 +531,37 @@ export function synthesizeHtmlFunnelDesignSourcePackage({
   };
 
   const contributions = [htmlContribution];
+  for (const file of [...designFiles.files].sort((a, b) => a.contribution_id.localeCompare(b.contribution_id))) {
+    const id = file.contribution_id;
+    // kind collapses non-Figma tools to "other". Use a new field so existing
+    // source-reference notes remain nonmaterial, including design_file refs.
+    const sourceRefs = [{ id: `${id}-file`, kind: "url", url: file.file_url, role: "design_file",
+      ...(!["figma", "other"].includes(file.identity.type) ? { design_file_type: file.identity.type } : {}),
+    }];
+    const mappings = file.pages.map((pageId) => {
+      const surfaceId = surfaceByPageId.get(pageId);
+      const declaration = designFiles.pages.find((page) => page.page_id === pageId).declaration;
+      const frameRefs = Object.entries(declaration.frames).map(([viewport, frame]) => ({
+        id: `${id}-${surfaceId}-frame-${viewport}`, kind: "url", url: frame.url, role: `design_frame:${viewport}`,
+      }));
+      sourceRefs.push(...frameRefs);
+      return { id: `${id}-${surfaceId}-coverage`, surface_id: surfaceId, coverage_role: "reference_only", confidence: "high", source_refs: [`${id}-file`, ...frameRefs.map((ref) => ref.id)], screenshot_refs: [], reference_refs: [] };
+    });
+    const fromManifest = file.producer === "source_html_manifest";
+    contributions.push({
+      id, kind: file.identity.type === "figma" ? "figma_frames" : "other", trust: file.identity.type === "figma" ? "native" : "opaque", renderable: false,
+      provenance: {
+        source_type: "design_file", adapter: "design-file-reference", producer: file.producer,
+        generator: null, generator_version: null, source_root: null,
+        manifest_schema_version: fromManifest ? optionalString(manifestInput.value?.schema_version) : null,
+        manifest_path: fromManifest ? optionalString(manifestInput.path) : null,
+        manifest_sha256: fromManifest ? validSha(manifestInput.value?.sha256) : null,
+        producer_material_fingerprint: null, asset_crawl_schema_version: null,
+      },
+      presentation_intent: { summary: "Design file the page's HTML export was produced from. Recorded as the design authority; this version does not read it." },
+      source_refs: sourceRefs, screenshot_refs: [], reference_refs: [], mappings,
+    });
+  }
   const template = normalizeTemplateFamily(templateFamily);
   const qualifyingHtmlSurfaces = new Set(
     htmlCoverage
@@ -998,6 +1035,15 @@ export function validateDesignSourcePackage(value, {
     if (contributionIds.has(contribution.id)) add("design_source_package.contribution_id_duplicate", `${path}.id`, `Duplicate contribution id "${contribution.id}".`);
     contributionIds.add(contribution.id);
   });
+  contributions.forEach((contribution, index) => {
+    arrayOrEmpty(contribution?.mappings).forEach((mapping, mappingIndex) => {
+      if (!Object.hasOwn(mapping || {}, "derived_from")) return;
+      const target = contributions.find((entry) => entry?.id === mapping.derived_from && entry !== contribution);
+      if (!target || !["figma_frames", "figma_sections", "other"].includes(target.kind) || !arrayOrEmpty(target.mappings).some((entry) => entry?.surface_id === mapping.surface_id)) {
+        add("design_source_package.derived_from_ref", `$.contributions[${index}].mappings[${mappingIndex}].derived_from`, "derived_from must name another design contribution mapped to the same surface_id.");
+      }
+    });
+  });
 
   validateRecordArray(value.source_gaps, "$.source_gaps", GAP_FIELDS,
     ["id", "kind", "scope", "applies_to", "reason", "status", "attributed_by"], add,
@@ -1394,6 +1440,8 @@ function projectContribution(contribution) {
 function projectSourceRef(ref) {
   return compactDefined({
     ...pickFields(ref, ["id", "kind", "path", "url", "role", "media_type"]),
+    // Absent from every BASE-valid package; never project existing prose notes.
+    design_file_type: ref?.design_file_type,
     sha256: canonicalHashSpelling(ref?.sha256),
   });
 }
@@ -1451,6 +1499,7 @@ function projectProvenance(provenance) {
 
 function projectCoverageMapping(mapping) {
   return compactDefined({
+    derived_from: mapping?.derived_from,
     id: mapping?.id,
     surface_id: mapping?.surface_id,
     coverage_role: mapping?.coverage_role,
@@ -2252,6 +2301,10 @@ function validateSourceReference(value, path, add) {
   if (!checkStrictObject(value, path, SOURCE_REF_FIELDS, ["id", "kind"], add)) return;
   checkNonEmptyString(value.id, `${path}.id`, add);
   checkEnum(value.kind, SOURCE_REF_KINDS, `${path}.kind`, add);
+  if (Object.hasOwn(value, "design_file_type")) {
+    checkNonEmptyString(value.design_file_type, `${path}.design_file_type`, add);
+    if (value.role !== "design_file") add("design_source_package.design_file_type", `${path}.design_file_type`, "design_file_type requires role design_file.");
+  }
   if (!isNonEmptyString(value.path) && !isNonEmptyString(value.url)) add("design_source_package.source_ref_location", path, "Source reference requires path or url.");
   for (const field of ["path", "url", "role", "media_type"]) if (value[field] != null) checkNonEmptyString(value[field], `${path}.${field}`, add);
   if (value.sha256 != null && !SHA256_PATTERN.test(value.sha256)) add("design_source_package.sha256", `${path}.sha256`, "sha256 must be 64 lowercase hex, with optional sha256: prefix.");
@@ -2293,6 +2346,7 @@ function validateCoverageMapping(value, path, add) {
     "id", "surface_id", "coverage_role", "confidence", "source_refs", "screenshot_refs", "reference_refs",
   ], add)) return false;
   checkNonEmptyString(value.id, `${path}.id`, add);
+  if (Object.hasOwn(value, "derived_from")) checkNonEmptyString(value.derived_from, `${path}.derived_from`, add);
   checkNonEmptyString(value.surface_id, `${path}.surface_id`, add);
   checkEnum(value.coverage_role, new Set(COVERAGE_ROLES), `${path}.coverage_role`, add);
   checkEnum(value.confidence, new Set(MAPPING_CONFIDENCE_LEVELS), `${path}.confidence`, add);
