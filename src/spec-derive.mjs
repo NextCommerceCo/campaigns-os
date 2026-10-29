@@ -52,6 +52,18 @@ export const SPEC_DERIVE_FIELDS = Object.freeze([
 // that names a page the tree added or removed (#721).
 export const PAGE_ROUTING_FIELDS = Object.freeze(["next_page", "on_accept", "on_decline", "success_url"]);
 
+// The SDK routing meta tags a page's `sdk_hints.meta_tags` may carry, and the
+// declared routing field (a page id) each one is the route of. A derived
+// route change on the referenced page leaves such a hint stale, and derive
+// reports it. The one exception is an edge derive itself re-points after
+// handoff (a page added or removed): there no editor will regenerate the
+// hint, so derive writes it with the routing field it goes with.
+const ROUTING_HINT_FIELDS = Object.freeze({
+  "next-success-url": "success_url",
+  "next-upsell-accept-url": "on_accept",
+  "next-upsell-decline-url": "on_decline",
+});
+
 // The further paths a handed-off derive may write: whole pages added to or
 // removed from the funnel the tree states (an element op), the routing
 // fields of an edge that names such a page, and the offer and package fields
@@ -59,6 +71,7 @@ export const PAGE_ROUTING_FIELDS = Object.freeze(["next_page", "on_accept", "on_
 export const SPEC_DERIVE_ELEMENTS = Object.freeze(["funnels[].pages[]", "funnel_pages[]", "offers[]"]);
 export const SPEC_DERIVE_MIRROR_FIELDS = Object.freeze([
   ...PAGE_ROUTING_FIELDS.flatMap((field) => [`funnels[].pages[].${field}`, `funnel_pages[].${field}`]),
+  ...Object.keys(ROUTING_HINT_FIELDS).flatMap((tag) => [`funnels[].pages[].sdk_hints.meta_tags.${tag}`, `funnel_pages[].sdk_hints.meta_tags.${tag}`]),
   ...MIRRORED_PACKAGE_FIELDS.flatMap((field) => [`funnels[].pages[].packages[].${field}`, `funnel_pages[].packages[].${field}`]),
   "offers",
   ...MIRRORED_OFFER_FIELDS.map((field) => `offers[].${field}`),
@@ -70,16 +83,6 @@ export const ANALYTICS_ID_FIELDS = Object.freeze([
   Object.freeze({ key: "gtm_id", provider: "gtm", property: "containerId", shape: /^GTM-[A-Z0-9]{4,}$/, describe: "a GTM container id (GTM-XXXXXXX)" }),
   Object.freeze({ key: "fb_pixel_id", provider: "facebook", property: "pixelId", shape: /^\d{5,20}$/, describe: "a Meta pixel id (digits only)" }),
 ]);
-
-// The SDK routing meta tags a page's `sdk_hints.meta_tags` may carry, and the
-// declared routing field (a page id) each one is the route of. A derived
-// route change on the referenced page leaves such a hint stale; the hint is a
-// spec projection the editor regenerates, so it is reported, not rewritten.
-const ROUTING_HINT_FIELDS = Object.freeze({
-  "next-success-url": "success_url",
-  "next-upsell-accept-url": "on_accept",
-  "next-upsell-decline-url": "on_decline",
-});
 
 // The directories page-kit's own discovery ignores (`_layouts`, `_includes`;
 // on 0.2.x everything else under the campaign root, `assets/` and `_data/`
@@ -289,6 +292,19 @@ export function staleRoutingHints(spec, { publicRouteSlug = "", routeByPageId = 
   return stale;
 }
 
+// A routing hint rewritten to `route`, spelled the way the hint it replaces
+// was: the prefix in front of its runtime-relative route ("/slug/" in
+// "/slug/receipt/", nothing in "receipt/") is kept, so a rooted hint stays
+// rooted.
+function routingHintValue(previous, route, publicRouteSlug) {
+  const relative = runtimeRelativeRouteForSpecValue(route, publicRouteSlug);
+  const raw = previous.trim().replace(/[?#].*$/, "");
+  const withSlash = raw.endsWith("/") ? raw : `${raw}/`;
+  const old = runtimeRelativeRouteForSpecValue(previous, publicRouteSlug);
+  const prefix = old && withSlash.endsWith(old) ? withSlash.slice(0, withSlash.length - old.length) : "";
+  return `${prefix}${relative}`;
+}
+
 function terminalSegment(route) {
   const parts = normalizePageKitRoute(route).replace(/^\/+|\/+$/g, "").split("/").filter(Boolean);
   return parts.length ? parts[parts.length - 1] : "";
@@ -394,13 +410,6 @@ function planPageScope({ spec, activePages, pageFiles, packetBindings, boundFile
   const mirror = funnels && Array.isArray(spec?.funnel_pages) ? spec.funnel_pages : null;
   const mirrorIndexOf = (id) => (mirror ? mirror.findIndex((page) => isPlainObject(page) && page.id === id) : -1);
 
-  for (const { page, path } of gone) {
-    scope.removed.push({ page_id: page.id, file: bindings.get(page.id).replace(/^\/+/, "") });
-    scope.changes.push({ field: pathLabel(path), page_id: page.id, path, op: "remove", before: page, after: undefined, source: `${bindings.get(page.id).replace(/^\/+/, "")} (no longer in the page tree)` });
-    const at = mirrorIndexOf(page.id);
-    if (at !== -1) scope.changes.push({ field: `funnel_pages[${at}]`, page_id: page.id, path: ["funnel_pages", at], op: "remove", before: mirror[at], after: undefined, source: `mirror of ${pathLabel(path)}` });
-  }
-
   const takenIds = new Set();
   for (const list of [...(funnels || []).map((funnel) => funnel?.pages), spec?.funnel_pages]) {
     for (const page of Array.isArray(list) ? list : []) if (isPlainObject(page) && isNonEmptyString(page.id)) takenIds.add(page.id);
@@ -425,6 +434,30 @@ function planPageScope({ spec, activePages, pageFiles, packetBindings, boundFile
     takenIds.add(id);
     added.push({ file, id, type });
   }
+
+  // A page whose file is gone and a new file of the same type in one run is
+  // most likely a rename (upsell.html to upsell-1.html). Applied as written,
+  // the remove would discard the page's authored record (its packages,
+  // offers, label and hints) and the add would start a bare one, so neither
+  // is applied: the pair is reported for a person to resolve.
+  const goneTypes = new Set(gone.map(({ page }) => page.type));
+  const renamedTypes = new Set(added.filter(({ type }) => goneTypes.has(type)).map(({ type }) => type));
+  const held = (type) => renamedTypes.has(type);
+  for (const { file, id, type } of added.filter((entry) => held(entry.type))) {
+    const was = gone.filter(({ page }) => page.type === type).map(({ page }) => `"${page.id}"`).join(", ");
+    scope.not_derived.push({ field: `page file ${file.path}`, page_id: id, reason: "page_renamed", detail: `${file.path} is a new ${type} page and the file of ${type} page ${was} is gone, which reads as a rename; derive applies neither, so the page's packages, offers and other authored fields are not lost. If it is a rename, set that page's page_url to ${JSON.stringify(file.route)} (it keeps its id), or rename the file back. If it is a new page, remove the old page from the spec by hand. Then derive again.` });
+  }
+  for (const { page, path } of gone) {
+    if (held(page.type)) {
+      scope.not_derived.push({ field: pathLabel(path), page_id: page.id, reason: "page_renamed", detail: `the file of page "${page.id}" (${bindings.get(page.id).replace(/^\/+/, "")}) is gone and the tree has a new ${page.type} page file, which reads as a rename; derive did not remove the page. See the page_renamed row for the new file.` });
+      continue;
+    }
+    scope.removed.push({ page_id: page.id, file: bindings.get(page.id).replace(/^\/+/, "") });
+    scope.changes.push({ field: pathLabel(path), page_id: page.id, path, op: "remove", before: page, after: undefined, source: `${bindings.get(page.id).replace(/^\/+/, "")} (no longer in the page tree)` });
+    const at = mirrorIndexOf(page.id);
+    if (at !== -1) scope.changes.push({ field: `funnel_pages[${at}]`, page_id: page.id, path: ["funnel_pages", at], op: "remove", before: mirror[at], after: undefined, source: `mirror of ${pathLabel(path)}` });
+  }
+  if (renamedTypes.size) added.splice(0, added.length, ...added.filter((entry) => !held(entry.type)));
 
   // The routes of the pages the spec will hold, for resolving links.
   const finalRoutes = new Map([...derivedRouteByPageId].filter(([id]) => !scope.removed.some((removed) => removed.page_id === id)));
@@ -462,9 +495,35 @@ function planPageScope({ spec, activePages, pageFiles, packetBindings, boundFile
     }
   });
 
-  // The kept pages' edges that name an added or a removed page.
+  // The kept pages' edges that name an added or a removed page. Re-pointing
+  // an edge also writes the routing hint that goes with it (when the page
+  // carries one) to the new target's route, and the legacy mirror's copy of
+  // both: after handoff no editor regenerates them, and a hint left on the
+  // old route is what doctor and record spec then refuse.
   const fileByPageId = new Map();
   for (const file of pageFiles) if (boundFiles.has(file.path)) fileByPageId.set(boundFiles.get(file.path), file);
+  const hintTagFor = new Map(Object.entries(ROUTING_HINT_FIELDS).map(([tag, field]) => [field, tag]));
+  const repoint = (page, path, field, before, after, source) => {
+    const rows = [{ field: `${pathLabel(path)}.${field}`, page_id: page.id, path: [...path, field], before, after, source }];
+    const tag = hintTagFor.get(field);
+    const hintRow = (record, recordPath) => {
+      const value = record?.sdk_hints?.meta_tags?.[tag];
+      if (!tag || !isNonEmptyString(value) || isAbsoluteHttpUrl(value.trim()) || !finalRoutes.has(after)) return null;
+      const next = routingHintValue(value, finalRoutes.get(after), publicRouteSlug);
+      if (next === value) return null;
+      return { field: `${pathLabel(recordPath)}.sdk_hints.meta_tags.${tag}`, page_id: page.id, path: [...recordPath, "sdk_hints", "meta_tags", tag], before: value, after: next, source: `route of page "${after}" (${source})` };
+    };
+    const own = hintRow(page, path);
+    if (own) rows.push(own);
+    const at = path[0] === "funnels" ? mirrorIndexOf(page.id) : -1;
+    if (at !== -1) {
+      const mirrorPath = ["funnel_pages", at];
+      if (isPlainObject(mirror[at]) && mirror[at][field] !== after) rows.push({ field: `${pathLabel(mirrorPath)}.${field}`, page_id: page.id, path: [...mirrorPath, field], before: mirror[at][field], after, source: `mirror of ${pathLabel(path)}.${field}` });
+      const mirrorHint = hintRow(mirror[at], mirrorPath);
+      if (mirrorHint) rows.push(mirrorHint);
+    }
+    scope.changes.push(...rows);
+  };
   for (const { page, path } of activePages) {
     if (removedIds.has(page.id)) continue;
     const file = fileByPageId.get(page.id);
@@ -472,9 +531,9 @@ function planPageScope({ spec, activePages, pageFiles, packetBindings, boundFile
       const current = isNonEmptyString(page[field]) ? page[field] : undefined;
       const target = file ? resolveLink(file[key]) : null;
       if (target && addedIds.has(target) && current !== target) {
-        scope.changes.push({ field: `${pathLabel(path)}.${field}`, page_id: page.id, path: [...path, field], before: current, after: target, source: `${file.path} frontmatter ${key}` });
+        repoint(page, path, field, current, target, `${file.path} frontmatter ${key}`);
       } else if (current && removedIds.has(current)) {
-        if (target && target !== current) scope.changes.push({ field: `${pathLabel(path)}.${field}`, page_id: page.id, path: [...path, field], before: current, after: target, source: `${file.path} frontmatter ${key}` });
+        if (target && target !== current) repoint(page, path, field, current, target, `${file.path} frontmatter ${key}`);
         else scope.not_derived.push({ field: `${pathLabel(path)}.${field}`, page_id: page.id, reason: "routing_target_removed", detail: `page "${page.id}" routes ${field} to "${current}", which the tree removed, and ${file ? `${file.path}'s ${key} names no page the spec keeps` : "no page file states where it goes now"}; set ${field} by hand.` });
       }
     }
@@ -568,7 +627,7 @@ export function planSpecDerive({ spec, entry, pageFiles = null, packetBindings =
   for (const { page } of activePages) idCounts.set(page.id, (idCounts.get(page.id) || 0) + 1);
   // The route every bound page derives to, changed or not: the standing
   // check on routing hints reads it, so a hint left stale by an earlier run
-  // keeps surfacing until the Map is re-saved.
+  // keeps surfacing until the hint is fixed.
   const derivedRouteByPageId = new Map();
   // What the page-scope plan reads: the files a page binds, the files more
   // than one page could be, and the pages no file binds.
@@ -653,16 +712,28 @@ export function planSpecDerive({ spec, entry, pageFiles = null, packetBindings =
         }
       }
     }
-    // A routing hint that names a page whose derived route it does not match
-    // is stale, whether the route moved in this run or an earlier one. Hints
-    // are a spec projection the editor regenerates (doctor reads them as
-    // build expectations), so they are reported, never rewritten.
-    staleHints.push(...staleRoutingHints(spec, { publicRouteSlug, routeByPageId: derivedRouteByPageId }));
-
     // The pages the tree adds or removes (#721), matched by id.
     pageScope = planPageScope({ spec, activePages, pageFiles, packetBindings, boundFiles, ambiguousFiles, notFound, derivedRouteByPageId, publicRouteSlug, handedOff });
     changes.push(...pageScope.changes);
     notDerived.push(...pageScope.not_derived);
+
+    // A routing hint that names a page whose route it does not match is
+    // stale, whether the route moved in this run or an earlier one. It is
+    // read off the spec as this plan leaves it, so a hint the plan rewrites
+    // is not reported and one an added or removed page leaves behind is:
+    // the same list doctor blocks on and record spec refuses after the
+    // write. Hints are a spec projection (doctor reads them as build
+    // expectations); derive rewrites only the hint on an edge it re-points.
+    const routesAfter = new Map([...derivedRouteByPageId].filter(([id]) => !pageScope.removed.some((entry) => entry.page_id === id)));
+    for (const entry of pageScope.added) routesAfter.set(entry.page_id, entry.route);
+    let planned = null;
+    try {
+      planned = applySpecDerive(structuredClone(spec), { changes });
+    } catch {
+      // A plan the guard would refuse is reported by the write; the hints
+      // are then read off the spec as it is.
+    }
+    staleHints.push(...staleRoutingHints(planned || spec, { publicRouteSlug, routeByPageId: routesAfter }));
   }
   // A page the tree no longer builds is reported as not found unless this run
   // removes it.

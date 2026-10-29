@@ -20,6 +20,7 @@ import { evaluateRecordedHiddenEagerMediaCheckpoint } from "./polish-node.mjs";
 import { resolveInvocationPolicy } from "./invocation.mjs";
 import { buildReadabilityRecord } from "./polish-readability.mjs";
 import { recordCommand, recordStageCommand } from "./stage-record.mjs";
+import { recordPendingDesignSourceProvenance } from "./design-source-publication.mjs";
 import { withTargetLockSync } from "./target-lock.mjs";
 import { readdirSync } from "node:fs";
 import { unavailableCapturesRecord, VISUAL_VIEWPORTS } from "./polish-visual.mjs";
@@ -3764,7 +3765,7 @@ function dspReferencesAgree(f) {
   }
 }
 
-test("F2.3-W1: a route moved after handoff binds with record spec: projection, Build Context and Design Source Package move, setup and waivers stay, build, Polish, QA and deploy are owed", async () => {
+test("F2.3-W1: a route moved after handoff binds with record spec: projection, Build Context and Design Source Package move, setup, waivers and the fingerprint-bound deploy stay, build, Polish and QA are owed", async () => {
   await guardedLifecycle(async (f) => {
     await handedOff(f);
     const dspBefore = readFileSync(dspPathOf(f), "utf8");
@@ -3798,14 +3799,60 @@ test("F2.3-W1: a route moved after handoff binds with record spec: projection, B
       assert.equal(report.stages[key].input_change.reason, "spec_material_changed");
       assert.equal(report.stages[key].history.at(-1).reason_code, "spec_material_changed");
     }
-    assert.equal(report.stages.deploy.status, "required", "the built page set changed, so the deploy probe is owed");
-    assert.equal(report.stages.deploy.history.at(-1).archived_by, "record spec");
+    // The deploy is bound to the build fingerprint it probed (#619): record
+    // build demotes it when the rebuilt site differs, so record spec leaves it.
+    assert.ok(report.stages.deploy.source_build_fingerprint, "setup: record deploy stamped the build it probed");
+    assert.equal(report.stages.deploy.status, "completed");
     assert.ok(validReport(report), JSON.stringify(validReport.errors));
     assert.ok(validContext(context), JSON.stringify(validContext.errors));
     const issues = doctorOk(f).errors.map((issue) => issue.code);
     assert.ok(!issues.some((code) => /dsp_mismatch/.test(code)), issues.join(", "));
   });
 });
+
+test("F2.3-W1b: a deploy recorded without a build fingerprint is owed again when record spec changes the set of built pages", async () => {
+  await guardedLifecycle(async (f) => {
+    await handedOff(f);
+    mutateJson(f.reportPath, (report) => { delete report.stages.deploy.source_build_fingerprint; });
+    editSpec(f, (spec) => { pageOf(spec, "upsell").page_url = "upsell-moved/"; });
+    const result = recordInputOk(f, "spec", "refreshed");
+    assert.equal(result.pages.built_pages_changed, true);
+    const deploy = readJson(f.reportPath).stages.deploy;
+    assert.equal(deploy.status, "required", "the built page set changed, so the unstamped deploy probe is owed");
+    assert.equal(deploy.history.at(-1).archived_by, "record spec");
+  });
+});
+
+// A record spec run that stops part way: the package and the packet are
+// published, the Context and the report (or only the report) are not, and the
+// pending provenance record still names the new package. The next record
+// spec moves the references the run left behind.
+for (const [label, restore] of [["the Build Context and the report were", ["contextPath", "reportPath"]], ["the report was", ["reportPath"]]]) {
+  test(`F2.3-W1c: a page rebind that stopped before ${label} written is completed by the next record spec`, async () => {
+    await guardedLifecycle(async (f) => {
+      await handedOff(f);
+      const saved = Object.fromEntries(restore.map((key) => [key, readFileSync(f[key], "utf8")]));
+      const oldSha = readJson(f.packetPath).design_source_package.sha256;
+      editSpec(f, (spec) => { pageOf(spec, "upsell").page_url = "upsell-moved/"; });
+      recordInputOk(f, "spec", "refreshed");
+      const newSha = readJson(f.packetPath).design_source_package.sha256;
+      assert.notEqual(newSha, oldSha, "setup: the package was rewritten");
+      for (const [key, text] of Object.entries(saved)) writeFileSync(f[key], text);
+      recordPendingDesignSourceProvenance(dspPathOf(f), [newSha, oldSha]);
+      const gateCodes = () => (doctorOk(f).derived?.prepare_build_gate?.issues || []).map((issue) => issue.code);
+      const before = gateCodes();
+      assert.ok(before.some((code) => /dsp_mismatch/.test(code)), `setup: the interrupted run leaves a reference mismatch: ${before.join(", ")}`);
+
+      const result = recordInputOk(f, "spec", "refreshed");
+      assert.equal(result.design_source_references_repaired.sha256, newSha);
+      assert.notEqual(result.pages?.built_unchanged, true, "a recovery run does not keep the build");
+      dspReferencesAgree(f);
+      assert.equal(readJson(f.reportPath).stages.assembly.status, "required");
+      assert.deepEqual(gateCodes().filter((code) => /dsp_mismatch/.test(code)), []);
+      recordInputOk(f, "spec", "unchanged");
+    });
+  });
+}
 
 test("F2.3-W2: moving the checkout route re-projects the landing page's forward link", async () => {
   await guardedLifecycle((f) => {
@@ -3934,7 +3981,7 @@ test("F2.3-W5: an upsell page added to a handed-off funnel's page tree is record
     const context = readJson(f.contextPath);
     assert.ok(context.spec.active_pages.some((page) => page.id === "upsell-2"));
     assert.equal(context.page_map.find((page) => page.page_id === "upsell-2").origin, "repo");
-    assert.equal(readJson(f.reportPath).stages.deploy.status, "required", "a page was added, so the deploy probe is owed");
+    assert.equal(readJson(f.reportPath).stages.assembly.status, "required", "a page was added, so the build is owed");
     assert.ok(validContext(context), JSON.stringify(validContext.errors));
     const issues = doctorOk(f).errors.map((issue) => issue.code);
     assert.ok(!issues.includes("source_html.pages.coverage"), issues.join(", "));
@@ -3962,5 +4009,55 @@ test("F2.3-W6: a page whose built file is gone is removed by spec derive on a ha
     assert.deepEqual(bound.pages.removed, ["upsell"]);
     assert.equal(packetPage(f, "upsell"), undefined);
     assert.ok(!readJson(f.contextPath).spec.active_pages.some((page) => page.id === "upsell"));
+  });
+});
+
+// The routing hints Map Builder exports for every routed page, on the
+// routes the lifecycle spec has: rooted, as doctor expects them.
+function addMapHints(f) {
+  editSpec(f, (spec) => {
+    pageOf(spec, "checkout").sdk_hints = { meta_tags: { "next-page-type": "checkout", "next-success-url": `/${f.slug}/upsell/` } };
+    pageOf(spec, "upsell").sdk_hints = { meta_tags: { "next-page-type": "upsell", "next-upsell-accept-url": `/${f.slug}/receipt/`, "next-upsell-decline-url": `/${f.slug}/receipt/` } };
+  });
+  recordInputOk(f, "spec", "refreshed");
+  assert.ok(!doctorOk(f).errors.some((issue) => issue.code === "spec.routing_hint_stale"), "setup: the hints match their routes");
+}
+
+test("F2.3-W7: with Map-style routing hints, spec derive rewrites the hint on each edge it re-points, so record spec binds an added page and doctor does not block", async () => {
+  await guardedLifecycle(async (f) => {
+    await handedOff(f);
+    addMapHints(f);
+    const tree = writePageTree(f);
+    writeFileSync(join(tree, "upsell-2.html"), `---\npage_type: upsell\nnext_url: /${f.slug}/receipt/\ndecline_url: /${f.slug}/receipt/\n---\n<h1>upsell-2</h1>\n`);
+    const upsellFile = join(tree, "upsell.html");
+    writeFileSync(upsellFile, readFileSync(upsellFile, "utf8").replace(`next_url: /${f.slug}/receipt/`, `next_url: /${f.slug}/upsell-2/`));
+    const derive = runJson(["spec", "derive", "--packet", f.packetPath, "--no-live-refs"], f.dir);
+    assert.equal(derive.status, 0, derive.stderr);
+    const hint = derive.json.changes.find((row) => row.field.endsWith("sdk_hints.meta_tags.next-upsell-accept-url"));
+    assert.deepEqual([hint.page_id, hint.before, hint.after], ["upsell", `/${f.slug}/receipt/`, `/${f.slug}/upsell-2/`]);
+    assert.ok(!derive.json.warnings.some((issue) => issue.code === "spec.derive.routing_hint_stale"), JSON.stringify(derive.json.warnings));
+    const spec = readJson(specPathOf(f));
+    assert.equal(pageOf(spec, "upsell").sdk_hints.meta_tags["next-upsell-accept-url"], `/${f.slug}/upsell-2/`);
+    assert.equal(pageOf(spec, "upsell").sdk_hints.meta_tags["next-upsell-decline-url"], `/${f.slug}/receipt/`, "the decline edge was not re-pointed");
+    assert.ok(!doctorOk(f).errors.some((issue) => issue.code === "spec.routing_hint_stale"));
+    const bound = recordInputOk(f, "spec", "refreshed");
+    assert.deepEqual(bound.pages.added, ["upsell-2"]);
+  });
+});
+
+test("F2.3-W8: with Map-style routing hints, a page removed by spec derive re-points checkout's next-success-url, and record spec binds", async () => {
+  await guardedLifecycle(async (f) => {
+    await handedOff(f);
+    addMapHints(f);
+    const tree = writePageTree(f);
+    rmSync(join(tree, "upsell.html"));
+    const checkoutFile = join(tree, "checkout.html");
+    writeFileSync(checkoutFile, readFileSync(checkoutFile, "utf8").replace(`next_url: /${f.slug}/upsell/`, `next_url: /${f.slug}/receipt/`));
+    const derive = runJson(["spec", "derive", "--packet", f.packetPath, "--no-live-refs"], f.dir);
+    assert.equal(derive.status, 0, derive.stderr);
+    assert.equal(pageOf(readJson(specPathOf(f)), "checkout").sdk_hints.meta_tags["next-success-url"], `/${f.slug}/receipt/`);
+    assert.ok(!doctorOk(f).errors.some((issue) => issue.code === "spec.routing_hint_stale"));
+    const bound = recordInputOk(f, "spec", "refreshed");
+    assert.deepEqual(bound.pages.removed, ["upsell"]);
   });
 });

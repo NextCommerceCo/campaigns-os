@@ -151,6 +151,7 @@ import { derivePackagePin, LOCAL_INVOCATION_PREFIX, localInstallStatus, resolveI
 import {
   campaignRouteRoot,
   normalizePublicRouteSlug,
+  specPublicRouteSlug,
 } from "./route-identity.mjs";
 import {
   PAGE_KIT_BUILD_SUMMARY_CAPTURE_COMMAND,
@@ -3432,11 +3433,7 @@ export function pageKitSyncCommand(args) {
   // spec.local_path would write another campaign's store profile into this
   // route with a plausible-looking diff.
   if (spec && publicRouteSlug) {
-    const specSlug = normalizePublicRouteSlug(
-      optionalString(spec.spec_identity?.public_route_slug)
-      || optionalString(spec.campaign?.slug)
-      || optionalString(spec.campaign?.id),
-    );
+    const specSlug = specPublicRouteSlug(spec);
     const specMapId = optionalString(spec.spec_identity?.map_id) || optionalString(spec.map_id);
     const packetMapId = optionalString(packet.spec?.map_id);
     if (specSlug && specSlug !== publicRouteSlug) {
@@ -3812,11 +3809,7 @@ export function specDeriveCommand(args, { store: storeRead = null, liveCampaign 
   // (campaign.route_slug_identity); without it a stale or copy-pasted
   // spec.local_path would receive another campaign's routes and pin.
   if (spec && publicRouteSlug) {
-    const specSlug = normalizePublicRouteSlug(
-      optionalString(spec.spec_identity?.public_route_slug)
-      || optionalString(spec.campaign?.slug)
-      || optionalString(spec.campaign?.id),
-    );
+    const specSlug = specPublicRouteSlug(spec);
     const specMapId = optionalString(spec.spec_identity?.map_id) || optionalString(spec.map_id);
     const packetMapId = optionalString(packet.spec?.map_id);
     if (specSlug && specSlug !== publicRouteSlug) {
@@ -3980,7 +3973,7 @@ export function specDeriveCommand(args, { store: storeRead = null, liveCampaign 
     addIssue(result.warnings, `spec.derive.${row.reason}`, `${row.field} was not derived: ${row.detail}`, { field: row.field, reason: row.reason, ...(row.page_id ? { page_id: row.page_id } : {}) });
   }
   for (const hint of plan.stale_hints) {
-    addIssue(result.warnings, "spec.derive.routing_hint_stale", `page "${hint.page_id}" carries sdk_hints.meta_tags.${hint.tag} ${JSON.stringify(hint.value)}, but page "${hint.target_page_id}" now derives to ${JSON.stringify(hint.derived_route)}. Routing hints are a Map projection derive does not rewrite; re-save the Map (or edit the hint) so the built meta tag and doctor's expectation agree.`, hint);
+    addIssue(result.warnings, "spec.derive.routing_hint_stale", `page "${hint.page_id}" carries sdk_hints.meta_tags.${hint.tag} ${JSON.stringify(hint.value)}, but page "${hint.target_page_id}" now derives to ${JSON.stringify(hint.derived_route)}. Derive rewrites a hint only on an edge it re-points after handoff; edit the hint to that route in the spec (or, while the Map is still the spec's source, re-save the Map) so the built meta tag and doctor's expectation agree. Doctor blocks and record spec refuses until then.`, hint);
   }
   for (const block of plan.created_blocks || []) {
     addIssue(result.warnings, "spec.derive.analytics_block_created", `${block} ${dryRun ? "would be" : "is"} created from the repo's id: the spec ${dryRun ? "would then declare" : "now declares"} an analytics contract, so QA expects that tag to fire instead of treating analytics as advisory.`);

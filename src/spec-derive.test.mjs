@@ -1554,9 +1554,15 @@ test("planSpecDerive adds a page the tree builds after handoff, appended by id, 
   assert.deepEqual([insert.field, insert.after], ["funnels[0].pages[4]", { id: "upsell-2", type: "upsell", page_url: "upsell-2/", on_accept: "receipt", on_decline: "receipt" }]);
   assert.deepEqual(plan.changes.filter((row) => row.field === "funnels[0].pages[2].on_accept").map((row) => [row.before, row.after, row.source]), [["receipt", "upsell-2", "upsell.html frontmatter next_url"]]);
   assert.deepEqual(plan.not_derived.map((row) => [row.field, row.reason]), [["funnels[0].pages[4].order", "page_order_not_derived"]]);
+  // The hint on the re-pointed edge moves with it, spelled as it was; the
+  // decline edge kept its target, so its hint is left alone.
+  assert.deepEqual(plan.changes.filter((row) => row.field.includes(".sdk_hints.")).map((row) => [row.field, row.before, row.after]), [["funnels[0].pages[2].sdk_hints.meta_tags.next-upsell-accept-url", "receipt/", "upsell-2/"]]);
+  assert.deepEqual(plan.stale_hints, [], "no hint is left stale by the plan");
   const spec = applySpecDerive(specFixture(), plan);
   assert.deepEqual(spec.funnels[0].pages.map((page) => page.id), ["landing", "checkout", "upsell", "receipt", "upsell-2"]);
   assert.equal(spec.funnels[0].pages[2].on_accept, "upsell-2");
+  assert.equal(spec.funnels[0].pages[2].sdk_hints.meta_tags["next-upsell-accept-url"], "upsell-2/");
+  assert.deepEqual(staleRoutingHints(spec, { publicRouteSlug: "runtime-packet-demo" }), [], "doctor's check passes on the written spec");
 
   // Before handoff the design source decides the pages: the file is listed,
   // nothing is added.
@@ -1578,6 +1584,8 @@ test("planSpecDerive removes, after handoff, a page whose projected file is gone
   const spec = applySpecDerive(specFixture(), plan);
   assert.deepEqual(spec.funnels[0].pages.map((page) => page.id), ["landing", "checkout", "receipt"]);
   assert.equal(spec.funnels[0].pages[1].success_url, "receipt");
+  assert.equal(spec.funnels[0].pages[1].sdk_hints.meta_tags["next-success-url"], "receipt/");
+  assert.deepEqual(staleRoutingHints(spec, { publicRouteSlug: "runtime-packet-demo" }), []);
 
   // No projection named the file: the page was never built, so it is only
   // not found.
@@ -1586,6 +1594,37 @@ test("planSpecDerive removes, after handoff, a page whose projected file is gone
   assert.deepEqual(unbuilt.not_derived.filter((row) => row.page_id === "upsell").map((row) => row.reason), ["page_file_not_found"]);
   // The guard: a page op only ever touches a page list.
   assert.throws(() => applySpecDerive(specFixture(), { changes: [{ field: "campaign", path: ["campaign"], op: "remove" }] }), /Refusing to remove "campaign"/);
+});
+
+test("planSpecDerive keeps a rooted routing hint rooted when it re-points the edge, and reports a hint an added page leaves stale", () => {
+  const rooted = () => specFixture((draft) => { draft.funnels[0].pages[2].sdk_hints.meta_tags["next-upsell-accept-url"] = "/runtime-packet-demo/receipt/"; });
+  const tree = [
+    ...TREE_WITH_LINKS.map((file) => (file.basename === "upsell" ? { ...file, next_url: "/runtime-packet-demo/upsell-2/" } : file)),
+    { path: "upsell-2.html", basename: "upsell-2", route: "upsell-2/", permalink: null, page_type: "upsell", next_url: "/runtime-packet-demo/receipt/", decline_url: "/runtime-packet-demo/receipt/" },
+  ];
+  const plan = planSpecDerive({ spec: rooted(), entry: CONFIGURED_ENTRY, pageFiles: tree, packetBindings: PROJECTED, publicRouteSlug: "runtime-packet-demo", handedOff: true });
+  assert.equal(plan.changes.find((row) => row.field.endsWith("next-upsell-accept-url")).after, "/runtime-packet-demo/upsell-2/");
+
+  // The checkout's hint names the upsell's old route, which the tree moved:
+  // a hint derive did not re-point is still reported, read off the planned spec.
+  const moved = TREE_WITH_LINKS.map((file) => (file.basename === "upsell" ? { ...file, path: "upsell.html", route: "upsell-1/", permalink: "/runtime-packet-demo/upsell-1/" } : file));
+  const stale = planSpecDerive({ spec: specFixture(), entry: CONFIGURED_ENTRY, pageFiles: moved, packetBindings: PROJECTED, publicRouteSlug: "runtime-packet-demo", handedOff: true });
+  assert.deepEqual(stale.stale_hints.map((hint) => [hint.page_id, hint.tag, hint.derived_route]), [["checkout", "next-success-url", "upsell-1/"]]);
+});
+
+test("planSpecDerive holds a page whose file is gone and a new file of the same type as a probable rename, and writes neither", () => {
+  const tree = [
+    ...TREE_WITH_LINKS.filter((file) => file.basename !== "upsell").map((file) => (file.basename === "checkout" ? { ...file, next_url: "/runtime-packet-demo/upsell-1/" } : file)),
+    { path: "upsell-1.html", basename: "upsell-1", route: "upsell-1/", permalink: null, page_type: "upsell", next_url: "/runtime-packet-demo/receipt/", decline_url: "/runtime-packet-demo/receipt/" },
+  ];
+  const plan = planSpecDerive({ spec: specFixture(), entry: CONFIGURED_ENTRY, pageFiles: tree, packetBindings: PROJECTED, publicRouteSlug: "runtime-packet-demo", handedOff: true });
+  assert.deepEqual([plan.page_scope.added, plan.page_scope.removed], [[], []]);
+  assert.equal(plan.changes.some((row) => row.op), false);
+  assert.equal(plan.changes.some((row) => row.field.endsWith(".success_url")), false, "no edge is re-pointed at a page that was not added");
+  assert.deepEqual(plan.not_derived.filter((row) => row.reason === "page_renamed").map((row) => row.page_id).sort(), ["upsell", "upsell-1"]);
+  assert.match(plan.not_derived.find((row) => row.page_id === "upsell-1").detail, /set that page's page_url to "upsell-1\/"/);
+  const spec = applySpecDerive(specFixture(), plan);
+  assert.deepEqual(spec.funnels[0].pages[2].packages, specFixture().funnels[0].pages[2].packages, "the upsell's authored packages are kept");
 });
 
 test("staleRoutingHints compares each routing hint with the current route of the page its routing field names", () => {
@@ -1634,6 +1673,27 @@ test("planCampaignMirrorDerive refreshes a package's mirrored fields and the off
   const gone = planCampaignMirrorDerive({ spec, campaign: { ...liveCampaignBody().data, packages: [] } });
   assert.deepEqual(gone.not_derived.map((row) => [row.field, row.reason]), [["funnels[0].pages[1].packages[0]", "package_not_live"], ["funnels[0].pages[2].packages[0]", "package_not_live"]]);
   assert.throws(() => applySpecDerive(specFixture(), { changes: [{ field: "funnels[0].pages[1].packages[0].qty", path: ["funnels", 0, "pages", 1, "packages", 0, "qty"], after: 9 }] }), /Refusing to write/);
+});
+
+test("planCampaignMirrorDerive mirrors a subscription package's recurring price and its variant attributes, and does not pad a one-time package", () => {
+  const spec = specFixture();
+  const live = liveCampaignBody().data;
+  const recurring = { ...live, packages: [{ ...live.packages[0], is_recurring: true, price_recurring: "29.00", interval: "month", interval_count: 1, product_variant_attribute_values: [{ code: "size", value: "L" }] }] };
+  const plan = planCampaignMirrorDerive({ spec, campaign: recurring });
+  const rows = plan.changes.filter((row) => row.field.startsWith("funnels[0].pages[1].packages[0]."));
+  assert.deepEqual(rows.map((row) => [row.field.split(".").at(-1), row.after]).filter(([field]) => ["is_recurring", "price_recurring", "interval", "interval_count", "variant_attributes"].includes(field)), [
+    ["is_recurring", true], ["price_recurring", "29.00"], ["interval", "month"], ["interval_count", 1], ["variant_attributes", [{ code: "size", value: "L" }]],
+  ]);
+  const written = applySpecDerive(specFixture(), plan);
+  assert.equal(written.funnels[0].pages[1].packages[0].price_recurring, "29.00");
+  // The package went back to one-time: the spec's recurring fields follow.
+  const oneTime = planCampaignMirrorDerive({ spec: written, campaign: { ...live, packages: [{ ...live.packages[0], is_recurring: false, price_recurring: null, interval: null, interval_count: null, product_variant_attribute_values: [] }] } });
+  assert.deepEqual(oneTime.changes.filter((row) => row.field.startsWith("funnels[0].pages[1].packages[0].")).map((row) => [row.field.split(".").at(-1), row.after]).filter(([field]) => field !== "price"), [
+    ["is_recurring", false], ["price_recurring", null], ["interval", null], ["interval_count", null], ["variant_attributes", []],
+  ]);
+  // A one-time package the spec never marked recurring gains no empty keys.
+  const plain = planCampaignMirrorDerive({ spec, campaign: { ...live, packages: [{ ...live.packages[0], is_recurring: false, price_recurring: null, product_variant_attribute_values: [] }] } });
+  assert.equal(plain.changes.some((row) => /is_recurring|price_recurring|variant_attributes/.test(row.field)), false);
 });
 
 test("spec derive reads the live campaign when the built site exists, names the changed offer and price in its diff, and --no-live-refs sends nothing", async () => {

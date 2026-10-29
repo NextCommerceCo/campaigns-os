@@ -49,7 +49,7 @@ import {
   wellFormedBriefMaterial,
 } from "./input-currency.mjs";
 import { cmd } from "./install-invocation.mjs";
-import { campaignRouteRoot, intakeRouteRoot, normalizePublicRouteSlug } from "./route-identity.mjs";
+import { campaignRouteRoot, intakeRouteRoot, normalizePublicRouteSlug, specPublicRouteSlug } from "./route-identity.mjs";
 import { projectPageKitTargets, publicRouteForPage } from "./source-html-intake.mjs";
 import { staleRoutingHints } from "./spec-derive.mjs";
 import { routeMaskedSpecMaterialHash, specHashesMatch } from "./spec-identity.mjs";
@@ -633,7 +633,7 @@ const canonicalJson = (value) => {
 function planPageRebind({ spec, packet, packetPath, report, reportPath, context, targetRepo, scope }) {
   const refuse = (code, detail) => ({ refusal: [code, detail] });
   const slug = normalizePublicRouteSlug(packet.campaign?.public_route_slug);
-  const specSlug = normalizePublicRouteSlug(optionalString(spec.spec_identity?.public_route_slug) || optionalString(spec.campaign?.slug));
+  const specSlug = specPublicRouteSlug(spec);
   const packetRoot = campaignRouteRoot(packet);
   const declaredRoot = optionalString(spec.spec_identity?.route_root) || optionalString(spec.campaign?.route_root);
   const specRoot = declaredRoot ? intakeRouteRoot(declaredRoot, slug) : null;
@@ -642,7 +642,7 @@ function planPageRebind({ spec, packet, packetPath, report, reportPath, context,
   }
   const stale = staleRoutingHints(spec, { publicRouteSlug: slug });
   if (stale.length) {
-    return refuse("routing_hint_stale", `the CampaignSpec's routing hints name routes their pages no longer have: ${stale.map((hint) => `${hint.page_id} sdk_hints.meta_tags.${hint.tag} ${JSON.stringify(hint.value)} (page "${hint.target_page_id}" routes to ${JSON.stringify(hint.derived_route)})`).join("; ")}. The built meta tag follows the hint, so shoppers would be sent to the old path. Re-save the Map, or edit each hint to the route shown, then run ${cmd("record")} spec again.`);
+    return refuse("routing_hint_stale", `the CampaignSpec's routing hints name routes their pages no longer have: ${stale.map((hint) => `${hint.page_id} sdk_hints.meta_tags.${hint.tag} ${JSON.stringify(hint.value)} (page "${hint.target_page_id}" routes to ${JSON.stringify(hint.derived_route)})`).join("; ")}. The built meta tag follows the hint, so shoppers would be sent to the old path. Edit each hint to the route shown in the spec (${cmd("spec")} derive rewrites the ones on an edge it re-points after handoff; while the Map is still the spec's source, re-saving it regenerates them), then run ${cmd("record")} spec again.`);
   }
 
   const activePages = activeSpecPages(spec);
@@ -669,9 +669,12 @@ function planPageRebind({ spec, packet, packetPath, report, reportPath, context,
     byTarget.set(target, entry.page_id);
   }
   const kitOf = (entries) => new Map(entries.filter((entry) => isObject(entry?.page_kit)).map((entry) => [entry.page_id, canonicalJson(entry.page_kit)]));
-  const beforeKits = kitOf(previousPages);
+  const differs = (before, after) => before.size !== after.size || [...after].some(([id, kit]) => before.get(id) !== kit);
   const afterKits = kitOf(nextPages);
-  const projectionChanged = beforeKits.size !== afterKits.size || [...afterKits].some(([id, kit]) => beforeKits.get(id) !== kit);
+  // Compared with the Build Context's page map as well as the packet's: a
+  // run that stopped after writing the packet leaves the packet already
+  // re-projected, and the Context still says what was built.
+  const projectionChanged = differs(kitOf(previousPages), afterKits) || differs(kitOf(Array.isArray(context.page_map) ? context.page_map : []), afterKits);
   const routesOf = (entries) => [...new Set(entries.filter((entry) => isObject(entry?.page_kit)).map((entry) => entry.page_kit.public_route))].sort();
   const builtPagesChanged = canonicalJson(routesOf(previousPages)) !== canonicalJson(routesOf(nextPages));
   // A moved page with no page-kit target (out of scope, not built) still
@@ -705,20 +708,29 @@ function planPageRebind({ spec, packet, packetPath, report, reportPath, context,
       return refuse("design_source_package_unreadable", `the Design Source Package at ${packagePath} could not be read (${error.message}); restore it, or re-run intake (${cmd("prepare-build")}).`);
     }
     const onDisk = hashSerializedDesignSourcePackage(bytes);
-    const provenance = readPriorDesignSourceProvenance(reportPath, packagePath);
-    if (report.design_source_package?.origin !== "synthesized") {
-      return refuse("design_source_package_operator_supplied", `the Design Source Package at ${packagePath} was not synthesized by prepare-build (the Assembly Report records origin ${JSON.stringify(report.design_source_package?.origin ?? null)}), so record spec does not rewrite its page routes; reconcile it with the new pages and re-run intake (${cmd("prepare-build")}).`);
+    let rebound;
+    let serialized;
+    try {
+      rebound = rebindDesignSourcePackagePages(value, { activePages, projections });
+      serialized = serializeDesignSourcePackage(rebound);
+    } catch (error) {
+      return refuse("design_source_package_unbindable", `the Design Source Package at ${packagePath} is not a package record spec can re-bind (${error.message}); re-run intake (${cmd("prepare-build")}).`);
     }
-    if (onDisk !== reference.sha256 && !(provenance?.synthesized || []).includes(onDisk)) {
-      return refuse("design_source_package_edited", `the Design Source Package at ${packagePath} no longer matches the sha256 the packet records (it was edited since prepare-build wrote it), so record spec does not rewrite it; restore it, or re-run intake (${cmd("prepare-build")} --force regenerates a package it synthesized).`);
-    }
-    const rebound = rebindDesignSourcePackagePages(value, { activePages, projections });
-    const validation = validateDesignSourcePackage(rebound);
-    if (!validation.ok) {
-      return refuse("design_source_package_unbindable", `the Design Source Package with the new page routes does not validate (${validation.errors.slice(0, 3).map((error) => `[${error.code}] ${error.message}`).join("; ")}); re-run intake (${cmd("prepare-build")}).`);
-    }
-    const serialized = serializeDesignSourcePackage(rebound);
-    if (hashSerializedDesignSourcePackage(serialized) !== onDisk) {
+    // Only a rebind that changes the package writes it, so only then do the
+    // checks on who may rewrite it apply.
+    if (serialized !== serializeDesignSourcePackage(value)) {
+      const origin = report.design_source_package?.origin ?? null;
+      if (origin !== "synthesized") {
+        return refuse("design_source_package_operator_supplied", `the Design Source Package at ${packagePath} ${origin === "adopted" ? "was adopted by prepare-build from a package it did not write" : origin ? `has origin ${JSON.stringify(origin)}` : "has no recorded origin (an Assembly Report older than the origin field)"}, so record spec does not rewrite its page routes, which the new pages would change; reconcile it with the new pages and re-run intake (${cmd("prepare-build")}).`);
+      }
+      const provenance = readPriorDesignSourceProvenance(reportPath, packagePath);
+      if (onDisk !== reference.sha256 && !(provenance?.synthesized || []).includes(onDisk)) {
+        return refuse("design_source_package_edited", `the Design Source Package at ${packagePath} no longer matches the sha256 the packet records (it was edited since prepare-build wrote it), so record spec does not rewrite it; restore it, or re-run intake (${cmd("prepare-build")} --force regenerates a package it synthesized).`);
+      }
+      const validation = validateDesignSourcePackage(rebound);
+      if (!validation.ok) {
+        return refuse("design_source_package_unbindable", `the Design Source Package with the new page routes does not validate (${validation.errors.slice(0, 3).map((error) => `[${error.code}] ${error.message}`).join("; ")}); re-run intake (${cmd("prepare-build")}).`);
+      }
       const identity = createDesignSourcePackageArtifactReference(rebound, { serialized });
       designSource = { path: packagePath, serialized, sha256: identity.sha256, material_fingerprint: identity.material_fingerprint };
     }
@@ -740,6 +752,37 @@ function planPageRebind({ spec, packet, packetPath, report, reportPath, context,
     // meta, the same Design Source Package, and only routes moved.
     builtUnchanged: routesOnly && !projectionChanged && !unprojectedMoved && !designSource,
   };
+}
+
+/**
+ * The Design Source Package reference a record spec run that stopped part
+ * way left behind (#531). The rewritten package is published first and the
+ * report last, so a run that dies between them leaves the packet, the Build
+ * Context or the Assembly Report naming the old sha256 while the package on
+ * disk is the new one. When prepare-build's provenance (the report's
+ * synthesized reference or the pending record beside the package) vouches
+ * for the bytes on disk, and any of the three references names other bytes,
+ * this returns the identity to move them to; otherwise null, and doctor
+ * reports a mismatch it cannot vouch for.
+ */
+function designSourceReferenceRepair({ packet, packetPath, context, report, reportPath }) {
+  const reference = packet.design_source_package;
+  if (!isObject(reference) || report.design_source_package?.origin !== "synthesized") return null;
+  const packagePath = resolveFromFile(packetPath, reference.path);
+  let bytes;
+  let value;
+  try {
+    bytes = readFileSync(packagePath);
+    value = JSON.parse(bytes.toString("utf8"));
+  } catch {
+    return null;
+  }
+  const onDisk = hashSerializedDesignSourcePackage(bytes);
+  const references = [reference, context.design_source_package, report.design_source_package].filter(isObject);
+  if (references.every((ref) => ref.sha256 === onDisk)) return null;
+  if (!(readPriorDesignSourceProvenance(reportPath, packagePath)?.synthesized || []).includes(onDisk)) return null;
+  const identity = createDesignSourcePackageArtifactReference(value, { serialized: bytes });
+  return { path: packagePath, sha256: identity.sha256, material_fingerprint: identity.material_fingerprint };
 }
 
 // The currency reasons that mean a stage's stamp differs from the current
@@ -776,7 +819,14 @@ function refreshSpecUnderLock({ packetPath, sidecars, lockedTarget, dryRun, time
   const owedOnStamp = STAMPED_STAGES.filter((key) => STAMP_OWED_REASONS.includes(currency.reasons[key]));
   const notices = bindingUnknownNotices(currency);
   const specChanged = !specHashesMatch(boundMaterial, material);
-  const unchanged = !specChanged && !owedOnStamp.length && !rebind;
+  // A package reference an earlier, interrupted run left behind is moved
+  // with whatever else this run binds (a rewrite this run makes moves them
+  // itself).
+  const repair = rebind?.designSource ? null : designSourceReferenceRepair({ packet, packetPath, context, report, reportPath });
+  // A recovery run never keeps the build: what the interrupted run changed
+  // cannot be told from what this one sees, so the stages are owed again.
+  const builtUnchanged = Boolean(rebind?.builtUnchanged) && !repair;
+  const unchanged = !specChanged && !owedOnStamp.length && !rebind && !repair;
 
   const writes = [];
   let demoted = [];
@@ -825,14 +875,14 @@ function refreshSpecUnderLock({ packetPath, sidecars, lockedTarget, dryRun, time
     // The rebound pages' Design Source Package: the same path, new bytes, and
     // each of the three references to it moved together (#531).
     let nextPacket = null;
-    if (rebind) {
-      nextPacket = { ...packet, source_html: { ...packet.source_html, pages: rebind.nextPages } };
-      if (rebind.designSource) {
-        const moved = { sha256: rebind.designSource.sha256, material_fingerprint: rebind.designSource.material_fingerprint };
-        nextPacket.design_source_package = { ...packet.design_source_package, ...moved };
-        if (isObject(nextContext.design_source_package)) nextContext.design_source_package = { ...nextContext.design_source_package, ...moved };
-        if (isObject(nextReport.design_source_package)) nextReport.design_source_package = { ...nextReport.design_source_package, ...moved };
-      }
+    if (rebind) nextPacket = { ...packet, source_html: { ...packet.source_html, pages: rebind.nextPages } };
+    const movedTo = rebind?.designSource || repair;
+    if (movedTo) {
+      const moved = { sha256: movedTo.sha256, material_fingerprint: movedTo.material_fingerprint };
+      const at = (ref) => ref.sha256 !== moved.sha256 || ref.material_fingerprint !== moved.material_fingerprint;
+      if (at(packet.design_source_package)) nextPacket = { ...(nextPacket || packet), design_source_package: { ...packet.design_source_package, ...moved } };
+      if (isObject(nextContext.design_source_package) && at(nextContext.design_source_package)) nextContext.design_source_package = { ...nextContext.design_source_package, ...moved };
+      if (isObject(nextReport.design_source_package) && at(nextReport.design_source_package)) nextReport.design_source_package = { ...nextReport.design_source_package, ...moved };
     }
     // A stage is owed on the spec unless its spec stamp already equals the
     // new material (a build recorded after the edit has recorded the change
@@ -845,7 +895,7 @@ function refreshSpecUnderLock({ packetPath, sidecars, lockedTarget, dryRun, time
     // targets, links and routing meta, #531): a stage made against the bound
     // spec is restamped with the new material instead of made owed again.
     const keptStages = [];
-    if (rebind?.builtUnchanged && specChanged) {
+    if (builtUnchanged && specChanged) {
       for (const key of STAMPED_STAGES) {
         const record = nextReport.stages[key];
         if (!COMPLETED_STATUSES.includes(record?.status) || !specHashesMatch(record.source_spec_material_hash, boundMaterial)) continue;
@@ -880,10 +930,13 @@ function refreshSpecUnderLock({ packetPath, sidecars, lockedTarget, dryRun, time
       allCauses.push(...causes);
     }
     // Deploy evidence is the list of URLs that answered; when the set of
-    // built pages changes, the probe is owed again (#531).
+    // built pages changes, the probe is owed again (#531). A deploy bound to
+    // the build fingerprint it probed (#619) is demoted by record build when
+    // the rebuilt site differs, so only a deploy recorded before that stamp
+    // existed is demoted here.
     if (rebind?.builtPagesChanged) {
       const previousDeploy = nextReport.stages.deploy;
-      if (isObject(previousDeploy) && COMPLETED_STATUSES.includes(previousDeploy.status)) {
+      if (isObject(previousDeploy) && COMPLETED_STATUSES.includes(previousDeploy.status) && !optionalString(previousDeploy.source_build_fingerprint)) {
         const demotedDeploy = { ...previousDeploy, stage: "deploy", status: "required", required_by: "spec", required_for: ["qa"] };
         for (const field of ["source_build_fingerprint", "evidence", "outputs", "completed_at", "recorded_by", "performed_by"]) delete demotedDeploy[field];
         nextReport = { ...nextReport, stages: { ...nextReport.stages, deploy: archiveSupersededRecord(demotedDeploy, previousDeploy, { by: "record spec", reason: "spec_material_changed", at: timestamp }) } };
@@ -897,9 +950,10 @@ function refreshSpecUnderLock({ packetPath, sidecars, lockedTarget, dryRun, time
     const pageNote = rebind
       ? `; pages ${[rebind.scope.added.length ? `added ${rebind.scope.added.join(", ")}` : null, rebind.scope.removed.length ? `removed ${rebind.scope.removed.join(", ")}` : null, rebind.scope.moved.length ? `moved ${rebind.scope.moved.join(", ")}` : null].filter(Boolean).join("; ")}, page-kit projection ${rebind.projectionChanged ? "rewritten" : "unchanged"}${rebind.designSource ? ", Design Source Package page surfaces rewritten" : ""}${keptStages.length ? `, ${keptStages.join(", ")} kept (nothing built changed)` : ""}`
       : "";
+    const repairNote = repair ? `; Design Source Package references moved to ${repair.sha256}, the package an interrupted record spec published` : "";
     nextReport.evidence = [
       ...(Array.isArray(report.evidence) ? report.evidence : []),
-      `${timestamp} record spec: CampaignSpec material ${specChanged ? `${boundMaterial || "(none bound)"} -> ${material}` : `${material} already bound`}${briefNote}${pageNote}; ${demoted.length ? `${demoted.join(", ")} owed again` : "no recorded stage was demoted"}${reason ? ` (${reason})` : ""}.`,
+      `${timestamp} record spec: CampaignSpec material ${specChanged ? `${boundMaterial || "(none bound)"} -> ${material}` : `${material} already bound`}${briefNote}${pageNote}${repairNote}; ${demoted.length ? `${demoted.join(", ")} owed again` : "no recorded stage was demoted"}${reason ? ` (${reason})` : ""}.`,
     ];
     writes.push(...(rebind?.designSource ? [rebind.designSource.path] : []), ...(nextPacket ? [packetPath] : []), ...(briefWritten ? [normalizedPath] : []), contextPath, reportPath);
     if (!dryRun) {
@@ -920,7 +974,7 @@ function refreshSpecUnderLock({ packetPath, sidecars, lockedTarget, dryRun, time
         command: "record spec",
         staleReason: "The CampaignSpec was bound with record spec after this doctor snapshot. Re-run doctor (or next) for current state.",
       });
-      if (rebind?.designSource) recordPendingDesignSourceProvenance(rebind.designSource.path, []);
+      if (movedTo) recordPendingDesignSourceProvenance(movedTo.path, []);
     }
   }
 
@@ -946,9 +1000,10 @@ function refreshSpecUnderLock({ packetPath, sidecars, lockedTarget, dryRun, time
         projection_changed: rebind.projectionChanged,
         design_source_package_rewritten: Boolean(rebind.designSource),
         built_pages_changed: rebind.builtPagesChanged,
-        built_unchanged: rebind.builtUnchanged,
+        built_unchanged: builtUnchanged,
       },
     } : {}),
+    ...(repair ? { design_source_references_repaired: { sha256: repair.sha256 } } : {}),
     ...(reason ? { input_change: { reason, at: timestamp } } : {}),
     notices,
     note: outcome === "unchanged"

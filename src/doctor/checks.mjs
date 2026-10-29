@@ -36,6 +36,7 @@ import {
   normalizePublicRouteSlug,
   packetRouteRoot,
   runtimeRelativeRouteForSpecValue,
+  specPublicRouteSlug,
   stripPublicRoutePrefix,
 } from "../route-identity.mjs";
 import { evaluatePageKitBuildSummary } from "../page-kit-build-summary.mjs";
@@ -1564,11 +1565,7 @@ export function validateRouteSlugIdentity(spec, packet, errors, ready) {
   const mapId = optionalString(spec?.spec_identity?.map_id)
     || optionalString(spec?.map_id)
     || optionalString(packet?.spec?.map_id);
-  const specSlug = normalizePublicRouteSlug(
-    optionalString(spec?.spec_identity?.public_route_slug)
-    || optionalString(spec?.campaign?.slug)
-    || optionalString(spec?.campaign?.id)
-  );
+  const specSlug = specPublicRouteSlug(spec);
   const specDeclaresMapIdSlug = Boolean(specSlug) && Boolean(mapId) && specSlug === mapId;
 
   if (mapId && packetSlug === mapId && !specDeclaresMapIdSlug) {
@@ -1719,7 +1716,7 @@ export function validateSpecRoutingHintsCurrent(spec, packet, errors, ready) {
   addIssue(
     errors,
     "spec.routing_hint_stale",
-    `CampaignSpec routing hint(s) name a route the page they point at no longer has: ${sample}${more}. The built meta tag follows the hint, so the SDK would send shoppers to the old path. Re-save the Map (it regenerates the hints), or edit each hint to the route shown, then run record spec.`,
+    `CampaignSpec routing hint(s) name a route the page they point at no longer has: ${sample}${more}. The built meta tag follows the hint, so the SDK would send shoppers to the old path. Edit each hint to the route shown in the spec (or, while the Map is still the spec's source, re-save the Map, which regenerates them), then run record spec.`,
     { hints: stale },
   );
 }

@@ -1379,7 +1379,7 @@
       "writes": [
         {
           "path": "{spec}",
-          "when": "the target repo states a field the spec does not (SDK pin, page_url, analytics ids; after handoff, pages added to or removed from the page tree)",
+          "when": "the target repo states a field the spec does not (SDK pin, page_url, analytics ids; after handoff, pages added to or removed from the page tree, and the routing and routing hint on each edge that names one)",
           "observed_in": [
             "no_session",
             "ambient_session",
@@ -5963,7 +5963,7 @@
         },
         {
           "path": "{packet}",
-          "when": "the active pages changed in a way record spec binds (#531, #721): a move of routes alone, or on a handed-off campaign (deploy or QA completed) a page added or removed — source_html.pages[].page_kit re-projected for every page, an added page recorded with origin repo, a removed page's entry dropped, and design_source_package's sha256 and material_fingerprint when the package is rewritten",
+          "when": "the active pages changed in a way record spec binds (#531, #721): a move of routes alone, or on a handed-off campaign (deploy or QA completed) a page added or removed — source_html.pages[].page_kit re-projected for every page, an added page recorded with origin repo, a removed page's entry dropped, and design_source_package's sha256 and material_fingerprint when the package is rewritten; also, without a page rebind, design_source_package alone when an earlier record spec stopped after rewriting the package and its pending provenance record vouches for the bytes on disk",
           "observed_in": [],
           "not_observed_reason": "the effects seed changes a package qty, not the active pages, so no page rebind is due"
         },
@@ -5975,7 +5975,7 @@
         },
         {
           "path": "{runtime}/build-context.json",
-          "when": "the refresh runs (outcome refreshed) — spec.hash, spec.material_hash, spec.route_masked_material_hash and the active pages' labels; the brief summary and bindings when the re-derived brief is saved; on a page rebind, spec.active_pages, page_map and design_source_package too",
+          "when": "the refresh runs (outcome refreshed) — spec.hash, spec.material_hash, spec.route_masked_material_hash and the active pages' labels; the brief summary and bindings when the re-derived brief is saved; on a page rebind, spec.active_pages, page_map and design_source_package too; design_source_package when an interrupted earlier run left it naming the old package",
           "observed_in": [
             "no_session",
             "ambient_session",
@@ -5986,7 +5986,7 @@
         },
         {
           "path": "{runtime}/assembly-report.json",
-          "when": "the refresh runs (outcome refreshed) — identity.spec_hash and identity.spec_material_hash become the CampaignSpec's; each build, Polish and QA record made against other CampaignSpec or brief content becomes required, recording input_change and keeping the record it replaced in its history (on a page rebind that moved nothing the build wrote, each is restamped instead; when the set of built pages changes, a completed deploy becomes required too); evidence[] gains a line",
+          "when": "the refresh runs (outcome refreshed) — identity.spec_hash and identity.spec_material_hash become the CampaignSpec's; each build, Polish and QA record made against other CampaignSpec or brief content becomes required, recording input_change and keeping the record it replaced in its history (on a page rebind that moved nothing the build wrote, each is restamped instead; when the set of built pages changes, a completed deploy recorded without a build fingerprint becomes required too; design_source_package when an interrupted earlier run left it naming the old package); evidence[] gains a line",
           "observed_in": [
             "no_session",
             "ambient_session",

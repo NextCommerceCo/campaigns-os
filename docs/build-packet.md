@@ -461,8 +461,9 @@ spec in step without running setup or intake again:
 2. `campaigns-os record spec --packet <packet>` binds the result. A page added
    or removed is bound without intake: the packet's and the Build Context's
    page-kit projection are re-projected, the added page is recorded with
-   `origin: "repo"` (its source is its own page file), and the build, Polish,
-   QA and deploy stages it affects are owed again (see
+   `origin: "repo"` (its source is its own page file), and the build, Polish
+   and QA stages it affects are owed again; deploy follows at the next
+   `record build` (see
    [Binding a page change](#binding-a-page-change)).
 
 Then rebuild, record the build, and run Polish, deploy and QA as `next` asks.
@@ -542,9 +543,12 @@ the tree's route (`checkout`, `/<slug>/checkout/`) is not a change, and a
 value nested differently from the tree (`offers/upsell/` against
 `upsell.html`) is. A routing hint in `sdk_hints.meta_tags` (`next-success-url`,
 `next-upsell-accept-url`, `next-upsell-decline-url`) that no longer matches
-the derived route of the page it names is reported as
-`spec.derive.routing_hint_stale` on every run until the Map is re-saved;
-hints are a Map projection the editor regenerates and are not rewritten.
+the route of the page it names is reported as
+`spec.derive.routing_hint_stale` on every run until the hint is fixed. The
+list is read off the spec as the run leaves it. Hints are a spec projection
+the Map regenerates, so derive rewrites one only on an edge it re-points after
+handoff (below); any other stale hint is edited in the spec (or, while the Map
+is still the spec's source, fixed by re-saving the Map).
 
 A routing hint that is stale is also a doctor blocker (`spec.routing_hint_stale`,
 on every read), and `record spec` refuses to bind a page change while one is
@@ -573,7 +577,20 @@ position:
   `on_decline`) and, on a select or checkout_step page, `next_step`
   (`next_page`). An added page takes its own links; a kept page whose link now
   names an added page, or whose routing named a removed page, is re-pointed at
-  the page its link names. No other routing is touched.
+  the page its link names. No other routing is touched. When the re-pointed
+  page carries the routing hint that goes with that field
+  (`next-upsell-accept-url` for `on_accept`, `next-upsell-decline-url` for
+  `on_decline`, `next-success-url` for `success_url`), the hint is rewritten
+  to the new target's route in the same spelling (`/<slug>/receipt/` becomes
+  `/<slug>/upsell-2/`, `receipt/` becomes `upsell-2/`), and so is the legacy
+  `funnel_pages[]` copy. An added page gets no hints.
+- A page whose file is gone and a new file of the same page type in the same
+  run read as a rename (`upsell.html` to `upsell-1.html`). Derive applies
+  neither, so the page's packages, offers and other authored fields are not
+  lost, and reports both as `page_renamed`. For a rename, set the page's
+  `page_url` to the new route (it keeps its id; `record spec` binds that as a
+  move of routes) or rename the file back. For a new page, remove the old page
+  from the spec by hand and derive again.
 - Page order is not something the tree states. Where the funnel's pages carry
   an `order`, the added page's is reported as not derived.
 
@@ -590,7 +607,7 @@ fields the spec mirrors from the live campaign:
 
 | Spec field (mirrored) | Live campaign authority |
 |---|---|
-| each page package's `name`, `price`, `price_retail`, `product_name`, `product_sku`, `product_variant_name`, `product_purchase_availability`, `product_inventory_availability`, `image` | the campaign's package with the same `ref_id` |
+| each page package's `name`, `price`, `price_retail`, `product_name`, `product_sku`, `product_variant_name`, `product_purchase_availability`, `product_inventory_availability`, `image`, the recurring fields `is_recurring`, `price_recurring`, `interval`, `interval_count`, and `variant_attributes` (the campaign's `product_variant_attribute_values`) | the campaign's package with the same `ref_id`; a field the spec lacks is not added when the live value is null, `false` or an empty list, as Map Builder leaves it out |
 | `offers[]` records: `name`, `type`, `code`, `condition`, `benefit`, `packages` | the campaign's offer with the same `ref_id`; a live offer missing from `offers[]` is added |
 | each page's `offers[]` copy: `name`, `type`, `code`, `condition`, `benefit` | the same offer |
 
@@ -625,6 +642,7 @@ the status is `partial` (exit 0; the fields it could derive are written):
 | `page_type_unknown`, `page_id_unusable`, `page_funnel_ambiguous` | after handoff, a page file the spec lacks was not added: its `page_type` is not one of page-kit's four, its file name is not a usable new page id (taken, `index`, or not letters, digits, `-` and `_`), or the spec has several funnels (or none), so which one it joins is not stated |
 | `routing_not_derived`, `routing_target_removed` | an added page's link names no single page (or the file states none), or a kept page routes to a removed page and its file's link names no page the spec keeps; set the field by hand |
 | `page_order_not_derived` | an added page was appended; its `order` is left for you |
+| `page_renamed` | a page's file is gone and a new file of the same page type appeared; read as a rename, neither the remove nor the add is applied |
 | `package_not_live`, `offer_not_live`, `offers_not_in_live_campaign` | a package or offer the spec carries is not in the live campaign, or the live campaign carried no offers list; nothing is changed |
 
 A placeholder id (`GTM-XXXXXXX`, a run of one digit) is `target_invalid`:
@@ -2055,15 +2073,22 @@ it is re-derived; the Build Context's `spec.active_pages`, `page_map` and
 `design_source_package` reference; and the Assembly Report, whose
 `design_source_package` reference moves with the other two. The package is
 rewritten at its own path, with a pending provenance record beside it until
-the report records its new sha256, so a run that stops part way leaves a
-package the next `record spec` or `prepare-build` still knows as its own. An
+the report records its new sha256. A run that stops part way leaves a
+package the next `record spec` or `prepare-build` still knows as its own, and
+the next `record spec` finishes the job: when that provenance vouches for the
+package on disk and any of the packet's, the Build Context's or the report's
+references names other bytes, it moves them (result field
+`design_source_references_repaired`), and the build, Polish and QA are owed
+again, since what the stopped run changed cannot be told from what is left. An
 added page's own page file is its source, so doctor counts it as mapped, and
 as built once the file exists (`source_html.pages.repo_page_missing` when it
 does not), and the brief is not asked to name its design authority.
 
-The stages: build, Polish and QA are owed again as for any spec change, and
-deploy is owed again when the set of built page routes changes (deploy
-evidence is the list of URLs that answered). A move that changes nothing the
+The stages: build, Polish and QA are owed again as for any spec change. A
+deploy is bound to the build fingerprint it probed, so the next `record
+build` makes it owed when the rebuilt site differs. A deploy recorded before
+that stamp existed carries no fingerprint; `record spec` makes it owed when
+the set of built page routes changes. A move that changes nothing the
 build wrote (every page projects to the same target and links, the routing
 hints are unchanged, the Design Source Package is unchanged, and nothing but
 `page_url` differs from the material the Build Context recorded in
@@ -2078,11 +2103,11 @@ Refused, writing nothing:
 | Code | When |
 |---|---|
 | `route_root_changed` | the spec names another route slug, or declares a `route_root` other than the one the packet serves at; the recorded preview and deploy are rooted there, so that needs intake |
-| `routing_hint_stale` | a page's `sdk_hints.meta_tags` routing hint names a route its page no longer has; re-save the Map or edit the hint first |
+| `routing_hint_stale` | a page's `sdk_hints.meta_tags` routing hint names a route its page no longer has; edit the hint in the spec first (`spec derive` rewrites the ones on an edge it re-points after handoff) |
 | `page_kit_target_conflict` | two pages project to one page-kit target file |
 | `design_source_package_unreadable` | the package the packet names cannot be read |
-| `design_source_package_operator_supplied` | the report does not record the package as one prepare-build synthesized (`origin` other than `synthesized`), so `record spec` does not rewrite it |
-| `design_source_package_edited` | the package no longer hashes to the sha256 the packet records (or to one its pending provenance record names) |
+| `design_source_package_operator_supplied` | the new pages would change the package, and the report does not record it as one prepare-build synthesized (`origin` `adopted`, or no `origin` in a report older than that field), so `record spec` does not rewrite it |
+| `design_source_package_edited` | the new pages would change the package, and it no longer hashes to the sha256 the packet records (or to one its pending provenance record names) |
 | `design_source_package_unbindable` | the package with the new page surfaces does not validate |
 
 ### Recording stage completion

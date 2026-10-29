@@ -1,8 +1,8 @@
 // `campaigns-os spec derive`, live campaign half (#721): refresh the offer and
 // package fields the CampaignSpec mirrors from the Campaigns App.
 //
-// Field classes (#432): a page package's ref, name, price, product, variant
-// and availability are mirrored from the Campaigns App's packages; the offer
+// Field classes (#432): a page package's ref, name, price (recurring price
+// included), product, variant and availability are mirrored from the Campaigns App's packages; the offer
 // records (`offers[]`, and the copy a page carries in `pages[].offers[]`) are
 // mirrored from its offers. Which packages and offers a page carries, and a
 // package's qty and role flags (is_upsell, is_order_bump, default_selected,
@@ -16,7 +16,10 @@
 // plans rows in spec-derive.mjs's shape from the spec and that body, and
 // spec-derive.mjs applies them under its write guard.
 
-// The page package fields the live campaign is the authority for.
+// The page package fields the live campaign is the authority for, as Map
+// Builder exports them: the recurring price fields a subscription package
+// carries, and `variant_attributes`, which the campaign states as
+// `product_variant_attribute_values`.
 export const MIRRORED_PACKAGE_FIELDS = Object.freeze([
   "name",
   "price",
@@ -27,7 +30,15 @@ export const MIRRORED_PACKAGE_FIELDS = Object.freeze([
   "product_purchase_availability",
   "product_inventory_availability",
   "image",
+  "is_recurring",
+  "price_recurring",
+  "interval",
+  "interval_count",
+  "variant_attributes",
 ]);
+
+// A spec field whose live value sits under another key.
+const LIVE_FIELD = Object.freeze({ variant_attributes: "product_variant_attribute_values" });
 
 // The offer record fields (root `offers[]`), and the subset a page's copy
 // (`pages[].offers[]`) carries.
@@ -89,17 +100,21 @@ function indexByRef(list) {
 
 // The rows that bring one mirrored record in line with the live one: a field
 // the live record states is written when the spec's value differs, and only
-// where the spec already carries the key or the live value is not null, so a
-// refresh does not pad the spec with empty keys.
+// where the spec already carries the key or the live value says something
+// (not null, false or an empty list, which is how Map Builder leaves a
+// one-time package's recurring fields out), so a refresh does not pad the
+// spec with empty keys.
 function mirrorRows({ record, live, fields, path, source, pageId = null }) {
   const changes = [];
   const unchanged = [];
   for (const field of fields) {
-    if (!Object.hasOwn(live, field) || live[field] === undefined) continue;
+    const key = LIVE_FIELD[field] || field;
+    if (!Object.hasOwn(live, key) || live[key] === undefined) continue;
+    const value = live[key];
     const before = Object.hasOwn(record, field) ? record[field] : undefined;
-    if (before === undefined && live[field] === null) continue;
-    const row = { field: pathLabel([...path, field]), path: [...path, field], before: clone(before), after: clone(live[field]), source, ...(pageId ? { page_id: pageId } : {}) };
-    if (canonicalJson(before) === canonicalJson(live[field])) unchanged.push(row);
+    if (before === undefined && (value === null || value === false || (Array.isArray(value) && !value.length))) continue;
+    const row = { field: pathLabel([...path, field]), path: [...path, field], before: clone(before), after: clone(value), source, ...(pageId ? { page_id: pageId } : {}) };
+    if (canonicalJson(before) === canonicalJson(value)) unchanged.push(row);
     else changes.push(row);
   }
   return { changes, unchanged };
