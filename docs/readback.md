@@ -295,6 +295,20 @@ carries no parseable value — the readback does not choose. It names the
 candidates on stderr, says `--packet` is required, and exits `2`. No JSON object
 is emitted in that case.
 
+**Freshness chooses among runs of one funnel, never among funnels.** A project
+that holds several funnels has one packet per funnel
+(`campaign-runtime-<route>.build.json` beside the default; see
+[Several funnels in one project](build-packet.md#several-funnels-in-one-project)).
+When the valid candidates name more than one `campaign.public_route_slug`, the
+readback refuses the same way, naming each packet with its route, and exits
+`2`. Pass `--packet` to project one funnel. The doctor output, Build Context,
+Assembly Report, QA verdict and findings export rows then read from the runtime
+directory that packet records (`assembly.runtime_dir`), or from
+`.campaign-runtime/` when it records none. A packet whose `assembly.runtime_dir`
+is not its own funnel's directory is refused with exit `2`, since the readback
+cannot tell whose records to show. An explicit `--doctor`, `--context`,
+`--report`, `--qa-verdict` or `--findings` path still wins.
+
 Values are compared at **microsecond precision** — the precision Python's
 `datetime.fromisoformat` keeps, and the precision the Python readback this
 command ports compared at; a seventh or later fractional digit is truncated, not

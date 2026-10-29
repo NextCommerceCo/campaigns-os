@@ -73,6 +73,8 @@ Then do what `next` prints. From here the build is agent-driven: the setup, buil
 - `.campaign-runtime/qa-verdict.json`, after QA
 - `.campaign-runtime/agent-context/*`
 
+A folder can hold several funnels. The first one set up uses the paths above; each later funnel gets its own `campaign-runtime-<route>.build.json` and keeps its records under `.campaign-runtime/funnels/<route>/`, so one funnel's setup never overwrites another's. Pass that funnel's packet with `--packet`. See [several funnels in one project](docs/build-packet.md#several-funnels-in-one-project).
+
 ## Proof, test orders and launch
 
 Build output is not launch readiness. A complete run has build and lint evidence, a Polish record backed by `polish capture` against the served build, a recorded deploy, a browser QA verdict, and typed-card test-order proof from `--test-order common`. Global test cards bypass the gateway and create no transactions, but each test order leaves a real store order record. Unless the operator has already said test orders are fine for this campaign, ask once, up front, before placing test orders; then proceed. There is no permission flag. Localhost on any port is a Campaigns App development domain, so the SDK runs and analytics are suppressed there; a hosted preview or production origin must be on the campaign API key's allowed domains.
