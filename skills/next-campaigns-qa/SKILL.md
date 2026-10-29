@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-qa
-version: 1.3.51
+version: 1.3.52
 description: Run spec-aware QA from a saved Map or local-spec Build Packet and tested campaign URL after build, polish, and deploy/local evidence exist, including Playwright typed-card test-order proof.
 ---
 
-Bundle revision: 1.61.0+skills.2
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.61.0+skills.2`
+Bundle revision: 1.62.0+skills.1
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.62.0+skills.1`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -121,6 +121,7 @@ Rules:
 - Keep multi-funnel and `tiers:common` / `tiers:full` plans isolated to each selected checkout's own funnel graph, tiers, and recognized terminals; never borrow an unrelated funnel's receipt page.
 - Accepted-upsell proof is valid only when the browser observes the order upsell API mutation and the final order evidence contains the selected upsell package. A checkout bump line marked `is_upsell` is not accepted-upsell proof.
 - Test orders are real orders in the store, but global test cards bypass the gateway: no charge, no transaction, and no merchant-specific sandbox routing to confirm. Localhost on any port is globally available as a Campaigns App Development domain and suppresses Campaigns analytics; non-localhost preview/production origins must be allowlisted for the campaign API key so the SDK loads — that is about SDK initialization, not test-order permission.
+- `qa run --test-order` answers the analytics vendors' beacons itself by default (GA4, Meta, TikTok, Snap, Pinterest, Taboola, Triple Whale, AppLovin Axon), so test orders do not reach those vendors; their scripts still load. The `browser-test-order:vendor-beacons` row records, per vendor, the requests the page sent and whether one named a purchase. It is evidence that the page sent them, never purchase proof, and it never blocks; it also lists configured vendors that are not intercepted (Northbeam, GTM-loaded tags outside the list). Pass `--vendor-beacons live` only when the operator wants the vendors to receive the test purchases; `qa parity` orders are not intercepted.
 - Launch readiness is separate from Campaigns OS proof. If QA passes on local/preview, still surface production storefront URL, live payment methods, shipping markets, legal/support URLs, analytics expectations, and merchant-side configuration as real-shopper readiness items before launch.
 - For multi-market campaigns, verify at least one non-default currency/country path: currency display, shipping method names/prices, available payment methods, and market-specific copy.
 - Treat missing deploy URL, missing polish status, or unresolved doctor blockers as launch blockers.
