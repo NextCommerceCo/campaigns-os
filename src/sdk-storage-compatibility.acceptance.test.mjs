@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { scanSdkStorageCompatibility } from './sdk-storage-compatibility.mjs';
+import { scanSdkStorageCompatibility, inventoryFailure } from './sdk-storage-compatibility.mjs';
 
 // Synthetic tracked campaign sources, never merchant code or real order data.
 // A source-compatible result covers source storage access, not runtime identity.
@@ -168,5 +168,12 @@ test('a failed Git inventory names the reason in one line', t => {
   const cwd = fixture(t, "sessionStorage.getItem('next-order');");
   writeFileSync(join(cwd, '.git', 'index'), 'not an index');
   assert.throws(() => scanSdkStorageCompatibility(options(cwd)), error =>
-    /^Cannot inventory tracked Git source files: \S/.test(error.message) && !error.message.includes('\n') && !error.message.includes('Command failed'));
+    /^Cannot inventory tracked Git source files: \S/.test(error.message) && /index/.test(error.message) && !error.message.includes('\n') && !error.message.includes('Command failed'));
+});
+
+test('an inventory over the buffer asks for a narrower scope', () => {
+  let failure;
+  try { execFileSync('git', ['--version'], { stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 1 }); } catch (error) { failure = error; }
+  assert.equal(failure.code, 'ENOBUFS');
+  assert.match(inventoryFailure(failure), /larger than 256 MiB; narrow --scope\.$/);
 });

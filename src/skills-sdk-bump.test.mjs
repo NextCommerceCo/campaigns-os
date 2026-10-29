@@ -40,6 +40,8 @@ test("the SDK bump skill names each step the bump needs", () => {
     "Use the 3-D Secure test card in `docs/qa-and-test-orders.md`",
     "the install predates the fix in `1.61.0+agent.2`",
     "the check reads tracked files only",
+    "at the same repository-relative paths",
+    "[testing page](https://developers.nextcommerce.com/docs/testing)",
     "not the campaign's ref id",
     "unrendered `{{`",
     "at the highest version its supported range declares",

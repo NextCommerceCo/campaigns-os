@@ -364,8 +364,8 @@ function frontmatterScripts(text) {
 }
 const INVENTORY_MAX_BYTES = 256 * 1024 * 1024;
 
-function inventoryFailure(error) {
-  if (error.code === 'ENOENT') return 'git is not on PATH.';
+// A missing git already fails at rev-parse, above the inventory.
+export function inventoryFailure(error) {
   if (error.code === 'ENOBUFS') return `the tracked-file list under --scope is larger than ${INVENTORY_MAX_BYTES / 1024 / 1024} MiB; narrow --scope.`;
   const stderr = typeof error.stderr === 'string' ? error.stderr : error.stderr?.toString() ?? '';
   const detail = singleLineFragment(stderr.trim().split('\n')[0], error.code ?? `git exited ${error.status ?? 'abnormally'}`);

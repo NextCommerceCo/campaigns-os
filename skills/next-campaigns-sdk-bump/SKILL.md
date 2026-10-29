@@ -191,7 +191,8 @@ version and report that it does not speak for the versions above it.
 
 If the check stops with exactly `Cannot inventory tracked Git source files.`
 (with nothing after the period) on a large repository, the install predates the
-fix in `1.61.0+agent.2`. Copy the scoped folders into a new directory, run
+fix in `1.61.0+agent.2`. Copy the scoped folders into a new directory at the
+same repository-relative paths (so every `--scope` value still exists), run
 `git init`, `git add .` and `git commit` there (the check reads tracked files
 only), run the check in that repository, and say so in the hand-back.
 
