@@ -481,6 +481,7 @@ By default it reads the target repo only (no network unless `--from-store` or
 | `funnels[].pages[].page_url` (the legacy `funnel_pages[].page_url` mirror, when present, is reconciled to the same route on every run) | the page tree under `assembly.output_dir` (default `src/<public_route_slug>/`), read by page-kit's own rule: the file's basename alone (`checkout.html` → `checkout/` wherever it sits; `index.html` → the entry route; a nested `index.html` collides with the root and is not read), or a frontmatter `permalink` in the `/<slug>/<route>/` form prepare-build writes (page-kit serves a permalink verbatim, so any other spelling is a repo defect, refused) |
 | `analytics.providers.gtm.containerId` | `_data/campaigns.json[public_route_slug].gtm_id` |
 | `analytics.providers.facebook.pixelId` | `_data/campaigns.json[public_route_slug].fb_pixel_id` |
+| `analytics.vendors.<vendor>.id`, for each starter-template vendor adapter: `ga4`, `axon`, `taboola`, `triplewhale`, `tiktok`, `northbeam`, `snap`, `pinterest` | the vendor's id key in the same entry: `ga4_id`, `axon_event_key`, `taboola_account_id`, `triplewhale_name`, `tiktok_pixel_id`, `northbeam_client_id`, `snap_pixel_id`, `pinterest_tag_id` |
 
 Nothing else is written: not the store profile (store-derived; see
 `--from-store` below), not any authored or mirrored field, not the packet,
@@ -488,8 +489,11 @@ not the repo. A
 derived field the spec carries with a different, authored-looking value is
 overwritten, and the printed `before -> after` line shows it: that is the
 class doing its job. A block the spec lacks is created (`global_config`,
-`analytics.providers.gtm` as `{ "enabled": true, "containerId": … }`); an
-array element is never invented.
+`analytics.providers.gtm` as `{ "enabled": true, "containerId": … }`,
+`analytics.vendors.ga4` as `{ "enabled": true, "id": … }`); an array element
+is never invented. For a vendor only the id is derived: its platform,
+identity flag and allowed or blocked events stay authored in the Map, whose
+spec compiler writes them into `campaigns.json`.
 
 Each page is bound to one file: the packet's own projection first
 (`source_html.pages[].page_kit.target_path`, the file the build stage wrote
@@ -511,20 +515,24 @@ the status is `partial` (exit 0; the fields it could derive are written):
 | Reason | Meaning |
 |---|---|
 | `scaffold_seed` | the entry still carries the starter demo store profile, so its pin is the starter's seed, not a version anyone chose; `page-kit sync` seeds the pin from the spec in that state |
-| `target_missing`, `target_invalid` | the entry has no `sdk_version`, or it is not a released `MAJOR.MINOR.PATCH`; for an analytics id, the value is not a GTM container id / a digits-only pixel id; for a route, the file's permalink is not in the `/<slug>/<route>/` form (no slug prefix, another prefix, `.html`, `..`, a control character), reported with the URL page-kit would serve |
+| `target_missing`, `target_invalid` | the entry has no `sdk_version`, or it is not a released `MAJOR.MINOR.PATCH`; for an analytics id, the value is not a GTM container id / a digits-only pixel id / a GA4 measurement id (`G-…`) / a digits-only Taboola account id / for the other vendors, one token with no spaces or quotes; for a route, the file's permalink is not in the `/<slug>/<route>/` form (no slug prefix, another prefix, `.html`, `..`, a control character), reported with the URL page-kit would serve |
 | `waived` | an active named-human `page_kit.sdk_version` waiver covers the exact pair; derive leaves the spec as the waiver accepted it |
 | `spec_ahead` | a released pin the spec declares (canonical or alias) is ahead of the repo pin: the state doctor blocks on with `page-kit sync` as its repair (#413); one command owns it, so derive never moves a spec pin backwards |
 | `page_tree_missing`, `page_file_not_found`, `page_file_ambiguous` | no page tree, no file binds to the page, or more than one does |
 | `entry_route_undeclared` | the page binds to the top-level `index.html` (the entry route, `""`) but is not flagged `is_entry`; doctor honours an empty `page_url` only on the entry page, so the flag is asked for in the Map rather than the route written |
 | `waivers_unknown` | the Assembly Report could not be read, so a named-human `page_kit.sdk_version` waiver cannot be ruled out; the pin waits, routes and ids still derive |
 | `page_id_duplicate` | the page id appears more than once; no single route can be derived for it |
-| `spec_container_invalid` | `global_config`, `runtime`, `analytics`, `analytics.providers` or `analytics.providers.<provider>` exists in the spec but is not an object; reported by the plan so `--dry-run` and the write agree |
-| `target_empty` | the entry's `gtm_id` / `fb_pixel_id` is empty while the spec declares an id; an empty repo value never deletes a spec id |
+| `spec_container_invalid` | `global_config`, `runtime`, `analytics`, `analytics.providers`, `analytics.providers.<provider>`, `analytics.vendors` or `analytics.vendors.<vendor>` exists in the spec but is not an object; reported by the plan so `--dry-run` and the write agree |
+| `target_empty` | the entry's `gtm_id` / `fb_pixel_id` / vendor id key is empty while the spec declares an id; an empty repo value never deletes a spec id |
 
-A placeholder id (`GTM-XXXXXXX`, a run of one digit) is `target_invalid`:
-writing it would declare an analytics contract QA then blocks on. A derived
-field the entry does not carry at all is listed under `not_in_target[]` and
-left as it is.
+A placeholder id (`GTM-XXXXXXX`, a run of one digit; for a vendor also
+`XXXX`, `YOUR_`, `CHANGEME`, `<…>` or `EXAMPLE` anywhere in it, such as
+`G-XXXXXXXXXX` or `store.example.com`) is `target_invalid`: writing it would
+declare an analytics contract QA then blocks on, and the template loads a
+vendor for any non-empty value. A derived field the entry does not carry at
+all is listed under `not_in_target[]` and left as it is. Vendors are opt-in
+(an absent key means the vendor is off), so a vendor neither the entry nor
+the spec carries is not listed.
 
 `spec derive` writes the spec alone and no longer rebinds identity: the
 Build Context's `spec.hash` / `spec.material_hash` and the Assembly Report's
@@ -537,7 +545,10 @@ against the bound material hash. A derived route change also warns
 (`source_html.pages[].page_kit`) and the Build Context page map were prepared
 from the old routes, and `prepare-build` (or `start`) regenerates them. A
 provider block derive creates warns `spec.derive.analytics_block_created`:
-the spec then declares an analytics contract QA gates on. `--dry-run` carries
+the spec then declares an analytics contract QA gates on. A vendor block
+derive creates warns `spec.derive.analytics_vendor_created`: doctor then reads
+that vendor's `campaigns.json` key against the spec, and when the spec had no
+`analytics` block before, QA's analytics leg now runs too. `--dry-run` carries
 the same `file_reformatted`, `projection_stale` and `build_stale` warnings,
 phrased as what a write would do.
 

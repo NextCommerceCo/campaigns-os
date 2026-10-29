@@ -7,7 +7,8 @@
 // typed, and this command is the generator for the repo-derived ones: the
 // SDK pin from `_data/campaigns.json[<route>].sdk_version`, each page's public
 // route from the page tree under `src/<route>/`, and the analytics ids the
-// entry carries (`gtm_id`, `fb_pixel_id`). Doctor then compares generated
+// entry carries (`gtm_id`, `fb_pixel_id`, and the starter-template vendor ids
+// such as `ga4_id` or `triplewhale_name`). Doctor then compares generated
 // against generated instead of refereeing a human's typing against the repo.
 //
 // The repo is the authority for exactly those fields. A spec value that looks
@@ -19,7 +20,7 @@
 //
 // This module is pure: the CLI reads the packet, the spec, the entry and the
 // page tree, and does the writing and the printing.
-import { isReleasedSdkVersion } from "../campaign-spec/dist/index.js";
+import { ANALYTICS_VENDORS, isPlaceholderVendorId, isReleasedSdkVersion } from "../campaign-spec/dist/index.js";
 import { PAGE_KIT_CAMPAIGNS_REL_PATH } from "./page-kit-campaign-config.mjs";
 import { PAGE_KIT_STORE_PROFILE_FIELDS } from "./page-kit-store-profile.mjs";
 import { compareReleasedSdkVersions, entryInScaffoldState, resolveSpecSdkPin } from "./page-kit-sdk-version.mjs";
@@ -36,6 +37,7 @@ export const SPEC_DERIVE_FIELDS = Object.freeze([
   "funnel_pages[].page_url",
   "analytics.providers.gtm.containerId",
   "analytics.providers.facebook.pixelId",
+  ...ANALYTICS_VENDORS.map(({ key }) => `analytics.vendors.${key}.id`),
   ...PAGE_KIT_STORE_PROFILE_FIELDS.map((field) => `campaign.${field}`),
 ]);
 
@@ -44,6 +46,24 @@ export const ANALYTICS_ID_FIELDS = Object.freeze([
   Object.freeze({ key: "gtm_id", provider: "gtm", property: "containerId", shape: /^GTM-[A-Z0-9]{4,}$/, describe: "a GTM container id (GTM-XXXXXXX)" }),
   Object.freeze({ key: "fb_pixel_id", provider: "facebook", property: "pixelId", shape: /^\d{5,20}$/, describe: "a Meta pixel id (digits only)" }),
 ]);
+
+// The starter-template vendor ids (analytics.vendors.<vendor>.id), one per
+// vendor in the campaign-spec registry, keyed by the campaigns.json key that
+// switches the vendor on. GA4 and Taboola have a known format (Taboola's id is
+// injected unquoted, so anything but digits breaks the page); the others are
+// one token with no whitespace or quotes, since the template writes the id
+// into a script.
+const VENDOR_ID_SHAPES = Object.freeze({
+  ga4: { shape: /^G-[A-Z0-9]{4,}$/, describe: "a GA4 measurement id (G-XXXXXXXXXX)" },
+  taboola: { shape: /^\d+$/, describe: "a Taboola account id (digits only)" },
+});
+const VENDOR_ID_TOKEN = { shape: /^[^\s"'<>\\`]+$/, describe: "one id token with no spaces or quotes" };
+export const ANALYTICS_VENDOR_ID_FIELDS = Object.freeze(ANALYTICS_VENDORS.map(({ key, idKey, label }) => Object.freeze({
+  key: idKey,
+  vendor: key,
+  property: "id",
+  ...(VENDOR_ID_SHAPES[key] || { ...VENDOR_ID_TOKEN, describe: `a ${label} id (${VENDOR_ID_TOKEN.describe})` }),
+})));
 
 // The SDK routing meta tags a page's `sdk_hints.meta_tags` may carry, and the
 // declared routing field (a page id) each one is the route of. A derived
@@ -440,18 +460,24 @@ export function planSpecDerive({ spec, entry, pageFiles = null, packetBindings =
   }
 
   // Analytics ids the entry carries. A usable id is written into the provider
-  // block (created when the spec lacks it). An empty repo value never deletes
-  // a spec id: the mismatch is reported so someone decides which side is
-  // wrong.
-  for (const { key, provider, property, shape, describe } of ANALYTICS_ID_FIELDS) {
-    const field = `analytics.providers.${provider}.${property}`;
+  // or vendor block (created when the spec lacks it). An empty repo value
+  // never deletes a spec id: the mismatch is reported so someone decides
+  // which side is wrong. A vendor neither side carries is not listed under
+  // not_in_target: the template vendors are opt-in (absent means off), so
+  // eight "not in target" lines on every run would say nothing.
+  const analyticsIdRows = [
+    ...ANALYTICS_ID_FIELDS.map(({ key, provider, property, shape, describe }) => ({ key, block: "providers", name: provider, property, shape, describe, optIn: false })),
+    ...ANALYTICS_VENDOR_ID_FIELDS.map(({ key, vendor, property, shape, describe }) => ({ key, block: "vendors", name: vendor, property, shape, describe, optIn: true })),
+  ];
+  for (const { key, block, name, property, shape, describe, optIn } of analyticsIdRows) {
+    const field = `analytics.${block}.${name}.${property}`;
     const raw = Object.hasOwn(target, key) ? target[key] : undefined;
-    const current = spec?.analytics?.providers?.[provider]?.[property];
+    const current = spec?.analytics?.[block]?.[name]?.[property];
     const source = entrySource(key);
     if (raw === undefined || raw === null || (typeof raw === "string" && !raw.trim())) {
       if (isNonEmptyString(current)) {
         notDerived.push({ field, reason: "target_empty", detail: `the target entry's ${key} is empty but the spec declares ${field} ${quoteValue(current)}; add the id to ${source} if the funnel should carry it, or remove it from the spec. Nothing was written.` });
-      } else notInTarget.push(field);
+      } else if (!optIn) notInTarget.push(field);
       continue;
     }
     if (typeof raw !== "string" || hasControlCharacters(raw) || !shape.test(raw.trim())) {
@@ -459,11 +485,14 @@ export function planSpecDerive({ spec, entry, pageFiles = null, packetBindings =
       continue;
     }
     const after = raw.trim();
-    if (isPlaceholderId(after)) {
-      notDerived.push({ field, reason: "target_invalid", detail: `the target entry's ${key} ${quoteValue(after)} is a placeholder, not a real id; writing it would declare an analytics contract QA then blocks on. Replace it in ${source} (or clear it), then derive again.` });
+    if (isPlaceholderId(after) || (block === "vendors" && isPlaceholderVendorId(after))) {
+      const consequence = block === "vendors"
+        ? "the template loads the vendor for any non-empty value, so the campaign is sending to a vendor account that does not exist"
+        : "writing it would declare an analytics contract QA then blocks on";
+      notDerived.push({ field, reason: "target_invalid", detail: `the target entry's ${key} ${quoteValue(after)} is a placeholder, not a real id; ${consequence}. Replace it in ${source} (or clear it), then derive again.` });
       continue;
     }
-    const row = { field, path: ["analytics", "providers", provider, property], before: current, after, source };
+    const row = { field, path: ["analytics", block, name, property], before: current, after, source };
     const problem = containerProblem(spec, row.path);
     if (problem) notDerived.push({ field, reason: "spec_container_invalid", detail: `the spec's ${problem} is not an object, so ${field} cannot be written; repair the spec, then derive again.` });
     else if (current === after) unchanged.push(row);
@@ -475,8 +504,24 @@ export function planSpecDerive({ spec, entry, pageFiles = null, packetBindings =
   const createdBlocks = ANALYTICS_ID_FIELDS
     .filter(({ provider, property }) => changes.some((row) => row.field === `analytics.providers.${provider}.${property}`) && !isPlainObject(spec?.analytics?.providers?.[provider]))
     .map(({ provider }) => `analytics.providers.${provider}`);
+  // A vendor block derive will create declares the vendor: doctor then reads
+  // its campaigns.json key against the spec. When the spec had no analytics
+  // block at all, the new block also turns on QA's analytics leg.
+  const createdVendorBlocks = ANALYTICS_VENDOR_ID_FIELDS
+    .filter(({ vendor, property }) => changes.some((row) => row.field === `analytics.vendors.${vendor}.${property}`) && !isPlainObject(spec?.analytics?.vendors?.[vendor]))
+    .map(({ vendor }) => `analytics.vendors.${vendor}`);
+  const analyticsCreated = (createdBlocks.length > 0 || createdVendorBlocks.length > 0) && !isPlainObject(spec?.analytics);
 
-  return { changes, unchanged, not_derived: notDerived, not_in_target: notInTarget, stale_hints: staleHints, created_blocks: [...new Set(createdBlocks)] };
+  return {
+    changes,
+    unchanged,
+    not_derived: notDerived,
+    not_in_target: notInTarget,
+    stale_hints: staleHints,
+    created_blocks: [...new Set(createdBlocks)],
+    created_vendor_blocks: createdVendorBlocks,
+    analytics_created: analyticsCreated,
+  };
 }
 
 function pathMatchesPattern(path, pattern) {
@@ -487,8 +532,9 @@ function pathMatchesPattern(path, pattern) {
 
 // Apply a plan to the parsed spec. Mutates ONLY the derived field each change
 // names, in place, so key order and every other key survive; a missing
-// container object is created (`global_config`, `analytics.providers.gtm`
-// as `{ enabled: true }`), a missing array element is never invented. Returns
+// container object is created (`global_config`; a provider or vendor block
+// such as `analytics.providers.gtm` or `analytics.vendors.ga4` as
+// `{ enabled: true }`), a missing array element is never invented. Returns
 // the same spec object.
 export function applySpecDerive(spec, plan) {
   if (!isPlainObject(spec)) throw new Error("CampaignSpec must be a JSON object.");
@@ -508,9 +554,9 @@ export function applySpecDerive(spec, plan) {
       const nextIsIndex = Number.isInteger(path[index + 1]);
       if (node[segment] === undefined || node[segment] === null) {
         if (nextIsIndex) throw new Error(`Refusing to write "${change.field}": ${pathLabel(path.slice(0, index + 1))} is not an array in the spec.`);
-        // A provider block created by derive is enabled: an id the repo
-        // carries is a tag the funnel fires, which is what QA then expects.
-        node[segment] = path[index - 1] === "providers" ? { enabled: true } : {};
+        // A provider or vendor block created by derive is enabled: an id the
+        // repo carries is a tag the funnel fires, which is what QA then expects.
+        node[segment] = path[index - 1] === "providers" || path[index - 1] === "vendors" ? { enabled: true } : {};
       } else if (nextIsIndex ? !Array.isArray(node[segment]) : !isPlainObject(node[segment])) {
         throw new Error(`Refusing to write "${change.field}": ${pathLabel(path.slice(0, index + 1))} is not ${nextIsIndex ? "an array" : "an object"} in the spec.`);
       }

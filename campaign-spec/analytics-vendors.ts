@@ -11,7 +11,7 @@
  * `analytics.providers` (gtm, facebook, rudderstack, custom), which reach the
  * page through config.js.
  *
- * MIRROR of next-campaigns-ops `shared/route-c-vendors.mjs` (ROUTE_C_VENDORS,
+ * MIRROR of the Map Builder repo's `shared/route-c-vendors.mjs` (ROUTE_C_VENDORS,
  * "Route C" in that repo), which drives the Map Builder `analytics.vendors`
  * emit and the spec compiler's campaigns.json key upsert. The key table itself
  * is the starter templates' `_shared/analytics/README.md`. Keep `key`,

@@ -1,6 +1,6 @@
 /**
  * analytics.vendors: the registry mirror, the schema and the rule against the
- * block exactly as the Map Builder emits it (next-campaigns-ops
+ * block exactly as the Map Builder emits it (Map Builder repo:
  * campaign-map-builder/src/lib/spec.js buildAnalyticsContract, registry
  * shared/route-c-vendors.mjs).
  */
@@ -20,7 +20,7 @@ import type { CampaignSpec } from '../types.ts'
 
 const root = resolve(fileURLToPath(new URL('../..', import.meta.url)))
 
-// The ops registry at next-campaigns-ops e1f3e83f (shared/route-c-vendors.mjs),
+// The Map Builder registry at e1f3e83f (shared/route-c-vendors.mjs),
 // reduced to the fields that decide campaigns.json keys. A change there is a
 // change here: update both in one go.
 const OPS_ROUTE_C_VENDORS = [
