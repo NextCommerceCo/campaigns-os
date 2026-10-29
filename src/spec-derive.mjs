@@ -33,7 +33,7 @@ import { PAGE_KIT_CAMPAIGNS_REL_PATH } from "./page-kit-campaign-config.mjs";
 import { PAGE_KIT_STORE_PROFILE_FIELDS } from "./page-kit-store-profile.mjs";
 import { compareReleasedSdkVersions, entryInScaffoldState, resolveSpecSdkPin } from "./page-kit-sdk-version.mjs";
 import { isAbsoluteHttpUrl, normalizePageKitRoute, runtimeRelativeRouteForSpecValue, stripPublicRoutePrefix } from "./route-identity.mjs";
-import { publicRouteForPage } from "./source-html-intake.mjs";
+import { cpkPageTypeForSpecType, publicRouteForPage } from "./source-html-intake.mjs";
 import { MIRRORED_OFFER_FIELDS, MIRRORED_PACKAGE_FIELDS, MIRRORED_PAGE_OFFER_FIELDS } from "./spec-derive-campaign.mjs";
 
 // The spec fields this command may write, as path patterns. `applySpecDerive`
@@ -380,8 +380,14 @@ function pathLabel(path) {
 // The CampaignSpec page type a page-kit page_type stands for when the tree
 // adds a page. page-kit's four runtime types are coarser than the spec's, so
 // product reads as a landing page; a page that is something else (a
-// presell, a downsell) has its type authored after the add.
+// presell, a downsell) has its type authored after the add. A checkout file
+// that carries next_step is a step before the Checkout (prepare-build writes
+// next_step only there), so it is added as a checkout_step.
 const SPEC_TYPE_FOR_PAGE_KIT_TYPE = Object.freeze({ product: "landing", checkout: "checkout", upsell: "upsell", receipt: "thankyou" });
+function specTypeForPageFile(file) {
+  if (file.page_type === "checkout" && isNonEmptyString(file.next_step)) return "checkout_step";
+  return SPEC_TYPE_FOR_PAGE_KIT_TYPE[file.page_type];
+}
 
 // The frontmatter link that states each routing field, by spec page type: the
 // keys prepare-build projects (source-html-intake.mjs) read back the other
@@ -438,7 +444,7 @@ function planPageScope({ spec, activePages, pageFiles, packetBindings, boundFile
   for (const file of unbound) {
     const id = file.basename;
     const label = `page file ${file.path}`;
-    const type = SPEC_TYPE_FOR_PAGE_KIT_TYPE[file.page_type];
+    const type = specTypeForPageFile(file);
     if (!type) {
       scope.not_derived.push({ field: label, page_id: id, reason: "page_type_unknown", detail: `${file.path} declares page_type ${quoteValue(file.page_type)}, which is not one of page-kit's product, checkout, upsell or receipt; the page was not added. Correct the frontmatter, then derive again.` });
       continue;
@@ -455,21 +461,25 @@ function planPageScope({ spec, activePages, pageFiles, packetBindings, boundFile
     added.push({ file, id, type });
   }
 
-  // A page whose file is gone and a new file of the same type in one run is
-  // most likely a rename (upsell.html to upsell-1.html). Applied as written,
-  // the remove would discard the page's authored record (its packages,
-  // offers, label and hints) and the add would start a bare one, so neither
-  // is applied: the pair is reported for a person to resolve.
-  const goneTypes = new Set(gone.map(({ page }) => page.type));
-  const renamedTypes = new Set(added.filter(({ type }) => goneTypes.has(type)).map(({ type }) => type));
-  const held = (type) => renamedTypes.has(type);
-  for (const { file, id, type } of added.filter((entry) => held(entry.type))) {
-    const was = gone.filter(({ page }) => page.type === type).map(({ page }) => `"${page.id}"`).join(", ");
-    scope.not_derived.push({ field: `page file ${file.path}`, page_id: id, reason: "page_renamed", detail: `${file.path} is a new ${type} page and the file of ${type} page ${was} is gone, which reads as a rename; derive applies neither, so the page's packages, offers and other authored fields are not lost. If it is a rename, set that page's page_url to ${JSON.stringify(file.route)} (it keeps its id), or rename the file back. If it is a new page, remove the old page from the spec by hand. Then derive again.` });
+  // A page whose file is gone and a new file of the same page-kit page_type
+  // in one run is most likely a rename (upsell.html to upsell-1.html, or a
+  // downsell's downsell.html, which prepare-build writes as page_type upsell,
+  // to downsell-1.html). Applied as written, the remove would discard the
+  // page's authored record (its packages, offers, label and hints) and the
+  // add would start a bare one, so neither is applied: the pair is reported
+  // for a person to resolve. The comparison is in page-kit's types, the only
+  // type the new file states.
+  const goneKitTypes = new Set(gone.map(({ page }) => cpkPageTypeForSpecType(page.type)));
+  const renamedKitTypes = new Set(added.filter(({ file }) => goneKitTypes.has(file.page_type)).map(({ file }) => file.page_type));
+  const held = (kitType) => renamedKitTypes.has(kitType);
+  for (const { file, id } of added.filter((entry) => held(entry.file.page_type))) {
+    const was = gone.filter(({ page }) => cpkPageTypeForSpecType(page.type) === file.page_type).map(({ page }) => `"${page.id}"`).join(", ");
+    scope.not_derived.push({ field: `page file ${file.path}`, page_id: id, reason: "page_renamed", detail: `${file.path} is a new page_type ${file.page_type} page and the file of page ${was} (also page_type ${file.page_type}) is gone, which reads as a rename; derive applies neither, so the page's packages, offers and other authored fields are not lost. If it is a rename, set that page's page_url to ${JSON.stringify(file.route)} (it keeps its id), or rename the file back. If it is a new page, remove the old page from the spec by hand. Then derive again.` });
   }
   for (const { page, path } of gone) {
-    if (held(page.type)) {
-      scope.not_derived.push({ field: pathLabel(path), page_id: page.id, reason: "page_renamed", detail: `the file of page "${page.id}" (${bindings.get(page.id).replace(/^\/+/, "")}) is gone and the tree has a new ${page.type} page file, which reads as a rename; derive did not remove the page. See the page_renamed row for the new file.` });
+    const kitType = cpkPageTypeForSpecType(page.type);
+    if (held(kitType)) {
+      scope.not_derived.push({ field: pathLabel(path), page_id: page.id, reason: "page_renamed", detail: `the file of page "${page.id}" (${bindings.get(page.id).replace(/^\/+/, "")}) is gone and the tree has a new page_type ${kitType} page file, which reads as a rename; derive did not remove the page. See the page_renamed row for the new file.` });
       continue;
     }
     scope.removed.push({ page_id: page.id, file: bindings.get(page.id).replace(/^\/+/, "") });
@@ -477,7 +487,7 @@ function planPageScope({ spec, activePages, pageFiles, packetBindings, boundFile
     const at = mirrorIndexOf(page.id);
     if (at !== -1) scope.changes.push({ field: `funnel_pages[${at}]`, page_id: page.id, path: ["funnel_pages", at], op: "remove", before: mirror[at], after: undefined, source: `mirror of ${pathLabel(path)}` });
   }
-  if (renamedTypes.size) added.splice(0, added.length, ...added.filter((entry) => !held(entry.type)));
+  if (renamedKitTypes.size) added.splice(0, added.length, ...added.filter((entry) => !held(entry.file.page_type)));
 
   // The routes of the pages the spec will hold, for resolving links.
   const finalRoutes = new Map([...derivedRouteByPageId].filter(([id]) => !scope.removed.some((removed) => removed.page_id === id)));
@@ -550,7 +560,11 @@ function planPageScope({ spec, activePages, pageFiles, packetBindings, boundFile
   for (const { page, path } of activePages) {
     if (removedIds.has(page.id)) continue;
     const file = fileByPageId.get(page.id);
-    for (const [key, field] of linkFieldsForType(page.type)) {
+    for (const [key, linkField] of linkFieldsForType(page.type)) {
+      // A checkout with no success_url forwards through next_page (the
+      // generic fallback, campaign-spec/routing.ts), so that is the field
+      // its next_url re-points.
+      const field = linkField === "success_url" && !isNonEmptyString(page.success_url) && isNonEmptyString(page.next_page) ? "next_page" : linkField;
       const current = isNonEmptyString(page[field]) ? page[field] : undefined;
       const target = file ? resolveLink(file[key]) : null;
       if (target && addedIds.has(target) && current !== target) {

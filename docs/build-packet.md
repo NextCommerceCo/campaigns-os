@@ -615,7 +615,8 @@ position:
 - A file with a page-kit `page_type` in its frontmatter (`product`, `checkout`,
   `upsell`, `receipt`) that no spec page binds is **added**: its id is the file
   name, its type follows `page_type` (`product` reads as `landing`, `receipt` as
-  `thankyou`), its `page_url` is the route the file builds to, and it is
+  `thankyou`, and a `checkout` file that carries `next_step` as a
+  `checkout_step`), its `page_url` is the route the file builds to, and it is
   appended to the funnel's pages (the legacy `funnel_pages[]` mirror too). The
   diff row carries `op: "insert"`.
 - A page whose file the packet's projection named
@@ -624,7 +625,8 @@ position:
   `page_file_not_found`.
 - Routing is read from the page files' frontmatter links, the keys
   prepare-build projects: `next_url` (an upsell's `on_accept`, a checkout's
-  `success_url`, a landing page's `next_page`), `decline_url` (an upsell's
+  `success_url`, or its `next_page` when it forwards through that, a landing
+  page's `next_page`), `decline_url` (an upsell's
   `on_decline`) and, on a select or checkout_step page, `next_step`
   (`next_page`). An added page takes its own links; a kept page whose link now
   names an added page, or whose routing named a removed page, is re-pointed at
@@ -639,8 +641,10 @@ position:
   for it. Until each path into the Checkout passes a page that sells a
   main-cart package (and each upsell or downsell has its offer package),
   doctor blocks on `CheckoutPathHasPackages` or `UpsellHasPackages`.
-- A page whose file is gone and a new file of the same page type in the same
-  run read as a rename (`upsell.html` to `upsell-1.html`). Derive applies
+- A page whose file is gone and a new file of the same page-kit `page_type`
+  in the same run read as a rename (`upsell.html` to `upsell-1.html`, or a
+  downsell's `downsell.html`, which is `page_type: upsell`, to
+  `downsell-1.html`). Derive applies
   neither, so the page's packages, offers and other authored fields are not
   lost, and reports both as `page_renamed`. For a rename, set the page's
   `page_url` to the new route (it keeps its id; `record spec` binds that as a
@@ -698,7 +702,7 @@ the status is `partial` (exit 0; the fields it could derive are written):
 | `routing_not_derived`, `routing_target_removed` | an added page's link names no single page (or the file states none), or a kept page routes to a removed page and its file's link names no page the spec keeps; set the field by hand |
 | `page_order_not_derived` | an added page was appended; its `order` is left for you |
 | `page_packages_not_derived` | an added page (any type but a thank-you page) carries no packages; author them before doctor's `CheckoutPathHasPackages` / `UpsellHasPackages` rules pass |
-| `page_renamed` | a page's file is gone and a new file of the same page type appeared; read as a rename, neither the remove nor the add is applied |
+| `page_renamed` | a page's file is gone and a new file of the same page-kit `page_type` appeared; read as a rename, neither the remove nor the add is applied |
 | `package_not_live`, `offer_not_live`, `offers_not_in_live_campaign` | a package or offer the spec carries is not in the live campaign, or the live campaign carried no offers list; nothing is changed |
 
 A placeholder id (`GTM-XXXXXXX`, a run of one digit; for a vendor also

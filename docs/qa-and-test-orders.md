@@ -443,7 +443,8 @@ way and tags the slug's entry page.
 page-only change owes: `doctor --ci` and `next` name the changed pages by
 their route ids (`upsell1` for `upsell1/index.html`), and the CampaignSpec page
 id is accepted too. It needs `--packet`, places no test orders (it refuses
-`--test-order` other than `off`), and refuses before checking anything when the
+`--test-order` and `--legacy-api-test-order` other than `off`, and
+`--vendor-beacons`), and refuses before checking anything when the
 output on disk is not the recorded build (run `record build` first), when the
 change since the build QA reviewed touches commerce, when a changed page is
 left out, when the QA it would extend did not complete (a blocked full run

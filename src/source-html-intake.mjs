@@ -721,7 +721,7 @@ function normalizeRootedRoute(value) {
   return normalized ? `/${normalized}` : "/";
 }
 
-function cpkPageTypeForSpecType(type) {
+export function cpkPageTypeForSpecType(type) {
   if (type === "presell" || type === "landing") return "product";
   if (type === "thankyou" || type === "receipt") return "receipt";
   if (type === "upsell" || type === "downsell") return "upsell";

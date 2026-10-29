@@ -194,6 +194,7 @@ test("a page-only change carries stale Polish evidence as advisory; other blocks
   assert.equal(applyPageOnlyChangeToCheckpoint(stale, { polish: { advisory: false } }), stale, "a full change keeps the block");
   const checkpoint = applyPageOnlyChangeToCheckpoint(stale, advisory);
   assert.ok(isPageOnlyCarry(checkpoint));
+  assert.equal(checkpoint.carried_forward.evidence, "stale", "the capture exists, for an older build");
   assert.match(carriedForwardMessage(checkpoint), /^Advisory for a page-only change: /);
 
   const gate = evaluatePolishGate({ report: rebuilt, hiddenEagerMediaGate: checkpoint });
@@ -201,6 +202,7 @@ test("a page-only change carries stale Polish evidence as advisory; other blocks
   assert.equal(gate.code, "polish.evidence_missing");
   const carried = applyPageOnlyChangeToPolishGate(gate, { debt: advisory, checkpointGate: checkpoint });
   assert.ok(isPageOnlyCarry(carried));
+  assert.equal(carried.carried_forward.evidence, "missing", "no Polish review was recorded");
   assert.equal(polishCarriedForwardForLadder(rebuilt, carried), true, "next does not stop on advisory Polish, page load recorded or not");
   assert.equal(applyPageOnlyChangeToPolishGate(gate, { debt: advisory, checkpointGate: stale }).status, "blocked",
     "a checkpoint block that was not carried keeps Polish blocked");

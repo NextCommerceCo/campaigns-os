@@ -1717,6 +1717,40 @@ test("planSpecDerive holds a page whose file is gone and a new file of the same 
   assert.match(plan.not_derived.find((row) => row.page_id === "upsell-1").detail, /set that page's page_url to "upsell-1\/"/);
   const spec = applySpecDerive(specFixture(), plan);
   assert.deepEqual(spec.funnels[0].pages[2].packages, specFixture().funnels[0].pages[2].packages, "the upsell's authored packages are kept");
+
+  // A downsell's file is page_type upsell, so a renamed downsell file is held
+  // the same way: the hold compares page-kit types, not spec types.
+  const downsell = () => specFixture((draft) => { draft.funnels[0].pages[2].type = "downsell"; });
+  const renamed = tree.map((file) => (file.basename === "upsell-1" ? { ...file, path: "downsell-1.html", basename: "downsell-1", route: "downsell-1/" } : file));
+  const held = planSpecDerive({ spec: downsell(), entry: CONFIGURED_ENTRY, pageFiles: renamed, packetBindings: PROJECTED, publicRouteSlug: "runtime-packet-demo", handedOff: true });
+  assert.deepEqual([held.page_scope.added, held.page_scope.removed], [[], []]);
+  assert.deepEqual(held.not_derived.filter((row) => row.reason === "page_renamed").map((row) => row.page_id).sort(), ["downsell-1", "upsell"]);
+  assert.deepEqual(applySpecDerive(downsell(), held).funnels[0].pages[2].packages, downsell().funnels[0].pages[2].packages, "the downsell's authored packages are kept");
+});
+
+test("planSpecDerive adds a checkout file that carries next_step as a checkout_step routed by next_step, never by the Checkout's next_url", () => {
+  const tree = [
+    ...TREE_WITH_LINKS.map((file) => (file.basename === "landing" ? { ...file, next_url: "/runtime-packet-demo/step-2/" } : file)),
+    { path: "step-2.html", basename: "step-2", route: "step-2/", permalink: null, page_type: "checkout", next_url: "/runtime-packet-demo/upsell/", next_step: "/runtime-packet-demo/checkout/" },
+  ];
+  const plan = planSpecDerive({ spec: specFixture(), entry: CONFIGURED_ENTRY, pageFiles: tree, packetBindings: PROJECTED, publicRouteSlug: "runtime-packet-demo", handedOff: true });
+  assert.deepEqual(plan.page_scope.added, [{ page_id: "step-2", file: "step-2.html", type: "checkout_step", route: "step-2/" }]);
+  assert.deepEqual(plan.changes.find((row) => row.op === "insert").after, { id: "step-2", type: "checkout_step", page_url: "step-2/", next_page: "checkout" });
+  assert.deepEqual(plan.changes.filter((row) => row.field === "funnels[0].pages[0].next_page").map((row) => [row.before, row.after]), [["checkout", "step-2"]]);
+});
+
+test("planSpecDerive re-points a checkout that forwards through next_page, and reports it when its target is removed", () => {
+  const viaNextPage = () => specFixture((draft) => { delete draft.funnels[0].pages[1].success_url; draft.funnels[0].pages[1].next_page = "upsell"; });
+  const withoutUpsell = (checkoutNext) => TREE_WITH_LINKS
+    .filter((file) => file.basename !== "upsell")
+    .map((file) => (file.basename === "checkout" ? { ...file, next_url: checkoutNext } : file));
+  const plan = planSpecDerive({ spec: viaNextPage(), entry: CONFIGURED_ENTRY, pageFiles: withoutUpsell("/runtime-packet-demo/receipt/"), packetBindings: PROJECTED, publicRouteSlug: "runtime-packet-demo", handedOff: true });
+  assert.deepEqual(plan.changes.filter((row) => row.field === "funnels[0].pages[1].next_page").map((row) => [row.before, row.after]), [["upsell", "receipt"]]);
+  assert.equal(plan.changes.some((row) => row.field === "funnels[0].pages[1].success_url"), false, "no success_url is invented");
+  assert.equal(applySpecDerive(viaNextPage(), plan).funnels[0].pages[1].next_page, "receipt");
+
+  const dangling = planSpecDerive({ spec: viaNextPage(), entry: CONFIGURED_ENTRY, pageFiles: withoutUpsell("/runtime-packet-demo/nowhere/"), packetBindings: PROJECTED, publicRouteSlug: "runtime-packet-demo", handedOff: true });
+  assert.deepEqual(dangling.not_derived.filter((row) => row.reason === "routing_target_removed").map((row) => row.field), ["funnels[0].pages[1].next_page"]);
 });
 
 test("staleRoutingHints compares each routing hint with the current route of the page its routing field names", () => {

@@ -1,7 +1,7 @@
 {
   "schema": "campaigns-os-effects/v1",
   "_note": "The declared effect of every supported invocation: what it writes, what it sends, and the test case that proves it. One row per command, per subcommand and per effect-changing flag (vocabulary.effect_changing_flags). A row is not publishable without its effect test — scripts/check-effects.mjs refuses one, and refuses a flag from that list that a help usage line carries and no row declares. Read this with docs/effects.md.",
-  "contract_version": "1.2.0",
+  "contract_version": "1.3.0",
   "vocabulary": {
     "annotations": {
       "readOnlyHint": "The invocation changes nothing: no file under the target, the working directory or the user's machine, and no request off the machine. The command-lifecycle journal counts — a journal append is a write like any other, so every readOnlyHint: true row is an invocation the CLI exempts from lifecycle capture (the converse does not hold: some journal-exempt invocations, such as demo and the --no-write forms, still write other declared files).",

@@ -139,7 +139,9 @@ export function carried(gate, policy = LOCAL_PREVIEW_POLICY, packet = null) {
     ...(policy === HOSTED_TEMPLATE_PREVIEW_POLICY
       ? { required_actions: [hostedTemplateQaAction(previewUrl)] }
       : {}),
-    carried_forward: { policy, from_status: gate.status, evidence: "missing" },
+    // A page-only carry stands on a review of an older build, so its evidence
+    // is stale, except where no Polish was ever recorded.
+    carried_forward: { policy, from_status: gate.status, evidence: policy === PAGE_ONLY_CHANGE_POLICY && gate.code !== "polish.evidence_missing" ? "stale" : "missing" },
   };
 }
 
