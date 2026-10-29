@@ -393,6 +393,18 @@ test("the order-bump cart reads the one checkout QA drives", () => {
   );
 });
 
+// campaigns-os#710: an upsell page's package row is the page's offer, so an
+// is_upsell: true row there is no checkout order bump and earns no bump run.
+test("an upsell page's is_upsell row does not make the checkout declare an order bump", () => {
+  const tier = { ref_id: "1", qty: 1, name: "Main", price: "29.00", default_selected: true };
+  const pages = [
+    { id: "checkout", type: "checkout", order: 1, success_url: "upsell", packages: [tier] },
+    { id: "upsell", type: "upsell", order: 2, on_accept: "receipt", on_decline: "receipt", packages: [{ ref_id: "5", qty: 1, is_upsell: true }] },
+    { id: "receipt", type: "thankyou", order: 3 },
+  ];
+  assert.equal(checkoutOrderBumpCart({ funnels: [{ pages }] }), null);
+});
+
 test("an intentional no-order diagnostic policy still reaches done unchanged", () => {
   const fixture = target({ prefix: "closeout-evidence-nodepth-", orderPathDepth: "off" });
   runProducer(fixture, { runId: "SYNTHRUN000000000000000001", completedAt: "2026-09-11T02:00:00.000Z", orders: 0 });

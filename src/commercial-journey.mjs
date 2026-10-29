@@ -109,7 +109,11 @@ function selectedShipping(page) {
 // `is_upsell: true` on a non-upsell page. Every consumer that must
 // tell a bump from a main selector row (parity scenarios, bump deltas, the QA
 // selector-tier planner, `next`'s order-bump QA command) reads this, so a
-// marker change lands in one place.
+// marker change lands in one place. The page-type half of the contract
+// (campaigns-os#710, stated on the schema's pagePackage.is_upsell) sits with
+// the callers: on an upsell or downsell page every row is the page's offer,
+// so planScenarios puts all of them in mainRows, and the tier and bump readers
+// are only given the select, checkout_step and checkout pages of a path.
 export function isBumpRow(row) {
   return Boolean(row?.is_order_bump || row?.is_upsell);
 }
