@@ -1371,6 +1371,80 @@ controls on an ordinary or unknown page remain blockers; they are not treated
 as evidence that a receipt was reached. Cross-origin handoffs count as terminal
 navigation, but not as Campaigns OS receipt rendering or persisted-receipt proof.
 
+### Analytics vendor beacons (`--vendor-beacons live`)
+
+A test order is a real purchase on the page, so the page reports it to every
+analytics vendor the campaign loads. To keep test orders out of vendor data, a
+`qa run --test-order` run answers the vendors' beacon requests locally. A
+beacon is the request a vendor script sends to report a page view or an event,
+as opposed to the loader, the request that downloads the vendor script. Every
+browser context the run opens (page checks, analytics capture and the orders)
+answers a request to a listed beacon endpoint with an empty `204` response, so
+nothing reaches the vendor. Those contexts also block service workers, because
+a request a page's service worker makes on the page's behalf would bypass the
+local answer. Loader scripts load normally: a blocked loader would leave the
+vendor script undefined, and the page would send nothing to observe.
+
+| Vendor | Beacon endpoints answered locally | Loaders that still load |
+|---|---|---|
+| GA4 (`ga4`) | `*.google-analytics.com/g/…`, `analytics.google.com/g/…`, `stats.g.doubleclick.net/g/…`, `www.google.com/g/collect` | `www.googletagmanager.com/gtag/js` |
+| Meta (`meta`) | `www.facebook.com/tr`, `www.facebook.com/privacy_sandbox/…` | `connect.facebook.net` |
+| TikTok (`tiktok`) | `analytics.tiktok.com/api/v2/…`, `analytics-ipv6.tiktokw.us` | `analytics.tiktok.com/i18n/pixel/…` |
+| Snap (`snap`) | `tr.snapchat.com`, `tr6.snapchat.com`, `tr-shadow.snapchat.com` | `sc-static.net` |
+| Pinterest (`pinterest`) | `ct.pinterest.com/v3/…`, `/user/…`, `/stats/…` | `s.pinimg.com`, `ct.pinterest.com/static/…` and `/ct.html` |
+| Taboola (`taboola`) | `trc.taboola.com` | `cdn.taboola.com` |
+| Triple Whale (`triplewhale`) | `api.config-security.com` (all but `/first`), `api.whaledb.io/keep-alive` | `api.config-security.com/first`, `conf.config-security.com` |
+| AppLovin Axon (`axon`) | `b.applovin.com/v1/pixel` | `s.axon.ai`, `c.albss.com`, `res4.applovin.com` |
+
+Each endpoint was read from the vendor's public loader script or public
+documentation; the source is recorded per vendor in
+`src/qa-vendor-endpoints.mjs`. Two vendor keys are not intercepted, and the
+verdict names them:
+
+- `northbeam`: its beacon host could not be confirmed (the loader is per client
+  and the public docs name no beacon host), so Northbeam still receives what
+  the page sends it, test purchases included.
+- `gtm`: Google Tag Manager sends nothing of its own. The tags it loads send to
+  their own vendors, held back only when that vendor is in the table. A GTM tag
+  for any other vendor (Google Ads, an affiliate pixel) still sends.
+
+`qa parity` orders are not intercepted.
+
+Every request to a listed endpoint is recorded, and the verdict carries one
+informational row, `browser-test-order:vendor-beacons` (status `pass`, severity
+`info`). Its `evidence` gives, per vendor seen, the request count, whether one
+of the requests named a purchase event (`purchase_seen`; `null` for Axon, whose
+event field could not be confirmed), and the ids, event names and endpoints
+(origin and path only, never a query string); `configured_not_seen` lists the
+vendors the CampaignSpec analytics block declares that sent nothing to a listed
+endpoint; `configured_not_observable` lists the declared vendors with no listed
+endpoint (GTM, Northbeam), which the row cannot see either way; and
+`not_intercepted` lists the two vendors above with the reason for each (with
+`live`, every vendor). The row is evidence only. A
+request the page sent proves the page sent it, not that the vendor received it,
+so it never counts as vendor purchase proof and never blocks the run. Purchase
+proof stays with `analytics-correctness:purchase-fires` (the dataLayer
+purchase, a Meta Purchase pixel request, or a GA4 purchase hit); with
+interception on, the Meta and GA4 requests behind it are still observed, just
+answered locally. The same requests feed the analytics inventory and parity
+legs as tag fires.
+
+To send the beacons to the vendors, pass `--vendor-beacons live`. `live` is
+the only value; any other value is refused before anything runs, and so is the
+flag on a run without `--test-order`, where it would change nothing. The row
+then records the requests as sent.
+
+```bash
+npm run campaigns-os -- qa run \
+  --packet campaign-runtime.build.json \
+  --test-order common \
+  --vendor-beacons live
+```
+
+Do not hold beacons back with `?ignore=true` on the campaign URL: from SDK
+0.4.42 it stops the SDK's `dl_*` events entirely, so the run would prove no
+purchase event at all.
+
 ### Purchase-proof coverage (`--test-order off` is a diagnostic)
 
 A QA run finalizes a verdict and records a terminal stage status whether or not

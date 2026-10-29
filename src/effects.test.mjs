@@ -725,11 +725,13 @@ const INVOCATIONS = {
   "qa run|--no-post-verdict": { proxyBase: true, argv: (s, receiver) => ["qa", "run", "--packet", s.packetPath, "--base-url", receiver, "--no-post-verdict", "--json"] },
   "qa run|--no-remit": { proxyBase: true, argv: (s, receiver) => ["qa", "run", "--packet", s.packetPath, "--base-url", receiver, "--no-remit", "--json"] },
   "qa run|--test-order": { proxyBase: true, argv: (s, receiver) => ["qa", "run", "--packet", s.packetPath, "--base-url", receiver, "--test-order", "typed-card", "--json"] },
+  "qa run|--test-order --vendor-beacons": { proxyBase: true, argv: (s, receiver) => ["qa", "run", "--packet", s.packetPath, "--base-url", receiver, "--test-order", "typed-card", "--vendor-beacons", "live", "--json"] },
   "qa run|--browser": { proxyBase: true, argv: (s, receiver) => ["qa", "run", "--packet", s.packetPath, "--base-url", receiver, "--browser", "--json"] },
   "qa run|--no-live-refs": { proxyBase: true, argv: (s, receiver) => ["qa", "run", "--packet", s.packetPath, "--base-url", receiver, "--no-live-refs", "--json"] },
   "qa run|--no-remit --no-live-refs": { proxyBase: true, argv: (s, receiver) => ["qa", "run", "--packet", s.packetPath, "--base-url", receiver, "--no-remit", "--no-live-refs", "--json"] },
   "qa run|--no-post-verdict --no-live-refs": { proxyBase: true, argv: (s, receiver) => ["qa", "run", "--packet", s.packetPath, "--base-url", receiver, "--no-post-verdict", "--no-live-refs", "--json"] },
   "qa run|--test-order --no-live-refs": { proxyBase: true, argv: (s, receiver) => ["qa", "run", "--packet", s.packetPath, "--base-url", receiver, "--test-order", "typed-card", "--no-live-refs", "--json"] },
+  "qa run|--test-order --vendor-beacons --no-live-refs": { proxyBase: true, argv: (s, receiver) => ["qa", "run", "--packet", s.packetPath, "--base-url", receiver, "--test-order", "typed-card", "--vendor-beacons", "live", "--no-live-refs", "--json"] },
   "qa run|--browser --no-live-refs": { proxyBase: true, argv: (s, receiver) => ["qa", "run", "--packet", s.packetPath, "--base-url", receiver, "--browser", "--no-live-refs", "--json"] },
   "qa parity": {
     prepare: seedParityFixture, env: playwrightEnv,
