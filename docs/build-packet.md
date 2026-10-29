@@ -401,8 +401,9 @@ This procedure does not grant new merge, store-write or deployment authority.
    Do not infer intent from every difference in a stale export. If the repository
    advances during review, repeat the comparison against the new revision.
 5. **Refresh and validate the result.** Preview `spec derive --dry-run`, inspect
-   every refused or unresolved field, then apply the accepted derivation. Plain
-   derive is local; it does not merge authored intent. Follow the packet's normal
+   every refused or unresolved field, then apply the accepted derivation. Derive
+   writes repo-derived fields and the offer and package fields mirrored from the
+   live campaign; it does not merge authored intent. Follow the packet's normal
    `page-kit sync`, build, doctor and relevant QA steps. Resolve stale routing
    hints and rebuild affected pages. A successful derive exit alone is not build
    or QA approval. After an authored-only edit, derive may return `unchanged`
