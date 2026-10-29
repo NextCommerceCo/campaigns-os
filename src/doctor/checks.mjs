@@ -102,6 +102,7 @@ import {
 import { loadPageKitCampaignEntry, pageKitIgnoresAssetsHtml, projectPageKitCampaignLoad } from "../page-kit-campaign-config.mjs";
 import { evaluatePageKitStoreProfile, PAGE_KIT_STORE_PROFILE_SCOPE, storeProfileIntentionallyEmptyNote } from "../page-kit-store-profile.mjs";
 import { evaluatePageKitSdkVersion, PAGE_KIT_SDK_VERSION_SCOPE } from "../page-kit-sdk-version.mjs";
+import { evaluatePageKitAnalyticsVendors, PAGE_KIT_ANALYTICS_VENDORS_SCOPE } from "../page-kit-analytics-vendors.mjs";
 // ADR-003: the public, canonical CampaignSpec rule registry. The doctor and any
 // campaign authoring UI (e.g. a Map Builder bundle) import the same rules, so a
 // spec check is authored once and reaches internal teams and agencies alike.
@@ -381,6 +382,11 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
     id: PAGE_KIT_STORE_PROFILE_SCOPE,
     phase: "target",
     run: ({ spec, errors, warnings, ready, derived, buildState }) => validateTargetStoreProfile(spec, errors, warnings, ready, derived, buildState),
+  },
+  {
+    id: PAGE_KIT_ANALYTICS_VENDORS_SCOPE,
+    phase: "target",
+    run: ({ spec, warnings, ready, buildState }) => validateTargetAnalyticsVendors(spec, warnings, ready, buildState),
   },
   {
     id: "spec.shipping_countries",
@@ -1414,6 +1420,18 @@ function validateTargetStoreProfile(spec, errors, warnings, ready, derived, buil
   const intentionallyEmpty = gate.matrix.filter((row) => row.kind === "intentionally_empty").map((row) => row.field);
   ready.push("Target campaigns.json Store Profile matches the CampaignSpec across all nine governed fields."
     + storeProfileIntentionallyEmptyNote(intentionallyEmpty));
+}
+
+// The starter-template vendor keys against analytics.vendors: advisory only,
+// one warning per vendor the two sides disagree on (#689).
+function validateTargetAnalyticsVendors(spec, warnings, ready, buildState) {
+  const result = evaluatePageKitAnalyticsVendors({ spec, targetLoad: buildState?.pageKitCampaignConfig });
+  for (const finding of result.findings) {
+    addIssue(warnings, finding.code, finding.message, { vendor: finding.vendor, id_key: finding.id_key, repair: finding.repair });
+  }
+  if (result.status === "ok" && result.vendors.length) {
+    ready.push(`Target campaigns.json vendor keys match the CampaignSpec analytics.vendors (${result.vendors.join(", ")}).`);
+  }
 }
 
 function validateSpecShippingCountries(spec, warnings, ready) {

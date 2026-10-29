@@ -351,6 +351,53 @@ action. A configured campaign whose pin is newer than the spec's is the
 advisory case above: no required action, and sync never moves that pin
 backwards; `spec derive` is the command that closes it from the spec side.
 
+### Template analytics vendors (`page_kit.analytics_vendors`)
+
+The certified starter templates ship a direct adapter for eight analytics
+vendors: GA4, AppLovin Axon, Taboola, Triple Whale, TikTok, Northbeam,
+Snapchat and Pinterest. A vendor is switched on by its id key in the
+campaign's `_data/campaigns.json` entry (`ga4_id`, `axon_event_key`,
+`taboola_account_id`, `triplewhale_name`, `tiktok_pixel_id`,
+`northbeam_client_id`, `snap_pixel_id`, `pinterest_tag_id`); absent or empty
+means off. The adapter forwards the SDK's `dl_*` events to the vendor. These
+vendors are separate from the SDK providers in `analytics.providers` (GTM,
+Meta, RudderStack, a custom endpoint), which reach the page through
+`config.js`.
+
+The CampaignSpec declares them under `analytics.vendors`, keyed by vendor,
+in the shape the Map Builder saves:
+
+```json
+"analytics": {
+  "vendors": {
+    "triplewhale": { "enabled": true, "id": "acme.myshopify.com", "platform": "SHOPIFY", "identityEnabled": true, "blockedEvents": ["dl_purchase", "dl_upsell_purchase"] },
+    "tiktok": { "enabled": true, "id": "CABCDEFGHIJ1234567890" }
+  }
+}
+```
+
+`id` is the value of the vendor's id key, `platform` is Triple Whale's
+`triplewhale_platform`, `identityEnabled` turns on the vendor's identity or
+advanced-matching flag (raw email and phone), and `allowedEvents` /
+`blockedEvents` are the `dl_*` events the adapter forwards or drops. The Map's
+spec compiler writes the matching keys into `campaigns.json`, and
+`spec derive` mirrors the id back (see below).
+
+Once the target entry exists, doctor compares the two sides and warns, per
+vendor, when:
+
+| Code | Meaning |
+|---|---|
+| `page_kit.analytics_vendors.key_missing` | the spec declares the vendor but its id key is absent or empty, so the template never loads it |
+| `page_kit.analytics_vendors.key_placeholder` | the id key holds a placeholder (`XXXX`, `YOUR_`, `CHANGEME`, `<…>`, `EXAMPLE`); the template loads the vendor for any non-empty value |
+| `page_kit.analytics_vendors.undeclared` | the id key switches the vendor on but the spec does not declare it, declares it with `enabled: false`, or turns analytics off |
+| `page_kit.analytics_vendors.id_mismatch` | both sides name the vendor with different ids; the `campaigns.json` value is what ships |
+
+Every finding is a warning and names only keys and vendors, never a value
+read from `campaigns.json`. Doctor writes nothing. `spec derive` clears an
+`undeclared` or `id_mismatch` finding from the spec side; the others are
+fixed in `campaigns.json` or in the Map.
+
 ### Changing a campaign after handoff
 
 For page-kit campaigns, the reviewed repository spec determines the next build.
