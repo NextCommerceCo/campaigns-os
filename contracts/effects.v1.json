@@ -363,17 +363,31 @@
         "--dry-run"
       ],
       "annotations": {
-        "readOnlyHint": true,
+        "readOnlyHint": false,
         "destructiveHint": false,
-        "openWorldHint": false,
+        "openWorldHint": true,
         "idempotentHint": true
       },
-      "tier": "none",
+      "tier": "A",
       "writes": [],
-      "sends": [],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/campaign",
+          "what": "one GET of the live campaign (its packages, offers and shipping methods) under X-Campaign-Key, the public Campaigns API key; no request body and no Admin or store credential. The body refreshes the spec's mirrored offer and package fields (#721).",
+          "when": "the packet's built _site/<route>/ exists, a public Campaigns API key resolves from the packet, its local CampaignSpec or the declared campaign-key env var, and --no-live-refs is not given",
+          "requires_consent": false,
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        }
+      ],
       "effect_test": "effects: spec derive --dry-run",
       "test_scope": "full",
-      "notes": "spec derive --dry-run runs every check the real invocation runs and prints what it would do; it writes nothing under the target, appends no lifecycle entry (the command is declared `dryRun` in src/invocation.mjs) and runs no stale-session closeout."
+      "notes": "spec derive --dry-run runs every check the real invocation runs and prints what it would do; it writes nothing under the target, appends no lifecycle entry (the command is declared `dryRun` in src/invocation.mjs) and runs no stale-session closeout. It makes the same one live campaign read the real invocation makes, so the diff it prints names the offer and package fields that would change; it is not readOnlyHint because of that read. --no-live-refs skips it."
     },
     {
       "command": "install-skills",
@@ -1295,6 +1309,70 @@
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
+        "openWorldHint": true,
+        "idempotentHint": true
+      },
+      "tier": "A",
+      "writes": [
+        {
+          "path": "{spec}",
+          "when": "the target repo states a field the spec does not (SDK pin, page_url, analytics ids; after handoff, pages added to or removed from the page tree), or the live campaign states a mirrored offer or package field the spec does not",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{runtime}/doctor-output.json",
+          "when": "the derive invalidates the retained doctor sidecar",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/campaign",
+          "what": "one GET of the live campaign (its packages, offers and shipping methods) under X-Campaign-Key, the public Campaigns API key; no request body and no Admin or store credential. The body refreshes the spec's mirrored offer and package fields (#721).",
+          "when": "the packet's built _site/<route>/ exists, a public Campaigns API key resolves from the packet, its local CampaignSpec or the declared campaign-key env var, and --no-live-refs is not given",
+          "requires_consent": false,
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        }
+      ],
+      "effect_test": "effects: spec derive",
+      "test_scope": "full",
+      "notes": "Repo-derived fields, plus the offer and package fields the spec mirrors from the Campaigns App when the live campaign is read. That read is the one doctor makes: when the packet's built _site/<route>/ exists and a public Campaigns API key resolves, one read-only GET of {proxy-base}/api/campaign under X-Campaign-Key (--proxy-base names the proxy, else the canonical one); a failed read leaves those fields as they are, with a warning. --no-live-refs skips it (its own row). The write lands on the packet's local CampaignSpec (spec.local_path), which is outside the target repo in the shipped example layout — hence the {spec} location token."
+    },
+    {
+      "command": "spec",
+      "subcommand": "derive",
+      "flags": [
+        "--no-live-refs"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
         "openWorldHint": false,
         "idempotentHint": true
       },
@@ -1302,7 +1380,7 @@
       "writes": [
         {
           "path": "{spec}",
-          "when": "the target repo states a field the spec does not (SDK pin, page_url, analytics ids)",
+          "when": "the target repo states a field the spec does not (SDK pin, page_url, analytics ids; after handoff, pages added to or removed from the page tree, and the routing and routing hint on each edge that names one)",
           "observed_in": [
             "no_session",
             "ambient_session",
@@ -1332,9 +1410,9 @@
         }
       ],
       "sends": [],
-      "effect_test": "effects: spec derive",
+      "effect_test": "effects: spec derive --no-live-refs",
       "test_scope": "full",
-      "notes": "Repo-derived fields only and no network by default. The write lands on the packet's local CampaignSpec (spec.local_path), which is outside the target repo in the shipped example layout — hence the {spec} location token."
+      "notes": "The derive with the live campaign read switched off: nothing is sent even when the packet's built _site/<route>/ exists and a public Campaigns API key resolves, and the spec's offer and package fields are left as they are (the result's live_campaign records not_run with reason disabled). Everything else is the plain row."
     },
     {
       "command": "findings",
@@ -5867,6 +5945,14 @@
           "requires_consent": false,
           "observed_in": [],
           "not_observed_reason": "the gateway is unreachable offline and the fixture holds no credential; the case proves the refusal (exit 2) writes nothing"
+        },
+        {
+          "destination": "{proxy-base}/api/campaign",
+          "what": "one GET of the live campaign (its packages, offers and shipping methods) under X-Campaign-Key, the public Campaigns API key; no request body and no Admin or store credential. The body refreshes the spec's mirrored offer and package fields (#721).",
+          "when": "the packet's built _site/<route>/ exists, a public Campaigns API key resolves from the packet, its local CampaignSpec or the declared campaign-key env var, and --no-live-refs is not given",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the fixture has no built _site/, so no live campaign read is due"
         }
       ],
       "effect_test": "effects: spec derive --from-store (preflight)",
@@ -5951,6 +6037,14 @@
           "requires_consent": false,
           "observed_in": [],
           "not_observed_reason": "the loopback stand-in cannot satisfy the Map read's precondition, so the PUT is never reached"
+        },
+        {
+          "destination": "{proxy-base}/api/campaign",
+          "what": "one GET of the live campaign (its packages, offers and shipping methods) under X-Campaign-Key, the public Campaigns API key; no request body and no Admin or store credential. The body refreshes the spec's mirrored offer and package fields (#721).",
+          "when": "the packet's built _site/<route>/ exists, a public Campaigns API key resolves from the packet, its local CampaignSpec or the declared campaign-key env var, and --no-live-refs is not given",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the fixture has no built _site/, so no live campaign read is due"
         }
       ],
       "effect_test": "effects: spec derive --write-map (preflight)",
@@ -6144,8 +6238,20 @@
           ]
         },
         {
+          "path": "{packet}",
+          "when": "the active pages changed in a way record spec binds (#531, #721): a move of routes alone, or on a handed-off campaign (deploy or QA completed) a page added or removed — source_html.pages[].page_kit re-projected for every page, an added page recorded with origin repo, a removed page's entry dropped, and design_source_package's sha256 and material_fingerprint when the package is rewritten; also, without a page rebind, design_source_package alone when an earlier record spec stopped after rewriting the package and its pending provenance record vouches for the bytes on disk",
+          "observed_in": [],
+          "not_observed_reason": "the effects seed changes a package qty, not the active pages, so no page rebind is due"
+        },
+        {
+          "path": "{runtime}/input/design-source-package.json",
+          "when": "that page rebind changes a kept page's Surface Identity (its route, page-kit target or label) — the package prepare-build synthesized is rewritten at the same path, written first, with a pending provenance record beside it until the report records its new sha256",
+          "observed_in": [],
+          "not_observed_reason": "the effects seed changes a package qty, not the active pages, so no page rebind is due"
+        },
+        {
           "path": "{runtime}/build-context.json",
-          "when": "the refresh runs (outcome refreshed) — spec.hash, spec.material_hash and the active pages' labels; the brief summary and bindings when the re-derived brief is saved",
+          "when": "the refresh runs (outcome refreshed) — spec.hash, spec.material_hash, spec.route_masked_material_hash and the active pages' labels; the brief summary and bindings when the re-derived brief is saved; on a page rebind, spec.active_pages, page_map and design_source_package too; design_source_package when an interrupted earlier run left it naming the old package",
           "observed_in": [
             "no_session",
             "ambient_session",
@@ -6156,7 +6262,7 @@
         },
         {
           "path": "{runtime}/assembly-report.json",
-          "when": "the refresh runs (outcome refreshed) — identity.spec_hash and identity.spec_material_hash become the CampaignSpec's; each build, Polish and QA record made against other CampaignSpec or brief content becomes required, recording input_change and keeping the record it replaced in its history; evidence[] gains a line",
+          "when": "the refresh runs (outcome refreshed) — identity.spec_hash and identity.spec_material_hash become the CampaignSpec's; each build, Polish and QA record made against other CampaignSpec or brief content becomes required, recording input_change and keeping the record it replaced in its history (on a page rebind that moved nothing the build wrote, each is restamped instead; when the set of built pages changes, a completed deploy recorded without a build fingerprint becomes required too; design_source_package when an interrupted earlier run left it naming the old package); evidence[] gains a line",
           "observed_in": [
             "no_session",
             "ambient_session",
@@ -6188,7 +6294,7 @@
       "sends": [],
       "effect_test": "effects: record spec",
       "test_scope": "full",
-      "notes": "Destructive: build, Polish and QA records made against earlier CampaignSpec or brief content become owed again, each moving to that stage's history, which keeps the last five per stage and is never used as current proof. Waivers, warning accepts, the applied theme and deploy settings are kept. Idempotent: a repeat reads unchanged. When the bound CampaignSpec material is the spec's and no stage's recorded CampaignSpec or brief content differs from the current inputs it reads unchanged and writes nothing but the lifecycle entry. The Build Packet is read, not written; the brief is re-read from the brief file last saved by intake or `record brief`, never rediscovered. For a saved-Map or gateway packet it compares the copy intake fetched and sends nothing. Refused, writing nothing but the lifecycle entry, when the CampaignSpec cannot be read as a JSON object, names another campaign (local_spec_id or map_id) than the Build Packet or the Assembly Report binds, or its active pages (ids, order or routes) changed (that needs intake), or when that brief file is over 1 MiB or names more than 512 design_authority entries, names a file Campaigns OS writes itself, or is missing or not a readable regular file."
+      "notes": "Destructive: build, Polish and QA records made against earlier CampaignSpec or brief content become owed again, each moving to that stage's history, which keeps the last five per stage and is never used as current proof. Waivers, warning accepts, the applied theme and deploy settings are kept. Idempotent: a repeat reads unchanged. When the bound CampaignSpec material is the spec's and no stage's recorded CampaignSpec or brief content differs from the current inputs it reads unchanged and writes nothing but the lifecycle entry. The Build Packet is read, and written only on a page rebind (a move of routes alone, or after handoff a page added or removed), which also rewrites the Design Source Package prepare-build synthesized; the brief is re-read from the brief file last saved by intake or `record brief`, never rediscovered. For a saved-Map or gateway packet it compares the copy intake fetched and sends nothing. Refused, writing nothing but the lifecycle entry, when the CampaignSpec cannot be read as a JSON object, names another campaign (local_spec_id or map_id) than the Build Packet or the Assembly Report binds, or its active pages are in another order, or a page was added or removed before handoff (those need intake), or a page rebind would move the route root or slug, leave a routing hint stale, put two pages on one page-kit target, or rewrite a Design Source Package prepare-build did not synthesize or that was edited since, or when that brief file is over 1 MiB or names more than 512 design_authority entries, names a file Campaigns OS writes itself, or is missing or not a readable regular file."
     },
     {
       "command": "record",

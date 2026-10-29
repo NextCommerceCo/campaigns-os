@@ -632,8 +632,11 @@ function evaluateCampaignBuildBrief(brief, { spec, activePages, pageMappings, so
   const variantSignals = collectVariantSignals(spec, sourceAssetCrawl);
   const regulated = hasRegulatedSignals(spec);
   const pageIds = [...new Set((activePages || []).map((page) => page.id).filter(Boolean))];
+  // A page added from the repo's page tree after handoff (#721) has the repo
+  // page itself as its authority; the brief is not asked to name one.
+  const repoPages = new Set((pageMappings || []).filter((page) => page?.origin === "repo").map((page) => page.page_id));
 
-  const missingDesignAuthority = pageIds.filter((pageId) => !isObject(brief.design_authority?.[pageId]) || !isNonEmptyString(brief.design_authority?.[pageId]?.source));
+  const missingDesignAuthority = pageIds.filter((pageId) => !repoPages.has(pageId) && (!isObject(brief.design_authority?.[pageId]) || !isNonEmptyString(brief.design_authority?.[pageId]?.source)));
   if (missingDesignAuthority.length) {
     addQuestion(questions, "page_design_authority", {
       detail: `Missing page authority for: ${missingDesignAuthority.join(", ")}.`,

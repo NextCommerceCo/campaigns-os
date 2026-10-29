@@ -149,6 +149,10 @@
                 "pattern": "^[0-9a-f]{64}$",
                 "description": "Optional sha256 of the source HTML file at the time the manifest was written. Doctor compares this to the on-disk file's actual hash and warns on mismatch (Slice 6 drift detection)."
               },
+              "origin": {
+                "enum": ["repo"],
+                "description": "Set by record spec on a page added from the repo's page tree after handoff (#721): the page's source is its target page file (page_kit.output_path) in the target repo, not a file under source_html.root, so it carries no path. Doctor counts it as mapped, and as built once that file exists."
+              },
               "page_kit": {
                 "type": "object",
                 "additionalProperties": false,

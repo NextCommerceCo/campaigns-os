@@ -77,6 +77,11 @@
           "pattern": "^sha256:[0-9a-f]{64}$",
           "description": "Canonical semantic identity used to correlate QA with the authored spec. hash remains exact raw-byte integrity."
         },
+        "route_masked_material_hash": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "description": "The spec material with every page's page_url left out. record spec compares it to tell a change of routes alone from one that also changed anything else the build reads (#531)."
+        },
         "active_pages": {
           "type": "array",
           "items": {
@@ -163,6 +168,10 @@
           "output_path": {
             "type": ["string", "null"],
             "description": "Page Kit target file path relative to the target repo. This mirrors page_kit.output_path; source_path remains producer provenance."
+          },
+          "origin": {
+            "enum": ["repo"],
+            "description": "Set on a page added from the repo's page tree after handoff (#721): its source is the target page file (page_kit.output_path), not a design source file, so source_path and skip_reason are null."
           },
           "page_kit": {
             "type": ["object", "null"],
