@@ -1,3 +1,4 @@
+import { worseChangeKind } from "../change-scope.mjs";
 import { assessEvidenceDebt } from "../evidence-debt.mjs";
 
 export const DOCTOR_CI_EXIT_CODES = Object.freeze({ current: 0, owed: 3, unknown: 4, usage: 2 });
@@ -19,9 +20,7 @@ export function assessDoctorCi(inputs) {
 export function ciChangeScope(ci) {
   const owed = ["polish", "qa"].filter((stage) => ci[stage]?.status === "owed");
   if (!owed.length) return { scope: null, kind: null };
-  const rank = ["none", "page_only", "commerce_affecting", "unknown"];
-  const kind = owed.map((stage) => ci[stage].change?.kind || "unknown")
-    .reduce((worst, next) => (rank.indexOf(next) > rank.indexOf(worst) ? next : worst), "none");
+  const kind = owed.map((stage) => ci[stage].change?.kind || "unknown").reduce(worseChangeKind, "none");
   const required = owed.filter((stage) => !ci[stage].advisory);
   const scope = required.every((stage) => stage === "qa" && ci.qa.scope === "pages") ? "pages" : "full";
   return { scope, kind };
@@ -111,10 +110,15 @@ export function formatDoctorCi(result) {
     const reasons = [...new Set((ci.polish.change?.reasons || []).concat(ci.qa.change?.reasons || [])
       .map((reason) => commerceReasonText.get(reason.code)).filter(Boolean))];
     const found = change.kind === "commerce_affecting" ? "commerce-affecting"
-      : change.kind === "page_only" ? "page-only, but a brief or spec change requires the full stages" : "not classified";
-    lines.push(`Change found: ${found}${reasons.length ? ` (${reasons.join("; ")})` : ""}. It owes the full Polish and QA.`);
+      : change.kind === "page_only" ? "page-only, but an input change or a Polish or QA that did not complete requires the full stages" : "not classified";
+    // Name only the stages that count, each at the scope it is owed: an
+    // advisory Polish is not owed, and QA can still be owed on pages only.
+    const qaPages = ci.qa.scope === "pages" ? `QA on ${ci.qa.owed_pages.map((page) => code(page.page_id)).join(", ")}` : null;
+    const owes = owed.length === 2 ? (qaPages ? `the full Polish, and ${qaPages}` : "the full Polish and QA")
+      : owed[0] === "polish" ? "the full Polish" : qaPages || "a full QA run";
+    lines.push(`Change found: ${found}${reasons.length ? ` (${reasons.join("; ")})` : ""}. It owes ${owes}${advisory.includes("polish") ? "; Polish is advisory" : ""}.`);
   }
-  lines.push(`Owed stages: ${owed.length ? owed.map((stage) => stage === "qa" && pageScoped ? "qa (changed pages only)" : stage).join(", ") : "none"}.`);
+  lines.push(`Owed stages: ${owed.length ? owed.map((stage) => stage === "qa" && ci.qa.scope === "pages" ? "qa (changed pages only)" : stage).join(", ") : "none"}.`);
   for (const stage of owed) {
     const reason = ci[stage].reason === "build_fingerprint_changed"
       ? "the recorded build fingerprint differs from the current build"

@@ -44,9 +44,14 @@ export const BUILD_CHANGES_LIMIT = 25;
 export const CHANGE_PATH_LIMIT = 20;
 // CPK page types that take payment or render the checkout surface.
 const CHECKOUT_PAGE_TYPES = new Set(["checkout", "checkout_step", "select"]);
-// Attribute names, beyond data-next-*, that carry package, offer, shipping or
-// upsell identity on built pages.
-const COMMERCE_ATTRIBUTE = /^data-next-|^data-[a-z0-9-]*(?:package|offer|shipping|upsell|voucher|coupon)[a-z0-9-]*$|^data-(?:next-)?[a-z0-9-]*template-id$/;
+// Attribute names that carry package, offer, shipping, upsell or checkout
+// identity on built pages: data-next-*, the older os-checkout-* bindings and
+// other data-* names for those refs. Inline event handlers (onclick and the
+// like) can call the SDK, so they count too.
+const COMMERCE_ATTRIBUTE = /^data-next-|^data-[a-z0-9-]*(?:package|offer|shipping|upsell|voucher|coupon)[a-z0-9-]*$|^data-(?:next-)?[a-z0-9-]*template-id$|^os-checkout(?:-|$)|^on[a-z]+$/;
+// Attributes that render the checkout surface or take payment. A page that
+// carries one is a checkout page whatever its type or route says.
+const CHECKOUT_ATTRIBUTE = /^data-next-(?:checkout|payment|express-checkout)(?:-|$)|^os-checkout(?:-|$)/;
 
 const sha256 = (value) => `sha256:${createHash("sha256").update(value).digest("hex")}`;
 const isObject = (value) => Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -57,19 +62,24 @@ function textOf(node) {
 }
 
 // The commerce-bearing facts of one built page, in document order: every
-// SDK attribute, every next-* meta tag, every script (src, or the inline
-// body), every link target and form action. Copy, images and styling are
-// left out, so a copy edit keeps the signature.
+// SDK attribute and inline event handler, every next-* meta tag, every
+// script (src, or the inline body), every link target and form action. Copy,
+// images and styling are left out, so a copy edit keeps the signature.
+// `checkout` is true when the page carries checkout or payment markup.
 export function pageCommerceFacts(html) {
   const facts = [];
   let pageType = null;
+  let checkout = false;
   const walk = (node) => {
     const children = node.content ? node.content.childNodes : node.childNodes;
     for (const child of children || []) {
       if (child.nodeName && !child.nodeName.startsWith("#")) {
         const tag = child.nodeName.toLowerCase();
         const attrs = new Map((child.attrs || []).map((attr) => [attr.name.toLowerCase(), attr.value]));
-        for (const [name, value] of attrs) if (COMMERCE_ATTRIBUTE.test(name)) facts.push(`${tag}[${name}]=${value}`);
+        for (const [name, value] of attrs) {
+          if (COMMERCE_ATTRIBUTE.test(name)) facts.push(`${tag}[${name}]=${value}`);
+          if (CHECKOUT_ATTRIBUTE.test(name)) checkout = true;
+        }
         const metaName = String(attrs.get("name") || "").trim().toLowerCase();
         if (tag === "meta" && metaName.startsWith("next-")) {
           facts.push(`meta[${metaName}]=${attrs.get("content") ?? ""}`);
@@ -83,7 +93,7 @@ export function pageCommerceFacts(html) {
     }
   };
   walk(parse(String(html)));
-  return { signature: sha256(facts.join("\n")), page_type: pageType };
+  return { signature: sha256(facts.join("\n")), page_type: pageType, checkout };
 }
 
 // The campaign's own Page Kit config entry, hashed; a missing or unreadable
@@ -157,7 +167,7 @@ export function classifyDrift({ changes, baseline, outputRoot, targetRepo, publi
       continue;
     }
     const type = current.page_type || inferPageType(routeForFile(outputRoot, join(outputRoot, page.built_path)));
-    if (CHECKOUT_PAGE_TYPES.has(type)) reasons.push({ code: "checkout_page", path: page.built_path });
+    if (CHECKOUT_PAGE_TYPES.has(type) || current.checkout) reasons.push({ code: "checkout_page", path: page.built_path });
     else if (!signature || !Object.hasOwn(signature.pages, page.built_path)) {
       if (signature) reasons.push({ code: "commerce_signature_unavailable", path: page.built_path });
     } else if (signature.pages[page.built_path] !== current.signature) {
@@ -209,7 +219,12 @@ export function nextBuildChanges(previous, entry, anchors = []) {
 }
 
 const KIND_RANK = Object.freeze({ none: 0, page_only: 1, commerce_affecting: 2, unknown: 3 });
-const worse = (a, b) => (KIND_RANK[a] >= KIND_RANK[b] ? a : b);
+// The worse of two change kinds; an unrecognized kind reads as unknown.
+const rankOf = (kind) => KIND_RANK[kind] ?? KIND_RANK.unknown;
+export function worseChangeKind(a, b) {
+  const kind = rankOf(a) >= rankOf(b) ? a : b;
+  return Object.hasOwn(KIND_RANK, kind) ? kind : "unknown";
+}
 
 /**
  * The change a stage that reviewed `anchor` owes for: the recorded rebuilds
@@ -237,7 +252,7 @@ export function changeSince(anchor, { assembly, drift, driftClassification }) {
   const unmapped = new Set();
   let kind = "none";
   const add = (part, partKind, reasons) => {
-    kind = worse(kind, partKind);
+    kind = worseChangeKind(kind, partKind);
     for (const page of part.changed_pages || []) pages.set(page.built_path, { page_id: page.page_id, built_path: page.built_path });
     for (const path of part.unmapped_files || []) unmapped.add(path);
     result.reasons.push(...(reasons || []));

@@ -54,7 +54,7 @@ import {
 import { evaluateRecordedHiddenEagerMediaCheckpoint } from "./polish-node.mjs";
 import { effectiveStageStatus, effectiveStatusIsTerminal, inputStamps, stageWriteInputs } from "./input-currency.mjs";
 import { demoteStages, recordBrief, recordSpec } from "./input-refresh.mjs";
-import { applyDerivedAssemblyReportSummary, archiveStageRecord, archiveSupersededRecord, assemblyReportMatchesPacket, commitAssemblyReport, inputChangeFor, qaRecordedBuildFingerprint, restorePolishKeptWithOutput } from "./stage-ledger.mjs";
+import { applyDerivedAssemblyReportSummary, archiveStageRecord, archiveSupersededRecord, assemblyReportMatchesPacket, commitAssemblyReport, inputChangeFor, polishReviewedBuild, qaExtendedBuildFingerprint, qaRecordedBuildFingerprint, restorePolishKeptWithOutput } from "./stage-ledger.mjs";
 import { withTargetLockSync } from "./target-lock.mjs";
 import { commerceScopeFromScope } from "./theme-gate.mjs";
 
@@ -332,13 +332,6 @@ function currentStamps(inputs) {
   return Object.fromEntries(Object.entries(stamps).filter(([, value]) => value !== null));
 }
 
-// The build Polish last reviewed: the output it is bound to, or, once a
-// rebuild has made it required, the build that rebuild kept for it.
-function polishReviewedBuild(polish) {
-  if (stageIsTerminal(String(polish.status || ""))) return optionalString(polish.source_build_fingerprint);
-  return polish.status === "required" && polish.required_by === "build" ? optionalString(polish.owed_since_build_fingerprint) : null;
-}
-
 // #707/#720: what this rebuild changed against the build recorded before it,
 // classified page-only or commerce-affecting, appended to the kept history so
 // a stage that reviewed an older build can still read its changed pages; and
@@ -356,7 +349,7 @@ function buildChangeFacts(report, { packet, packetPath, fingerprint, now }) {
   const debt = assessEvidenceDebt({ packet, packetPath, report });
   const entry = buildChangeEntry({ from, to: fingerprint, at: now, changes: debt.changes,
     classification: { kind: debt.changes.kind, reasons: debt.changes.reasons } });
-  const anchors = [qaRecordedBuildFingerprint(report), polishReviewedBuild(stageObject(report, "polish"))];
+  const anchors = [qaRecordedBuildFingerprint(report), qaExtendedBuildFingerprint(report), polishReviewedBuild(stageObject(report, "polish"))];
   return { signature, buildChanges: nextBuildChanges(previousAssembly.build_changes, entry, anchors) };
 }
 

@@ -300,3 +300,87 @@ test("qa run --page from the CLI: argv refusals, then a commerce change stops be
   assert.equal(readFileSync(f.reportPath, "utf8"), before, "the QA stage is not recorded");
   assert.equal(spawnSync("ls", [join(f.root, "qa-output")]).status !== 0, true, "no verdict is written");
 });
+
+// Review of #720: a page-only change extends only a completed review.
+const editReport = (f, change) => {
+  const report = f.readReport();
+  change(report.stages);
+  writeFileSync(f.reportPath, JSON.stringify(report));
+};
+
+test("a page-only change after a blocked full QA owes a full QA run; Polish stays advisory", (t) => {
+  const f = fixture(t);
+  editReport(f, (stages) => Object.assign(stages.qa, { status: "blocked", blockers: ["checkout broken"] }));
+  copyEdit(f);
+  for (const recorded of [false, true]) {
+    if (recorded) f.recordBuild();
+    const json = JSON.parse(ci(f, "--json").stdout).ci;
+    assert.equal(json.status, "owed", `record build ${recorded}`);
+    assert.equal(json.qa.status, "owed");
+    assert.equal(json.qa.scope, "full", "a blocked QA extends nothing");
+    assert.deepEqual(json.qa.owed_pages, []);
+    assert.equal(json.polish.advisory, true, "Polish completed, so it stays advisory");
+    const markdown = ci(f);
+    assert.equal(markdown.status, 3);
+    assert.match(markdown.stdout, /Change found: page-only, but .+\. It owes a full QA run; Polish is advisory\./);
+    assert.match(markdown.stdout, /Owed stages: qa\./);
+    assert.doesNotMatch(markdown.stdout, /--page/);
+  }
+  const base = `http://127.0.0.1:9/${SLUG}/`;
+  assert.throws(() => applyQaPageScope([{ pages: [{ page_id: "upsell1", url: `${base}upsell1/` }] }],
+    { pages: ["upsell1"], baseUrl: base, debt: f.debt(), report: f.readReport() }),
+  /page-only, but the QA recorded before it did not complete, so it owes a full QA run/);
+});
+
+test("a blocked Polish is not advisory for a page-only change, before or after record build", (t) => {
+  const f = fixture(t);
+  editReport(f, (stages) => Object.assign(stages.polish, { status: "blocked", blockers: ["layout broken"] }));
+  copyEdit(f);
+  for (const recorded of [false, true]) {
+    if (recorded) f.recordBuild();
+    const json = JSON.parse(ci(f, "--json").stdout).ci;
+    assert.equal(json.polish.status, "owed", `record build ${recorded}`);
+    assert.equal(json.polish.advisory, false, `record build ${recorded}`);
+    assert.equal(json.qa.scope, "pages", "QA completed, so it can still be paid on the changed page");
+    const markdown = ci(f);
+    assert.equal(markdown.status, 3);
+    assert.match(markdown.stdout, /It owes the full Polish, and QA on `upsell1`\./);
+    assert.match(markdown.stdout, /Owed stages: polish, qa \(changed pages only\)\./);
+  }
+});
+
+test("a page-scoped run that did not complete stays page-scoped from the full QA it extended", (t) => {
+  const f = fixture(t);
+  copyEdit(f);
+  f.recordBuild();
+  const afterFirst = f.readReport().stages.assembly.build_fingerprint;
+  // Stand-in for a blocked page-scoped QA record on the first rebuild.
+  editReport(f, (stages) => Object.assign(stages.qa, {
+    status: "blocked", blockers: ["upsell copy overflows"],
+    evidence: { qc_build_fingerprint: afterFirst, qc_results: [], page_scope: { pages: ["upsell1"], owed_pages: ["upsell1"], base_build_fingerprint: f.original.fingerprint } },
+  }));
+  // The fix, plus a second page-only edit.
+  f.writePage("landing", PAGES.landing.replace("Landing headline", "A new headline"));
+  f.recordBuild();
+  const debt = f.debt();
+  assert.equal(debt.qa.scope, "pages");
+  assert.equal(debt.qa.change.since_build_fingerprint, f.original.fingerprint, "read from the completed QA's build");
+  assert.deepEqual(debt.qa.owed_pages.map((page) => page.page_id), ["landing", "upsell1"], "the unpaid page stays owed");
+  const base = `http://127.0.0.1:9/${SLUG}/`;
+  const topologies = [{ pages: ["landing", "upsell1"].map((page) => ({ page_id: page, url: `${base}${page}/` })) }];
+  assert.throws(() => applyQaPageScope(topologies, { pages: ["landing"], baseUrl: base, debt, report: f.readReport() }), /add --page upsell1/);
+  const scoped = applyQaPageScope(topologies, { pages: ["landing", "upsell1"], baseUrl: base, debt, report: f.readReport() });
+  assert.equal(scoped.scope.base_build_fingerprint, f.original.fingerprint);
+});
+
+test("a page-scoped run refuses QA that an input change owes, or whose inputs cannot be confirmed", (t) => {
+  const f = fixture(t);
+  copyEdit(f);
+  f.recordBuild();
+  const base = `http://127.0.0.1:9/${SLUG}/`;
+  const topologies = [{ pages: [{ page_id: "upsell1", url: `${base}upsell1/` }] }];
+  const scope = (qaInputCurrency) => applyQaPageScope(topologies, { pages: ["upsell1"], baseUrl: base, debt: f.debt(), report: f.readReport(), qaInputCurrency });
+  assert.throws(() => scope("owed"), /an input change \(the brief's qa_policy or the CampaignSpec\) owes QA again, so it owes a full QA run/);
+  assert.throws(() => scope("unknown"), /cannot be confirmed current, so it owes a full QA run/);
+  assert.deepEqual(scope("current").scope.owed_pages, ["upsell1"]);
+});

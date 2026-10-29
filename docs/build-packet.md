@@ -1367,8 +1367,9 @@ change from a commerce-affecting one
 - `stages.assembly.commerce_signature`: `{ "algorithm": "commerce-signature/v1",
   "campaign_config", "pages" }`. `pages` maps each built page's path to a hash
   of its commerce-bearing markup (every `data-next-*` attribute and other
-  package, offer, shipping or upsell attribute, every `next-*` meta tag, every
-  script's `src` or inline body, every link target and form action). Copy,
+  package, offer, shipping or upsell attribute and `os-checkout-*` attribute,
+  every inline event handler, every `next-*` meta tag, every script's `src` or
+  inline body, every link target and form action). Copy,
   image references and styling are not in the hash. `campaign_config` is a
   hash of the campaign's own entry in `_data/campaigns.json`, or
   `unavailable:<status>` when that entry cannot be read. The record build

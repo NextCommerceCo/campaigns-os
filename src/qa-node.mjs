@@ -4,7 +4,7 @@ import { assessEvidenceDebt } from "./evidence-debt.mjs";
 import { routePageIdForUrl } from "./change-scope.mjs";
 import { expectedBinding, createBindingScriptLoader, observeBinding, bindingAssertion, scriptParseAssertion } from './qa-binding-evidence.mjs';
 import { shellToken } from "./shell-token.mjs";
-import { currentBriefMaterial } from "./input-currency.mjs";
+import { currentBriefMaterial, deriveInputCurrency } from "./input-currency.mjs";
 import { applyQaBuildScope, specForQaScope } from "./qa-build-scope.mjs";
 import { requiredActionText } from "./gate-actions.mjs";
 import { parseOrderPathDepthFlag } from "./proof-policy.mjs";
@@ -80,7 +80,7 @@ import {
 } from "./polish-capture.mjs";
 import { resolveConsent } from "./consent.mjs";
 import { markDoctorSidecarStale } from "./doctor-sidecar.mjs";
-import { commitAssemblyReport } from "./stage-ledger.mjs";
+import { commitAssemblyReport, qaExtendedBuildFingerprint } from "./stage-ledger.mjs";
 // Tags a refusal raised before a qa handler runs, so the CLI's lifecycle
 // persist step suppresses the journal append from one place. lifecycle.mjs
 // imports nothing from this repository, so this cannot be circular.
@@ -536,11 +536,16 @@ async function resolveQaInputs(args, {
     packet, report: checkpointPreflight?.runtimeReport,
     targetRepo: checkpointPreflight?.targetRepo, publicRouteSlug,
   });
+  const requestedPages = qaPageArgs(args);
   const pageScope = applyQaPageScope(buildScope.topologies, {
-    pages: qaPageArgs(args),
+    pages: requestedPages,
     baseUrl,
     debt: checkpointPreflight?.evidenceDebt || null,
     report: checkpointPreflight?.runtimeReport,
+    // Read against the spec this run judges, as doctor reads it.
+    qaInputCurrency: requestedPages
+      ? deriveInputCurrency({ packet, packetPath, report: checkpointPreflight?.runtimeReport || null, spec: isPlainObject(rawSpec) ? rawSpec : null }).stages.qa
+      : undefined,
   });
   const qaScope = { ...buildScope, topologies: pageScope.topologies };
   const brandContract = loadBrandContract(templateFamily);
@@ -1026,10 +1031,13 @@ function refuseBadPageScope(args) {
 // Narrow the QA topology to the pages --page names, after checking that the
 // run can pay what QA owes: the output on disk is the recorded build, the
 // change since the build QA reviewed is page-only, and the named pages cover
-// every changed page. Re-running a page-scoped record for the same build is
-// allowed too. Each requested id is a topology page id or the page id of its
-// route (the id the change lists use).
-export function applyQaPageScope(topologies, { pages, baseUrl, debt, report } = {}) {
+// every changed page. The run extends a completed QA, and QA's inputs (the
+// brief's qa_policy and the CampaignSpec) are current: `qaInputCurrency` is
+// derived.input_currency.stages.qa, and a QA an input change owes, or whose
+// inputs cannot be confirmed, owes a full run. Re-running a page-scoped
+// record for the same build is allowed too. Each requested id is a topology
+// page id or the page id of its route (the id the change lists use).
+export function applyQaPageScope(topologies, { pages, baseUrl, debt, report, qaInputCurrency = undefined } = {}) {
   if (!pages) return { topologies, scope: null };
   const all = topologies.flatMap((topology) => topology.pages || []);
   const idsOf = (page) => [String(page.page_id), page.url && baseUrl ? routePageIdForUrl(page.url, baseUrl) : null].filter(Boolean);
@@ -1049,8 +1057,9 @@ export function applyQaPageScope(topologies, { pages, baseUrl, debt, report } = 
   if (changes.recorded_build_fingerprint !== changes.current_build_fingerprint) {
     throw new Error(`qa run --page: the built output is not the recorded build; run ${cmd("record")} build --packet <packet> first, so the page-scoped verdict is bound to the output it checked.`);
   }
+  const extended = qaExtendedBuildFingerprint(report);
   const previousScope = report?.stages?.qa?.evidence?.page_scope;
-  let base = qa.recorded_build_fingerprint;
+  let base = qa.change?.since_build_fingerprint || qa.recorded_build_fingerprint;
   if (qa.status === "current") {
     const previousPages = Array.isArray(previousScope?.owed_pages) ? previousScope.owed_pages : null;
     if (!previousPages || !previousPages.every((id) => selectedRouteIds.has(id))) {
@@ -1059,13 +1068,21 @@ export function applyQaPageScope(topologies, { pages, baseUrl, debt, report } = 
     base = previousScope.base_build_fingerprint || base;
   } else if (qa.status !== "owed" || qa.scope !== "pages") {
     const kind = qa.change?.kind === "commerce_affecting" ? "commerce-affecting"
-      : qa.status === "owed" && qa.change?.kind === "page_only" ? "page-only, but QA is required again by an input change" : "not classified as page-only";
+      : qa.status === "owed" && qa.change?.kind === "page_only"
+        ? extended ? "page-only, but QA is required again by an input change" : "page-only, but the QA recorded before it did not complete"
+        : "not classified as page-only";
     throw new Error(`qa run --page: the change since the build QA reviewed is ${kind}${(qa.change?.reasons || []).length ? ` (${[...new Set(qa.change.reasons.map((reason) => reason.code))].join(", ")})` : ""}, so it owes a full QA run. Run ${cmd("qa")} run without --page.`);
   } else {
     const uncovered = qa.owed_pages.filter((page) => !selectedRouteIds.has(page.page_id));
     if (uncovered.length) {
       throw new Error(`qa run --page: QA is owed on ${qa.owed_pages.map((page) => page.page_id).join(", ")}; add ${uncovered.map((page) => `--page ${page.page_id}`).join(" ")}.`);
     }
+  }
+  if (qaInputCurrency === "owed" || qaInputCurrency === "unknown") {
+    throw new Error(`qa run --page: ${qaInputCurrency === "owed" ? "an input change (the brief's qa_policy or the CampaignSpec) owes QA again" : "QA's inputs (the brief and the CampaignSpec) cannot be confirmed current"}, so it owes a full QA run. Run ${cmd("qa")} run without --page.`);
+  }
+  if (!extended) {
+    throw new Error(`qa run --page: the QA recorded before this change did not complete${report?.stages?.qa?.status ? ` (status ${JSON.stringify(String(report.stages.qa.status))})` : ""}, so there is no passed QA to extend and it owes a full QA run. Run ${cmd("qa")} run without --page.`);
   }
   const excluded = new Map();
   const scoped = topologies.map((topology) => {

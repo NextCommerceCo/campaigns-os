@@ -411,12 +411,17 @@ their route ids (`upsell1` for `upsell1/index.html`), and the CampaignSpec page
 id is accepted too. It needs `--packet`, places no test orders (it refuses
 `--test-order` other than `off`), and refuses before checking anything when the
 output on disk is not the recorded build (run `record build` first), when the
-change since the build QA reviewed touches commerce, or when a changed page is
-left out. Every other page gets a `page-scope:<page_id>` row, `skipped` with
-`outside_page_scope`. The QA stage it records carries `evidence.page_scope`
-(`pages`, `owed_pages`, `base_build_fingerprint`) and keeps the
-`purchase_proof` of the full run it extends. QA already recorded in full for
-the current build is re-run without `--page`.
+change since the build QA reviewed touches commerce, when a changed page is
+left out, when the QA it would extend did not complete (a blocked full run
+owes a full run), or when QA's inputs (the brief's `qa_policy` and the
+CampaignSpec) changed or cannot be confirmed current. Every other page gets a
+`page-scope:<page_id>` row, `skipped` with `outside_page_scope`. The QA stage
+it records carries `evidence.page_scope` (`pages`, `owed_pages`,
+`base_build_fingerprint`) and keeps the `purchase_proof` of the full run it
+extends. Its `evidence.qc_results` holds the rows for the scoped pages only,
+so until the next full run the QC handoff coverage reports the earlier full
+run's other QA checks (order paths and tracking among them) as not captured.
+QA already recorded in full for the current build is re-run without `--page`.
 
 ### Automatic commercial parity
 

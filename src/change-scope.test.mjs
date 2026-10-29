@@ -12,6 +12,7 @@ import {
   nextBuildChanges,
   pageCommerceFacts,
   routePageIdForUrl,
+  worseChangeKind,
 } from "./change-scope.mjs";
 import {
   applyPageOnlyChangeToCheckpoint,
@@ -47,9 +48,25 @@ test("the commerce signature ignores copy, images and styling, and reads every c
     ["inline script", "debug: false", "debug: true"],
     ["route", 'href="../receipt/"', 'href="../thanks/"'],
     ["page type", 'content="upsell"', 'content="checkout"'],
+    ["inline event handler", "<h1 class=\"hero\">", "<h1 class=\"hero\" onclick=\"next.addUpsell({ packageId: 99 })\">"],
+    ["checkout binding", "<h1 class=\"hero\">", "<h1 class=\"hero\" os-checkout-field=\"email\">"],
   ]) {
     assert.notEqual(pageCommerceFacts(UPSELL.replace(edit[1], edit[2])).signature, base.signature, `${edit[0]} changes the signature`);
   }
+  // Checkout or payment markup makes a page a checkout page whatever its type.
+  assert.equal(base.checkout, false);
+  for (const marker of ['data-next-checkout="form"', 'data-next-payment-method="card"', 'data-next-express-checkout="paypal"', 'os-checkout-payment="combo"']) {
+    assert.equal(pageCommerceFacts(UPSELL.replace("<h1 class=\"hero\">", `<h1 class="hero" ${marker}>`)).checkout, true, marker);
+  }
+  assert.equal(pageCommerceFacts(UPSELL.replace("<h1 class=\"hero\">", '<h1 class="hero" data-next-checkout-review-note="x" data-next-checkoutish="x">')).checkout, true);
+  assert.equal(pageCommerceFacts(UPSELL.replace("<h1 class=\"hero\">", '<h1 class="hero" data-next-checkoutish="x">')).checkout, false);
+});
+
+test("worseChangeKind ranks none, page_only, commerce_affecting, unknown", () => {
+  assert.equal(["page_only", "none", "commerce_affecting", "page_only"].reduce(worseChangeKind, "none"), "commerce_affecting");
+  assert.equal(worseChangeKind("page_only", "unknown"), "unknown");
+  assert.equal(worseChangeKind("page_only", "bogus"), "unknown");
+  assert.equal(worseChangeKind("none", "page_only"), "page_only");
 });
 
 test("routePageIdForUrl derives the id the change lists use", () => {
@@ -88,6 +105,16 @@ test("classifyDrift reads a page-only drift and names every commerce reason", (t
   assert.deepEqual(classify(known(), baseline()).reasons, [{ code: "commerce_markup_changed", path: "upsell/index.html" }]);
   writeFileSync(join(outputRoot, "upsell", "index.html"), UPSELL.replace('content="upsell"', 'content="checkout"'));
   assert.deepEqual(classify(known(), baseline()).reasons, [{ code: "checkout_page", path: "upsell/index.html" }]);
+  // A checkout page on a free-form route with no page-type meta is still a
+  // checkout page: its checkout markup says so, and a copy edit owes full QA.
+  const freeForm = (html) => html.replace(/<meta name="next-page-type"[^>]*>/, "")
+    .replace("<h1 class=\"hero\">", "<form data-next-checkout=\"form\"><button type=\"submit\">Pay</button></form><h1 class=\"hero\">");
+  writeFileSync(join(outputRoot, "upsell", "index.html"), freeForm(UPSELL).replace("second", "third"));
+  assert.deepEqual(classify(known(), baseline({ pages: { "upsell/index.html": pageCommerceFacts(freeForm(UPSELL)).signature } })).reasons,
+    [{ code: "checkout_page", path: "upsell/index.html" }]);
+  // An inline handler that calls the SDK is commerce markup.
+  writeFileSync(join(outputRoot, "upsell", "index.html"), UPSELL.replace("<h1 class=\"hero\">", "<h1 class=\"hero\" onclick=\"next.addUpsell({ packageId: 99 })\">"));
+  assert.deepEqual(classify(known(), baseline()).reasons, [{ code: "commerce_markup_changed", path: "upsell/index.html" }]);
 });
 
 test("build history: each stage walks back to the build it reviewed, or reads unknown", () => {

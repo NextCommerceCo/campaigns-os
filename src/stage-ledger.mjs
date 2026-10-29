@@ -11,6 +11,7 @@ import {
   NEXT_STAGE_CONTRACTS,
   NEXT_STAGE_OWNERS,
   stageIsBlocked,
+  stageIsTerminal,
 } from "./orchestration-stage-contract.mjs";
 
 const PRODUCER_STAGES = new Set(["doctor", "qa"]);
@@ -571,6 +572,27 @@ export function qaGateEvidence(report, gate) {
 export function qaRecordedBuildFingerprint(report) {
   return optionalString(report?.stages?.qa?.evidence?.qc_build_fingerprint)
     || optionalString(report?.stages?.qa?.evidence?.source_build_fingerprint);
+}
+
+// #720: the build whose completed QA a page-scoped run extends. A completed
+// QA record extends its own build. A page-scoped run that did not complete
+// extends the build of the full QA it was based on, which was completed when
+// that run was accepted. Any other record (blocked or pending full QA, a
+// skip, a required stage) extends nothing, so it owes a full QA run.
+const QA_EXTENDABLE_STATUSES = Object.freeze(["completed", "completed_with_warnings"]);
+export function qaExtendedBuildFingerprint(report) {
+  const qa = report?.stages?.qa;
+  if (QA_EXTENDABLE_STATUSES.includes(qa?.status)) return qaRecordedBuildFingerprint(report);
+  if (qa?.status === "blocked") return optionalString(qa?.evidence?.page_scope?.base_build_fingerprint);
+  return null;
+}
+
+// The build Polish last reviewed: the output a terminal Polish is bound to,
+// or, once a rebuild has made it required, the build that rebuild kept for
+// it. A blocked or pending Polish reviewed nothing.
+export function polishReviewedBuild(polish) {
+  if (stageIsTerminal(String(polish?.status || ""))) return optionalString(polish.source_build_fingerprint);
+  return polish?.status === "required" && polish.required_by === "build" ? optionalString(polish.owed_since_build_fingerprint) : null;
 }
 
 export function qaRecordedForCurrentBuild(report, buildFingerprint) {

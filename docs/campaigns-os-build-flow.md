@@ -62,9 +62,13 @@ stay listed after `record build`. A change is one of two kinds:
 
 - **Page-only.** Only the HTML of some pages changed (copy, image references,
   inline styling), and none of them is a checkout page or changed its commerce markup:
-  `data-next-*` and other package, offer, shipping or upsell attributes,
-  `next-*` meta tags (the upsell accept and decline routes among them),
-  scripts, link targets or form actions. The campaign's own entry in
+  `data-next-*`, `os-checkout-*` and other package, offer, shipping or upsell
+  attributes, inline event handlers (`onclick` and the like), `next-*` meta
+  tags (the upsell accept and decline routes among them), scripts, link
+  targets or form actions. A checkout page is one whose type is checkout,
+  checkout step or select, or one that carries checkout or payment markup
+  (`data-next-checkout*`, `data-next-payment*`, `data-next-express-checkout*`,
+  `os-checkout*`). The campaign's own entry in
   `_data/campaigns.json` (SDK pin, analytics ids, store fields) is unchanged.
   It owes QA on the changed pages only: `qa.scope` is `pages` and
   `qa.owed_pages` lists them. Polish is advisory (`polish.advisory: true`): it
@@ -77,6 +81,13 @@ stay listed after `record build`. A change is one of two kinds:
   kept a commerce signature, or a rebuild history that no longer reaches the
   reviewed build). A Polish or QA requirement a brief or spec change made is
   always full.
+
+A page-only change extends only a review that completed. Polish is advisory
+only when the last Polish completed or was skipped; a blocked Polish owes the
+full stage. QA is owed on the changed pages only when the last QA completed,
+or when it was a page-scoped run that did not complete, in which case the
+pages are counted from the full QA that run extended, so its unpaid pages stay
+owed. A blocked or pending full QA owes a full run.
 
 The PR comment opens with the kind it found and what that owes, for example
 "Change found: page-only. It owes QA on `upsell1`; Polish is advisory." A
@@ -102,8 +113,10 @@ To repay a page-only change, rebuild, run `record build`, then run
 those pages and places no test orders; the QA stage it records keeps the
 purchase proof of the full run it extends. It refuses, before checking
 anything, when the output on disk is not the recorded build, when the change
-is commerce-affecting, or when a changed page is left out. Running Polish for
-a page-only change is optional.
+is commerce-affecting, when a changed page is left out, when the QA it would
+extend did not complete, or when QA's inputs (the brief's `qa_policy` and the
+CampaignSpec) changed or cannot be confirmed current. Running Polish for a
+page-only change is optional.
 
 To repay fingerprint-drift debt for any other change, rebuild and record the output, re-run `polish capture` against
 that served build, record Polish with `record polish --evidence <evidence.json>`,

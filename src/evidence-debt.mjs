@@ -12,7 +12,7 @@ import {
 import { changeSince, classifyDrift } from "./change-scope.mjs";
 import { normalizePublicRouteSlug } from "./route-identity.mjs";
 import { isFileReadFailure } from "./cart-placeholders.mjs";
-import { qaRecordedBuildFingerprint, qaRecordedForCurrentBuild } from "./stage-ledger.mjs";
+import { polishReviewedBuild, qaExtendedBuildFingerprint, qaRecordedBuildFingerprint, qaRecordedForCurrentBuild } from "./stage-ledger.mjs";
 
 export const EVIDENCE_DEBT_STATUSES = Object.freeze(["current", "owed", "unknown"]);
 
@@ -124,25 +124,31 @@ export function assessEvidenceDebt({ packet = null, packetPath = null, report = 
   changes.reasons = driftClassification.reasons;
   const changeFor = (anchor) => changeSince(anchor, { assembly, drift: changes, driftClassification });
 
-  // Polish reviewed the build it is bound to; once `record build` has made it
-  // required, the build it reviewed is kept as owed_since_build_fingerprint.
-  // Only a requirement the build itself made can be advisory: one a brief or
-  // spec change made owes the full stage.
+  // Polish reviewed the build a terminal record is bound to; once `record
+  // build` has made it required, the build it reviewed is kept as
+  // owed_since_build_fingerprint (polishReviewedBuild). Only a Polish that
+  // reviewed a build can be advisory: a blocked or pending one, or one a
+  // brief or spec change made required, owes the full stage, before and
+  // after record build alike.
   const polishRecord = report?.stages?.polish;
   const polish = stage(polishRecord, polishBuild, Boolean(polishBuild && currentBuild && polishBuild === currentBuild));
   if (polish.status === "owed") {
-    const requiredByInputs = polishRecord?.status === "required" && polishRecord?.required_by !== "build";
-    polish.change = changeFor(polishBuild || fingerprint(polishRecord?.owed_since_build_fingerprint));
-    polish.advisory = !requiredByInputs && polish.change.kind === "page_only";
+    const reviewed = polishReviewedBuild(polishRecord);
+    polish.change = changeFor(reviewed || polishBuild || fingerprint(polishRecord?.owed_since_build_fingerprint));
+    polish.advisory = Boolean(reviewed) && polish.change.kind === "page_only";
   } else {
     polish.change = null;
     polish.advisory = false;
   }
+  // QA on the changed pages only extends a completed QA: the change is read
+  // from the build that QA checked (qaExtendedBuildFingerprint). A blocked,
+  // pending or skipped full run extends nothing and owes the full stage.
   const qaRecord = report?.stages?.qa;
   const qa = stage(qaRecord, qaBuild, qaRecordedForCurrentBuild(report, currentBuild));
   if (qa.status === "owed") {
-    qa.change = changeFor(qaBuild);
-    qa.scope = qaRecord?.status !== "required" && qa.change.kind === "page_only" ? "pages" : "full";
+    const extended = qaExtendedBuildFingerprint(report);
+    qa.change = changeFor(extended || qaBuild);
+    qa.scope = extended && qaRecord?.status !== "required" && qa.change.kind === "page_only" ? "pages" : "full";
     qa.owed_pages = qa.scope === "pages" ? qa.change.changed_pages : [];
   } else {
     qa.change = null;
