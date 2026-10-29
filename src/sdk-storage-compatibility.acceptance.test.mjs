@@ -192,7 +192,8 @@ test('inventoryFailure falls back to the exit status and bounds long git message
   assert.equal(long, `${'x'.repeat(200)}….`);
 });
 
-test('a scope that looks like pathspec magic is matched literally', t => {
+// Windows forbids ':' in file names, and the case needs it.
+test('a scope that looks like pathspec magic is matched literally', { skip: process.platform === 'win32' }, t => {
   // Read as magic, ':(icase)zz' would match only a folder named zz and the scope would have no files.
   const cwd = fixture(t, '// none', { extra: { ':(icase)zz/x.js': "sessionStorage.getItem('next-order');" } });
   const report = scanSdkStorageCompatibility({ ...options(cwd), scope: [':(icase)zz'], exclude: [] });

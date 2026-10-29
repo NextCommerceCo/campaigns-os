@@ -17,7 +17,7 @@ The `next-campaigns-sdk-bump` skill (1.0.7, bundle `1.61.0+skills.2`) takes the 
 ### Fixed
 
 - `sdk storage-check` lists only the tracked files under `--scope` (`git ls-files -- <scope>`), so a large repository no longer passes Node's 1 MiB default buffer. Before this, a repository with more than about 25,000 tracked paths stopped with `Cannot inventory tracked Git source files.` (#717)
-- That error now reads `Cannot inventory tracked Git source files: <reason>`, with Git's first stderr line as the reason, or its exit status when Git printed nothing, or a request to narrow a scope whose list passes 256 MiB. `docs/sdk-storage-compatibility.md` says so.
+- That error now reads `Cannot inventory tracked Git source files: <reason>`, with Git's first stderr line as the reason, or, when Git printed nothing, how it ended (its exit status, the signal that stopped it, or a spawn error code), or a request to narrow a scope whose list passes 256 MiB. `docs/sdk-storage-compatibility.md` says so.
 
 ## [1.61.0+agent.1] - 2026-10-24
 

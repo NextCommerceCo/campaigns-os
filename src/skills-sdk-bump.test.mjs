@@ -35,7 +35,7 @@ test("the SDK bump skill names each step the bump needs", () => {
     "plan a 3-D Secure test order in step 6",
     "Known changes a bump can cross.",
     "The checkout page no longer emits `order:completed` when it creates an order.",
-    "own Spreedly script tag (`core.spreedly.com/iframe/iframe-v1.min.js`)",
+    "any `<script>` whose src is on `core.spreedly.com`",
     "Rebuild the list from the target tag's `dist/` or remove it",
     "Use the 3-D Secure test card in `docs/qa-and-test-orders.md`",
     "the pinned Campaigns OS is npm 1.61.0 or earlier",
