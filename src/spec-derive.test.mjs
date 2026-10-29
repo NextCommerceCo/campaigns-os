@@ -1728,15 +1728,28 @@ test("planSpecDerive holds a page whose file is gone and a new file of the same 
   assert.deepEqual(applySpecDerive(downsell(), held).funnels[0].pages[2].packages, downsell().funnels[0].pages[2].packages, "the downsell's authored packages are kept");
 });
 
-test("planSpecDerive adds a checkout file that carries next_step as a checkout_step routed by next_step, never by the Checkout's next_url", () => {
-  const tree = [
+test("planSpecDerive adds a checkout file that carries next_step as a step or a select page routed by next_step, never by the Checkout's next_url", () => {
+  const withStep = (facts) => [
     ...TREE_WITH_LINKS.map((file) => (file.basename === "landing" ? { ...file, next_url: "/runtime-packet-demo/step-2/" } : file)),
-    { path: "step-2.html", basename: "step-2", route: "step-2/", permalink: null, page_type: "checkout", next_url: "/runtime-packet-demo/upsell/", next_step: "/runtime-packet-demo/checkout/" },
+    { path: "step-2.html", basename: "step-2", route: "step-2/", permalink: null, page_type: "checkout", next_url: "/runtime-packet-demo/upsell/", next_step: "/runtime-packet-demo/checkout/", ...facts },
   ];
-  const plan = planSpecDerive({ spec: specFixture(), entry: CONFIGURED_ENTRY, pageFiles: tree, packetBindings: PROJECTED, publicRouteSlug: "runtime-packet-demo", handedOff: true });
+  const insertOf = (spec, tree) => {
+    const plan = planSpecDerive({ spec, entry: CONFIGURED_ENTRY, pageFiles: tree, packetBindings: PROJECTED, publicRouteSlug: "runtime-packet-demo", handedOff: true });
+    return [plan, plan.changes.find((row) => row.op === "insert").after];
+  };
+  // prepare-build writes step_number only on a checkout_step.
+  const v5 = () => specFixture((draft) => { draft.schema_version = "5.0"; });
+  const [plan, step] = insertOf(v5(), withStep({ step_number: "1" }));
   assert.deepEqual(plan.page_scope.added, [{ page_id: "step-2", file: "step-2.html", type: "checkout_step", route: "step-2/" }]);
-  assert.deepEqual(plan.changes.find((row) => row.op === "insert").after, { id: "step-2", type: "checkout_step", page_url: "step-2/", next_page: "checkout" });
+  assert.deepEqual(step, { id: "step-2", type: "checkout_step", page_url: "step-2/", next_page: "checkout" });
   assert.deepEqual(plan.changes.filter((row) => row.field === "funnels[0].pages[0].next_page").map((row) => [row.before, row.after]), [["checkout", "step-2"]]);
+  assert.deepEqual(insertOf(v5(), withStep({}))[1], { id: "step-2", type: "select", page_url: "step-2/", next_page: "checkout" });
+  // A v4 spec has no checkout_step type: the step is a checkout that forwards
+  // to the Checkout, which the v5 upgrade reads back as a checkout_step.
+  assert.deepEqual(insertOf(specFixture(), withStep({ step_number: "1" }))[1], { id: "step-2", type: "checkout", page_url: "step-2/", next_page: "checkout" });
+
+  const odd = planSpecDerive({ spec: specFixture(), entry: CONFIGURED_ENTRY, pageFiles: [...TREE_WITH_LINKS, { path: "odd.html", basename: "odd", route: "odd/", permalink: null, page_type: "toString" }], packetBindings: PROJECTED, publicRouteSlug: "runtime-packet-demo", handedOff: true });
+  assert.deepEqual([odd.page_scope.added, odd.not_derived.map((row) => row.reason)], [[], ["page_type_unknown"]]);
 });
 
 test("planSpecDerive re-points a checkout that forwards through next_page, and reports it when its target is removed", () => {

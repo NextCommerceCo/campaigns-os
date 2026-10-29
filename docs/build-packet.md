@@ -615,8 +615,10 @@ position:
 - A file with a page-kit `page_type` in its frontmatter (`product`, `checkout`,
   `upsell`, `receipt`) that no spec page binds is **added**: its id is the file
   name, its type follows `page_type` (`product` reads as `landing`, `receipt` as
-  `thankyou`, and a `checkout` file that carries `next_step` as a
-  `checkout_step`), its `page_url` is the route the file builds to, and it is
+  `thankyou`; a `checkout` file that carries `next_step` is a `checkout_step`
+  when it also carries `step_number` and a `select` page when it does not, and
+  in a v4 spec a step is a `checkout` that forwards to the Checkout), its
+  `page_url` is the route the file builds to, and it is
   appended to the funnel's pages (the legacy `funnel_pages[]` mirror too). The
   diff row carries `op: "insert"`.
 - A page whose file the packet's projection named

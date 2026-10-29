@@ -3710,8 +3710,8 @@ function listPageKitPageFiles(outputDir, publicRouteSlug, { assetsHtmlIgnored = 
       // falls back to the filename route. The page_type and the links to
       // other pages are read too: after handoff they say which files are
       // funnel pages and how they link (#721).
-      const { permalink, page_type: pageType, next_url: nextUrl, decline_url: declineUrl, next_step: nextStep } = frontmatterScalars(readFileSync(fullPath, "utf8"));
-      const facts = { page_type: pageType, next_url: nextUrl, decline_url: declineUrl, next_step: nextStep };
+      const { permalink, page_type: pageType, next_url: nextUrl, decline_url: declineUrl, next_step: nextStep, step_number: stepNumber } = frontmatterScalars(readFileSync(fullPath, "utf8"));
+      const facts = { page_type: pageType, next_url: nextUrl, decline_url: declineUrl, next_step: nextStep, step_number: stepNumber };
       if (permalink === null) {
         const filenameRoute = pageRouteForFile(path);
         if (filenameRoute === null) continue;

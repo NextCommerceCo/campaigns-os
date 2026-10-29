@@ -255,7 +255,7 @@ export function frontmatterPermalink(text) {
 // The frontmatter keys a page file states that derive reads after handoff:
 // the page-kit page_type (which makes a file a funnel page) and the links
 // prepare-build projects between pages (next_url, decline_url, next_step).
-export const PAGE_FILE_FRONTMATTER_KEYS = Object.freeze(["permalink", "page_type", "next_url", "decline_url", "next_step"]);
+export const PAGE_FILE_FRONTMATTER_KEYS = Object.freeze(["permalink", "page_type", "next_url", "decline_url", "next_step", "step_number"]);
 
 // The raw scalar of each named key in a page file's frontmatter (the first
 // line of the block that declares it), read as frontmatterPermalink reads a
@@ -380,13 +380,24 @@ function pathLabel(path) {
 // The CampaignSpec page type a page-kit page_type stands for when the tree
 // adds a page. page-kit's four runtime types are coarser than the spec's, so
 // product reads as a landing page; a page that is something else (a
-// presell, a downsell) has its type authored after the add. A checkout file
-// that carries next_step is a step before the Checkout (prepare-build writes
-// next_step only there), so it is added as a checkout_step.
+// presell, a downsell) has its type authored after the add. prepare-build
+// writes next_step on every page before the Checkout and step_number only on a
+// checkout_step, so a checkout file with next_step is a checkout_step when it
+// has a step_number and a select page when it has none.
 const SPEC_TYPE_FOR_PAGE_KIT_TYPE = Object.freeze({ product: "landing", checkout: "checkout", upsell: "upsell", receipt: "thankyou" });
 function specTypeForPageFile(file) {
-  if (file.page_type === "checkout" && isNonEmptyString(file.next_step)) return "checkout_step";
-  return SPEC_TYPE_FOR_PAGE_KIT_TYPE[file.page_type];
+  if (file.page_type === "checkout" && isNonEmptyString(file.next_step)) {
+    return file.step_number != null && String(file.step_number).trim() !== "" ? "checkout_step" : "select";
+  }
+  return Object.hasOwn(SPEC_TYPE_FOR_PAGE_KIT_TYPE, file.page_type ?? "") ? SPEC_TYPE_FOR_PAGE_KIT_TYPE[file.page_type] : undefined;
+}
+
+// checkout_step is a CampaignSpec v5 type. A v4 spec states a step as a
+// checkout that forwards to another checkout (upgradeCampaignSpec retypes it
+// on read), so that is how a step is added to one.
+function writtenPageType(type, spec) {
+  const version = typeof spec?.schema_version === "string" ? spec.schema_version.trim() : "";
+  return type === "checkout_step" && !/^5(\.|$)/.test(version) ? "checkout" : type;
 }
 
 // The frontmatter link that states each routing field, by spec page type: the
@@ -504,7 +515,7 @@ function planPageScope({ spec, activePages, pageFiles, packetBindings, boundFile
   const hasOrder = containerPages.some((page) => isPlainObject(page) && typeof page.order === "number");
   added.forEach(({ file, id, type }, offset) => {
     const path = [...container, containerPages.length + offset];
-    const page = { id, type, page_url: file.route };
+    const page = { id, type: writtenPageType(type, spec), page_url: file.route };
     for (const [key, field] of linkFieldsForType(type)) {
       const target = resolveLink(file[key]);
       if (target && target !== id) page[field] = target;
@@ -514,7 +525,7 @@ function planPageScope({ spec, activePages, pageFiles, packetBindings, boundFile
           : `${file.path} states no ${key}, so page "${id}"'s ${field} is not something the tree states; set it by hand.` });
       }
     }
-    scope.added.push({ page_id: id, file: file.path, type, route: file.route });
+    scope.added.push({ page_id: id, file: file.path, type: page.type, route: file.route });
     if (type !== "thankyou") {
       scope.not_derived.push({ field: `${pathLabel(path)}.packages`, page_id: id, reason: "page_packages_not_derived", detail: `page "${id}" was added from ${file.path}; which packages it sells is authored, so set them by hand. Until each path into the Checkout passes a page that sells a main-cart package, and each upsell or downsell has its offer package, doctor blocks (CheckoutPathHasPackages, UpsellHasPackages).` });
     }
