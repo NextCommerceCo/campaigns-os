@@ -374,7 +374,7 @@ Usage:
   campaigns-os next deploy --packet <json> --report <json> [--json]
   campaigns-os next qa --packet <json> --report <json> [--json]
   campaigns-os qa resolve --packet <json> [--base-url <url>] [--no-probe] [--probe-timeout-ms <ms>] [--json]   # probes the derived entry URLs; a dead route set reports routes_unresolved, an unprobed one ready_unprobed
-  campaigns-os qa run --packet <json> [--base-url <url>] [--currency <code>] [--browser] [--test-order <mode>] [--select-package <ref[:qty],...>] [--apply-coupon <code>] [--test-email <email>] [--test-country <code> --test-address1 <line> --test-city <city> --test-province <code> --test-postal <code>] [--no-post-verdict] [--no-remit] [--no-live-refs] [--output-dir <dir>] [--json]
+  campaigns-os qa run --packet <json> [--base-url <url>] [--currency <code>] [--page <page_id>]... [--browser] [--test-order <mode>] [--select-package <ref[:qty],...>] [--apply-coupon <code>] [--test-email <email>] [--test-country <code> --test-address1 <line> --test-city <city> --test-province <code> --test-postal <code>] [--no-post-verdict] [--no-remit] [--no-live-refs] [--output-dir <dir>] [--json]
   campaigns-os qa promote --packet <json> --verdict <full-verdict.json> [--json]   # project one explicit qa-output verdict to the committed .campaign-runtime/qa-verdict.json sidecar
   campaigns-os qa publish --packet <json> [--verdict <full-verdict.json>] [--republish] [--proxy-base <url>] [--dry-run] [--json]   # post an already-stored verdict (the sidecar's run, or --verdict) to the QA portal without a re-run or an order; refuses a stale spec_hash or an already-published verdict. --dry-run runs every one of those refusal checks and prints what would be posted (endpoint, verdict run id, payload bytes) without the POST
   campaigns-os qa policy set --packet <json> [--allowed-domains-confirmed true|false] [--deploy-target <target>] [--preview-url <url>] [--production-url <url>] [--order-path-depth <off|common|full>] [--json]   # --order-path-depth writes qa.proof_policy.order_path_depth and refreshes the assembly report's proof_policy mirror
@@ -743,10 +743,17 @@ export function recordQaStageOutcome(args, result) {
     // start and the spec material it judged, never the inputs at write time.
     const qaStamps = inputStamps({ briefMaterial: verdict.source_brief_material, specMaterial: verdict.spec_hash });
     const qaInputs = stageWriteInputs("qa", currentPacketInputs({ packet, packetPath }));
+    const pageScope = isObject(result.page_scope) ? result.page_scope : null;
     const committed = commitAssemblyReport(workspace, (report) => {
       if (hasLocalIdentity && !specHashesMatch(verdict.spec_hash, report.identity?.spec_material_hash)) {
         throw new Error("Local-spec QA verdict belongs to a different material revision; report evidence was not changed.");
       }
+      // A page-scoped run (#720) is bound to the build it checked; a report
+      // rebuilt since then keeps the QA it had.
+      if (pageScope && currentBuildFingerprint(report) !== pageScope.build_fingerprint) {
+        throw new Error("The build was recorded again during this page-scoped QA run; report evidence was not changed. Re-run qa run --page against the recorded build.");
+      }
+      const evidence = qaStageGateEvidence(verdict, report, result);
       return recordProducerStageOutcome(report, {
         stage: "qa",
         disposition: verdict.disposition,
@@ -763,11 +770,19 @@ export function recordQaStageOutcome(args, result) {
         // Which build this verdict judged, and the gates whose browser outcome
         // the doctor's static scan defers to (qaGatePassedForCurrentBuild). A
         // gate that never ran is left out, so silence never reads as a pass.
-        evidence: qaStageGateEvidence(verdict, report, result),
+        // A page-scoped record names its pages, the changed pages it pays
+        // for and the build whose full QA it extends.
+        evidence: pageScope ? { ...evidence, page_scope: {
+          pages: pageScope.pages, owed_pages: pageScope.owed_pages, base_build_fingerprint: pageScope.base_build_fingerprint,
+        } } : evidence,
         // Counts-only: never order ids, refs, emails or URLs (see
         // summarizePurchaseProof). This is what lets `next` tell a real purchase
-        // path from a `--test-order off` diagnostic.
-        proof: summarizePurchaseProof({ verdict, proofPolicy: packet.qa?.proof_policy }),
+        // path from a `--test-order off` diagnostic. A page-scoped run places
+        // no orders and the change it pays touches no commerce, so the
+        // purchase proof of the full run it extends is kept.
+        proof: pageScope && isObject(report.stages?.qa?.purchase_proof)
+          ? report.stages.qa.purchase_proof
+          : summarizePurchaseProof({ verdict, proofPolicy: packet.qa?.proof_policy }),
         stamps: qaStamps,
         inputs: qaInputs,
       });
@@ -1270,6 +1285,8 @@ async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = nul
     // The ambient session is handed over, not re-discovered: the closeout
     // command a QA run prints has to agree with the run_id this session will
     // later close and remit under.
+    // --page repeats; the shared parser keeps only the last value.
+    if (args._[1] === "run" && Array.isArray(argv) && argv.includes("--page")) args = { ...args, page: repeatedFlagValues(argv, "page") };
     const result = await runQaCli(args, { ambient });
     if (result?.verdict?.disposition === "blocked") {
       recorder.recordFindingCodes(result.verdict.assertions?.filter((item) => item.status === "fail" || item.severity === "blocker")

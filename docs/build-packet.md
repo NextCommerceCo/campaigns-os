@@ -1336,8 +1336,11 @@ Add `--ci` for the [standing PR evidence check](campaigns-os-build-flow.md#live-
 `campaigns-os doctor --packet <packet> --ci --no-live-refs`. CI mode assesses the
 same build-bound Polish/QA debt as readback, exits 0 for current evidence, 3 for
 owed evidence, 4 for unknown debt, and 2 for a missing/unreadable packet. Any owed
-stage returns 3; otherwise an unknown stage returns 4. Other doctor errors remain reported but do not
-change the CI exit. It prints Markdown for a PR comment, or adds `ci.status`,
+stage returns 3; otherwise an unknown stage returns 4. Advisory Polish, owed
+for a page-only change, does not count: such a change owes QA on the changed
+pages only, which `qa run --packet <packet> --page <page_id>` pays. Other doctor errors remain reported but do not
+change the CI exit. It prints Markdown for a PR comment that opens with the
+kind of change it found and what that owes, or adds `ci.status`,
 `ci.exit_code`, `ci.polish`, `ci.qa` and `ci.changes` under `--json`.
 `--ci` adds no writes or network reads; pass `--no-live-refs` in CI to disable
 doctor's existing live campaign read. Without `--ci`, inspection behavior is unchanged.
@@ -1537,6 +1540,37 @@ made before build kept a manifest, or a manifest that does not hash to the recor
 fingerprint, refuses as before and says the manifest is unavailable; run
 `record build` again to record one. Cleaning `_site/` before a build is Page Kit's
 job, not this check's.
+
+#### What a rebuild changed
+
+`record build` also keeps two records that let a later check tell a page-only
+change from a commerce-affecting one
+([what a change owes](campaigns-os-build-flow.md#what-a-change-owes)):
+
+- `stages.assembly.commerce_signature`: `{ "algorithm": "commerce-signature/v1",
+  "campaign_config", "pages" }`. `pages` maps each built page's path to a hash
+  of its commerce-bearing markup (every `data-next-*` attribute and other
+  package, offer, shipping or upsell attribute and `os-checkout-*` attribute,
+  every inline event handler, every `next-*` meta tag, every script's `src` or
+  inline body, every link target and form action). Copy,
+  image references and styling are not in the hash. `campaign_config` is a
+  hash of the campaign's own entry in `_data/campaigns.json`, or
+  `unavailable:<status>` when that entry cannot be read. The record build
+  result does not echo it.
+- `stages.assembly.build_changes`: one entry per rebuild since the builds Polish
+  and QA last reviewed, oldest first, each `{ "from_build_fingerprint",
+  "build_fingerprint", "recorded_at", "kind", "changed_pages",
+  "unmapped_files", "unmapped_file_count", "reasons" }`. `kind` is `page_only`,
+  `commerce_affecting` or `unknown`, and `reasons` names why a change counts as
+  commerce (for example `checkout_page`, `commerce_markup_changed`,
+  `campaign_config_changed`, `unmapped_file`, `page_added`). Entries no stage
+  needs any more are dropped, and at most 25 are kept; a stage that reviewed an
+  older build reads its change as unknown and owes the full stage.
+
+Readback's `evidence_debt.<stage>.change` and `doctor --ci` read these, so the
+changed-page list survives `record build`. A record made before these fields
+existed has no signature, and its next change reads as unknown (full Polish and
+QA) until `record build` records one.
 
 A stale or missing Assembly Source Package Fingerprint is waivable only as an
 exceptional Source Freshness Waiver. The waiver must be structured in
@@ -2176,7 +2210,7 @@ hand-editing `.campaign-runtime/` JSON:
 | Command | Writes | Refused (nothing written) when |
 |---|---|---|
 | `campaigns-os record setup --packet <p>` | Build Context `scaffold.required=false` (`handoff_skill` next-campaigns-build) and `stages.setup` completed | the campaign output directory (`assembly.output_dir`) does not exist, or there is no Build Context or Assembly Report |
-| `campaigns-os record build --packet <p> [--build-environment <development\|production>] [--adapter-decision <key>=<value>[,<key>=<value>...]]` | `stages.assembly` completed with `build_fingerprint` = doctor's `derived.build_output_fingerprint.value`, `source_package_material_fingerprint` = the report's Design Source Package material fingerprint when present, `evidence.build_environment` = the `--build-environment` value when given (kept from the last record otherwise), and the specified scalar `report.adapter_decisions`; all recordable decisions go in one comma-separated flag (a repeated flag keeps only the last list); `wrapper_policy` stays an intake choice. `stages.polish` resets to `required` (`required_by` build, `required_for` qa) unless its evidence is bound to this exact output; a completed `stages.deploy` whose `source_build_fingerprint` names other output resets to `required` the same way, without the old probe's `outputs` and `evidence`, and its prior record is kept in `stages.deploy.history` (a deploy with no `source_build_fingerprint`, recorded before deploy stamped it, is kept) | doctor cannot compute the fingerprint (no `_site/<public_route_slug>/`), setup is still required, `stages.setup` is not terminal, or an adapter decision key/value is invalid |
+| `campaigns-os record build --packet <p> [--build-environment <development\|production>] [--adapter-decision <key>=<value>[,<key>=<value>...]]` | `stages.assembly` completed with `build_fingerprint` = doctor's `derived.build_output_fingerprint.value`, `source_package_material_fingerprint` = the report's Design Source Package material fingerprint when present, `evidence.build_environment` = the `--build-environment` value when given (kept from the last record otherwise), and the specified scalar `report.adapter_decisions`; all recordable decisions go in one comma-separated flag (a repeated flag keeps only the last list); `wrapper_policy` stays an intake choice. `stages.polish` resets to `required` (`required_by` build, `required_for` qa, `owed_since_build_fingerprint` the build Polish last reviewed) unless its evidence is bound to this exact output; `stages.assembly.commerce_signature` and `stages.assembly.build_changes` record what the rebuild changed (see "What a rebuild changed" below); a completed `stages.deploy` whose `source_build_fingerprint` names other output resets to `required` the same way, without the old probe's `outputs` and `evidence`, and its prior record is kept in `stages.deploy.history` (a deploy with no `source_build_fingerprint`, recorded before deploy stamped it, is kept) | doctor cannot compute the fingerprint (no `_site/<public_route_slug>/`), setup is still required, `stages.setup` is not terminal, or an adapter decision key/value is invalid |
 | `campaigns-os record polish --packet <p> --evidence <file>` | `stages.polish` from the file (`docs/polish-evidence.md` §7: completed, blocked or skipped), bound to doctor's current fingerprint; `report.theme.repair_loop_defect` when the file sets it | build is not recorded for the current output, the file has a shape error (named by field), or, for a completed status, the polish gate doctor evaluates would not pass on the result |
 | `campaigns-os record theme --packet <p>` | `report.theme`: status `applied`, `load_order` `after-next-core`, `css_path`, `commerce_pages` and per-page evidence read from each built commerce page's stylesheet links; any earlier theme waiver is cleared | build is not recorded for the current output, the campaign ships no commerce pages, a built commerce page that loads `next-core.css` does not load `brand-theme.css` (or `checkout-brand.css`) after it or links one missing from the built output, or no built commerce page loads `next-core.css` |
 | `campaigns-os record deploy --packet <p> --base-url <url>` | the packet's `deploy.preview_url` and `stages.deploy` completed with the URL in `outputs`, one evidence line per built page that answered (each page is requested under the URL first) and, on a hosted target, one per script or stylesheet served as built, and `source_build_fingerprint` = the recorded `stages.assembly.build_fingerprint` it probed, so a later `record build` of different output makes deploy owed again and `next` routes back to `record deploy` before QA; a byte-identical rebuild keeps it current | the URL does not name the campaign's route root; on a `local-serve` packet, the URL is not a loopback origin or a built page does not answer 2xx; on any other deploy target, the URL is not https (plain http only on a loopback host), a built page does not answer 200, or a script or stylesheet the built pages load from that origin is missing or served with other bytes (sha256) than the built output (each one named; HTML is not compared, since hosts inject markup); polish is not recorded, the built output changed since build was recorded, or the theme gate is blocked |

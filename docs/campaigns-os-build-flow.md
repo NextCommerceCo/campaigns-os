@@ -33,8 +33,8 @@ a production render instead. Environment differences also change fingerprints.
 
 | CI status | Exit code | Meaning |
 |---|---|---|
-| `current` | `0` | Polish and QA both bind to the build on disk and neither is lifecycle-required. |
-| `owed` | `3` | Polish or QA binds to another build or is lifecycle-required; evidence is owed. |
+| `current` | `0` | Polish and QA both bind to the build on disk and neither is lifecycle-required, or the only owed stage is advisory Polish for a page-only change. |
+| `owed` | `3` | Polish or QA binds to another build or is lifecycle-required; evidence is owed. For a page-only change only QA on the changed pages counts. |
 | `unknown` | `4` | Output or assembly fingerprints are missing, a stage fingerprint is missing without a lifecycle requirement, output is unreadable, or inspection throws; debt cannot be determined. |
 | `usage` | `2` | The packet is missing, unreadable or invalid JSON. |
 
@@ -53,6 +53,46 @@ The check reads recorded fingerprints, not machine-local capture files.
 Readback's `evidence_debt` uses the same assessment, showing an agent this debt
 before it edits; its separate time-based staleness assessment is not the CI signal.
 
+### What a change owes
+
+Each owed stage carries `change`: what changed since the build that stage
+last reviewed. It is read from the rebuilds `record build` keeps
+(`stages.assembly.build_changes`) plus the drift on disk, so the changed pages
+stay listed after `record build`. A change is one of two kinds:
+
+- **Page-only.** Only the HTML of some pages changed (copy, image references,
+  inline styling), and none of them is a checkout page or changed its commerce markup:
+  `data-next-*`, `os-checkout-*` and other package, offer, shipping or upsell
+  attributes, inline event handlers (`onclick` and the like), `next-*` meta
+  tags (the upsell accept and decline routes among them), scripts, link
+  targets or form actions. A checkout page is one whose type is checkout,
+  checkout step or select, or one that carries checkout or payment markup
+  (`data-next-checkout*`, `data-next-payment*`, `data-next-express-checkout*`,
+  `os-checkout*`). The campaign's own entry in
+  `_data/campaigns.json` (SDK pin, analytics ids, store fields) is unchanged.
+  It owes QA on the changed pages only: `qa.scope` is `pages` and
+  `qa.owed_pages` lists them. Polish is advisory (`polish.advisory: true`): it
+  is reported, and `next`, the CI check and the QA gate do not require it.
+- **Commerce-affecting.** Anything else: a checkout page, commerce markup or
+  the config entry changed, a page was added or removed (a route change), or a
+  built file other than a page's HTML changed (a script, stylesheet or image
+  file cannot be mapped to one page). It owes the full Polish and QA, as
+  does a change that cannot be read (a record made before `record build`
+  kept a commerce signature, or a rebuild history that no longer reaches the
+  reviewed build). A Polish or QA requirement a brief or spec change made is
+  always full.
+
+A page-only change extends only a review that completed. Polish is advisory
+only when the last Polish completed or was skipped; a blocked Polish owes the
+full stage. QA is owed on the changed pages only when the last QA completed,
+or when it was a page-scoped run that did not complete, in which case the
+pages are counted from the full QA that run extended, so its unpaid pages stay
+owed. A blocked or pending full QA owes a full run.
+
+The PR comment opens with the kind it found and what that owes, for example
+"Change found: page-only. It owes QA on `upsell1`; Polish is advisory." A
+commerce-affecting change names its reasons.
+
 Copy the [workflow example](https://github.com/NextCommerceCo/campaigns-os/blob/main/docs/examples/campaign-repo-evidence-check.yml) into the
 campaign repository and adjust the packet path. It posts or updates one PR
 comment using the fixed `<!-- campaign-evidence-check -->` marker. Evidence
@@ -67,7 +107,18 @@ Fork pull requests may lack comment-write permission; comment failures are
 nonfatal and the report remains in the job log. The example uses `pull_request`
 and does not run untrusted code with `pull_request_target` privileges.
 
-To repay fingerprint-drift debt, rebuild and record the output, re-run `polish capture` against
+To repay a page-only change, rebuild, run `record build`, then run
+`qa run --packet <packet> --page <page_id>` against that build, repeating
+`--page` for each changed page the report names. A page-scoped run checks only
+those pages and places no test orders; the QA stage it records keeps the
+purchase proof of the full run it extends. It refuses, before checking
+anything, when the output on disk is not the recorded build, when the change
+is commerce-affecting, when a changed page is left out, when the QA it would
+extend did not complete, or when QA's inputs (the brief's `qa_policy` and the
+CampaignSpec) changed or cannot be confirmed current. Running Polish for a
+page-only change is optional.
+
+To repay fingerprint-drift debt for any other change, rebuild and record the output, re-run `polish capture` against
 that served build, record Polish with `record polish --evidence <evidence.json>`,
 then run `qa run` to record QA for the current build. For lifecycle-required
 stages with matching build bindings, re-run the required stages against the

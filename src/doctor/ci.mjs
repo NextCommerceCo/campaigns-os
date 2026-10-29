@@ -1,15 +1,45 @@
+import { worseChangeKind } from "../change-scope.mjs";
 import { assessEvidenceDebt } from "../evidence-debt.mjs";
 
 export const DOCTOR_CI_EXIT_CODES = Object.freeze({ current: 0, owed: 3, unknown: 4, usage: 2 });
 
 export function assessDoctorCi(inputs) {
   const debt = assessEvidenceDebt(inputs);
-  const stages = [debt.polish, debt.qa];
+  // Advisory Polish (a page-only change) is reported, never required.
+  const stages = [debt.polish, debt.qa].filter((stage) => !stage.advisory);
   // Any known debt is owed; otherwise incomplete evidence remains unknown.
   const status = stages.some((stage) => stage.status === "owed") ? "owed"
     : stages.some((stage) => stage.status === "unknown") ? "unknown" : "current";
   return { status, exit_code: DOCTOR_CI_EXIT_CODES[status], ...debt };
 }
+
+// What the change owes, from the stages it left owed: "pages" when the only
+// required stage is QA on the changed pages (Polish advisory or current),
+// "full" when a full stage is owed, null when nothing is owed. `kind` is the
+// worst change kind among the owed stages.
+export function ciChangeScope(ci) {
+  const owed = ["polish", "qa"].filter((stage) => ci[stage]?.status === "owed");
+  if (!owed.length) return { scope: null, kind: null };
+  const kind = owed.map((stage) => ci[stage].change?.kind || "unknown").reduce(worseChangeKind, "none");
+  const required = owed.filter((stage) => !ci[stage].advisory);
+  const scope = required.every((stage) => stage === "qa" && ci.qa.scope === "pages") ? "pages" : "full";
+  return { scope, kind };
+}
+
+// Page ids come from built routes ([A-Za-z0-9_-]); anything else is encoded.
+const pageArg = (id) => (/^[A-Za-z0-9_-]+$/.test(String(id)) ? String(id) : text(id));
+
+const commerceReasonText = new Map([
+  ["unmapped_file", "a file outside any page changed"],
+  ["page_added", "a page was added"],
+  ["page_removed", "a page was removed"],
+  ["checkout_page", "a checkout page changed"],
+  ["commerce_markup_changed", "package, offer, shipping, upsell, route or script markup changed"],
+  ["commerce_signature_unavailable", "the recorded build has no commerce signature to compare against"],
+  ["campaign_config_changed", "the campaign's Page Kit config (SDK pin, analytics ids, store fields) changed"],
+  ["campaign_config_unavailable", "the campaign's Page Kit config entry could not be read"],
+  ["change_history_unavailable", "the rebuilds since the reviewed build were not kept"],
+]);
 
 // Values can come from campaign files and will be rendered in a PR comment.
 // Encode punctuation as well as HTML: diagnostics are plain text, and may
@@ -70,18 +100,45 @@ export function formatDoctorCi(result) {
     ].join("\n");
   }
   const lines = [`## Campaign evidence: ${text(ci.status)} (exit ${ci.exit_code})`, ""];
-  const owed = ["polish", "qa"].filter((stage) => ci[stage].status === "owed");
-  lines.push(`Owed stages: ${owed.length ? owed.join(", ") : "none"}.`);
+  const advisory = ["polish", "qa"].filter((stage) => ci[stage].status === "owed" && ci[stage].advisory);
+  const owed = ["polish", "qa"].filter((stage) => ci[stage].status === "owed" && !ci[stage].advisory);
+  const change = ciChangeScope(ci);
+  const pageScoped = change.scope === "pages";
+  if (pageScoped) {
+    lines.push(`Change found: page-only. ${owed.length ? `It owes QA on ${ci.qa.owed_pages.map((page) => code(page.page_id)).join(", ")}` : "QA is current"}; Polish is advisory.`);
+  } else if (change.scope === "full") {
+    const reasons = [...new Set((ci.polish.change?.reasons || []).concat(ci.qa.change?.reasons || [])
+      .map((reason) => commerceReasonText.get(reason.code)).filter(Boolean))];
+    const found = change.kind === "commerce_affecting" ? "commerce-affecting"
+      : change.kind === "page_only" ? "page-only, but an input change or a Polish or QA that did not complete requires the full stages" : "not classified";
+    // Name only the stages that count, each at the scope it is owed: an
+    // advisory Polish is not owed, and QA can still be owed on pages only.
+    const qaPages = ci.qa.scope === "pages" ? `QA on ${ci.qa.owed_pages.map((page) => code(page.page_id)).join(", ")}` : null;
+    const owes = owed.length === 2 ? (qaPages ? `the full Polish, and ${qaPages}` : "the full Polish and QA")
+      : owed[0] === "polish" ? "the full Polish" : qaPages || "a full QA run";
+    lines.push(`Change found: ${found}${reasons.length ? ` (${reasons.join("; ")})` : ""}. It owes ${owes}${advisory.includes("polish") ? "; Polish is advisory" : ""}.`);
+  }
+  lines.push(`Owed stages: ${owed.length ? owed.map((stage) => stage === "qa" && ci.qa.scope === "pages" ? "qa (changed pages only)" : stage).join(", ") : "none"}.`);
   for (const stage of owed) {
     const reason = ci[stage].reason === "build_fingerprint_changed"
       ? "the recorded build fingerprint differs from the current build"
       : requiredStageReasons.get(ci[stage].reason) ?? "the recorded stage evidence is owed";
     lines.push(`- Owed ${stage}: ${reason}.`);
   }
-  for (const page of ci.changes.changed_pages) {
+  for (const stage of advisory) {
+    lines.push(`- Advisory ${stage}: the change since its last review is page-only, so it is reported and not required.`);
+  }
+  // The pages changed since the builds the owed stages reviewed, which
+  // record build keeps; without them, the drift from the assembly manifest.
+  const sincePages = new Map();
+  for (const stage of [...owed, ...advisory]) {
+    for (const page of ci[stage].change?.changed_pages || []) sincePages.set(page.built_path, page);
+  }
+  const changedPages = sincePages.size ? [...sincePages.values()] : ci.changes.changed_pages;
+  for (const page of changedPages) {
     lines.push(`- Changed page: ${code(page.page_id)} (${code(page.built_path)})`);
   }
-  if (!ci.changes.changed_pages.length && (owed.length || ci.changes.status === "unknown")) {
+  if (!changedPages.length && (owed.length || ci.changes.status === "unknown")) {
     lines.push(ci.changes.status === "unknown"
       ? `Changed pages unavailable: ${unavailablePageChanges.get(ci.changes.reason) ?? "the page-change reason is unrecognized."}`
       : "Changed page ids unavailable: the retained assembly manifest may already describe the rebuilt output.");
@@ -90,7 +147,11 @@ export function formatDoctorCi(result) {
     if (ci[stage].status === "unknown") lines.push(`- Unknown ${stage}: ${code(ci[stage].reason)}`);
   }
   if (ci.changes.status === "unknown") lines.push(`- Unknown page changes: ${code(ci.changes.reason)}`);
-  if (ci.status === "owed" || ci.status === "unknown") {
+  if (ci.status === "owed" && pageScoped && owed.length) {
+    const pages = ci.qa.owed_pages.map((page) => ` --page ${pageArg(page.page_id)}`).join("");
+    const recorded = ci.changes.recorded_build_fingerprint && ci.changes.recorded_build_fingerprint === ci.changes.current_build_fingerprint;
+    lines.push("", `Remedy: ${recorded ? "" : "run `campaigns-os record build --packet <packet>` for the rebuilt output, then "}run \`campaigns-os qa run --packet <packet>${pages}\` against that build. Polish capture is optional for a page-only change.`);
+  } else if (ci.status === "owed" || ci.status === "unknown") {
     const matchingRequired = owed.length > 0
       && owed.every((stage) => requiredStageReasons.has(ci[stage].reason) && ci[stage].matches_current_build === true)
       && ["polish", "qa"].every((stage) => ci[stage].status !== "unknown");
