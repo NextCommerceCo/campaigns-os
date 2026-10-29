@@ -368,7 +368,7 @@ const INVENTORY_MAX_BYTES = 256 * 1024 * 1024;
 export function inventoryFailure(error) {
   if (error.code === 'ENOBUFS') return `the tracked-file list under --scope is larger than ${INVENTORY_MAX_BYTES / 1024 / 1024} MiB; narrow --scope.`;
   const stderr = typeof error.stderr === 'string' ? error.stderr : error.stderr?.toString() ?? '';
-  const detail = singleLineFragment(stderr.trim().split('\n')[0], error.code ?? `git exited ${error.status ?? 'abnormally'}`);
+  const detail = singleLineFragment(stderr.trim().split('\n')[0], `git exited ${error.status ?? error.signal ?? 'abnormally'} with no message`);
   return `${detail.slice(0, 200).replace(/\.$/, '')}.`;
 }
 

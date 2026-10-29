@@ -9910,7 +9910,7 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.61.0+agent.2",
-      "changelog_sha256": "6938fd5e3f9d38b63c10ec58bc349bc6a7739467903bd21a7915583778ba0425",
+      "changelog_sha256": "5911deaf05813daa2341e64d7b7ce1177829a467316e3f8801220e2f644f8cdd",
       "agent_impact": "An agent running next-campaigns-sdk-bump checks step 3's known-changes table for each version the range crosses: for 0.4.32 it moves a hand-wired order:completed purchase capture off the checkout page to the first page after checkout, reading the order's ?ref_id=, and leaves that page out of the cached reloads; for 0.4.41 it removes a page's own Spreedly iframe script; for 0.4.43 it checks Shop Pay; and it rebuilds or removes a hand-written modulepreload list of SDK files. For a 3-D Secure order it uses the card in docs/qa-and-test-orders.md and asks first when the gateway is not in test mode. sdk storage-check now inventories only the tracked files under --scope, so it runs on large repositories, and its inventory failure reads 'Cannot inventory tracked Git source files: <reason>' instead of ending at the period; an agent matching the old exact text should match the prefix. Re-run tooling status --skills-revision 1.61.0+skills.2 and start a fresh session on mismatch.",
       "compatibility": "compatible",
       "migration": "none",
@@ -9994,7 +9994,7 @@
           "summary": "Describe the scoped tracked-file inventory and the new 'Cannot inventory tracked Git source files: <reason>' error."
         }
       ],
-      "entry_sha256": "cf2fa051cd65b02c6f2706993bb42c814278aa8393ae21cc3ae5869fa89cac3c"
+      "entry_sha256": "c365d08d19dafc0a33fff9cc3376d07ed05ae95c54e497b219c6e7c906d7ee3d"
     }
   ]
 }

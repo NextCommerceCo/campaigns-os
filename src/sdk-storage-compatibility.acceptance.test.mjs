@@ -171,9 +171,10 @@ test('a failed Git inventory names the reason in one line', t => {
     /^Cannot inventory tracked Git source files: \S/.test(error.message) && /index/.test(error.message) && !error.message.includes('\n') && !error.message.includes('Command failed'));
 });
 
-test('an inventory over the buffer asks for a narrower scope', () => {
+test('an ENOBUFS failure asks for a narrower scope', () => {
   let failure;
   try { execFileSync('git', ['--version'], { stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 1 }); } catch (error) { failure = error; }
+  assert.ok(failure, 'git --version must overflow the 1-byte buffer');
   assert.equal(failure.code, 'ENOBUFS');
   assert.match(inventoryFailure(failure), /larger than 256 MiB; narrow --scope\.$/);
 });
