@@ -3264,6 +3264,12 @@ function scanMarketSensitiveCopy(spec, warnings, ready, derived) {
   }
 }
 
+// CampaignSpec owns `campaign.available_currencies`: every currency the
+// campaign sells in, the default included (the CampaignCurrencies rule checks
+// its codes). `additional_currencies` is the Campaigns App API's name for the
+// same list without the default and is not a spec field; both market scopes
+// still read it, and its camelCase spelling, so a spec copied from an API body
+// gets the copy review it needs.
 function deriveMarketScope(spec) {
   const campaign = spec?.campaign || {};
   const defaultCurrency = normalizeCurrency(campaign.currency);

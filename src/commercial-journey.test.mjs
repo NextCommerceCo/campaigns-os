@@ -117,6 +117,24 @@ test("a checkout row marked is_order_bump alone is a bump, not part of the repre
   }
 });
 
+// campaigns-os#710: on an upsell or downsell page every package row is the
+// page's offer and never an order bump, whatever is_upsell says. A flagged
+// row and a plain row both price as the representative offer, and neither
+// gets bump-with/bump-without scenarios.
+test("an upsell or downsell page's package row is its offer, never a bump, with or without is_upsell", () => {
+  for (const type of ["upsell", "downsell"]) {
+    for (const flag of [null, "is_upsell", "is_order_bump"]) {
+      const row = { ref_id: "3", qty: 1, ...(flag ? { [flag]: true } : {}) };
+      const page = { id: "offer", type, order: 3, packages: [row] };
+      const plan = planScenarios(page, { campaign: { currency: "USD" }, funnels: [{ id: "default", pages: [page] }] });
+      const label = `${type} ${flag || "plain"}`;
+      assert.deepEqual(plan.map((descriptor) => descriptor.context.role), ["representative", "row"], label);
+      const [representative] = plan;
+      assert.deepEqual(representative.body.lines.map(({ package_id, quantity }) => ({ package_id, quantity })), [{ package_id: 3, quantity: 1 }], label);
+    }
+  }
+});
+
 // Multi-step checkout (campaigns-os#641): on a three-step path the cart is
 // declared on the first step and the Checkout (billing) carries no packages,
 // so it is never planned. The summary prices the step that carries the cart.

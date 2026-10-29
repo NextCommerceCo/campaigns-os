@@ -27,7 +27,9 @@ Authoring guidance:
   - `packages[]` entries use `ref_id` + `qty` (the real export key is `qty`,
     not `quantity`). A plain entry is the main package; add-ons carry the
     boolean role flags `is_order_bump: true` / `is_upsell: true` — there is
-    no `role` field in exports.
+    no `role` field in exports. The flags mean "add-on" on `checkout`,
+    `checkout_step` and `select` pages only. On an upsell or downsell page
+    they mark nothing (see the upsell page below).
   - `sdk_hints.template_family` names the intended starter family only as a
     hint; the Build Packet still locks the family.
   - `sdk_hints.meta_tags.next-success-url` points to the next runtime route.
@@ -65,9 +67,12 @@ Authoring guidance:
   - `type: "upsell"` or `type: "downsell"`, with
     `sdk_hints.sdk_page_type: "upsell"`
   - `page_url` is a Page Kit route, not a source filename.
-  - `packages[]` (with `is_upsell: true`) or `offers[]` names the
-    post-purchase offer refs. Offers are identified by `ref_id` into the
-    root `offers[]` catalog (`package_ref_id` is not part of the contract).
+  - `packages[]` or `offers[]` names the post-purchase offer refs. Write each
+    package as a plain `{ ref_id, qty }` entry. On an upsell or downsell page
+    every package row is the page's offer and never an order bump, so
+    `is_upsell: true` on that row is accepted and changes nothing about
+    its role. Offers are identified by `ref_id` into the root `offers[]` catalog
+    (`package_ref_id` is not part of the contract).
   - `on_accept` and `on_decline` hold the next PAGE IDs; route paths live
     in `page_url` / derived `resolved_routing`.
 
@@ -90,6 +95,26 @@ Generator checklist:
   useful, but require the Build Packet/template lock before commerce wiring.
 - Keep checkout/upsell/downsell/receipt runtime surfaces template-clone-first;
   source HTML can own visual composition and copy, not payment/order mutation.
+
+## Campaign Currencies
+
+- `campaign.currency` is the default currency: a three-letter upper-case
+  ISO 4217 code such as `"USD"`. A lower-case code (`"usd"`) or a symbol
+  (`"US$"`) is an error, because Campaign Cart can fall back to a cached USD
+  campaign and price the page in the wrong currency.
+- `campaign.available_currencies` lists every currency the campaign sells in,
+  the default included, as code strings: `["USD", "EUR", "GBP"]`. The
+  Campaigns API returns this list as `{ code, label }` objects; Map Builder
+  writes the codes, and a hand-written spec should too.
+- The Campaigns App API also has `additional_currencies`, which is the same
+  list without the default. It is not a CampaignSpec field: put every
+  currency in `available_currencies`.
+- When `available_currencies` is non-empty and does not contain
+  `campaign.currency`, the validator warns. An empty list states nothing and
+  is not checked.
+
+These checks are the `CampaignCurrencies` validator rule, which
+`campaigns-os doctor` runs with the rest of the spec rules.
 
 ## Order Bump Notes
 
