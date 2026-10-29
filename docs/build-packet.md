@@ -1065,19 +1065,28 @@ route>/`.
 `start` and `prepare-build` choose the packet and directory for you:
 
 1. `--out` names the packet when given.
-2. Otherwise, a funnel that already has `campaign-runtime-<route>.build.json`
-   keeps it. A funnel whose route matches `campaign-runtime.build.json`, or a
-   project with no default packet yet, uses the default packet. Any other
-   funnel gets `campaign-runtime-<route>.build.json`. The default packet is
-   never replaced by another route's.
-3. A packet that already records `assembly.runtime_dir` for this route keeps
-   it. Otherwise a funnel whose `.campaign-runtime/funnels/<route>/` exists
-   keeps that directory. The project-level `.campaign-runtime/` is used when it
-   holds no Build Context or Assembly Report yet, or when those belong to this
-   route (the report's `identity.public_route_slug`, else the route of the
-   packet the context names). Records that belong to another route, or whose
-   route cannot be read, are never replaced: the funnel gets its own directory
-   instead.
+2. Otherwise, a funnel whose route matches `campaign-runtime.build.json`, or a
+   project with no default packet yet, uses the default packet. A funnel that
+   already has `campaign-runtime-<route>.build.json` keeps it. Any other
+   funnel gets `campaign-runtime-<route>.build.json`.
+3. A packet that already exists at that path for another route, or whose route
+   cannot be read, is not replaced: the run is refused and names that route.
+   This holds for `--out` too. Only `--force` replaces it, which is how a
+   funnel's route is renamed (below).
+4. A packet that already records `assembly.runtime_dir` for this route keeps
+   it, and one for this route that records none keeps `.campaign-runtime/`
+   while those records are its own. Otherwise a funnel whose
+   `.campaign-runtime/funnels/<route>/` exists keeps that directory. The
+   project-level `.campaign-runtime/` is used when it holds no Build Context or
+   Assembly Report yet, or when those belong to this route (the report's
+   `identity.public_route_slug`, else the route of the packet the context
+   names). Records that belong to another route, or whose route cannot be
+   read, are never replaced: the funnel gets its own directory instead.
+
+The choice is made before the prepare-build target lock is taken and checked
+again once it is held. When another funnel was set up while the run waited
+(two first funnels started at once in an empty project), the run stops and
+names where this funnel now belongs; run it again.
 
 A route used as a directory and file name may contain letters, digits, dots,
 underscores and hyphens, and may not start with a dot. A packet whose
@@ -1102,9 +1111,29 @@ reading and writing `.campaign-runtime/`, and nothing has to be set up again.
 Adding a second funnel to that project leaves the first funnel's packet and
 records where they are.
 
-To rename a funnel's route, set the new route in the CampaignSpec and run
-setup again. The renamed funnel is set up as a new funnel with its own packet;
-remove the old route's packet and directory once nothing reads them.
+A new route beside an existing default packet could be another funnel or a
+rename of that one, and only the operator knows which. `prepare-build` sets it
+up as another funnel and prints a `Funnel:` line saying so, with the steps to
+make it a rename instead (the JSON result carries `funnelAddedBeside`, the
+default packet's path and route).
+
+To rename the route of a project's first funnel (the one at
+`campaign-runtime.build.json`):
+
+1. Set the new route in the CampaignSpec.
+2. If setup already ran for the new route, delete what it created:
+   `campaign-runtime-<new route>.build.json` and
+   `.campaign-runtime/funnels/<new route>/`. Do not delete `.campaign-runtime/`
+   itself, which also holds the project's shared records.
+3. Run `prepare-build --out campaign-runtime.build.json --force` (or `start`
+   with the same flags). The default packet and the records directly under
+   `.campaign-runtime/` are rewritten for the new route in place. Like any
+   `--force` intake, this clears recorded stage evidence and operator state.
+
+To rename the route of a later funnel, delete its packet
+(`campaign-runtime-<old route>.build.json`) and its directory
+(`.campaign-runtime/funnels/<old route>/`), then run setup again for the new
+route. It is set up as a funnel named for the new route.
 
 The packet's top-level `generated_at` (ISO-8601 UTC, `Z` suffix) is stamped by
 `prepare-build` on every new packet. Downstream freshness — campaigns-agent's

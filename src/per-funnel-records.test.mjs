@@ -215,8 +215,8 @@ test("#719: a second funnel gets its own packet and runtime directory, and the f
   assert.equal(readJson(first.packetPath).campaign.public_route_slug, FIRST, "the default packet still describes the first funnel");
 
   // Re-running setup for either funnel finds its own packet and directory again.
-  assert.deepEqual(planFunnelWorkspace(p.target, SECOND), { packetPath: second.packetPath, runtimeRelPath: `.campaign-runtime/funnels/${SECOND}`, scoped: true });
-  assert.deepEqual(planFunnelWorkspace(p.target, FIRST), { packetPath: first.packetPath, runtimeRelPath: ".campaign-runtime", scoped: false });
+  assert.deepEqual(planFunnelWorkspace(p.target, SECOND), { packetPath: second.packetPath, runtimeRelPath: `.campaign-runtime/funnels/${SECOND}`, scoped: true, addedBeside: null });
+  assert.deepEqual(planFunnelWorkspace(p.target, FIRST), { packetPath: first.packetPath, runtimeRelPath: ".campaign-runtime", scoped: false, addedBeside: null });
 });
 
 test("#719: two funnels each run setup, build, doctor and QA without changing the other's files", async (t) => {
@@ -342,7 +342,7 @@ test("#719: a single-funnel project from the current layout reads its existing r
   assert.equal(soleProjectPacket(p.target), first.packetPath);
 
   // A rerun of setup for the same funnel keeps the project-level layout.
-  assert.deepEqual(planFunnelWorkspace(p.target, FIRST), { packetPath: first.packetPath, runtimeRelPath: ".campaign-runtime", scoped: false });
+  assert.deepEqual(planFunnelWorkspace(p.target, FIRST), { packetPath: first.packetPath, runtimeRelPath: ".campaign-runtime", scoped: false, addedBeside: null });
   assert.ok(!existsSync(join(p.target, ".campaign-runtime/funnels")));
 });
 
@@ -379,13 +379,28 @@ test("#719: planFunnelWorkspace never hands one route another route's packet or 
   const dir = mkdtempSync(join(tmpdir(), "campaigns-os-funnels-"));
   try {
     // Empty project: the first funnel takes the defaults.
-    assert.deepEqual(planFunnelWorkspace(dir, "alpha"), { packetPath: join(dir, "campaign-runtime.build.json"), runtimeRelPath: ".campaign-runtime", scoped: false });
+    assert.deepEqual(planFunnelWorkspace(dir, "alpha"), { packetPath: join(dir, "campaign-runtime.build.json"), runtimeRelPath: ".campaign-runtime", scoped: false, addedBeside: null });
     // Project-level records owned by alpha (by the report's identity): beta is scoped.
     writeJson(join(dir, ".campaign-runtime/assembly-report.json"), { identity: { public_route_slug: "alpha" } });
     writeJson(join(dir, "campaign-runtime.build.json"), { campaign: { public_route_slug: "alpha" }, assembly: {} });
-    assert.deepEqual(planFunnelWorkspace(dir, "beta"), { packetPath: join(dir, "campaign-runtime-beta.build.json"), runtimeRelPath: ".campaign-runtime/funnels/beta", scoped: true });
+    const besideAlpha = { packetPath: join(dir, "campaign-runtime.build.json"), route: "alpha" };
+    assert.deepEqual(planFunnelWorkspace(dir, "beta"), { packetPath: join(dir, "campaign-runtime-beta.build.json"), runtimeRelPath: ".campaign-runtime/funnels/beta", scoped: true, addedBeside: besideAlpha });
     // An explicit --out keeps its path; the records still go to beta's own directory.
-    assert.deepEqual(planFunnelWorkspace(dir, "beta", { packetPath: join(dir, "config/beta.json") }), { packetPath: join(dir, "config/beta.json"), runtimeRelPath: ".campaign-runtime/funnels/beta", scoped: true });
+    assert.deepEqual(planFunnelWorkspace(dir, "beta", { packetPath: join(dir, "config/beta.json") }), { packetPath: join(dir, "config/beta.json"), runtimeRelPath: ".campaign-runtime/funnels/beta", scoped: true, addedBeside: besideAlpha });
+    // An explicit --out naming alpha's packet would orphan alpha's records:
+    // refused, unless --force says beta replaces alpha (a route rename), and
+    // then beta takes over the project-level records alpha kept.
+    assert.throws(() => planFunnelWorkspace(dir, "beta", { packetPath: join(dir, "campaign-runtime.build.json") }), /Build Packet of route alpha.*--force/s);
+    assert.deepEqual(planFunnelWorkspace(dir, "beta", { packetPath: join(dir, "campaign-runtime.build.json"), force: true }), { packetPath: join(dir, "campaign-runtime.build.json"), runtimeRelPath: ".campaign-runtime", scoped: false, addedBeside: null });
+    // The same for a later funnel's packet, which keeps its own directory.
+    writeJson(join(dir, "campaign-runtime-delta.build.json"), { campaign: { public_route_slug: "delta" }, assembly: { runtime_dir: ".campaign-runtime/funnels/delta" } });
+    assert.throws(() => planFunnelWorkspace(dir, "beta", { packetPath: join(dir, "campaign-runtime-delta.build.json") }), /Build Packet of route delta/);
+    assert.equal(planFunnelWorkspace(dir, "beta", { packetPath: join(dir, "campaign-runtime-delta.build.json"), force: true }).runtimeRelPath, ".campaign-runtime/funnels/beta");
+    // A packet whose route cannot be read is not claimed either.
+    writeFileSync(join(dir, "campaign-runtime-epsilon.build.json"), "{ not json");
+    assert.throws(() => planFunnelWorkspace(dir, "epsilon"), /Build Packet of route \(unreadable\)/);
+    rmSync(join(dir, "campaign-runtime-delta.build.json"));
+    rmSync(join(dir, "campaign-runtime-epsilon.build.json"));
     // Records whose route cannot be read are never claimed.
     writeFileSync(join(dir, ".campaign-runtime/assembly-report.json"), "{ not json");
     rmSync(join(dir, "campaign-runtime.build.json"));
@@ -399,6 +414,107 @@ test("#719: planFunnelWorkspace never hands one route another route's packet or 
     }
     // ...but never another funnel's.
     assert.throws(() => planFunnelWorkspace(dir, "../escape"), /cannot name/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// A prepare-build that may be refused: the error or the exit, with its text.
+async function prepare(p, route, extra = []) {
+  const specPath = join(p.dir, `${route}.campaignspec.json`);
+  writeJson(specPath, specFor(route));
+  const result = await runCli([
+    "prepare-build", "--spec", specPath, "--source", p.source, "--target", p.target,
+    "--template-family", "olympus", "--no-run-session", "--no-remit", ...extra,
+  ]);
+  return { ...result, text: `${result.error?.message || ""}\n${result.stderr}\n${result.stdout}` };
+}
+
+test("#719: --out naming another funnel's packet is refused, and the funnel and its records are left alone", async (t) => {
+  const p = project(t);
+  const first = await setUpFunnel(p, FIRST);
+  await runFunnel(p, first);
+  const before = snapshot(p.target);
+
+  const refused = await prepare(p, SECOND, ["--out", first.packetPath]);
+  assert.ok(refused.error || refused.exitCode, `refused: ${refused.text.slice(0, 400)}`);
+  assert.match(refused.text, new RegExp(`Build Packet of route ${FIRST}`));
+  assert.match(refused.text, /--force/);
+  assert.deepEqual(changedBetween(before, snapshot(p.target)), [], "the refused run changed nothing");
+  assert.equal(readJson(first.packetPath).campaign.public_route_slug, FIRST);
+});
+
+test("#719: renaming a single funnel's route keeps the default layout when the operator says so", async (t) => {
+  const p = project(t);
+  const first = await setUpFunnel(p, FIRST);
+
+  // A new route beside the default packet is set up as another funnel, and the
+  // run says how to make it a rename instead.
+  const added = await prepare(p, SECOND);
+  assert.equal(added.error, null, added.text.slice(0, 800));
+  const ownPacket = join(p.target, `campaign-runtime-${SECOND}.build.json`);
+  const ownRuntime = `.campaign-runtime/funnels/${SECOND}`;
+  assert.ok(existsSync(ownPacket));
+  assert.match(added.stdout, new RegExp(`Funnel: route ${SECOND} was set up as another funnel beside ${first.packetPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\(route ${FIRST}\\)`));
+  assert.ok(added.stdout.includes(`delete ${ownPacket} and ${ownRuntime}/, then re-run prepare-build with --out ${first.packetPath} --force`), added.stdout);
+
+  // Following it: the default packet and the project-level records now
+  // describe the renamed route, and readback finds one funnel again.
+  rmSync(ownPacket);
+  rmSync(join(p.target, ownRuntime), { recursive: true });
+  const renamed = await prepare(p, SECOND, ["--out", first.packetPath, "--force", "--json"]);
+  assert.equal(renamed.error, null, renamed.text.slice(0, 800));
+  const packet = readJson(first.packetPath);
+  assert.equal(packet.campaign.public_route_slug, SECOND);
+  assert.equal(packet.assembly.runtime_dir, undefined, "the renamed funnel keeps the project-level records");
+  assert.equal(readJson(join(p.target, ".campaign-runtime/assembly-report.json")).identity.public_route_slug, SECOND);
+  assert.equal(JSON.parse(renamed.stdout).funnelAddedBeside, undefined);
+  const projected = readback([p.target, "--json"]);
+  assert.equal(projected.exitCode, 0, projected.text);
+  assert.equal(projected.json.packet_selection.selected, "campaign-runtime.build.json");
+  assert.equal(soleProjectPacket(p.target), first.packetPath);
+});
+
+test("#719: two first funnels started at once: the one that waited for the lock stops instead of writing over the other", async (t) => {
+  const { withTargetLock } = await import("./target-lock.mjs");
+  const p = project(t);
+  mkdirSync(p.target, { recursive: true });
+  // The lock is held by a run other than SECOND's: SECOND starts outside the
+  // holder's async context, since the lock is reentrant for its holder.
+  let release;
+  let acquired;
+  const isHeld = new Promise((done) => { acquired = done; });
+  const holder = withTargetLock(p.target, () => new Promise((done) => { release = done; acquired(); }));
+  await isHeld;
+  // SECOND plans against the empty project (the default packet and the
+  // project-level records), then waits for the lock.
+  const waiting = prepare(p, SECOND, ["--json"]);
+  await new Promise((done) => setTimeout(done, 500));
+  // Meanwhile FIRST is set up in those very places.
+  writeJson(join(p.target, "campaign-runtime.build.json"), { campaign: { public_route_slug: FIRST }, assembly: {} });
+  writeJson(join(p.target, ".campaign-runtime/assembly-report.json"), { identity: { public_route_slug: FIRST } });
+  release();
+  await holder;
+  const before = snapshot(p.target);
+  const result = await waiting;
+  assert.ok(result.error || result.exitCode, `refused: ${result.text.slice(0, 400)}`);
+  assert.match(result.text, /Another funnel was set up/);
+  assert.ok(result.text.includes(`campaign-runtime-${SECOND}.build.json`), "names where the funnel now belongs");
+  assert.deepEqual(changedBetween(before, snapshot(p.target)), [], "FIRST's packet and records are untouched");
+});
+
+test("#719: soleProjectPacket picks among one funnel's packets the way readback does, and refuses across funnels", () => {
+  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-funnels-"));
+  try {
+    writeJson(join(dir, "campaign-runtime.build.json"), { schema_version: "campaign-runtime-build-packet/v0", generated_at: "2026-10-01T00:00:00Z", campaign: { public_route_slug: "alpha" } });
+    writeJson(join(dir, "campaign-runtime-2.build.json"), { schema_version: "campaign-runtime-build-packet/v0", generated_at: "2026-10-02T00:00:00Z", campaign: { public_route_slug: "alpha" } });
+    assert.equal(soleProjectPacket(dir), join(dir, "campaign-runtime-2.build.json"), "two runs of one funnel: the newest");
+    assert.equal(readback([dir, "--json"]).json.packet_selection.selected, "campaign-runtime-2.build.json", "the same packet readback selects");
+    writeJson(join(dir, "campaign-runtime-beta.build.json"), { generated_at: "2026-10-03T00:00:00Z", campaign: { public_route_slug: "beta" } });
+    assert.throws(() => soleProjectPacket(dir, { command: "tooling status" }), (error) => error.code === "MULTIPLE_FUNNEL_PACKETS"
+      && error.message.includes("campaign-runtime-beta.build.json (route beta)")
+      && error.message.includes("campaign-runtime.build.json (route alpha)")
+      && error.message.includes("--packet <packet> to tooling status"));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

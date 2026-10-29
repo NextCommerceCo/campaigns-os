@@ -40,10 +40,6 @@ export const FUNNEL_PACKET_PATTERN = /^campaign-runtime-.+\.build\.json$/;
 // schema allows in route_root, not starting with a dot (so never `.` or `..`).
 const ROUTE_COMPONENT = /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/;
 
-export function routeNamesFunnelDirectory(routeSlug) {
-  return ROUTE_COMPONENT.test(normalizePublicRouteSlug(routeSlug));
-}
-
 function routeComponent(routeSlug) {
   const slug = normalizePublicRouteSlug(routeSlug);
   if (!ROUTE_COMPONENT.test(slug)) {
@@ -105,18 +101,6 @@ export function campaignSidecarPaths(targetRepo, runtimeRelPath = RUNTIME_DIR_RE
     reportPath: join(runtimeDir, basename(ASSEMBLY_REPORT_REL_PATH)),
     doctorOutPath: join(runtimeDir, basename(DOCTOR_SIDECAR_REL_PATH)),
     qaOutputDir: join(targetRepo, QA_OUTPUT_REL_PATH),
-  };
-}
-
-// Every default location of one packet's records: the build sidecars under
-// its target repo, and `packetRuntimeDir`, the same runtime directory beside
-// the packet, where the QA verdict sidecar and Run Records go.
-export function packetSidecarPaths(packetPath, packet) {
-  const runtimeRelPath = packetRuntimeRelPath(packet);
-  return {
-    ...campaignSidecarPaths(targetRepoFor(packetPath, packet), runtimeRelPath),
-    runtimeRelPath,
-    packetRuntimeDir: join(dirname(resolve(packetPath)), runtimeRelPath),
   };
 }
 
@@ -239,7 +223,8 @@ function routeOf(packet) {
 
 // The root-level Build Packets of a project, default name first, then one per
 // additional funnel by name, each with the route it names (null when the
-// packet cannot be read or names none).
+// packet names none), its generated_at instant in milliseconds (null when it
+// records none it can parse) and whether it could be read at all.
 export function projectFunnelPackets(root) {
   const projectRoot = resolve(root);
   let names = [];
@@ -261,23 +246,31 @@ export function projectFunnelPackets(root) {
       continue;
     }
     const { value } = readJsonState(path);
-    packets.push({ name, path, route: routeOf(value) });
+    const generated = typeof value?.generated_at === "string" ? Date.parse(value.generated_at) : Number.NaN;
+    packets.push({ name, path, route: routeOf(value), readable: Boolean(value), generatedAt: Number.isFinite(generated) ? generated : null });
   }
   return packets;
 }
 
-// The packet a command acts on when it was given no --packet: the project's
-// only packet, null when there is none, and a refusal naming every packet
-// when the project holds more than one funnel. Picking one of several would
-// read or write another funnel's records.
+// The packet a command acts on when it was given no --packet, chosen the way
+// readback discovers one: null when there is none, the only readable packet,
+// or among packets that all name one route (later runs of one funnel) the
+// newest by generated_at, the default name first on a tie. Packets naming
+// different routes are different funnels, and picking one would read or write
+// another funnel's records, so that is refused with every packet named.
 export function soleProjectPacket(root, { command = "this command" } = {}) {
   const packets = projectFunnelPackets(root);
-  if (packets.length <= 1) return packets[0]?.path || null;
-  const listed = packets.map((packet) => `${packet.name}${packet.route ? ` (route ${packet.route})` : ""}`).join(", ");
-  throw Object.assign(new Error(
-    `${resolve(root)} holds ${packets.length} Build Packets, one per funnel: ${listed}. `
-    + `Pass --packet <packet> to ${command} to name the funnel to act on.`,
-  ), { code: "MULTIPLE_FUNNEL_PACKETS", packets: packets.map((packet) => packet.path) });
+  const readable = packets.filter((packet) => packet.readable);
+  if (!readable.length) return packets[0]?.path || null;
+  if (new Set(readable.map((packet) => packet.route)).size > 1) {
+    const listed = readable.map((packet) => `${packet.name} (route ${packet.route || "unnamed"})`).join(", ");
+    throw Object.assign(new Error(
+      `${resolve(root)} holds Build Packets for ${new Set(readable.map((packet) => packet.route)).size} funnels: ${listed}. `
+      + `Pass --packet <packet> to ${command} to name the funnel to act on.`,
+    ), { code: "MULTIPLE_FUNNEL_PACKETS", packets: readable.map((packet) => packet.path) });
+  }
+  const newest = readable.reduce((best, packet) => ((packet.generatedAt ?? -Infinity) > (best.generatedAt ?? -Infinity) ? packet : best));
+  return newest.path;
 }
 
 // The route the project-level records belong to: undefined when there are
@@ -299,57 +292,109 @@ function projectRecordsRoute(targetRepo) {
 /**
  * Where prepare-build puts one funnel's packet and records.
  *
- * Packet: an explicit `--out` wins. Otherwise the funnel's own
+ * Packet: an explicit `--out` wins. Otherwise the default
+ * `campaign-runtime.build.json` when it is this route's, else the funnel's own
  * `campaign-runtime-<route>.build.json` when it already exists, else the
- * default `campaign-runtime.build.json` when it is absent or already this
- * route's, else the funnel's own name. A default packet for another route is
- * never replaced.
+ * default when it is absent, else the funnel's own name. A Build Packet that
+ * exists at the chosen path for another route, or one whose route cannot be
+ * read, is replaced only with `force`: that is the operator saying this
+ * funnel takes the other's place (renaming a funnel's route), never a side
+ * effect of naming a path.
  *
  * Records: a packet already at that path for this route keeps the runtime
- * directory it records. Otherwise the funnel's own directory when it already
- * exists, else the project-level `.campaign-runtime` when it holds no records
- * or this route's, else the funnel's own directory. Records another route owns,
- * or records whose route cannot be read, are never replaced.
+ * directory it records (the project-level one when it records none and those
+ * records are this route's or absent). A packet replaced with `force` whose records are the
+ * project-level ones hands those to this funnel, so renaming a project's first
+ * funnel keeps the default layout. Otherwise the funnel's own directory when
+ * it already exists, else the project-level `.campaign-runtime` when it holds
+ * no records or this route's, else the funnel's own directory. Records another
+ * route owns, or records whose route cannot be read, are never replaced.
  *
- * Returns `{ packetPath, runtimeRelPath, scoped }`; `scoped` is true when the
- * packet must record `assembly.runtime_dir`.
+ * Returns `{ packetPath, runtimeRelPath, scoped, addedBeside }`; `scoped` is
+ * true when the packet must record `assembly.runtime_dir`, and `addedBeside`
+ * names the default packet and its route when this run sets the funnel up as
+ * a new one beside it (null otherwise).
  */
-export function planFunnelWorkspace(targetRepo, routeSlug, { packetPath: explicitPacketPath = null } = {}) {
+export function planFunnelWorkspace(targetRepo, routeSlug, { packetPath: explicitPacketPath = null, force = false } = {}) {
   const repo = resolve(targetRepo);
   const slug = normalizePublicRouteSlug(routeSlug);
   const nameable = ROUTE_COMPONENT.test(slug);
   const rootPacket = join(repo, DEFAULT_PACKET_FILENAME);
   const ownPacket = nameable ? join(repo, funnelPacketFilename(slug)) : null;
+  const rootPacketState = readJsonState(rootPacket);
+  const rootPacketRoute = routeOf(rootPacketState.value);
 
   let packetPath = explicitPacketPath ? resolve(explicitPacketPath) : null;
   if (!packetPath) {
-    const rootPacketState = readJsonState(rootPacket);
-    const rootPacketFree = rootPacketState.state === "absent" || routeOf(rootPacketState.value) === slug;
-    packetPath = ownPacket && existsSync(ownPacket) ? ownPacket
-      : rootPacketFree || !ownPacket ? rootPacket
-        : ownPacket;
-    if (!rootPacketFree && packetPath === rootPacket) {
+    const rootPacketFree = rootPacketState.state === "absent" || rootPacketRoute === slug;
+    packetPath = rootPacketRoute === slug ? rootPacket
+      : ownPacket && existsSync(ownPacket) ? ownPacket
+        : rootPacketFree || !ownPacket ? rootPacket
+          : ownPacket;
+    if (!rootPacketFree && packetPath === rootPacket && !force) {
       throw new Error(
-        `${rootPacket} belongs to route ${routeOf(rootPacketState.value) || "(unreadable)"}, and route ${JSON.stringify(slug)} cannot name a packet of its own. `
+        `${rootPacket} belongs to route ${rootPacketRoute || "(unreadable)"}, and route ${JSON.stringify(slug)} cannot name a packet of its own. `
         + "Pass --out <packet> to keep this funnel's packet elsewhere, or set a public route slug of letters, digits, dots, underscores and hyphens.",
       );
     }
   }
 
-  const existing = readJsonState(packetPath).value;
-  if (existing && routeOf(existing) === slug && existing.assembly?.runtime_dir != null) {
-    const runtimeRelPath = packetRuntimeRelPath(existing);
-    return { packetPath, runtimeRelPath, scoped: runtimeRelPath !== RUNTIME_DIR_REL_PATH };
+  const existingState = readJsonState(packetPath);
+  const existing = existingState.value;
+  const existingRoute = routeOf(existing);
+  const replacing = isBuildPacketAt(packetPath, existingState) && existingRoute !== slug;
+  if (replacing && !force) {
+    throw new Error(
+      `${packetPath} is the Build Packet of route ${existingRoute || "(unreadable)"}, not ${JSON.stringify(slug)}; replacing it would leave that funnel's records with no packet. `
+      + "Pass a different --out to set this funnel up beside it, or --force to replace that funnel with this one (renaming its route).",
+    );
+  }
+  const addedBeside = !replacing && existingState.state === "absent" && packetPath !== rootPacket
+    && rootPacketState.state === "present" && rootPacketRoute !== slug
+    ? { packetPath: rootPacket, route: rootPacketRoute }
+    : null;
+  const plan = (runtimeRelPath) => ({ packetPath, runtimeRelPath, scoped: runtimeRelPath !== RUNTIME_DIR_REL_PATH, addedBeside });
+
+  const owner = projectRecordsRoute(repo);
+  if (existing && existingRoute === slug) {
+    if (existing.assembly?.runtime_dir != null) return plan(packetRuntimeRelPath(existing));
+    if (owner === undefined || owner === slug) return plan(RUNTIME_DIR_REL_PATH);
+  }
+  if (replacing && existing && replacedRuntimeRelPath(existing) === RUNTIME_DIR_REL_PATH
+    && (owner === undefined || owner === null || owner === existingRoute || owner === slug)) {
+    return plan(RUNTIME_DIR_REL_PATH);
   }
   const ownRuntime = nameable ? funnelRuntimeRelPath(slug) : null;
-  if (ownRuntime && existsSync(join(repo, ownRuntime))) return { packetPath, runtimeRelPath: ownRuntime, scoped: true };
-  const owner = projectRecordsRoute(repo);
-  if (owner === undefined || owner === slug) return { packetPath, runtimeRelPath: RUNTIME_DIR_REL_PATH, scoped: false };
+  if (ownRuntime && existsSync(join(repo, ownRuntime))) return plan(ownRuntime);
+  if (owner === undefined || owner === slug) return plan(RUNTIME_DIR_REL_PATH);
   if (!ownRuntime) {
     throw new Error(
       `${join(repo, RUNTIME_DIR_REL_PATH)} holds the records of route ${owner || "(unreadable)"}, and route ${JSON.stringify(slug)} cannot name a runtime directory of its own. `
       + "Set a public route slug of letters, digits, dots, underscores and hyphens.",
     );
   }
-  return { packetPath, runtimeRelPath: ownRuntime, scoped: true };
+  return plan(ownRuntime);
+}
+
+// Whether the file at `path` is a Build Packet another funnel may own: a
+// packet by its contents, or a file at a packet's name that cannot be read.
+// Any other file there is left to prepare-build's output collision checks.
+function isBuildPacketAt(path, { state, value }) {
+  if (state !== "present") return false;
+  if (value) {
+    return (typeof value.schema_version === "string" && value.schema_version.startsWith("campaign-runtime-build-packet/"))
+      || (value.campaign !== null && typeof value.campaign === "object" && !Array.isArray(value.campaign));
+  }
+  const name = basename(path);
+  return name === DEFAULT_PACKET_FILENAME || FUNNEL_PACKET_PATTERN.test(name);
+}
+
+// The runtime directory a packet being replaced keeps its records in, or null
+// when its recorded value is not one prepare-build writes.
+function replacedRuntimeRelPath(packet) {
+  try {
+    return packetRuntimeRelPath(packet);
+  } catch {
+    return null;
+  }
 }

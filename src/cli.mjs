@@ -321,7 +321,7 @@ Usage:
                      [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
                      [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>] [--design-manifest <path>]
                      [--allow-uncertified-template "<reason>"] [--order-path-depth <off|common|full>]
-                     [--deploy-target <target>] [--preview-url <url>] [--production-url <url>] [--no-run-session] [--force]   # --force overwrites an assembly report that carries stage evidence (destructive; prints the cleared stage keys) and regenerates a stale Design Source Package an earlier intake synthesized and nobody changed
+                     [--deploy-target <target>] [--preview-url <url>] [--production-url <url>] [--no-run-session] [--force]   # --force overwrites an assembly report that carries stage evidence (destructive; prints the cleared stage keys) and regenerates a stale Design Source Package an earlier intake synthesized and nobody changed; with --out naming another route's packet it replaces that funnel (renaming its route)
   campaigns-os prepare-build (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
                              [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
                              [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>] [--design-manifest <path>]
@@ -1677,9 +1677,10 @@ async function prepareBuild(args, options = {}) {
   // .campaign-runtime/, every later one its own (planFunnelWorkspace). The
   // route is read here, before the lock, and checked again under it.
   const plannedRoute = intakeRouteSlug(options.fetchedSpec || readSpecForRoute(specPath), args);
-  const funnel = plannedRoute
-    ? refusing(() => planFunnelWorkspace(targetRepo, plannedRoute, { packetPath: args.out || null }))
-    : { packetPath: resolve(args.out || join(targetRepo, DEFAULT_PACKET_FILENAME)), runtimeRelPath: RUNTIME_DIR_REL_PATH, scoped: false };
+  const planFunnel = () => plannedRoute
+    ? refusing(() => planFunnelWorkspace(targetRepo, plannedRoute, { packetPath: args.out || null, force: args.force === true }))
+    : { packetPath: resolve(args.out || join(targetRepo, DEFAULT_PACKET_FILENAME)), runtimeRelPath: RUNTIME_DIR_REL_PATH, scoped: false, addedBeside: null };
+  const funnel = planFunnel();
   const sidecars = campaignSidecarPaths(targetRepo, funnel.runtimeRelPath);
   const packetPath = funnel.packetPath;
   const contextPath = resolve(args["context-out"] || sidecars.contextPath);
@@ -1692,7 +1693,7 @@ async function prepareBuild(args, options = {}) {
     outputs: { packetPath, contextPath, reportPath, doctorOutPath, briefPath },
     force: args.force === true,
     publishSpec,
-  }, (publication) => prepareBuildUnderLock({ args, options, specPath, sourceRoot, targetRepo, publication, funnel: { ...funnel, route: plannedRoute } }));
+  }, (publication) => prepareBuildUnderLock({ args, options, specPath, sourceRoot, targetRepo, publication, funnel: { ...funnel, route: plannedRoute }, planFunnel }));
 }
 
 // A spec that cannot be read here is read again, and refused, under the lock.
@@ -1719,6 +1720,7 @@ function prepareBuildUnderLock({
   targetRepo,
   publication,
   funnel,
+  planFunnel,
 }) {
   const { packetPath, contextPath, reportPath, doctorOutPath, briefPath, designSourcePackagePath } = publication.paths;
   // #531: a host-prefixed route ("shop.example.com/route/upsell/") in a Map
@@ -1747,6 +1749,16 @@ function prepareBuildUnderLock({
   // under another route's.
   if (normalizePublicRouteSlug(publicRouteSlug) !== funnel.route) {
     throw new Error(`The CampaignSpec's public route slug changed while prepare-build waited for the target lock (${JSON.stringify(funnel.route)} became ${JSON.stringify(publicRouteSlug)}). Re-run prepare-build.`);
+  }
+  // Another funnel set up while this run waited can change where this one
+  // belongs (two first funnels started at once in an empty project). The
+  // paths this run writes were fixed before the lock, so it stops instead.
+  const replanned = planFunnel();
+  if (replanned.packetPath !== funnel.packetPath || replanned.runtimeRelPath !== funnel.runtimeRelPath) {
+    throw new Error(
+      `Another funnel was set up in ${targetRepo} while prepare-build waited for the target lock, so route ${JSON.stringify(funnel.route)} now belongs at `
+      + `${replanned.packetPath} with its records under ${replanned.runtimeRelPath}/, not ${funnel.packetPath} and ${funnel.runtimeRelPath}/. Re-run prepare-build.`,
+    );
   }
 
   // Dispatch validated the argv-only flags before spec resolution, including
@@ -2272,6 +2284,7 @@ function prepareBuildUnderLock({
     context,
     report,
     doctor,
+    ...(funnel.addedBeside ? { funnelAddedBeside: funnel.addedBeside } : {}),
   };
 }
 
@@ -8589,6 +8602,19 @@ function printPrepareResult(result, args) {
     }
   }
   console.log(`Packet: ${result.packetPath}`);
+  if (result.funnelAddedBeside) {
+    // A route differing from the default packet's is either another funnel
+    // or a rename of that one; only the operator knows which, so say what was
+    // done and how to undo it.
+    const beside = result.funnelAddedBeside;
+    const route = result.packet?.campaign?.public_route_slug;
+    const runtimeDir = result.packet?.assembly?.runtime_dir;
+    console.log(
+      `Funnel: route ${route} was set up as another funnel beside ${beside.packetPath} (route ${beside.route || "unnamed"})`
+      + `${runtimeDir ? `, with its records under ${runtimeDir}/` : ""}. To rename that funnel's route instead, delete ${result.packetPath}`
+      + `${runtimeDir ? ` and ${runtimeDir}/` : ""}, then re-run prepare-build with --out ${beside.packetPath} --force.`,
+    );
+  }
   if (result.briefPath) {
     const brief = result.context?.build_brief;
     console.log(`Brief: ${result.briefPath}${brief ? ` (${brief.mode}, ${brief.status}, questions=${brief.question_count})` : ""}`);
