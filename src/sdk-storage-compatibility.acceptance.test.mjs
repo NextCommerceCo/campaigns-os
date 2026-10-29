@@ -150,10 +150,23 @@ test('a local HTML base cannot conceal an omitted script dependency', t => {
   assert.ok(report.findings.some(f => f.status === 'unknown'));
 });
 
-test('a repository whose tracked-file list exceeds 1 MiB is still inventoried (#717)', t => {
+test('a scope whose tracked-file list exceeds 1 MiB is still inventoried (#717)', t => {
+  // 6,000 tracked paths of ~210 bytes inside the scope, about 1.29 MB of
+  // `git ls-files -z` output: over Node's 1 MiB default buffer.
   const name = 'x'.repeat(200);
   const extra = {};
-  for (let i = 0; i < 6000; i++) extra[`bulk/${i}-${name}.txt`] = '';
-  const report = scanSdkStorageCompatibility(options(fixture(t, "sessionStorage.getItem('next-order');", { extra })));
+  for (let i = 0; i < 6000; i++) extra[`campaign-a/bulk/${i}-${name}.txt`] = '';
+  const cwd = fixture(t, "sessionStorage.getItem('next-order');", { extra });
+  assert.ok(execFileSync('git', ['-C', cwd, 'ls-files', '-z', '--', 'campaign-a'], { maxBuffer: 16 * 1024 * 1024 }).byteLength > 1024 * 1024);
+  const report = scanSdkStorageCompatibility(options(cwd));
   assert.equal(report.status, 'incompatible');
+  assert.ok(report.findings.some(f => f.key === 'next-order' && f.status === 'incompatible'));
+  assert.equal(report.files.length, 3);
+});
+
+test('a failed Git inventory names the reason in one line', t => {
+  const cwd = fixture(t, "sessionStorage.getItem('next-order');");
+  writeFileSync(join(cwd, '.git', 'index'), 'not an index');
+  assert.throws(() => scanSdkStorageCompatibility(options(cwd)), error =>
+    /^Cannot inventory tracked Git source files: \S/.test(error.message) && !error.message.includes('\n') && !error.message.includes('Command failed'));
 });

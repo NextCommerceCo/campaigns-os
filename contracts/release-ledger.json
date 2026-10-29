@@ -9910,8 +9910,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.61.0+agent.2",
-      "changelog_sha256": "854d627484a8c9990fa44058692971f9588ab56d99245a977bf62d56a63a166e",
-      "agent_impact": "An agent running next-campaigns-sdk-bump checks step 3's known-changes table for each version the range crosses: it moves a hand-wired order:completed purchase capture off the checkout page for 0.4.32, removes a page's own Spreedly iframe script for 0.4.41, and rebuilds or removes a hand-written modulepreload list on any bump. For a 3-D Secure order it uses the 3DS payment flow card from the platform's testing page and asks first when the gateway is not in test mode. sdk storage-check now runs on repositories with more than about 25,000 tracked paths. Re-run tooling status --skills-revision 1.61.0+skills.2 and start a fresh session on mismatch.",
+      "changelog_sha256": "0b1963aba71ceaff01f9321c959355493544493d61491b3f684e750ac5e91afe",
+      "agent_impact": "An agent running next-campaigns-sdk-bump checks step 3's known-changes table for each version the range crosses: for 0.4.32 it moves a hand-wired order:completed purchase capture off the checkout page to the first page after checkout, reading the order's ?ref_id=, and leaves that page out of the cached reloads; for 0.4.41 it removes a page's own Spreedly iframe script; for 0.4.43 it checks Shop Pay; and it rebuilds or removes a hand-written modulepreload list of SDK files. For a 3-D Secure order it uses the card in docs/qa-and-test-orders.md and asks first when the gateway is not in test mode. sdk storage-check now inventories only the tracked files under --scope, so it runs on large repositories, and its inventory failure reads 'Cannot inventory tracked Git source files: <reason>' instead of ending at the period; an agent matching the old exact text should match the prefix. Re-run tooling status --skills-revision 1.61.0+skills.2 and start a fresh session on mismatch.",
       "compatibility": "compatible",
       "migration": "none",
       "changes": [
@@ -9925,7 +9925,7 @@
           "class": "skill",
           "path": "skills/next-campaigns-sdk-bump/SKILL.md",
           "surface_entry": null,
-          "summary": "Add the known-changes table (0.4.32 order:completed, 0.4.41 Spreedly script, modulepreload), the 3-D Secure test card source, and the storage-check large-repository workaround."
+          "summary": "Add the known-changes table (0.4.32 order:completed, 0.4.41 Spreedly script, 0.4.42, 0.4.43, modulepreload), the 3-D Secure test card, and the storage-check workaround for older installs."
         },
         {
           "class": "skill",
@@ -9986,9 +9986,15 @@
           "path": "docs/skills-revision.md",
           "surface_entry": "docs/skills-revision.md",
           "summary": "Update current bundle revision examples to 1.61.0+skills.2."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/sdk-storage-compatibility.md",
+          "surface_entry": "docs/sdk-storage-compatibility.md",
+          "summary": "Describe the scoped tracked-file inventory and the new 'Cannot inventory tracked Git source files: <reason>' error."
         }
       ],
-      "entry_sha256": "9d88dfe45dcd8bb2bf33223f92e4c0274314960593477500aaf79d7eacf06fa3"
+      "entry_sha256": "d66e490d21d4ac960199176e7e5e513ec77dbb70994460472a31e12f0a438b94"
     }
   ]
 }

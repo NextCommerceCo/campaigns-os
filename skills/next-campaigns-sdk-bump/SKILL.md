@@ -169,11 +169,11 @@ release notes:
 
 | Version | What changed | What to check |
 |---|---|---|
-| 0.4.32 | The checkout page no longer emits `order:completed` when it creates an order. The event fires on the page the shopper lands on next, while the SDK boots and before `next:initialized`. | A hand-wired purchase capture on the checkout stops firing, and page code on the next page cannot subscribe in time. Move the capture to the first page after checkout and read the order by its `ref_id`, or use the SDK's own `dl_purchase` event and its `value` rule. |
-| 0.4.41 | The card fields are set up by NEXT's payment script (`payments.29next.com`), which loads Spreedly itself. The `next-spreedly-key` and `next-payment-env-key` meta tags and `nextConfig.spreedlyEnvironmentKey` are no longer read. | Remove a page's own Spreedly script tag (`core.spreedly.com/iframe/iframe-v1.min.js`): it loads beside the payment script's copy. Add both hosts to any Content-Security-Policy. Plan a 3-D Secure order in step 6. |
+| 0.4.32 | The checkout page no longer emits `order:completed` when it creates an order. The event fires on the first page opened with the order's `?ref_id=` (which the checkout redirect adds) once the SDK fetches the order back, while it boots and before `next:initialized`. | A hand-wired purchase capture on the checkout stops firing, and page code on that next page cannot subscribe in time. Move the capture to the first page after checkout and read the order by the order's ref id from that page's `?ref_id=` (not the campaign's ref id), or use the SDK's own `dl_purchase` (see `docs/qa-and-test-orders.md`, "Purchase data layer"). The page you move it to is then one step 6 leaves out of the cached reloads. |
+| 0.4.41 | The card fields are set up by NEXT's payment script (`payments.29next.com`), which loads Spreedly itself, with the campaign's `payment_env_key`. A `next-spreedly-key` meta tag is no longer read; it does no harm if it stays. | Remove a page's own Spreedly script tag (`core.spreedly.com/iframe/iframe-v1.min.js`): it loads beside the payment script's copy. Add both hosts to any Content-Security-Policy. Plan a 3-D Secure order in step 6. |
 | 0.4.42 | `next:initialized` fires once and is not replayed. | Guard every listener, as above. |
-| 0.4.43 | Shop Pay in the express-checkout container. | As above. |
-| Any | The SDK's chunk file names change between versions. | Rebuild a hand-written `modulepreload` list for the target version's chunks, or remove it; otherwise every listed file 404s. |
+| 0.4.43 | Shop Pay in the express-checkout container. | Check whether the campaign's `expressCheckout.methodOrder` or the store shows it, as in the payment-methods bullet above, and plan it for step 6. |
+| Any, if a page has a hand-written `<link rel="modulepreload">` list of SDK files | The SDK's chunk file names change between versions. | Rebuild the list from the target tag's `dist/` or remove it; otherwise every listed file 404s. |
 
 ## 4. Storage check
 
@@ -189,10 +189,11 @@ v0.4.39 to v0.4.43 declare 0.4.38 to 0.4.38, so `--target-sdk 0.4.43` returns
 `target-outside-manifest-range`. Run the check at the manifest's highest
 version and report that it does not speak for the versions above it.
 
-On Campaigns OS 1.61.0 and earlier, the check stops with `Cannot inventory
-tracked Git source files.` on a repository whose tracked-file list passes 1 MiB
-(about 25,000 paths). If you see it on an older install, copy the scoped folders into
-a new Git repository, run the check there, and say so in the hand-back.
+If the check stops with exactly `Cannot inventory tracked Git source files.`
+(with nothing after the period) on a large repository, the install predates the
+fix in `1.61.0+agent.2`. Copy the scoped folders into a new directory, run
+`git init`, `git add .` and `git commit` there (the check reads tracked files
+only), run the check in that repository, and say so in the hand-back.
 
 ## 5. Build and check
 
@@ -278,10 +279,10 @@ Cover:
   cancelled, where the campaign offers it;
 - an upsell at quantity 2 or more on a page that shows a quantity picker;
 - a 3-D Secure card when step 3 found card-field or 3-D Secure changes, and whether it challenged.
-  Use the "3DS payment flow" test card on the platform's testing page,
-  <https://developers.29next.com/docs/testing>, which also lists the standard
-  success card. If the checkout gateway is not in test mode, ask before
-  placing it;
+  Use the 3-D Secure test card in `docs/qa-and-test-orders.md` (`6011 0009 9013 9424`;
+  the platform's [testing page](https://developers.nextcommerce.com/docs/testing)
+  lists it as the "3DS payment flow" card). If the checkout gateway is not in
+  test mode, ask before placing it;
 - the coupon path, if the funnel has one;
 - the purchase event fires once, on the page the release says it should;
 - every SDK page, upsells included, on one fresh load and then five cached
