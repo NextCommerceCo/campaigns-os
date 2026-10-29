@@ -11,7 +11,7 @@ import { commitAssemblyReport, recordProducerStageOutcome } from "../stage-ledge
 import { annotateDoctorIssueCauses } from "../finding-cause.mjs";
 import { DOCTOR_SIDECAR_SCHEMA } from "../doctor-sidecar.mjs";
 import { recordQcResults } from "../qc-results.mjs";
-import { resolveCampaignWorkspace } from "../campaign-workspace.mjs";
+import { packetRuntimeRelPath, resolveCampaignWorkspace } from "../campaign-workspace.mjs";
 import { normalizePublicRouteSlug } from "../route-identity.mjs";
 import { DEFAULT_PROXY_BASE } from "../spec-fetch.mjs";
 import { disabledLiveRead, liveRefsDisabled, readLiveCampaignForPacket } from "../live-campaign-refs.mjs";
@@ -458,6 +458,16 @@ export function doctorBuiltOutput(args) {
   };
 }
 
+// Inspection already refused a packet whose runtime directory is unreadable;
+// the history lookup then falls back to the project-level directory.
+function packetRuntimeRelPathOrDefault(packetPath) {
+  try {
+    return packetRuntimeRelPath(JSON.parse(readFileSync(resolve(packetPath), "utf8")));
+  } catch {
+    return undefined;
+  }
+}
+
 export function doctorPacket(packetPath, options = {}) {
   const result = withHtmlScanSnapshot(() => inspectDoctorPacket(packetPath, options));
   // Per-finding cause classification lives HERE, at the single production
@@ -487,6 +497,7 @@ export function doctorPacket(packetPath, options = {}) {
     errors: result.errors,
     warnings: result.warnings,
     baseDir: comparableIdentity ? dirname(resolve(packetPath)) : null,
+    runtimeRelPath: comparableIdentity ? packetRuntimeRelPathOrDefault(packetPath) : undefined,
     mapId: result.derived?.map_id || null,
     localSpecId: result.derived?.local_spec_id || null,
   });

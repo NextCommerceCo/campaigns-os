@@ -2,7 +2,8 @@
 // history, and which are not. Three kinds share the directory:
 //
 //   1. The readback bundle (build-context, assembly-report, doctor-output,
-//      qa-verdict) — current readback truth; docs/migration-sidecar-bundle.md
+//      qa-verdict, at the top level or under funnels/<route>/ for a project's
+//      second and later funnels) — current readback truth; docs/migration-sidecar-bundle.md
 //      names it and `bundle check` validates it. Committed by design.
 //   2. Handoff inputs and agent context (input/, theme/, agent-context/,
 //      setup-handoff.json) — durable build handoff. Committed by design.
@@ -28,6 +29,9 @@ export const RUNTIME_STATE_IGNORED_PATHS = [
   ".campaign-runtime/agent-deviations.jsonl",
   ".campaign-runtime/workflow-findings.jsonl",
   ".campaign-runtime/run-records/",
+  // A project's second and later funnels keep their Run Records under their
+  // own runtime directory (src/campaign-workspace.mjs).
+  ".campaign-runtime/funnels/*/run-records/",
   ".campaign-runtime/fetched-specs/",
   ".campaign-runtime/progress/",
   ".campaign-runtime/polish-evidence/",
@@ -47,7 +51,7 @@ export const RUNTIME_STATE_IGNORED_PATHS = [
 // must gain it on the next setup command rather than on the next accidental
 // commit. An entry an operator has placed anywhere else in the file counts as
 // present.
-export const RUNTIME_STATE_REQUIRED_IGNORED_PATHS = ["qa-output/", ".campaign-runtime/progress/"];
+export const RUNTIME_STATE_REQUIRED_IGNORED_PATHS = ["qa-output/", ".campaign-runtime/progress/", ".campaign-runtime/funnels/*/run-records/"];
 
 export const RUNTIME_STATE_IGNORE_BLOCK = [
   RUNTIME_STATE_IGNORE_MARKER,

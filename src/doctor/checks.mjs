@@ -26,6 +26,7 @@ import {
   SOURCE_HTML_MANIFEST_SCHEMA,
 } from "../source-html-manifest.mjs";
 import { validateAssemblyReportThemeBlock, validateThemeContextBlock } from "../brand-theme.mjs";
+import { packetRuntimeRelPath } from "../campaign-workspace.mjs";
 import { singleLineDetail, singleLineField } from "../text-safety.mjs";
 import {
   campaignRouteRoot,
@@ -4625,7 +4626,7 @@ export function validateBuiltContentResidue(packet, errors, warnings, ready, der
   const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
   const siteRoot = derived.target_repo && publicRouteSlug ? join(derived.target_repo, "_site", publicRouteSlug) : null;
   if (!siteRoot || !existsSync(siteRoot) || !statSync(siteRoot).isDirectory()) return;
-  const brief = loadBriefPayload(derived.target_repo);
+  const brief = loadBriefPayload(derived.target_repo, packetRuntimeRelPath(packet));
   const urgencyVerified = briefUrgencyVerified(brief?.payload);
   const findings = scanBuiltOutputContentResidue(siteRoot, { urgencyVerified });
   if (!findings.length) {
@@ -4694,7 +4695,7 @@ export function validateBuiltContentResidue(packet, errors, warnings, ready, der
 // non-shipped, non-usable assets stay warnings (the attestation queue), so a
 // producer that correctly excluded them is not blocked.
 export function validateProofAttestation(packet, errors, warnings, ready, derived, buildState = {}) {
-  const brief = loadBriefPayload(derived.target_repo);
+  const brief = loadBriefPayload(derived.target_repo, packetRuntimeRelPath(packet));
   if (!brief) return; // not an AI-assembled run — no brief payload, no gate
   if (brief.error) {
     // Fail closed: the brief payload is the source of attestation state. If
