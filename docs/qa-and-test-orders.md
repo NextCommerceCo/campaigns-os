@@ -381,6 +381,40 @@ default currency. The persisted verdict redacts every URL query, so the
 currency is recorded as `evidence.currency` on the entry page's
 `http:<page_id>` assertion; an entry URL that does not parse gets no currency,
 and its row records `evidence.currency_not_applied` with the reason instead.
+
+The run also checks that the currency took. Campaign Cart falls back to the
+campaign's default currency when the requested one is not available, so a page
+can load with `?currency=GBP` and still take a USD order:
+
+- Each test order gets a `browser-order-currency:<path>` row comparing the
+  created order's `currency` (read from the order API response) with the run
+  currency. An order in any other currency fails as a blocker, and so does a
+  verified order whose currency was not recorded. The row's evidence is
+  `{ requested, order_currency }`.
+- Automatic commercial parity (below) asks the calculate endpoint for expected
+  totals in the run currency, in place of the Map's `campaign.currency`. When
+  the endpoint answers in another currency, the campaign does not price in the
+  run currency: a `commercial-currency:<RUN>:<ANSWERED>` row (family `pricing`)
+  fails as a blocker, and the commercial report lists the
+  `calculate_currency_mismatch` issue, so its status reads `incomplete`. The
+  row's id names the answered code upper-cased, one row per answered currency,
+  and it is written even when the verdict's assertion budget is used up.
+- Commercial parity reads prices from each page's source HTML, where a bound
+  price such as `data-next-display="bundle.main.price"` holds the authored
+  fallback text in the Map's `campaign.currency` (Campaign Cart replaces it at
+  runtime). When the run currency is not the Map's `campaign.currency`, those
+  price and recurring-price claims are not compared with the run-currency
+  totals: they count as unresolved, and the commercial report records
+  `unresolved_money_claims_reason: "static_source_not_in_run_currency"`. A
+  correctly built multi-currency page gets no `price-claim-mismatch` warning,
+  and the commercial status reads `incomplete` instead of `pass`. With
+  `--currency` set to the Map's own currency, the claims are compared as
+  before.
+
+Either blocker makes the verdict `blocked` and the command exit `4`. Without
+`--currency` neither row is written and expected totals use
+`campaign.currency`, as before.
+
 `--currency` sets the currency only. Test orders still ship to the address the
 `--test-*` flags give, a US address by default (see
 [Test customer and shipping address](#test-customer-and-shipping-address)). A
