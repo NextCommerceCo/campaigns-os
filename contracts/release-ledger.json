@@ -10102,97 +10102,97 @@
           "class": "named_surface",
           "path": "contracts/fixtures/runtime-recipe/accept/current.json",
           "surface_entry": "contracts/fixtures/runtime-recipe/accept/current.json",
-          "summary": "Regenerated with the new recipe input."
+          "summary": "Regenerated with the three new recipe inputs."
         },
         {
           "class": "named_surface",
           "path": "contracts/fixtures/runtime-recipe/accept/minimal.json",
           "surface_entry": "contracts/fixtures/runtime-recipe/accept/minimal.json",
-          "summary": "Regenerated with the new recipe input."
+          "summary": "Regenerated with the three new recipe inputs."
         },
         {
           "class": "named_surface",
           "path": "contracts/fixtures/runtime-recipe/dist-states.json",
           "surface_entry": "contracts/fixtures/runtime-recipe/dist-states.json",
-          "summary": "Regenerated with the new recipe input."
+          "summary": "Regenerated with the three new recipe inputs."
         },
         {
           "class": "named_surface",
           "path": "contracts/fixtures/runtime-recipe/reject/advisory-enforcement.json",
           "surface_entry": "contracts/fixtures/runtime-recipe/reject/advisory-enforcement.json",
-          "summary": "Regenerated with the new recipe input."
+          "summary": "Regenerated with the three new recipe inputs."
         },
         {
           "class": "named_surface",
           "path": "contracts/fixtures/runtime-recipe/reject/allowlist-without-hosts.json",
           "surface_entry": "contracts/fixtures/runtime-recipe/reject/allowlist-without-hosts.json",
-          "summary": "Regenerated with the new recipe input."
+          "summary": "Regenerated with the three new recipe inputs."
         },
         {
           "class": "named_surface",
           "path": "contracts/fixtures/runtime-recipe/reject/committed-output-claim.json",
           "surface_entry": "contracts/fixtures/runtime-recipe/reject/committed-output-claim.json",
-          "summary": "Regenerated with the new recipe input."
+          "summary": "Regenerated with the three new recipe inputs."
         },
         {
           "class": "named_surface",
           "path": "contracts/fixtures/runtime-recipe/reject/engines-disagreement-warns.json",
           "surface_entry": "contracts/fixtures/runtime-recipe/reject/engines-disagreement-warns.json",
-          "summary": "Regenerated with the new recipe input."
+          "summary": "Regenerated with the three new recipe inputs."
         },
         {
           "class": "named_surface",
           "path": "contracts/fixtures/runtime-recipe/reject/lifecycle-scripts-enabled.json",
           "surface_entry": "contracts/fixtures/runtime-recipe/reject/lifecycle-scripts-enabled.json",
-          "summary": "Regenerated with the new recipe input."
+          "summary": "Regenerated with the three new recipe inputs."
         },
         {
           "class": "named_surface",
           "path": "contracts/fixtures/runtime-recipe/reject/unknown-kind.json",
           "surface_entry": "contracts/fixtures/runtime-recipe/reject/unknown-kind.json",
-          "summary": "Regenerated with the new recipe input."
+          "summary": "Regenerated with the three new recipe inputs."
         },
         {
           "class": "named_surface",
           "path": "contracts/fixtures/runtime-recipe/reject/unknown-network-policy.json",
           "surface_entry": "contracts/fixtures/runtime-recipe/reject/unknown-network-policy.json",
-          "summary": "Regenerated with the new recipe input."
+          "summary": "Regenerated with the three new recipe inputs."
         },
         {
           "class": "named_surface",
           "path": "contracts/fixtures/runtime-recipe/reject/unknown-output-check.json",
           "surface_entry": "contracts/fixtures/runtime-recipe/reject/unknown-output-check.json",
-          "summary": "Regenerated with the new recipe input."
+          "summary": "Regenerated with the three new recipe inputs."
         },
         {
           "class": "named_surface",
           "path": "contracts/fixtures/runtime-recipe/reject/unknown-revision.json",
           "surface_entry": "contracts/fixtures/runtime-recipe/reject/unknown-revision.json",
-          "summary": "Regenerated with the new recipe input."
+          "summary": "Regenerated with the three new recipe inputs."
         },
         {
           "class": "named_surface",
           "path": "contracts/fixtures/runtime-recipe/reject/unknown-step-id.json",
           "surface_entry": "contracts/fixtures/runtime-recipe/reject/unknown-step-id.json",
-          "summary": "Regenerated with the new recipe input."
+          "summary": "Regenerated with the three new recipe inputs."
         },
         {
           "class": "named_surface",
           "path": "contracts/fixtures/runtime-recipe/reject/unperformable-check-skipped.json",
           "surface_entry": "contracts/fixtures/runtime-recipe/reject/unperformable-check-skipped.json",
-          "summary": "Regenerated with the new recipe input."
+          "summary": "Regenerated with the three new recipe inputs."
         },
         {
           "class": "named_surface",
           "path": "contracts/fixtures/runtime-recipe/reject/unpinned-lockfile.json",
           "surface_entry": "contracts/fixtures/runtime-recipe/reject/unpinned-lockfile.json",
-          "summary": "Regenerated with the new recipe input."
+          "summary": "Regenerated with the three new recipe inputs."
         },
         {
           "class": "hashed_surface",
           "path": "contracts/runtime-recipe.campaigns-os-node-v1.json",
           "surface_entry": "contracts/runtime-recipe.campaigns-os-node-v1.json",
-          "summary": "Inputs gain campaign-spec/rules/checkout-path-has-packages.ts."
+          "summary": "Inputs gain campaign-spec/analytics-vendors.ts, campaign-spec/rules/campaign-currencies.ts and campaign-spec/rules/checkout-path-has-packages.ts."
         },
         {
           "class": "compatibility_policy",
@@ -10258,7 +10258,7 @@
           "class": "named_surface",
           "path": "docs/runtime-readiness.md",
           "surface_entry": "docs/runtime-readiness.md",
-          "summary": "Regenerated at supported surface 1.62.0 with the new recipe input."
+          "summary": "Regenerated at supported surface 1.62.0 with the three new recipe inputs."
         },
         {
           "class": "named_surface",
@@ -10405,7 +10405,7 @@
           "summary": "next treats an advisory Polish as not required."
         }
       ],
-      "entry_sha256": "26e841626a84ebbb5805f7412246c335dac9fa462fdfadd01e690b6d24635fbf"
+      "entry_sha256": "0dfafcade4361a2d932c2ae920e420ab0f225a61487ca9953f9a041129ef4e48"
     }
   ]
 }
