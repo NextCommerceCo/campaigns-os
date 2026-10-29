@@ -2,6 +2,23 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.61.0+agent.2] - 2026-10-29
+
+The `next-campaigns-sdk-bump` skill (1.0.7) takes the findings from its third live run, the first on a static repository. Step 3 now has a table of known changes a bump can cross, and step 6 names the 3-D Secure test card. `sdk storage-check` no longer fails on large repositories, and its inventory error now says why. Refresh installed skills with `install-skills` to get it.
+
+### Changed
+
+The `next-campaigns-sdk-bump` skill (1.0.7, bundle `1.61.0+skills.2`) takes the third-run findings on campaigns-os#683:
+
+- Step 3 has a table of known changes by version. 0.4.32: the checkout page no longer emits `order:completed` when it creates an order. The skill prefers the SDK's `dl_purchase`, which fires once per order; a capture that stays hand-wired moves to the first page after checkout, reads the order by the order's `?ref_id=`, and sends once per order, and step 6 reloads that page once with beacons blocked to prove it. 0.4.41: the card fields are Spreedly's hosted fields loaded by NEXT's payment script, so a page's own Spreedly `iframe-v1.min.js` tag, calls on the `Spreedly` global and CSS aimed at the v1 frame ids are removed or ported in the same commit as the pin move, after confirming the campaign has a payment key. 0.4.42 points at the `next:initialized` guard and 0.4.43 at the Shop Pay check. A page with a hand-written `modulepreload` list of SDK files rebuilds it from the target tag's `dist/` or removes it.
+- Step 6 names the 3-D Secure test card from `docs/qa-and-test-orders.md`, links the platform's testing page, and asks the developer to confirm the gateway is in test mode before placing the order.
+- Step 4 says that the old storage-check failure below means the pinned Campaigns OS is npm 1.61.0 or earlier, to update the pin, and not to run the check on a copied repository, which can lose tracked files.
+
+### Fixed
+
+- `sdk storage-check` lists only the tracked files under `--scope` (`git ls-files -- <scope>`), so a large repository no longer passes Node's 1 MiB default buffer. Before this, a repository with more than about 25,000 tracked paths stopped with `Cannot inventory tracked Git source files.` (#717)
+- That error now reads `Cannot inventory tracked Git source files: <reason>`, with Git's first stderr line as the reason, or, when Git printed nothing, how it ended (its exit status, the signal that stopped it, or a spawn error code), or a request to narrow a scope whose list passes 256 MiB. `docs/sdk-storage-compatibility.md` says so.
+
 ## [1.61.0+agent.1] - 2026-10-24
 
 ### Changed

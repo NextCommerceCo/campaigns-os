@@ -9902,6 +9902,99 @@
         }
       ],
       "entry_sha256": "c8d911144e956c791867afb9cc014bbbbf54be8e3faee6448bafea4a588f618c"
+    },
+    {
+      "id": "RL-0311",
+      "sequence": 299,
+      "date": "2026-10-29",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.61.0+agent.2",
+      "changelog_sha256": "077018155e9017725a3f64c0e0158a6dae9dc3381eb8869fcccbc943a22d3458",
+      "agent_impact": "An agent running next-campaigns-sdk-bump checks step 3's known-changes table for each version the range crosses. For 0.4.32 it prefers the SDK's dl_purchase; a purchase capture that stays hand-wired moves off the checkout page to the first page after checkout, reads the order's ?ref_id=, sends once per order, and step 6 reloads that page once with beacons blocked to prove it; it never re-adds an order:completed listener there. For 0.4.41 it confirms the campaign has a payment key and removes or ports the page's own Spreedly iframe script, Spreedly-global calls and v1 frame selectors in the same commit as the pin move. For 0.4.43 it checks Shop Pay, and it rebuilds or removes a hand-written modulepreload list of SDK files. For a 3-D Secure order it uses the card in docs/qa-and-test-orders.md after the developer confirms the gateway is in test mode. sdk storage-check now inventories only the tracked files under --scope, so it runs on large repositories; the old 'Cannot inventory tracked Git source files.' failure means the pinned install is npm 1.61.0 or earlier and is fixed by updating the pin. The inventory failure now reads 'Cannot inventory tracked Git source files: <reason>'; an agent matching the old exact text should match the prefix. Re-run tooling status --skills-revision 1.61.0+skills.2 and start a fresh session on mismatch.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance bundle revision to 1.61.0+skills.2 and each skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-sdk-bump/SKILL.md",
+          "surface_entry": null,
+          "summary": "Add the known-changes table (0.4.32 purchase capture with once-per-order sends, 0.4.41 Spreedly hosted fields, 0.4.42, 0.4.43, modulepreload), the 3-D Secure test card, a purchase replay check in step 6, and the update-the-pin answer to the old storage-check failure."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Update current bundle revision examples to 1.61.0+skills.2."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/sdk-storage-compatibility.md",
+          "surface_entry": "docs/sdk-storage-compatibility.md",
+          "summary": "Describe the scoped tracked-file inventory and the new 'Cannot inventory tracked Git source files: <reason>' error."
+        }
+      ],
+      "entry_sha256": "61bdc9a4d654769cbd5b3a4695c81783f607bf00d5121c048249726d475aeccc"
     }
   ]
 }

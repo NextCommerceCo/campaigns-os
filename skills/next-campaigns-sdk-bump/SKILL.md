@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-sdk-bump
-version: 1.0.6
+version: 1.0.7
 description: Bump a live campaign's Campaign Cart SDK from one 0.4.x release to a later 0.4.x on a page-kit or static repo. Use for any request to bump, upgrade or move a campaign to SDK 0.4.x, including when the repository has its own BUMP.md. Find every pin, check the release diff and storage against the campaign's own code, prove on a preview with approved test orders, and report what is not proven.
 ---
 
-Bundle revision: 1.61.0+skills.1
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.61.0+skills.1`
+Bundle revision: 1.61.0+skills.2
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.61.0+skills.2`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -164,6 +164,17 @@ particular:
   `window.next` exists and `document.body.dataset.nextSdkLoading === "false"`,
   otherwise wait for the event, and run once either way. Step 6 proves it.
 
+Known changes a bump can cross. Check each row the range covers, as well as the
+release notes:
+
+| Version | What changed | What to check |
+|---|---|---|
+| 0.4.32 | The checkout page no longer emits `order:completed` when it creates an order. The event fires on the first page opened with the order's `?ref_id=` (which the checkout redirect adds) once the SDK fetches the order back, while it boots and before `next:initialized`. | A hand-wired purchase capture on the checkout stops firing. Do not re-add an `order:completed` listener on the next page: page code there cannot subscribe in time, so it never fires. Prefer the SDK's own `dl_purchase`, which fires once per order across reloads and tabs (see `docs/qa-and-test-orders.md`, "Purchase data layer"). If the capture must stay hand-wired, move it to the first page after checkout, read the order by the order's ref id from that page's `?ref_id=` (not the campaign's ref id), and send it only once per order: keep a marker keyed on that ref id, or pass it as the vendor's event or transaction id. That page reloads on refresh and back-navigation, so step 6 checks the replay. |
+| 0.4.41 | The card fields are set up by NEXT's payment script (`payments.29next.com`), which loads Spreedly itself, with the campaign's `payment_env_key`. A `next-spreedly-key` meta tag is no longer read; it does no harm if it stays. | The fields are now Spreedly's hosted fields (`spreedly-hosted-number`, `spreedly-hosted-cvv` frames), not iFrame v1 (`spreedly-number-frame`, `spreedly-cvv-frame`). Confirm the campaign has a payment key. Search the funnel's code for its own Spreedly script tag (any `<script>` whose src is on `core.spreedly.com`; SDK 0.4.40 loaded `core.spreedly.com/iframe/iframe-v1.min.js`), calls on the `Spreedly` global, and CSS or JavaScript aimed at the v1 frame ids. Remove or port each one in the same commit that moves that page's pin to 0.4.41 or later, never before, since a page still below 0.4.41 needs them. Add both hosts to any Content-Security-Policy. Plan a 3-D Secure order and check the card fields' styling in step 6. |
+| 0.4.42 | `next:initialized` fires once and is not replayed. | Guard every listener, as above. |
+| 0.4.43 | Shop Pay in the express-checkout container. | Check whether the campaign's `expressCheckout.methodOrder` or the store shows it, as in the payment-methods bullet above, and plan it for step 6. |
+| Any, if a page has a hand-written `<link rel="modulepreload">` list of SDK files | The SDK's chunk file names change between versions. | Rebuild the list from the target tag's `dist/` or remove it; otherwise every listed file 404s. |
+
 ## 4. Storage check
 
 Run `campaigns-os sdk storage-check --target <git-root> --target-sdk <x.y.z> --manifest <storage-migrations.v1.json> --scope <funnel folder,shared js>`
@@ -177,6 +188,14 @@ The manifest's `supportedSdkVersions` can stop below the tag it ships in: tags
 v0.4.39 to v0.4.43 declare 0.4.38 to 0.4.38, so `--target-sdk 0.4.43` returns
 `target-outside-manifest-range`. Run the check at the manifest's highest
 version and report that it does not speak for the versions above it.
+
+If the check stops with exactly `Cannot inventory tracked Git source files.`
+(with nothing after the period), the pinned Campaigns OS is npm 1.61.0 or
+earlier, which lists the whole repository and fails once that list passes
+1 MiB. Update the pin to a release whose bundle revision matches this skill, as
+the check at the top of this skill requires, and run the check again. Do not
+work around it in a copied repository: a copy can lose tracked files and report
+a false `source-compatible`.
 
 ## 5. Build and check
 
@@ -261,7 +280,12 @@ Cover:
 - each payment or express method step 3 found the range adds, started and
   cancelled, where the campaign offers it;
 - an upsell at quantity 2 or more on a page that shows a quantity picker;
-- a 3-D Secure card when step 3 found card-field or 3-D Secure changes, and whether it challenged;
+- a 3-D Secure card when step 3 found card-field or 3-D Secure changes, and whether it challenged.
+  Use the 3-D Secure test card in `docs/qa-and-test-orders.md` (`6011 0009 9013 9424`;
+  the platform's [testing page](https://developers.nextcommerce.com/docs/testing)
+  lists it as the "3DS payment flow" card). You cannot see whether the store's
+  gateway is in test mode, so ask the developer to confirm it before placing
+  the order;
 - the coupon path, if the funnel has one;
 - the purchase event fires once, on the page the release says it should;
 - every SDK page, upsells included, on one fresh load and then five cached
@@ -270,7 +294,10 @@ Cover:
   the receipt and any page where step 3 found a hand-wired purchase push or
   `order:completed` listener: upsell pages reload the order and can resend a
   real purchase on each load. Count purchase events across the whole run, and
-  list those pages' listeners as not proven on cached reloads.
+  list those pages' listeners as not proven on cached reloads;
+- where a purchase capture is hand-wired, one reload of the page it runs on,
+  with the vendor beacons blocked at the network, and the purchase sent only
+  once for that order.
 
 Read each order back in the store admin (the packet run's verdict under
 `qa-output/` also lists the orders it created) and keep the order numbers for

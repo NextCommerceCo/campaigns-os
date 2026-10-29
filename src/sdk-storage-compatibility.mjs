@@ -7,6 +7,7 @@ import { readFileSync, lstatSync, realpathSync, statSync } from 'node:fs';
 import { resolve, relative, dirname, posix, sep } from 'node:path';
 import { createHash } from 'node:crypto';
 import { isUtf8 } from 'node:buffer';
+import { singleLineFragment } from './text-safety.mjs';
 const digest = value => createHash('sha256').update(value).digest('hex');
 const version = value => {
   if (typeof value !== 'string' || !/^\d+\.\d+\.\d+$/.test(value))
@@ -361,6 +362,19 @@ function frontmatterScripts(text) {
   // linePos is 1-based within the YAML block, which starts on the file's line 2.
   return { scripts: scripts.items.map(item => ({ value: item.value, line: lineCounter.linePos(item.range[0]).line + 1 })) };
 }
+const INVENTORY_MAX_BYTES = 256 * 1024 * 1024;
+const INVENTORY_DETAIL_MAX = 200;
+
+// A missing git already fails at rev-parse, above the inventory.
+export function inventoryFailure(error) {
+  if (error.code === 'ENOBUFS') return `the tracked-file list under --scope is larger than ${INVENTORY_MAX_BYTES / 1024 / 1024} MiB; narrow --scope.`;
+  const stderr = typeof error.stderr === 'string' ? error.stderr : error.stderr?.toString() ?? '';
+  const detail = singleLineFragment(stderr.trim().split('\n')[0], `git exited ${error.status ?? error.signal ?? error.code ?? 'abnormally'} with no message`);
+  const chars = Array.from(detail);
+  const bounded = chars.length > INVENTORY_DETAIL_MAX ? `${chars.slice(0, INVENTORY_DETAIL_MAX).join('')}…` : detail;
+  return `${bounded.replace(/\.$/, '')}.`;
+}
+
 export function scanSdkStorageCompatibility({ cwd = process.cwd(), targetSdkVersion, manifestPath, scope, exclude = [] }) {
   version(targetSdkVersion);
   if (!Array.isArray(scope) || !scope.length)
@@ -375,9 +389,14 @@ export function scanSdkStorageCompatibility({ cwd = process.cwd(), targetSdkVers
   if (rootIdentity.dev !== targetIdentity.dev || rootIdentity.ino !== targetIdentity.ino)
     throw new Error('--target must be the Git repository root.');
   const { value: manifest, evidence } = readStorageManifest(manifestPath);
+  // Inventory only the scope: a whole-repository list can pass Node's 1 MiB
+  // default buffer on a large repository (#717). Scopes are literal paths.
   let tracked;
-  try { tracked = execFileSync('git', ['-C', root, 'ls-files', '-z'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).split('\0').filter(Boolean); }
-  catch { throw new Error('Cannot inventory tracked Git source files.'); }
+  try {
+    tracked = execFileSync('git', ['--literal-pathspecs', '-C', root, 'ls-files', '-z', '--', ...scope], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: INVENTORY_MAX_BYTES }).split('\0').filter(Boolean);
+  } catch (error) {
+    throw new Error(`Cannot inventory tracked Git source files: ${inventoryFailure(error)}`);
+  }
   for (const item of scope)
     if (!tracked.some(p => inside(p, item)))
       throw new Error(`Scope has no tracked files: ${item}`);
