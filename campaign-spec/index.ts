@@ -86,6 +86,8 @@ export {
   isCheckoutStepPage,
   isPrePaymentPage,
   isCheckoutFlowPage,
+  isMainCartPackage,
+  sellsMainCartPackage,
   resolveRouteTargetPage,
   forwardTargetPage,
   checkoutPathFrom,

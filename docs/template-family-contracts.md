@@ -99,6 +99,38 @@ placed on a step lands on the first upsell. QA submits each step and
 asserts it lands on the step's declared next page before paying on the
 Checkout. A 4.2/4.3 spec that typed every step `checkout` is retyped on read.
 
+## Main-cart entry
+
+A shopper can only place an order if something is in the cart when they reach
+the Checkout. The spec says what goes in the cart through the package entries
+on each page (`page.packages[]`), and three booleans on an entry set its role.
+There is no `role` field.
+
+- **Main-cart package**: an entry with neither `is_upsell: true` nor
+  `is_order_bump: true`. This is the package the shopper buys.
+- **Bump**: an entry with `is_order_bump: true`, or `is_upsell: true` on a
+  checkout page, which is how real exports mark bumps. The two flags are read
+  as one signal. A bump is added on top of a main-cart package and never
+  fills the cart by itself.
+- **`default_selected`** says which main-cart entry a selector starts on. It
+  never changes an entry's role.
+
+Every path from an entry page to a Checkout must pass at least one page that
+carries a main-cart entry. Any page on the path up to and including the
+Checkout counts: a `select` page's bundle picker, a landing page's package
+cards (`shop-single-step` populates the cart this way), a `checkout_step`, or
+the Checkout's own selector. Entries on upsell, downsell and thank-you pages
+are post-purchase offers and never count. The check follows the spec's
+routing fields; it never reads page order or page names.
+
+The CampaignSpec rule `CheckoutPathHasPackages`
+(`campaign-spec/rules/checkout-path-has-packages.ts`) enforces this at spec
+validation, so Map Builder, `start` and `doctor` all report it. It is an error,
+or a warning when `build_scope.mode` is `partial` (a page outside the build may
+fill the cart). The canonical CampaignSpec fixture of every certified family
+passes it; `campaign-spec/test/rules/checkout-path-has-packages.test.ts` proves
+that. `qa resolve` is unchanged: `resolvePayload.ok` stays unconditional.
+
 ## Inventory Matrix
 
 | Family | Pages | Bundle Picker | Order Bump | Upsell/Downsell | Exit Pop | Key QA Invariants |

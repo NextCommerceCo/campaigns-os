@@ -23,6 +23,7 @@
         {
           "id": "f-c",
           "type": "checkout",
+          "packages": [{ "ref_id": 1, "qty": 1 }],
           "label": "Checkout",
           "success_url": "f-ty",
           "exit_intent": {

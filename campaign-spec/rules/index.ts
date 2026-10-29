@@ -37,6 +37,7 @@ import { CheckoutForwardTarget } from './checkout-forward-target.ts'
 import { PrePaymentForwardTarget } from './pre-payment-forward-target.ts'
 import { CheckoutStepReachesCheckout } from './checkout-step-reaches-checkout.ts'
 import { OneCheckoutPerPath } from './one-checkout-per-path.ts'
+import { CheckoutPathHasPackages } from './checkout-path-has-packages.ts'
 import { UpsellWithoutCheckout } from './upsell-without-checkout.ts'
 import { DownsellWithoutUpsell } from './downsell-without-upsell.ts'
 import { CampaignMetadata } from './campaign-metadata.ts'
@@ -73,6 +74,7 @@ export { CheckoutForwardTarget } from './checkout-forward-target.ts'
 export { PrePaymentForwardTarget } from './pre-payment-forward-target.ts'
 export { CheckoutStepReachesCheckout } from './checkout-step-reaches-checkout.ts'
 export { OneCheckoutPerPath } from './one-checkout-per-path.ts'
+export { CheckoutPathHasPackages } from './checkout-path-has-packages.ts'
 export { UpsellWithoutCheckout } from './upsell-without-checkout.ts'
 export { DownsellWithoutUpsell } from './downsell-without-upsell.ts'
 export { PackagePricingSanity } from './package-pricing-sanity.ts'
@@ -119,6 +121,7 @@ export const allRules: RuleSet = [
   PrePaymentForwardTarget,
   CheckoutStepReachesCheckout,
   OneCheckoutPerPath,
+  CheckoutPathHasPackages,
   UpsellWithoutCheckout,
   DownsellWithoutUpsell,
   PackagePricingSanity,

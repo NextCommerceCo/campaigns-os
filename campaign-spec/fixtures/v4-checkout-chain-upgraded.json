@@ -40,6 +40,7 @@
         {
           "id": "billing",
           "type": "checkout",
+          "packages": [{ "ref_id": 1, "qty": 1 }],
           "label": "Billing",
           "page_url": "/billing/",
           "next_page": "upsell-1"

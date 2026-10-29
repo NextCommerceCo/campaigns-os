@@ -52,7 +52,7 @@
       "sha256": "53269453dfdaac4b286124d445b60b0c46205dfbaf8037ac61b30254a32df53a"
     },
     "contracts/runtime-recipe.campaigns-os-node-v1.json": {
-      "sha256": "ab0537a4756310d3a35b400d3932e46695a820f1b8b398f52f6fd0906098bc1d"
+      "sha256": "08dfab6fb25cd05f5652c7b173198200ee7353b40e2b42477339796acaa3b96c"
     },
     "schemas/campaign-build-brief.v1.schema.json": {
       "sha256": "d524003184131398dc15fdb84385af1be0de0c69d6c5ede7278689a5b6101b81"
