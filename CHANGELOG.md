@@ -2,6 +2,22 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.61.0+agent.2] - 2026-10-29
+
+The `next-campaigns-sdk-bump` skill (1.0.7) takes the findings from its third live run, the first on a static repository. Step 3 now has a table of known changes a bump can cross, and step 6 says where to find a 3-D Secure test card. `sdk storage-check` no longer fails on large repositories. Refresh installed skills with `install-skills` to get it.
+
+### Changed
+
+The `next-campaigns-sdk-bump` skill (1.0.7, bundle `1.61.0+skills.2`) takes the third-run findings on campaigns-os#683:
+
+- Step 3 has a table of known changes by version. 0.4.32: the checkout page no longer emits `order:completed` when it creates an order, so a hand-wired purchase capture moves to the first page after checkout and reads the order by its `ref_id`, or uses the SDK's `dl_purchase`. 0.4.41: the card fields come from NEXT's payment script, so a page's own Spreedly `iframe-v1.min.js` tag is removed and both hosts go in any Content-Security-Policy. Any version: a hand-written `modulepreload` list is rebuilt for the target's chunks or removed. The 0.4.42 and 0.4.43 rows point at the existing steps.
+- Step 6 names the "3DS payment flow" test card on the platform's testing page for the 3-D Secure order, and asks before placing it when the gateway is not in test mode.
+- Step 4 gives the workaround for the storage-check failure below on 1.61.0 and earlier: run the check in a new Git repository holding the scoped folders.
+
+### Fixed
+
+- `sdk storage-check` reads the tracked-file list with a 1 GiB buffer instead of Node's 1 MiB default, so a repository with more than about 25,000 tracked paths no longer stops with `Cannot inventory tracked Git source files.` The message now carries the underlying error code. (#717)
+
 ## [1.61.0+agent.1] - 2026-10-24
 
 ### Changed

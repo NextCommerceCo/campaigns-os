@@ -149,3 +149,11 @@ test('a local HTML base cannot conceal an omitted script dependency', t => {
   assert.equal(report.status, 'unknown');
   assert.ok(report.findings.some(f => f.status === 'unknown'));
 });
+
+test('a repository whose tracked-file list exceeds 1 MiB is still inventoried (#717)', t => {
+  const name = 'x'.repeat(200);
+  const extra = {};
+  for (let i = 0; i < 6000; i++) extra[`bulk/${i}-${name}.txt`] = '';
+  const report = scanSdkStorageCompatibility(options(fixture(t, "sessionStorage.getItem('next-order');", { extra })));
+  assert.equal(report.status, 'incompatible');
+});

@@ -376,8 +376,9 @@ export function scanSdkStorageCompatibility({ cwd = process.cwd(), targetSdkVers
     throw new Error('--target must be the Git repository root.');
   const { value: manifest, evidence } = readStorageManifest(manifestPath);
   let tracked;
-  try { tracked = execFileSync('git', ['-C', root, 'ls-files', '-z'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).split('\0').filter(Boolean); }
-  catch { throw new Error('Cannot inventory tracked Git source files.'); }
+  // Node's 1 MiB default kills git on large repositories (#717).
+  try { tracked = execFileSync('git', ['-C', root, 'ls-files', '-z'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 1024 * 1024 * 1024 }).split('\0').filter(Boolean); }
+  catch (error) { throw new Error(`Cannot inventory tracked Git source files (${error.code ?? error.message}).`); }
   for (const item of scope)
     if (!tracked.some(p => inside(p, item)))
       throw new Error(`Scope has no tracked files: ${item}`);

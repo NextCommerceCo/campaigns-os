@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-sdk-bump
-version: 1.0.6
+version: 1.0.7
 description: Bump a live campaign's Campaign Cart SDK from one 0.4.x release to a later 0.4.x on a page-kit or static repo. Use for any request to bump, upgrade or move a campaign to SDK 0.4.x, including when the repository has its own BUMP.md. Find every pin, check the release diff and storage against the campaign's own code, prove on a preview with approved test orders, and report what is not proven.
 ---
 
-Bundle revision: 1.61.0+skills.1
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.61.0+skills.1`
+Bundle revision: 1.61.0+skills.2
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.61.0+skills.2`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -164,6 +164,17 @@ particular:
   `window.next` exists and `document.body.dataset.nextSdkLoading === "false"`,
   otherwise wait for the event, and run once either way. Step 6 proves it.
 
+Known changes a bump can cross. Check each row the range covers, as well as the
+release notes:
+
+| Version | What changed | What to check |
+|---|---|---|
+| 0.4.32 | The checkout page no longer emits `order:completed` when it creates an order. The event fires on the page the shopper lands on next, while the SDK boots and before `next:initialized`. | A hand-wired purchase capture on the checkout stops firing, and page code on the next page cannot subscribe in time. Move the capture to the first page after checkout and read the order by its `ref_id`, or use the SDK's own `dl_purchase` event and its `value` rule. |
+| 0.4.41 | The card fields are set up by NEXT's payment script (`payments.29next.com`), which loads Spreedly itself. The `next-spreedly-key` and `next-payment-env-key` meta tags and `nextConfig.spreedlyEnvironmentKey` are no longer read. | Remove a page's own Spreedly script tag (`core.spreedly.com/iframe/iframe-v1.min.js`): it loads beside the payment script's copy. Add both hosts to any Content-Security-Policy. Plan a 3-D Secure order in step 6. |
+| 0.4.42 | `next:initialized` fires once and is not replayed. | Guard every listener, as above. |
+| 0.4.43 | Shop Pay in the express-checkout container. | As above. |
+| Any | The SDK's chunk file names change between versions. | Rebuild a hand-written `modulepreload` list for the target version's chunks, or remove it; otherwise every listed file 404s. |
+
 ## 4. Storage check
 
 Run `campaigns-os sdk storage-check --target <git-root> --target-sdk <x.y.z> --manifest <storage-migrations.v1.json> --scope <funnel folder,shared js>`
@@ -177,6 +188,11 @@ The manifest's `supportedSdkVersions` can stop below the tag it ships in: tags
 v0.4.39 to v0.4.43 declare 0.4.38 to 0.4.38, so `--target-sdk 0.4.43` returns
 `target-outside-manifest-range`. Run the check at the manifest's highest
 version and report that it does not speak for the versions above it.
+
+On Campaigns OS 1.61.0 and earlier, the check stops with `Cannot inventory
+tracked Git source files.` on a repository whose tracked-file list passes 1 MiB
+(about 25,000 paths). If you see it on an older install, copy the scoped folders into
+a new Git repository, run the check there, and say so in the hand-back.
 
 ## 5. Build and check
 
@@ -261,7 +277,11 @@ Cover:
 - each payment or express method step 3 found the range adds, started and
   cancelled, where the campaign offers it;
 - an upsell at quantity 2 or more on a page that shows a quantity picker;
-- a 3-D Secure card when step 3 found card-field or 3-D Secure changes, and whether it challenged;
+- a 3-D Secure card when step 3 found card-field or 3-D Secure changes, and whether it challenged.
+  Use the "3DS payment flow" test card on the platform's testing page,
+  <https://developers.29next.com/docs/testing>, which also lists the standard
+  success card. If the checkout gateway is not in test mode, ask before
+  placing it;
 - the coupon path, if the funnel has one;
 - the purchase event fires once, on the page the release says it should;
 - every SDK page, upsells included, on one fresh load and then five cached
