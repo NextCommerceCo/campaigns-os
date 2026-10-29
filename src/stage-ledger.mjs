@@ -716,7 +716,7 @@ function commitAssemblyReportUnderLock(workspace, mutate, {
       const doctor = refreshDoctor(outcome);
       if (doctor !== null && doctor !== undefined) writeDoctorSidecar(doctorOutPath, doctor, { command: command.trim(), targetRepo });
     } else if (outcome.written) {
-      markDoctorSidecarStale(targetRepo, { command: command.trim(), reason: staleReason.trim() });
+      markDoctorSidecarStale(targetRepo, { command: command.trim(), reason: staleReason.trim(), ...(doctorOutPath ? { path: doctorOutPath } : {}) });
     }
     return outcome;
   };

@@ -332,6 +332,11 @@
           "type": "string",
           "minLength": 1
         },
+        "runtime_dir": {
+          "type": "string",
+          "pattern": "^\\.campaign-runtime(?:/funnels/[A-Za-z0-9_-][A-Za-z0-9._-]*)?$",
+          "description": "Where this funnel's records live, relative to target_repo (and, for the QA verdict sidecar and Run Records, to this packet's directory). prepare-build writes \".campaign-runtime/funnels/<public_route_slug>\" when the project already holds another funnel's records, so one Page Kit project can hold several funnels without one overwriting another's Build Context, Assembly Report, doctor output, theme output, inputs, QA verdict sidecar or Run Records. Absent (every packet before per-funnel records, and a project's first funnel) means the project-level \".campaign-runtime\". Any value other than those two for this packet's public_route_slug is refused."
+        },
         "output_dir": {
           "type": "string",
           "minLength": 1

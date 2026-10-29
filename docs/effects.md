@@ -70,10 +70,12 @@ with one of these:
 | Token | Resolves to |
 | --- | --- |
 | `{target}` | The target the invocation names: the directory given to `--target`, or the Page Kit target repository the Build Packet points at. |
+| `{runtime}` | The funnel's runtime directory under `{target}`: `{target}/.campaign-runtime` for a Build Packet that records no `assembly.runtime_dir` (every packet before per-funnel records, and the first funnel of a project), else `{target}/<assembly.runtime_dir>`, which is `.campaign-runtime/funnels/<public_route_slug>` for each later funnel of the same project. The funnel's Build Context, Assembly Report, doctor output, theme output and intake inputs live here. |
 | `{cwd}` | The working directory the invocation runs in. |
 | `{spec}` | The CampaignSpec file the Build Packet names (`spec.local_path`), which need not live inside the target repository. |
 | `{home}` | Your machine: the home directory and the config root under it (`XDG_CONFIG_HOME` when set). |
 | `{packet}` | The Build Packet the invocation names (`--packet`), wherever it lives — it need not be the copy inside the target repository. |
+| `{packet-runtime}` | The same funnel runtime directory beside the Build Packet: `<packet directory>/.campaign-runtime`, or `<packet directory>/<assembly.runtime_dir>` when the packet records one. The committed QA verdict sidecar and the Run Records live here. |
 | `{lifecycle-journal}` | The command-lifecycle journal wherever it was selected for this invocation. |
 | `{proxy-base}` | The endpoint `--proxy-base` names, or the canonical NEXT endpoint when it does not. |
 | `{base-url}` | The campaign under test, as `--base-url` names it or as the packet derives it. |
@@ -81,8 +83,8 @@ with one of these:
 
 The tokens matter because effects are not all under the target. `install-skills`
 writes your **home** directory, not the campaign. `telemetry on` writes your
-**machine** config. `run-record` writes beside the **working directory**, not the
-target repo. A row that said "writes the target" would be wrong about all three.
+**machine** config. `run-record` writes beside the **Build Packet**
+(`{packet-runtime}`), not the target repo. A row that said "writes the target" would be wrong about all three.
 
 ### The Map Builder fetch
 

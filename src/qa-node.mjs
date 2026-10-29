@@ -84,7 +84,7 @@ import { commitAssemblyReport } from "./stage-ledger.mjs";
 // persist step suppresses the journal append from one place. lifecycle.mjs
 // imports nothing from this repository, so this cannot be circular.
 import { refused, refusing } from "./lifecycle.mjs";
-import { campaignSidecarPaths, explicitReportPath, resolveCampaignWorkspace, targetRepoFor } from "./campaign-workspace.mjs";
+import { campaignSidecarPaths, explicitReportPath, packetRuntimeRelPath, resolveCampaignWorkspace, targetRepoFor } from "./campaign-workspace.mjs";
 import { loadParityFixture } from "./qa-parity-fixture.mjs";
 import { assessParityCapture, resolveParityScenario, runParityCapture } from "./qa-parity-capture.mjs";
 import { loadPageKitCampaignEntry, PAGE_KIT_CAMPAIGNS_REL_PATH } from "./page-kit-campaign-config.mjs";
@@ -1637,7 +1637,7 @@ function serializeThrownValue(error) {
 // `derived.assembly_report_path` handling — so the printed remediations can
 // name it and a default-report campaign's output is unchanged.
 function reportPathField(resolved) {
-  const reportPath = explicitReportPath(resolved?.reportPath, resolved?.targetRepo);
+  const reportPath = explicitReportPath(resolved?.reportPath, resolved?.targetRepo, packetRuntimeRelPath(resolved?.packet));
   return reportPath ? { report_path: reportPath } : {};
 }
 
@@ -1932,6 +1932,7 @@ function updateQaPolicy(args) {
     // #171: packet edits change what doctor would conclude; the retained
     // doctor sidecar (if any) now predates them.
     markDoctorSidecarStale(targetRepoFor(packetPath, packet), {
+      path: campaignSidecarPaths(targetRepoFor(packetPath, packet), packetRuntimeRelPath(packet)).doctorOutPath,
       command: "qa policy set",
       reason: staleReason,
     });
@@ -2715,6 +2716,7 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
   // `external:qa_verdict` whenever that is not the packet directory.
   const causeSummary = annotateQaAssertionCauses(assertions, {
     baseDir: resolved.packetPath ? dirname(resolved.packetPath) : null,
+    runtimeRelPath: resolved.packetPath ? packetRuntimeRelPath(resolved.packet) : undefined,
     targetRepo: resolved.packetPath ? targetRepoFor(resolved.packetPath, resolved.packet) : null,
     mapId: resolved.mapId,
     localSpecId: resolved.localSpecId,

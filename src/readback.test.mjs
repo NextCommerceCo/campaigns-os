@@ -681,11 +681,13 @@ function writeVerdict(root, assertions, disposition = "blocked") {
   );
 }
 
-function writePacket(dir, name, generatedAt, mapId) {
+// Every packet one test writes is a run of the same funnel unless it names a
+// route of its own: freshness chooses among runs, never among funnels.
+function writePacket(dir, name, generatedAt, mapId, route = "readback-funnel") {
   const payload = {
     schema_version: "campaign-runtime-build-packet/v0",
     spec: { map_id: mapId },
-    campaign: { public_route_slug: mapId },
+    campaign: { public_route_slug: route },
   };
   if (generatedAt !== null) payload.generated_at = generatedAt;
   writeFileSync(join(dir, name), JSON.stringify(payload), "utf8");

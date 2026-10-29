@@ -76,8 +76,19 @@ test("an older managed block gains the progress ignore rule on the next write", 
     writeFileSync(join(dir, ".gitignore"), stale);
     const result = ensureRuntimeStateIgnored(dir);
     assert.equal(result.action, "updated");
-    assert.deepEqual(result.added_entries, [".campaign-runtime/progress/"]);
+    assert.deepEqual(result.added_entries, [".campaign-runtime/progress/", ".campaign-runtime/funnels/*/run-records/"]);
     assert.ok(readFileSync(join(dir, ".gitignore"), "utf8").split("\n").includes(".campaign-runtime/progress/"));
+    assert.equal(ensureRuntimeStateIgnored(dir).action, "present");
+  });
+});
+
+test("a block written before per-funnel records gains the funnel Run Records rule (#719)", () => {
+  withTempDir((dir) => {
+    const stale = `${RUNTIME_STATE_IGNORE_MARKER}\nqa-output/\n.campaign-runtime/progress/\n.campaign-runtime/run-records/\n`;
+    writeFileSync(join(dir, ".gitignore"), stale);
+    const result = ensureRuntimeStateIgnored(dir);
+    assert.equal(result.action, "updated");
+    assert.deepEqual(result.added_entries, [".campaign-runtime/funnels/*/run-records/"]);
     assert.equal(ensureRuntimeStateIgnored(dir).action, "present");
   });
 });

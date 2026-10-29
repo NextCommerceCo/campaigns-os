@@ -56,6 +56,8 @@ import { fileURLToPath } from "node:url";
 import { assessInputCurrency, currentPacketInputs, effectiveStageStatus } from "./input-currency.mjs";
 import { deriveAssemblyReportSummary } from "./stage-ledger.mjs";
 import { assessEvidenceDebt } from "./evidence-debt.mjs";
+import { RUNTIME_DIR_REL_PATH, packetRuntimeRelPath } from "./campaign-workspace.mjs";
+import { normalizePublicRouteSlug } from "./route-identity.mjs";
 
 export const MAX_ARTIFACT_BYTES = 32 * 1024 * 1024;
 export const MAX_GIT_METADATA_BYTES = 64 * 1024;
@@ -193,7 +195,9 @@ export function readReflogTail(path) {
 
 // Artifact keys, in render order, with the default location of each artifact
 // relative to the target repository root. The packet lives at the root; the
-// sidecars live under .campaign-runtime/.
+// sidecars live under .campaign-runtime/, or under the runtime directory the
+// selected packet records (assembly.runtime_dir) when the project holds
+// several funnels.
 export const DEFAULT_RELATIVE_PATHS = {
   packet: "campaign-runtime.build.json",
   doctor: ".campaign-runtime/doctor-output.json",
@@ -221,8 +225,10 @@ export const RECOGNIZED_SCHEMA_VERSIONS = {
 };
 
 // Root-level Build Packets other than the default-named one. A second run in
-// the same repository leaves its record under a suffixed name; both shapes are
-// discovery candidates when no `--packet` was given.
+// the same repository leaves its record under a suffixed name, and every
+// funnel after a project's first has its packet at
+// campaign-runtime-<route>.build.json; both shapes are discovery candidates
+// when no `--packet` was given.
 const PACKET_CANDIDATE_PATTERN = /^campaign-runtime-.*\.build\.json$/;
 
 // Sidecar path some write-ends have used instead of the contracted root home.
@@ -1835,6 +1841,18 @@ export function selectPacketPath(rootPath, override) {
 
   if (considered.length === 1) return chose(considered[0], "sole_candidate");
 
+  // Packets for different routes are different funnels, each with its own
+  // records: freshness would only say which funnel was set up last, so the
+  // caller names the one to project.
+  const routes = new Map(considered.map((name) => [name, normalizePublicRouteSlug(views.get(name).data?.campaign?.public_route_slug) || null]));
+  if (new Set(routes.values()).size > 1) {
+    const detail = considered.map((name) => `${name} (route ${routes.get(name) || "unnamed"})`).join(", ");
+    throw new ReadbackUsageError(
+      `the target root holds Build Packets for more than one funnel: ${detail}. ` +
+        "Pass --packet to name the funnel's Build Packet to project.",
+    );
+  }
+
   if (considered.some((name) => times.get(name) === null)) {
     const detail = considered
       .map((name) => {
@@ -1869,22 +1887,43 @@ export function selectPacketPath(rootPath, override) {
 /**
  * Return `{ paths, packetSelection, packetView }` for one target root.
  *
- * `packetView` is the Build Packet view discovery already loaded, ready to hand
- * to loadArtifacts as `preloaded` so no artifact is read twice; it is null when
- * discovery read no packet.
+ * `packetView` is the Build Packet view already loaded (by discovery, or here
+ * for an explicit `--packet` that names a file), ready to hand to
+ * loadArtifacts as `preloaded` so no artifact is read twice; it is null when
+ * there is no packet file to read. The sidecar paths sit under the runtime
+ * directory that packet records.
  */
 export function resolveProjection(root, overrides = {}) {
   const info = statOrNull(root);
   if (!info || !info.isDirectory()) {
     throw new ReadbackUsageError(`target repository root must name an existing directory: ${root}`);
   }
-  const { path: packetPath, selection, view } = selectPacketPath(root, overrides.packet);
+  const selected = selectPacketPath(root, overrides.packet);
+  const { path: packetPath, selection } = selected;
+  // The sidecars follow the packet: read it now when discovery did not, so
+  // its runtime directory is known and it is still read only once.
+  const view = selected.view || (isFilePath(packetPath) ? loadArtifact("packet", packetPath) : null);
+  const runtime = packetRuntimeDirFor(view);
   const paths = { packet: packetPath };
   for (const [key, relative] of Object.entries(DEFAULT_RELATIVE_PATHS)) {
     if (key === "packet") continue;
-    paths[key] = overrides[key] ? String(overrides[key]) : join(root, relative);
+    paths[key] = overrides[key] ? String(overrides[key]) : join(root, runtime, relative.slice(RUNTIME_DIR_REL_PATH.length + 1));
   }
   return { paths, packetSelection: selection, packetView: view };
+}
+
+// The runtime directory the selected packet records, relative to the root;
+// the project-level .campaign-runtime when there is no readable packet or it
+// records none. A value the packet may not carry leaves no way to know whose
+// records to show, and showing the project-level ones could project another
+// funnel's, so the readback cannot form a projection.
+function packetRuntimeDirFor(view) {
+  if (view?.state !== "loaded") return RUNTIME_DIR_REL_PATH;
+  try {
+    return packetRuntimeRelPath(view.data);
+  } catch (error) {
+    throw new ReadbackUsageError(`${view.path}: ${error.message}`);
+  }
 }
 
 /** The artifact paths to project; discovery result discarded. */

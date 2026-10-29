@@ -65,6 +65,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 import { computeBuildFingerprint } from "./built-site-scope.mjs";
+import { packetRuntimeRelPath } from "./campaign-workspace.mjs";
 import { buildPageLoadCapture } from "./polish-capture.mjs";
 import { planPolishCapture } from "./polish-node.mjs";
 import { buildPolishPageLoadEvidence } from "./polish-page-load.mjs";
@@ -910,10 +911,16 @@ async function runCondition(row, invocation, condition) {
     invocation.expect?.(result, seed, `${row.effect_test} [${condition}]`);
     const changed = changedPaths(before, snapshot(seed.dir));
 
+    const target = invocation.target ? invocation.target(seed) : "target-page-kit";
+    // The funnel runtime directory the seed packet records, under the target
+    // and beside the packet (the project-level one for this single funnel).
+    const runtime = packetRuntimeRelPath(existsSync(seed.packetPath) ? readJson(seed.packetPath) : null);
     const tokens = {
-      "{target}": invocation.target ? invocation.target(seed) : "target-page-kit",
+      "{target}": target,
+      "{runtime}": `${target}/${runtime}`,
       "{cwd}": "",
       "{home}": "home",
+      "{packet-runtime}": join(relative(seed.dir, dirname(seed.packetPath)), runtime),
       "{packet}": relative(seed.dir, seed.packetPath),
       "{spec}": relative(seed.dir, seed.specPath),
     };

@@ -1090,6 +1090,109 @@ Record already on disk for this packet's campaign (re-emitted in place), else
 a freshly minted id; `--new-run` mints on request and `--list` prints the ids
 on disk without writing (see docs/workflow-findings-sidecar.md).
 
+### Several funnels in one project
+
+One Page Kit project can hold several funnels, each with its own public route
+slug (`campaign.public_route_slug`, the `_site/<route>/` directory). Each funnel
+keeps its own packet and its own records, so setting up, building, recording or
+running QA for one funnel never changes another funnel's files.
+
+- The first funnel set up in a project uses the layout above: the packet
+  `campaign-runtime.build.json` and its records directly under
+  `.campaign-runtime/`.
+- Every later funnel gets a packet named `campaign-runtime-<route>.build.json`
+  at the project root and keeps its records under
+  `.campaign-runtime/funnels/<route>/`. Its packet records that directory as
+  `assembly.runtime_dir`.
+
+The funnel's runtime directory holds its Build Context, Assembly Report, doctor
+output, `theme/`, `input/` (normalized brief, Design Source Package, brief
+payload), `setup-handoff.json`, the committed QA verdict sidecar
+(`qa-verdict.json`) and its Run Records (`run-records/`). The QA verdict sidecar
+and Run Records sit under the same relative directory beside the packet, which
+is the target root unless `--out` placed the packet elsewhere.
+
+Some things stay shared by the whole project: the run session, the lifecycle,
+deviation and findings journals, `fetched-specs/`, `agent-context/`,
+`progress/`, the SDK repin record, the Page Kit build summary, the polish
+capture images under `.campaign-runtime/polish/` (each file is named by the
+hash of its bytes, so one funnel's capture never replaces another's), the
+prepare-build target lock and the full QA verdicts under `qa-output/<map id or
+route>/`.
+
+`start` and `prepare-build` choose the packet and directory for you:
+
+1. `--out` names the packet when given.
+2. Otherwise, a funnel whose route matches `campaign-runtime.build.json`, or a
+   project with no default packet yet, uses the default packet. A funnel that
+   already has `campaign-runtime-<route>.build.json` keeps it. Any other
+   funnel gets `campaign-runtime-<route>.build.json`.
+3. A packet that already exists at that path for another route, or whose route
+   cannot be read, is not replaced: the run is refused and names that route.
+   This holds for `--out` too. Only `--force` replaces it, which is how a
+   funnel's route is renamed (below).
+4. A packet that already records `assembly.runtime_dir` for this route keeps
+   it, and one for this route that records none keeps `.campaign-runtime/`
+   while those records are its own. Otherwise a funnel whose
+   `.campaign-runtime/funnels/<route>/` exists keeps that directory. The
+   project-level `.campaign-runtime/` is used when it holds no Build Context or
+   Assembly Report yet, or when those belong to this route (the report's
+   `identity.public_route_slug`, else the route of the packet the context
+   names). Records that belong to another route, or whose route cannot be
+   read, are never replaced: the funnel gets its own directory instead.
+
+The choice is made before the prepare-build target lock is taken and checked
+again once it is held. When another funnel was set up while the run waited
+(two first funnels started at once in an empty project), the run stops and
+names where this funnel now belongs; run it again.
+
+A route used as a directory and file name may contain letters, digits, dots,
+underscores and hyphens, and may not start with a dot. A packet whose
+`assembly.runtime_dir` is anything other than `.campaign-runtime` or
+`.campaign-runtime/funnels/<its own route>` is refused, because following it
+could read or write another funnel's records.
+
+Every command that takes `--packet` reads and writes that funnel's records:
+`doctor` (including `--ci`, the PR evidence check), `next`, `record`, `theme`,
+`checkpoint`, `polish capture`, `qa`, `run-record`, `page-kit sync` and
+`spec derive`. Commands that would otherwise pick a packet for you do not
+guess when the project holds more than one: `readback <root>` refuses with
+exit 2 and names each packet with its route, and `tooling status` reads no
+packet pin and says why. Pass `--packet` to name the funnel. In CI, run the
+evidence check once per packet. `bundle check` still validates only the
+repository-root bundle of the first funnel; a later funnel's packet reports
+`bundle.packet.noncanonical_path`.
+
+A single-funnel project set up before per-funnel records reads exactly as it
+did. Its packet records no `assembly.runtime_dir`, so every command keeps
+reading and writing `.campaign-runtime/`, and nothing has to be set up again.
+Adding a second funnel to that project leaves the first funnel's packet and
+records where they are.
+
+A new route beside an existing default packet could be another funnel or a
+rename of that one, and only the operator knows which. `prepare-build` sets it
+up as another funnel and prints a `Funnel:` line saying so, with the steps to
+make it a rename instead (the JSON result carries `funnelAddedBeside`, the
+default packet's path and route).
+
+To rename the route of a project's first funnel (the one at
+`campaign-runtime.build.json`):
+
+1. Set the new route in the CampaignSpec.
+2. If setup already ran for the new route, delete what it created:
+   `campaign-runtime-<new route>.build.json` and
+   `.campaign-runtime/funnels/<new route>/`. Do not delete `.campaign-runtime/`
+   itself, which also holds the project's shared records.
+3. Run `prepare-build --out campaign-runtime.build.json --force` (or `start`
+   with the same flags). The default packet and the records directly under
+   `.campaign-runtime/` are rewritten for the new route in place. Like any
+   `--force` intake, this clears recorded stage evidence and operator state.
+
+To rename the route of a later funnel, delete its packet
+(`campaign-runtime-<old route>.build.json`) and its directory
+(`.campaign-runtime/funnels/<old route>/`), then run setup again for the new
+route. It is set up as a funnel named for the new route.
+
 The packet's top-level `generated_at` (ISO-8601 UTC, `Z` suffix) is stamped by
 `prepare-build` on every new packet. Downstream freshness — campaigns-agent's
 readback staleness comparison and its multi-packet selection at the repository
@@ -1100,7 +1203,7 @@ than hand-adding the field. Note that a committed artifact set always reads
 stale to the readback once HEAD moves past it — freshness proof is a
 regeneration at HEAD, not a property a commit can preserve.
 
-Commit durable packet/context/report artifacts when they represent a real build handoff. The rest of `.campaign-runtime/` is machine-local and is not for the campaign repository: `run-session.json`, `command-lifecycle.jsonl`, `agent-deviations.jsonl`, `workflow-findings.jsonl`, `run-records/`, `fetched-specs/`, `progress/`, `polish-evidence/`, `evidence/`, and `*.log`/`*.tmp` are per-machine, append-only, or carry live URLs and absolute paths, and so are the full QA verdicts `qa run` writes under the target's `qa-output/`. `start`, `prepare-build`, `install-agent-context`, and `run start` write a managed ignore block for that set into the target's `.gitignore` (keyed on its marker line; edit the list beneath it freely). An existing block gains `qa-output/` and `.campaign-runtime/progress/` when they are missing, since those hold live URLs, order references and remit records. The readback bundle (`build-context.json`, `assembly-report.json`, `doctor-output.json`, `qa-verdict.json`), `input/`, `theme/`, `agent-context/`, and `setup-handoff.json` are deliberately not ignored. The Campaigns API key is a public, browser-side, domain-allowlisted key and may already be present in the local CampaignSpec as `campaign.campaigns_api_key`; do not duplicate it into the packet unless the spec is unavailable. Do not commit raw private API responses, backend secrets, or temporary media exports.
+Commit durable packet/context/report artifacts when they represent a real build handoff. The rest of `.campaign-runtime/` is machine-local and is not for the campaign repository: `run-session.json`, `command-lifecycle.jsonl`, `agent-deviations.jsonl`, `workflow-findings.jsonl`, `run-records/`, `fetched-specs/`, `progress/`, `polish-evidence/`, `evidence/`, and `*.log`/`*.tmp` are per-machine, append-only, or carry live URLs and absolute paths, and so are the full QA verdicts `qa run` writes under the target's `qa-output/`. `start`, `prepare-build`, `install-agent-context`, and `run start` write a managed ignore block for that set into the target's `.gitignore` (keyed on its marker line; edit the list beneath it freely). The block also lists `.campaign-runtime/funnels/*/run-records/` for the Run Records of a project's second and later funnels. An existing block gains `qa-output/`, `.campaign-runtime/progress/` and `.campaign-runtime/funnels/*/run-records/` when they are missing, since those hold live URLs, order references and remit records. The readback bundle (`build-context.json`, `assembly-report.json`, `doctor-output.json`, `qa-verdict.json`), `input/`, `theme/`, `agent-context/`, and `setup-handoff.json` are deliberately not ignored, at the top level or under `funnels/<route>/`. The Campaigns API key is a public, browser-side, domain-allowlisted key and may already be present in the local CampaignSpec as `campaign.campaigns_api_key`; do not duplicate it into the packet unless the spec is unavailable. Do not commit raw private API responses, backend secrets, or temporary media exports.
 
 Packet-mode `doctor` is inspection-only by default and preserves retained evidence and active run journals, even when lifecycle capture is configured. Use `--write` to intentionally record fresh evidence; `--no-write` takes precedence. Inspection still reports current blockers and keeps the same exit status.
 

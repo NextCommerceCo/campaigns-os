@@ -1,12 +1,14 @@
 import { localSpecIdentityFields } from "./spec-source-identity.mjs";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
+import { packetRuntimeRelPath } from "./campaign-workspace.mjs";
 import { deriveExceptions, validateVerdict } from "./qa-verdict.mjs";
 
 // The committed QA verdict sidecar: `.campaign-runtime/qa-verdict.json` beside
-// the Build Packet, the artifact campaigns-agent's readback projects. Full
+// the Build Packet (under the packet's own runtime directory when it is one
+// of several funnels in its project), the artifact campaigns-agent's readback projects. Full
 // verdicts under qa-output/ are gitignored because they carry live storefront
 // URLs, request evidence, and order references; the sidecar is committed to
 // merchant repos, so it is an allowlist PROJECTION of one verdict, never a
@@ -100,8 +102,18 @@ export function projectVerdictForSidecar(verdict, { generatedAt }) {
   };
 }
 
-export function sidecarPathForPacket(packetPath) {
-  return join(dirname(resolve(packetPath)), SIDECAR_RELATIVE_PATH);
+// `packet` is read from `packetPath` when not given; an unreadable packet
+// names the project-level location, which the writers refuse before using.
+export function sidecarPathForPacket(packetPath, packet = readPacketOrNull(packetPath)) {
+  return join(dirname(resolve(packetPath)), packetRuntimeRelPath(packet), basename(SIDECAR_RELATIVE_PATH));
+}
+
+function readPacketOrNull(packetPath) {
+  try {
+    return JSON.parse(readFileSync(resolve(packetPath), "utf8"));
+  } catch {
+    return null;
+  }
 }
 
 const PACKET_SCHEMA = "campaign-runtime-build-packet/v0";

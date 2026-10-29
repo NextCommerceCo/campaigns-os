@@ -474,7 +474,11 @@ readback consumes. It is written for every finalized disposition, blocked
 included: the sidecar records what QA concluded, it is not a pass mark. A run
 that dies before verdict finalization or fails local validation never touches
 an existing sidecar. Packet-less runs (`--site`, raw map-id) have no packet
-home and write no sidecar.
+home and write no sidecar. For a project's second and later funnels the sidecar
+is `.campaign-runtime/funnels/<route>/qa-verdict.json` beside that funnel's
+packet, the runtime directory its `assembly.runtime_dir` names (see
+[Several funnels in one project](build-packet.md#several-funnels-in-one-project));
+`qa promote` and `qa publish` read and write the same file.
 
 The sidecar is an allowlist **projection** of the full verdict, same schema
 (`1.0`), stamped with its own `generated_at` at promotion time. Full verdicts

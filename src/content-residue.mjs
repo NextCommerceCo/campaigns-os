@@ -189,9 +189,11 @@ export function scanBuiltOutputContentResidue(outputDir, { urgencyVerified = fal
 // seeds non-usable candidates to test exactly that.
 export const BRIEF_PAYLOAD_REL_PATH = ".campaign-runtime/input/brief-payload.json";
 
-export function loadBriefPayload(targetRepo) {
+// `runtimeRelPath` is the packet's runtime directory (packetRuntimeRelPath in
+// campaign-workspace.mjs), so a project's second funnel reads its own payload.
+export function loadBriefPayload(targetRepo, runtimeRelPath = ".campaign-runtime") {
   if (!targetRepo) return null;
-  const path = join(targetRepo, BRIEF_PAYLOAD_REL_PATH);
+  const path = join(targetRepo, runtimeRelPath, relative(".campaign-runtime", BRIEF_PAYLOAD_REL_PATH));
   if (!existsSync(path)) return null;
   try {
     return { path, payload: JSON.parse(readFileSync(path, "utf8")) };

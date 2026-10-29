@@ -82,7 +82,17 @@ import { markDoctorSidecarStale, writeDoctorSidecar, writeJsonAtomic } from "./d
 import { QcAcceptRefusal, buildQcHandoff, parseQcResultRef, planQcAccepts, projectQcAccept, qcAcceptAttribution, qcHandoffTextLines } from "./qc-accept.mjs";
 import { loadQcRederivers } from "./qc-check-registry.mjs";
 import { fingerprint12, readCurrentQcResults } from "./qc-results.mjs";
-import { campaignSidecarPaths, explicitReportPath, resolveCampaignWorkspace, targetRepoFor } from "./campaign-workspace.mjs";
+import {
+  DEFAULT_PACKET_FILENAME,
+  RUNTIME_DIR_REL_PATH,
+  campaignSidecarPaths,
+  explicitReportPath,
+  packetRuntimeRelPath,
+  planFunnelWorkspace,
+  resolveCampaignWorkspace,
+  soleProjectPacket,
+  targetRepoFor,
+} from "./campaign-workspace.mjs";
 import { canonicalPath, sameFile } from "./fs-identity.mjs";
 import { DEFAULT_PROXY_BASE, fetchSpecByMapId } from "./spec-fetch.mjs";
 import { writeMapSdkPin } from "./map-pin-writeback.mjs";
@@ -311,7 +321,7 @@ Usage:
                      [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
                      [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>] [--design-manifest <path>]
                      [--allow-uncertified-template "<reason>"] [--order-path-depth <off|common|full>]
-                     [--deploy-target <target>] [--preview-url <url>] [--production-url <url>] [--no-run-session] [--force]   # --force overwrites an assembly report that carries stage evidence (destructive; prints the cleared stage keys) and regenerates a stale Design Source Package an earlier intake synthesized and nobody changed
+                     [--deploy-target <target>] [--preview-url <url>] [--production-url <url>] [--no-run-session] [--force]   # --force overwrites an assembly report that carries stage evidence (destructive; prints the cleared stage keys) and regenerates a stale Design Source Package an earlier intake synthesized and nobody changed; with --out naming another route's packet it replaces that funnel (renaming its route)
   campaigns-os prepare-build (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
                              [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
                              [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>] [--design-manifest <path>]
@@ -1024,7 +1034,7 @@ async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = nul
     // A --map-id fetch runs here, but the fetched spec is written to the
     // shared cache file inside prepareBuild, under the per-target lock, so it
     // never replaces the spec another run is reading and hashing (#501).
-    const { publishSpec, ...resolved } = await recorder.time("resolve-spec", () => resolveSpecPath(args, { deferCacheWrite: true }));
+    const { publishSpec, fetchedSpec, ...resolved } = await recorder.time("resolve-spec", () => resolveSpecPath(args, { deferCacheWrite: true }));
     // The spec as the operator named it, before resolution, so the build
     // context can record which input to replay (a local file, or a map id
     // fetched from a given store).
@@ -1035,7 +1045,7 @@ async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = nul
     // Doctor runs inside prepare-build, so its codes are recorded while that
     // phase is active and attach to it.
     const result = await recorder.time("prepare-build", async () => {
-      const prepared = await prepareBuild(args, { ...mode, command, specInput, publishSpec, sourceKind, wrapperPolicyFlag, orderPathDepthFlag });
+      const prepared = await prepareBuild(args, { ...mode, command, specInput, publishSpec, fetchedSpec, sourceKind, wrapperPolicyFlag, orderPathDepthFlag });
       if (prepared.doctor && !prepared.doctor.ok) recorder.recordFindingCodes(prepared.doctor.errors?.map((issue) => issue.code));
       return prepared;
     });
@@ -1403,7 +1413,9 @@ async function resolveSpecPath(args, opts = {}) {
     return { specPath: cachePath, source: "remote", mapId, proxyBase,
       savedMapRevision: { map_id: mapId, hash: spec.spec_identity?.spec_hash || spec.spec_hash || null,
         algorithm: "map-store-v1", local_spec_material_hash: specMaterialHash(spec) },
-      ...(opts.deferCacheWrite ? { publishSpec } : {}),
+      // The fetched spec itself, for a caller that writes the cache later and
+      // must know the funnel's route first. Not part of the reported source.
+      ...(opts.deferCacheWrite ? { publishSpec, fetchedSpec: spec } : {}),
     };
   }
   throw refused(
@@ -1532,11 +1544,13 @@ function createProofPolicy({ orderPathDepth = null } = {}) {
 // channel that supplies it. Source screenshot proof is seeded only by the
 // source-html manifest's pages[].screenshots[], which is documented nowhere in
 // the blocking reason itself.
-const DESIGN_SOURCE_PACKAGE_REMEDY = [
+// `packagePath` is where this run emitted the package, relative to the target
+// repo: under the funnel's runtime directory.
+const designSourcePackageRemedy = (packagePath = DESIGN_SOURCE_PACKAGE_REL_PATH) => [
   `Supply the missing source proof through pages[].screenshots[] in ${SOURCE_HTML_MANIFEST_REL_PATH}`,
   "under the source root, or in a manifest anywhere else named by --design-manifest <path>",
   "(one available desktop record and one available mobile record per renderable page);",
-  `then, if no downstream stage has consumed it, remove the Design Source Package this blocked run emitted at ${DESIGN_SOURCE_PACKAGE_REL_PATH}`,
+  `then, if no downstream stage has consumed it, remove the Design Source Package this blocked run emitted at ${packagePath}`,
   "and rerun prepare-build/start.",
   'See "Clearing DESIGN_SOURCE_PACKAGE_NOT_READY" in docs/design-source-package.md.',
 ].join(" ");
@@ -1547,12 +1561,13 @@ const DESIGN_SOURCE_PACKAGE_REMEDY = [
 // exception reasons keep their own wording.
 const DESIGN_SOURCE_PACKAGE_REMEDY_REASON = /source_screenshot proof\.$|^Source TODO "capture-(?![^"]*-template-)[^"]*" is /;
 
-function designSourcePackageBlockers(prepared) {
+function designSourcePackageBlockers(prepared, targetRepo) {
   if (!["blocked", "pending"].includes(prepared.value?.readiness?.status)) return [];
+  const remedy = designSourcePackageRemedy(prepared.path && targetRepo ? relFromDir(targetRepo, prepared.path) : undefined);
   return (prepared.value.readiness.blocking_reasons || []).map((message, index) => ({
     code: "DESIGN_SOURCE_PACKAGE_NOT_READY",
     stage: "prepare_build",
-    message: DESIGN_SOURCE_PACKAGE_REMEDY_REASON.test(message) ? `${message} ${DESIGN_SOURCE_PACKAGE_REMEDY}` : message,
+    message: DESIGN_SOURCE_PACKAGE_REMEDY_REASON.test(message) ? `${message} ${remedy}` : message,
     detail: {
       blocker_index: index,
       readiness_status: prepared.value.readiness.status,
@@ -1657,18 +1672,44 @@ async function prepareBuild(args, options = {}) {
   if (publishSpec && !existsSync(targetRepo)) mkdirSync(targetRepo, { recursive: true });
   if (!existsSync(targetRepo) || !statSync(targetRepo).isDirectory()) throw new Error(`Target repo is not a directory: ${targetRepo}`);
 
-  const sidecars = campaignSidecarPaths(targetRepo);
-  const packetPath = resolve(args.out || join(targetRepo, "campaign-runtime.build.json"));
+  // Which funnel this is decides where its packet and records go (#719): a
+  // project's first funnel uses the default packet and the project-level
+  // .campaign-runtime/, every later one its own (planFunnelWorkspace). The
+  // route is read here, before the lock, and checked again under it.
+  const plannedRoute = intakeRouteSlug(options.fetchedSpec || readSpecForRoute(specPath), args);
+  const planFunnel = () => plannedRoute
+    ? refusing(() => planFunnelWorkspace(targetRepo, plannedRoute, { packetPath: args.out || null, force: args.force === true }))
+    : { packetPath: resolve(args.out || join(targetRepo, DEFAULT_PACKET_FILENAME)), runtimeRelPath: RUNTIME_DIR_REL_PATH, scoped: false, addedBeside: null };
+  const funnel = planFunnel();
+  const sidecars = campaignSidecarPaths(targetRepo, funnel.runtimeRelPath);
+  const packetPath = funnel.packetPath;
   const contextPath = resolve(args["context-out"] || sidecars.contextPath);
   const reportPath = resolve(args["report-out"] || sidecars.reportPath);
   const doctorOutPath = resolve(args["doctor-out"] || sidecars.doctorOutPath);
-  const briefPath = resolve(args["brief-out"] || join(targetRepo, BUILD_BRIEF_NORMALIZED_REL_PATH));
+  const briefPath = resolve(args["brief-out"] || join(sidecars.runtimeDir, relative(RUNTIME_DIR_REL_PATH, BUILD_BRIEF_NORMALIZED_REL_PATH)));
   return withDesignSourcePublication({
     targetRepo,
+    runtimeDir: sidecars.runtimeDir,
     outputs: { packetPath, contextPath, reportPath, doctorOutPath, briefPath },
     force: args.force === true,
     publishSpec,
-  }, (publication) => prepareBuildUnderLock({ args, options, specPath, sourceRoot, targetRepo, publication }));
+  }, (publication) => prepareBuildUnderLock({ args, options, specPath, sourceRoot, targetRepo, publication, funnel: { ...funnel, route: plannedRoute }, planFunnel }));
+}
+
+// A spec that cannot be read here is read again, and refused, under the lock.
+function readSpecForRoute(specPath) {
+  try {
+    return readJson(specPath);
+  } catch {
+    return null;
+  }
+}
+
+// The public route slug intake will use, from the flag or the spec; null when
+// neither names one (prepare-build then refuses under the lock).
+function intakeRouteSlug(spec, args) {
+  if (!isObject(spec)) return optionalString(args["public-route-slug"]) || null;
+  return normalizePublicRouteSlug(campaignIdentity(spec, args).publicRouteSlug) || null;
 }
 
 function prepareBuildUnderLock({
@@ -1678,6 +1719,8 @@ function prepareBuildUnderLock({
   sourceRoot,
   targetRepo,
   publication,
+  funnel,
+  planFunnel,
 }) {
   const { packetPath, contextPath, reportPath, doctorOutPath, briefPath, designSourcePackagePath } = publication.paths;
   // #531: a host-prefixed route ("shop.example.com/route/upsell/") in a Map
@@ -1701,6 +1744,22 @@ function prepareBuildUnderLock({
     throw new Error("CampaignSpec requires exactly one identity: a saved spec_identity.map_id, or an agent-authored spec_identity.local_spec_id (1–64 letters, digits, underscores or hyphens). Keep the local ID stable across revisions; do not invent a Map ID.");
   }
   if (!publicRouteSlug) throw new Error("CampaignSpec has no public route slug. Set spec_identity.public_route_slug or campaign.slug.");
+  // The packet and runtime directory were chosen for the route read before
+  // the lock; a spec that changed meanwhile would file this funnel's records
+  // under another route's.
+  if (normalizePublicRouteSlug(publicRouteSlug) !== funnel.route) {
+    throw new Error(`The CampaignSpec's public route slug changed while prepare-build waited for the target lock (${JSON.stringify(funnel.route)} became ${JSON.stringify(publicRouteSlug)}). Re-run prepare-build.`);
+  }
+  // Another funnel set up while this run waited can change where this one
+  // belongs (two first funnels started at once in an empty project). The
+  // paths this run writes were fixed before the lock, so it stops instead.
+  const replanned = planFunnel();
+  if (replanned.packetPath !== funnel.packetPath || replanned.runtimeRelPath !== funnel.runtimeRelPath) {
+    throw new Error(
+      `Another funnel was set up in ${targetRepo} while prepare-build waited for the target lock, so route ${JSON.stringify(funnel.route)} now belongs at `
+      + `${replanned.packetPath} with its records under ${replanned.runtimeRelPath}/, not ${funnel.packetPath} and ${funnel.runtimeRelPath}/. Re-run prepare-build.`,
+    );
+  }
 
   // Dispatch validated the argv-only flags before spec resolution, including
   // the value forms of --template-family, --allow-uncertified-template,
@@ -1932,7 +1991,7 @@ function prepareBuildUnderLock({
     mapId,
     publicRouteSlug,
   });
-  const designSourceBlockers = designSourcePackageBlockers(designSourcePackage);
+  const designSourceBlockers = designSourcePackageBlockers(designSourcePackage, targetRepo);
   const blockers = [...sourceBlockers, ...briefBlockers, ...briefQuestionBlockers, ...designSourceBlockers];
   const adapterDecisions = createAdapterDecisions({ commerceZoneFindings, wrapperPolicy: wrapperPolicy.value });
   const proofPolicy = createProofPolicy({ orderPathDepth: orderPathDepthFlag });
@@ -1977,6 +2036,9 @@ function prepareBuildUnderLock({
     assembly: {
       implementation: "next-campaigns-build",
       target_repo: relFromFile(packetPath, targetRepo),
+      // Recorded only for a funnel that is not the project's first; absent,
+      // the records are under the project-level .campaign-runtime/.
+      ...(funnel.scoped ? { runtime_dir: funnel.runtimeRelPath } : {}),
       output_dir: outputDir,
       template_family: isUnresolvedTemplateFamily(templateFamily) ? "undecided" : templateFamily,
       template_decision_notes: templateLocked
@@ -2102,7 +2164,7 @@ function prepareBuildUnderLock({
       target_repo: ".",
       output_dir: portable(resolve(targetRepo, outputDir)),
       handoff_skill: existsSync(resolve(targetRepo, outputDir)) ? "next-campaigns-build" : "next-campaigns-os-setup",
-      handoff_artifact: ".campaign-runtime/setup-handoff.json",
+      handoff_artifact: `${funnel.runtimeRelPath}/setup-handoff.json`,
       reason: existsSync(resolve(targetRepo, outputDir))
         ? "Target campaign output directory already exists."
         : "Target campaign output directory is missing; scaffold before build.",
@@ -2222,6 +2284,7 @@ function prepareBuildUnderLock({
     context,
     report,
     doctor,
+    ...(funnel.addedBeside ? { funnelAddedBeside: funnel.addedBeside } : {}),
   };
 }
 
@@ -2601,7 +2664,9 @@ function themeCommand(args) {
   // (blocked, already-current CSS) leaves doctor's inputs untouched (Kilo
   // review, PR #176).
   if (written.wrote?.report || written.wrote?.css) {
-    markDoctorSidecarStale(resolveFromFile(packetPath, packet?.assembly?.target_repo) || dirname(packetPath), {
+    const staleTarget = resolveFromFile(packetPath, packet?.assembly?.target_repo) || dirname(packetPath);
+    markDoctorSidecarStale(staleTarget, {
+      path: campaignSidecarPaths(staleTarget, packetRuntimeRelPath(packet)).doctorOutPath,
       command: "theme generate",
       reason: `Theme artifacts were generated after this doctor snapshot. Re-run ${cmd("doctor")} (or next) for current state.`,
     });
@@ -3494,6 +3559,7 @@ export function pageKitSyncCommand(args) {
     // result, never a thrown error that hides the write.
     try {
       markDoctorSidecarStale(targetRepo, {
+        path: campaignSidecarPaths(targetRepo, packetRuntimeRelPath(packet)).doctorOutPath,
         command: "page-kit sync",
         reason: `page-kit sync rewrote ${PAGE_KIT_CAMPAIGNS_REL_PATH}[${publicRouteSlug}] after this doctor snapshot. Re-run ${cmd("doctor")} (or next) for current state.`,
       });
@@ -3938,6 +4004,7 @@ export function specDeriveCommand(args, { store: storeRead = null } = {}) {
     // The retained doctor snapshot (if any) now predates the spec it judged.
     try {
       markDoctorSidecarStale(targetRepo, {
+        path: campaignSidecarPaths(targetRepo, packetRuntimeRelPath(packet)).doctorOutPath,
         command: "spec derive",
         reason: `spec derive rewrote the CampaignSpec after this doctor snapshot. Re-run ${cmd("doctor")} (or next) for current state.`,
       });
@@ -4386,7 +4453,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
   let runRecordCloseout = null;
   try {
     runRecordCloseout = assessRunRecordCloseout({
-      records: readRunRecordsForTarget(dirname(packetPath)),
+      records: readRunRecordsForTarget(dirname(packetPath), packetRuntimeRelPath(packet)),
       packet,
       report,
       currentQaVerdictDigests: currentQaVerdictDigestsForReport(report, report ? reportPath : null, targetRepo),
@@ -4412,7 +4479,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
     // command names the report this run read when that is not the default
     // one (from --report or the Build Context pointer), so it records there.
     const qc = readCurrentQcResults({ report, doctor, spec, targetRepo, packetPath, reportPath, qcStandIns, rederivers: qcRederivers });
-    result.qc_handoff = buildQcHandoff({ results: qc.results, coverage: qc.coverage, accepts: report?.qc_accepts, packetPath, reportPath: explicitReportPath(reportPath, targetRepo) });
+    result.qc_handoff = buildQcHandoff({ results: qc.results, coverage: qc.coverage, accepts: report?.qc_accepts, packetPath, reportPath: explicitReportPath(reportPath, targetRepo, packetRuntimeRelPath(packet)) });
     // One note per operator decision that kept the build output unchanged
     // after an input change, quoting the operator's reason.
     for (const issue of doctor.warnings) if (issue.code === "assembly.output_unchanged_by_operator_decision") (result.qc_handoff.notes ||= []).push(`Build output kept unchanged after an input change by the operator's decision: "${issue.detail.reason}"`);
@@ -5090,14 +5157,15 @@ function templateStockPromptLine(packet, derived = {}) {
 
 function buildPrompt(packetPath, contextPath, reportPath, packet, derived = {}, intent) {
   const briefPath = packet.build_brief?.normalized_path || "(missing; generate or confirm Campaign Build Brief before business-sensitive assembly)";
+  const runtime = runtimeRelPathOf(packet);
   return `${campaignIntentPromptHeader(intent)}Use next-campaigns-build for this Campaigns OS handoff.
 
 Read first:
 - Build Packet: ${packetPath}
-- Build Context: ${contextPath || "(use packet-adjacent .campaign-runtime/build-context.json if present)"}
-- Assembly Report: ${reportPath || "(use packet-adjacent .campaign-runtime/assembly-report.json if present)"}
+- Build Context: ${contextPath || `(use packet-adjacent ${runtime}/build-context.json if present)`}
+- Assembly Report: ${reportPath || `(use packet-adjacent ${runtime}/assembly-report.json if present)`}
 - Campaign Build Brief: ${briefPath}
-- Design Source Package: .campaign-runtime/input/design-source-package.json when present; use report.design_source_package.material_fingerprint as the source context fingerprint.
+- Design Source Package: ${runtime}/input/design-source-package.json when present; use report.design_source_package.material_fingerprint as the source context fingerprint.
 - Template family: ${packet.assembly.template_family}${templateStockPromptLine(packet, derived)}
 
 Rules:
@@ -5108,7 +5176,7 @@ Rules:
 - Prepared AI/exported HTML must be converted into page-kit-ready source first: keep page-owned body markup, strip document wrappers, add YAML frontmatter, move shared CSS/assets into the campaign structure, and use Liquid helpers only for page-kit links/assets/includes. Page Kit publishes src/<slug>/assets/config.js as /<slug>/config.js and src/<slug>/assets/products/foo.png as /<slug>/products/foo.png; do not leave raw /assets/... or /<slug>/assets/... references in rendered pages.
 - Preserve prepared source HTML for landing/presell pages when it is a real standalone design.
 - For checkout/upsell/downsell/receipt, use the starter template as the SDK contract reference only: preserve required data-next controls and runtime wiring, but let the campaign/source own visual chrome, copy hierarchy, imagery, and brand layer.
-- Read context.theme and .campaign-runtime/theme/theme-report.json when present. If a fresh brand-theme.css exists, copy it into the campaign assets/css folder and list it after next-core.css in checkout/upsell/downsell/receipt frontmatter styles; when theme generate also wrote brand-fonts.css (the design's own faces), copy it beside brand-theme.css and list it on the same pages; if policy is inspect_only, generate or skip explicitly before applying a new brand layer.
+- Read context.theme and ${runtime}/theme/theme-report.json when present. If a fresh brand-theme.css exists, copy it into the campaign assets/css folder and list it after next-core.css in checkout/upsell/downsell/receipt frontmatter styles; when theme generate also wrote brand-fonts.css (the design's own faces), copy it beside brand-theme.css and list it on the same pages; if policy is inspect_only, generate or skip explicitly before applying a new brand layer.
 - Generated brand-theme.css v0 is root-variable-only. Do not edit SDK-owned selectors, package controls, payment fields, totals, submit controls, receipt templates, route meta tags, or SDK JavaScript as part of theme application.
 - If you copy starter-template files, copy the selected family atomically with dependent pages, _includes, _layouts, assets/css, and assets/js; do not copy only checkout.html and receipt.html.
 - Resolve SDK routing meta tags to campaign-root paths such as ${campaignRouteRoot(packet) || `/${packet.campaign.public_route_slug}/`}upsell/, not source filenames or unrooted spec literals.
@@ -5180,7 +5248,7 @@ Read first:
 
 Prepare the target page-kit structure and agent context, then record setup:
 - ${cmd("record")} setup --packet ${packetPath}
-It sets .campaign-runtime/build-context.json scaffold.required=false and .campaign-runtime/assembly-report.json stages.setup to completed, validated against their schemas; do not hand-edit either file.
+It sets the Build Context's scaffold.required=false and the Assembly Report's stages.setup to completed, validated against their schemas; do not hand-edit either file.
 
 When copying a starter template family, copy the family as an atomic page-kit slice: pages plus required _includes, _layouts, assets/css, and assets/js. Do not copy only checkout.html and receipt.html.
 
@@ -5882,11 +5950,22 @@ export function resolvePinSources(args, { cwd = process.cwd() } = {}) {
   // An explicit packet names its project: its target repo, whatever the cwd.
   const projectStart = packet ? targetRepoFor(packetPath, packet) : cwd;
   const packageJsonPath = nearestPackageJson(projectStart);
+  let packetUnread = false;
   if (!packetPath) {
     // The contracted home of the packet is the project root beside package.json
     // (prepare-build's default --out), the same place readback discovers it.
-    packetPath = join(packageJsonPath ? dirname(packageJsonPath) : resolve(cwd), "campaign-runtime.build.json");
-    if (existsSync(packetPath)) packet = readPinJson(packetPath, packetProblem);
+    // A project holding several funnels has one packet each; reading any one
+    // of them would be a guess, so none is read and the warning names them.
+    const projectRoot = packageJsonPath ? dirname(packageJsonPath) : resolve(cwd);
+    packetPath = join(projectRoot, DEFAULT_PACKET_FILENAME);
+    try {
+      packetPath = soleProjectPacket(projectRoot, { command: "tooling status" }) || packetPath;
+    } catch (error) {
+      if (error?.code !== "MULTIPLE_FUNNEL_PACKETS") throw error;
+      packetUnread = true;
+      warnings.push(`Packet pin not read: ${error.message}`);
+    }
+    if (!packetUnread && existsSync(packetPath)) packet = readPinJson(packetPath, packetProblem);
   }
 
   const { projectSpec, projectManifest, projectKey } = resolveProjectPin(packageJsonPath, warnings);
@@ -5903,7 +5982,7 @@ export function resolvePinSources(args, { cwd = process.cwd() } = {}) {
       packetVersionIgnored = typeof recorded === "string" ? recorded : JSON.stringify(recorded);
       warnings.push(`Packet campaigns_os_version ignored: ${JSON.stringify(recorded)} in ${packetPath} is not an exact version.`);
     }
-  } else if (existsSync(packetPath) && !packet) {
+  } else if (!packetUnread && existsSync(packetPath) && !packet) {
     warnings.push(`Packet pin unavailable: ${packetPath} ${packetProblem.reason}.`);
   }
   return {
@@ -7366,7 +7445,7 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   const parsedSurfaces = parseRunRecordSurfaces(args.surfaces);
   const packet = readJson(packetPath);
   const explicitTargetRepo = resolveFromFile(packetPath, packet.assembly?.target_repo);
-  const { baseDir, targetRepo, contextPath, reportPath } = resolveCampaignWorkspace(packetPath, {
+  const { baseDir, runtimeRelPath, targetRepo, contextPath, reportPath } = resolveCampaignWorkspace(packetPath, {
     packet,
     contextPath: args.context ? resolve(args.context) : undefined,
     reportPath: args.report ? resolve(args.report) : undefined,
@@ -7410,7 +7489,7 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   // session decides without it, and a target with a long history pays no I/O
   // for a decision already made.
   const needsDiskScan = listOnly || (!optionalString(args["run-id"]) && args["new-run"] !== true && !isNonEmptyString(ambient?.session?.run_id));
-  const targetRecords = needsDiskScan ? readRunRecordsForTarget(baseDir) : [];
+  const targetRecords = needsDiskScan ? readRunRecordsForTarget(baseDir, runtimeRelPath) : [];
   const latestRecordEntry = needsDiskScan ? latestMatchingRunRecord(targetRecords, packet) : null;
   let runId;
   let runIdSource;
@@ -7551,7 +7630,7 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   // may not. A pure --no-write run reads nothing: it writes and sends nothing.
   // A --dry-run does read it, because what a real run would do here is the
   // very thing the dry run is being asked to report.
-  const prior = write || dryRun ? readPriorRunRecord(runId, baseDir) : null;
+  const prior = write || dryRun ? readPriorRunRecord(runId, baseDir, runtimeRelPath) : null;
   const priorRemit = priorRemitOutcome(prior?.record);
   const storedRemotely = priorRemit?.state === "ok";
   // A pure local-inspection run (--no-write), an explicit --no-remit, or a
@@ -7750,7 +7829,7 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   // carries this run's remit_* outcome rather than the placeholders it was
   // assembled with. Validated above, ahead of the send; nothing is written
   // under --dry-run or --no-write.
-  const recordPath = write ? writeRunRecord(record, { baseDir }) : null;
+  const recordPath = write ? writeRunRecord(record, { baseDir, runtimeRelPath }) : null;
 
   const summary = {
     ok: true,
@@ -7782,7 +7861,7 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
     // stopped the send anyway, and null with `would_remit_refused` set when the
     // transport's destination gate refuses the base before any socket opens).
     // Envelope only; never on the record.
-    ...(dryRun ? { dry_run: true, would_write: resolveRunRecordPath(runId, baseDir), would_remit: wouldRemitEndpoint, would_remit_refused: wouldRemitRefusal } : {}),
+    ...(dryRun ? { dry_run: true, would_write: resolveRunRecordPath(runId, baseDir, runtimeRelPath), would_remit: wouldRemitEndpoint, would_remit_refused: wouldRemitRefusal } : {}),
   };
   if (silent) return summary;
   if (args.json) {
@@ -7835,10 +7914,10 @@ function assertRunRecordValid(record) {
 // `writeRunRecord` could have written is trusted as a prior — the same
 // validator gates both — so a file that merely says `remit_state: "ok"` is
 // replaced like a corrupt one, never preserved or handed back as the record.
-function readPriorRunRecord(runId, baseDir) {
+function readPriorRunRecord(runId, baseDir, runtimeRelPath) {
   let path;
   try {
-    path = resolveRunRecordPath(runId, baseDir);
+    path = resolveRunRecordPath(runId, baseDir, runtimeRelPath);
   } catch {
     return null;
   }
@@ -7920,6 +7999,26 @@ function artifactRefPath(kind, filePath, baseDir) {
   return rel.startsWith(".") ? rel : `./${rel}`;
 }
 
+// The packet's runtime directory for a printed prompt; a packet that records
+// an unusable one names the project-level directory (doctor refuses it).
+function runtimeRelPathOf(packet) {
+  try {
+    return packetRuntimeRelPath(packet);
+  } catch {
+    return RUNTIME_DIR_REL_PATH;
+  }
+}
+
+// The runtime directory of the packet at `packetPath`, or the project-level
+// one when it cannot be read (the printed command then carries --report).
+function runtimeRelPathAt(packetPath) {
+  try {
+    return packetPath ? packetRuntimeRelPath(readJson(packetPath)) : RUNTIME_DIR_REL_PATH;
+  } catch {
+    return RUNTIME_DIR_REL_PATH;
+  }
+}
+
 // The verdict a Run Record should carry when none was named: every candidate
 // the report records or the qa-output directories hold, minus any the QA
 // verdict receiver stamped `trusted: false` (an anonymous submission is
@@ -7932,7 +8031,7 @@ function inferQaVerdictPath({ packet, report, reportPath = null, targetRepo = nu
   const eligible = discoverQaVerdicts({
     packet,
     report,
-    reportPath: reportPath || (targetRepo ? campaignSidecarPaths(targetRepo).reportPath : null),
+    reportPath: reportPath || (targetRepo ? campaignSidecarPaths(targetRepo, packetRuntimeRelPath(packet)).reportPath : null),
     roots: [targetRepo, baseDir],
   }).filter((candidate) => candidate.verdict && candidate.trusted
     && ((packet?.spec?.local_spec_id == null && candidate.verdict.local_spec_id == null) || candidate.identityMatch));
@@ -8473,7 +8572,7 @@ export function doctorRequiredActionLines(result) {
   // cannot be ruled out.
   const inspectedReportPath = typeof derived?.assembly_report_path === "string" ? derived.assembly_report_path : null;
   const inferredReportPath = typeof derived?.target_repo === "string"
-    ? campaignSidecarPaths(derived.target_repo).reportPath
+    ? campaignSidecarPaths(derived.target_repo, runtimeRelPathAt(packetPath)).reportPath
     : null;
   const reportPath = inspectedReportPath && inspectedReportPath !== inferredReportPath ? inspectedReportPath : null;
   const lines = [];
@@ -8510,6 +8609,19 @@ function printPrepareResult(result, args) {
     }
   }
   console.log(`Packet: ${result.packetPath}`);
+  if (result.funnelAddedBeside) {
+    // A route differing from the default packet's is either another funnel
+    // or a rename of that one; only the operator knows which, so say what was
+    // done and how to undo it.
+    const beside = result.funnelAddedBeside;
+    const route = result.packet?.campaign?.public_route_slug;
+    const runtimeDir = result.packet?.assembly?.runtime_dir;
+    console.log(
+      `Funnel: route ${route} was set up as another funnel beside ${beside.packetPath} (route ${beside.route || "unnamed"})`
+      + `${runtimeDir ? `, with its records under ${runtimeDir}/` : ""}. To rename that funnel's route instead, delete ${result.packetPath}`
+      + `${runtimeDir ? ` and ${runtimeDir}/` : ""}, then re-run prepare-build with --out ${beside.packetPath} --force.`,
+    );
+  }
   if (result.briefPath) {
     const brief = result.context?.build_brief;
     console.log(`Brief: ${result.briefPath}${brief ? ` (${brief.mode}, ${brief.status}, questions=${brief.question_count})` : ""}`);

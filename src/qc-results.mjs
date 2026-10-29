@@ -21,7 +21,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
 
-import { campaignSidecarPaths } from "./campaign-workspace.mjs";
+import { campaignSidecarPaths, packetRuntimeRelPath } from "./campaign-workspace.mjs";
 import { checkpointStateFingerprint } from "./checkpoint-waiver.mjs";
 import { contrastToolkit } from "./contrast.mjs";
 import { sameFile } from "./fs-identity.mjs";
@@ -299,10 +299,14 @@ export function readQaFullVerdict({ stage, targetRepo, packetPath = null, report
     const stats = statSync(real);
     if (!stats.isFile()) return null;
     if (!inside(realpathSync(outputDir), real)) return null;
+    // This funnel's default report and every other funnel's project-level
+    // one (#719): neither is a verdict.
+    const packet = isNonEmptyString(packetPath) ? readPacketForGuard(packetPath) : null;
     const forbidden = [
       reportPath,
       campaignSidecarPaths(targetRepo).reportPath,
-      isNonEmptyString(packetPath) ? sidecarPathForPacket(packetPath) : null,
+      packet ? campaignSidecarPaths(targetRepo, packetRuntimeRelPath(packet)).reportPath : null,
+      isNonEmptyString(packetPath) ? sidecarPathForPacket(packetPath, packet) : null,
       ...outputs.filter((path) => path !== candidates[0]),
     ].filter(isNonEmptyString);
     for (const path of forbidden) {
@@ -312,6 +316,15 @@ export function readQaFullVerdict({ stage, targetRepo, packetPath = null, report
       if (other.dev === stats.dev && other.ino === stats.ino) return null;
     }
     return JSON.parse(readFileSync(real, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function readPacketForGuard(packetPath) {
+  try {
+    const parsed = JSON.parse(readFileSync(packetPath, "utf8"));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
   } catch {
     return null;
   }

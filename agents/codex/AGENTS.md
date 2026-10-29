@@ -7,6 +7,7 @@ A NEXT campaign is one connected commerce journey: the pages the CampaignSpec de
 - Read `campaign-runtime.build.json` first.
 - To pick up an existing campaign, run `npx --no-install campaigns-os readback .` and `npx --no-install campaigns-os next --packet campaign-runtime.build.json` before reading artifacts by hand; `next` blocks polish and QA again whenever the built output changes. The committed `.campaign-runtime/qa-verdict.json` keeps no order records or URLs: its `browser-test-order:<path>` assertions are the typed-card proof, and the full verdict is under `qa-output/`.
 - If `.campaign-runtime/build-context.json` or `.campaign-runtime/assembly-report.json` exists, read them before editing campaign files.
+- A project that holds several funnels has one Build Packet per funnel: `campaign-runtime.build.json` for the first funnel set up, whose records are directly under `.campaign-runtime/`, and `campaign-runtime-<route>.build.json` for each other funnel, whose records are under `.campaign-runtime/funnels/<route>/` (its `assembly.runtime_dir`). Pass that funnel's packet with `--packet` to every command, `readback . --packet` included; without one, readback refuses and names the packets.
 - Run `npx --no-install campaigns-os doctor --packet campaign-runtime.build.json` before build work.
 - Treat CampaignSpec validation as owned by the public `@nextcommerce/campaigns-os/campaign-spec` rules surfaced through doctor `spec.validation` findings; use structured rule/path detail when available.
 - Respect the selected template family's `agentContract`.

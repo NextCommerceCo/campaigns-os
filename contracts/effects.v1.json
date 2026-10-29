@@ -18,8 +18,10 @@
     },
     "locations": {
       "{target}": "The target the invocation names: the directory given to --target, or the Page Kit target repository the Build Packet points at.",
+      "{runtime}": "The funnel's runtime directory under {target}: {target}/.campaign-runtime for a Build Packet that records no assembly.runtime_dir (every packet from before per-funnel records, and the first funnel of a project), else {target}/<assembly.runtime_dir>, which prepare-build sets to .campaign-runtime/funnels/<public_route_slug> for each later funnel of the same project. The Build Context, Assembly Report, doctor output, theme output and intake inputs of a funnel live here.",
       "{cwd}": "The working directory the invocation runs in.",
       "{packet}": "The Build Packet the invocation names (--packet), wherever it lives — it need not be the copy inside the target repository.",
+      "{packet-runtime}": "The same funnel runtime directory beside the Build Packet: <packet directory>/.campaign-runtime, or <packet directory>/<assembly.runtime_dir> when the packet records one. The committed QA verdict sidecar and the Run Records live here.",
       "{spec}": "The CampaignSpec file the Build Packet names (spec.local_path), which need not live inside the target repository.",
       "{home}": "The user's machine: the home directory and the config root under it (XDG_CONFIG_HOME when set).",
       "{lifecycle-journal}": "The command-lifecycle journal wherever it was selected for the invocation — the active run session's journal, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG.",
@@ -814,7 +816,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the packet edit invalidates the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -825,7 +827,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "--order-path-depth is given and the report exists — the report's proof_policy mirror is refreshed through the ledger write",
           "observed_in": [
             "no_session",
@@ -862,13 +864,13 @@
       "tier": "B",
       "writes": [
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "the parity render completes — stages.assembly.evidence.local_proof.production_parity is recorded",
           "observed_in": [],
           "not_observed_reason": "the offline fixture is not a local-serve deploy target and has no page-kit renderer to build with, so the command refuses before the verdict is recorded"
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the recorded parity verdict invalidates the retained doctor sidecar",
           "observed_in": [],
           "not_observed_reason": "the parity verdict the stamp follows is never recorded offline"
@@ -1028,7 +1030,7 @@
       "tier": "A",
       "writes": [
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "always under --write — the doctor sidecar is (re)written",
           "observed_in": [
             "no_session",
@@ -1039,7 +1041,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "the run's doctor evidence on the assembly report changes",
           "observed_in": [
             "no_session",
@@ -1093,7 +1095,7 @@
       "tier": "B",
       "writes": [
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "always under --write — the doctor sidecar is (re)written",
           "observed_in": [
             "no_session",
@@ -1104,7 +1106,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "the run's doctor evidence on the assembly report changes",
           "observed_in": [
             "no_session",
@@ -1141,7 +1143,7 @@
       "tier": "B",
       "writes": [
         {
-          "path": "{target}/.campaign-runtime/theme/theme-report.json",
+          "path": "{runtime}/theme/theme-report.json",
           "when": "always — the generated brand theme report is written",
           "observed_in": [
             "no_session",
@@ -1152,13 +1154,13 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/theme/**",
+          "path": "{runtime}/theme/**",
           "when": "the generated CSS and token files, when --out-dir is not redirected",
           "observed_in": [],
           "not_observed_reason": "the offline fixture's packet has no generatable brand source, so generation stops at the report"
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the theme decision invalidates the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -1197,7 +1199,7 @@
       "tier": "C",
       "writes": [
         {
-          "path": "{target}/.campaign-runtime/theme/theme-report.json",
+          "path": "{runtime}/theme/theme-report.json",
           "when": "always — the generated brand theme report is written",
           "observed_in": [
             "no_session",
@@ -1208,13 +1210,13 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/theme/**",
+          "path": "{runtime}/theme/**",
           "when": "the generated CSS and token files, when --out-dir is not redirected",
           "observed_in": [],
           "not_observed_reason": "the offline fixture's packet has no generatable brand source, so generation stops at the report"
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the theme decision invalidates the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -1262,7 +1264,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the sync invalidates the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -1310,7 +1312,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the derive invalidates the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -1449,7 +1451,7 @@
       "tier": "C",
       "writes": [
         {
-          "path": "{cwd}/.campaign-runtime/qa-verdict.json",
+          "path": "{packet-runtime}/qa-verdict.json",
           "when": "always — the named verdict is projected over the committed sidecar",
           "observed_in": [
             "no_session",
@@ -1691,7 +1693,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the recomputed gates invalidate the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -1756,7 +1758,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the recomputed gates invalidate the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -1821,7 +1823,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the recomputed gates invalidate the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -1886,7 +1888,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the recomputed gates invalidate the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -1951,7 +1953,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the recomputed gates invalidate the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -2016,7 +2018,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the recomputed gates invalidate the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -2083,7 +2085,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the recomputed gates invalidate the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -2207,7 +2209,7 @@
           ]
         },
         {
-          "path": "{cwd}/.campaign-runtime/qa-verdict.json",
+          "path": "{packet-runtime}/qa-verdict.json",
           "when": "always — the committed verdict sidecar is projected from the attempt",
           "observed_in": [
             "no_session",
@@ -2218,7 +2220,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the QA stage outcome is recorded on the report",
           "observed_in": [
             "no_session",
@@ -2240,7 +2242,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the QA outcome invalidates the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -2339,7 +2341,7 @@
           ]
         },
         {
-          "path": "{cwd}/.campaign-runtime/qa-verdict.json",
+          "path": "{packet-runtime}/qa-verdict.json",
           "when": "always — the committed verdict sidecar is projected from the attempt",
           "observed_in": [
             "no_session",
@@ -2350,7 +2352,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the QA stage outcome is recorded on the report",
           "observed_in": [
             "no_session",
@@ -2372,7 +2374,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the QA outcome invalidates the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -2462,7 +2464,7 @@
           ]
         },
         {
-          "path": "{cwd}/.campaign-runtime/qa-verdict.json",
+          "path": "{packet-runtime}/qa-verdict.json",
           "when": "always — the committed verdict sidecar is projected from the attempt",
           "observed_in": [
             "no_session",
@@ -2473,7 +2475,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the QA stage outcome is recorded on the report",
           "observed_in": [
             "no_session",
@@ -2495,7 +2497,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the QA outcome invalidates the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -2586,7 +2588,7 @@
           ]
         },
         {
-          "path": "{cwd}/.campaign-runtime/qa-verdict.json",
+          "path": "{packet-runtime}/qa-verdict.json",
           "when": "always — the committed verdict sidecar is projected from the attempt",
           "observed_in": [
             "no_session",
@@ -2597,7 +2599,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the QA stage outcome is recorded on the report",
           "observed_in": [
             "no_session",
@@ -2619,7 +2621,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the QA outcome invalidates the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -2859,7 +2861,7 @@
           ]
         },
         {
-          "path": "{cwd}/.campaign-runtime/qa-verdict.json",
+          "path": "{packet-runtime}/qa-verdict.json",
           "when": "always — the committed verdict sidecar is projected from the attempt",
           "observed_in": [
             "no_session",
@@ -2870,7 +2872,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the QA stage outcome is recorded on the report",
           "observed_in": [
             "no_session",
@@ -2892,7 +2894,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the QA outcome invalidates the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -2975,10 +2977,10 @@
       "preflight": {
         "may_write": [
           "{target}/qa-output/**",
-          "{cwd}/.campaign-runtime/qa-verdict.json",
-          "{target}/.campaign-runtime/assembly-report.json",
+          "{packet-runtime}/qa-verdict.json",
+          "{runtime}/assembly-report.json",
           "{target}/.campaign-runtime/progress/**",
-          "{target}/.campaign-runtime/doctor-output.json",
+          "{runtime}/doctor-output.json",
           "{target}/.campaign-runtime/run-session.json",
           "{lifecycle-journal}"
         ],
@@ -3014,7 +3016,7 @@
           ]
         },
         {
-          "path": "{cwd}/.campaign-runtime/qa-verdict.json",
+          "path": "{packet-runtime}/qa-verdict.json",
           "when": "always — the committed verdict sidecar is projected from the attempt",
           "observed_in": [
             "no_session",
@@ -3025,7 +3027,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the QA stage outcome is recorded on the report",
           "observed_in": [
             "no_session",
@@ -3047,7 +3049,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the QA outcome invalidates the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -3139,7 +3141,7 @@
           ]
         },
         {
-          "path": "{cwd}/.campaign-runtime/qa-verdict.json",
+          "path": "{packet-runtime}/qa-verdict.json",
           "when": "always — the committed verdict sidecar is projected from the attempt",
           "observed_in": [
             "no_session",
@@ -3150,7 +3152,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the QA stage outcome is recorded on the report",
           "observed_in": [
             "no_session",
@@ -3172,7 +3174,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the QA outcome invalidates the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -3255,7 +3257,7 @@
           ]
         },
         {
-          "path": "{cwd}/.campaign-runtime/qa-verdict.json",
+          "path": "{packet-runtime}/qa-verdict.json",
           "when": "always — the committed verdict sidecar is projected from the attempt",
           "observed_in": [
             "no_session",
@@ -3266,7 +3268,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the QA stage outcome is recorded on the report",
           "observed_in": [
             "no_session",
@@ -3288,7 +3290,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the QA outcome invalidates the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -3372,7 +3374,7 @@
           ]
         },
         {
-          "path": "{cwd}/.campaign-runtime/qa-verdict.json",
+          "path": "{packet-runtime}/qa-verdict.json",
           "when": "always — the committed verdict sidecar is projected from the attempt",
           "observed_in": [
             "no_session",
@@ -3383,7 +3385,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the QA stage outcome is recorded on the report",
           "observed_in": [
             "no_session",
@@ -3405,7 +3407,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the QA outcome invalidates the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -3631,7 +3633,7 @@
           ]
         },
         {
-          "path": "{cwd}/.campaign-runtime/qa-verdict.json",
+          "path": "{packet-runtime}/qa-verdict.json",
           "when": "always — the committed verdict sidecar is projected from the attempt",
           "observed_in": [
             "no_session",
@@ -3642,7 +3644,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the QA stage outcome is recorded on the report",
           "observed_in": [
             "no_session",
@@ -3664,7 +3666,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the QA outcome invalidates the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -3739,10 +3741,10 @@
       "preflight": {
         "may_write": [
           "{target}/qa-output/**",
-          "{cwd}/.campaign-runtime/qa-verdict.json",
-          "{target}/.campaign-runtime/assembly-report.json",
+          "{packet-runtime}/qa-verdict.json",
+          "{runtime}/assembly-report.json",
           "{target}/.campaign-runtime/progress/**",
-          "{target}/.campaign-runtime/doctor-output.json",
+          "{runtime}/doctor-output.json",
           "{target}/.campaign-runtime/run-session.json",
           "{lifecycle-journal}"
         ],
@@ -3949,7 +3951,7 @@
       "tier": "C",
       "writes": [
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the waiver is recorded at stages.qa.waivers[<assertion>] (reason, waived_by, waived_at) and appended to the report's evidence[]",
           "observed_in": [
             "no_session",
@@ -3960,7 +3962,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the waiver invalidates the retained doctor sidecar — the report edit postdates the doctor snapshot",
           "observed_in": [
             "no_session",
@@ -4055,7 +4057,7 @@
       "tier": "A",
       "writes": [
         {
-          "path": "{cwd}/.campaign-runtime/run-records/*.json",
+          "path": "{packet-runtime}/run-records/*.json",
           "when": "always — the assembled Run Record is written (re-emitted in place for an existing run id)",
           "observed_in": [
             "no_session",
@@ -4108,7 +4110,7 @@
       "tier": "B",
       "writes": [
         {
-          "path": "{cwd}/.campaign-runtime/run-records/*.json",
+          "path": "{packet-runtime}/run-records/*.json",
           "when": "always — the assembled Run Record is written",
           "observed_in": [
             "no_session",
@@ -4165,7 +4167,7 @@
           ]
         },
         {
-          "path": "{cwd}/.campaign-runtime/run-records/*.json",
+          "path": "{packet-runtime}/run-records/*.json",
           "when": "a STALE run session at the root the command is about to act on is closed out before argv is read",
           "observed_in": [
             "stale_session"
@@ -4230,7 +4232,7 @@
           ]
         },
         {
-          "path": "{cwd}/.campaign-runtime/run-records/*.json",
+          "path": "{packet-runtime}/run-records/*.json",
           "when": "a STALE run session at the root the command is about to act on is closed out before argv is read",
           "observed_in": [
             "stale_session"
@@ -4272,7 +4274,7 @@
       "tier": "C",
       "writes": [
         {
-          "path": "{cwd}/.campaign-runtime/run-records/*.json",
+          "path": "{packet-runtime}/run-records/*.json",
           "when": "a session is active (or stale) at the root — the aggregated Run Record is written",
           "observed_in": [
             "ambient_session",
@@ -4373,7 +4375,7 @@
       "tier": "C",
       "writes": [
         {
-          "path": "{cwd}/.campaign-runtime/run-records/*.json",
+          "path": "{packet-runtime}/run-records/*.json",
           "when": "a session is active (or stale) at the root — the aggregated Run Record is written",
           "observed_in": [
             "ambient_session",
@@ -4463,13 +4465,13 @@
       "tier": "B",
       "writes": [
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "an accept is recorded — every listed result is a current accept-eligible warning that was on record before the command; the accepts are appended to qc_accepts[] and evidence[], and nothing already there is replaced",
           "observed_in": [],
           "not_observed_reason": "the offline fixture names a synthetic result ref that matches no current result, so its accept is refused (changed_since_handoff) before the one write; the case proves the refusal writes nothing"
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "an accept is recorded; it marks the retained doctor sidecar stale",
           "observed_in": [],
           "not_observed_reason": "the offline fixture names a synthetic result ref that matches no current result, so its accept is refused (changed_since_handoff) before the one write; the case proves the refusal writes nothing"
@@ -4503,7 +4505,7 @@
       "tier": "C",
       "writes": [
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the waiver is recorded on the report",
           "observed_in": [
             "no_session",
@@ -4514,7 +4516,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the waiver invalidates the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -4551,7 +4553,7 @@
       "tier": "C",
       "writes": [
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the theme-gate waiver is recorded on the report",
           "observed_in": [
             "no_session",
@@ -4562,7 +4564,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the waiver invalidates the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -4610,7 +4612,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/build-context.json",
+          "path": "{runtime}/build-context.json",
           "when": "always — the build context sidecar",
           "observed_in": [
             "no_session",
@@ -4621,7 +4623,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the assembly report for the run",
           "observed_in": [
             "no_session",
@@ -4632,7 +4634,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/input/*",
+          "path": "{runtime}/input/*",
           "when": "always — the normalized brief and the design source package",
           "observed_in": [
             "no_session",
@@ -4650,7 +4652,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/theme/theme-report.json",
+          "path": "{runtime}/theme/theme-report.json",
           "when": "the theme policy is not off",
           "observed_in": [
             "no_session",
@@ -4661,7 +4663,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the intake runs doctor — `start` and `build` do, `prepare-build` alone does not",
           "observed_in": [
             "no_session",
@@ -4703,7 +4705,7 @@
           ]
         },
         {
-          "path": "{cwd}/.campaign-runtime/run-records/*.json",
+          "path": "{packet-runtime}/run-records/*.json",
           "when": "a STALE run session at the root the command is about to act on is closed out before argv is read",
           "observed_in": [
             "stale_session"
@@ -4769,7 +4771,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/build-context.json",
+          "path": "{runtime}/build-context.json",
           "when": "always — the build context sidecar",
           "observed_in": [
             "no_session",
@@ -4780,7 +4782,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the assembly report for the run",
           "observed_in": [
             "no_session",
@@ -4791,7 +4793,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/input/*",
+          "path": "{runtime}/input/*",
           "when": "always — the normalized brief and the design source package",
           "observed_in": [
             "no_session",
@@ -4809,7 +4811,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/theme/theme-report.json",
+          "path": "{runtime}/theme/theme-report.json",
           "when": "the theme policy is not off",
           "observed_in": [
             "no_session",
@@ -4820,7 +4822,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the intake runs doctor — `start` and `build` do, `prepare-build` alone does not",
           "observed_in": [
             "no_session",
@@ -4862,7 +4864,7 @@
           ]
         },
         {
-          "path": "{cwd}/.campaign-runtime/run-records/*.json",
+          "path": "{packet-runtime}/run-records/*.json",
           "when": "a STALE run session at the root the command is about to act on is closed out before argv is read",
           "observed_in": [
             "stale_session"
@@ -4900,7 +4902,7 @@
       ],
       "effect_test": "effects: start --force",
       "test_scope": "full",
-      "notes": "DESTRUCTIVE: --force overwrites an assembly report that carries stage evidence, stage history or operator decisions, and the packet's recorded deploy target, preview URL, production URL, order-path depth and allowed-domains confirmation, printing the stage keys and the operator state it cleared. It archives completed build, Polish and QA records into stage history, which is kept, and keeps each stage's record that its inputs changed. This is the flag that makes `start` destructive; the base form refuses instead. It also regenerates a stale Design Source Package that this intake synthesized itself: the previous Assembly Report records origin \"synthesized\" and the package bytes still match it. An adopted or hand-edited package is never replaced. The declared writes already cover that path."
+      "notes": "DESTRUCTIVE: --force overwrites an assembly report that carries stage evidence, stage history or operator decisions, and the packet's recorded deploy target, preview URL, production URL, order-path depth and allowed-domains confirmation, printing the stage keys and the operator state it cleared. It archives completed build, Polish and QA records into stage history, which is kept, and keeps each stage's record that its inputs changed. This is the flag that makes `start` destructive; the base form refuses instead. It also regenerates a stale Design Source Package that this intake synthesized itself: the previous Assembly Report records origin \"synthesized\" and the package bytes still match it. An adopted or hand-edited package is never replaced. The declared writes already cover that path. With --out naming the Build Packet of another route, it also replaces that funnel with this one (renaming its route): the packet is rewritten for this route, and when that funnel kept the project-level records they are regenerated for this route in place. Without --force that run is refused, so naming a path never replaces another funnel."
     },
     {
       "command": "start",
@@ -4928,7 +4930,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/build-context.json",
+          "path": "{runtime}/build-context.json",
           "when": "always — the build context sidecar",
           "observed_in": [
             "no_session",
@@ -4939,7 +4941,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the assembly report for the run",
           "observed_in": [
             "no_session",
@@ -4950,7 +4952,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/input/*",
+          "path": "{runtime}/input/*",
           "when": "always — the normalized brief and the design source package",
           "observed_in": [
             "no_session",
@@ -4968,7 +4970,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/theme/theme-report.json",
+          "path": "{runtime}/theme/theme-report.json",
           "when": "the theme policy is not off",
           "observed_in": [
             "no_session",
@@ -4979,7 +4981,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the intake runs doctor — `start` and `build` do, `prepare-build` alone does not",
           "observed_in": [
             "no_session",
@@ -5057,7 +5059,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/build-context.json",
+          "path": "{runtime}/build-context.json",
           "when": "always — the build context sidecar",
           "observed_in": [
             "no_session",
@@ -5068,7 +5070,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the assembly report for the run",
           "observed_in": [
             "no_session",
@@ -5079,7 +5081,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/input/*",
+          "path": "{runtime}/input/*",
           "when": "always — the normalized brief and the design source package",
           "observed_in": [
             "no_session",
@@ -5097,7 +5099,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/theme/theme-report.json",
+          "path": "{runtime}/theme/theme-report.json",
           "when": "the theme policy is not off",
           "observed_in": [
             "no_session",
@@ -5128,7 +5130,7 @@
           ]
         },
         {
-          "path": "{cwd}/.campaign-runtime/run-records/*.json",
+          "path": "{packet-runtime}/run-records/*.json",
           "when": "a STALE run session at the root the command is about to act on is closed out before argv is read",
           "observed_in": [
             "stale_session"
@@ -5194,7 +5196,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/build-context.json",
+          "path": "{runtime}/build-context.json",
           "when": "always — the build context sidecar",
           "observed_in": [
             "no_session",
@@ -5205,7 +5207,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the assembly report for the run",
           "observed_in": [
             "no_session",
@@ -5216,7 +5218,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/input/*",
+          "path": "{runtime}/input/*",
           "when": "always — the normalized brief and the design source package",
           "observed_in": [
             "no_session",
@@ -5234,7 +5236,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/theme/theme-report.json",
+          "path": "{runtime}/theme/theme-report.json",
           "when": "the theme policy is not off",
           "observed_in": [
             "no_session",
@@ -5303,7 +5305,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/build-context.json",
+          "path": "{runtime}/build-context.json",
           "when": "always — the build context sidecar",
           "observed_in": [
             "no_session",
@@ -5314,7 +5316,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the assembly report for the run",
           "observed_in": [
             "no_session",
@@ -5325,7 +5327,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/input/*",
+          "path": "{runtime}/input/*",
           "when": "always — the normalized brief and the design source package",
           "observed_in": [
             "no_session",
@@ -5343,7 +5345,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/theme/theme-report.json",
+          "path": "{runtime}/theme/theme-report.json",
           "when": "the theme policy is not off",
           "observed_in": [
             "no_session",
@@ -5374,7 +5376,7 @@
           ]
         },
         {
-          "path": "{cwd}/.campaign-runtime/run-records/*.json",
+          "path": "{packet-runtime}/run-records/*.json",
           "when": "a STALE run session at the root the command is about to act on is closed out before argv is read",
           "observed_in": [
             "stale_session"
@@ -5412,7 +5414,7 @@
       ],
       "effect_test": "effects: prepare-build --force",
       "test_scope": "full",
-      "notes": "DESTRUCTIVE: --force overwrites an assembly report that carries stage evidence, stage history or operator decisions, and the packet's recorded deploy target, preview URL, production URL, order-path depth and allowed-domains confirmation, printing the stage keys and the operator state it cleared. It archives completed build, Polish and QA records into stage history, which is kept, and keeps each stage's record that its inputs changed. This is the flag that makes `prepare-build` destructive; the base form refuses instead. It also regenerates a stale Design Source Package that this intake synthesized itself: the previous Assembly Report records origin \"synthesized\" and the package bytes still match it. An adopted or hand-edited package is never replaced. The declared writes already cover that path. Everything else it writes is the base form's intake."
+      "notes": "DESTRUCTIVE: --force overwrites an assembly report that carries stage evidence, stage history or operator decisions, and the packet's recorded deploy target, preview URL, production URL, order-path depth and allowed-domains confirmation, printing the stage keys and the operator state it cleared. It archives completed build, Polish and QA records into stage history, which is kept, and keeps each stage's record that its inputs changed. This is the flag that makes `prepare-build` destructive; the base form refuses instead. It also regenerates a stale Design Source Package that this intake synthesized itself: the previous Assembly Report records origin \"synthesized\" and the package bytes still match it. An adopted or hand-edited package is never replaced. The declared writes already cover that path. With --out naming the Build Packet of another route, it also replaces that funnel with this one (renaming its route): the packet is rewritten for this route, and when that funnel kept the project-level records they are regenerated for this route in place. Without --force that run is refused, so naming a path never replaces another funnel. Everything else it writes is the base form's intake."
     },
     {
       "command": "build",
@@ -5438,7 +5440,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/build-context.json",
+          "path": "{runtime}/build-context.json",
           "when": "always — the build context sidecar",
           "observed_in": [
             "no_session",
@@ -5449,7 +5451,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the assembly report for the run",
           "observed_in": [
             "no_session",
@@ -5460,7 +5462,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/input/*",
+          "path": "{runtime}/input/*",
           "when": "always — the normalized brief and the design source package",
           "observed_in": [
             "no_session",
@@ -5478,7 +5480,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/theme/theme-report.json",
+          "path": "{runtime}/theme/theme-report.json",
           "when": "the theme policy is not off",
           "observed_in": [
             "no_session",
@@ -5489,7 +5491,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the intake runs doctor — `start` and `build` do, `prepare-build` alone does not",
           "observed_in": [
             "no_session",
@@ -5520,7 +5522,7 @@
           ]
         },
         {
-          "path": "{cwd}/.campaign-runtime/run-records/*.json",
+          "path": "{packet-runtime}/run-records/*.json",
           "when": "a STALE run session at the root the command is about to act on is closed out before argv is read",
           "observed_in": [
             "stale_session"
@@ -5586,7 +5588,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/build-context.json",
+          "path": "{runtime}/build-context.json",
           "when": "always — the build context sidecar",
           "observed_in": [
             "no_session",
@@ -5597,7 +5599,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the assembly report for the run",
           "observed_in": [
             "no_session",
@@ -5608,7 +5610,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/input/*",
+          "path": "{runtime}/input/*",
           "when": "always — the normalized brief and the design source package",
           "observed_in": [
             "no_session",
@@ -5626,7 +5628,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/theme/theme-report.json",
+          "path": "{runtime}/theme/theme-report.json",
           "when": "the theme policy is not off",
           "observed_in": [
             "no_session",
@@ -5637,7 +5639,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the intake runs doctor — `start` and `build` do, `prepare-build` alone does not",
           "observed_in": [
             "no_session",
@@ -5706,7 +5708,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/build-context.json",
+          "path": "{runtime}/build-context.json",
           "when": "always — the build context sidecar",
           "observed_in": [
             "no_session",
@@ -5717,7 +5719,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the assembly report for the run",
           "observed_in": [
             "no_session",
@@ -5728,7 +5730,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/input/*",
+          "path": "{runtime}/input/*",
           "when": "always — the normalized brief and the design source package",
           "observed_in": [
             "no_session",
@@ -5746,7 +5748,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/theme/theme-report.json",
+          "path": "{runtime}/theme/theme-report.json",
           "when": "the theme policy is not off",
           "observed_in": [
             "no_session",
@@ -5757,7 +5759,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the intake runs doctor — `start` and `build` do, `prepare-build` alone does not",
           "observed_in": [
             "no_session",
@@ -5788,7 +5790,7 @@
           ]
         },
         {
-          "path": "{cwd}/.campaign-runtime/run-records/*.json",
+          "path": "{packet-runtime}/run-records/*.json",
           "when": "a STALE run session at the root the command is about to act on is closed out before argv is read",
           "observed_in": [
             "stale_session"
@@ -5826,7 +5828,7 @@
       ],
       "effect_test": "effects: build --force",
       "test_scope": "full",
-      "notes": "DESTRUCTIVE: --force overwrites an assembly report that carries stage evidence, stage history or operator decisions, and the packet's recorded deploy target, preview URL, production URL, order-path depth and allowed-domains confirmation, printing the stage keys and the operator state it cleared. It archives completed build, Polish and QA records into stage history, which is kept, and keeps each stage's record that its inputs changed. This is the flag that makes `build` destructive; the base form refuses instead. It also regenerates a stale Design Source Package that this intake synthesized itself: the previous Assembly Report records origin \"synthesized\" and the package bytes still match it. An adopted or hand-edited package is never replaced. The declared writes already cover that path. Everything else it writes is the base form's intake."
+      "notes": "DESTRUCTIVE: --force overwrites an assembly report that carries stage evidence, stage history or operator decisions, and the packet's recorded deploy target, preview URL, production URL, order-path depth and allowed-domains confirmation, printing the stage keys and the operator state it cleared. It archives completed build, Polish and QA records into stage history, which is kept, and keeps each stage's record that its inputs changed. This is the flag that makes `build` destructive; the base form refuses instead. It also regenerates a stale Design Source Package that this intake synthesized itself: the previous Assembly Report records origin \"synthesized\" and the package bytes still match it. An adopted or hand-edited package is never replaced. The declared writes already cover that path. With --out naming the Build Packet of another route, it also replaces that funnel with this one (renaming its route): the packet is rewritten for this route, and when that funnel kept the project-level records they are regenerated for this route in place. Without --force that run is refused, so naming a path never replaces another funnel. Everything else it writes is the base form's intake."
     },
     {
       "command": "spec",
@@ -5903,7 +5905,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the derive invalidates the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -5914,7 +5916,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "the Map write succeeds and is recorded on the report's evidence[]",
           "observed_in": [],
           "not_observed_reason": "the Map write is not reachable against a loopback stand-in"
@@ -5957,7 +5959,7 @@
       "preflight": {
         "may_write": [
           "{spec}",
-          "{target}/.campaign-runtime/doctor-output.json",
+          "{runtime}/doctor-output.json",
           "{lifecycle-journal}"
         ],
         "may_contact": [
@@ -5984,7 +5986,7 @@
           "not_observed_reason": "the capture is refused before the browser is launched"
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "the capture completes and its evidence is recorded",
           "observed_in": [],
           "not_observed_reason": "the capture is refused before the browser is launched"
@@ -6042,7 +6044,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/input/*",
+          "path": "{runtime}/input/*",
           "when": "the save changes the brief (outcome saved or saved_with_invalidation) — the normalized brief, re-derived from the saved brief file",
           "observed_in": [
             "no_session",
@@ -6053,7 +6055,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/build-context.json",
+          "path": "{runtime}/build-context.json",
           "when": "the save changes the brief (outcome saved or saved_with_invalidation) — the brief summary, its bindings and the brief's prompts",
           "observed_in": [
             "no_session",
@@ -6064,7 +6066,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "the save changes the brief (outcome saved or saved_with_invalidation) — the brief summary and bindings, and stages.prepare_build re-derived from the brief's blockers; on a material change (saved_with_invalidation) build, Polish and QA become required (QA alone when only qa_policy changed), each recording input_change and keeping the record it replaced in its history, and evidence[] gains a line",
           "observed_in": [
             "no_session",
@@ -6075,7 +6077,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "a save changes the brief (outcome saved or saved_with_invalidation) and a retained doctor sidecar exists — the write postdates the doctor snapshot, so it is stamped stale",
           "observed_in": [
             "no_session",
@@ -6131,7 +6133,7 @@
       "tier": "C",
       "writes": [
         {
-          "path": "{target}/.campaign-runtime/input/*",
+          "path": "{runtime}/input/*",
           "when": "the refresh runs (outcome refreshed) and the brief re-derived from the brief file last saved by intake or `record brief` (or from the generated draft) differs from what is bound, or the normalized brief on disk no longer holds the re-derived brief's material — the normalized brief",
           "observed_in": [
             "no_session",
@@ -6142,7 +6144,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/build-context.json",
+          "path": "{runtime}/build-context.json",
           "when": "the refresh runs (outcome refreshed) — spec.hash, spec.material_hash and the active pages' labels; the brief summary and bindings when the re-derived brief is saved",
           "observed_in": [
             "no_session",
@@ -6153,7 +6155,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "the refresh runs (outcome refreshed) — identity.spec_hash and identity.spec_material_hash become the CampaignSpec's; each build, Polish and QA record made against other CampaignSpec or brief content becomes required, recording input_change and keeping the record it replaced in its history; evidence[] gains a line",
           "observed_in": [
             "no_session",
@@ -6164,7 +6166,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "a refresh runs (outcome refreshed) and a retained doctor sidecar exists — the write postdates the doctor snapshot, so it is stamped stale",
           "observed_in": [
             "no_session",
@@ -6220,7 +6222,7 @@
       "tier": "C",
       "writes": [
         {
-          "path": "{target}/.campaign-runtime/build-context.json",
+          "path": "{runtime}/build-context.json",
           "when": "the record passes every check — scaffold.required becomes false (handoff to build)",
           "observed_in": [
             "no_session",
@@ -6231,7 +6233,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "the record passes every check — stages.setup becomes completed",
           "observed_in": [
             "no_session",
@@ -6242,7 +6244,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "a retained doctor sidecar exists — the record postdates the doctor snapshot, so it is stamped stale",
           "observed_in": [
             "no_session",
@@ -6298,7 +6300,7 @@
       "tier": "C",
       "writes": [
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "the record passes every check — stages.assembly becomes completed with build_fingerprint set to doctor's derived.build_output_fingerprint.value and the brief and CampaignSpec content it was made against, keeping the record it replaced in its history. When the replaced completed record was made against other brief or CampaignSpec content, the record writes input_change and stages.polish and stages.qa become required; otherwise stages.polish becomes required unless its evidence is bound to that exact output. Output identical to the build that change superseded keeps input_change, unless --deviation-reason records the operator's reason (status completed_with_warnings)",
           "observed_in": [
             "no_session",
@@ -6309,7 +6311,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "a retained doctor sidecar exists — the record postdates the doctor snapshot, so it is stamped stale",
           "observed_in": [
             "no_session",
@@ -6365,7 +6367,7 @@
       "tier": "C",
       "writes": [
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "the record passes every check — stages.polish becomes the file's status (completed, blocked with blockers, or skipped with skip_reason) and evidence, bound to doctor's current fingerprint and, for a completed status, the brief and CampaignSpec content it was made against, keeping the record it replaced in its history; theme.repair_loop_defect when the file sets it",
           "observed_in": [
             "no_session",
@@ -6376,7 +6378,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "a retained doctor sidecar exists — the record postdates the doctor snapshot, so it is stamped stale",
           "observed_in": [
             "no_session",
@@ -6432,7 +6434,7 @@
       "tier": "C",
       "writes": [
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "the record passes every check — theme.status becomes applied with load_order after-next-core, css_path, commerce_pages and per-page evidence read from the built pages; any earlier theme waiver is cleared",
           "observed_in": [
             "no_session",
@@ -6443,7 +6445,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "a retained doctor sidecar exists — the record postdates the doctor snapshot, so it is stamped stale",
           "observed_in": [
             "no_session",
@@ -6510,7 +6512,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "the record passes every check — stages.deploy becomes completed with the served URL in outputs and one evidence line per page that answered",
           "observed_in": [
             "no_session",
@@ -6521,7 +6523,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "a retained doctor sidecar exists — the record postdates the doctor snapshot, so it is stamped stale",
           "observed_in": [
             "no_session",

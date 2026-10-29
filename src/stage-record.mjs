@@ -519,12 +519,12 @@ const routeKey = (route) => String(route || "").replace(/^\/+|\/+$/g, "");
 // Context's theme.generated.fonts_css_path (theme generate --out-dir moves
 // it); the default path is read only when the context names none. Any page
 // that breaks the rule is a refusal naming the page.
-function brandLayerFacts(doctor, context = null) {
+function brandLayerFacts(doctor, context = null, runtimeDir = resolve(doctor.derived?.target_repo || ".", ".campaign-runtime")) {
   const derived = doctor.derived || {};
   const recordedFonts = context?.theme?.generated?.fonts_css_path;
   const generatedFonts = typeof recordedFonts === "string" && recordedFonts
     ? resolve(derived.target_repo, recordedFonts)
-    : (context?.theme?.generated ? null : resolve(derived.target_repo, ".campaign-runtime/theme", BRAND_FONTS_FILENAME));
+    : (context?.theme?.generated ? null : resolve(runtimeDir, "theme", BRAND_FONTS_FILENAME));
   const fontsRequired = Boolean(generatedFonts) && existsSync(generatedFonts);
   const insideSite = (file) => {
     const rel = relative(site.site_root, file);
@@ -616,10 +616,10 @@ function brandLayerFacts(doctor, context = null) {
       : `No built commerce page loads ${CORE_STYLESHEET} (${unstyled.join(", ")}${outOfScope.length ? `; declared but not built: ${outOfScope.join(", ")}` : ""}), so no page renders family components for a brand layer to style. If shipping without one is intended, record that with ${cmd("theme")} waive.`]);
   }
   const cssPath = relative(derived.target_repo, layers[0]);
-  const generated = resolve(derived.target_repo, ".campaign-runtime/theme/brand-theme.css");
+  const generated = resolve(runtimeDir, "theme/brand-theme.css");
   if (existsSync(generated)) {
     const same = readFileSync(generated, "utf8") === readFileSync(layers[0], "utf8");
-    evidence.push(`${cssPath} ${same ? "matches" : "differs from"} the generated .campaign-runtime/theme/brand-theme.css.`);
+    evidence.push(`${cssPath} ${same ? "matches" : "differs from"} the generated ${relative(derived.target_repo, generated).split(sep).join("/")}.`);
   }
   return {
     cssPath,
@@ -1218,7 +1218,7 @@ function recordUnderLock({ stage, packetPath, sidecars, lockedTarget, input, dry
     }
     facts = doctorFacts(stage, doctor, report, packet);
     if (typeof afterDoctorRead === "function") afterDoctorRead();
-    if (stage === "theme") layer = brandLayerFacts(doctor, readJsonIfExists(contextPath));
+    if (stage === "theme") layer = brandLayerFacts(doctor, readJsonIfExists(contextPath), workspace.runtimeDir);
     if (stage === "deploy") deployFacts(doctor, packet, input, facts.fingerprint);
     const next = stage === "setup"
       ? composeSetup(report, context, { now: timestamp, recordedBy })

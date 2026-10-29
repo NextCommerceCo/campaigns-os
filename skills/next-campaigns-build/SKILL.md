@@ -76,6 +76,7 @@ Inputs:
 - target page-kit repo
 - starter-template commerce catalog
 - Read the normalized Campaign Build Brief at `.campaign-runtime/input/campaign-build-brief.normalized.json` and the recorded decisions (`adapter_decisions`, `decisions` and `theme` in `.campaign-runtime/assembly-report.json`, and `assembly.template_decision_notes` in the Build Packet) before working on the campaign. The campaign intent summary at the top of the setup, build, Polish and QA prompts and in every `next` result is orientation, never a source of prices or commerce behaviour.
+- A Page Kit project can hold several funnels. The first one set up uses `campaign-runtime.build.json` and the `.campaign-runtime/` paths named here; each later funnel has `campaign-runtime-<route>.build.json` and keeps the same files under `.campaign-runtime/funnels/<route>/` (the packet's `assembly.runtime_dir`). Read and pass the funnel's own packet and paths; the paths `next` prints are already the right ones.
 
 Build rules:
 
