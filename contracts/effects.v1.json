@@ -2799,7 +2799,7 @@
           ]
         },
         {
-          "path": "{cwd}/.campaign-runtime/qa-verdict.json",
+          "path": "{packet-runtime}/qa-verdict.json",
           "when": "always — the committed verdict sidecar is projected from the attempt",
           "observed_in": [
             "no_session",
@@ -2810,7 +2810,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the QA stage outcome is recorded on the report",
           "observed_in": [
             "no_session",
@@ -2832,7 +2832,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the QA outcome invalidates the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -3578,7 +3578,7 @@
           ]
         },
         {
-          "path": "{cwd}/.campaign-runtime/qa-verdict.json",
+          "path": "{packet-runtime}/qa-verdict.json",
           "when": "always — the committed verdict sidecar is projected from the attempt",
           "observed_in": [
             "no_session",
@@ -3589,7 +3589,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the QA stage outcome is recorded on the report",
           "observed_in": [
             "no_session",
@@ -3611,7 +3611,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the QA outcome invalidates the retained doctor sidecar",
           "observed_in": [
             "no_session",

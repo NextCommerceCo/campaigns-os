@@ -606,6 +606,9 @@ export function qaExtendedBuildFingerprint(report) {
 // it. A blocked or pending Polish reviewed nothing.
 export function polishReviewedBuild(polish) {
   if (stageIsTerminal(String(polish?.status || ""))) return optionalString(polish.source_build_fingerprint);
+  // A brief or spec change since then (input_change, which only a restored
+  // or new Polish clears) owes the full review, whatever the build change.
+  if (Object.hasOwn(polish || {}, "input_change")) return null;
   return polish?.status === "required" && polish.required_by === "build" ? optionalString(polish.owed_since_build_fingerprint) : null;
 }
 

@@ -505,6 +505,9 @@ function planPageScope({ spec, activePages, pageFiles, packetBindings, boundFile
       }
     }
     scope.added.push({ page_id: id, file: file.path, type, route: file.route });
+    if (type !== "thankyou") {
+      scope.not_derived.push({ field: `${pathLabel(path)}.packages`, page_id: id, reason: "page_packages_not_derived", detail: `page "${id}" was added from ${file.path}; which packages it sells is authored, so set them by hand. Until each path into the Checkout passes a page that sells a main-cart package, and each upsell or downsell has its offer package, doctor blocks (CheckoutPathHasPackages, UpsellHasPackages).` });
+    }
     scope.changes.push({ field: pathLabel(path), page_id: id, path, op: "insert", before: undefined, after: page, source: `${file.path} (page_type ${file.page_type})` });
     if (mirror) {
       const mirrorPath = ["funnel_pages", mirror.length + offset];

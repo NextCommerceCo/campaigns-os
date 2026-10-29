@@ -14,6 +14,7 @@ import { buildManifestEntries, computeBuildFingerprint } from "./built-site-scop
 import { recordQaStageOutcome } from "./cli.mjs";
 import { doctorPacket } from "./doctor/inspect.mjs";
 import { assessEvidenceDebt } from "./evidence-debt.mjs";
+import { demoteStages } from "./input-refresh.mjs";
 import { __qaNodeTestHooks, applyQaPageScope } from "./qa-node.mjs";
 import { runReadbackCommand } from "./readback.mjs";
 import { recordStageCommand } from "./stage-record.mjs";
@@ -279,6 +280,10 @@ test("qa run --page from the CLI: argv refusals, then a commerce change stops be
   const withOrders = run("--packet", f.packetPath, "--page", "upsell1", "--test-order", "common");
   assert.notEqual(withOrders.status, 0);
   assert.match(withOrders.stderr, /--page cannot be combined with --test-order/);
+  const withBeacons = run("--packet", f.packetPath, "--page", "upsell1", "--vendor-beacons", "live");
+  assert.notEqual(withBeacons.status, 0);
+  assert.match(withBeacons.stderr, /--page cannot be combined with --vendor-beacons/);
+  assert.doesNotMatch(withBeacons.stderr, /add --test-order/);
   const empty = run("--packet", f.packetPath, "--page");
   assert.notEqual(empty.status, 0);
   assert.match(empty.stderr, /--page takes a page id/);
@@ -346,6 +351,21 @@ test("a blocked Polish is not advisory for a page-only change, before or after r
     assert.equal(markdown.status, 3);
     assert.match(markdown.stdout, /It owes the full Polish, and QA on `upsell1`\./);
     assert.match(markdown.stdout, /Owed stages: polish, qa \(changed pages only\)\./);
+  }
+});
+
+test("a Polish a spec change made owed again is not advisory for a later page-only change", (t) => {
+  const f = fixture(t);
+  copyEdit(f);
+  f.recordBuild();
+  assert.equal(f.debt().polish.advisory, true, "setup: a page-only change alone leaves Polish advisory");
+  editReport(f, (stages) => Object.assign(stages, demoteStages({ stages }, { causes: ["spec"], by: "record spec", now: "2026-10-30T00:00:00Z" }).report.stages));
+  f.writePage("upsell1", PAGES.upsell1.replace("Add a second bottle", "Add a fourth bottle"));
+  for (const recorded of [false, true]) {
+    if (recorded) f.recordBuild();
+    const debt = f.debt();
+    assert.equal(debt.polish.status, "owed", `record build ${recorded}`);
+    assert.equal(debt.polish.advisory, false, `record build ${recorded}: the spec change owes the full Polish`);
   }
 });
 

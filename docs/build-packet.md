@@ -634,7 +634,11 @@ position:
   `on_decline`, `next-success-url` for `success_url`), the hint is rewritten
   to the new target's route in the same spelling (`/<slug>/receipt/` becomes
   `/<slug>/upsell-2/`, `receipt/` becomes `upsell-2/`), and so is the legacy
-  `funnel_pages[]` copy. An added page gets no hints.
+  `funnel_pages[]` copy. An added page gets no hints and no packages: which
+  packages it sells is authored, so derive reports `page_packages_not_derived`
+  for it. Until each path into the Checkout passes a page that sells a
+  main-cart package (and each upsell or downsell has its offer package),
+  doctor blocks on `CheckoutPathHasPackages` or `UpsellHasPackages`.
 - A page whose file is gone and a new file of the same page type in the same
   run read as a rename (`upsell.html` to `upsell-1.html`). Derive applies
   neither, so the page's packages, offers and other authored fields are not
@@ -693,6 +697,7 @@ the status is `partial` (exit 0; the fields it could derive are written):
 | `page_type_unknown`, `page_id_unusable`, `page_funnel_ambiguous` | after handoff, a page file the spec lacks was not added: its `page_type` is not one of page-kit's four, its file name is not a usable new page id (taken, `index`, or not letters, digits, `-` and `_`), or the spec has several funnels (or none), so which one it joins is not stated |
 | `routing_not_derived`, `routing_target_removed` | an added page's link names no single page (or the file states none), or a kept page routes to a removed page and its file's link names no page the spec keeps; set the field by hand |
 | `page_order_not_derived` | an added page was appended; its `order` is left for you |
+| `page_packages_not_derived` | an added page (any type but a thank-you page) carries no packages; author them before doctor's `CheckoutPathHasPackages` / `UpsellHasPackages` rules pass |
 | `page_renamed` | a page's file is gone and a new file of the same page type appeared; read as a rename, neither the remove nor the add is applied |
 | `package_not_live`, `offer_not_live`, `offers_not_in_live_campaign` | a package or offer the spec carries is not in the live campaign, or the live campaign carried no offers list; nothing is changed |
 

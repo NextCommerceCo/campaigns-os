@@ -1645,7 +1645,7 @@ test("planSpecDerive adds a page the tree builds after handoff, appended by id, 
   const insert = plan.changes.find((row) => row.op === "insert");
   assert.deepEqual([insert.field, insert.after], ["funnels[0].pages[4]", { id: "upsell-2", type: "upsell", page_url: "upsell-2/", on_accept: "receipt", on_decline: "receipt" }]);
   assert.deepEqual(plan.changes.filter((row) => row.field === "funnels[0].pages[2].on_accept").map((row) => [row.before, row.after, row.source]), [["receipt", "upsell-2", "upsell.html frontmatter next_url"]]);
-  assert.deepEqual(plan.not_derived.map((row) => [row.field, row.reason]), [["funnels[0].pages[4].order", "page_order_not_derived"]]);
+  assert.deepEqual(plan.not_derived.map((row) => [row.field, row.reason]), [["funnels[0].pages[4].packages", "page_packages_not_derived"], ["funnels[0].pages[4].order", "page_order_not_derived"]]);
   // The hint on the re-pointed edge moves with it, spelled as it was; the
   // decline edge kept its target, so its hint is left alone.
   assert.deepEqual(plan.changes.filter((row) => row.field.includes(".sdk_hints.")).map((row) => [row.field, row.before, row.after]), [["funnels[0].pages[2].sdk_hints.meta_tags.next-upsell-accept-url", "receipt/", "upsell-2/"]]);

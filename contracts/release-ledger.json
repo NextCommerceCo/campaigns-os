@@ -10003,8 +10003,8 @@
       "kind": "release",
       "surface_version": "1.62.0",
       "changelog_section": "1.62.0",
-      "changelog_sha256": "6f1b4b484c3b55b8b86c638a8e9150f3d19c99ddd9ee5651976abd2613efefa6",
-      "agent_impact": "In a Page Kit project with more than one funnel, an agent passes --packet campaign-runtime-<route>.build.json for a later funnel; that funnel's records live under .campaign-runtime/funnels/<route>/ (assembly.runtime_dir), readback without --packet refuses across funnels, and prepare-build refuses to replace another route's packet unless the operator agrees to --force. After deploy or QA has completed, spec derive adds and removes pages from the page tree, re-points the routing and routing hints on the edges that name them, holds a same-type file swap as page_renamed, and refreshes mirrored package and offer fields from one read-only GET /api/campaign (--no-live-refs skips it); doctor blocks a stale routing hint as spec.routing_hint_stale. For a change that touches only some pages' HTML, readback's evidence_debt marks Polish advisory and QA scoped to the changed pages, and qa run --page <id> pays it without test orders. CampaignSpec validation adds CheckoutPathHasPackages (an error for a checkout path nothing sells into) and CampaignCurrencies (malformed ISO codes), and the spec carries analytics.vendors.<vendor>, which spec derive fills from campaigns.json id keys and doctor compares (page_kit.analytics_vendors, advisory). qa run --test-order answers listed vendors' beacons locally by default and records the requests as browser-test-order:vendor-beacons evidence, never purchase proof; --vendor-beacons live sends them. qa run --currency now blocks when an order or the calculate endpoint comes back in another currency. Polish warns layout.conventions for crowded floating CTA bars and CTA labels under 16px. A live lock from another Campaigns OS release is refused at once with ELOCKFORMAT. Refresh skills to 1.62.0+skills.1.",
+      "changelog_sha256": "2cd9a45a004c38896646aeb3729ccf6ab6166965fd86a8e879bf26e39247a48d",
+      "agent_impact": "In a Page Kit project with more than one funnel, an agent passes --packet campaign-runtime-<route>.build.json for a later funnel; that funnel's records live under .campaign-runtime/funnels/<route>/ (assembly.runtime_dir), readback without --packet refuses across funnels, and prepare-build refuses to replace another route's packet unless the operator agrees to --force. After deploy or QA has completed, spec derive adds and removes pages from the page tree, re-points the routing and routing hints on the edges that name them, holds a same-type file swap as page_renamed, reports an added page's packages as page_packages_not_derived (author them before doctor's CheckoutPathHasPackages / UpsellHasPackages pass), and refreshes mirrored package and offer fields from one read-only GET /api/campaign (--no-live-refs skips it); doctor blocks a stale routing hint as spec.routing_hint_stale. For a change that touches only some pages' HTML, readback's evidence_debt marks Polish advisory and QA scoped to the changed pages, and qa run --page <id> pays it without test orders. CampaignSpec validation adds CheckoutPathHasPackages (an error for a checkout path nothing sells into) and CampaignCurrencies (malformed ISO codes), and the spec carries analytics.vendors.<vendor>, which spec derive fills from campaigns.json id keys and doctor compares (page_kit.analytics_vendors, advisory). qa run --test-order answers listed vendors' beacons locally by default and records the requests as browser-test-order:vendor-beacons evidence, never purchase proof; --vendor-beacons live sends them. qa run --currency now blocks when an order or the calculate endpoint comes back in another currency. Polish warns layout.conventions for crowded floating CTA bars and CTA labels under 16px. A live lock from another Campaigns OS release is refused at once with ELOCKFORMAT. Refresh skills to 1.62.0+skills.1.",
       "compatibility": "additive",
       "migration": "none",
       "changes": [
@@ -10204,7 +10204,7 @@
           "class": "named_surface",
           "path": "docs/build-packet.md",
           "surface_entry": "docs/build-packet.md",
-          "summary": "Several funnels in one project, spec derive after handoff (pages, routing, rename hold, live mirror refresh), record spec page rebinds, template analytics vendors."
+          "summary": "Several funnels in one project, spec derive after handoff (pages, routing, rename hold, page_packages_not_derived, live mirror refresh), record spec page rebinds, template analytics vendors."
         },
         {
           "class": "named_surface",
@@ -10222,7 +10222,7 @@
           "class": "named_surface",
           "path": "docs/effects.md",
           "surface_entry": "docs/effects.md",
-          "summary": "New location tokens, the --vendor-beacons flag and its refusals, and the record spec rebind rule."
+          "summary": "New location tokens, spec derive's live campaign read and tiers, the --vendor-beacons flag and its refusals, and the record spec rebind rule."
         },
         {
           "class": "named_surface",
@@ -10354,19 +10354,19 @@
           "class": "skill",
           "path": "skills/next-campaigns-os/SKILL.md",
           "surface_entry": null,
-          "summary": "Per-funnel records and spec derive after handoff."
+          "summary": "Per-funnel records, spec derive after handoff, and the page-only exception to full Polish and QA after launch."
         },
         {
           "class": "skill",
           "path": "skills/next-campaigns-polish/SKILL.md",
           "surface_entry": null,
-          "summary": "Report layout.conventions warnings and accept them with checkpoint accept."
+          "summary": "Report layout.conventions warnings and accept them with checkpoint accept; read a later funnel's brief and report under its runtime directory."
         },
         {
           "class": "skill",
           "path": "skills/next-campaigns-qa/SKILL.md",
           "surface_entry": null,
-          "summary": "Default vendor-beacon interception, the --currency blockers, and page-scoped QA with --page and its refusals."
+          "summary": "Default vendor-beacon interception, the --currency blockers, page-scoped QA with --page and its refusals, and a later funnel's brief and report paths."
         },
         {
           "class": "skill",
@@ -10405,7 +10405,7 @@
           "summary": "next treats an advisory Polish as not required."
         }
       ],
-      "entry_sha256": "0dfafcade4361a2d932c2ae920e420ab0f225a61487ca9953f9a041129ef4e48"
+      "entry_sha256": "53dd44772d2d95887875f2556770dd4668c33ddd930232e6203537492e15478d"
     }
   ]
 }

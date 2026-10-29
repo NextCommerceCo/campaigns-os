@@ -1039,6 +1039,9 @@ function refuseBadPageScope(args) {
       throw refused(`--page cannot be combined with --${flag}: a page-scoped run checks the named pages and places no test orders. Run ${cmd("qa")} run without --page for purchase proof.`);
     }
   }
+  if (args["vendor-beacons"] !== undefined) {
+    throw refused("--page cannot be combined with --vendor-beacons: a page-scoped run places no test orders, so there are no vendor beacons to route. Drop --vendor-beacons.");
+  }
 }
 
 // Narrow the QA topology to the pages --page names, after checking that the
