@@ -28,7 +28,7 @@ const PAGES = Object.freeze({
   receipt: `<!doctype html><html><head><meta name="next-page-type" content="receipt"></head><body><h1>Thank you</h1></body></html>\n`,
 });
 
-function fixture(t) {
+function fixture(t, { spec = {} } = {}) {
   const root = mkdtempSync(join(tmpdir(), "page-only-change-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const output = join(root, "_site", SLUG);
@@ -41,7 +41,7 @@ function fixture(t) {
   const config = { [SLUG]: { sdk_version: "0.4.40", store_name: "Synthetic Store" } };
   const writeConfig = () => writeFileSync(join(root, "_data", "campaigns.json"), JSON.stringify(config));
   writeConfig();
-  writeFileSync(join(root, "missing-spec.json"), "{}");
+  writeFileSync(join(root, "missing-spec.json"), JSON.stringify(spec));
   mkdirSync(join(root, "src", SLUG), { recursive: true });
   const original = computeBuildFingerprint(output);
   const packet = {
@@ -264,4 +264,39 @@ test("rebuilds accumulate per stage: QA paid on one page still reads a later pag
   assert.deepEqual(debt.polish.change.changed_pages.map((page) => page.page_id), ["landing", "upsell1"], "Polish reads both rebuilds since its review");
   assert.equal(debt.polish.advisory, true);
   assert.equal(f.readReport().stages.assembly.build_changes.length, 2);
+});
+
+test("qa run --page from the CLI: argv refusals, then a commerce change stops before any page is checked", (t) => {
+  // A spec whose pages the QA topology knows.
+  const f = fixture(t, { spec: { funnels: [{ id: "main", pages: ["landing", "checkout", "upsell1", "receipt"]
+    .map((page, index) => ({ id: page, type: page === "landing" ? "landing" : page, order: index + 1, page_url: `${page}/` })) }] } });
+  const run = (...flags) => spawnSync(process.execPath, [cli, "qa", "run", ...flags, "--no-post-verdict", "--no-remit", "--no-live-refs", "--json"], {
+    cwd: f.root, encoding: "utf8", env: { ...process.env, CAMPAIGNS_OS_TELEMETRY: "off", CAMPAIGNS_OS_LIFECYCLE_LOG: "" },
+  });
+  const noPacket = run("--page", "upsell1", "--base-url", `http://127.0.0.1:9/${SLUG}/`);
+  assert.notEqual(noPacket.status, 0);
+  assert.match(noPacket.stderr, /--page needs --packet/);
+  const withOrders = run("--packet", f.packetPath, "--page", "upsell1", "--test-order", "common");
+  assert.notEqual(withOrders.status, 0);
+  assert.match(withOrders.stderr, /--page cannot be combined with --test-order/);
+  const empty = run("--packet", f.packetPath, "--page");
+  assert.notEqual(empty.status, 0);
+  assert.match(empty.stderr, /--page takes a page id/);
+
+  // --page repeats: every value is read, not only the last.
+  copyEdit(f);
+  f.recordBuild();
+  const repeated = run("--packet", f.packetPath, "--page", "nope", "--page", "upsell1", "--base-url", `http://127.0.0.1:9/${SLUG}/`);
+  assert.notEqual(repeated.status, 0);
+  assert.match(repeated.stderr, /"nope" is not a page of this campaign's QA topology/);
+
+  // A package ref change.
+  f.writePage("upsell1", PAGES.upsell1.replace('data-next-package-id="12"', 'data-next-package-id="13"'));
+  f.recordBuild();
+  const before = readFileSync(f.reportPath, "utf8");
+  const commerce = run("--packet", f.packetPath, "--page", "upsell1", "--base-url", `http://127.0.0.1:9/${SLUG}/`);
+  assert.notEqual(commerce.status, 0);
+  assert.match(commerce.stderr, /commerce-affecting \(commerce_markup_changed\), so it owes a full QA run/);
+  assert.equal(readFileSync(f.reportPath, "utf8"), before, "the QA stage is not recorded");
+  assert.equal(spawnSync("ls", [join(f.root, "qa-output")]).status !== 0, true, "no verdict is written");
 });

@@ -134,6 +134,21 @@ waiver commands keep them strict. Progress
 snapshots record a carried-forward gate as `not_applicable`, because their
 schema has no carried-forward state.
 
+### Polish advisory for a page-only change
+
+After launch, a change that touches only some pages' HTML and leaves checkout,
+commerce markup, routes, scripts and the campaign's Page Kit config alone is a
+page-only change ([what a change owes](campaigns-os-build-flow.md#what-a-change-owes)).
+On any target, its stale Polish evidence (`polish.evidence_missing` after
+`record build`, `polish.stale`, `polish.output_drift`, and the
+`polish.hidden_eager_media.capture_stale` checkpoint) is carried forward with
+the `page_only_change` policy. Doctor reports it as a warning starting
+"Advisory for a page-only change"; `next` and `record deploy` move past Polish;
+QA records it as a `skipped` row, so it does not hold the verdict to
+`ready_with_exceptions`. A Polish recorded as blocked, incomplete or
+self-certified stays blocking, and so does a stage a brief or spec change
+requires.
+
 ## Resolve
 
 Use resolve before a full run:
@@ -389,6 +404,19 @@ prints a warning on stderr and the run goes ahead. Only the missing flag is
 checked: a currency such as EUR covers many countries, so an explicit
 `--test-country` is taken as meant. `qa run --site` takes `--currency` the same
 way and tags the slug's entry page.
+
+`--page <page_id>` (repeatable) checks only the named pages. It pays the QA a
+page-only change owes: `doctor --ci` and `next` name the changed pages by
+their route ids (`upsell1` for `upsell1/index.html`), and the CampaignSpec page
+id is accepted too. It needs `--packet`, places no test orders (it refuses
+`--test-order` other than `off`), and refuses before checking anything when the
+output on disk is not the recorded build (run `record build` first), when the
+change since the build QA reviewed touches commerce, or when a changed page is
+left out. Every other page gets a `page-scope:<page_id>` row, `skipped` with
+`outside_page_scope`. The QA stage it records carries `evidence.page_scope`
+(`pages`, `owed_pages`, `base_build_fingerprint`) and keeps the
+`purchase_proof` of the full run it extends. QA already recorded in full for
+the current build is re-run without `--page`.
 
 ### Automatic commercial parity
 

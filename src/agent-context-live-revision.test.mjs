@@ -16,6 +16,7 @@ const SOURCES = [
 const HEADING = "## Revising a live campaign";
 const REVISION_COMMANDS = [
   "npx --no-install campaigns-os record build --packet campaign-runtime.build.json",
+  "npx --no-install campaigns-os qa run --packet campaign-runtime.build.json --page <page_id>",
   "npx --no-install campaigns-os polish capture --packet campaign-runtime.build.json --base-url <served-current-build-url>",
   "npx --no-install campaigns-os record polish --packet campaign-runtime.build.json --evidence <polish-evidence.json>",
   "npx --no-install campaigns-os qa run --packet campaign-runtime.build.json",
@@ -23,7 +24,7 @@ const REVISION_COMMANDS = [
 const STEPS = [
   "1. Before editing, run `npx --no-install campaigns-os readback .` and `npx --no-install campaigns-os next --packet campaign-runtime.build.json`. Readback's `evidence_debt` compares the build on disk with the builds Polish and QA were recorded for. Changed pages are listed against the recorded assembly build manifest; an owed stage with an empty page list still means evidence is owed.",
   "2. For pages built from a provided design, the Design Source Package is the authority, not the punch list's wording.",
-  `3. Before opening the pull request, after the final edit, rebuild, then run \`${REVISION_COMMANDS[0]}\`, \`${REVISION_COMMANDS[1]}\` for the whole route, and \`${REVISION_COMMANDS[2]}\`, in that order. When QA is owed, run \`${REVISION_COMMANDS[3]}\` against that build.`,
+  `3. Before opening the pull request, after the final edit, rebuild, then run \`${REVISION_COMMANDS[0]}\`. When \`next\` or the pull-request check says the change is page-only, run \`${REVISION_COMMANDS[1]}\` against that build, with one \`--page\` for each changed page it names; Polish is optional for it. Otherwise run \`${REVISION_COMMANDS[2]}\` for the whole route and \`${REVISION_COMMANDS[3]}\`, in that order, and when QA is owed, run \`${REVISION_COMMANDS[4]}\` against that build.`,
   "4. In the pull request body, put the design reference and the preview of each changed page side by side.",
 ];
 const STANDING_CHECK = "The standing pull-request check is `npx --no-install campaigns-os doctor --ci --packet campaign-runtime.build.json --no-live-refs`, report-only unless the repo opts in.";
@@ -66,7 +67,7 @@ test("every live-revision command follows the executable sequence and satisfies 
     const section = readFileSync(join(ROOT, source), "utf8").split(HEADING)[1].split(/\n#{1,2} /)[0];
     const step3 = section.match(/^3\.[\s\S]*?(?=^4\.)/m)?.[0] ?? "";
     const sequence = [...step3.matchAll(/`([^`]*\bcampaigns-os\s+[^`]+)`/g)].map((match) => match[1]);
-    assert.deepEqual(sequence, REVISION_COMMANDS, `${source}: rebuild, record build, capture the whole route, record Polish, then run owed QA`);
+    assert.deepEqual(sequence, REVISION_COMMANDS, `${source}: rebuild, record build, page-scoped QA for a page-only change, else capture the whole route, record Polish, then run owed QA`);
   }
   const commands = [...[...STEPS, STANDING_CHECK].join("\n").matchAll(/`([^`]*\bcampaigns-os\s+[^`]+)`/g)]
     .map((match) => match[1]);
