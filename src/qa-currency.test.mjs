@@ -7,12 +7,13 @@ import { test } from "node:test";
 import { parseArgs } from "./cli.mjs";
 import { REFUSED_INVOCATION } from "./lifecycle.mjs";
 import { resolveCartEntryPage } from "./qa-cart-entry.mjs";
+import { planCommercialParity, runCommercialParity } from "./qa-commercial-parity.mjs";
 import { QA_RUN_CURRENCY, __qaBrowserTestHooks } from "./qa-browser.mjs";
 import { __qaNodeTestHooks, runQaCli } from "./qa-node.mjs";
 import { createTrackingRun } from "./qa-tracking-params.mjs";
 
 const { deriveEntryUrls, qaRunCurrency, runPageChecks, runResolvedQa, warnCurrencyWithoutTestCountry, withEntryCurrency } = __qaNodeTestHooks;
-const { createSelectorProbeCache, enterCartViaLanding, openCheckoutForPath, pathCurrencyLoad, recoverCreatedOrder } = __qaBrowserTestHooks;
+const { createSelectorProbeCache, dispatchTestOrderPlans, enterCartViaLanding, openCheckoutForPath, orderCurrencyAssertion, pathCurrencyLoad, recoverCreatedOrder } = __qaBrowserTestHooks;
 
 // The entry page already carries tracking params: --currency must keep them.
 const LANDING_URL = "https://shop.example.com/offer/?utm_source=newsletter&utm_campaign=spring%20sale";
@@ -490,4 +491,181 @@ test("a non-USD --currency on an ordering run with no --test-country warns, and 
   assert.equal(warned(["--currency", "GBP"]), null, "no orders, no address");
   assert.equal(warned(["--currency", "GBP", "--test-order", "off"]), null);
   assert.equal(warned(["--test-order", "common"]), null);
+});
+
+// --- The run currency is checked, not only requested (#713) ----------------
+
+const PRICED_SPEC = Object.freeze({
+  schema_version: "4.3",
+  campaign: { currency: "USD", campaigns_api_key: "campaign-key" },
+  funnels: [{ id: "default", pages: [
+    { id: "landing", type: "landing", order: 1 },
+    { id: "checkout", type: "checkout", order: 2, enabled: true, packages: [{ ref_id: "5", qty: 1 }] },
+  ] }],
+});
+
+// A price-preview endpoint that records each requested scenario and answers
+// in `answerCurrency`, or in the requested currency when that is null.
+function pricePreview(answerCurrency = null) {
+  const requested = [];
+  const fetchImpl = async (url, options) => {
+    const { scenario } = JSON.parse(options.body);
+    requested.push({ url: String(url), currency: scenario.currency ?? null });
+    const lines = scenario.lines.map((line) => ({ package_id: line.package_id, quantity: line.quantity, discounts: [], subtotal: "19.00", original_package_price: "19.00", total_discount: "0.00", total: "19.00" }));
+    const data = { lines, offer_discounts: [], voucher_discounts: [], subtotal: "19.00", total_discount: "0.00", total: "19.00", currency: answerCurrency ?? scenario.currency };
+    return new Response(JSON.stringify({ ok: true, status: 200, data, calculated_at: "2026-10-29T00:00:00.000Z" }), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+  return { requested, fetchImpl };
+}
+
+test("expected totals are planned in the run currency; without one, in the Map's campaign currency", () => {
+  const currencies = (plan) => plan.plan.filter((entry) => !entry.unresolved).map((entry) => entry.body.currency);
+  const gbp = planCommercialParity(PRICED_SPEC, { currency: "GBP" });
+  assert.ok(gbp.plan.length > 0);
+  assert.deepEqual([...new Set(currencies(gbp))], ["GBP"]);
+  assert.deepEqual([...new Set(currencies(planCommercialParity(PRICED_SPEC)))], ["USD"]);
+});
+
+test("under a run currency, a calculate response in another currency is a pricing blocker; in the run currency, or with no run currency, there is none", async () => {
+  const resolved = { rawSpec: PRICED_SPEC, spec: PRICED_SPEC, proxyBase: "https://proxy.example.test" };
+
+  const fellBack = pricePreview("USD");
+  const blocked = await runCommercialParity({ resolved, captures: [], fetchImpl: fellBack.fetchImpl, currency: "GBP" });
+  assert.ok(fellBack.requested.length > 0);
+  assert.ok(fellBack.requested.every((request) => request.currency === "GBP"), "expected totals were requested in GBP");
+  const row = blocked.assertions.find((entry) => entry.id === "commercial-currency:GBP:USD");
+  assert.equal(row.status, "fail");
+  assert.equal(row.severity, "blocker");
+  assert.equal(row.family, "pricing");
+  assert.deepEqual(row.evidence, { code: "currency_mismatch", requested: "GBP", actual: "USD" });
+  assert.equal(blocked.assertions.filter((entry) => entry.id.startsWith("commercial-currency:")).length, 1, "one row per currency the server answered in");
+  assert.ok(blocked.commercial.issues.some((issue) => issue.code === "calculate_currency_mismatch"));
+  assert.equal(blocked.commercial.coverage_complete, false);
+
+  // A lower-case echo of the run currency is the same currency.
+  const lowerCase = await runCommercialParity({ resolved, captures: [], fetchImpl: pricePreview("gbp").fetchImpl, currency: "GBP" });
+  assert.equal(lowerCase.assertions.some((entry) => entry.id.startsWith("commercial-currency:")), false);
+
+  const priced = pricePreview();
+  const passed = await runCommercialParity({ resolved, captures: [], fetchImpl: priced.fetchImpl, currency: "GBP" });
+  assert.ok(priced.requested.every((request) => request.currency === "GBP"));
+  assert.equal(passed.assertions.some((entry) => entry.id.startsWith("commercial-currency:")), false);
+  assert.equal(passed.commercial.issues.some((issue) => issue.code === "calculate_currency_mismatch"), false);
+
+  // Without a run currency the request asks for the campaign currency, and a
+  // mismatched answer stays a journey warning with no QA row, as before.
+  const plain = pricePreview("EUR");
+  const unchanged = await runCommercialParity({ resolved, captures: [], fetchImpl: plain.fetchImpl });
+  assert.ok(plain.requested.every((request) => request.currency === "USD"));
+  assert.equal(unchanged.assertions.some((entry) => entry.id.startsWith("commercial-currency:")), false);
+  assert.equal(unchanged.commercial.issues.some((issue) => issue.code === "calculate_currency_mismatch"), false);
+});
+
+function createdOrder(currency, { verified = true } = {}) {
+  return {
+    path: "checkout",
+    ok: verified,
+    ref_id: "ref-1",
+    next_order_id: "1001",
+    is_test: true,
+    card: { last4: "1111" },
+    checkout_url: CHECKOUT_URL,
+    final_url: "https://shop.example.com/offer/receipt/?ref_id=ref-1",
+    receipt_line_items: [{ title: "Package 5", quantity: 1 }],
+    vouchers: [],
+    verification: { verified, order_create_status: 201, currency },
+    evidence: { steps: [{ step: "order_submitted", status: "ok" }] },
+  };
+}
+
+test("an order placed in another currency than --currency is a blocker; in the run currency it passes", () => {
+  const page = { page_id: "checkout", page_type: "checkout", url: CHECKOUT_URL };
+  const usd = orderCurrencyAssertion(page, "checkout", createdOrder("USD"), runArgs("GBP"));
+  assert.equal(usd.id, "browser-order-currency:checkout");
+  assert.equal(usd.family, "browser-test-order");
+  assert.equal(usd.status, "fail");
+  assert.equal(usd.severity, "blocker");
+  assert.equal(usd.actual, "order placed in USD");
+  assert.deepEqual(usd.evidence, { requested: "GBP", order_currency: "USD" });
+
+  const gbp = orderCurrencyAssertion(page, "checkout", createdOrder("gbp"), runArgs("GBP"));
+  assert.equal(gbp.status, "pass");
+  assert.equal(gbp.severity, undefined);
+
+  // A verified order with no recorded currency cannot be shown to be in GBP.
+  const unrecorded = orderCurrencyAssertion(page, "checkout", createdOrder(null), runArgs("GBP"));
+  assert.equal(unrecorded.status, "fail");
+  assert.equal(unrecorded.severity, "blocker");
+  assert.equal(unrecorded.actual, "the order's currency was not recorded");
+  // An order body read on an attempt that failed later still names its currency.
+  assert.equal(orderCurrencyAssertion(page, "checkout", createdOrder("USD", { verified: false }), runArgs("GBP")).status, "fail");
+
+  // No row: no run currency (a raw --currency is never read), or no order body.
+  assert.equal(orderCurrencyAssertion(page, "checkout", createdOrder("USD"), { currency: "GBP" }), null);
+  assert.equal(orderCurrencyAssertion(page, "checkout", createdOrder("USD"), {}), null);
+  assert.equal(orderCurrencyAssertion(page, "checkout", createdOrder(null, { verified: false }), runArgs("GBP")), null);
+  assert.equal(orderCurrencyAssertion(page, "checkout", undefined, runArgs("GBP")), null);
+});
+
+test("the order runner adds the currency row beside each path's order row only under --currency", async () => {
+  const dispatch = (args, currency) => dispatchTestOrderPlans({
+    context: {},
+    plans: ["checkout"],
+    checkoutPage: { page_id: "checkout", page_type: "checkout", url: CHECKOUT_URL },
+    args,
+    runId: "qa-currency-dispatch",
+    options: { runSingleTestOrder: async () => ({ ok: true, submit: { reserved: true }, order: createdOrder(currency), events: { requests: [], responses: [], failed: [], console: [], pageErrors: [], navigations: [] } }) },
+  });
+  const usd = await dispatch(runArgs("GBP"), "USD");
+  assert.equal(usd.assertions.find((entry) => entry.id === "browser-test-order:checkout")?.status, "pass", "the order was created");
+  const row = usd.assertions.find((entry) => entry.id === "browser-order-currency:checkout");
+  assert.equal(row.status, "fail");
+  assert.equal(row.severity, "blocker");
+
+  const gbp = await dispatch(runArgs("GBP"), "GBP");
+  assert.equal(gbp.assertions.find((entry) => entry.id === "browser-order-currency:checkout")?.status, "pass");
+
+  const plain = await dispatch({}, "USD");
+  assert.equal(plain.assertions.some((entry) => entry.id.startsWith("browser-order-currency:")), false);
+});
+
+test("qa run --currency GBP: a campaign that prices in USD blocks the verdict (exit 4); GBP pricing does not, and expected totals are requested in GBP", async () => {
+  const run = async (args, answerCurrency) => {
+    const preview = pricePreview(answerCurrency);
+    const outputDir = mkdtempSync(join(tmpdir(), "campaigns-os-qa-currency-priced-"));
+    const packetPath = join(outputDir, "campaign-runtime.build.json");
+    writeFileSync(packetPath, `${JSON.stringify({ schema_version: "campaign-runtime-build-packet/v0" })}\n`);
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (url, options) => {
+      if (String(url) === "https://proxy.example.test/api/price-preview") return preview.fetchImpl(url, options);
+      if (String(url).startsWith("https://shop.example.com/")) return new Response("<!doctype html><html><head><title>Offer</title></head><body></body></html>", { status: 200 });
+      throw new Error(`Unexpected fetch: ${String(url)}`);
+    };
+    try {
+      const resolved = { ...resolvedFixture(packetPath), rawSpec: PRICED_SPEC, spec: PRICED_SPEC };
+      const result = await runResolvedQa({ _: ["qa", "run"], "output-dir": outputDir, "no-post-verdict": true, "no-live-refs": true, json: true, ...args }, resolved);
+      return { verdict: result.verdict, requested: preview.requested };
+    } finally {
+      globalThis.fetch = originalFetch;
+      rmSync(outputDir, { recursive: true, force: true });
+    }
+  };
+  const exitCode = (verdict) => (verdict.disposition === "blocked" ? 4 : 0); // runQaCli's mapping
+
+  const fellBack = await run({ currency: "GBP" }, "USD");
+  assert.ok(fellBack.requested.length > 0);
+  assert.ok(fellBack.requested.every((request) => request.currency === "GBP"));
+  assert.equal(fellBack.verdict.assertions.find((entry) => entry.id === "commercial-currency:GBP:USD")?.severity, "blocker");
+  assert.equal(fellBack.verdict.disposition, "blocked");
+  assert.equal(exitCode(fellBack.verdict), 4);
+
+  const priced = await run({ currency: "GBP" }, null);
+  assert.ok(priced.requested.every((request) => request.currency === "GBP"));
+  assert.equal(priced.verdict.assertions.some((entry) => entry.id.startsWith("commercial-currency:")), false);
+
+  // Control: no --currency, the same USD answer, the campaign currency asked for, no row.
+  const plain = await run({}, "USD");
+  assert.ok(plain.requested.every((request) => request.currency === "USD"));
+  assert.equal(plain.verdict.assertions.some((entry) => entry.id.startsWith("commercial-currency:")), false);
+  assert.equal(plain.verdict.disposition, priced.verdict.disposition);
 });

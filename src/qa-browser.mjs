@@ -462,6 +462,8 @@ async function dispatchTestOrderPlans({ context, plans, checkoutPage, args = {},
       if (displayParity) assertions.push(displayParity);
       const totalParity = orderTotalParityAssertion(pageForPlan, identifier, result.order);
       if (totalParity) assertions.push(totalParity);
+      const currencyMatch = orderCurrencyAssertion(pageForPlan, identifier, result.order, args);
+      if (currencyMatch) assertions.push(currencyMatch);
       const renderedReceiptAssertion = receiptRenderingAssertion(pageForPlan, identifier, result.order);
       if (renderedReceiptAssertion) assertions.push(renderedReceiptAssertion);
       const dataLayerAssertion = purchaseDataLayerAssertion(pageForPlan, identifier, result.order);
@@ -4900,9 +4902,13 @@ export const QA_RUN_CURRENCY = Symbol("qa run --currency");
 // checkout opened directly. Campaign Cart keeps a URL currency in session
 // storage for the rest of the tab's session, so later loads in the tab are
 // the plain URL; the receipt reload in recovery is not a path load at all.
-function pathCurrencyLoad(args) {
+function runCurrency(args) {
   const code = args?.[QA_RUN_CURRENCY];
-  let pending = typeof code === "string" && /^[A-Z]{3}$/.test(code) ? code : null;
+  return typeof code === "string" && /^[A-Z]{3}$/.test(code) ? code : null;
+}
+
+function pathCurrencyLoad(args) {
+  let pending = runCurrency(args);
   return (url) => {
     if (!pending) return url;
     const entered = withQueryParam(url, "currency", pending);
@@ -6635,6 +6641,31 @@ function orderTotalParityAssertion(page, planIdentifier, order) {
     severity: parity.ok ? undefined : SEVERITY.BLOCKER,
     actual: `displayed ${parity.displayed_total}; order ${parity.order_pre_upsell_total}; delta ${parity.delta}`,
     evidence: parity,
+  });
+}
+
+// `qa run --currency <code>`: a created order must have been placed in the
+// run currency. Campaign Cart falls back to the default currency when the
+// requested one is not available, so an order recorded in any other currency
+// blocks, and so does a verified order whose currency was not recorded. No run
+// currency, or no order body read at all (the order's own row already says
+// why), gives no row.
+function orderCurrencyAssertion(page, planIdentifier, order, args) {
+  const expected = runCurrency(args);
+  if (!expected) return null;
+  const recorded = stringArg(order?.verification?.currency);
+  if (!recorded && order?.verification?.verified !== true) return null;
+  const actual = recorded ? recorded.toUpperCase() : null;
+  const ok = actual === expected;
+  return assertion({
+    id: `browser-order-currency:${planIdentifier}`,
+    family: "browser-test-order",
+    page,
+    status: ok ? STATUS.PASS : STATUS.FAIL,
+    severity: ok ? undefined : SEVERITY.BLOCKER,
+    expected: `the order is placed in the run currency ${expected}`,
+    actual: actual ? `order placed in ${actual}` : "the order's currency was not recorded",
+    evidence: { requested: expected, order_currency: actual },
   });
 }
 
@@ -8893,6 +8924,7 @@ function qaBrowserMissing(kind, error) {
 }
 
 export const __qaBrowserTestHooks = Object.freeze({
+  orderCurrencyAssertion,
   qaBrowserMissing,
   PRIMARY_CTA_SELECTOR,
   COUPON_INPUT_SELECTORS,

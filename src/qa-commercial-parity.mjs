@@ -379,7 +379,9 @@ export async function mapConcurrent(values, limit, operation) {
   return results;
 }
 
-export function planCommercialParity(spec, { maxScenarios = COMMERCIAL_QA_LIMITS.max_scenarios } = {}) {
+// `currency` is the run's currency (`qa run --currency`): every calculate
+// request asks for it instead of the Map's campaign currency.
+export function planCommercialParity(spec, { maxScenarios = COMMERCIAL_QA_LIMITS.max_scenarios, currency = null } = {}) {
   const limit = positiveLimit(maxScenarios, COMMERCIAL_QA_LIMITS.max_scenarios);
   const pages = commercialSpecPages(spec, { maxPages: limit + 1 });
   const plan = [];
@@ -391,7 +393,7 @@ export function planCommercialParity(spec, { maxScenarios = COMMERCIAL_QA_LIMITS
       break;
     }
     try {
-      plan.push(...planScenarios(page, spec, { maxScenarios: remaining }));
+      plan.push(...planScenarios(page, spec, { maxScenarios: remaining, currency }));
     } catch (error) {
       if (!(error instanceof CommercialJourneyLimitError)) throw error;
       overflow = true;
@@ -581,6 +583,28 @@ export function unavailableCommercialReport(code, { status = "not_run" } = {}) {
   };
 }
 
+// One blocker row per currency the calculate endpoint answered in other than
+// the run's: expected totals were asked for in `currency` and came back priced
+// in another one.
+function runCurrencyMismatchAssertions(journey, currency, { maxAssertions = Number.POSITIVE_INFINITY } = {}) {
+  const requested = String(currency).toUpperCase();
+  return array(journey?.warnings)
+    .filter((warning) => warning?.type === "currency_mismatch"
+      && String(warning.requested).toUpperCase() === requested
+      && String(warning.actual).toUpperCase() !== requested)
+    .slice(0, Math.max(0, maxAssertions))
+    .map((warning) => ({
+      id: `commercial-currency:${requested}:${encodeURIComponent(String(warning.actual))}`,
+      family: "pricing",
+      page: "campaign",
+      status: "fail",
+      severity: "blocker",
+      expected: `expected totals calculated in the run currency ${requested}`,
+      actual: `the calculate endpoint priced in ${warning.actual}`,
+      evidence: { code: "currency_mismatch", requested, actual: String(warning.actual) },
+    }));
+}
+
 /**
  * Run the portable commercial planner against the public proxy contract and
  * serialize proven mismatches into ordinary QA assertions.
@@ -592,6 +616,7 @@ export async function runCommercialParity({
   limits: limitOverrides = {},
   planning = null,
   maxAssertions = Number.POSITIVE_INFINITY,
+  currency = null,
 } = {}) {
   const limits = {
     ...COMMERCIAL_QA_LIMITS,
@@ -603,6 +628,7 @@ export async function runCommercialParity({
   const planningSpec = resolved?.rawSpec || resolved?.spec || {};
   const commercialPlanning = planning || planCommercialParity(planningSpec, {
     maxScenarios: limits.max_scenarios,
+    currency,
   });
   const plan = commercialPlanning.plan;
   const scenarioOverflow = commercialPlanning.overflow || plan.length > limits.max_scenarios;
@@ -654,8 +680,16 @@ export async function runCommercialParity({
   const parityJourney = scenarioOverflow
     ? withScenarioOverflowPages(journey, commercialPlanning.pages)
     : journey;
+  // Under a run currency, a calculate response in another currency means the
+  // campaign does not price in it: a blocker, and the comparison below is
+  // against totals in the wrong currency, so the proof is incomplete. Without
+  // one, the journey's currency_mismatch warning stays where it is.
+  const currencyAssertions = present(currency)
+    ? runCurrencyMismatchAssertions(journey, currency, { maxAssertions })
+    : [];
+  currencyAssertions.forEach(() => issues.push({ code: "calculate_currency_mismatch" }));
   const parity = createCommercialParityReport(captures, parityJourney, {
-    maxAssertions,
+    maxAssertions: Math.max(0, maxAssertions - currencyAssertions.length),
     countsOnly: aggregateClaimOverflow,
   });
   // Subscription packages a page renders with no recurring claim read for
@@ -665,11 +699,11 @@ export async function runCommercialParity({
     : recurringClaimAbsences(captures, subscriptionPackageRefsByPage(planningSpec, commercialPlanning.pages));
   absences.forEach(() => issues.push({ code: "recurring_claim_absent" }));
   const absentAssertions = recurringClaimAbsentAssertions(absences, {
-    maxAssertions: Math.max(0, maxAssertions - parity.assertions.length),
+    maxAssertions: Math.max(0, maxAssertions - currencyAssertions.length - parity.assertions.length),
   });
   parity.recurring_claim_absences = absences;
   return {
-    assertions: [...parity.assertions, ...absentAssertions],
+    assertions: [...currencyAssertions, ...parity.assertions, ...absentAssertions],
     commercial: compactReport(
       parity,
       parityJourney,

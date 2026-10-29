@@ -2390,7 +2390,8 @@ async function runResolvedQa(args, resolvedInputs, { runSessionActive = false, l
   ];
   const contractAssertion = templateBrandContractAssertion(resolved);
   if (contractAssertion) assertions.push(contractAssertion);
-  const commercialPlanning = planCommercialParity(specForQaScope(resolved.rawSpec || resolved.spec, resolved.excludedPages));
+  // Under --currency the expected totals are calculated in the run currency.
+  const commercialPlanning = planCommercialParity(specForQaScope(resolved.rawSpec || resolved.spec, resolved.excludedPages), { currency });
   const sourceLoader = createPageSourceLoader({ authCookie: args["auth-cookie"] });
   const commercialIds = new Set(commercialPlanning.pages
     .filter((page) => page?.id !== undefined && page?.id !== null)
@@ -2478,6 +2479,7 @@ async function runResolvedQa(args, resolvedInputs, { runSessionActive = false, l
       captures: [...capturesByPageId.values()],
       planning: commercialPlanning,
       maxAssertions: remainingAssertionBudget,
+      currency,
     });
   } catch (error) {
     commercialResult = {

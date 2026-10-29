@@ -381,6 +381,27 @@ default currency. The persisted verdict redacts every URL query, so the
 currency is recorded as `evidence.currency` on the entry page's
 `http:<page_id>` assertion; an entry URL that does not parse gets no currency,
 and its row records `evidence.currency_not_applied` with the reason instead.
+
+The run also checks that the currency took. Campaign Cart falls back to the
+campaign's default currency when the requested one is not available, so a page
+can load with `?currency=GBP` and still take a USD order:
+
+- Each test order gets a `browser-order-currency:<path>` row comparing the
+  created order's `currency` (read from the order API response) with the run
+  currency. An order in any other currency fails as a blocker, and so does a
+  verified order whose currency was not recorded. The row's evidence is
+  `{ requested, order_currency }`.
+- Automatic commercial parity (below) asks the calculate endpoint for expected
+  totals in the run currency, in place of the Map's `campaign.currency`. When
+  the endpoint answers in another currency, the campaign does not price in the
+  run currency: a `commercial-currency:<RUN>:<ANSWERED>` row (family `pricing`)
+  fails as a blocker, and the commercial report lists the
+  `calculate_currency_mismatch` issue, so its status reads `incomplete`.
+
+Either blocker makes the verdict `blocked` and the command exit `4`. Without
+`--currency` neither row is written and expected totals use
+`campaign.currency`, as before.
+
 `--currency` sets the currency only. Test orders still ship to the address the
 `--test-*` flags give, a US address by default (see
 [Test customer and shipping address](#test-customer-and-shipping-address)). A
