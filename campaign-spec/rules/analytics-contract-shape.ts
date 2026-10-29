@@ -37,6 +37,14 @@
  *      "disabled"; missing mode means SDK defaults apply), runtime/global_config
  *      sdk_version should be an exact released semver >= the SDK identity
  *      baseline so events carry campaign/session ids.
+ *   9. `vendors`, when present, is an object keyed by one of the eight
+ *      starter-template vendor keys (analytics-vendors.ts); an unknown key is
+ *      carried but compiles to no campaigns.json key, so nothing loads it. Each
+ *      enabled vendor declares an `id` (the compiler skips a vendor without
+ *      one), and `allowedEvents` / `blockedEvents` are string arrays. The
+ *      id-format, placeholder and event-name checks for vendors live with the
+ *      ops registry the Map Builder export gate composes on top of this rule,
+ *      so they are not repeated here.
  */
 
 import type { CampaignSpec, Rule, Violation } from '../types.ts'
@@ -44,6 +52,7 @@ import {
   CAMPAIGN_CART_ANALYTICS_IDENTITY_MIN_SDK_VERSION,
   isKnownDlEvent,
 } from '../analytics-vocabulary.ts'
+import { ANALYTICS_VENDOR_KEYS, analyticsVendorByKey } from '../analytics-vendors.ts'
 
 const VALID_MODES = new Set(['auto', 'manual', 'disabled'])
 const PURCHASE_EVENT = /^(?:dl_)?purchase$/i
@@ -228,6 +237,36 @@ export const AnalyticsContractShape: Rule = {
         }
         if (enabled && kind === 'custom' && !isNonEmptyString(provider.endpoint)) {
           warn(`analytics.providers.custom is enabled but has no endpoint URL.`, `${base}/endpoint`, 'custom-endpoint-missing', { kind })
+        }
+      }
+    }
+
+    // 9. vendors
+    const vendors = analytics.vendors
+    if (vendors !== undefined) {
+      if (!isPlainAnalyticsObject(vendors)) {
+        warn(`analytics.vendors must be an object keyed by vendor (${ANALYTICS_VENDOR_KEYS.join(', ')}).`, '/analytics/vendors', 'vendors-not-object')
+      } else {
+        for (const [key, vendor] of Object.entries(vendors)) {
+          const base = `/analytics/vendors/${key}`
+          const definition = analyticsVendorByKey(key)
+          if (!definition) {
+            warn(`analytics.vendors.${key} is not a starter-template vendor (${ANALYTICS_VENDOR_KEYS.join(', ')}). No campaigns.json key is compiled for it, so nothing loads it; check for a typo, or declare a pixel loaded another way under out_of_band_pixels.`, base, 'vendor-unknown', { vendor: key })
+            continue
+          }
+          if (!vendor || typeof vendor !== 'object' || Array.isArray(vendor)) {
+            warn(`analytics.vendors.${key} must be an object ({ enabled, id, … }).`, base, 'vendor-shape', { vendor: key })
+            continue
+          }
+          const entry = vendor as Record<string, unknown>
+          if (entry.enabled !== false && !isNonEmptyString(entry.id)) {
+            warn(`analytics.vendors.${key} is enabled but has no id; the template loads ${definition.label} only when ${definition.idKey} is set, so it stays off.`, `${base}/id`, 'vendor-id-missing', { vendor: key })
+          }
+          for (const list of ['allowedEvents', 'blockedEvents']) {
+            if (entry[list] !== undefined && !isStringArray(entry[list])) {
+              warn(`analytics.vendors.${key}.${list} must be an array of event-name strings.`, `${base}/${list}`, 'vendor-events-shape', { vendor: key, list })
+            }
+          }
         }
       }
     }

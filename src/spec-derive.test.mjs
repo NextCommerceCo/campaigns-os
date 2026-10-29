@@ -17,6 +17,7 @@ import { entryInScaffoldState, evaluatePageKitSdkVersion, SPEC_DERIVE_COMMAND } 
 import { stageRealPackageInstall } from "./package-install-fixture.mjs";
 import {
   ANALYTICS_ID_FIELDS,
+  ANALYTICS_VENDOR_ID_FIELDS,
   applySpecDerive,
   derivedRouteProblem,
   formatDeriveValue,
@@ -236,10 +237,101 @@ test("applySpecDerive edits only the named paths, creates missing containers, an
   assert.throws(() => applySpecDerive(specFixture((draft) => { draft.analytics = "off"; }), { changes: [{ field: "analytics.providers.gtm.containerId", path: ["analytics", "providers", "gtm", "containerId"], after: "GTM-ABC1234" }] }), /analytics is not an object/);
   assert.deepEqual(SPEC_DERIVE_FIELDS, [
     "global_config.sdk_version", "runtime.sdk_version", "funnels[].pages[].page_url", "funnel_pages[].page_url", "analytics.providers.gtm.containerId", "analytics.providers.facebook.pixelId",
+    "analytics.vendors.ga4.id", "analytics.vendors.axon.id", "analytics.vendors.taboola.id", "analytics.vendors.triplewhale.id",
+    "analytics.vendors.tiktok.id", "analytics.vendors.northbeam.id", "analytics.vendors.snap.id", "analytics.vendors.pinterest.id",
     "campaign.store_name", "campaign.store_url", "campaign.store_terms", "campaign.store_privacy", "campaign.store_contact", "campaign.store_returns", "campaign.store_shipping", "campaign.store_phone", "campaign.store_phone_tel",
   ]);
   assert.equal(formatDeriveValue(undefined), "(absent)");
   assert.equal(formatDeriveValue(""), "\"\"");
+});
+
+// The starter-template vendor ids mirror the way GTM and Meta do: the repo
+// key is the authority for analytics.vendors.<vendor>.id (#689).
+test("planSpecDerive mirrors each template vendor id from its campaigns.json key, with the GTM and Meta empty-value and placeholder rules", () => {
+  assert.deepEqual(ANALYTICS_VENDOR_ID_FIELDS.map((row) => [row.key, row.vendor]), [
+    ["ga4_id", "ga4"], ["axon_event_key", "axon"], ["taboola_account_id", "taboola"], ["triplewhale_name", "triplewhale"],
+    ["tiktok_pixel_id", "tiktok"], ["northbeam_client_id", "northbeam"], ["snap_pixel_id", "snap"], ["pinterest_tag_id", "pinterest"],
+  ]);
+  const entry = {
+    ...CONFIGURED_ENTRY,
+    ga4_id: " G-AB12CD34EF ",
+    taboola_account_id: "1234567",
+    triplewhale_name: "acme.myshopify.com",
+    triplewhale_platform: "SHOPIFY",
+    triplewhale_blocked_events: "dl_purchase,dl_upsell_purchase",
+    tiktok_pixel_id: "",
+  };
+  const spec = specFixture((draft) => {
+    draft.analytics = { providers: {}, vendors: { triplewhale: { enabled: true, id: "old-store.myshopify.com", platform: "SHOPIFY" }, tiktok: { enabled: true, id: "CABCDEFGHIJ1234567890" } } };
+  });
+  const plan = planSpecDerive({ spec, entry, pageFiles: PAGE_FILES, publicRouteSlug: "runtime-packet-demo" });
+  assert.deepEqual(plan.changes.filter((row) => row.field.startsWith("analytics.vendors")).map((row) => [row.field, row.before, row.after, row.source]), [
+    ["analytics.vendors.ga4.id", undefined, "G-AB12CD34EF", "_data/campaigns.json[runtime-packet-demo].ga4_id"],
+    ["analytics.vendors.taboola.id", undefined, "1234567", "_data/campaigns.json[runtime-packet-demo].taboola_account_id"],
+    ["analytics.vendors.triplewhale.id", "old-store.myshopify.com", "acme.myshopify.com", "_data/campaigns.json[runtime-packet-demo].triplewhale_name"],
+  ]);
+  // An empty repo key never deletes a spec vendor id.
+  assert.deepEqual(plan.not_derived.map((row) => [row.field, row.reason]), [["analytics.vendors.tiktok.id", "target_empty"]]);
+  assert.match(plan.not_derived[0].detail, /tiktok_pixel_id is empty but the spec declares analytics\.vendors\.tiktok\.id/);
+  // Vendors neither side carries are opt-in and stay out of not_in_target.
+  assert.deepEqual(plan.not_in_target, []);
+  assert.deepEqual(plan.created_blocks, ["analytics.providers.gtm", "analytics.providers.facebook"]);
+  assert.deepEqual(plan.created_vendor_blocks, ["analytics.vendors.ga4", "analytics.vendors.taboola"]);
+  assert.equal(plan.analytics_created, false);
+
+  applySpecDerive(spec, plan);
+  assert.deepEqual(spec.analytics.vendors, {
+    triplewhale: { enabled: true, id: "acme.myshopify.com", platform: "SHOPIFY" },
+    tiktok: { enabled: true, id: "CABCDEFGHIJ1234567890" },
+    ga4: { enabled: true, id: "G-AB12CD34EF" },
+    taboola: { enabled: true, id: "1234567" },
+  }, "only the id is derived; the platform and event lists stay authored in the Map");
+
+  // Placeholders and malformed ids are refused, never written.
+  const refused = planSpecDerive({
+    spec: specFixture(),
+    entry: { ...CONFIGURED_ENTRY, ga4_id: "G-XXXXXXXXXX", triplewhale_name: "store.example.com", taboola_account_id: "acct-12", snap_pixel_id: "abc def", pinterest_tag_id: ["1"] },
+    pageFiles: PAGE_FILES,
+  });
+  assert.deepEqual(refused.changes.filter((row) => row.field.startsWith("analytics.vendors")), []);
+  assert.deepEqual(refused.not_derived.map((row) => [row.field, row.reason]), [
+    ["analytics.vendors.ga4.id", "target_invalid"],
+    ["analytics.vendors.taboola.id", "target_invalid"],
+    ["analytics.vendors.triplewhale.id", "target_invalid"],
+    ["analytics.vendors.snap.id", "target_invalid"],
+    ["analytics.vendors.pinterest.id", "target_invalid"],
+  ]);
+  assert.match(refused.not_derived[0].detail, /"G-XXXXXXXXXX" is a placeholder/);
+  assert.match(refused.not_derived[1].detail, /not a Taboola account id \(digits only\)/);
+  assert.match(refused.not_derived[2].detail, /"store\.example\.com" is a placeholder/);
+  assert.match(refused.not_derived[3].detail, /not a Snapchat id/);
+  assert.match(refused.not_derived[4].detail, /is an array/);
+
+  // A vendor id on a spec with no analytics block creates the block.
+  const fresh = planSpecDerive({ spec: specFixture(), entry: { ...CONFIGURED_ENTRY, gtm_id: "", fb_pixel_id: "", northbeam_client_id: "nb-client-1" }, pageFiles: PAGE_FILES });
+  assert.deepEqual(fresh.created_vendor_blocks, ["analytics.vendors.northbeam"]);
+  assert.equal(fresh.analytics_created, true);
+  const written = applySpecDerive(specFixture(), fresh);
+  assert.deepEqual(written.analytics, { vendors: { northbeam: { enabled: true, id: "nb-client-1" } } });
+});
+
+test("spec derive warns when it creates a vendor block, and says QA's analytics leg turns on when the spec had no analytics", () => {
+  const { dir, packetPath, specPath } = fixture({ entry: { ...CONFIGURED_ENTRY, gtm_id: "", fb_pixel_id: "", ga4_id: "G-AB12CD34EF" } });
+  try {
+    const dry = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath, "dry-run": true });
+    const created = dry.warnings.filter((issue) => issue.code === "spec.derive.analytics_vendor_created");
+    assert.equal(created.length, 1);
+    assert.match(created[0].message, /^analytics\.vendors\.ga4 would be created from the repo's id: doctor would then read that vendor's campaigns\.json key against the spec, and the spec would then carry an analytics block, so QA runs its analytics leg/);
+    assert.equal(readJson(specPath).analytics, undefined, "dry run writes nothing");
+    const run = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath });
+    assert.ok(run.changes.some((row) => row.field === "analytics.vendors.ga4.id"));
+    assert.deepEqual(readJson(specPath).analytics, { vendors: { ga4: { enabled: true, id: "G-AB12CD34EF" } } });
+    assert.ok(specDeriveTextLines(run).some((line) => line.includes("analytics.vendors.ga4.id") && line.includes("G-AB12CD34EF")), "the diff names the vendor field");
+    const again = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath, "dry-run": true });
+    assert.equal(again.warnings.some((issue) => issue.code === "spec.derive.analytics_vendor_created"), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("pageRouteForFile follows page-kit's basename rule, permalinkRoute accepts only the /<slug>/<route>/ form, and YAML idioms read as page-kit reads them", () => {

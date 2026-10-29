@@ -426,6 +426,22 @@
             }
           }
         },
+        "vendors": {
+          "type": "object",
+          "description": "Starter-template vendor adapters, keyed by vendor key (ga4, axon, taboola, triplewhale, tiktok, northbeam, snap, pinterest), as the Map Builder emits them. Each is switched on by a flat key in the campaign's _data/campaigns.json entry; see AnalyticsVendor in campaign-spec/types.ts.",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "enabled": { "type": "boolean" },
+              "id": { "type": "string" },
+              "platform": { "type": "string" },
+              "identityEnabled": { "type": "boolean" },
+              "allowedEvents": { "type": "array", "items": { "type": "string" } },
+              "blockedEvents": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
         "out_of_band_pixels": {
           "type": "array",
           "items": {
