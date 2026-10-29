@@ -165,6 +165,10 @@ test('a scope whose tracked-file list exceeds 1 MiB is still inventoried (#717)'
 });
 
 test('a failed Git inventory names the reason in one line', t => {
+  // Git localizes its messages; pin English so the reason text is stable.
+  const locale = process.env.LC_ALL;
+  process.env.LC_ALL = 'C';
+  t.after(() => { if (locale === undefined) delete process.env.LC_ALL; else process.env.LC_ALL = locale; });
   const cwd = fixture(t, "sessionStorage.getItem('next-order');");
   writeFileSync(join(cwd, '.git', 'index'), 'not an index');
   assert.throws(() => scanSdkStorageCompatibility(options(cwd)), error =>
@@ -177,4 +181,21 @@ test('an ENOBUFS failure asks for a narrower scope', () => {
   assert.ok(failure, 'git --version must overflow the 1-byte buffer');
   assert.equal(failure.code, 'ENOBUFS');
   assert.match(inventoryFailure(failure), /larger than 256 MiB; narrow --scope\.$/);
+});
+
+test('inventoryFailure falls back to the exit status and bounds long git messages', () => {
+  assert.equal(inventoryFailure({ status: 128, stderr: '' }), 'git exited 128 with no message.');
+  assert.equal(inventoryFailure({ status: null, signal: 'SIGKILL', stderr: Buffer.alloc(0) }), 'git exited SIGKILL with no message.');
+  assert.equal(inventoryFailure({ status: null, signal: null, code: 'ETIMEDOUT', stderr: '' }), 'git exited ETIMEDOUT with no message.');
+  assert.equal(inventoryFailure({ status: 1, stderr: 'fatal: bad.\nmore' }), 'fatal: bad.');
+  const long = inventoryFailure({ status: 1, stderr: 'x'.repeat(500) });
+  assert.equal(long, `${'x'.repeat(200)}….`);
+});
+
+test('a scope that looks like pathspec magic is matched literally', t => {
+  // Read as magic, ':(icase)zz' would match only a folder named zz and the scope would have no files.
+  const cwd = fixture(t, '// none', { extra: { ':(icase)zz/x.js': "sessionStorage.getItem('next-order');" } });
+  const report = scanSdkStorageCompatibility({ ...options(cwd), scope: [':(icase)zz'], exclude: [] });
+  assert.deepEqual(report.files.map(f => f.path), [':(icase)zz/x.js']);
+  assert.equal(report.status, 'incompatible');
 });
