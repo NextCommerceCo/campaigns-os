@@ -81,7 +81,7 @@ Not redundant with the install step. Because install runs with lifecycle scripts
 
 The complete input set, enumerated explicitly rather than globbed. The compiler's configured include globs are NOT the input set: two root modules enter the compilation transitively through imports from the entry module and are emitted, so a fingerprint derived from the globs would cover 36 of the 38 compiled sources and miss one of the larger emitted surfaces. Test fixtures and the package's own tests are not inputs; nothing under them is emitted. A checker resolves the compiler's actual file list and asserts it equals this enumeration, so this list cannot rot silently.
 
-Fingerprint algorithm `sha256`, over 47 enumerated files:
+Fingerprint algorithm `sha256`, over 48 enumerated files:
 
 - `campaign-spec/analytics-vocabulary.ts`
 - `campaign-spec/checkout-flow.ts`
@@ -94,6 +94,7 @@ Fingerprint algorithm `sha256`, over 47 enumerated files:
 - `campaign-spec/rules/campaign-metadata.ts`
 - `campaign-spec/rules/checkout-forward-target.ts`
 - `campaign-spec/rules/checkout-has-success-url.ts`
+- `campaign-spec/rules/checkout-path-has-packages.ts`
 - `campaign-spec/rules/checkout-step-reaches-checkout.ts`
 - `campaign-spec/rules/cycle-detection.ts`
 - `campaign-spec/rules/design-source-shape.ts`
@@ -137,7 +138,7 @@ The output directory is a build product. It is untracked and git-ignored, no com
 
 Directory `campaign-spec/dist`. Committed: `false`. Type entry `campaign-spec/dist/index.d.ts`.
 
-Expected inventory is derived, never listed twice. For every enumerated input under module_source_root whose path ends in .ts, the build is expected to emit campaign-spec/dist/<path relative to module_source_root, with .ts replaced> once per entry in emitted_extensions. The expected inventory is exactly that set: nothing missing, nothing extra. Emitted extensions: `.js`, `.d.ts`. At this revision that derivation yields 86 files.
+Expected inventory is derived, never listed twice. For every enumerated input under module_source_root whose path ends in .ts, the build is expected to emit campaign-spec/dist/<path relative to module_source_root, with .ts replaced> once per entry in emitted_extensions. The expected inventory is exactly that set: nothing missing, nothing extra. Emitted extensions: `.js`, `.d.ts`. At this revision that derivation yields 88 files.
 
 ### Mandatory checks
 

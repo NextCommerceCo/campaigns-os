@@ -116,6 +116,7 @@
       "campaign-spec/rules/campaign-metadata.ts",
       "campaign-spec/rules/checkout-forward-target.ts",
       "campaign-spec/rules/checkout-has-success-url.ts",
+      "campaign-spec/rules/checkout-path-has-packages.ts",
       "campaign-spec/rules/checkout-step-reaches-checkout.ts",
       "campaign-spec/rules/cycle-detection.ts",
       "campaign-spec/rules/design-source-shape.ts",
