@@ -413,7 +413,7 @@ function assertValidPreparedDesignSourcePackage(value, path, currentPageScope, c
 // hash if the run adopts another writer's package instead of publishing, and
 // is removed once a report has recorded the package. A retry that finds it
 // still accepts only bytes that hash to one of its entries.
-function readPriorDesignSourceProvenance(reportPath, packagePath) {
+export function readPriorDesignSourceProvenance(reportPath, packagePath) {
   const synthesized = [];
   const pending = readJsonIfExistsQuietly(pendingDesignSourceProvenancePath(packagePath));
   // All or nothing: a record with any entry that is not a digest (a torn or
@@ -452,7 +452,7 @@ function pendingDesignSourceProvenancePath(designSourcePackagePath) {
 // Written (staged, then renamed into place) before a synthesized package is
 // published, so the claim survives a crash between that publication and the
 // report's. An empty list removes the record.
-function recordPendingDesignSourceProvenance(designSourcePackagePath, sha256) {
+export function recordPendingDesignSourceProvenance(designSourcePackagePath, sha256) {
   const pendingPath = pendingDesignSourceProvenancePath(designSourcePackagePath);
   if (!sha256.length) {
     rmSync(pendingPath, { force: true });

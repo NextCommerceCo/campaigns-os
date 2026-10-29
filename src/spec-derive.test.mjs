@@ -1373,13 +1373,20 @@ test("spec derive --write-map sends nothing when the pin was not derived, when t
   }
 });
 
-test("spec derive rejects a valued --write-map, a bare --proxy-base, and --proxy-base without --write-map, before reading anything", async () => {
+test("spec derive rejects a valued --write-map, a bare --proxy-base and a valued --no-live-refs before reading anything, and takes --proxy-base for the live campaign read", async () => {
   const { dir, packetPath, specPath } = fixture();
   try {
     const before = readFileSync(specPath, "utf8");
     await assert.rejects(specDeriveWithMapWriteback({ _: ["spec", "derive"], packet: packetPath, "write-map": "yes" }), /--write-map takes no value \(got "yes"\)/);
     await assert.rejects(specDeriveWithMapWriteback({ _: ["spec", "derive"], packet: packetPath, "write-map": true, "proxy-base": true }), /--proxy-base needs a URL/);
-    await assert.rejects(specDeriveWithMapWriteback({ _: ["spec", "derive"], packet: packetPath, "proxy-base": MAP_PROXY }), /--proxy-base only applies with --write-map/);
+    await assert.rejects(specDeriveWithMapWriteback({ _: ["spec", "derive"], packet: packetPath, "no-live-refs": "yes" }), /--no-live-refs takes no value \(got "yes"\)/);
+    // --proxy-base also names the proxy of the live campaign read (#721); with
+    // no built _site/ nothing is due, so nothing is sent and the derive runs.
+    const fetchCalls = [];
+    const proxied = await specDeriveWithMapWriteback({ _: ["spec", "derive"], packet: packetPath, "proxy-base": MAP_PROXY, "dry-run": true }, { fetchImpl: async (url) => { fetchCalls.push(url); throw new Error("no request is due"); } });
+    assert.equal(proxied.ok, true);
+    assert.equal(proxied.live_campaign, null);
+    assert.deepEqual(fetchCalls, []);
     // The local command itself still knows nothing of the two flags.
     assert.throws(() => specDeriveCommand({ _: ["spec", "derive"], packet: packetPath, "write-map": true }), /Unknown flag for spec derive: --write-map/);
     assert.equal(readFileSync(specPath, "utf8"), before);

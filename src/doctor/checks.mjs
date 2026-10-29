@@ -14,6 +14,7 @@ import {
 } from "../adapter-decision-contract.mjs";
 import { createDoctorCheckRegistry, runDoctorCheckRegistry } from "../doctor-check-registry.mjs";
 import { evaluateSourcePreparation } from "../source-prep.mjs";
+import { staleRoutingHints } from "../spec-derive.mjs";
 import { isLoopbackHostname } from "../remit.mjs";
 import {
   HOST_STRIPPED_CODE,
@@ -392,6 +393,11 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
     id: "spec.routing_meta_tags",
     phase: "spec",
     run: ({ spec, packet, warnings, ready, derived, buildState }) => validateSpecRoutingMetaTags(spec, packet, warnings, ready, derived, buildState),
+  },
+  {
+    id: "spec.routing_hint_stale",
+    phase: "spec",
+    run: ({ spec, packet, errors, ready }) => validateSpecRoutingHintsCurrent(spec, packet, errors, ready),
   },
   {
     id: "spec.routing_host_prefix",
@@ -1690,6 +1696,31 @@ export function validateSpecRoutingMetaTags(spec, packet, warnings, ready, deriv
     warnings,
     "routing_meta.runtime_root",
     `CampaignSpec sdk_hints.meta_tags routing values must render as campaign-rooted paths before QA. Expected values like "${routeRoot}upsell/" for ${SDK_ROUTING_META_TAGS.join(", ")}; found ${sample}${more}.`
+  );
+}
+
+// #531: a routing hint (`sdk_hints.meta_tags` next-success-url and the upsell
+// accept/decline urls) that does not match the route of the page its routing
+// field names. Nothing else catches it once the build exists: the built meta
+// check compares the built page against the hint, and QA derives its
+// expectation from the hint, so a moved upsell with checkout still pointing
+// at the old path passes both and sends shoppers to a 404 after payment. It
+// blocks on every read, before and after the build, and record spec refuses a
+// routes-only bind on the same function (spec-derive.mjs staleRoutingHints).
+export function validateSpecRoutingHintsCurrent(spec, packet, errors, ready) {
+  const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  const stale = staleRoutingHints(spec, { publicRouteSlug });
+  if (!stale.length) {
+    if (activeSpecPages(spec).some((page) => isObject(page.sdk_hints?.meta_tags))) ready.push("CampaignSpec routing hints match the routes of the pages they name");
+    return;
+  }
+  const sample = stale.slice(0, 5).map((hint) => `${hint.page_id}:${hint.tag} ${JSON.stringify(hint.value)} but page "${hint.target_page_id}" routes to ${JSON.stringify(hint.derived_route)}`).join("; ");
+  const more = stale.length > 5 ? `; plus ${stale.length - 5} more` : "";
+  addIssue(
+    errors,
+    "spec.routing_hint_stale",
+    `CampaignSpec routing hint(s) name a route the page they point at no longer has: ${sample}${more}. The built meta tag follows the hint, so the SDK would send shoppers to the old path. Re-save the Map (it regenerates the hints), or edit each hint to the route shown, then run record spec.`,
+    { hints: stale },
   );
 }
 
@@ -3712,6 +3743,25 @@ function validateSourceCoverage(packet, packetPath, spec, errors, warnings, read
     }
     if (!activeIds.has(page.page_id)) {
       addIssue(warnings, "source_html.pages.extra", `Source mapping "${page.page_id}" is not an active CampaignSpec page.`);
+    }
+    // A page added from the repo's page tree after handoff (#721): its source
+    // is the target page file itself, so it is mapped and, once that file
+    // exists, a build candidate like any other.
+    if (page.origin === "repo") {
+      const repoFile = optionalString(page.page_kit?.output_path) && derived.target_repo ? resolve(derived.target_repo, page.page_kit.output_path) : null;
+      if (!repoFile || !existsSync(repoFile) || !statSync(repoFile).isFile()) {
+        addIssue(errors, "source_html.pages.repo_page_missing", `Page "${page.page_id}" was added from the repo's page tree, but its page file ${page.page_kit?.output_path || "(no page_kit.output_path)"} is not in the target repo. Restore the file, or run spec derive and record spec to remove the page.`, { page_id: page.page_id, output_path: page.page_kit?.output_path || null });
+      } else if (specPage) {
+        builtPages.push({
+          page_id: specPage.id,
+          type: specPage.type || "page",
+          role: pageRole(specPage.type),
+          route: builtRoute,
+          source_path: null,
+          repo_source: page.page_kit.output_path,
+        });
+      }
+      continue;
     }
     if (page.path) {
       const fullPath = resolve(sourceRoot, page.path);

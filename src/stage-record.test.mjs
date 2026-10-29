@@ -2761,11 +2761,6 @@ for (const [id, label, edit] of [
     assert.ok(funnel, "setup: a funnel with two pages");
     [funnel.pages[0], funnel.pages[1]] = [funnel.pages[1], funnel.pages[0]];
   }],
-  ["F2.2-B17", "one active page's route changed", (spec) => {
-    const upsell = pagesOf(spec).find((page) => page.id === "upsell");
-    assert.ok(upsell, "setup: the example spec has an upsell page");
-    upsell.page_url = "upsell-moved/";
-  }],
 ]) {
   test(`${id}: with the brief file at the recorded brief path and ${label}, record spec refuses page_scope_changed`, async () => {
     await guardedLifecycle((f) => {
@@ -3731,5 +3726,241 @@ test("A-C4 real record polish CLI refuses all-skipped package captures without c
     assert.match(refused.stderr, /polish.evidence_incomplete/);
     assert.match(refused.stderr, /captures is not a current package capture record/);
     assert.deepEqual(snapshotFiles(f), before);
+  });
+});
+
+// ----- F2.3 rows: record spec binds a page change (#531 item 4, #721) --------
+//
+// A move of routes alone binds: the packet's and the Build Context's page-kit
+// projection, the Design Source Package's page surfaces and the three
+// references to it are rewritten, the build, Polish and QA are owed again
+// unless nothing built changed, and deploy is owed again when the set of
+// built pages changes. After handoff a page added or removed binds too.
+
+const DSP_REL = ".campaign-runtime/input/design-source-package.json";
+const dspPathOf = (f) => join(f.target, DSP_REL);
+const pageOf = (spec, id) => spec.funnels.flatMap((funnel) => funnel.pages).find((page) => page.id === id);
+const packetPage = (f, id) => readJson(f.packetPath).source_html.pages.find((page) => page.page_id === id);
+
+// A campaign recorded through QA (so it is handed off), with the stages and
+// a waiver the bind must keep or demote.
+async function handedOff(f) {
+  await recordThroughPolish(f);
+  await recordDeploy(f);
+  await recordQa(f);
+  mutateJson(f.reportPath, (report) => {
+    report.waivers = [{ scope: "polish.synthetic_scope", reason: "synthetic waiver kept across record spec", applies_to: [], waived_by: "Jordan Lee", waived_at: "2026-10-01T10:00:00.000Z", evidence_refs: [] }];
+  });
+}
+
+function dspReferencesAgree(f) {
+  const packet = readJson(f.packetPath).design_source_package;
+  const context = readJson(f.contextPath).design_source_package;
+  const report = readJson(f.reportPath).design_source_package;
+  const onDisk = `sha256:${sha256File(dspPathOf(f)).replace(/^sha256:/, "")}`;
+  for (const [label, ref] of [["packet", packet], ["context", context], ["report", report]]) {
+    assert.equal(ref.sha256, onDisk, `the ${label} references the package bytes on disk`);
+    assert.equal(ref.material_fingerprint, packet.material_fingerprint, `the ${label} names the packet's material fingerprint`);
+  }
+}
+
+test("F2.3-W1: a route moved after handoff binds with record spec: projection, Build Context and Design Source Package move, setup and waivers stay, build, Polish, QA and deploy are owed", async () => {
+  await guardedLifecycle(async (f) => {
+    await handedOff(f);
+    const dspBefore = readFileSync(dspPathOf(f), "utf8");
+    editSpec(f, (spec) => { pageOf(spec, "upsell").page_url = "upsell-moved/"; });
+    const result = recordInputOk(f, "spec", "refreshed");
+    assert.deepEqual(result.pages.moved, ["upsell"]);
+    assert.deepEqual([result.pages.added, result.pages.removed], [[], []]);
+    assert.equal(result.pages.projection_changed, true);
+    assert.equal(result.pages.design_source_package_rewritten, true);
+    assert.ok(result.written.includes(f.packetPath) && result.written.includes(dspPathOf(f)), JSON.stringify(result.written));
+
+    const upsell = packetPage(f, "upsell").page_kit;
+    assert.equal(upsell.public_route, `/${f.slug}/upsell-moved/`);
+    assert.equal(upsell.target_path, "upsell-moved.html");
+    // Every page is re-projected: checkout's forward link reads the route.
+    assert.equal(packetPage(f, "checkout").page_kit.frontmatter.next_url, `/${f.slug}/upsell-moved/`);
+    const context = readJson(f.contextPath);
+    assert.equal(context.spec.active_pages.find((page) => page.id === "upsell").page_url, "upsell-moved/");
+    assert.equal(context.page_map.find((entry) => entry.page_id === "upsell").page_kit.public_route, `/${f.slug}/upsell-moved/`);
+    assert.notEqual(readFileSync(dspPathOf(f), "utf8"), dspBefore);
+    const surface = readJson(dspPathOf(f)).surface_identity.find((entry) => entry.mappings?.campaign_spec_page_id === "upsell");
+    assert.equal(surface.mappings.public_route, `/${f.slug}/upsell-moved/`);
+    assert.equal(surface.mappings.page_kit.target_path, "upsell-moved.html");
+    dspReferencesAgree(f);
+
+    const report = readJson(f.reportPath);
+    assert.equal(report.stages.setup.status, "completed");
+    assert.equal(report.waivers.length, 1, "waivers are kept");
+    for (const key of ["assembly", "polish", "qa"]) {
+      assert.equal(report.stages[key].status, "required", `${key} is owed again`);
+      assert.equal(report.stages[key].input_change.reason, "spec_material_changed");
+      assert.equal(report.stages[key].history.at(-1).reason_code, "spec_material_changed");
+    }
+    assert.equal(report.stages.deploy.status, "required", "the built page set changed, so the deploy probe is owed");
+    assert.equal(report.stages.deploy.history.at(-1).archived_by, "record spec");
+    assert.ok(validReport(report), JSON.stringify(validReport.errors));
+    assert.ok(validContext(context), JSON.stringify(validContext.errors));
+    const issues = doctorOk(f).errors.map((issue) => issue.code);
+    assert.ok(!issues.some((code) => /dsp_mismatch/.test(code)), issues.join(", "));
+  });
+});
+
+test("F2.3-W2: moving the checkout route re-projects the landing page's forward link", async () => {
+  await guardedLifecycle((f) => {
+    recordThroughBuild(f);
+    editSpec(f, (spec) => { pageOf(spec, "checkout").page_url = "order/"; });
+    recordInputOk(f, "spec", "refreshed");
+    assert.equal(packetPage(f, "landing").page_kit.frontmatter.next_url, `/${f.slug}/order/`);
+    assert.equal(packetPage(f, "checkout").page_kit.public_route, `/${f.slug}/order/`);
+  });
+});
+
+test("F2.3-W3: a route respelled to the same target binds without demoting the build, Polish or QA", async () => {
+  await guardedLifecycle(async (f) => {
+    await handedOff(f);
+    const packetBefore = readFileSync(f.packetPath, "utf8");
+    const dspBefore = readFileSync(dspPathOf(f), "utf8");
+    editSpec(f, (spec) => { pageOf(spec, "upsell").page_url = `/${f.slug}/upsell/`; });
+    const result = recordInputOk(f, "spec", "refreshed");
+    assert.deepEqual(result.pages.moved, ["upsell"]);
+    assert.equal(result.pages.built_unchanged, true);
+    assert.deepEqual(result.demoted, []);
+    assert.equal(readFileSync(dspPathOf(f), "utf8"), dspBefore, "the package is unchanged");
+    assert.deepEqual(readJson(f.packetPath).source_html, JSON.parse(packetBefore).source_html);
+    assert.deepEqual(stageStatuses(f, ["setup", "assembly", "polish", "deploy", "qa"]), { setup: "completed", assembly: "completed", polish: "completed", deploy: "completed", qa: "completed" });
+    const currency = await currencyNow(f);
+    assert.deepEqual(currency.stages, { assembly: "current", polish: "current", qa: "current" });
+  });
+});
+
+test("F2.3-W4: record spec --dry-run on a route move lists the packet and the Design Source Package and writes nothing", async () => {
+  await guardedLifecycle((f) => {
+    recordThroughBuild(f);
+    editSpec(f, (spec) => { pageOf(spec, "upsell").page_url = "upsell-moved/"; });
+    const before = treeDigest(f.dir);
+    const result = recordInputOk(f, "spec", "refreshed", ["--dry-run"]);
+    assert.ok(result.would_write.includes(f.packetPath), JSON.stringify(result.would_write));
+    assert.ok(result.would_write.includes(dspPathOf(f)), JSON.stringify(result.would_write));
+    assertNothingWritten(f.dir, before, "record spec --dry-run");
+  });
+});
+
+for (const [id, label, prepare, code] of [
+  ["F2.3-B1", "a route move that also moves the route root", (f) => editSpec(f, (spec) => {
+    spec.spec_identity = { ...spec.spec_identity, route_root: "/" };
+    pageOf(spec, "upsell").page_url = "upsell-moved/";
+  }), "route_root_changed"],
+  ["F2.3-B2", "a route move onto another page's target", (f) => editSpec(f, (spec) => { pageOf(spec, "upsell").page_url = "receipt/"; }), "page_kit_target_conflict"],
+  ["F2.3-B3", "a route move over a Design Source Package the operator supplied", (f) => {
+    mutateJson(f.reportPath, (report) => { report.design_source_package.origin = "adopted"; });
+    editSpec(f, (spec) => { pageOf(spec, "upsell").page_url = "upsell-moved/"; });
+  }, "design_source_package_operator_supplied"],
+  ["F2.3-B4", "a route move over a Design Source Package edited since prepare-build", (f) => {
+    mutateJson(dspPathOf(f), (dsp) => { dsp.notes = [...(dsp.notes || []), "edited by hand"]; });
+    editSpec(f, (spec) => { pageOf(spec, "upsell").page_url = "upsell-moved/"; });
+  }, "design_source_package_edited"],
+  ["F2.3-B5", "a route move that leaves checkout's next-success-url hint on the old path", (f) => editSpec(f, (spec) => {
+    pageOf(spec, "checkout").sdk_hints = { meta_tags: { "next-success-url": `/${f.slug}/upsell/` } };
+    pageOf(spec, "upsell").page_url = "upsell-moved/";
+  }), "routing_hint_stale"],
+  ["F2.3-B6", "a page added before handoff", (f) => editSpec(f, (spec) => {
+    const funnel = spec.funnels.find((candidate) => candidate.pages.some((page) => page.id === "upsell"));
+    funnel.pages.push({ id: "upsell-2", type: "upsell", page_url: "upsell-2/" });
+  }), "page_scope_changed"],
+]) {
+  test(`${id}: record spec refuses ${label} (${code}) and writes nothing`, async () => {
+    await guardedLifecycle((f) => {
+      recordThroughBuild(f);
+      prepare(f);
+      assertRefusedWritingNothing(f, "spec", code);
+    });
+  });
+}
+
+test("F2.3-B7: doctor blocks on a routing hint that names a route its page no longer has", async () => {
+  await guardedLifecycle((f) => {
+    editSpec(f, (spec) => {
+      pageOf(spec, "checkout").sdk_hints = { meta_tags: { "next-success-url": `/${f.slug}/upsell/` } };
+      pageOf(spec, "upsell").page_url = "upsell-moved/";
+    });
+    const blocked = doctorOk(f).errors.find((issue) => issue.code === "spec.routing_hint_stale");
+    assert.ok(blocked, "doctor blocks with spec.routing_hint_stale");
+    assert.deepEqual(blocked.detail.hints.map((hint) => [hint.page_id, hint.tag, hint.target_page_id, hint.derived_route]), [["checkout", "next-success-url", "upsell", "upsell-moved/"]]);
+    editSpec(f, (spec) => { pageOf(spec, "checkout").sdk_hints.meta_tags["next-success-url"] = `/${f.slug}/upsell-moved/`; });
+    assert.ok(!doctorOk(f).errors.some((issue) => issue.code === "spec.routing_hint_stale"));
+  });
+});
+
+// The page tree a built page-kit campaign has: one file per page with the
+// frontmatter prepare-build projected (page_type and the links).
+function writePageTree(f) {
+  const packet = readJson(f.packetPath);
+  const dir = resolve(f.target, packet.assembly.output_dir);
+  mkdirSync(dir, { recursive: true });
+  for (const page of packet.source_html.pages) {
+    const kit = page.page_kit;
+    const lines = Object.entries(kit.frontmatter).map(([key, value]) => `${key}: ${value}`);
+    writeFileSync(join(dir, kit.target_path), `---\n${lines.join("\n")}\n---\n<h1>${page.page_id}</h1>\n`);
+  }
+  return dir;
+}
+
+test("F2.3-W5: an upsell page added to a handed-off funnel's page tree is recorded by spec derive and record spec without intake", async () => {
+  await guardedLifecycle(async (f) => {
+    await handedOff(f);
+    const tree = writePageTree(f);
+    // The new page, and the existing upsell's accept link moved onto it.
+    writeFileSync(join(tree, "upsell-2.html"), `---\npage_type: upsell\nnext_url: /${f.slug}/receipt/\ndecline_url: /${f.slug}/receipt/\n---\n<h1>upsell-2</h1>\n`);
+    const upsellFile = join(tree, "upsell.html");
+    writeFileSync(upsellFile, readFileSync(upsellFile, "utf8").replace(`next_url: /${f.slug}/receipt/`, `next_url: /${f.slug}/upsell-2/`));
+
+    const derive = runJson(["spec", "derive", "--packet", f.packetPath, "--no-live-refs"], f.dir);
+    assert.equal(derive.status, 0, derive.stderr);
+    assert.deepEqual(derive.json.page_scope.added.map((page) => page.page_id), ["upsell-2"]);
+    const added = derive.json.changes.find((row) => row.op === "insert" && row.page_id === "upsell-2");
+    assert.deepEqual(added.after, { id: "upsell-2", type: "upsell", page_url: "upsell-2/", on_accept: "receipt", on_decline: "receipt" });
+    assert.deepEqual(derive.json.changes.filter((row) => row.field.endsWith(".on_accept")).map((row) => [row.page_id, row.before, row.after]), [["upsell", "receipt", "upsell-2"]]);
+    const spec = readJson(specPathOf(f));
+    assert.ok(pageOf(spec, "upsell-2"), "the page is in the spec");
+    assert.equal(pageOf(spec, "upsell").on_accept, "upsell-2");
+
+    const bound = recordInputOk(f, "spec", "refreshed");
+    assert.deepEqual(bound.pages.added, ["upsell-2"]);
+    const entry = packetPage(f, "upsell-2");
+    assert.equal(entry.origin, "repo");
+    assert.equal(entry.page_kit.target_path, "upsell-2.html");
+    const context = readJson(f.contextPath);
+    assert.ok(context.spec.active_pages.some((page) => page.id === "upsell-2"));
+    assert.equal(context.page_map.find((page) => page.page_id === "upsell-2").origin, "repo");
+    assert.equal(readJson(f.reportPath).stages.deploy.status, "required", "a page was added, so the deploy probe is owed");
+    assert.ok(validContext(context), JSON.stringify(validContext.errors));
+    const issues = doctorOk(f).errors.map((issue) => issue.code);
+    assert.ok(!issues.includes("source_html.pages.coverage"), issues.join(", "));
+    assert.ok(!issues.includes("source_html.pages.repo_page_missing"), issues.join(", "));
+    assert.ok(!issues.some((code) => /dsp_mismatch|prepare_build/.test(code)), issues.join(", "));
+    // The same spec bound again reads unchanged.
+    recordInputOk(f, "spec", "unchanged");
+  });
+});
+
+test("F2.3-W6: a page whose built file is gone is removed by spec derive on a handed-off funnel and bound by record spec", async () => {
+  await guardedLifecycle(async (f) => {
+    await handedOff(f);
+    const tree = writePageTree(f);
+    rmSync(join(tree, "upsell.html"));
+    // checkout now goes straight to the receipt.
+    const checkoutFile = join(tree, "checkout.html");
+    writeFileSync(checkoutFile, readFileSync(checkoutFile, "utf8").replace(`next_url: /${f.slug}/upsell/`, `next_url: /${f.slug}/receipt/`));
+    const derive = runJson(["spec", "derive", "--packet", f.packetPath, "--no-live-refs"], f.dir);
+    assert.equal(derive.status, 0, derive.stderr);
+    assert.deepEqual(derive.json.page_scope.removed.map((page) => page.page_id), ["upsell"]);
+    assert.deepEqual(derive.json.changes.filter((row) => row.field.endsWith(".success_url")).map((row) => [row.page_id, row.before, row.after]), [["checkout", "upsell", "receipt"]]);
+    assert.equal(pageOf(readJson(specPathOf(f)), "upsell"), undefined);
+    const bound = recordInputOk(f, "spec", "refreshed");
+    assert.deepEqual(bound.pages.removed, ["upsell"]);
+    assert.equal(packetPage(f, "upsell"), undefined);
+    assert.ok(!readJson(f.contextPath).spec.active_pages.some((page) => page.id === "upsell"));
   });
 });

@@ -349,7 +349,7 @@ const REFUSED_INVOCATIONS = [
   { argv: ["standardize", "--dryrun", "--target", "%DIR%"], expect: /Unknown flag for standardize: --dryrun/ },
   // Disallowed flag / flag combination.
   { argv: ["telemetry", "off", "--proxy-base", "https://example.test"], expect: /--proxy-base is not accepted/ },
-  { argv: ["spec", "derive", "--proxy-base", "https://example.test"], expect: /--proxy-base only applies with --write-map/ },
+  { argv: ["spec", "derive", "--no-live-refs", "now"], expect: /--no-live-refs takes no value/ },
   { argv: ["spec", "derive", "--store-token-source", "env:FOO"], expect: /--store-token-source only applies with --from-store/ },
   // Missing flag value.
   { argv: ["telemetry", "on", "--proxy-base"], expect: /--proxy-base needs a URL/ },

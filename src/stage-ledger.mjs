@@ -227,6 +227,20 @@ export function restorePolishKeptWithOutput(polish, { fingerprint, sourcePackage
 }
 
 /**
+ * True when the campaign has been handed off (#721): its deploy or its QA was
+ * completed, as the live record or as a record the stage's history keeps
+ * (a deploy or QA made owed again by a later change still happened). From
+ * then on the repo, not the design source, is the authority for which pages
+ * the funnel has, so `spec derive` adds and removes pages from the page tree
+ * and `record spec` binds that change without intake.
+ */
+export function campaignHandedOff(report) {
+  const completedIn = (stage) => isPlainObject(stage) && (isCompletedStatus(stage.status)
+    || (Array.isArray(stage.history) && stage.history.some((entry) => isPlainObject(entry) && isCompletedStatus(entry.status))));
+  return completedIn(report?.stages?.deploy) || completedIn(report?.stages?.qa);
+}
+
+/**
  * True when any stage of `report` carries a non-empty history: recorded
  * operator-visible state an intake must not silently drop.
  */
