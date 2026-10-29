@@ -26,7 +26,13 @@ test("interception is the default for a test-order run, live is the opt-out, oth
   assert.equal(vendorBeaconMode({ "test-order": true }), "intercept", "bare --test-order");
   assert.equal(vendorBeaconMode({ "test-order": "common", "vendor-beacons": "live" }), "live");
   assert.equal(vendorBeaconMode({ "test-order": "common", "vendor-beacons": "LIVE" }), "live");
-  assert.equal(vendorBeaconMode({ "vendor-beacons": "live" }), null, "live without a test order changes nothing");
+  for (const args of [{ "vendor-beacons": "live" }, { "test-order": "off", "vendor-beacons": "live" }]) {
+    assert.throws(() => vendorBeaconMode(args), (error) => {
+      assert.equal(error.code, REFUSED_INVOCATION);
+      assert.match(error.message, /applies only to a browser test-order run/);
+      return true;
+    }, "live without a test order would do nothing, so it is refused");
+  }
   for (const value of ["intercept", "off", "", true, "live,intercept"]) {
     assert.throws(() => vendorBeaconMode({ "test-order": "common", "vendor-beacons": value }), (error) => {
       assert.equal(error.code, REFUSED_INVOCATION);
@@ -99,6 +105,7 @@ test("intercept mode answers a listed beacon locally and records it; other reque
     requests: 1, purchase_seen: true, ids: ["998877"], events: ["Purchase"], endpoints: ["https://www.facebook.com/tr"],
   }, "the preflight is not counted, and nothing from the query string but the id and event is kept");
   assert.deepEqual(row.evidence.configured_not_seen, ["snap"]);
+  assert.deepEqual(row.evidence.configured_not_observable, []);
   assert.deepEqual(row.evidence.not_intercepted.map((entry) => entry.vendor), ["gtm", "northbeam"]);
   assert.match(row.actual, /^answered locally: meta 1 \(purchase\); configured, never seen: snap; not intercepted: gtm, northbeam$/);
   // Evidence only: never a finding, never a blocker.
@@ -118,9 +125,29 @@ test("live mode routes nothing and records the listed requests as they go out", 
   const row = vendorBeaconAssertion(ledger);
   assert.deepEqual(Object.keys(row.evidence.vendors), ["snap"]);
   assert.equal(row.evidence.vendors.snap.purchase_seen, true);
-  assert.equal(row.evidence.not_intercepted, "all: --vendor-beacons live");
+  assert.deepEqual(row.evidence.not_intercepted.map((entry) => entry.vendor).sort(), [
+    "axon", "ga4", "gtm", "meta", "northbeam", "pinterest", "snap", "taboola", "tiktok", "triplewhale",
+  ], "with live nothing is intercepted, and the field is still a list");
+  assert.equal(row.evidence.not_intercepted.find((entry) => entry.vendor === "meta").reason, "--vendor-beacons live");
+  assert.match(row.evidence.not_intercepted.find((entry) => entry.vendor === "northbeam").reason, /Northbeam|beacon/i);
   assert.match(row.actual, /^sent: snap 1 \(purchase\)/);
   assert.equal(computeDisposition([row]), "ready");
+});
+
+test("a configured vendor with no listed beacon is not reported as never seen", () => {
+  const ledger = createVendorBeaconLedger({
+    mode: "intercept",
+    analytics: { providers: { gtm: { containerId: "GTM-AB12" }, facebook: { pixelId: "1" } }, vendors: { northbeam: { id: "nb-1" }, snap: { id: "s-1" } } },
+  });
+  ledger.record(readVendorBeacon("https://www.facebook.com/tr?id=1&ev=Purchase"));
+  const row = vendorBeaconAssertion(ledger);
+  assert.deepEqual(row.evidence.configured, ["gtm", "meta", "northbeam", "snap"]);
+  assert.deepEqual(row.evidence.configured_not_seen, ["snap"], "GTM and Northbeam cannot be seen, so they are not 'never seen'");
+  assert.deepEqual(row.evidence.configured_not_observable, ["gtm", "northbeam"]);
+  assert.equal(
+    row.actual,
+    "answered locally: meta 1 (purchase); configured, never seen: snap; not intercepted: gtm (configured), northbeam (configured)",
+  );
 });
 
 test("a routed browser routes every context it opens, and is untouched when the run routes nothing", async () => {
@@ -135,7 +162,10 @@ test("a routed browser routes every context it opens, and is untouched when the 
   await routed.newContext({ viewport: { width: 1, height: 1 } });
   await routed.newContext();
   assert.deepEqual(opened.map((context) => context.routes.length), [1, 1]);
-  assert.deepEqual(opened[0].options, { viewport: { width: 1, height: 1 } });
+  assert.deepEqual(opened[0].options, { viewport: { width: 1, height: 1 }, serviceWorkers: "block" }, "a service worker could pass a beacon around the route");
+  assert.deepEqual(opened[1].options, { serviceWorkers: "block" });
+  await withVendorBeaconRouting(browser, createVendorBeaconLedger({ mode: "live" })).newContext({ viewport: { width: 2, height: 2 } });
+  assert.deepEqual(opened[2].options, { viewport: { width: 2, height: 2 } }, "live mode leaves the context options alone");
   assert.equal(await routed.close(), true, "other methods keep the real browser as this");
   assert.equal(vendorBeaconLedgerFor({ [QA_VENDOR_BEACONS]: ledger }), ledger);
   assert.equal(vendorBeaconLedgerFor({ "test-order": "common" }), null);

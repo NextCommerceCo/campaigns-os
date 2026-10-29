@@ -254,8 +254,9 @@ input resolution. They append no lifecycle entry. Accepted modes remain
 `accept`, `decline`, and `both` (case-insensitive); browser `--test-order` still
 takes precedence and does not require the legacy cart. API credentials are
 still checked only inside the legacy handler and failures there are journaled.
-A `qa run --vendor-beacons` value other than `live` is likewise an argv-only
-refusal before QA input resolution.
+A `qa run --vendor-beacons` value other than `live`, or `--vendor-beacons` on
+a run without browser `--test-order`, is likewise an argv-only refusal before
+QA input resolution.
 The nested run-record refusal scope in session closeout guards against future
 changes. No internal closeout can currently create a refusal before its
 invoking command journals.

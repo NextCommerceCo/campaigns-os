@@ -237,7 +237,8 @@ Options:
                                   data; loader scripts still load. The verdict row browser-test-order:vendor-beacons
                                   records the requests per vendor as evidence, never as purchase proof, and names
                                   the vendors not intercepted (Northbeam; GTM, which sends nothing of its own).
-                                  live is the only value; any other is refused.
+                                  live is the only value; any other is refused, as is the flag without
+                                  --test-order.
   --allowed-domains-confirmed <bool>
                                   qa policy set: persist non-localhost SDK-origin confirmation.
                                   Localhost on any port is a global Development domain with analytics suppressed.

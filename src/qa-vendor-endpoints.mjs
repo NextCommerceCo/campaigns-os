@@ -71,11 +71,12 @@ export const VENDOR_ENDPOINTS = Object.freeze([
       { host: "google-analytics.com", path: "/g/" },
       { host: "analytics.google.com", path: "/g/" },
       { host: "stats.g.doubleclick.net", path: "/g/" },
+      { host: "www.google.com", path: "/g/collect" },
     ],
     id: "tid",
     event: "en",
     purchaseEvents: ["purchase", "upsell_purchase"],
-    source: "gtag.js (www.googletagmanager.com/gtag/js) builds https://<region>.google-analytics.com/g/collect, https://analytics.google.com/g/collect and https://stats.g.doubleclick.net/g/collect; tid is the measurement id, en the event name (batched events carry one en per body line)",
+    source: "gtag.js (www.googletagmanager.com/gtag/js) builds https://<region>.google-analytics.com/g/collect, https://analytics.google.com/g/collect and https://stats.g.doubleclick.net/g/collect, and retries a failed send at https://www.google.com/g/collect; tid is the measurement id, en the event name (batched events carry one en per body line)",
   },
   {
     vendor: "axon",

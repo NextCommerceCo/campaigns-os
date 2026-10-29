@@ -17,7 +17,8 @@ import test, { after } from "node:test";
 import assert from "node:assert/strict";
 
 import { attachAnalyticsCapture } from "./qa-analytics-parity.mjs";
-import { createVendorBeaconLedger, vendorBeaconAssertion, withVendorBeaconRouting } from "./qa-vendor-beacons.mjs";
+import { captureAnalyticsForUrls } from "./qa-browser.mjs";
+import { createVendorBeaconLedger, QA_VENDOR_BEACONS, vendorBeaconAssertion, withVendorBeaconRouting } from "./qa-vendor-beacons.mjs";
 
 const ORIGIN = "https://shop.fixture.test";
 const PAGE = `${ORIGIN}/campaign/receipt/`;
@@ -68,28 +69,33 @@ async function chromiumAvailable() {
   }
 }
 
+// The network stand-in, installed on a context before anything the run adds.
+async function routeStandIn(context, network) {
+  await context.route("**/*", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (url.origin === ORIGIN) return route.fulfill({ status: 200, contentType: "text/html", body: PAGE_HTML });
+    network.push({ host: url.hostname, path: url.pathname, method: request.method() });
+    if (url.hostname === "sc-static.net") return route.fulfill({ status: 200, contentType: "text/javascript", body: "window.__loaderRan = true;" });
+    return route.fulfill({
+      status: 204,
+      headers: {
+        "access-control-allow-origin": ORIGIN,
+        "access-control-allow-credentials": "true",
+        "access-control-allow-headers": "content-type",
+      },
+      body: "",
+    });
+  });
+}
+
 // The real browser with the network stand-in installed on every context it
-// opens, before anything the run adds.
+// opens.
 function standInBrowser(real, network) {
   return {
     newContext: async (options) => {
       const context = await real.newContext(options);
-      await context.route("**/*", async (route) => {
-        const request = route.request();
-        const url = new URL(request.url());
-        if (url.origin === ORIGIN) return route.fulfill({ status: 200, contentType: "text/html", body: PAGE_HTML });
-        network.push({ host: url.hostname, path: url.pathname, method: request.method() });
-        if (url.hostname === "sc-static.net") return route.fulfill({ status: 200, contentType: "text/javascript", body: "window.__loaderRan = true;" });
-        return route.fulfill({
-          status: 204,
-          headers: {
-            "access-control-allow-origin": ORIGIN,
-            "access-control-allow-credentials": "true",
-            "access-control-allow-headers": "content-type",
-          },
-          body: "",
-        });
-      });
+      await routeStandIn(context, network);
       return context;
     },
   };
@@ -163,4 +169,44 @@ browserTest("vendor beacons: --vendor-beacons live lets the listed vendor beacon
   assert.equal(row.evidence.vendors.snap.requests, 1);
   assert.match(row.actual, /^sent: /);
   assert.deepEqual(collected.inventory.meta, ["998877"]);
+});
+
+// The same proof through qa-browser's own launch: a real browser leg of the
+// run (the parity capture) with the run's ledger on args. qa-browser launches
+// Chromium itself, so the stand-in goes in by wrapping playwright's
+// chromium.launch for this test; the run's routing still wraps what comes back.
+browserTest("vendor beacons: a qa-browser leg launched for a --test-order run is routed and records into the run's ledger", async () => {
+  const { chromium } = await import("playwright");
+  const realLaunch = chromium.launch;
+  const network = [];
+  const contexts = [];
+  chromium.launch = async function launch(...launchArgs) {
+    const launched = await realLaunch.apply(this, launchArgs);
+    const newContext = launched.newContext.bind(launched);
+    launched.newContext = async (...contextArgs) => {
+      const context = await newContext(...contextArgs);
+      contexts.push(contextArgs[0]);
+      await routeStandIn(context, network);
+      return context;
+    };
+    return launched;
+  };
+  const ledger = createVendorBeaconLedger({ mode: "intercept", analytics: { providers: { gtm: { containerId: "GTM-AB12" }, facebook: { pixelId: "998877" } } } });
+  let captures;
+  try {
+    captures = await captureAnalyticsForUrls({ receipt: PAGE }, { "analytics-settle": "500", "browser-timeout": "10000", [QA_VENDOR_BEACONS]: ledger });
+  } finally {
+    chromium.launch = realLaunch;
+  }
+
+  assert.equal(contexts.length, 1);
+  assert.equal(contexts[0].serviceWorkers, "block", "the leg's context blocks service workers");
+  assert.deepEqual(network.map((request) => request.host), ["sc-static.net"], "only the loader got past the run's routing");
+  const row = vendorBeaconAssertion(ledger);
+  assert.deepEqual(Object.keys(row.evidence.vendors).sort(), ["meta", "pinterest", "snap"]);
+  assert.equal(row.evidence.vendors.meta.purchase_seen, true);
+  assert.deepEqual(row.evidence.configured_not_seen, []);
+  assert.deepEqual(row.evidence.configured_not_observable, ["gtm"]);
+  assert.deepEqual(captures.receipt.inventory.meta, ["998877"]);
+  assert.equal(captures.receipt.purchaseSignals.meta, true);
 });

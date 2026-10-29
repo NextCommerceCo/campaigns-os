@@ -1346,13 +1346,14 @@ beacon is the request a vendor script sends to report a page view or an event,
 as opposed to the loader, the request that downloads the vendor script. Every
 browser context the run opens (page checks, analytics capture and the orders)
 answers a request to a listed beacon endpoint with an empty `204` response, so
-nothing reaches the vendor. Loader scripts load normally: a blocked loader
-would leave the vendor script undefined, and the page would send nothing to
-observe.
+nothing reaches the vendor. Those contexts also block service workers, because
+a request a page's service worker makes on the page's behalf would bypass the
+local answer. Loader scripts load normally: a blocked loader would leave the
+vendor script undefined, and the page would send nothing to observe.
 
 | Vendor | Beacon endpoints answered locally | Loaders that still load |
 |---|---|---|
-| GA4 (`ga4`) | `*.google-analytics.com/g/…`, `analytics.google.com/g/…`, `stats.g.doubleclick.net/g/…` | `www.googletagmanager.com/gtag/js` |
+| GA4 (`ga4`) | `*.google-analytics.com/g/…`, `analytics.google.com/g/…`, `stats.g.doubleclick.net/g/…`, `www.google.com/g/collect` | `www.googletagmanager.com/gtag/js` |
 | Meta (`meta`) | `www.facebook.com/tr`, `www.facebook.com/privacy_sandbox/…` | `connect.facebook.net` |
 | TikTok (`tiktok`) | `analytics.tiktok.com/api/v2/…`, `analytics-ipv6.tiktokw.us` | `analytics.tiktok.com/i18n/pixel/…` |
 | Snap (`snap`) | `tr.snapchat.com`, `tr6.snapchat.com`, `tr-shadow.snapchat.com` | `sc-static.net` |
@@ -1381,8 +1382,11 @@ informational row, `browser-test-order:vendor-beacons` (status `pass`, severity
 of the requests named a purchase event (`purchase_seen`; `null` for Axon, whose
 event field could not be confirmed), and the ids, event names and endpoints
 (origin and path only, never a query string); `configured_not_seen` lists the
-vendors the CampaignSpec analytics block declares that sent nothing; and
-`not_intercepted` lists the two vendors above. The row is evidence only. A
+vendors the CampaignSpec analytics block declares that sent nothing to a listed
+endpoint; `configured_not_observable` lists the declared vendors with no listed
+endpoint (GTM, Northbeam), which the row cannot see either way; and
+`not_intercepted` lists the two vendors above with the reason for each (with
+`live`, every vendor). The row is evidence only. A
 request the page sent proves the page sent it, not that the vendor received it,
 so it never counts as vendor purchase proof and never blocks the run. Purchase
 proof stays with `analytics-correctness:purchase-fires` (the dataLayer
@@ -1392,8 +1396,9 @@ answered locally. The same requests feed the analytics inventory and parity
 legs as tag fires.
 
 To send the beacons to the vendors, pass `--vendor-beacons live`. `live` is
-the only value; any other value is refused before anything runs. The row then
-records the requests as sent.
+the only value; any other value is refused before anything runs, and so is the
+flag on a run without `--test-order`, where it would change nothing. The row
+then records the requests as sent.
 
 ```bash
 npm run campaigns-os -- qa run \

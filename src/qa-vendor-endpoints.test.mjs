@@ -39,6 +39,8 @@ test("beacon endpoints match and loader scripts never do, even on a shared host"
   assert.equal(beacon("https://connect.facebook.net/en_US/fbevents.js"), null);
   assert.equal(beacon("https://region1.google-analytics.com/g/collect?tid=G-1&en=purchase"), "ga4");
   assert.equal(beacon("https://stats.g.doubleclick.net/g/collect?tid=G-1"), "ga4");
+  assert.equal(beacon("https://www.google.com/g/collect?tid=G-1&en=purchase"), "ga4", "gtag's retry endpoint");
+  assert.equal(beacon("https://www.google.com/search?q=g/collect"), null);
   assert.equal(beacon("https://www.googletagmanager.com/gtag/js?id=G-1"), null);
   assert.equal(beacon("https://www.googletagmanager.com/gtm.js?id=GTM-1"), null);
   assert.equal(beacon("https://analytics.tiktok.com/api/v2/pixel"), "tiktok");

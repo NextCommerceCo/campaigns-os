@@ -22,7 +22,7 @@
 
 import { refused } from "./lifecycle.mjs";
 import { SEVERITY, STATUS } from "./qa-verdict.mjs";
-import { configuredVendors, NOT_INTERCEPTED_VENDORS, readVendorBeacon, vendorBeaconFor } from "./qa-vendor-endpoints.mjs";
+import { configuredVendors, INTERCEPTED_VENDORS, NOT_INTERCEPTED_VENDORS, readVendorBeacon, VENDOR_KEYS, vendorBeaconFor } from "./qa-vendor-endpoints.mjs";
 
 // The run's ledger rides on args under this key, like QA_RUN_CURRENCY, so every
 // browser leg of one `qa run` records into the same one.
@@ -38,9 +38,11 @@ const MAX_VALUES = 10;
 
 // "intercept" or "live" for a run that drives browser test orders, null for
 // one that does not (nothing is routed or recorded then). Any --vendor-beacons
-// value but `live` is refused before anything runs.
+// value but `live` is refused before anything runs, and so is the flag on a
+// run with no browser test order, where it would do nothing.
 export function vendorBeaconMode(args = {}) {
-  if (Object.hasOwn(args, "vendor-beacons")) {
+  const flagged = Object.hasOwn(args, "vendor-beacons");
+  if (flagged) {
     const value = args["vendor-beacons"];
     if (typeof value !== "string" || value.trim().toLowerCase() !== VENDOR_BEACON_MODES.LIVE) {
       const got = typeof value === "string" && value !== "" ? JSON.stringify(value) : "no value";
@@ -48,8 +50,11 @@ export function vendorBeaconMode(args = {}) {
     }
   }
   const testOrder = String(args["test-order"] ?? "off").toLowerCase();
-  if (!testOrder || testOrder === "off" || testOrder === "false") return null;
-  return Object.hasOwn(args, "vendor-beacons") ? VENDOR_BEACON_MODES.LIVE : VENDOR_BEACON_MODES.INTERCEPT;
+  if (!testOrder || testOrder === "off" || testOrder === "false") {
+    if (flagged) throw refused("--vendor-beacons live applies only to a browser test-order run (--test-order <mode>); this run places no browser test orders and routes no vendor beacons. Drop --vendor-beacons, or add --test-order.");
+    return null;
+  }
+  return flagged ? VENDOR_BEACON_MODES.LIVE : VENDOR_BEACON_MODES.INTERCEPT;
 }
 
 // The per-run record. `configured` is the vendor keys the CampaignSpec
@@ -148,13 +153,22 @@ export async function routeVendorBeacons(context, ledger) {
 }
 
 // A browser whose every new context is routed for the run. The browser itself
-// comes back unchanged when the run routes nothing.
+// comes back unchanged when the run routes nothing. In intercept mode the
+// context also blocks service workers: context.route does not see a request a
+// service worker handles, so a page's worker could otherwise pass a beacon
+// through to the vendor.
 export function withVendorBeaconRouting(browser, ledger) {
   if (!browser || !ledger) return browser;
   const newContext = browser.newContext.bind(browser);
+  const intercept = ledger.mode !== VENDOR_BEACON_MODES.LIVE;
   return new Proxy(browser, {
     get(target, key, receiver) {
-      if (key === "newContext") return async (...args) => routeVendorBeacons(await newContext(...args), ledger);
+      if (key === "newContext") {
+        return async (options, ...rest) => routeVendorBeacons(
+          await newContext(intercept ? { ...(options || {}), serviceWorkers: "block" } : options, ...rest),
+          ledger,
+        );
+      }
       const value = Reflect.get(target, key, receiver);
       return typeof value === "function" ? value.bind(target) : value;
     },
@@ -173,13 +187,21 @@ export function vendorBeaconEvidence(ledger) {
       endpoints: [...entry.endpoints],
     };
   }
+  // Only a vendor with listed beacon endpoints can be seen; a configured vendor
+  // without them (GTM, Northbeam) is named under configured_not_observable,
+  // never as one that sent nothing.
+  const observable = (vendor) => INTERCEPTED_VENDORS.includes(vendor);
+  const unlisted = new Map(NOT_INTERCEPTED_VENDORS.map((entry) => [entry.vendor, entry.reason]));
   return {
     mode: ledger.mode,
     vendors,
     configured: [...ledger.configured],
-    configured_not_seen: ledger.configured.filter((vendor) => !ledger.vendors.has(vendor)),
+    configured_not_seen: ledger.configured.filter((vendor) => observable(vendor) && !ledger.vendors.has(vendor)),
+    configured_not_observable: ledger.configured.filter((vendor) => !observable(vendor)),
+    // In live mode nothing is intercepted, so every vendor is listed; the
+    // unlisted ones keep their own reason.
     not_intercepted: ledger.mode === VENDOR_BEACON_MODES.LIVE
-      ? "all: --vendor-beacons live"
+      ? VENDOR_KEYS.map((vendor) => ({ vendor, reason: unlisted.get(vendor) || "--vendor-beacons live" }))
       : NOT_INTERCEPTED_VENDORS.map((entry) => ({ ...entry })),
   };
 }
@@ -193,7 +215,8 @@ export function vendorBeaconAssertion(ledger) {
   const evidence = vendorBeaconEvidence(ledger);
   const seen = Object.entries(evidence.vendors).map(([vendor, entry]) => `${vendor} ${entry.requests}${entry.purchase_seen ? " (purchase)" : ""}`);
   const live = ledger.mode === VENDOR_BEACON_MODES.LIVE;
-  const notIntercepted = live ? "" : `; not intercepted: ${list(evidence.not_intercepted.map((entry) => entry.vendor))}`;
+  const configured = new Set(evidence.configured);
+  const notIntercepted = live ? "" : `; not intercepted: ${list(evidence.not_intercepted.map((entry) => `${entry.vendor}${configured.has(entry.vendor) ? " (configured)" : ""}`))}`;
   return {
     id: "browser-test-order:vendor-beacons",
     family: "browser-test-order",
