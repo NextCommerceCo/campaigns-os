@@ -37,6 +37,7 @@ import { assessReceiptPurchase } from "./qa-analytics-correctness.mjs";
 import { trackingQaAssertion, trackingRunScopeRows } from "./qa-tracking-params.mjs";
 import { contentParamNotRequestedRows, contentParamQaAssertion } from "./qa-content-params.mjs";
 import { policyLinkNotRequestedRows, policyLinkQaAssertion } from "./qa-policy-links.mjs";
+import { createVendorBeaconLedger, QA_VENDOR_BEACONS, vendorBeaconAssertion, vendorBeaconMode } from "./qa-vendor-beacons.mjs";
 import { createVerdict, formatTestOrderSummary, isFindingAssertion, QA_ASSERTION_FAMILY_VOCABULARY, SESSION_ENDING_DISPOSITIONS, SEVERITY, STATUS, validateVerdict } from "./qa-verdict.mjs";
 import { normalizeSdkMetaName, lookupSdkIgnoredMetaTag } from "./sdk-meta-tags.mjs";
 import { annotateQaAssertionCauses, formatCauseReportLines, formatCauseTag } from "./finding-cause.mjs";
@@ -229,6 +230,14 @@ Options:
   --max-order-creations <n>       Hard bound on REAL order creations in this run, reserved before each submit
                                   click. Default: the planned path count. A path whose failure is confirmed to
                                   have created an order is inspected read-only, never resubmitted.
+  --vendor-beacons live           qa run --test-order: let the page's analytics vendor beacons reach the vendors.
+                                  By default a test-order run answers requests to the listed vendor beacon
+                                  endpoints (GA4, Meta, TikTok, Snap, Pinterest, Taboola, Triple Whale, AppLovin
+                                  Axon) locally in every browser context, so test purchases stay out of vendor
+                                  data; loader scripts still load. The verdict row browser-test-order:vendor-beacons
+                                  records the requests per vendor as evidence, never as purchase proof, and names
+                                  the vendors not intercepted (Northbeam; GTM, which sends nothing of its own).
+                                  live is the only value; any other is refused.
   --allowed-domains-confirmed <bool>
                                   qa policy set: persist non-localhost SDK-origin confirmation.
                                   Localhost on any port is a global Development domain with analytics suppressed.
@@ -2293,6 +2302,7 @@ async function runQa(args, options = {}) {
   if (browserMode === "off" && legacyMode !== "off") {
     refusing(() => legacyTestOrderInputs({ ...args, "test-order": legacyMode }));
   }
+  vendorBeaconMode(args);
   const resolved = await resolveQaInputs(args);
   return runResolvedQa(args, resolved, options);
 }
@@ -2435,6 +2445,12 @@ async function runResolvedQa(args, resolvedInputs, { runSessionActive = false, l
       proxyBase: resolved.proxyBase,
     });
   assertions.push(...liveCampaignRefAssertions({ pages: [...livePages.values()], spec: liveSpec, liveCampaign: liveRead }));
+  // A test-order run answers vendor beacons locally in every browser context
+  // it opens, unless --vendor-beacons live; the ledger rides on args to each
+  // browser leg and becomes one evidence row (qa-vendor-beacons.mjs).
+  const vendorBeaconRun = vendorBeaconMode(args);
+  const vendorBeacons = vendorBeaconRun ? createVendorBeaconLedger({ mode: vendorBeaconRun, analytics: resolved.spec?.analytics }) : null;
+  if (vendorBeacons) args = { ...args, [QA_VENDOR_BEACONS]: vendorBeacons };
   const qcResults = [];
   if (args.browser === true) {
     const browserAssertions = await runBrowserChecks(resolved.topologies, args, {
@@ -2470,6 +2486,7 @@ async function runResolvedQa(args, resolvedInputs, { runSessionActive = false, l
   }
 
   const testOrders = await runAnalyticsOrderSequence({ args, resolved, runId, assertions, qcResults });
+  if (vendorBeacons) assertions.push(vendorBeaconAssertion(vendorBeacons));
   const remainingAssertionBudget = Math.max(0, QA_VERDICT_ASSERTION_LIMIT - assertions.length);
   let commercialResult;
   try {

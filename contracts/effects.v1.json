@@ -58,6 +58,7 @@
       "--no-write",
       "--republish",
       "--test-order",
+      "--vendor-beacons",
       "--write",
       "--write-map"
     ],
@@ -2689,7 +2690,148 @@
       ],
       "effect_test": "effects: qa run --test-order",
       "test_scope": "full",
-      "notes": "The most consequential row in the file: --test-order places REAL orders against the store under test. Destructive, open-world, not idempotent. It SENDS on a blocked attempt too: the QA stage progress observation to {proxy-base}/api/progress under persisted consent for the endpoint, and the verdict to {proxy-base}/api/qa/verdicts under the same consent unless the base URL is a local address, which keeps the verdict local by default (#486; --post-verdict still sends it). Publishing rides the telemetry consent seam rather than a flag of its own, so the four consent-off conditions saw neither request. Local-spec packets retain verdicts in the repository and never send a QA verdict or progress to the Map portal, even with --post-verdict. When a served page was read and a public Campaigns API key resolves, it also makes one read-only GET of {proxy-base}/api/campaign under X-Campaign-Key to check the served pages' shipping and package refs against the live campaign (#533); without a key or a page, or on a failed read, the verdict records the check as not_run with its reason. --no-live-refs skips that read (its own row)."
+      "notes": "The most consequential row in the file: --test-order places REAL orders against the store under test. Destructive, open-world, not idempotent. It SENDS on a blocked attempt too: the QA stage progress observation to {proxy-base}/api/progress under persisted consent for the endpoint, and the verdict to {proxy-base}/api/qa/verdicts under the same consent unless the base URL is a local address, which keeps the verdict local by default (#486; --post-verdict still sends it). Publishing rides the telemetry consent seam rather than a flag of its own, so the four consent-off conditions saw neither request. Local-spec packets retain verdicts in the repository and never send a QA verdict or progress to the Map portal, even with --post-verdict. When a served page was read and a public Campaigns API key resolves, it also makes one read-only GET of {proxy-base}/api/campaign under X-Campaign-Key to check the served pages' shipping and package refs against the live campaign (#533); without a key or a page, or on a failed read, the verdict records the check as not_run with its reason. --no-live-refs skips that read (its own row). Vendor beacons are held back: by default every browser context the run opens answers page requests to the listed analytics vendor beacon endpoints (GA4, Meta, TikTok, Snap, Pinterest, Taboola, Triple Whale, AppLovin Axon; the list is in docs/qa-and-test-orders.md) locally with a 204, so the test purchases never reach those vendors, and records each request on the browser-test-order:vendor-beacons verdict row as evidence. Vendor loader scripts still load from their hosts, and vendors the list does not intercept (Northbeam, and tags GTM loads for vendors outside the list) still receive what the page sends them; the row names them. --vendor-beacons live lets the listed endpoints through (its own row)."
+    },
+    {
+      "command": "qa",
+      "subcommand": "run",
+      "flags": [
+        "--test-order",
+        "--vendor-beacons"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": true,
+        "idempotentHint": false
+      },
+      "tier": "C",
+      "writes": [
+        {
+          "path": "{target}/qa-output/**",
+          "when": "always — the full verdict for the attempt is written to the qa-output tree",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{cwd}/.campaign-runtime/qa-verdict.json",
+          "when": "always — the committed verdict sidecar is projected from the attempt",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "when": "always — the QA stage outcome is recorded on the report",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/progress/**",
+          "when": "always — the QA stage progress snapshot is captured locally",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "the QA outcome invalidates the retained doctor sidecar",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/run-session.json",
+          "when": "an ambient run session is resolved; a blocked attempt keeps it open, a ready verdict clears it",
+          "observed_in": [
+            "ambient_session"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/qa/verdicts",
+          "what": "the QA verdict for the attempt, published to the QA portal",
+          "when": "--post-verdict is given; or, by default (no --no-post-verdict), the base URL is not a local address (localhost, *.localhost, 127.x.x.x, 0.0.0.0, [::1], an IPv4-mapped loopback) and the consent seam allows it — Run Telemetry consent on for the endpoint, or a portal-managed campaign; never for a local-spec packet",
+          "requires_consent": true,
+          "observed_in": [],
+          "not_observed_reason": "the offline fixture serves the campaign from a 127.0.0.1 base URL, a local address, so the default keeps the verdict local (#486); qa publish proves this send"
+        },
+        {
+          "destination": "{base-url}",
+          "what": "HTTP requests against the campaign under test, INCLUDING order creation against the live store",
+          "when": "always",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the offline fixture is blocked before the order ladder is reached; the mode is proved by the gate refusing without placing an order"
+        },
+        {
+          "destination": "{proxy-base}/api/runs",
+          "what": "the Run Record / progress remit envelope for this run",
+          "when": "Run Telemetry consent is on for the endpoint and --no-remit was not given",
+          "requires_consent": true,
+          "observed_in": [],
+          "not_observed_reason": "a blocked attempt assembles no Run Record, so nothing is remitted"
+        },
+        {
+          "destination": "{proxy-base}/api/progress",
+          "what": "the stage progress observation — the snapshot just captured locally, POSTed under X-Campaign-Key",
+          "when": "Run Telemetry consent is on for the endpoint, --no-remit was not given, and the packet's campaign key resolves; never for a local-spec packet",
+          "requires_consent": true,
+          "observed_in": [
+            "persisted_consent"
+          ]
+        },
+        {
+          "destination": "{proxy-base}/api/campaign",
+          "what": "one GET of the live campaign (its packages and shipping methods) under X-Campaign-Key, the public Campaigns API key; no request body and no Admin or store credential, and the read writes nothing",
+          "when": "at least one served page was read and a public Campaigns API key resolves from the packet, the CampaignSpec or the declared campaign-key env var",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the offline fixture is blocked at the theme/proof gate before a served page is read, so there is no page to compare and the live campaign is not read"
+        },
+        {
+          "destination": "the analytics vendor beacon endpoints listed in docs/qa-and-test-orders.md (GA4, Meta, TikTok, Snap, Pinterest, Taboola, Triple Whale, AppLovin Axon)",
+          "what": "the page under test's own analytics requests to those vendors, test purchases included, let through as the page makes them instead of answered locally; each is still recorded on the browser-test-order:vendor-beacons verdict row",
+          "when": "a browser test order opens a campaign page that loads one of those vendors",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the offline fixture is blocked before a browser opens; the vendor-beacons browser test proves a listed endpoint is let through with live and answered locally without it"
+        }
+      ],
+      "effect_test": "effects: qa run --test-order --vendor-beacons",
+      "test_scope": "full",
+      "notes": "The `qa run --test-order` row's writes and sends, plus the vendor beacons: with --vendor-beacons live no browser context is routed, so the page's requests to the listed analytics vendor endpoints reach the vendors, test purchases included. The verdict's browser-test-order:vendor-beacons row still records them, as sent. live is the only value the flag takes; any other is refused before anything runs."
     },
     {
       "command": "qa",
@@ -3326,7 +3468,141 @@
       ],
       "effect_test": "effects: qa run --test-order --no-live-refs",
       "test_scope": "full",
-      "notes": "The `qa run --test-order` row's writes and sends, without the {proxy-base}/api/campaign read: the verdict records the live-campaign-refs check skipped with reason disabled, never a pass. The other sends keep their own conditions and opt-outs."
+      "notes": "The `qa run --test-order` row's writes and sends, without the {proxy-base}/api/campaign read: the verdict records the live-campaign-refs check skipped with reason disabled, never a pass. The other sends keep their own conditions and opt-outs. Vendor beacons are held back: by default every browser context the run opens answers page requests to the listed analytics vendor beacon endpoints (GA4, Meta, TikTok, Snap, Pinterest, Taboola, Triple Whale, AppLovin Axon; the list is in docs/qa-and-test-orders.md) locally with a 204, so the test purchases never reach those vendors, and records each request on the browser-test-order:vendor-beacons verdict row as evidence. Vendor loader scripts still load from their hosts, and vendors the list does not intercept (Northbeam, and tags GTM loads for vendors outside the list) still receive what the page sends them; the row names them. --vendor-beacons live lets the listed endpoints through (its own row)."
+    },
+    {
+      "command": "qa",
+      "subcommand": "run",
+      "flags": [
+        "--test-order",
+        "--vendor-beacons",
+        "--no-live-refs"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": true,
+        "idempotentHint": false
+      },
+      "tier": "C",
+      "writes": [
+        {
+          "path": "{target}/qa-output/**",
+          "when": "always — the full verdict for the attempt is written to the qa-output tree",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{cwd}/.campaign-runtime/qa-verdict.json",
+          "when": "always — the committed verdict sidecar is projected from the attempt",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "when": "always — the QA stage outcome is recorded on the report",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/progress/**",
+          "when": "always — the QA stage progress snapshot is captured locally",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "when": "the QA outcome invalidates the retained doctor sidecar",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/run-session.json",
+          "when": "an ambient run session is resolved; a blocked attempt keeps it open, a ready verdict clears it",
+          "observed_in": [
+            "ambient_session"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/qa/verdicts",
+          "what": "the QA verdict for the attempt, published to the QA portal",
+          "when": "--post-verdict is given; or, by default (no --no-post-verdict), the base URL is not a local address (localhost, *.localhost, 127.x.x.x, 0.0.0.0, [::1], an IPv4-mapped loopback) and the consent seam allows it — Run Telemetry consent on for the endpoint, or a portal-managed campaign; never for a local-spec packet",
+          "requires_consent": true,
+          "observed_in": [],
+          "not_observed_reason": "the offline fixture serves the campaign from a 127.0.0.1 base URL, a local address, so the default keeps the verdict local (#486); qa publish proves this send"
+        },
+        {
+          "destination": "{base-url}",
+          "what": "HTTP requests against the campaign under test, INCLUDING order creation against the live store",
+          "when": "always",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the offline fixture is blocked before the order ladder is reached; the mode is proved by the gate refusing without placing an order"
+        },
+        {
+          "destination": "{proxy-base}/api/runs",
+          "what": "the Run Record / progress remit envelope for this run",
+          "when": "Run Telemetry consent is on for the endpoint and --no-remit was not given",
+          "requires_consent": true,
+          "observed_in": [],
+          "not_observed_reason": "a blocked attempt assembles no Run Record, so nothing is remitted"
+        },
+        {
+          "destination": "{proxy-base}/api/progress",
+          "what": "the stage progress observation — the snapshot just captured locally, POSTed under X-Campaign-Key",
+          "when": "Run Telemetry consent is on for the endpoint, --no-remit was not given, and the packet's campaign key resolves; never for a local-spec packet",
+          "requires_consent": true,
+          "observed_in": [
+            "persisted_consent"
+          ]
+        },
+        {
+          "destination": "the analytics vendor beacon endpoints listed in docs/qa-and-test-orders.md (GA4, Meta, TikTok, Snap, Pinterest, Taboola, Triple Whale, AppLovin Axon)",
+          "what": "the page under test's own analytics requests to those vendors, test purchases included, let through as the page makes them instead of answered locally; each is still recorded on the browser-test-order:vendor-beacons verdict row",
+          "when": "a browser test order opens a campaign page that loads one of those vendors",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the offline fixture is blocked before a browser opens; the vendor-beacons browser test proves a listed endpoint is let through with live and answered locally without it"
+        }
+      ],
+      "effect_test": "effects: qa run --test-order --vendor-beacons --no-live-refs",
+      "test_scope": "full",
+      "notes": "The `qa run --test-order --vendor-beacons` row's writes and sends, without the {proxy-base}/api/campaign read: the verdict records the live-campaign-refs check skipped with reason disabled, never a pass."
     },
     {
       "command": "qa",

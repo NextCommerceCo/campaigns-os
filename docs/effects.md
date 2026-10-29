@@ -164,8 +164,9 @@ flags that change what the invocation does to the world are listed once, in
 `vocabulary.effect_changing_flags`: `--apply`, `--browser`, `--built`, `--dry-run`,
 `--emit-packet`, `--example`, `--force`, `--from-store`, `--list`,
 `--no-live-refs`, `--no-post-verdict`, `--no-probe`, `--no-remit`, `--no-run-session`,
-`--no-write`, `--republish`, `--test-order`, `--write`, `--write-map`. Flags
-that only change the output shape (`--json`, `--report`) deliberately do not.
+`--no-write`, `--republish`, `--test-order`, `--vendor-beacons`, `--write`,
+`--write-map`. Flags that only change the output shape (`--json`, `--report`)
+deliberately do not.
 
 **"The help text" is every help block the CLI prints**, not one file's.
 `campaigns-os qa` prints its own from `src/qa-node.mjs`, and while the coverage
@@ -253,6 +254,8 @@ input resolution. They append no lifecycle entry. Accepted modes remain
 `accept`, `decline`, and `both` (case-insensitive); browser `--test-order` still
 takes precedence and does not require the legacy cart. API credentials are
 still checked only inside the legacy handler and failures there are journaled.
+A `qa run --vendor-beacons` value other than `live` is likewise an argv-only
+refusal before QA input resolution.
 The nested run-record refusal scope in session closeout guards against future
 changes. No internal closeout can currently create a refusal before its
 invoking command journals.

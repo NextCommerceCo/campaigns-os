@@ -19,6 +19,7 @@ import { redactPersisted, redactUrlQueriesInText, redactUrlQuery } from "./qa-ur
 import { TRACKING_ADDED_BOUND_MS, TRACKING_OBSERVATION, createTrackingRun, trackingQaAssertion } from "./qa-tracking-params.mjs";
 import { CONTENT_PARAM_LIMITS, runContentParamChecks } from "./qa-content-params.mjs";
 import { createPolicyLinkBudget, hasPolicyLinkFields, readPageAnchors, runPolicyLinkChecks } from "./qa-policy-links.mjs";
+import { vendorBeaconLedgerFor, withVendorBeaconRouting } from "./qa-vendor-beacons.mjs";
 import {
   canonicalHttpUrl,
   commonTestOrderPaths,
@@ -8873,8 +8874,11 @@ function trim(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
 
-function launchChromium(args) {
-  return launchPackageChromium({ headed: args.headed, onMissing: qaBrowserMissing });
+// Every browser QA leg launches here, so on a test-order run every context it
+// opens answers the vendor beacon endpoints locally (qa-vendor-beacons.mjs).
+async function launchChromium(args) {
+  const browser = await launchPackageChromium({ headed: args.headed, onMissing: qaBrowserMissing });
+  return withVendorBeaconRouting(browser, vendorBeaconLedgerFor(args));
 }
 
 function qaBrowserMissing(kind, error) {

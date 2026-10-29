@@ -214,8 +214,12 @@ in the verdict, but the runner's separate page checks open new tabs without
 it. `qa run` has no country flag.
 
 Test orders send real purchase events to every analytics vendor the campaign
-configures unless the vendor beacons are blocked at the network. `qa run` does
-not block them yet. Do not add `?ignore=true` to stop them: it turns off the
+configures unless the vendor beacons are blocked at the network. `qa run
+--test-order` answers the listed vendors' beacons locally by default, and its
+`browser-test-order:vendor-beacons` verdict row names the vendors it does not
+intercept (`--vendor-beacons live` sends them all; see
+`docs/qa-and-test-orders.md`, "Analytics vendor beacons"). Orders placed by
+hand are not held back. Do not add `?ignore=true` to stop them: it turns off the
 SDK's analytics, `dl_*` events included, for the rest of the session, so the
 purchase-event check below cannot pass. Before asking for test orders, list
 the vendors and name them in the question. On Page Kit, read every non-empty
