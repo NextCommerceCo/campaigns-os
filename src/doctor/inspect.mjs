@@ -1,7 +1,8 @@
 // Doctor entry points: the doctor command, packet inspection and built-output inspection.
 import { resolveCampaignIdentity } from "../spec-source-identity.mjs";
 import { assessDoctorCi, doctorCiFailure } from "./ci.mjs";
-import { applyLocalPreviewToCheckpoint, applyLocalPreviewToPolishGate, carriedForwardMessage, CARRIED_FORWARD } from "../local-preview-policy.mjs";
+import { applyLocalPreviewToCheckpoint, applyLocalPreviewToPolishGate, applyPageOnlyChangeToCheckpoint, applyPageOnlyChangeToPolishGate, carriedForwardMessage, CARRIED_FORWARD } from "../local-preview-policy.mjs";
+import { assessEvidenceDebt } from "../evidence-debt.mjs";
 import { withHtmlScanSnapshot } from "../html-scan.mjs";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -598,16 +599,21 @@ function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath =
 
   // The local preview policy (local-preview-policy.mjs) carries missing
   // polish and page-load evidence forward as warnings on a local-serve packet.
-  const polishCheckpointGate = applyLocalPreviewToCheckpoint(
+  // A page-only change since Polish last reviewed the campaign carries its
+  // stale evidence on any target: Polish is advisory for it (#720). The
+  // evidence debt is the one readback and doctor --ci assess.
+  const evidenceDebt = assessEvidenceDebt({ packet, packetPath, report });
+  derived.evidence_debt = evidenceDebt;
+  const polishCheckpointGate = applyPageOnlyChangeToCheckpoint(applyLocalPreviewToCheckpoint(
     evaluateRecordedHiddenEagerMediaCheckpoint({ packet, report }),
     { packet, report },
-  );
+  ), evidenceDebt);
   derived.polish_checkpoint_gate = polishCheckpointGate;
-  const polishGate = applyLocalPreviewToPolishGate(evaluatePolishGate({
+  const polishGate = applyPageOnlyChangeToPolishGate(applyLocalPreviewToPolishGate(evaluatePolishGate({
     report,
     hiddenEagerMediaGate: polishCheckpointGate,
     currentOutputFingerprint: derived.build_output_fingerprint?.value || null,
-  }), { packet, checkpointGate: polishCheckpointGate });
+  }), { packet, checkpointGate: polishCheckpointGate }), { debt: evidenceDebt, checkpointGate: polishCheckpointGate });
   derived.polish_gate = polishGate;
   if (polishGate.status === "blocked" && !polishGate.owned_checkpoint_only) {
     pushGateIssue({ errors, warnings }, gateIssue("polish_gate", polishGate));

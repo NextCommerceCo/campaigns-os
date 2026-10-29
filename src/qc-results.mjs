@@ -1053,7 +1053,7 @@ function readabilityCropResolves(ref, targetRepo) {
 //    enumeration cap, → evidence_not_reproducible;
 // 4. the rows READABILITY_QC_RULES.evaluate derives from each cell.
 // `campaignSlug` is the packet's slug; a missing one never matches.
-export function readReadability({ record, pageLoad = null, currentBuild = null, currentSource = null, buildOutput = null, campaignSlug = null, targetRepo = null, qcStandIns = null, rederivers = null } = {}) {
+export function readReadability({ record, pageLoad = null, currentBuild = null, currentSource = null, buildOutput = undefined, campaignSlug = null, targetRepo = null, qcStandIns = null, rederivers = null } = {}) {
   if (record === undefined || record === null) return [];
   const [check] = POLISH_RECORDS.readability.checks;
   const measuredAt = canonicalTime(record?.measured_at) ? record.measured_at : null;
@@ -1164,7 +1164,9 @@ export function readReadability({ record, pageLoad = null, currentBuild = null, 
   const bound = isNonEmptyString(currentBuild)
     && subject.build_fingerprint === currentBuild
     && subject.source_package_material_fingerprint === (isNonEmptyString(currentSource) ? currentSource : null)
-    && !outputDrifted(buildOutput ?? null);
+    // As in the captures reader: no buildOutput (undefined) reads without the
+    // output check; null is drift.
+    && !outputDrifted(buildOutput);
 
   // 3. The recomputed route set, read only when the output is the build's.
   const results = [];

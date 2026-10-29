@@ -188,10 +188,12 @@ function inputRequiredDebtFixture(t) {
 test("evidence debt: matching build keeps both stages current and clean unaffected", (t) => {
   const { root, original } = evidenceDebtFixture(t);
   const payload = evidenceDebtPayload(root);
+  const notOwed = { polish: { change: null, advisory: false }, qa: { change: null, scope: null, owed_pages: [] } };
   for (const name of ["polish", "qa"]) {
     assert.deepEqual(payload.evidence_debt[name], {
       status: "current", matches_current_build: true,
       recorded_build_fingerprint: original.fingerprint, current_build_fingerprint: original.fingerprint, reason: null,
+      ...notOwed[name],
     });
   }
   assert.equal(payload.evidence_debt.changes.status, "known");
@@ -396,11 +398,15 @@ test("evidence debt: legacy report without a manifest still owes both stages aft
   writeFileSync(join(output, "landing", "index.html"), "<main>legacy campaign revised</main>\n");
   const current = computeBuildFingerprint(output);
   const payload = evidenceDebtPayload(root);
+  // Without a manifest the change cannot be read, so both stages owe in full.
+  const change = { kind: "unknown", since_build_fingerprint: original.fingerprint, changed_pages: [], unmapped_files: [], reasons: [] };
+  const owes = { polish: { change, advisory: false }, qa: { change, scope: "full", owed_pages: [] } };
   for (const name of ["polish", "qa"]) {
     assert.deepEqual(payload.evidence_debt[name], {
       status: "owed", matches_current_build: false,
       recorded_build_fingerprint: original.fingerprint, current_build_fingerprint: current.fingerprint,
       reason: "build_fingerprint_changed",
+      ...owes[name],
     });
   }
   assert.equal(payload.evidence_debt.changes.status, "unknown");
@@ -443,6 +449,9 @@ test("evidence debt: absent QA fingerprint with valid assembly and Polish eviden
     recorded_build_fingerprint: null,
     current_build_fingerprint: original.fingerprint,
     reason: "stage_build_fingerprint_missing",
+    change: null,
+    scope: null,
+    owed_pages: [],
   });
   assert.deepEqual(payload.evidence_debt.polish, before.polish, "missing QA binding leaves Polish current");
   assert.deepEqual(payload.evidence_debt.changes, before.changes, "assembly evidence remains valid");

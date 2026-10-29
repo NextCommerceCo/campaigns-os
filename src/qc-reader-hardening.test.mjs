@@ -544,6 +544,17 @@ async function assertPairAcceptsLapse(t, tamper, label) {
   assert.deepEqual(assess(rows), everyLapsed(4), `${label}: every prior pair accept reads lapsed / ${E}, never orphaned`);
 }
 
+// #707: the readability reader treats an absent build output the way the
+// captures reader does: undefined reads without the output check, null is drift.
+test("readability reader: an undefined buildOutput passes through unchanged, as in the captures reader", async (t) => {
+  const { read, kit } = await readabilityReader(t);
+  const record = readabilityRecord(kit);
+  const bound = read(record);
+  assert.ok(bound.length && bound.every((row) => row.reason_code !== "stale_binding"), "setup: the bound record reads current");
+  assert.deepEqual(read(record, { buildOutput: undefined }), bound, "no build output: no output check");
+  assert.ok(read(record, { buildOutput: null }).some((row) => row.reason_code === "stale_binding"), "a null build output is drift");
+});
+
 test("readability reader: a record whose thresholds differ from the constants still names its pair rows, so prior pair accepts lapse", async (t) => {
   await assertPairAcceptsLapse(t, (record) => {
     record.thresholds.normal = 4.4;

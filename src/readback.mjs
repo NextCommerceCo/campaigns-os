@@ -1310,6 +1310,13 @@ function renderEvidenceDebt(debt, lines) {
         : `evidence currency is unknown (${stage.reason}); absence of proof is not no debt`;
     lines.push(`  ${name}: ${stage.status} — ${explanation}`);
     lines.push(`    recorded: ${stage.recorded_build_fingerprint ?? "unknown"}; current: ${stage.current_build_fingerprint ?? "unknown"}`);
+    if (stage.change) {
+      const owes = stage.advisory ? "advisory: reported, not required"
+        : stage.scope === "pages" ? `owed on ${stage.owed_pages.map((page) => oneLine(page.page_id)).join(", ")} (qa run --page)` : "the full stage is owed";
+      lines.push(`    change since its build: ${stage.change.kind}; ${owes}`);
+      for (const page of stage.change.changed_pages) lines.push(`    changed page: ${oneLine(page.page_id)} (${oneLine(page.built_path)})`);
+      for (const reason of stage.change.reasons) lines.push(`    commerce: ${oneLine(reason.code)}${reason.path ? ` (${oneLine(reason.path)})` : ""}`);
+    }
   }
   const changes = debt.changes;
   lines.push(`  changes against assembly manifest: ${changes.status}${changes.reason ? ` (${changes.reason})` : ""}`);
@@ -1648,7 +1655,8 @@ export function serializeStaleness(staleness) {
  * or unrecognized one always is); the staleness comparison is computable and NO
  * loaded artifact is stale; NO loaded artifact recorded a `generated_at` this
  * readback could not parse; no cross-artifact divergence was found; and the
- * doctor output records zero errors; and no evidence-debt stage is owed.
+ * doctor output records zero errors; and no evidence-debt stage is owed
+ * (advisory Polish for a page-only change does not count).
  * Unknown build binding does not independently change this integrity flag;
  * callers must read evidence_debt rather than treating clean as no debt.
  *
@@ -1670,7 +1678,8 @@ export function serializeStaleness(staleness) {
  */
 export function computeClean(views, staleness, evidenceDebt) {
   if (evidenceDebt == null) throw new TypeError("computeClean requires an evidence-debt assessment");
-  if ([evidenceDebt?.polish, evidenceDebt?.qa].some((stage) => stage?.status === "owed")) return false;
+  // Advisory Polish (a page-only change) is reported, never required.
+  if ([evidenceDebt?.polish, evidenceDebt?.qa].some((stage) => stage?.status === "owed" && !stage.advisory)) return false;
   if (Object.values(views).some((view) => !CLEAN_ARTIFACT_STATES.has(view.state))) return false;
   if (!staleness || !staleness.computable || staleness.stale) return false;
   if (staleness.unparseable_keys.length) return false;
