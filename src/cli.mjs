@@ -8830,11 +8830,20 @@ export async function specDeriveWithMapWriteback(args, { fetchImpl = undefined, 
   }
   const writeMap = args["write-map"] === true;
   const localArgs = Object.fromEntries(Object.entries(args).filter(([key]) => !SPEC_DERIVE_MAP_FLAGS.includes(key)));
-  // The live campaign read (#721) runs first, under the proxy --proxy-base
-  // names; --no-live-refs sends nothing. Unknown flags are refused by the
-  // local command before anything it reads is used.
+  // The live campaign read (#721), under the proxy --proxy-base names, is
+  // made only once the local checks pass: a dry run of the repo half first,
+  // so a missing packet, spec or entry (or an unknown flag) sends nothing.
+  // --no-live-refs sends nothing at all.
   const unknownFlags = Object.keys(localArgs).filter((key) => key !== "_" && !SPEC_DERIVE_FLAGS.includes(key));
-  const liveCampaign = unknownFlags.length ? undefined : await readSpecDeriveLiveCampaign(args, { ...(fetchImpl ? { fetchImpl } : {}), env, ...(warn ? { warn } : {}) });
+  // The store flags are judged first, as the local command judges them, so
+  // the preflight below (which leaves them out) never changes which refusal
+  // a malformed invocation gets.
+  if (!unknownFlags.length) parseSpecDeriveStoreFlags(localArgs);
+  const preflightArgs = Object.fromEntries(Object.entries(localArgs).filter(([key]) => key !== "from-store" && key !== "store-token-source"));
+  const preflight = unknownFlags.length || liveRefsDisabled(args) ? null : specDeriveCommand({ ...preflightArgs, "dry-run": true });
+  const liveCampaign = liveRefsDisabled(args)
+    ? disabledLiveRead()
+    : preflight && !preflight.errors.length ? await readSpecDeriveLiveCampaign(args, { ...(fetchImpl ? { fetchImpl } : {}), env, ...(warn ? { warn } : {}) }) : undefined;
   // A copy, so nothing here depends on the local command handing out a
   // mutable object; the Map outcome is added beside its fields, not into them.
   // The store source (--from-store) is the other network read; it runs

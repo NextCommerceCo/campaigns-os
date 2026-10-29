@@ -442,6 +442,44 @@ routing references and rebuild the affected upsell page. If the developer also
 changed the selected package to C, record a conflict and obtain a choice before
 merging. Do not apply B merely because the Map was saved later.
 
+#### Pages, offers and packages after handoff
+
+A campaign is **handed off** once its deploy or its QA has been completed: the
+Assembly Report's `stages.deploy` or `stages.qa` holds a completed record, now
+or in that stage's `history` (a deploy or QA made owed again by a later change
+still happened). From then on the repo's page tree, not the design source, is
+the authority for which pages the funnel has, and the Campaigns App is the
+authority for the offers and packages the spec mirrors. Two commands keep the
+spec in step without running setup or intake again:
+
+1. `campaigns-os spec derive --packet <packet> --dry-run` shows the change, field
+   by field; run it again without `--dry-run` to write it. It adds a page the
+   tree builds that no spec page binds, removes a page whose built file is gone,
+   and refreshes the offer and package fields the spec mirrors from the live
+   campaign (see [Deriving the spec from the repo](#deriving-the-spec-from-the-repo-spec-derive)).
+2. `campaigns-os record spec --packet <packet>` binds the result. A page added
+   or removed is bound without intake: the packet's and the Build Context's
+   page-kit projection are re-projected, the added page is recorded with
+   `origin: "repo"` (its source is its own page file), and the build, Polish,
+   QA and deploy stages it affects are owed again (see
+   [Binding a page change](#binding-a-page-change)).
+
+Then rebuild, record the build, and run Polish, deploy and QA as `next` asks.
+Before handoff, `spec derive` lists a page file no spec page binds as
+unclaimed and adds nothing, and `record spec` refuses a page added or removed
+(`page_scope_changed`): the design source decides the pages until the first
+deploy or QA, and a new page there needs intake.
+
+To add an upsell after handoff, copy an existing upsell page file to a new
+name (the file name becomes the page id, so `upsell-2.html` is page
+`upsell-2`), keep its `page_type: upsell` frontmatter, and set its `next_url`
+and `decline_url` to the routes it leads to. Point the page before it at the
+new route (for example the first upsell's `next_url`). `spec derive` then
+appends the page to the funnel, sets its `on_accept` and `on_decline` from
+those links, and moves the first upsell's `on_accept` to the new page. The
+repo states links, not positions, so the new page's `order` is reported as not
+derived; set it by hand if the funnel's pages carry one.
+
 #### Map write-back and future portal saves
 
 `spec derive --write-map` remains an explicit, pin-only action. A developer or
@@ -469,11 +507,13 @@ this command generates the repo-derived ones so doctor compares generated
 against generated instead of refereeing a hand-typed value against the repo:
 
 ```bash
-campaigns-os spec derive --packet campaign-runtime.build.json [--dry-run] [--json] [--report <json>] [--from-store <subdomain> [--store-token-source env:<VAR>]] [--write-map] [--proxy-base <url>]
+campaigns-os spec derive --packet campaign-runtime.build.json [--dry-run] [--json] [--report <json>] [--no-live-refs] [--from-store <subdomain> [--store-token-source env:<VAR>]] [--write-map] [--proxy-base <url>]
 ```
 
-By default it reads the target repo only (no network unless `--from-store` or
-`--write-map`, below) and writes into the packet's local spec (`spec.local_path`):
+It reads the target repo and, once the campaign is built, the live campaign
+in the Campaigns App (below), and writes into the packet's local spec
+(`spec.local_path`). `--from-store` and `--write-map` are the other two
+network paths. The repo-derived fields:
 
 | Spec field | Repo authority |
 |---|---|
@@ -482,9 +522,9 @@ By default it reads the target repo only (no network unless `--from-store` or
 | `analytics.providers.gtm.containerId` | `_data/campaigns.json[public_route_slug].gtm_id` |
 | `analytics.providers.facebook.pixelId` | `_data/campaigns.json[public_route_slug].fb_pixel_id` |
 
-Nothing else is written: not the store profile (store-derived; see
-`--from-store` below), not any authored or mirrored field, not the packet,
-not the repo. A
+Nothing else is written from the repo: not the store profile (store-derived;
+see `--from-store` below), not any authored or mirrored field, not the packet,
+not the repo, with the one exception of pages after handoff (below). A
 derived field the spec carries with a different, authored-looking value is
 overwritten, and the printed `before -> after` line shows it: that is the
 class doing its job. A block the spec lacks is created (`global_config`,
@@ -505,6 +545,67 @@ the derived route of the page it names is reported as
 `spec.derive.routing_hint_stale` on every run until the Map is re-saved;
 hints are a Map projection the editor regenerates and are not rewritten.
 
+A routing hint that is stale is also a doctor blocker (`spec.routing_hint_stale`,
+on every read), and `record spec` refuses to bind a page change while one is
+(`routing_hint_stale`): the built meta tag follows the hint, so a moved upsell
+with checkout's hint on the old path sends shoppers to a 404 after payment.
+The three share one function (`staleRoutingHints` in `src/spec-derive.mjs`).
+
+**Pages after handoff (#721).** On a handed-off campaign (see
+[Pages, offers and packages after handoff](#pages-offers-and-packages-after-handoff))
+the page tree also says which pages exist, matched by page id and never by
+position:
+
+- A file with a page-kit `page_type` in its frontmatter (`product`, `checkout`,
+  `upsell`, `receipt`) that no spec page binds is **added**: its id is the file
+  name, its type follows `page_type` (`product` reads as `landing`, `receipt` as
+  `thankyou`), its `page_url` is the route the file builds to, and it is
+  appended to the funnel's pages (the legacy `funnel_pages[]` mirror too). The
+  diff row carries `op: "insert"`.
+- A page whose file the packet's projection named
+  (`source_html.pages[].page_kit.target_path`) and the tree no longer has is
+  **removed** (`op: "remove"`). A page the build never wrote stays, reported as
+  `page_file_not_found`.
+- Routing is read from the page files' frontmatter links, the keys
+  prepare-build projects: `next_url` (an upsell's `on_accept`, a checkout's
+  `success_url`, a landing page's `next_page`), `decline_url` (an upsell's
+  `on_decline`) and, on a select or checkout_step page, `next_step`
+  (`next_page`). An added page takes its own links; a kept page whose link now
+  names an added page, or whose routing named a removed page, is re-pointed at
+  the page its link names. No other routing is touched.
+- Page order is not something the tree states. Where the funnel's pages carry
+  an `order`, the added page's is reported as not derived.
+
+Before handoff the files no page binds are listed in `page_scope.unclaimed`
+and nothing is added or removed. The result's `page_scope` names what was
+added, removed and left unclaimed.
+
+**Offers and packages from the Campaigns App (#721).** When the packet's
+built `_site/<public_route_slug>/` exists and a public Campaigns API key
+resolves (the packet, its local CampaignSpec, or the declared campaign-key env
+var), `spec derive` makes the read-only `GET {proxy-base}/api/campaign` under
+`X-Campaign-Key` that doctor and `qa run` already make, and refreshes the
+fields the spec mirrors from the live campaign:
+
+| Spec field (mirrored) | Live campaign authority |
+|---|---|
+| each page package's `name`, `price`, `price_retail`, `product_name`, `product_sku`, `product_variant_name`, `product_purchase_availability`, `product_inventory_availability`, `image` | the campaign's package with the same `ref_id` |
+| `offers[]` records: `name`, `type`, `code`, `condition`, `benefit`, `packages` | the campaign's offer with the same `ref_id`; a live offer missing from `offers[]` is added |
+| each page's `offers[]` copy: `name`, `type`, `code`, `condition`, `benefit` | the same offer |
+
+Which packages and offers a page carries, and a package's `qty`,
+`is_upsell`, `is_order_bump`, `default_selected` and `configurable`, are
+authored and never written. A price reaches the spec only from the Campaigns
+App, never from the repo. A record the spec carries that the live campaign
+does not serve is reported (`package_not_live`, `offer_not_live`) and kept.
+Each row names its source, for example
+`- funnels[0].pages[1].packages[0].price: "49.00" -> "39.00"  (from the Campaigns App campaign 424242 (GET /api/campaign))`.
+A read that fails leaves those fields as they are, with a
+`spec.derive.live_campaign_not_read` warning; `--no-live-refs` sends nothing
+and leaves them as they are; `--proxy-base` names the proxy. `--dry-run`
+makes the same read, so its diff shows what would change. The result's
+`live_campaign` says whether the read happened.
+
 What the repo cannot state is reported as `not_derived[]` with a reason and
 the status is `partial` (exit 0; the fields it could derive are written):
 
@@ -520,6 +621,10 @@ the status is `partial` (exit 0; the fields it could derive are written):
 | `page_id_duplicate` | the page id appears more than once; no single route can be derived for it |
 | `spec_container_invalid` | `global_config`, `runtime`, `analytics`, `analytics.providers` or `analytics.providers.<provider>` exists in the spec but is not an object; reported by the plan so `--dry-run` and the write agree |
 | `target_empty` | the entry's `gtm_id` / `fb_pixel_id` is empty while the spec declares an id; an empty repo value never deletes a spec id |
+| `page_type_unknown`, `page_id_unusable`, `page_funnel_ambiguous` | after handoff, a page file the spec lacks was not added: its `page_type` is not one of page-kit's four, its file name is not a usable new page id (taken, `index`, or not letters, digits, `-` and `_`), or the spec has several funnels (or none), so which one it joins is not stated |
+| `routing_not_derived`, `routing_target_removed` | an added page's link names no single page (or the file states none), or a kept page routes to a removed page and its file's link names no page the spec keeps; set the field by hand |
+| `page_order_not_derived` | an added page was appended; its `order` is left for you |
+| `package_not_live`, `offer_not_live`, `offers_not_in_live_campaign` | a package or offer the spec carries is not in the live campaign, or the live campaign carried no offers list; nothing is changed |
 
 A placeholder id (`GTM-XXXXXXX`, a run of one digit) is `target_invalid`:
 writing it would declare an analytics contract QA then blocks on. A derived
@@ -532,10 +637,11 @@ Build Context's `spec.hash` / `spec.material_hash` and the Assembly Report's
 bound to, so every build, Polish and QA record made against the earlier
 content reads owed again. Run `record spec` after it (the result's `next`
 names it) to bind the derived spec; QA's verdict and `bundle check` correlate
-against the bound material hash. A derived route change also warns
-`spec.derive.projection_stale`: the packet's page-kit projection
-(`source_html.pages[].page_kit`) and the Build Context page map were prepared
-from the old routes, and `prepare-build` (or `start`) regenerates them. A
+against the bound material hash. A derived route change, or a page added or
+removed, also warns `spec.derive.projection_stale`: the packet's page-kit
+projection (`source_html.pages[].page_kit`) and the Build Context page map
+describe the old pages, and `record spec` re-projects them (see
+[Binding a page change](#binding-a-page-change)). A
 provider block derive creates warns `spec.derive.analytics_block_created`:
 the spec then declares an analytics contract QA gates on. `--dry-run` carries
 the same `file_reformatted`, `projection_stale` and `build_stale` warnings,
@@ -1888,7 +1994,7 @@ own stages) → calls `next` again → repeat until stage="done"
 
 ### Refreshing after a CampaignSpec change
 
-When the CampaignSpec's material content changes, every build, Polish and QA record made against the earlier content stops counting as current, in local-spec, saved-Map and gateway packets alike. For a saved Map or gateway packet, Campaigns OS compares the copy intake fetched; it does not check whether that copy is the latest remote revision, and reports the remote as unconfirmed. Doctor warns `spec.material_stale`, and `next`, progress, readback, the Assembly Report's own status and the QA gate show the stages that are owed again; `next` routes to the first one. Run `campaigns-os record spec --packet <packet>` to bind the new content: it updates the build context and report identity, re-reads the brief file last saved (by intake or `record brief`), keeps waivers, warning accepts, the applied theme and deploy settings, and moves each superseded stage record into that stage's `history`, which is never used as current proof. `spec derive` no longer rebinds identity; run `record spec` after it. A change to the set, order or routes of active pages still needs intake. Re-recording an unchanged build after a spec change keeps the build owed, because the change has not reached the pages, unless the operator records a reason with `--deviation-reason`; this holds even when `record spec` was not run, and that `record build` also marks Polish and QA owed again. Polish stays owed until a new `polish capture`, with one exception: when `record build --deviation-reason` records the very output a completed Polish reviewed (same build fingerprint and source package) and only the CampaignSpec changed, not the brief's presentation, that `record build` restores the Polish record the change moved to history, stamped with the current inputs. It is the same review of the same pages. QA must produce a new verdict against the current content. Polish measurements of byte-identical output keep their values, but the Polish stage is owed again. These checks are tamper evidence, not proof: a hand-written record that copies the current values, or a packet pointed at an older copy of the spec, is not detected.
+When the CampaignSpec's material content changes, every build, Polish and QA record made against the earlier content stops counting as current, in local-spec, saved-Map and gateway packets alike. For a saved Map or gateway packet, Campaigns OS compares the copy intake fetched; it does not check whether that copy is the latest remote revision, and reports the remote as unconfirmed. Doctor warns `spec.material_stale`, and `next`, progress, readback, the Assembly Report's own status and the QA gate show the stages that are owed again; `next` routes to the first one. Run `campaigns-os record spec --packet <packet>` to bind the new content: it updates the build context and report identity, re-reads the brief file last saved (by intake or `record brief`), keeps waivers, warning accepts, the applied theme and deploy settings, and moves each superseded stage record into that stage's `history`, which is never used as current proof. `spec derive` no longer rebinds identity; run `record spec` after it. A move of page routes binds with `record spec`, and so does a page added or removed after handoff (see [Binding a page change](#binding-a-page-change)); a change to the order of active pages, or a page added or removed before handoff, still needs intake. Re-recording an unchanged build after a spec change keeps the build owed, because the change has not reached the pages, unless the operator records a reason with `--deviation-reason`; this holds even when `record spec` was not run, and that `record build` also marks Polish and QA owed again. Polish stays owed until a new `polish capture`, with one exception: when `record build --deviation-reason` records the very output a completed Polish reviewed (same build fingerprint and source package) and only the CampaignSpec changed, not the brief's presentation, that `record build` restores the Polish record the change moved to history, stamped with the current inputs. It is the same review of the same pages. QA must produce a new verdict against the current content. Polish measurements of byte-identical output keep their values, but the Polish stage is owed again. These checks are tamper evidence, not proof: a hand-written record that copies the current values, or a packet pointed at an older copy of the spec, is not detected.
 
 The CampaignSpec's material content is the whole spec except `spec_identity`,
 `slug`, `map_id` and `saved_at`; a page `label` edit is material. A spec
@@ -1896,18 +2002,19 @@ change affects the stages as follows:
 
 | Stage | After a spec material change |
 |---|---|
-| `prepare_build` | unchanged (`record spec` refuses a page-scope change, which needs intake) |
+| `prepare_build` | unchanged (`record spec` refuses a page reorder, and a page added or removed before handoff, which need intake) |
 | `doctor` | recomputed on every read |
 | `setup` | kept |
 | `assembly` | owed: `required`, `required_by: "spec"`, `required_for: ["polish", "qa"]` |
 | `polish` | owed: `required`, `required_by: "spec"`, `required_for: ["qa"]` |
-| `deploy` | kept |
+| `deploy` | kept, unless a page change alters the set of built pages: then owed (`required`, `required_by: "spec"`, `required_for: ["qa"]`, the probe kept in its history) |
 | `qa` | owed: `required`, `required_by: "spec"`, `required_for: []` |
 
 `record spec` refuses, writing nothing, in this order: `spec_unreadable` (the
 spec does not parse), `spec_identity_changed` (its map id or local spec id
-names another campaign than the packet or the report), `page_scope_changed`,
-then, for the brief file last saved (by intake or `record brief`), `brief_too_large`,
+names another campaign than the packet or the report), `page_scope_changed`
+(the active pages are in another order, or a page was added or removed before
+handoff), the page-change refusals below, then, for the brief file last saved (by intake or `record brief`), `brief_too_large`,
 `brief_source_is_package_artifact` and `brief_file_missing` (the recorded
 path is missing or is not a readable regular file: a directory, a pipe or
 socket, a symlink to nothing, or a file without read permission). When it must
@@ -1920,8 +2027,62 @@ does not record which content it was made against is named in a
 normalized brief from the brief file last saved, so an edit made to the
 normalized brief itself is replaced by what its source gives. A stage whose spec
 stamp already equals the new content (a build recorded after the edit) is not
-demoted. `record spec` does not write the Build Packet. `--dry-run` runs every
-check and writes nothing.
+demoted. `record spec` writes the Build Packet only when it binds a page
+change. `--dry-run` runs every check and writes nothing; its `would_write`
+lists every file the bind would write.
+
+#### Binding a page change
+
+`record spec` compares the spec's active pages with the Build Context's
+`spec.active_pages` in two parts: page identity (the ids, and the order of the
+pages both lists keep) and routes. It binds:
+
+- **A move of routes alone**, whenever it happens (#531). This is what a
+  `spec derive` route change needs.
+- **A page added or removed** on a handed-off campaign (deploy or QA
+  completed, now or in the stage's history; #721). This is what `spec derive`
+  writes when the page tree gains or loses a page after handoff.
+
+Binding re-projects every page's page-kit target (a page's `next_url` and
+`decline_url` read the routes of the pages it links to) and writes, in
+publication order with the report last: the Design Source Package, when a kept
+page's Surface Identity changes (route, page-kit target or label); the Build
+Packet's `source_html.pages[]` (an added page as
+`{ page_id, page_type, origin: "repo", page_kit }`, a removed page's entry
+dropped) and its `design_source_package` reference; the normalized brief when
+it is re-derived; the Build Context's `spec.active_pages`, `page_map` and
+`design_source_package` reference; and the Assembly Report, whose
+`design_source_package` reference moves with the other two. The package is
+rewritten at its own path, with a pending provenance record beside it until
+the report records its new sha256, so a run that stops part way leaves a
+package the next `record spec` or `prepare-build` still knows as its own. An
+added page's own page file is its source, so doctor counts it as mapped, and
+as built once the file exists (`source_html.pages.repo_page_missing` when it
+does not), and the brief is not asked to name its design authority.
+
+The stages: build, Polish and QA are owed again as for any spec change, and
+deploy is owed again when the set of built page routes changes (deploy
+evidence is the list of URLs that answered). A move that changes nothing the
+build wrote (every page projects to the same target and links, the routing
+hints are unchanged, the Design Source Package is unchanged, and nothing but
+`page_url` differs from the material the Build Context recorded in
+`spec.route_masked_material_hash` at the last bind) demotes nothing: the
+build, Polish and QA records made against the bound spec are restamped with
+the new content. A respelling such as `upsell/` to `/<slug>/upsell/` is that
+case. A Build Context written before this field existed has no recorded value,
+so its first move is treated as a full change.
+
+Refused, writing nothing:
+
+| Code | When |
+|---|---|
+| `route_root_changed` | the spec names another route slug, or declares a `route_root` other than the one the packet serves at; the recorded preview and deploy are rooted there, so that needs intake |
+| `routing_hint_stale` | a page's `sdk_hints.meta_tags` routing hint names a route its page no longer has; re-save the Map or edit the hint first |
+| `page_kit_target_conflict` | two pages project to one page-kit target file |
+| `design_source_package_unreadable` | the package the packet names cannot be read |
+| `design_source_package_operator_supplied` | the report does not record the package as one prepare-build synthesized (`origin` other than `synthesized`), so `record spec` does not rewrite it |
+| `design_source_package_edited` | the package no longer hashes to the sha256 the packet records (or to one its pending provenance record names) |
+| `design_source_package_unbindable` | the package with the new page surfaces does not validate |
 
 ### Recording stage completion
 
