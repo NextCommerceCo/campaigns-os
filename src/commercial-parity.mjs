@@ -714,10 +714,14 @@ function findingPage(capture, page) {
 
 /**
  * Pure, Exact-only diff. Unresolved, Stale, unbound, and malformed facts are
- * deliberately silent.
+ * deliberately silent. `options.unresolvedMoneyClaims`, a reason code, skips
+ * the price and recurrence comparisons: the captured amounts are in another
+ * currency than the calculated totals, so neither a match nor a mismatch
+ * means anything.
  */
-export function diffCommercialParity(capturesValue, journey) {
+export function diffCommercialParity(capturesValue, journey, options = {}) {
   const captures = partitionCaptures(capturesValue).valid;
+  const compareMoney = !present(options.unresolvedMoneyClaims);
   const findings = [];
 
   captures.forEach((capture) => {
@@ -725,7 +729,7 @@ export function diffCommercialParity(capturesValue, journey) {
     if (!page) return;
     const pageId = findingPage(capture, page);
     const source = present(capture.url) ? { url: String(capture.url) } : {};
-    const representative = exactMoneyFact(page.representative_total);
+    const representative = compareMoney ? exactMoneyFact(page.representative_total) : null;
     if (representative) {
       priceComparisonClaims(capture, page).compared.forEach((claim) => {
         const claimed = normalizeMoney(claim?.value);
@@ -741,7 +745,7 @@ export function diffCommercialParity(capturesValue, journey) {
       });
     }
 
-    recurrenceComparisonClaims(capture, page).compared.forEach(({ claim, truth }) => {
+    (compareMoney ? recurrenceComparisonClaims(capture, page).compared : []).forEach(({ claim, truth }) => {
       const packageId = positiveInteger(claim?.package_id);
       const claimed = {
         amount: normalizeMoney(claim?.amount),
@@ -929,8 +933,9 @@ export function recurringClaimAbsentAssertions(absences, { maxAssertions = Numbe
  */
 export function createCommercialParityReport(capturesValue, journey, options = {}) {
   const countsOnly = options.countsOnly === true;
+  const moneyReason = present(options.unresolvedMoneyClaims) ? String(options.unresolvedMoneyClaims) : null;
   const { valid: captures, invalid: invalidCaptures } = partitionCaptures(capturesValue, { countsOnly });
-  const findings = countsOnly ? [] : diffCommercialParity(captures, journey);
+  const findings = countsOnly ? [] : diffCommercialParity(captures, journey, { unresolvedMoneyClaims: moneyReason });
   const { assertions, omittedFindingCount } = countsOnly
     ? { assertions: [], omittedFindingCount: 0 }
     : serializeCommercialFindings(findings, options);
@@ -958,7 +963,7 @@ export function createCommercialParityReport(capturesValue, journey, options = {
     (sum, { capture }) => sum + capture.vouchers.length,
     0,
   );
-  const priceComparisonCounts = countsOnly
+  const priceComparisonCounts = countsOnly || moneyReason
     ? { compared: 0, unresolved: extractedPriceClaims }
     : matched.reduce((counts, { capture, page }) => {
       const comparison = priceComparisonClaims(capture, page);
@@ -966,7 +971,7 @@ export function createCommercialParityReport(capturesValue, journey, options = {
       counts.unresolved += comparison.unresolved;
       return counts;
     }, { compared: 0, unresolved: 0 });
-  const recurrenceComparisonCounts = countsOnly
+  const recurrenceComparisonCounts = countsOnly || moneyReason
     ? { compared: 0, unresolved: extractedRecurrenceClaims }
     : matched.reduce((counts, { capture, page }) => {
       const comparison = recurrenceComparisonClaims(capture, page);
@@ -1008,6 +1013,9 @@ export function createCommercialParityReport(capturesValue, journey, options = {
     extracted_voucher_claims: extractedVoucherClaims,
     compared_voucher_claims: voucherComparisonCounts.compared,
     unresolved_voucher_claims: voucherComparisonCounts.unresolved,
+    ...(moneyReason && extractedPriceClaims + extractedRecurrenceClaims > 0
+      ? { unresolved_money_claims_reason: moneyReason }
+      : {}),
     serialized_assertion_count: assertions.length,
     omitted_assertion_count: omittedFindingCount,
     findings,

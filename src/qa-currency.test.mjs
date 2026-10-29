@@ -7,7 +7,7 @@ import { test } from "node:test";
 import { parseArgs } from "./cli.mjs";
 import { REFUSED_INVOCATION } from "./lifecycle.mjs";
 import { resolveCartEntryPage } from "./qa-cart-entry.mjs";
-import { planCommercialParity, runCommercialParity } from "./qa-commercial-parity.mjs";
+import { captureCommercialClaims, planCommercialParity, runCommercialParity } from "./qa-commercial-parity.mjs";
 import { QA_RUN_CURRENCY, __qaBrowserTestHooks } from "./qa-browser.mjs";
 import { __qaNodeTestHooks, runQaCli } from "./qa-node.mjs";
 import { createTrackingRun } from "./qa-tracking-params.mjs";
@@ -559,6 +559,66 @@ test("under a run currency, a calculate response in another currency is a pricin
   assert.ok(plain.requested.every((request) => request.currency === "USD"));
   assert.equal(unchanged.assertions.some((entry) => entry.id.startsWith("commercial-currency:")), false);
   assert.equal(unchanged.commercial.issues.some((issue) => issue.code === "calculate_currency_mismatch"), false);
+});
+
+test("the commercial-currency row id names the answered currency upper-cased, once however the server cases it", async () => {
+  const resolved = { rawSpec: PRICED_SPEC, spec: PRICED_SPEC, proxyBase: "https://proxy.example.test" };
+  // Alternate scenarios answer in "usd" and "USD".
+  let calls = 0;
+  const mixed = (url, options) => {
+    calls += 1;
+    return pricePreview(calls % 2 ? "usd" : "USD").fetchImpl(url, options);
+  };
+  const twoPage = { ...PRICED_SPEC, funnels: [{ id: "default", pages: [
+    { id: "checkout", type: "checkout", order: 1, packages: [{ ref_id: "5", qty: 1 }] },
+    { id: "upsell", type: "upsell", order: 2, packages: [{ ref_id: "6", qty: 1 }] },
+  ] }] };
+  const { assertions, commercial } = await runCommercialParity({ resolved: { ...resolved, rawSpec: twoPage, spec: twoPage }, captures: [], fetchImpl: mixed, currency: "GBP" });
+  assert.ok(calls > 1, "more than one scenario was priced");
+  assert.deepEqual(assertions.filter((entry) => entry.id.startsWith("commercial-currency:")).map((entry) => [entry.id, entry.evidence.actual]), [["commercial-currency:GBP:USD", "USD"]]);
+  assert.deepEqual(commercial.issues.filter((issue) => issue.code === "calculate_currency_mismatch"), [{ code: "calculate_currency_mismatch", count: 1 }]);
+});
+
+test("a full assertion budget never hides the currency blocker or its issue", async () => {
+  const resolved = { rawSpec: PRICED_SPEC, spec: PRICED_SPEC, proxyBase: "https://proxy.example.test" };
+  const { assertions, commercial } = await runCommercialParity({ resolved, captures: [], fetchImpl: pricePreview("USD").fetchImpl, currency: "GBP", maxAssertions: 0 });
+  assert.deepEqual(assertions.map((entry) => [entry.id, entry.status, entry.severity]), [["commercial-currency:GBP:USD", "fail", "blocker"]]);
+  assert.ok(commercial.issues.some((issue) => issue.code === "calculate_currency_mismatch"));
+});
+
+// The page's source HTML carries the authored fallback price in the Map's
+// campaign currency; the SDK replaces it at runtime with the run currency's.
+const FALLBACK_PRICE_HTML = '<div data-next-package-id="5"><span data-next-display="bundle.main.price" data-next-format="currency">$29.99</span></div>';
+
+test("under a run currency the Map does not name, the source's fallback prices stay unresolved instead of mismatching", async () => {
+  const resolved = { rawSpec: PRICED_SPEC, spec: PRICED_SPEC, proxyBase: "https://proxy.example.test" };
+  const captures = () => [captureCommercialClaims({ page_id: "checkout", url: CHECKOUT_URL }, FALLBACK_PRICE_HTML)];
+  // The endpoint prices the campaign in whichever currency is asked for.
+  const priced = async (url, options) => {
+    const { scenario } = JSON.parse(options.body);
+    const total = scenario.currency === "GBP" ? "23.99" : "29.99";
+    const lines = scenario.lines.map((line) => ({ package_id: line.package_id, quantity: line.quantity, discounts: [], subtotal: total, original_package_price: total, total_discount: "0.00", total }));
+    const data = { lines, offer_discounts: [], voucher_discounts: [], subtotal: total, total_discount: "0.00", total, currency: scenario.currency };
+    return new Response(JSON.stringify({ ok: true, status: 200, data, calculated_at: "2026-10-29T00:00:00.000Z" }), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+
+  const gbp = await runCommercialParity({ resolved, captures: captures(), fetchImpl: priced, currency: "GBP" });
+  assert.deepEqual(gbp.assertions, []);
+  assert.equal(gbp.commercial.finding_count, 0);
+  assert.equal(gbp.commercial.status, "incomplete");
+  assert.equal(gbp.commercial.extracted_price_claims, 1);
+  assert.equal(gbp.commercial.compared_price_claims, 0);
+  assert.equal(gbp.commercial.unresolved_price_claims, 1);
+  assert.equal(gbp.commercial.unresolved_money_claims_reason, "static_source_not_in_run_currency");
+
+  // In the Map's own currency, with or without --currency, the fallback is
+  // compared as before, and it matches.
+  for (const currency of [null, "USD", "usd"]) {
+    const same = await runCommercialParity({ resolved, captures: captures(), fetchImpl: priced, currency });
+    assert.equal(same.commercial.status, "pass", `currency ${currency}`);
+    assert.equal(same.commercial.compared_price_claims, 1);
+    assert.equal(Object.hasOwn(same.commercial, "unresolved_money_claims_reason"), false);
+  }
 });
 
 function createdOrder(currency, { verified = true } = {}) {

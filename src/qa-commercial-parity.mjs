@@ -504,6 +504,9 @@ function compactReport(report, journey, plan, executed, issues, observedClaims, 
     extracted_voucher_claims: report.extracted_voucher_claims,
     compared_voucher_claims: report.compared_voucher_claims,
     unresolved_voucher_claims: report.unresolved_voucher_claims,
+    ...(present(report.unresolved_money_claims_reason)
+      ? { unresolved_money_claims_reason: report.unresolved_money_claims_reason }
+      : {}),
     serialized_assertion_count: report.serialized_assertion_count,
     omitted_assertion_count: report.omitted_assertion_count,
     recurring_claim_absences: array(report.recurring_claim_absences),
@@ -585,24 +588,27 @@ export function unavailableCommercialReport(code, { status = "not_run" } = {}) {
 
 // One blocker row per currency the calculate endpoint answered in other than
 // the run's: expected totals were asked for in `currency` and came back priced
-// in another one.
-function runCurrencyMismatchAssertions(journey, currency, { maxAssertions = Number.POSITIVE_INFINITY } = {}) {
+// in another one. Answered codes are compared and named upper-cased, so `usd`
+// and `USD` are one row. The rows are few (one per answered currency) and sit
+// outside the assertion budget, so a full budget never hides the blocker.
+function runCurrencyMismatchAssertions(journey, currency) {
   const requested = String(currency).toUpperCase();
-  return array(journey?.warnings)
-    .filter((warning) => warning?.type === "currency_mismatch"
-      && String(warning.requested).toUpperCase() === requested
-      && String(warning.actual).toUpperCase() !== requested)
-    .slice(0, Math.max(0, maxAssertions))
-    .map((warning) => ({
-      id: `commercial-currency:${requested}:${encodeURIComponent(String(warning.actual))}`,
-      family: "pricing",
-      page: "campaign",
-      status: "fail",
-      severity: "blocker",
-      expected: `expected totals calculated in the run currency ${requested}`,
-      actual: `the calculate endpoint priced in ${warning.actual}`,
-      evidence: { code: "currency_mismatch", requested, actual: String(warning.actual) },
-    }));
+  const answered = new Set();
+  array(journey?.warnings).forEach((warning) => {
+    if (warning?.type !== "currency_mismatch" || String(warning.requested).toUpperCase() !== requested) return;
+    const actual = String(warning.actual).toUpperCase();
+    if (actual !== requested) answered.add(actual);
+  });
+  return [...answered].map((actual) => ({
+    id: `commercial-currency:${requested}:${encodeURIComponent(actual)}`,
+    family: "pricing",
+    page: "campaign",
+    status: "fail",
+    severity: "blocker",
+    expected: `expected totals calculated in the run currency ${requested}`,
+    actual: `the calculate endpoint priced in ${actual}`,
+    evidence: { code: "currency_mismatch", requested, actual },
+  }));
 }
 
 /**
@@ -684,13 +690,20 @@ export async function runCommercialParity({
   // campaign does not price in it: a blocker, and the comparison below is
   // against totals in the wrong currency, so the proof is incomplete. Without
   // one, the journey's currency_mismatch warning stays where it is.
-  const currencyAssertions = present(currency)
-    ? runCurrencyMismatchAssertions(journey, currency, { maxAssertions })
-    : [];
+  const currencyAssertions = present(currency) ? runCurrencyMismatchAssertions(journey, currency) : [];
   currencyAssertions.forEach(() => issues.push({ code: "calculate_currency_mismatch" }));
+  // Captures read the page's source HTML, whose bound prices are the authored
+  // fallback text in the Map's campaign currency (the SDK replaces them at
+  // runtime). Under a run currency the Map does not name, those amounts cannot
+  // be compared with totals in the run currency: they stay unresolved, with
+  // the reason recorded, instead of reading as mismatches.
+  const sourceCurrency = planningSpec?.campaign?.currency ?? planningSpec?.currency;
+  const sourceNotInRunCurrency = present(currency)
+    && String(sourceCurrency ?? "").toUpperCase() !== String(currency).toUpperCase();
   const parity = createCommercialParityReport(captures, parityJourney, {
-    maxAssertions: Math.max(0, maxAssertions - currencyAssertions.length),
+    maxAssertions,
     countsOnly: aggregateClaimOverflow,
+    ...(sourceNotInRunCurrency ? { unresolvedMoneyClaims: "static_source_not_in_run_currency" } : {}),
   });
   // Subscription packages a page renders with no recurring claim read for
   // them: incomplete evidence (an issue), and a warning naming the package.
@@ -699,7 +712,7 @@ export async function runCommercialParity({
     : recurringClaimAbsences(captures, subscriptionPackageRefsByPage(planningSpec, commercialPlanning.pages));
   absences.forEach(() => issues.push({ code: "recurring_claim_absent" }));
   const absentAssertions = recurringClaimAbsentAssertions(absences, {
-    maxAssertions: Math.max(0, maxAssertions - currencyAssertions.length - parity.assertions.length),
+    maxAssertions: Math.max(0, maxAssertions - parity.assertions.length),
   });
   parity.recurring_claim_absences = absences;
   return {

@@ -195,7 +195,10 @@ Options:
   --currency <code>               qa run: enter each funnel's entry page with ?currency=<CODE> (three letters, e.g. GBP),
                                   keeping its existing query. The flag takes one code per run (given twice, the
                                   last one is used); the verdict records it as evidence.currency on the entry
-                                  page's http:<page> row. Not supported by qa parity or --legacy-api-test-order.
+                                  page's http:<page> row. Expected totals are calculated in the code, and a test
+                                  order or calculate response in another currency is a blocker (exit 4) on its
+                                  browser-order-currency:<path> or commercial-currency:<CODE>:<ANSWERED> row.
+                                  Not supported by qa parity or --legacy-api-test-order.
   --auth-cookie <cookie>          Cookie header for protected previews.
   --browser                       Run Playwright-rendered browser checks after static Node checks.
                                   Requires one-time setup: campaigns-os qa install-browser
