@@ -335,6 +335,10 @@ test("doctor --ci packet usage errors exit 2", (t) => {
     assert.equal(markdown.status, 2);
     assert.match(markdown.stdout, /^## Campaign evidence: could not evaluate \(exit 2\)/);
   }
+  // A flag refused up front is a usage error too, never "evidence unknown".
+  const joined = spawnSync(process.execPath, [cli, "doctor", "--ci", "--no-live-refs", "--json", `--packet=${f.packetPath}`], { cwd: f.root, encoding: "utf8" });
+  assert.equal(joined.status, 2, joined.stderr || joined.stdout);
+  assert.equal(JSON.parse(joined.stdout).errors[0].code, "doctor.ci.usage");
   writeFileSync(f.packetPath, "{ broken json");
   assert.equal(run(f, "--ci", "--json").status, 2);
 });

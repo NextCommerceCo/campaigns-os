@@ -10003,11 +10003,17 @@
       "kind": "release",
       "surface_version": "1.62.0",
       "changelog_section": "1.62.0",
-      "changelog_sha256": "0a6f7f2456654d208e10e1f7ebf981d8cbb6d05bdb42f5bef75da35de18fd748",
+      "changelog_sha256": "ee78768231befe6d8c6d5c555a3c603312e4c0153d4bb7a4e952d0f17842e4b4",
       "agent_impact": "In a Page Kit project with more than one funnel, an agent passes --packet campaign-runtime-<route>.build.json for a later funnel; that funnel's records live under .campaign-runtime/funnels/<route>/ (assembly.runtime_dir), readback without --packet refuses across funnels, and prepare-build refuses to replace another route's packet unless the operator agrees to --force. After deploy or QA has completed, spec derive adds and removes pages from the page tree, re-points the routing and routing hints on the edges that name them, holds a same-type file swap as page_renamed, reports an added page's packages as page_packages_not_derived (author them before doctor's CheckoutPathHasPackages / UpsellHasPackages pass), and refreshes mirrored package and offer fields from one read-only GET /api/campaign (--no-live-refs skips it); doctor blocks a stale routing hint as spec.routing_hint_stale. For a change that touches only some pages' HTML, readback's evidence_debt marks Polish advisory and QA scoped to the changed pages, and qa run --page <id> pays it without test orders. CampaignSpec validation adds CheckoutPathHasPackages (an error for a checkout path nothing sells into) and CampaignCurrencies (malformed ISO codes), and the spec carries analytics.vendors.<vendor>, which spec derive fills from campaigns.json id keys and doctor compares (page_kit.analytics_vendors, advisory). qa run --test-order answers listed vendors' beacons locally by default and records the requests as browser-test-order:vendor-beacons evidence, never purchase proof; --vendor-beacons live sends them. qa run --currency now blocks when an order or the calculate endpoint comes back in another currency. Polish warns layout.conventions for crowded floating CTA bars and CTA labels under 16px. A live lock from another Campaigns OS release is refused at once with ELOCKFORMAT. Refresh skills to 1.62.0+skills.1.",
       "compatibility": "additive",
       "migration": "none",
       "changes": [
+        {
+          "class": "documentation",
+          "path": "AGENTS.md",
+          "surface_entry": "AGENTS.md",
+          "summary": "A --flag=value token, which every command refuses, skips the stale-session closeout that otherwise precedes argument refusal."
+        },
         {
           "class": "documentation",
           "path": "agents/claude/CLAUDE.md",
@@ -10396,7 +10402,7 @@
           "class": "cli_surface",
           "path": "src/doctor/ci.mjs",
           "surface_entry": null,
-          "summary": "doctor --ci names the change found and what each stage owes; page-only changes count QA on the changed pages."
+          "summary": "doctor --ci names the change found and what each stage owes; page-only changes count QA on the changed pages; an up-front argv refusal under --ci is a usage error (doctor.ci.usage, exit 2)."
         },
         {
           "class": "cli_surface",
@@ -10411,7 +10417,7 @@
           "summary": "next treats an advisory Polish as not required."
         }
       ],
-      "entry_sha256": "1a9c1558a569a67ea6f384d773ea8dcc9982febd66d388eee617b0c622748ead"
+      "entry_sha256": "34151f9822332d3b3e122b637a8d49095fcfd192529bffb26fa923016d1367d5"
     }
   ]
 }

@@ -1,5 +1,6 @@
 import { worseChangeKind } from "../change-scope.mjs";
 import { assessEvidenceDebt } from "../evidence-debt.mjs";
+import { REFUSED_INVOCATION } from "../lifecycle.mjs";
 
 export const DOCTOR_CI_EXIT_CODES = Object.freeze({ current: 0, owed: 3, unknown: 4, usage: 2 });
 
@@ -68,10 +69,10 @@ const requiredStageReasons = new Map([
   ["stage_required", "the lifecycle requires this stage again"],
 ]);
 
-export function doctorCiFailure(error, { usage = false } = {}) {
+export function doctorCiFailure(error, { usage = false, code = usage ? "doctor.ci.packet" : "doctor.ci.failed" } = {}) {
   return {
     ok: false, status: "blocked",
-    errors: [{ code: usage ? "doctor.ci.packet" : "doctor.ci.failed", message: String(error?.message ?? error) }],
+    errors: [{ code, message: String(error?.message ?? error) }],
     warnings: [], exit_code: usage ? DOCTOR_CI_EXIT_CODES.usage : DOCTOR_CI_EXIT_CODES.unknown,
   };
 }
@@ -84,7 +85,8 @@ export async function withDoctorCiReport(args, invoke) {
     return await invoke(args);
   } catch (error) {
     if (command !== "doctor" || args.ci !== true) throw error;
-    const result = doctorCiFailure(error);
+    // A flag refused up front (such as --packet=<path>) is a usage error.
+    const result = error?.code === REFUSED_INVOCATION ? doctorCiFailure(error, { usage: true, code: "doctor.ci.usage" }) : doctorCiFailure(error);
     console.log(args.json ? JSON.stringify(result, null, 2) : formatDoctorCi(result));
     process.exitCode = result.exit_code;
   }

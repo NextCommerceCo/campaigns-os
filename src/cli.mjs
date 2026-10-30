@@ -388,7 +388,7 @@ Usage:
 
   Commands other than login, logout, demo, and tooling diagnose accept [--lifecycle-journal <path>] (or env CAMPAIGNS_OS_LIFECYCLE_LOG) to append a command-lifecycle entry (command, argv shape, exit status, timing) for the run; pair with --run-id so run-record can embed it.
     --no-write suppresses that append for every command, however the journal was selected (flag, env, or the active run session); a refused invocation (unknown command, an unknown subcommand refused before its handler runs, or a flag the command refuses up front) and \`run status\` never append one at all.
-    A refused invocation writes no file of its own. One effect still precedes argument refusal: \`start\`, \`prepare-build\`, \`build\`, \`run start\` and \`run end\` close out a STALE run session at the root they are about to act on (Run Record assembled and remitted under the usual consent, session file cleared) before argv is refused — a declared effect of those commands. --no-write suppresses that closeout too, so a --no-write invocation leaves the target byte-identical.
+    A refused invocation writes no file of its own. One effect still precedes argument refusal: \`start\`, \`prepare-build\`, \`build\`, \`run start\` and \`run end\` close out a STALE run session at the root they are about to act on (Run Record assembled and remitted under the usual consent, session file cleared) before argv is refused — a declared effect of those commands. --no-write suppresses that closeout too, so a --no-write invocation leaves the target byte-identical; a --flag=value token, which every command refuses, skips it as well.
   campaigns-os telemetry status|on [--proxy-base <url>] [--json]   # machine-level Run Telemetry consent (gates remit only; capture is always local). \`on\` records consent for ONE endpoint: the canonical NEXT endpoint by default, or the --proxy-base you name (a loopback or staging receiver); \`status\` reports the stored scope and checks it against the canonical endpoint or the --proxy-base you name
   campaigns-os telemetry off [--json]                                  # turn remit off for every endpoint (takes no --proxy-base)
   campaigns-os telemetry list [--packet <json> | --admin-key-env <VAR>] [--since <ISO>] [--package <v>] [--surface <s>] [--trusted] [--limit <n>] [--proxy-base <url>] [--trust-proxy-base] [--json]   # read stored Run Records: tenant scope via the packet's campaign key, or cross-tenant via the ops admin key (default env CAMPAIGN_OPS_ADMIN_KEY). --proxy-base must be https unless it is a loopback host (allowed over http, with a warning that the credential is in clear).
@@ -1342,14 +1342,14 @@ async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = nul
 
 // A flag takes its value as the next token. `--flag=value` would otherwise be
 // an unknown key, silently ignored (`qa run --page=x` widening to a full run),
-// so it is refused. The refusal is thrown at dispatch, like every other argv
-// refusal, after the stale-session closeout (which a joined --dry-run or
-// --no-write still suppresses: JOINED_FLAGS). Only the name is quoted: the
-// value can be a secret, such as an --auth-cookie.
+// so it is refused at dispatch, like every other argv refusal; the stale
+// sweep before dispatch is skipped for it (JOINED_FLAGS). Only the name is
+// quoted: the value can be a secret, such as an --auth-cookie.
 function refuseJoinedFlag(args) {
   const flags = args?.[JOINED_FLAGS];
   if (!flags?.length) return;
   const [flag] = flags;
+  if (!flag) throw refused("--=… is not accepted: the flag name is missing before =. Write the flag, then its value as the next argument (--flag value).");
   const name = `--${flag}`;
   throw refused(`${name}=… is not accepted: a flag takes its value as the next argument, not --flag=value. Write \`${name}\` alone for an on/off flag, or \`${name} <value>\` for a flag that takes a value.`);
 }
