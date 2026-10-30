@@ -83,7 +83,7 @@ field before attributing the file.
 `--run-id` and `--lifecycle-journal`. Any other flag is refused before the
 scan starts, with the known list in the message. Values follow the flag as
 the next argument: like every Campaigns OS command, standardize refuses the
-`--flag=value` spelling before it reads anything (`--no-doctor=maybe` used to
+`--flag=value` spelling before the scan starts (`--no-doctor=maybe` used to
 run the doctor anyway).
 
 ### Exit codes

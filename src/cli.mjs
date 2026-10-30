@@ -111,7 +111,7 @@ import {
   runWithRefusalScope,
   timeOperatorWait,
 } from "./lifecycle.mjs";
-import { commandNames, optsOutOfRunSession, runInvocation } from "./invocation.mjs";
+import { JOINED_FLAGS, commandNames, optsOutOfRunSession, runInvocation } from "./invocation.mjs";
 import {
   clearRunSession,
   findRunSession,
@@ -500,7 +500,10 @@ export async function main(argv, { authentication, qcStandIns } = {}) {
     return;
   }
   return withDoctorCiReport(parseArgs(argv), (args) => runInvocation(args, {
-    dispatch: (command, args, context) => dispatch(command, args, { ...context, argv, authentication, qcStandIns }),
+    dispatch: (command, args, context) => {
+      refuseJoinedFlag(args);
+      return dispatch(command, args, { ...context, argv, authentication, qcStandIns });
+    },
     closeOutStaleRunSessions,
     ambientRunSession,
     lifecycleIdentity,
@@ -1337,6 +1340,20 @@ async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = nul
   );
 }
 
+// A flag takes its value as the next token. `--flag=value` would otherwise be
+// an unknown key, silently ignored (`qa run --page=x` widening to a full run),
+// so it is refused. The refusal is thrown at dispatch, like every other argv
+// refusal, after the stale-session closeout (which a joined --dry-run or
+// --no-write still suppresses: JOINED_FLAGS). Only the name is quoted: the
+// value can be a secret, such as an --auth-cookie.
+function refuseJoinedFlag(args) {
+  const flags = args?.[JOINED_FLAGS];
+  if (!flags?.length) return;
+  const [flag] = flags;
+  const name = `--${flag}`;
+  throw refused(`${name}=… is not accepted: a flag takes its value as the next argument, not --flag=value. Write \`${name}\` alone for an on/off flag, or \`${name} <value>\` for a flag that takes a value.`);
+}
+
 export function parseArgs(argv) {
   const args = { _: [] };
   for (let index = 0; index < argv.length; index += 1) {
@@ -1345,14 +1362,11 @@ export function parseArgs(argv) {
       args._.push(token);
       continue;
     }
-    // A flag takes its value as the next token. `--flag=value` would parse as
-    // an unknown key and be silently ignored (`qa run --page=x` widening to a
-    // full run), so it is refused. Only the name is quoted: the value can be
-    // a secret, such as an --auth-cookie.
     const equal = token.indexOf("=");
-    if (equal > 2) {
-      const name = token.slice(0, equal);
-      throw refused(`${name}=… is not accepted: a flag takes its value as the next argument (--flag value), not --flag=value. Write \`${name} <value>\`, or \`${name}\` alone for an on/off flag.`);
+    if (equal >= 2) {
+      if (!args[JOINED_FLAGS]) Object.defineProperty(args, JOINED_FLAGS, { value: [] });
+      args[JOINED_FLAGS].push(token.slice(2, equal));
+      continue;
     }
     const key = token.slice(2);
     const next = argv[index + 1];
@@ -8124,16 +8138,14 @@ const ARGV_SHAPE_PRIVATE_FLAGS = new Set(["auth-cookie", "no-remit", "no-write",
 
 // argv SHAPE = selected flag NAMES present, never their values (minimization).
 // Sorted + de-duplicated for deterministic records; opt-out and endpoint flags
-// stay private. parseArgs refuses a `--flag=value` token; the split on "=" stays
-// as a second guard, so a value (e.g. --auth-cookie=SECRET) can never leak into
-// a persisted, potentially-remitted shape, whatever builds the args.
+// stay private. parseArgs keeps a `--flag=value` token off the keys, so no
+// value (e.g. --auth-cookie=SECRET) can reach a persisted, remitted shape.
 function argvShape(args) {
   const names = new Set();
   for (const key of Object.keys(args)) {
     if (key === "_") continue;
-    const name = key.split("=")[0];
-    if (ARGV_SHAPE_PRIVATE_FLAGS.has(name)) continue;
-    names.add(`--${name}`);
+    if (ARGV_SHAPE_PRIVATE_FLAGS.has(key)) continue;
+    names.add(`--${key}`);
   }
   return [...names].sort();
 }

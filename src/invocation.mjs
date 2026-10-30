@@ -111,6 +111,13 @@ export const commandNames = () => Object.keys(COMMANDS);
 
 export const subcommandNames = (command) => (Object.hasOwn(COMMANDS, command) && COMMANDS[command].subcommands) || frozen([]);
 
+// The flag names parseArgs met spelled `--flag=value` (in argv order), kept off
+// the enumerable keys: the invocation is refused at dispatch, and only the
+// sweep suppressors below read them, so a joined `--dry-run=yes` does nothing
+// first, as a valued `--dry-run yes` does.
+export const JOINED_FLAGS = Symbol("campaigns-os.joined-flags");
+const joined = (args, flag) => Boolean(args?.[JOINED_FLAGS]?.includes(flag));
+
 // A run opted out of sessions altogether: no stale sweep, and no intake
 // auto-start (which reads this predicate from here).
 export const optsOutOfRunSession = (args) => args["no-run-session"] === true;
@@ -130,10 +137,10 @@ export function resolveInvocationPolicy(command, args) {
   const subcommand = subcommandNames(command).includes(args._[1]) ? args._[1] : null;
   const rule = { class: "standard", ...(Object.hasOwn(COMMANDS, command) && COMMANDS[command]), ...(subcommand && SUBCOMMAND_OVERRIDES[`${command} ${subcommand}`]) };
   const steps = CLASS_STEPS[rule.class];
-  const noWrite = args["no-write"] === true;
+  const noWrite = args["no-write"] === true || joined(args, "no-write");
   const implementsDryRun = rule.dryRun === true;
-  const help = Boolean(args.help);
-  const sweepSuppressed = help || optsOutOfRunSession(args) || noWrite || (Object.hasOwn(args, "dry-run") && implementsDryRun);
+  const help = Boolean(args.help) || joined(args, "help");
+  const sweepSuppressed = help || optsOutOfRunSession(args) || joined(args, "no-run-session") || noWrite || ((Object.hasOwn(args, "dry-run") || joined(args, "dry-run")) && implementsDryRun);
   const inspection = Boolean(rule.journalExemptWhen && args[rule.journalExemptWhen.given] && args[rule.journalExemptWhen.unlessBare] !== true);
   return Object.freeze({
     class: rule.class,
