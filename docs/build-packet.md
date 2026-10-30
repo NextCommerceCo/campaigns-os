@@ -629,8 +629,8 @@ position:
   prepare-build projects: `next_url` (an upsell's `on_accept`, a checkout's
   `success_url`, or its `next_page` when it forwards through that, a landing
   page's `next_page`), `decline_url` (an upsell's
-  `on_decline`) and, on a select or checkout_step page, `next_step`
-  (`next_page`). An added page takes its own links; a kept page whose link now
+  `on_decline`) and, on a select or checkout_step page and on a `checkout`
+  page whose file carries `next_step` (a v4 step), `next_step` (`next_page`). An added page takes its own links; a kept page whose link now
   names an added page, or whose routing named a removed page, is re-pointed at
   the page its link names. No other routing is touched. When the re-pointed
   page carries the routing hint that goes with that field
