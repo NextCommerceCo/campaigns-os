@@ -24,7 +24,7 @@
       "weight": 100,
       "pages": [
         { "id": "p-l", "type": "landing", "label": "Landing", "next_page": "p-co" },
-        { "id": "p-co", "type": "checkout", "label": "Checkout", "success_url": "p-ty" },
+        { "id": "p-co", "type": "checkout", "label": "Checkout", "success_url": "p-ty", "packages": [{ "ref_id": 1, "qty": 1 }] },
         { "id": "p-ty", "type": "thankyou", "label": "Thank You" }
       ]
     }

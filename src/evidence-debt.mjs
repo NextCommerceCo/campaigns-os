@@ -9,9 +9,10 @@ import {
   resolveBuiltSiteScope,
   routeForFile,
 } from "./built-site-scope.mjs";
+import { changeSince, classifyDrift } from "./change-scope.mjs";
 import { normalizePublicRouteSlug } from "./route-identity.mjs";
 import { isFileReadFailure } from "./cart-placeholders.mjs";
-import { qaRecordedBuildFingerprint, qaRecordedForCurrentBuild } from "./stage-ledger.mjs";
+import { polishReviewedBuild, qaExtendedBuildFingerprint, qaRecordedBuildFingerprint, qaRecordedForCurrentBuild } from "./stage-ledger.mjs";
 
 export const EVIDENCE_DEBT_STATUSES = Object.freeze(["current", "owed", "unknown"]);
 
@@ -24,6 +25,12 @@ const portable = (value) => value.split(sep).join("/");
  * the build an older stage reviewed. We cannot reconstruct an older manifest.
  * Missing build inputs remain unknown; lifecycle-required stages are owed
  * even without a stage binding. A matching binding alone is not a verdict.
+ *
+ * Each owed stage also carries `change`: what changed since the build that
+ * stage reviewed (change-scope.mjs), read from the rebuilds `record build`
+ * kept plus the drift on disk. A page-only change makes owed Polish
+ * `advisory` and owed QA `scope: "pages"` on `owed_pages`; anything else
+ * owes the full stage.
  */
 export function assessEvidenceDebt({ packet = null, packetPath = null, report = null } = {}) {
   const assembly = report?.stages?.assembly;
@@ -38,12 +45,13 @@ export function assessEvidenceDebt({ packet = null, packetPath = null, report = 
   let outputRoot = null;
   let reason = null;
   let scopeReason = null;
+  let targetRepo = null;
   const target = fingerprint(packet?.assembly?.target_repo);
   const slug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
   if (!packet || !packetPath) reason = "packet_unavailable";
   else if (!target || !slug) reason = "build_output_location_unknown";
   else {
-    const targetRepo = resolve(dirname(resolve(packetPath)), target);
+    targetRepo = resolve(dirname(resolve(packetPath)), target);
     outputRoot = join(targetRepo, "_site", slug);
     try {
       current = computeBuildFingerprint(outputRoot);
@@ -111,9 +119,41 @@ export function assessEvidenceDebt({ packet = null, packetPath = null, report = 
       else changes.unmapped_files.push(path);
     }
   }
-  return {
-    polish: stage(report?.stages?.polish, polishBuild, Boolean(polishBuild && currentBuild && polishBuild === currentBuild)),
-    qa: stage(report?.stages?.qa, qaBuild, qaRecordedForCurrentBuild(report, currentBuild)),
-    changes,
-  };
+  const driftClassification = classifyDrift({ changes, baseline: assembly, outputRoot, targetRepo, publicRouteSlug: slug });
+  changes.kind = driftClassification.kind;
+  changes.reasons = driftClassification.reasons;
+  const changeFor = (anchor) => changeSince(anchor, { assembly, drift: changes, driftClassification });
+
+  // Polish reviewed the build a terminal record is bound to; once `record
+  // build` has made it required, the build it reviewed is kept as
+  // owed_since_build_fingerprint (polishReviewedBuild). Only a Polish that
+  // reviewed a build can be advisory: a blocked or pending one, or one a
+  // brief or spec change made required, owes the full stage, before and
+  // after record build alike.
+  const polishRecord = report?.stages?.polish;
+  const polish = stage(polishRecord, polishBuild, Boolean(polishBuild && currentBuild && polishBuild === currentBuild));
+  if (polish.status === "owed") {
+    const reviewed = polishReviewedBuild(polishRecord);
+    polish.change = changeFor(reviewed || polishBuild || fingerprint(polishRecord?.owed_since_build_fingerprint));
+    polish.advisory = Boolean(reviewed) && polish.change.kind === "page_only";
+  } else {
+    polish.change = null;
+    polish.advisory = false;
+  }
+  // QA on the changed pages only extends a completed QA: the change is read
+  // from the build that QA checked (qaExtendedBuildFingerprint). A blocked,
+  // pending or skipped full run extends nothing and owes the full stage.
+  const qaRecord = report?.stages?.qa;
+  const qa = stage(qaRecord, qaBuild, qaRecordedForCurrentBuild(report, currentBuild));
+  if (qa.status === "owed") {
+    const extended = qaExtendedBuildFingerprint(report);
+    qa.change = changeFor(extended || qaBuild);
+    qa.scope = extended && qaRecord?.status !== "required" && qa.change.kind === "page_only" ? "pages" : "full";
+    qa.owed_pages = qa.scope === "pages" ? qa.change.changed_pages : [];
+  } else {
+    qa.change = null;
+    qa.scope = null;
+    qa.owed_pages = [];
+  }
+  return { polish, qa, changes };
 }

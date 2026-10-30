@@ -28,11 +28,11 @@ import { diagnosticExport, diagnosticTextLines } from "./diagnostic.mjs";
 import { observeProgress, PROGRESS_OBSERVATION } from "./progress-node.mjs";
 import { HIDDEN_EAGER_MEDIA_ACTIONS, qaRunCommand, requiredActionText, substitutePacket } from "./gate-actions.mjs";
 import { orderPathDepthDriftText, orderPathDepthReconcileAction, orderPathDepthsDisagree, parseOrderPathDepthFlag } from "./proof-policy.mjs";
-import { specMaterialHash, specHashesMatch } from "./spec-identity.mjs";
+import { routeMaskedSpecMaterialHash, specMaterialHash, specHashesMatch } from "./spec-identity.mjs";
 // The same predicate stage-ledger.mjs judges a mutator's result with, imported
 // rather than re-stated so the waive preview and the commit agree by identity.
 import { isPlainObject } from "./repo-scan.mjs";
-import { applyDerivedAssemblyReportSummary, commitAssemblyReport, QA_GATE_PLACEHOLDER_TEXT_RESIDUE, recordProducerStageOutcome } from "./stage-ledger.mjs";
+import { applyDerivedAssemblyReportSummary, campaignHandedOff, commitAssemblyReport, QA_GATE_PLACEHOLDER_TEXT_RESIDUE, recordProducerStageOutcome } from "./stage-ledger.mjs";
 import { SESSION_ENDING_DISPOSITIONS, summarizePlaceholderTextGate, summarizePurchaseProof } from "./qa-verdict.mjs";
 import { assessRunRecordCloseout, identityMatches, latestMatchingRunRecord, reasonIsRemitRecovery } from "./run-record-closeout.mjs";
 import {
@@ -82,7 +82,17 @@ import { markDoctorSidecarStale, writeDoctorSidecar, writeJsonAtomic } from "./d
 import { QcAcceptRefusal, buildQcHandoff, parseQcResultRef, planQcAccepts, projectQcAccept, qcAcceptAttribution, qcHandoffTextLines } from "./qc-accept.mjs";
 import { loadQcRederivers } from "./qc-check-registry.mjs";
 import { fingerprint12, readCurrentQcResults } from "./qc-results.mjs";
-import { campaignSidecarPaths, explicitReportPath, resolveCampaignWorkspace, targetRepoFor } from "./campaign-workspace.mjs";
+import {
+  DEFAULT_PACKET_FILENAME,
+  RUNTIME_DIR_REL_PATH,
+  campaignSidecarPaths,
+  explicitReportPath,
+  packetRuntimeRelPath,
+  planFunnelWorkspace,
+  resolveCampaignWorkspace,
+  soleProjectPacket,
+  targetRepoFor,
+} from "./campaign-workspace.mjs";
 import { canonicalPath, sameFile } from "./fs-identity.mjs";
 import { DEFAULT_PROXY_BASE, fetchSpecByMapId } from "./spec-fetch.mjs";
 import { writeMapSdkPin } from "./map-pin-writeback.mjs";
@@ -101,7 +111,7 @@ import {
   runWithRefusalScope,
   timeOperatorWait,
 } from "./lifecycle.mjs";
-import { commandNames, optsOutOfRunSession, runInvocation } from "./invocation.mjs";
+import { JOINED_FLAGS, commandNames, optsOutOfRunSession, runInvocation } from "./invocation.mjs";
 import {
   clearRunSession,
   findRunSession,
@@ -141,6 +151,7 @@ import { derivePackagePin, LOCAL_INVOCATION_PREFIX, localInstallStatus, resolveI
 import {
   campaignRouteRoot,
   normalizePublicRouteSlug,
+  specPublicRouteSlug,
 } from "./route-identity.mjs";
 import {
   PAGE_KIT_BUILD_SUMMARY_CAPTURE_COMMAND,
@@ -240,11 +251,13 @@ import {
   formatDeriveValue,
   isPageTreeIgnoredDir,
   isPageTreeIgnoredPath,
-  frontmatterPermalink,
+  frontmatterScalars,
   pageRouteForFile,
   permalinkRoute,
   planSpecDerive,
 } from "./spec-derive.mjs";
+import { planCampaignMirrorDerive } from "./spec-derive-campaign.mjs";
+import { disabledLiveRead, liveRefsDisabled, readLiveCampaignForPacket } from "./live-campaign-refs.mjs";
 import {
   adminApiBaseForStore,
   normalizeStoreSubdomain,
@@ -311,7 +324,7 @@ Usage:
                      [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
                      [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>] [--design-manifest <path>]
                      [--allow-uncertified-template "<reason>"] [--order-path-depth <off|common|full>]
-                     [--deploy-target <target>] [--preview-url <url>] [--production-url <url>] [--no-run-session] [--force]   # --force overwrites an assembly report that carries stage evidence (destructive; prints the cleared stage keys) and regenerates a stale Design Source Package an earlier intake synthesized and nobody changed
+                     [--deploy-target <target>] [--preview-url <url>] [--production-url <url>] [--no-run-session] [--force]   # --force overwrites an assembly report that carries stage evidence (destructive; prints the cleared stage keys) and regenerates a stale Design Source Package an earlier intake synthesized and nobody changed; with --out naming another route's packet it replaces that funnel (renaming its route)
   campaigns-os prepare-build (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
                              [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
                              [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>] [--design-manifest <path>]
@@ -334,7 +347,7 @@ Usage:
   campaigns-os checkpoint waive --packet <campaign-runtime.build.json> --gate <checkpoint-id> [--page <page_id>] --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"] [--report <json>] [--dry-run] [--json]   # one bound is required; registered gates: page_kit.store_profile, page_kit.sdk_version, polish.hidden_eager_media, built_output.upsell_selector_scope, source_html.producer_provenance (per page: --page <page_id> is required, for a Figma-typed page whose approved source is hand-written HTML). --dry-run runs every check (named human, bounds, registered and waivable gate) and prints the waiver it would write, without touching the report
   campaigns-os checkpoint accept --packet <campaign-runtime.build.json> --result <result_id>@<fingerprint12> [--result ...] --reason "<the operator's reason>" --accepted-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"] [--report <json>] [--dry-run] [--json]   # record the operator's accept of a measured QC warning, as the QC handoff of next prints it; changes no readiness and lapses when the measured state or the build changes. --dry-run runs every check and prints the accepts it would record, without touching the report
   campaigns-os page-kit sync --packet <campaign-runtime.build.json> [--dry-run] [--json]   # write the CampaignSpec's Store Profile fields (campaign.store_*) and SDK pin (global_config.sdk_version, runtime.sdk_version alias) into the target's _data/campaigns.json entry for the packet's route, printing a field-by-field diff; the recovery for a doctor blocked on page_kit.store_profile / page_kit.sdk_version after a fresh scaffold. Writes only those ten fields, only from usable spec values (a bad pin, a non-http URL, a non-tel: phone URI or the demo value itself is reported as not synced, status PARTIAL); exit 2 when the entry or the spec is missing, or the spec identifies another campaign.
-  campaigns-os spec derive --packet <campaign-runtime.build.json> [--dry-run] [--json] [--report <json>] [--from-store <subdomain> [--store-token-source env:<VAR>]] [--write-map] [--proxy-base <url>]   # write the fields the target repo already states into the packet's local CampaignSpec (spec.local_path): the SDK pin from _data/campaigns.json[<route>].sdk_version (global_config.sdk_version, and the runtime.sdk_version alias when declared), each page's page_url from the page tree under src/<route>/ (filename or permalink), and the analytics ids the entry carries (gtm_id -> analytics.providers.gtm.containerId, fb_pixel_id -> analytics.providers.facebook.pixelId); prints a field-by-field before -> after diff and writes nothing else. Repo-derived fields only and no network by default; --from-store <subdomain> (the <store> of <store>.29next.store) also reads through campaigns-os login gateway credentials (--store-token-source env:<VAR> explicitly selects the warned break-glass Admin path; a token never goes on the command line) and writes the nine campaign.store_* Store Profile fields: store_name and store_url (primary domain) and store_phone/store_phone_tel from GET /store/, and store_terms/privacy/contact/returns/shipping as https://<primary domain>/<slug>/ from the one storefront page (GET /pages/) whose slug or title names each policy; an empty store field, no page or several never empties the spec's value. A field the repo or store cannot state (a scaffold's seeded pin, an unbound page, an empty or malformed id, an active page_kit.sdk_version waiver, an empty store field, an unbound policy page) is reported as not derived, status PARTIAL; exit 2 when the packet, the spec or the target entry is missing, the spec identifies another campaign, or the store cannot be read (credential missing, 401/403, no such store, unreachable). --write-map also records the derived pin into the saved Map's Build hints (Campaign Cart SDK version) through the proxy Worker (PUT /api/maps/<spec.map_id> under X-Campaign-Key, the packet's Campaigns API key, with the Map's spec_hash as the X-Spec-Hash precondition): written when the Map declares no pin or one behind the repo, unchanged when equal, refused (warning, exit 0) when the Map pin is ahead or cannot be ordered, failed (error, exit 2) when the key is missing or mismatched, the Map is gone, was saved in between, or the proxy refuses the body; the write is recorded on the Assembly Report evidence[] and in the result's map object. --proxy-base overrides the canonical proxy (https, or a loopback host over http); --dry-run reads the Map and reports would_write without a PUT.
+  campaigns-os spec derive --packet <campaign-runtime.build.json> [--dry-run] [--json] [--report <json>] [--no-live-refs] [--from-store <subdomain> [--store-token-source env:<VAR>]] [--write-map] [--proxy-base <url>]   # write the fields the target repo already states into the packet's local CampaignSpec (spec.local_path): the SDK pin from _data/campaigns.json[<route>].sdk_version (global_config.sdk_version, and the runtime.sdk_version alias when declared), each page's page_url from the page tree under src/<route>/ (filename or permalink), and the analytics ids the entry carries (gtm_id -> analytics.providers.gtm.containerId, fb_pixel_id -> analytics.providers.facebook.pixelId, and each starter-template vendor's id key, such as ga4_id or triplewhale_name -> analytics.vendors.<vendor>.id); prints a field-by-field before -> after diff and writes nothing else. On a handed-off campaign (deploy or QA completed, now or in the stage's history) the page tree also adds pages (a file with a page-kit page_type no spec page binds; id from the file name, appended to the funnel, routing from its next_url/decline_url/next_step frontmatter) and removes pages (one whose built file the packet named is gone), matched by page id; page order is reported as not derived. When the packet's built _site/<route>/ exists and a public Campaigns API key resolves, it also makes the one read-only GET of {proxy-base}/api/campaign doctor makes and refreshes the fields the spec mirrors from the Campaigns App (each page package's name, price, product, variant and availability; the offer records and each page's offer copies; live offers missing from offers[] are added) — a price is never written from the repo; --no-live-refs sends nothing and leaves those fields as they are; --proxy-base names the proxy. Otherwise repo-derived fields only; --from-store <subdomain> (the <store> of <store>.29next.store) also reads through campaigns-os login gateway credentials (--store-token-source env:<VAR> explicitly selects the warned break-glass Admin path; a token never goes on the command line) and writes the nine campaign.store_* Store Profile fields: store_name and store_url (primary domain) and store_phone/store_phone_tel from GET /store/, and store_terms/privacy/contact/returns/shipping as https://<primary domain>/<slug>/ from the one storefront page (GET /pages/) whose slug or title names each policy; an empty store field, no page or several never empties the spec's value. A field the repo or store cannot state (a scaffold's seeded pin, an unbound page, an empty or malformed id, an active page_kit.sdk_version waiver, an empty store field, an unbound policy page) is reported as not derived, status PARTIAL; exit 2 when the packet, the spec or the target entry is missing, the spec identifies another campaign, or the store cannot be read (credential missing, 401/403, no such store, unreachable). --write-map also records the derived pin into the saved Map's Build hints (Campaign Cart SDK version) through the proxy Worker (PUT /api/maps/<spec.map_id> under X-Campaign-Key, the packet's Campaigns API key, with the Map's spec_hash as the X-Spec-Hash precondition): written when the Map declares no pin or one behind the repo, unchanged when equal, refused (warning, exit 0) when the Map pin is ahead or cannot be ordered, failed (error, exit 2) when the key is missing or mismatched, the Map is gone, was saved in between, or the proxy refuses the body; the write is recorded on the Assembly Report evidence[] and in the result's map object. --proxy-base overrides the canonical proxy (https, or a loopback host over http); --dry-run reads the Map and reports would_write without a PUT.
   campaigns-os page-kit parity --packet <campaign-runtime.build.json> [--report <json>] [--json]   # local proof mode (deploy.target local-serve): render the current source in development and production through the target's page-kit into temp dirs, assert the served _site/ is the current development render and that production differs from it only in environment-gated output (same page set, same route slugs, same Campaign Cart pin and next-api-key); records stages.assembly.evidence.local_proof.production_parity, which doctor reads as local_proof.production_parity. Exit 2 on a non-gated difference.
   campaigns-os polish capture --packet <campaign-runtime.build.json> --base-url <url> [--report <json>] [--headed] [--auth-cookie <cookie>] [--json]
   campaigns-os record brief --packet <campaign-runtime.build.json> [--brief <yaml|json>] [--context <json>] [--report <json>] [--dry-run] [--json]
@@ -361,7 +374,7 @@ Usage:
   campaigns-os next deploy --packet <json> --report <json> [--json]
   campaigns-os next qa --packet <json> --report <json> [--json]
   campaigns-os qa resolve --packet <json> [--base-url <url>] [--no-probe] [--probe-timeout-ms <ms>] [--json]   # probes the derived entry URLs; a dead route set reports routes_unresolved, an unprobed one ready_unprobed
-  campaigns-os qa run --packet <json> [--base-url <url>] [--currency <code>] [--browser] [--test-order <mode>] [--select-package <ref[:qty],...>] [--apply-coupon <code>] [--test-email <email>] [--test-country <code> --test-address1 <line> --test-city <city> --test-province <code> --test-postal <code>] [--no-post-verdict] [--no-remit] [--no-live-refs] [--output-dir <dir>] [--json]
+  campaigns-os qa run --packet <json> [--base-url <url>] [--currency <code>] [--page <page_id>]... [--browser] [--test-order <mode>] [--select-package <ref[:qty],...>] [--apply-coupon <code>] [--test-email <email>] [--test-country <code> --test-address1 <line> --test-city <city> --test-province <code> --test-postal <code>] [--vendor-beacons live] [--no-post-verdict] [--no-remit] [--no-live-refs] [--output-dir <dir>] [--json]
   campaigns-os qa promote --packet <json> --verdict <full-verdict.json> [--json]   # project one explicit qa-output verdict to the committed .campaign-runtime/qa-verdict.json sidecar
   campaigns-os qa publish --packet <json> [--verdict <full-verdict.json>] [--republish] [--proxy-base <url>] [--dry-run] [--json]   # post an already-stored verdict (the sidecar's run, or --verdict) to the QA portal without a re-run or an order; refuses a stale spec_hash or an already-published verdict. --dry-run runs every one of those refusal checks and prints what would be posted (endpoint, verdict run id, payload bytes) without the POST
   campaigns-os qa policy set --packet <json> [--allowed-domains-confirmed true|false] [--deploy-target <target>] [--preview-url <url>] [--production-url <url>] [--order-path-depth <off|common|full>] [--json]   # --order-path-depth writes qa.proof_policy.order_path_depth and refreshes the assembly report's proof_policy mirror
@@ -375,7 +388,7 @@ Usage:
 
   Commands other than login, logout, demo, and tooling diagnose accept [--lifecycle-journal <path>] (or env CAMPAIGNS_OS_LIFECYCLE_LOG) to append a command-lifecycle entry (command, argv shape, exit status, timing) for the run; pair with --run-id so run-record can embed it.
     --no-write suppresses that append for every command, however the journal was selected (flag, env, or the active run session); a refused invocation (unknown command, an unknown subcommand refused before its handler runs, or a flag the command refuses up front) and \`run status\` never append one at all.
-    A refused invocation writes no file of its own. One effect still precedes argument refusal: \`start\`, \`prepare-build\`, \`build\`, \`run start\` and \`run end\` close out a STALE run session at the root they are about to act on (Run Record assembled and remitted under the usual consent, session file cleared) before argv is refused — a declared effect of those commands. --no-write suppresses that closeout too, so a --no-write invocation leaves the target byte-identical.
+    A refused invocation writes no file of its own. One effect still precedes argument refusal: \`start\`, \`prepare-build\`, \`build\`, \`run start\` and \`run end\` close out a STALE run session at the root they are about to act on (Run Record assembled and remitted under the usual consent, session file cleared) before argv is refused — a declared effect of those commands. --no-write suppresses that closeout too, so a --no-write invocation leaves the target byte-identical; a --flag=value token, which every command refuses, skips it as well.
   campaigns-os telemetry status|on [--proxy-base <url>] [--json]   # machine-level Run Telemetry consent (gates remit only; capture is always local). \`on\` records consent for ONE endpoint: the canonical NEXT endpoint by default, or the --proxy-base you name (a loopback or staging receiver); \`status\` reports the stored scope and checks it against the canonical endpoint or the --proxy-base you name
   campaigns-os telemetry off [--json]                                  # turn remit off for every endpoint (takes no --proxy-base)
   campaigns-os telemetry list [--packet <json> | --admin-key-env <VAR>] [--since <ISO>] [--package <v>] [--surface <s>] [--trusted] [--limit <n>] [--proxy-base <url>] [--trust-proxy-base] [--json]   # read stored Run Records: tenant scope via the packet's campaign key, or cross-tenant via the ops admin key (default env CAMPAIGN_OPS_ADMIN_KEY). --proxy-base must be https unless it is a loopback host (allowed over http, with a warning that the credential is in clear).
@@ -487,7 +500,10 @@ export async function main(argv, { authentication, qcStandIns } = {}) {
     return;
   }
   return withDoctorCiReport(parseArgs(argv), (args) => runInvocation(args, {
-    dispatch: (command, args, context) => dispatch(command, args, { ...context, argv, authentication, qcStandIns }),
+    dispatch: (command, args, context) => {
+      refuseJoinedFlag(args);
+      return dispatch(command, args, { ...context, argv, authentication, qcStandIns });
+    },
     closeOutStaleRunSessions,
     ambientRunSession,
     lifecycleIdentity,
@@ -730,10 +746,17 @@ export function recordQaStageOutcome(args, result) {
     // start and the spec material it judged, never the inputs at write time.
     const qaStamps = inputStamps({ briefMaterial: verdict.source_brief_material, specMaterial: verdict.spec_hash });
     const qaInputs = stageWriteInputs("qa", currentPacketInputs({ packet, packetPath }));
+    const pageScope = isObject(result.page_scope) ? result.page_scope : null;
     const committed = commitAssemblyReport(workspace, (report) => {
       if (hasLocalIdentity && !specHashesMatch(verdict.spec_hash, report.identity?.spec_material_hash)) {
         throw new Error("Local-spec QA verdict belongs to a different material revision; report evidence was not changed.");
       }
+      // A page-scoped run (#720) is bound to the build it checked; a report
+      // rebuilt since then keeps the QA it had.
+      if (pageScope && currentBuildFingerprint(report) !== pageScope.build_fingerprint) {
+        throw new Error("The build was recorded again during this page-scoped QA run; report evidence was not changed. Re-run qa run --page against the recorded build.");
+      }
+      const evidence = qaStageGateEvidence(verdict, report, result);
       return recordProducerStageOutcome(report, {
         stage: "qa",
         disposition: verdict.disposition,
@@ -750,11 +773,19 @@ export function recordQaStageOutcome(args, result) {
         // Which build this verdict judged, and the gates whose browser outcome
         // the doctor's static scan defers to (qaGatePassedForCurrentBuild). A
         // gate that never ran is left out, so silence never reads as a pass.
-        evidence: qaStageGateEvidence(verdict, report, result),
+        // A page-scoped record names its pages, the changed pages it pays
+        // for and the build whose full QA it extends.
+        evidence: pageScope ? { ...evidence, page_scope: {
+          pages: pageScope.pages, owed_pages: pageScope.owed_pages, base_build_fingerprint: pageScope.base_build_fingerprint,
+        } } : evidence,
         // Counts-only: never order ids, refs, emails or URLs (see
         // summarizePurchaseProof). This is what lets `next` tell a real purchase
-        // path from a `--test-order off` diagnostic.
-        proof: summarizePurchaseProof({ verdict, proofPolicy: packet.qa?.proof_policy }),
+        // path from a `--test-order off` diagnostic. A page-scoped run places
+        // no orders and the change it pays touches no commerce, so the
+        // purchase proof of the full run it extends is kept.
+        proof: pageScope && isObject(report.stages?.qa?.purchase_proof)
+          ? report.stages.qa.purchase_proof
+          : summarizePurchaseProof({ verdict, proofPolicy: packet.qa?.proof_policy }),
         stamps: qaStamps,
         inputs: qaInputs,
       });
@@ -1024,7 +1055,7 @@ async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = nul
     // A --map-id fetch runs here, but the fetched spec is written to the
     // shared cache file inside prepareBuild, under the per-target lock, so it
     // never replaces the spec another run is reading and hashing (#501).
-    const { publishSpec, ...resolved } = await recorder.time("resolve-spec", () => resolveSpecPath(args, { deferCacheWrite: true }));
+    const { publishSpec, fetchedSpec, ...resolved } = await recorder.time("resolve-spec", () => resolveSpecPath(args, { deferCacheWrite: true }));
     // The spec as the operator named it, before resolution, so the build
     // context can record which input to replay (a local file, or a map id
     // fetched from a given store).
@@ -1035,7 +1066,7 @@ async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = nul
     // Doctor runs inside prepare-build, so its codes are recorded while that
     // phase is active and attach to it.
     const result = await recorder.time("prepare-build", async () => {
-      const prepared = await prepareBuild(args, { ...mode, command, specInput, publishSpec, sourceKind, wrapperPolicyFlag, orderPathDepthFlag });
+      const prepared = await prepareBuild(args, { ...mode, command, specInput, publishSpec, fetchedSpec, sourceKind, wrapperPolicyFlag, orderPathDepthFlag });
       if (prepared.doctor && !prepared.doctor.ok) recorder.recordFindingCodes(prepared.doctor.errors?.map((issue) => issue.code));
       return prepared;
     });
@@ -1257,6 +1288,8 @@ async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = nul
     // The ambient session is handed over, not re-discovered: the closeout
     // command a QA run prints has to agree with the run_id this session will
     // later close and remit under.
+    // --page repeats; the shared parser keeps only the last value.
+    if (args._[1] === "run" && Array.isArray(argv) && argv.includes("--page")) args = { ...args, page: repeatedFlagValues(argv, "page") };
     const result = await runQaCli(args, { ambient });
     if (result?.verdict?.disposition === "blocked") {
       recorder.recordFindingCodes(result.verdict.assertions?.filter((item) => item.status === "fail" || item.severity === "blocker")
@@ -1307,12 +1340,32 @@ async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = nul
   );
 }
 
+// A flag takes its value as the next token. `--flag=value` would otherwise be
+// an unknown key, silently ignored (`qa run --page=x` widening to a full run),
+// so it is refused at dispatch, like every other argv refusal; the stale
+// sweep before dispatch is skipped for it (JOINED_FLAGS). Only the name is
+// quoted: the value can be a secret, such as an --auth-cookie.
+function refuseJoinedFlag(args) {
+  const flags = args?.[JOINED_FLAGS];
+  if (!flags?.length) return;
+  const [flag] = flags;
+  if (!flag) throw refused("--=… is not accepted: the flag name is missing before =. Write the flag, then its value as the next argument (--flag value).");
+  const name = `--${flag}`;
+  throw refused(`${name}=… is not accepted: a flag takes its value as the next argument, not --flag=value. Write \`${name}\` alone for an on/off flag, or \`${name} <value>\` for a flag that takes a value.`);
+}
+
 export function parseArgs(argv) {
   const args = { _: [] };
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
     if (!token.startsWith("--")) {
       args._.push(token);
+      continue;
+    }
+    const equal = token.indexOf("=");
+    if (equal >= 2) {
+      if (!args[JOINED_FLAGS]) Object.defineProperty(args, JOINED_FLAGS, { value: [] });
+      args[JOINED_FLAGS].push(token.slice(2, equal));
       continue;
     }
     const key = token.slice(2);
@@ -1403,7 +1456,9 @@ async function resolveSpecPath(args, opts = {}) {
     return { specPath: cachePath, source: "remote", mapId, proxyBase,
       savedMapRevision: { map_id: mapId, hash: spec.spec_identity?.spec_hash || spec.spec_hash || null,
         algorithm: "map-store-v1", local_spec_material_hash: specMaterialHash(spec) },
-      ...(opts.deferCacheWrite ? { publishSpec } : {}),
+      // The fetched spec itself, for a caller that writes the cache later and
+      // must know the funnel's route first. Not part of the reported source.
+      ...(opts.deferCacheWrite ? { publishSpec, fetchedSpec: spec } : {}),
     };
   }
   throw refused(
@@ -1532,11 +1587,13 @@ function createProofPolicy({ orderPathDepth = null } = {}) {
 // channel that supplies it. Source screenshot proof is seeded only by the
 // source-html manifest's pages[].screenshots[], which is documented nowhere in
 // the blocking reason itself.
-const DESIGN_SOURCE_PACKAGE_REMEDY = [
+// `packagePath` is where this run emitted the package, relative to the target
+// repo: under the funnel's runtime directory.
+const designSourcePackageRemedy = (packagePath = DESIGN_SOURCE_PACKAGE_REL_PATH) => [
   `Supply the missing source proof through pages[].screenshots[] in ${SOURCE_HTML_MANIFEST_REL_PATH}`,
   "under the source root, or in a manifest anywhere else named by --design-manifest <path>",
   "(one available desktop record and one available mobile record per renderable page);",
-  `then, if no downstream stage has consumed it, remove the Design Source Package this blocked run emitted at ${DESIGN_SOURCE_PACKAGE_REL_PATH}`,
+  `then, if no downstream stage has consumed it, remove the Design Source Package this blocked run emitted at ${packagePath}`,
   "and rerun prepare-build/start.",
   'See "Clearing DESIGN_SOURCE_PACKAGE_NOT_READY" in docs/design-source-package.md.',
 ].join(" ");
@@ -1547,12 +1604,13 @@ const DESIGN_SOURCE_PACKAGE_REMEDY = [
 // exception reasons keep their own wording.
 const DESIGN_SOURCE_PACKAGE_REMEDY_REASON = /source_screenshot proof\.$|^Source TODO "capture-(?![^"]*-template-)[^"]*" is /;
 
-function designSourcePackageBlockers(prepared) {
+function designSourcePackageBlockers(prepared, targetRepo) {
   if (!["blocked", "pending"].includes(prepared.value?.readiness?.status)) return [];
+  const remedy = designSourcePackageRemedy(prepared.path && targetRepo ? relFromDir(targetRepo, prepared.path) : undefined);
   return (prepared.value.readiness.blocking_reasons || []).map((message, index) => ({
     code: "DESIGN_SOURCE_PACKAGE_NOT_READY",
     stage: "prepare_build",
-    message: DESIGN_SOURCE_PACKAGE_REMEDY_REASON.test(message) ? `${message} ${DESIGN_SOURCE_PACKAGE_REMEDY}` : message,
+    message: DESIGN_SOURCE_PACKAGE_REMEDY_REASON.test(message) ? `${message} ${remedy}` : message,
     detail: {
       blocker_index: index,
       readiness_status: prepared.value.readiness.status,
@@ -1657,18 +1715,44 @@ async function prepareBuild(args, options = {}) {
   if (publishSpec && !existsSync(targetRepo)) mkdirSync(targetRepo, { recursive: true });
   if (!existsSync(targetRepo) || !statSync(targetRepo).isDirectory()) throw new Error(`Target repo is not a directory: ${targetRepo}`);
 
-  const sidecars = campaignSidecarPaths(targetRepo);
-  const packetPath = resolve(args.out || join(targetRepo, "campaign-runtime.build.json"));
+  // Which funnel this is decides where its packet and records go (#719): a
+  // project's first funnel uses the default packet and the project-level
+  // .campaign-runtime/, every later one its own (planFunnelWorkspace). The
+  // route is read here, before the lock, and checked again under it.
+  const plannedRoute = intakeRouteSlug(options.fetchedSpec || readSpecForRoute(specPath), args);
+  const planFunnel = () => plannedRoute
+    ? refusing(() => planFunnelWorkspace(targetRepo, plannedRoute, { packetPath: args.out || null, force: args.force === true }))
+    : { packetPath: resolve(args.out || join(targetRepo, DEFAULT_PACKET_FILENAME)), runtimeRelPath: RUNTIME_DIR_REL_PATH, scoped: false, addedBeside: null };
+  const funnel = planFunnel();
+  const sidecars = campaignSidecarPaths(targetRepo, funnel.runtimeRelPath);
+  const packetPath = funnel.packetPath;
   const contextPath = resolve(args["context-out"] || sidecars.contextPath);
   const reportPath = resolve(args["report-out"] || sidecars.reportPath);
   const doctorOutPath = resolve(args["doctor-out"] || sidecars.doctorOutPath);
-  const briefPath = resolve(args["brief-out"] || join(targetRepo, BUILD_BRIEF_NORMALIZED_REL_PATH));
+  const briefPath = resolve(args["brief-out"] || join(sidecars.runtimeDir, relative(RUNTIME_DIR_REL_PATH, BUILD_BRIEF_NORMALIZED_REL_PATH)));
   return withDesignSourcePublication({
     targetRepo,
+    runtimeDir: sidecars.runtimeDir,
     outputs: { packetPath, contextPath, reportPath, doctorOutPath, briefPath },
     force: args.force === true,
     publishSpec,
-  }, (publication) => prepareBuildUnderLock({ args, options, specPath, sourceRoot, targetRepo, publication }));
+  }, (publication) => prepareBuildUnderLock({ args, options, specPath, sourceRoot, targetRepo, publication, funnel: { ...funnel, route: plannedRoute }, planFunnel }));
+}
+
+// A spec that cannot be read here is read again, and refused, under the lock.
+function readSpecForRoute(specPath) {
+  try {
+    return readJson(specPath);
+  } catch {
+    return null;
+  }
+}
+
+// The public route slug intake will use, from the flag or the spec; null when
+// neither names one (prepare-build then refuses under the lock).
+function intakeRouteSlug(spec, args) {
+  if (!isObject(spec)) return optionalString(args["public-route-slug"]) || null;
+  return normalizePublicRouteSlug(campaignIdentity(spec, args).publicRouteSlug) || null;
 }
 
 function prepareBuildUnderLock({
@@ -1678,6 +1762,8 @@ function prepareBuildUnderLock({
   sourceRoot,
   targetRepo,
   publication,
+  funnel,
+  planFunnel,
 }) {
   const { packetPath, contextPath, reportPath, doctorOutPath, briefPath, designSourcePackagePath } = publication.paths;
   // #531: a host-prefixed route ("shop.example.com/route/upsell/") in a Map
@@ -1701,6 +1787,22 @@ function prepareBuildUnderLock({
     throw new Error("CampaignSpec requires exactly one identity: a saved spec_identity.map_id, or an agent-authored spec_identity.local_spec_id (1–64 letters, digits, underscores or hyphens). Keep the local ID stable across revisions; do not invent a Map ID.");
   }
   if (!publicRouteSlug) throw new Error("CampaignSpec has no public route slug. Set spec_identity.public_route_slug or campaign.slug.");
+  // The packet and runtime directory were chosen for the route read before
+  // the lock; a spec that changed meanwhile would file this funnel's records
+  // under another route's.
+  if (normalizePublicRouteSlug(publicRouteSlug) !== funnel.route) {
+    throw new Error(`The CampaignSpec's public route slug changed while prepare-build waited for the target lock (${JSON.stringify(funnel.route)} became ${JSON.stringify(publicRouteSlug)}). Re-run prepare-build.`);
+  }
+  // Another funnel set up while this run waited can change where this one
+  // belongs (two first funnels started at once in an empty project). The
+  // paths this run writes were fixed before the lock, so it stops instead.
+  const replanned = planFunnel();
+  if (replanned.packetPath !== funnel.packetPath || replanned.runtimeRelPath !== funnel.runtimeRelPath) {
+    throw new Error(
+      `Another funnel was set up in ${targetRepo} while prepare-build waited for the target lock, so route ${JSON.stringify(funnel.route)} now belongs at `
+      + `${replanned.packetPath} with its records under ${replanned.runtimeRelPath}/, not ${funnel.packetPath} and ${funnel.runtimeRelPath}/. Re-run prepare-build.`,
+    );
+  }
 
   // Dispatch validated the argv-only flags before spec resolution, including
   // the value forms of --template-family, --allow-uncertified-template,
@@ -1932,7 +2034,7 @@ function prepareBuildUnderLock({
     mapId,
     publicRouteSlug,
   });
-  const designSourceBlockers = designSourcePackageBlockers(designSourcePackage);
+  const designSourceBlockers = designSourcePackageBlockers(designSourcePackage, targetRepo);
   const blockers = [...sourceBlockers, ...briefBlockers, ...briefQuestionBlockers, ...designSourceBlockers];
   const adapterDecisions = createAdapterDecisions({ commerceZoneFindings, wrapperPolicy: wrapperPolicy.value });
   const proofPolicy = createProofPolicy({ orderPathDepth: orderPathDepthFlag });
@@ -1977,6 +2079,9 @@ function prepareBuildUnderLock({
     assembly: {
       implementation: "next-campaigns-build",
       target_repo: relFromFile(packetPath, targetRepo),
+      // Recorded only for a funnel that is not the project's first; absent,
+      // the records are under the project-level .campaign-runtime/.
+      ...(funnel.scoped ? { runtime_dir: funnel.runtimeRelPath } : {}),
       output_dir: outputDir,
       template_family: isUnresolvedTemplateFamily(templateFamily) ? "undecided" : templateFamily,
       template_decision_notes: templateLocked
@@ -2050,6 +2155,7 @@ function prepareBuildUnderLock({
       path: portable(specPath),
       hash: specFileHash,
       material_hash: specMaterialHash(spec),
+      route_masked_material_hash: routeMaskedSpecMaterialHash(spec),
       active_pages: activePages.map((page) => ({
         id: page.id,
         type: page.type || null,
@@ -2102,7 +2208,7 @@ function prepareBuildUnderLock({
       target_repo: ".",
       output_dir: portable(resolve(targetRepo, outputDir)),
       handoff_skill: existsSync(resolve(targetRepo, outputDir)) ? "next-campaigns-build" : "next-campaigns-os-setup",
-      handoff_artifact: ".campaign-runtime/setup-handoff.json",
+      handoff_artifact: `${funnel.runtimeRelPath}/setup-handoff.json`,
       reason: existsSync(resolve(targetRepo, outputDir))
         ? "Target campaign output directory already exists."
         : "Target campaign output directory is missing; scaffold before build.",
@@ -2222,6 +2328,7 @@ function prepareBuildUnderLock({
     context,
     report,
     doctor,
+    ...(funnel.addedBeside ? { funnelAddedBeside: funnel.addedBeside } : {}),
   };
 }
 
@@ -2505,11 +2612,8 @@ function rejectUnknownStandardizeFlags(args) {
   const known = new Set(STANDARDIZE_FLAGS);
   const unknown = Object.keys(args).filter((key) => key !== "_" && !known.has(key));
   if (!unknown.length) return;
-  const valueHint = unknown.some((key) => key.includes("="))
-    ? " A flag takes its value as the next argument (--flag value), not --flag=value."
-    : "";
   throw refused(
-    `Unknown flag${unknown.length > 1 ? "s" : ""} for standardize: ${unknown.map((key) => `--${key}`).join(", ")}.${valueHint} Known flags: ${STANDARDIZE_FLAGS.map((key) => `--${key}`).join(", ")}.`,
+    `Unknown flag${unknown.length > 1 ? "s" : ""} for standardize: ${unknown.map((key) => `--${key}`).join(", ")}. Known flags: ${STANDARDIZE_FLAGS.map((key) => `--${key}`).join(", ")}.`,
   );
 }
 
@@ -2601,7 +2705,9 @@ function themeCommand(args) {
   // (blocked, already-current CSS) leaves doctor's inputs untouched (Kilo
   // review, PR #176).
   if (written.wrote?.report || written.wrote?.css) {
-    markDoctorSidecarStale(resolveFromFile(packetPath, packet?.assembly?.target_repo) || dirname(packetPath), {
+    const staleTarget = resolveFromFile(packetPath, packet?.assembly?.target_repo) || dirname(packetPath);
+    markDoctorSidecarStale(staleTarget, {
+      path: campaignSidecarPaths(staleTarget, packetRuntimeRelPath(packet)).doctorOutPath,
       command: "theme generate",
       reason: `Theme artifacts were generated after this doctor snapshot. Re-run ${cmd("doctor")} (or next) for current state.`,
     });
@@ -3286,8 +3392,7 @@ export function pageKitSyncCommand(args) {
   // Assembly Report whose waivers are honoured below.
   const unknown = Object.keys(args).filter((key) => key !== "_" && !PAGE_KIT_SYNC_FLAGS.includes(key));
   if (unknown.length) {
-    const valueHint = unknown.some((key) => key.includes("=")) ? " A flag takes its value as the next argument (--flag value), not --flag=value." : "";
-    throw refused(`Unknown flag${unknown.length > 1 ? "s" : ""} for page-kit sync: ${unknown.map((key) => `--${key}`).join(", ")}.${valueHint} Known flags: ${PAGE_KIT_SYNC_FLAGS.map((key) => `--${key}`).join(", ")}.`);
+    throw refused(`Unknown flag${unknown.length > 1 ? "s" : ""} for page-kit sync: ${unknown.map((key) => `--${key}`).join(", ")}. Known flags: ${PAGE_KIT_SYNC_FLAGS.map((key) => `--${key}`).join(", ")}.`);
   }
   const packetPath = resolve(requireArg(args, "packet"));
   const dryRun = isDryRun(args);
@@ -3364,11 +3469,7 @@ export function pageKitSyncCommand(args) {
   // spec.local_path would write another campaign's store profile into this
   // route with a plausible-looking diff.
   if (spec && publicRouteSlug) {
-    const specSlug = normalizePublicRouteSlug(
-      optionalString(spec.spec_identity?.public_route_slug)
-      || optionalString(spec.campaign?.slug)
-      || optionalString(spec.campaign?.id),
-    );
+    const specSlug = specPublicRouteSlug(spec);
     const specMapId = optionalString(spec.spec_identity?.map_id) || optionalString(spec.map_id);
     const packetMapId = optionalString(packet.spec?.map_id);
     if (specSlug && specSlug !== publicRouteSlug) {
@@ -3494,6 +3595,7 @@ export function pageKitSyncCommand(args) {
     // result, never a thrown error that hides the write.
     try {
       markDoctorSidecarStale(targetRepo, {
+        path: campaignSidecarPaths(targetRepo, packetRuntimeRelPath(packet)).doctorOutPath,
         command: "page-kit sync",
         reason: `page-kit sync rewrote ${PAGE_KIT_CAMPAIGNS_REL_PATH}[${publicRouteSlug}] after this doctor snapshot. Re-run ${cmd("doctor")} (or next) for current state.`,
       });
@@ -3524,7 +3626,7 @@ export function pageKitSyncCommand(args) {
 // the default run stays offline. --dry-run prints the same diff and writes
 // nothing. Exit 2 when the packet, the spec or the target entry is missing,
 // or the store cannot be read.
-const SPEC_DERIVE_FLAGS = Object.freeze(["packet", "dry-run", "json", "report", "from-store", "store-token-source"]);
+const SPEC_DERIVE_FLAGS = Object.freeze(["packet", "dry-run", "json", "report", "from-store", "store-token-source", "no-live-refs"]);
 
 // The store flags, parsed once for both the async reader and the sync
 // command: `{ subdomain, token_env }` when --from-store is given, null when
@@ -3552,9 +3654,9 @@ function parseSpecDeriveStoreFlags(args) {
 // run the same command with the store read in hand. The only network the
 // command ever does happens here, and the token never leaves this function:
 // the result names the credential source, never its value.
-export async function specDeriveFromStoreCommand(args, { fetchImpl = globalThis.fetch, env = process.env, credentials, warn = console.warn } = {}) {
+export async function specDeriveFromStoreCommand(args, { fetchImpl = globalThis.fetch, env = process.env, credentials, warn = console.warn, liveCampaign = undefined } = {}) {
   const store = parseSpecDeriveStoreFlags(args);
-  if (!store) return specDeriveCommand(args);
+  if (!store) return specDeriveCommand(args, { liveCampaign });
   const preflight = specDeriveCommand(args, { store: { ...store, status: "preflight" } });
   if (preflight.errors.length) return preflight;
   let read;
@@ -3567,7 +3669,36 @@ export async function specDeriveFromStoreCommand(args, { fetchImpl = globalThis.
     read = await readGatewayStoreProfile({ subdomain: store.subdomain, credentials, fetchImpl });
   }
   // Recheck the original packet/spec identity after the network operation.
-  return specDeriveCommand(args, { store: { ...store, ...read, expected: { spec_path: preflight.spec_path, public_route_slug: preflight.public_route_slug } } });
+  return specDeriveCommand(args, { liveCampaign, store: { ...store, ...read, expected: { spec_path: preflight.spec_path, public_route_slug: preflight.public_route_slug } } });
+}
+
+// The live campaign read `spec derive` makes (#721): the one read-only GET of
+// {proxy-base}/api/campaign doctor makes, under the same rule (packet mode,
+// the packet's built _site/<route>/ exists, a public Campaigns API key
+// resolves), with the campaign body kept so the mirrored offer and package
+// fields can be refreshed from it. --no-live-refs sends nothing. `undefined`
+// means no read was due.
+export async function readSpecDeriveLiveCampaign(args, { fetchImpl = globalThis.fetch, env = process.env, warn = undefined } = {}) {
+  if (liveRefsDisabled(args)) return disabledLiveRead();
+  if (!isNonEmptyString(args.packet)) return undefined;
+  let workspace;
+  try {
+    workspace = resolveCampaignWorkspace(resolve(args.packet), { followContextPointer: false });
+  } catch {
+    // An unreadable packet is the derive's own error; there is nothing to read for.
+    return undefined;
+  }
+  const slug = normalizePublicRouteSlug(workspace.packet?.campaign?.public_route_slug);
+  if (!workspace.targetRepo || !slug || !existsSync(join(workspace.targetRepo, "_site", slug))) return undefined;
+  return readLiveCampaignForPacket({
+    packet: workspace.packet,
+    packetPath: workspace.packetPath,
+    env,
+    fetchImpl,
+    proxyBase: optionalString(args["proxy-base"]) || DEFAULT_PROXY_BASE,
+    includeCampaign: true,
+    ...(warn ? { warn } : {}),
+  });
 }
 
 // The page files page-kit renders under the campaign's source directory, with
@@ -3595,30 +3726,32 @@ function listPageKitPageFiles(outputDir, publicRouteSlug, { assetsHtmlIgnored = 
       // page-kit honours a permalink before its filename rule, so the
       // frontmatter is read first (quoting, comments, BOM and CRLF as
       // page-kit's reader takes them); only a file with no usable permalink
-      // falls back to the filename route.
-      const permalink = frontmatterPermalink(readFileSync(fullPath, "utf8"));
+      // falls back to the filename route. The page_type and the links to
+      // other pages are read too: after handoff they say which files are
+      // funnel pages and how they link (#721).
+      const { permalink, page_type: pageType, next_url: nextUrl, decline_url: declineUrl, next_step: nextStep, step_number: stepNumber } = frontmatterScalars(readFileSync(fullPath, "utf8"));
+      const facts = { page_type: pageType, next_url: nextUrl, decline_url: declineUrl, next_step: nextStep, step_number: stepNumber };
       if (permalink === null) {
         const filenameRoute = pageRouteForFile(path);
         if (filenameRoute === null) continue;
-        files.push({ path, basename: basename(entry.name, ".html"), route: filenameRoute, permalink: null, problem: null });
+        files.push({ path, basename: basename(entry.name, ".html"), route: filenameRoute, permalink: null, problem: null, ...facts });
         continue;
       }
       const resolved = permalinkRoute(permalink, publicRouteSlug);
-      files.push({ path, basename: basename(entry.name, ".html"), route: resolved.route ?? null, permalink, problem: resolved.problem ?? null });
+      files.push({ path, basename: basename(entry.name, ".html"), route: resolved.route ?? null, permalink, problem: resolved.problem ?? null, ...facts });
     }
   };
   walk(outputDir);
   return files.sort((a, b) => a.path.localeCompare(b.path));
 }
 
-export function specDeriveCommand(args, { store: storeRead = null } = {}) {
+export function specDeriveCommand(args, { store: storeRead = null, liveCampaign = undefined } = {}) {
   // A command that rewrites the spec rejects flags it does not know: a
   // mistyped --dryrun must not fall through to a real write. --report names
   // the Assembly Report whose waivers are honoured below.
   const unknown = Object.keys(args).filter((key) => key !== "_" && !SPEC_DERIVE_FLAGS.includes(key));
   if (unknown.length) {
-    const valueHint = unknown.some((key) => key.includes("=")) ? " A flag takes its value as the next argument (--flag value), not --flag=value." : "";
-    throw refused(`Unknown flag${unknown.length > 1 ? "s" : ""} for spec derive: ${unknown.map((key) => `--${key}`).join(", ")}.${valueHint} Known flags: ${SPEC_DERIVE_FLAGS.map((key) => `--${key}`).join(", ")}.`);
+    throw refused(`Unknown flag${unknown.length > 1 ? "s" : ""} for spec derive: ${unknown.map((key) => `--${key}`).join(", ")}. Known flags: ${SPEC_DERIVE_FLAGS.map((key) => `--${key}`).join(", ")}.`);
   }
   // The store read is supplied by specDeriveFromStoreCommand; this function
   // never touches the network itself, so a --from-store call that reaches it
@@ -3646,6 +3779,8 @@ export function specDeriveCommand(args, { store: storeRead = null } = {}) {
     not_derived: [],
     not_in_target: [],
     stale_hints: [],
+    page_scope: null,
+    live_campaign: null,
     store: storeFlags
       ? { subdomain: storeFlags.subdomain, admin_api: adminApiBaseForStore(storeFlags.subdomain), ...(storeFlags.token_env ? {} : { transport: "gateway", endpoint: "https://mcp.nextcommerce.com/admin/" }), token_source: storeFlags.token_env ? `env:${storeFlags.token_env}` : "gateway:login", store_read: null, pages_read: null, primary_domain: null }
       : null,
@@ -3709,11 +3844,7 @@ export function specDeriveCommand(args, { store: storeRead = null } = {}) {
   // (campaign.route_slug_identity); without it a stale or copy-pasted
   // spec.local_path would receive another campaign's routes and pin.
   if (spec && publicRouteSlug) {
-    const specSlug = normalizePublicRouteSlug(
-      optionalString(spec.spec_identity?.public_route_slug)
-      || optionalString(spec.campaign?.slug)
-      || optionalString(spec.campaign?.id),
-    );
+    const specSlug = specPublicRouteSlug(spec);
     const specMapId = optionalString(spec.spec_identity?.map_id) || optionalString(spec.map_id);
     const packetMapId = optionalString(packet.spec?.map_id);
     if (specSlug && specSlug !== publicRouteSlug) {
@@ -3836,7 +3967,24 @@ export function specDeriveCommand(args, { store: storeRead = null } = {}) {
     addIssue(result.errors, `spec.derive.${codes[storeRead.status] || "store_unreachable"}`, `${storeRead.detail} Nothing was written.`, { subdomain: storeRead.subdomain, token_source: storeRead.token_env ? `env:${storeRead.token_env}` : "gateway:login" });
     return result;
   }
-  const plan = planSpecDerive({ spec, entry, pageFiles, packetBindings, waivedGates, waiversUnknown, publicRouteSlug });
+  // After handoff the page tree also says which pages exist (#721).
+  const handedOff = campaignHandedOff(report);
+  const plan = planSpecDerive({ spec, entry, pageFiles, packetBindings, waivedGates, waiversUnknown, publicRouteSlug, handedOff });
+  result.page_scope = plan.page_scope;
+  // The mirrored offer and package fields, from the live campaign read
+  // (#721). A read that did not happen leaves them as they are and says why.
+  if (liveCampaign?.status === "read" && isObject(liveCampaign.campaign)) {
+    const mirror = planCampaignMirrorDerive({ spec, campaign: liveCampaign.campaign, campaignRef: liveCampaign.campaign_ref_id || null });
+    plan.changes.push(...mirror.changes);
+    plan.unchanged.push(...mirror.unchanged);
+    plan.not_derived.push(...mirror.not_derived);
+    result.live_campaign = { status: "read", key_source: liveCampaign.key_source || null, campaign_ref_id: liveCampaign.campaign_ref_id || null, ...mirror.summary };
+  } else if (liveCampaign) {
+    result.live_campaign = { status: "not_run", reason_code: liveCampaign.reason_code || null, reason: liveCampaign.reason || null, key_source: liveCampaign.key_source || null };
+    if (!["disabled", "no_key", "not_read"].includes(liveCampaign.reason_code)) {
+      addIssue(result.warnings, "spec.derive.live_campaign_not_read", `The live campaign was not read (${singleLineDetail(liveCampaign.reason || liveCampaign.reason_code || "unknown reason")}); the spec's offer and package fields were left as they are.`, { reason_code: liveCampaign.reason_code || null });
+    }
+  }
   let storeChanged = false;
   if (storeRead) {
     const storePlan = planStoreProfileDerive({ spec, store: storeRead.store, pages: storeRead.pages, pagesStatus: storeRead.pages_status, pagesDetail: storeRead.pages_detail, subdomain: storeRead.subdomain });
@@ -3860,10 +4008,17 @@ export function specDeriveCommand(args, { store: storeRead = null } = {}) {
     addIssue(result.warnings, `spec.derive.${row.reason}`, `${row.field} was not derived: ${row.detail}`, { field: row.field, reason: row.reason, ...(row.page_id ? { page_id: row.page_id } : {}) });
   }
   for (const hint of plan.stale_hints) {
-    addIssue(result.warnings, "spec.derive.routing_hint_stale", `page "${hint.page_id}" carries sdk_hints.meta_tags.${hint.tag} ${JSON.stringify(hint.value)}, but page "${hint.target_page_id}" now derives to ${JSON.stringify(hint.derived_route)}. Routing hints are a Map projection derive does not rewrite; re-save the Map (or edit the hint) so the built meta tag and doctor's expectation agree.`, hint);
+    addIssue(result.warnings, "spec.derive.routing_hint_stale", `page "${hint.page_id}" carries sdk_hints.meta_tags.${hint.tag} ${JSON.stringify(hint.value)}, but page "${hint.target_page_id}" now derives to ${JSON.stringify(hint.derived_route)}. Derive rewrites a hint only on an edge it re-points after handoff; edit the hint to that route in the spec (or, while the Map is still the spec's source, re-save the Map) so the built meta tag and doctor's expectation agree. Doctor blocks and record spec refuses until then.`, hint);
   }
   for (const block of plan.created_blocks || []) {
     addIssue(result.warnings, "spec.derive.analytics_block_created", `${block} ${dryRun ? "would be" : "is"} created from the repo's id: the spec ${dryRun ? "would then declare" : "now declares"} an analytics contract, so QA expects that tag to fire instead of treating analytics as advisory.`);
+  }
+  // A vendor block changes what doctor reads; it turns on QA's analytics leg
+  // only when it is the first analytics the spec carries (a provider block
+  // created beside it already says so).
+  const vendorOpensAnalytics = plan.analytics_created === true && !(plan.created_blocks || []).length;
+  for (const block of plan.created_vendor_blocks || []) {
+    addIssue(result.warnings, "spec.derive.analytics_vendor_created", `${block} ${dryRun ? "would be" : "is"} created from the repo's id: doctor ${dryRun ? "would then read" : "now reads"} that vendor's campaigns.json key against the spec${vendorOpensAnalytics ? `, and the spec ${dryRun ? "would then carry" : "now carries"} an analytics block, so QA runs its analytics leg and expects the typed-card order to fire a Purchase` : ""}.`);
   }
 
   // What a write entails is said in both modes, so a dry run previews the
@@ -3878,8 +4033,9 @@ export function specDeriveCommand(args, { store: storeRead = null } = {}) {
     if (serialize(spec) !== text) {
       addIssue(result.warnings, "spec.derive.file_reformatted", `${result.spec_path} ${would} re-serialized with ${indent === "\t" ? "tab" : `${indent.length}-space`} indentation; formatting outside the derived fields (key order, whitespace, number spelling) may differ from the original. Review the file diff before committing.`);
     }
-    if (plan.changes.some((row) => row.page_id)) {
-      addIssue(result.warnings, "spec.derive.projection_stale", `A page route ${dryRun ? "would move" : "moved"}, and the packet's page-kit projection (source_html.pages[].page_kit) and the Build Context were prepared from the old routes. Re-run ${cmd("prepare-build")} (or start) before the next build so they describe the routes the spec carries.`);
+    if (plan.changes.some((row) => row.page_id && (row.op || /\.page_url$/.test(row.field)))) {
+      const pageSetMoved = plan.changes.some((row) => row.op && row.page_id);
+      addIssue(result.warnings, "spec.derive.projection_stale", `${pageSetMoved ? "A page added or removed" : "A page route moved"} ${dryRun ? "would leave" : "leaves"} the packet's page-kit projection (source_html.pages[].page_kit) and the Build Context describing the old pages. Bind it with ${cmd("record")} spec, which re-projects them for a routes-only change and, on a handed-off campaign, for pages added or removed; any other page-scope change needs ${cmd("prepare-build")}.`);
     }
     if (stageIsTerminal(report?.stages?.assembly?.status)) {
       addIssue(result.warnings, "spec.derive.build_stale", `The Assembly Report records a terminal build (stages.assembly.status ${report.stages.assembly.status}) rendered from the spec ${dryRun ? "this would rewrite" : "just rewritten"}. Bind the rewritten spec with ${cmd("record")} spec (it keeps stage history); next then routes back to the build, and Polish and QA are owed again.`);
@@ -3931,6 +4087,7 @@ export function specDeriveCommand(args, { store: storeRead = null } = {}) {
     // The retained doctor snapshot (if any) now predates the spec it judged.
     try {
       markDoctorSidecarStale(targetRepo, {
+        path: campaignSidecarPaths(targetRepo, packetRuntimeRelPath(packet)).doctorOutPath,
         command: "spec derive",
         reason: `spec derive rewrote the CampaignSpec after this doctor snapshot. Re-run ${cmd("doctor")} (or next) for current state.`,
       });
@@ -3981,6 +4138,14 @@ export function specDeriveTextLines(result) {
   }
   if (result.unchanged?.length) lines.push(`Unchanged: ${result.unchanged.map((row) => row.field).join(", ")}`);
   if (result.not_in_target?.length) lines.push(`Not in target (left as they are): ${result.not_in_target.join(", ")}`);
+  if (result.page_scope?.added?.length) lines.push(`Pages added from the page tree: ${result.page_scope.added.map((page) => `${singleLineField(page.page_id)} (${singleLineField(page.file)})`).join(", ")}`);
+  if (result.page_scope?.removed?.length) lines.push(`Pages removed (their built file is gone): ${result.page_scope.removed.map((page) => `${singleLineField(page.page_id)} (${singleLineField(page.file)})`).join(", ")}`);
+  if (result.page_scope?.unclaimed?.length) lines.push(`Page files no spec page binds (pages are added from the tree only after handoff): ${result.page_scope.unclaimed.map(singleLineField).join(", ")}`);
+  if (result.live_campaign) {
+    lines.push(result.live_campaign.status === "read"
+      ? `Live campaign: read${result.live_campaign.campaign_ref_id ? ` (campaign ${singleLineField(result.live_campaign.campaign_ref_id)})` : ""}; offer and package fields refreshed from it`
+      : `Live campaign: not read (${singleLineField(result.live_campaign.reason_code || "unknown")}); offer and package fields left as they are`);
+  }
   if (result.warnings?.length) {
     lines.push("Warnings:");
     for (const issue of result.warnings) lines.push(`- ${formatIssueSummary(issue)}`);
@@ -4379,7 +4544,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
   let runRecordCloseout = null;
   try {
     runRecordCloseout = assessRunRecordCloseout({
-      records: readRunRecordsForTarget(dirname(packetPath)),
+      records: readRunRecordsForTarget(dirname(packetPath), packetRuntimeRelPath(packet)),
       packet,
       report,
       currentQaVerdictDigests: currentQaVerdictDigestsForReport(report, report ? reportPath : null, targetRepo),
@@ -4405,7 +4570,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
     // command names the report this run read when that is not the default
     // one (from --report or the Build Context pointer), so it records there.
     const qc = readCurrentQcResults({ report, doctor, spec, targetRepo, packetPath, reportPath, qcStandIns, rederivers: qcRederivers });
-    result.qc_handoff = buildQcHandoff({ results: qc.results, coverage: qc.coverage, accepts: report?.qc_accepts, packetPath, reportPath: explicitReportPath(reportPath, targetRepo) });
+    result.qc_handoff = buildQcHandoff({ results: qc.results, coverage: qc.coverage, accepts: report?.qc_accepts, packetPath, reportPath: explicitReportPath(reportPath, targetRepo, packetRuntimeRelPath(packet)) });
     // One note per operator decision that kept the build output unchanged
     // after an input change, quoting the operator's reason.
     for (const issue of doctor.warnings) if (issue.code === "assembly.output_unchanged_by_operator_decision") (result.qc_handoff.notes ||= []).push(`Build output kept unchanged after an input change by the operator's decision: "${issue.detail.reason}"`);
@@ -5083,14 +5248,15 @@ function templateStockPromptLine(packet, derived = {}) {
 
 function buildPrompt(packetPath, contextPath, reportPath, packet, derived = {}, intent) {
   const briefPath = packet.build_brief?.normalized_path || "(missing; generate or confirm Campaign Build Brief before business-sensitive assembly)";
+  const runtime = runtimeRelPathOf(packet);
   return `${campaignIntentPromptHeader(intent)}Use next-campaigns-build for this Campaigns OS handoff.
 
 Read first:
 - Build Packet: ${packetPath}
-- Build Context: ${contextPath || "(use packet-adjacent .campaign-runtime/build-context.json if present)"}
-- Assembly Report: ${reportPath || "(use packet-adjacent .campaign-runtime/assembly-report.json if present)"}
+- Build Context: ${contextPath || `(use packet-adjacent ${runtime}/build-context.json if present)`}
+- Assembly Report: ${reportPath || `(use packet-adjacent ${runtime}/assembly-report.json if present)`}
 - Campaign Build Brief: ${briefPath}
-- Design Source Package: .campaign-runtime/input/design-source-package.json when present; use report.design_source_package.material_fingerprint as the source context fingerprint.
+- Design Source Package: ${runtime}/input/design-source-package.json when present; use report.design_source_package.material_fingerprint as the source context fingerprint.
 - Template family: ${packet.assembly.template_family}${templateStockPromptLine(packet, derived)}
 
 Rules:
@@ -5101,7 +5267,7 @@ Rules:
 - Prepared AI/exported HTML must be converted into page-kit-ready source first: keep page-owned body markup, strip document wrappers, add YAML frontmatter, move shared CSS/assets into the campaign structure, and use Liquid helpers only for page-kit links/assets/includes. Page Kit publishes src/<slug>/assets/config.js as /<slug>/config.js and src/<slug>/assets/products/foo.png as /<slug>/products/foo.png; do not leave raw /assets/... or /<slug>/assets/... references in rendered pages.
 - Preserve prepared source HTML for landing/presell pages when it is a real standalone design.
 - For checkout/upsell/downsell/receipt, use the starter template as the SDK contract reference only: preserve required data-next controls and runtime wiring, but let the campaign/source own visual chrome, copy hierarchy, imagery, and brand layer.
-- Read context.theme and .campaign-runtime/theme/theme-report.json when present. If a fresh brand-theme.css exists, copy it into the campaign assets/css folder and list it after next-core.css in checkout/upsell/downsell/receipt frontmatter styles; when theme generate also wrote brand-fonts.css (the design's own faces), copy it beside brand-theme.css and list it on the same pages; if policy is inspect_only, generate or skip explicitly before applying a new brand layer.
+- Read context.theme and ${runtime}/theme/theme-report.json when present. If a fresh brand-theme.css exists, copy it into the campaign assets/css folder and list it after next-core.css in checkout/upsell/downsell/receipt frontmatter styles; when theme generate also wrote brand-fonts.css (the design's own faces), copy it beside brand-theme.css and list it on the same pages; if policy is inspect_only, generate or skip explicitly before applying a new brand layer.
 - Generated brand-theme.css v0 is root-variable-only. Do not edit SDK-owned selectors, package controls, payment fields, totals, submit controls, receipt templates, route meta tags, or SDK JavaScript as part of theme application.
 - If you copy starter-template files, copy the selected family atomically with dependent pages, _includes, _layouts, assets/css, and assets/js; do not copy only checkout.html and receipt.html.
 - Resolve SDK routing meta tags to campaign-root paths such as ${campaignRouteRoot(packet) || `/${packet.campaign.public_route_slug}/`}upsell/, not source filenames or unrooted spec literals.
@@ -5173,7 +5339,7 @@ Read first:
 
 Prepare the target page-kit structure and agent context, then record setup:
 - ${cmd("record")} setup --packet ${packetPath}
-It sets .campaign-runtime/build-context.json scaffold.required=false and .campaign-runtime/assembly-report.json stages.setup to completed, validated against their schemas; do not hand-edit either file.
+It sets the Build Context's scaffold.required=false and the Assembly Report's stages.setup to completed, validated against their schemas; do not hand-edit either file.
 
 When copying a starter template family, copy the family as an atomic page-kit slice: pages plus required _includes, _layouts, assets/css, and assets/js. Do not copy only checkout.html and receipt.html.
 
@@ -5875,11 +6041,22 @@ export function resolvePinSources(args, { cwd = process.cwd() } = {}) {
   // An explicit packet names its project: its target repo, whatever the cwd.
   const projectStart = packet ? targetRepoFor(packetPath, packet) : cwd;
   const packageJsonPath = nearestPackageJson(projectStart);
+  let packetUnread = false;
   if (!packetPath) {
     // The contracted home of the packet is the project root beside package.json
     // (prepare-build's default --out), the same place readback discovers it.
-    packetPath = join(packageJsonPath ? dirname(packageJsonPath) : resolve(cwd), "campaign-runtime.build.json");
-    if (existsSync(packetPath)) packet = readPinJson(packetPath, packetProblem);
+    // A project holding several funnels has one packet each; reading any one
+    // of them would be a guess, so none is read and the warning names them.
+    const projectRoot = packageJsonPath ? dirname(packageJsonPath) : resolve(cwd);
+    packetPath = join(projectRoot, DEFAULT_PACKET_FILENAME);
+    try {
+      packetPath = soleProjectPacket(projectRoot, { command: "tooling status" }) || packetPath;
+    } catch (error) {
+      if (error?.code !== "MULTIPLE_FUNNEL_PACKETS") throw error;
+      packetUnread = true;
+      warnings.push(`Packet pin not read: ${error.message}`);
+    }
+    if (!packetUnread && existsSync(packetPath)) packet = readPinJson(packetPath, packetProblem);
   }
 
   const { projectSpec, projectManifest, projectKey } = resolveProjectPin(packageJsonPath, warnings);
@@ -5896,7 +6073,7 @@ export function resolvePinSources(args, { cwd = process.cwd() } = {}) {
       packetVersionIgnored = typeof recorded === "string" ? recorded : JSON.stringify(recorded);
       warnings.push(`Packet campaigns_os_version ignored: ${JSON.stringify(recorded)} in ${packetPath} is not an exact version.`);
     }
-  } else if (existsSync(packetPath) && !packet) {
+  } else if (!packetUnread && existsSync(packetPath) && !packet) {
     warnings.push(`Packet pin unavailable: ${packetPath} ${packetProblem.reason}.`);
   }
   return {
@@ -7359,7 +7536,7 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   const parsedSurfaces = parseRunRecordSurfaces(args.surfaces);
   const packet = readJson(packetPath);
   const explicitTargetRepo = resolveFromFile(packetPath, packet.assembly?.target_repo);
-  const { baseDir, targetRepo, contextPath, reportPath } = resolveCampaignWorkspace(packetPath, {
+  const { baseDir, runtimeRelPath, targetRepo, contextPath, reportPath } = resolveCampaignWorkspace(packetPath, {
     packet,
     contextPath: args.context ? resolve(args.context) : undefined,
     reportPath: args.report ? resolve(args.report) : undefined,
@@ -7403,7 +7580,7 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   // session decides without it, and a target with a long history pays no I/O
   // for a decision already made.
   const needsDiskScan = listOnly || (!optionalString(args["run-id"]) && args["new-run"] !== true && !isNonEmptyString(ambient?.session?.run_id));
-  const targetRecords = needsDiskScan ? readRunRecordsForTarget(baseDir) : [];
+  const targetRecords = needsDiskScan ? readRunRecordsForTarget(baseDir, runtimeRelPath) : [];
   const latestRecordEntry = needsDiskScan ? latestMatchingRunRecord(targetRecords, packet) : null;
   let runId;
   let runIdSource;
@@ -7544,7 +7721,7 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   // may not. A pure --no-write run reads nothing: it writes and sends nothing.
   // A --dry-run does read it, because what a real run would do here is the
   // very thing the dry run is being asked to report.
-  const prior = write || dryRun ? readPriorRunRecord(runId, baseDir) : null;
+  const prior = write || dryRun ? readPriorRunRecord(runId, baseDir, runtimeRelPath) : null;
   const priorRemit = priorRemitOutcome(prior?.record);
   const storedRemotely = priorRemit?.state === "ok";
   // A pure local-inspection run (--no-write), an explicit --no-remit, or a
@@ -7743,7 +7920,7 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
   // carries this run's remit_* outcome rather than the placeholders it was
   // assembled with. Validated above, ahead of the send; nothing is written
   // under --dry-run or --no-write.
-  const recordPath = write ? writeRunRecord(record, { baseDir }) : null;
+  const recordPath = write ? writeRunRecord(record, { baseDir, runtimeRelPath }) : null;
 
   const summary = {
     ok: true,
@@ -7775,7 +7952,7 @@ async function runRecordCommand(args, ambient = null, { silent = false, promptFo
     // stopped the send anyway, and null with `would_remit_refused` set when the
     // transport's destination gate refuses the base before any socket opens).
     // Envelope only; never on the record.
-    ...(dryRun ? { dry_run: true, would_write: resolveRunRecordPath(runId, baseDir), would_remit: wouldRemitEndpoint, would_remit_refused: wouldRemitRefusal } : {}),
+    ...(dryRun ? { dry_run: true, would_write: resolveRunRecordPath(runId, baseDir, runtimeRelPath), would_remit: wouldRemitEndpoint, would_remit_refused: wouldRemitRefusal } : {}),
   };
   if (silent) return summary;
   if (args.json) {
@@ -7828,10 +8005,10 @@ function assertRunRecordValid(record) {
 // `writeRunRecord` could have written is trusted as a prior — the same
 // validator gates both — so a file that merely says `remit_state: "ok"` is
 // replaced like a corrupt one, never preserved or handed back as the record.
-function readPriorRunRecord(runId, baseDir) {
+function readPriorRunRecord(runId, baseDir, runtimeRelPath) {
   let path;
   try {
-    path = resolveRunRecordPath(runId, baseDir);
+    path = resolveRunRecordPath(runId, baseDir, runtimeRelPath);
   } catch {
     return null;
   }
@@ -7913,6 +8090,26 @@ function artifactRefPath(kind, filePath, baseDir) {
   return rel.startsWith(".") ? rel : `./${rel}`;
 }
 
+// The packet's runtime directory for a printed prompt; a packet that records
+// an unusable one names the project-level directory (doctor refuses it).
+function runtimeRelPathOf(packet) {
+  try {
+    return packetRuntimeRelPath(packet);
+  } catch {
+    return RUNTIME_DIR_REL_PATH;
+  }
+}
+
+// The runtime directory of the packet at `packetPath`, or the project-level
+// one when it cannot be read (the printed command then carries --report).
+function runtimeRelPathAt(packetPath) {
+  try {
+    return packetPath ? packetRuntimeRelPath(readJson(packetPath)) : RUNTIME_DIR_REL_PATH;
+  } catch {
+    return RUNTIME_DIR_REL_PATH;
+  }
+}
+
 // The verdict a Run Record should carry when none was named: every candidate
 // the report records or the qa-output directories hold, minus any the QA
 // verdict receiver stamped `trusted: false` (an anonymous submission is
@@ -7925,7 +8122,7 @@ function inferQaVerdictPath({ packet, report, reportPath = null, targetRepo = nu
   const eligible = discoverQaVerdicts({
     packet,
     report,
-    reportPath: reportPath || (targetRepo ? campaignSidecarPaths(targetRepo).reportPath : null),
+    reportPath: reportPath || (targetRepo ? campaignSidecarPaths(targetRepo, packetRuntimeRelPath(packet)).reportPath : null),
     roots: [targetRepo, baseDir],
   }).filter((candidate) => candidate.verdict && candidate.trusted
     && ((packet?.spec?.local_spec_id == null && candidate.verdict.local_spec_id == null) || candidate.identityMatch));
@@ -7941,16 +8138,14 @@ const ARGV_SHAPE_PRIVATE_FLAGS = new Set(["auth-cookie", "no-remit", "no-write",
 
 // argv SHAPE = selected flag NAMES present, never their values (minimization).
 // Sorted + de-duplicated for deterministic records; opt-out and endpoint flags
-// stay private. A `--flag=value` token parses as a single key, so split on "="
-// and keep only the name — otherwise a value (e.g. --auth-cookie=SECRET) would
-// leak into a persisted, potentially-remitted shape, breaking the guarantee.
+// stay private. parseArgs keeps a `--flag=value` token off the keys, so no
+// value (e.g. --auth-cookie=SECRET) can reach a persisted, remitted shape.
 function argvShape(args) {
   const names = new Set();
   for (const key of Object.keys(args)) {
     if (key === "_") continue;
-    const name = key.split("=")[0];
-    if (ARGV_SHAPE_PRIVATE_FLAGS.has(name)) continue;
-    names.add(`--${name}`);
+    if (ARGV_SHAPE_PRIVATE_FLAGS.has(key)) continue;
+    names.add(`--${key}`);
   }
   return [...names].sort();
 }
@@ -8466,7 +8661,7 @@ export function doctorRequiredActionLines(result) {
   // cannot be ruled out.
   const inspectedReportPath = typeof derived?.assembly_report_path === "string" ? derived.assembly_report_path : null;
   const inferredReportPath = typeof derived?.target_repo === "string"
-    ? campaignSidecarPaths(derived.target_repo).reportPath
+    ? campaignSidecarPaths(derived.target_repo, runtimeRelPathAt(packetPath)).reportPath
     : null;
   const reportPath = inspectedReportPath && inspectedReportPath !== inferredReportPath ? inspectedReportPath : null;
   const lines = [];
@@ -8503,6 +8698,19 @@ function printPrepareResult(result, args) {
     }
   }
   console.log(`Packet: ${result.packetPath}`);
+  if (result.funnelAddedBeside) {
+    // A route differing from the default packet's is either another funnel
+    // or a rename of that one; only the operator knows which, so say what was
+    // done and how to undo it.
+    const beside = result.funnelAddedBeside;
+    const route = result.packet?.campaign?.public_route_slug;
+    const runtimeDir = result.packet?.assembly?.runtime_dir;
+    console.log(
+      `Funnel: route ${route} was set up as another funnel beside ${beside.packetPath} (route ${beside.route || "unnamed"})`
+      + `${runtimeDir ? `, with its records under ${runtimeDir}/` : ""}. To rename that funnel's route instead, delete ${result.packetPath}`
+      + `${runtimeDir ? ` and ${runtimeDir}/` : ""}, then re-run prepare-build with --out ${beside.packetPath} --force.`,
+    );
+  }
   if (result.briefPath) {
     const brief = result.context?.build_brief;
     console.log(`Brief: ${result.briefPath}${brief ? ` (${brief.mode}, ${brief.status}, questions=${brief.question_count})` : ""}`);
@@ -8650,16 +8858,30 @@ export async function specDeriveWithMapWriteback(args, { fetchImpl = undefined, 
   if (Object.hasOwn(args, "proxy-base") && !optionalString(args["proxy-base"])) {
     throw refused("spec derive: --proxy-base needs a URL (https, or a loopback host); nothing was written.");
   }
-  if (optionalString(args["proxy-base"]) && args["write-map"] !== true) {
-    throw refused("spec derive: --proxy-base only applies with --write-map; nothing was written.");
+  if (Object.hasOwn(args, "no-live-refs") && args["no-live-refs"] !== true) {
+    throw refused(`--no-live-refs takes no value (got ${JSON.stringify(args["no-live-refs"])}); write \`--no-live-refs\` on its own, after the other flags.`);
   }
   const writeMap = args["write-map"] === true;
   const localArgs = Object.fromEntries(Object.entries(args).filter(([key]) => !SPEC_DERIVE_MAP_FLAGS.includes(key)));
+  // The live campaign read (#721), under the proxy --proxy-base names, is
+  // made only once the local checks pass: a dry run of the repo half first,
+  // so a missing packet, spec or entry (or an unknown flag) sends nothing.
+  // --no-live-refs sends nothing at all.
+  const unknownFlags = Object.keys(localArgs).filter((key) => key !== "_" && !SPEC_DERIVE_FLAGS.includes(key));
+  // The store flags are judged first, as the local command judges them, so
+  // the preflight below (which leaves them out) never changes which refusal
+  // a malformed invocation gets.
+  if (!unknownFlags.length) parseSpecDeriveStoreFlags(localArgs);
+  const preflightArgs = Object.fromEntries(Object.entries(localArgs).filter(([key]) => key !== "from-store" && key !== "store-token-source"));
+  const preflight = unknownFlags.length || liveRefsDisabled(args) ? null : specDeriveCommand({ ...preflightArgs, "dry-run": true });
+  const liveCampaign = liveRefsDisabled(args)
+    ? disabledLiveRead()
+    : preflight && !preflight.errors.length ? await readSpecDeriveLiveCampaign(args, { ...(fetchImpl ? { fetchImpl } : {}), env, ...(warn ? { warn } : {}) }) : undefined;
   // A copy, so nothing here depends on the local command handing out a
   // mutable object; the Map outcome is added beside its fields, not into them.
   // The store source (--from-store) is the other network read; it runs
   // before the Map write-back so the pin it reports is the one written.
-  const local = Object.hasOwn(localArgs, "from-store") ? await specDeriveFromStoreCommand(localArgs) : specDeriveCommand(localArgs);
+  const local = Object.hasOwn(localArgs, "from-store") ? await specDeriveFromStoreCommand(localArgs, { liveCampaign }) : specDeriveCommand(localArgs, { liveCampaign });
   const result = { ...local, write_map: writeMap, map: null };
   if (!writeMap) return result;
   const skipped = (reason, detail) => {

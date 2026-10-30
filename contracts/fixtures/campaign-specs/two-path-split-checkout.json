@@ -97,6 +97,12 @@
           "template": "src/shop-three-step/information.html",
           "page_url": "/information/",
           "next_page": "shipping",
+          "packages": [
+            {
+              "ref_id": 10,
+              "qty": 1
+            }
+          ],
           "sdk_hints": {
             "sdk_page_type": "checkout",
             "template_family": "shop-three-step"

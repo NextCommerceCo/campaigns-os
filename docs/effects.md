@@ -70,10 +70,12 @@ with one of these:
 | Token | Resolves to |
 | --- | --- |
 | `{target}` | The target the invocation names: the directory given to `--target`, or the Page Kit target repository the Build Packet points at. |
+| `{runtime}` | The funnel's runtime directory under `{target}`: `{target}/.campaign-runtime` for a Build Packet that records no `assembly.runtime_dir` (every packet before per-funnel records, and the first funnel of a project), else `{target}/<assembly.runtime_dir>`, which is `.campaign-runtime/funnels/<public_route_slug>` for each later funnel of the same project. The funnel's Build Context, Assembly Report, doctor output, theme output and intake inputs live here. |
 | `{cwd}` | The working directory the invocation runs in. |
 | `{spec}` | The CampaignSpec file the Build Packet names (`spec.local_path`), which need not live inside the target repository. |
 | `{home}` | Your machine: the home directory and the config root under it (`XDG_CONFIG_HOME` when set). |
 | `{packet}` | The Build Packet the invocation names (`--packet`), wherever it lives — it need not be the copy inside the target repository. |
+| `{packet-runtime}` | The same funnel runtime directory beside the Build Packet: `<packet directory>/.campaign-runtime`, or `<packet directory>/<assembly.runtime_dir>` when the packet records one. The committed QA verdict sidecar and the Run Records live here. |
 | `{lifecycle-journal}` | The command-lifecycle journal wherever it was selected for this invocation. |
 | `{proxy-base}` | The endpoint `--proxy-base` names, or the canonical NEXT endpoint when it does not. |
 | `{base-url}` | The campaign under test, as `--base-url` names it or as the packet derives it. |
@@ -81,8 +83,8 @@ with one of these:
 
 The tokens matter because effects are not all under the target. `install-skills`
 writes your **home** directory, not the campaign. `telemetry on` writes your
-**machine** config. `run-record` writes beside the **working directory**, not the
-target repo. A row that said "writes the target" would be wrong about all three.
+**machine** config. `run-record` writes beside the **Build Packet**
+(`{packet-runtime}`), not the target repo. A row that said "writes the target" would be wrong about all three.
 
 ### The Map Builder fetch
 
@@ -109,14 +111,14 @@ campaign. No store or Admin credential is used. The proxy's answer is an
 envelope whose `data` field holds the campaign. A failed read, an `ok: false`
 envelope, one with an `error` and no campaign, or several campaigns with no
 `campaign.ref_id` to pick one is recorded as `not_run` with its reason, never
-as a pass. `--no-live-refs` on `doctor` or `qa run` skips only this read and
+as a pass. `--no-live-refs` on `doctor`, `qa run` or `spec derive` skips only this read and
 records `not_run` with reason `disabled`; every other declared write and send
 is unchanged. Each form has its own row, including `doctor --write
 --no-live-refs` and `qa run --no-live-refs` with each `qa run` modifier.
 `doctor --no-write --no-live-refs` has the effects of the `doctor
 --no-live-refs` row.
 
-Only `doctor` and `qa run` make this read. The other commands that run doctor
+Only `doctor`, `qa run` and `spec derive` (see `spec derive` and the live campaign, below) make this read. The other commands that run doctor
 internally make no request and record `derived.live_campaign_refs` as
 `not_run` with reason `not_read`, with no warning: `start`, `prepare-build`
 and `build` (the intake alias for prepare-build + doctor), `theme waive`,
@@ -130,11 +132,13 @@ itself carries QA's own read).
 
 ### `record brief` and `record spec`
 
-**Saving brief answers.** `campaigns-os record brief --packet <packet>` saves Campaign Build Brief answers without re-running `start` or `prepare-build`. It writes the normalized brief under `{target}/.campaign-runtime/input/`, the Build Packet, the build context, the Assembly Report and the doctor-sidecar stale stamp, and sends nothing. It refuses a path that points at one of the files Campaigns OS writes itself, such as the normalized brief. Saving a brief whose content is unchanged keeps all stage evidence and statuses. Reformatting, reordering keys, writing a default value explicitly, or changing only `_meta` also keeps all stage evidence and statuses; the save may rewrite the brief files. When the presentation sections change, build, Polish and QA are owed again. When only `qa_policy` changes, QA alone is owed again. Setup and deploy records are kept. Each replaced record is kept under the stage's `history`; the last five superseded records per stage are kept, and history is never used as current proof.
+**Saving brief answers.** `campaigns-os record brief --packet <packet>` saves Campaign Build Brief answers without re-running `start` or `prepare-build`. It writes the normalized brief under the funnel's runtime directory (`{runtime}/input/`), the Build Packet, the build context, the Assembly Report and the doctor-sidecar stale stamp, and sends nothing. It refuses a path that points at one of the files Campaigns OS writes itself, such as the normalized brief. Saving a brief whose content is unchanged keeps all stage evidence and statuses. Reformatting, reordering keys, writing a default value explicitly, or changing only `_meta` also keeps all stage evidence and statuses; the save may rewrite the brief files. When the presentation sections change, build, Polish and QA are owed again. When only `qa_policy` changes, QA alone is owed again. Setup and deploy records are kept. Each replaced record is kept under the stage's `history`; the last five superseded records per stage are kept, and history is never used as current proof.
 
-**Binding a CampaignSpec change.** `campaigns-os record spec --packet <packet>` binds the new CampaignSpec content: it updates the build context and report identity, re-reads the brief file last saved (by intake or `record brief`), keeps waivers, warning accepts, the applied theme and deploy settings, and moves each superseded stage record into that stage's `history`. It writes the build context, the Assembly Report, the normalized brief and the doctor-sidecar stale stamp; it does not write the Build Packet, and it sends nothing. `spec derive` no longer rebinds identity; run `record spec` after it. A change to the set, order or routes of active pages still needs intake.
+**Binding a CampaignSpec change.** `campaigns-os record spec --packet <packet>` binds the new CampaignSpec content: it updates the build context and report identity, re-reads the brief file last saved (by intake or `record brief`), keeps waivers, warning accepts, the applied theme and deploy settings, and moves each superseded stage record into that stage's `history`. It writes the build context, the Assembly Report, the normalized brief and the doctor-sidecar stale stamp, and it sends nothing. It writes the Build Packet and the Design Source Package only when it binds a page change: a move of routes alone, or on a handed-off campaign (deploy or QA completed) a page added or removed; then a deploy recorded without a build fingerprint is owed again too when the set of built pages changes (a fingerprint-bound deploy is made owed by the next `record build`). A rerun after a run that stopped part way moves the Design Source Package references that run left behind. `spec derive` no longer rebinds identity; run `record spec` after it. A change to the order of active pages, or a page added or removed before handoff, still needs intake.
 
-Both rows are tier C, because a change makes recorded stages owed again, and each `--dry-run` form is tier none: it writes nothing and appends no lifecycle entry. A CampaignSpec change that was never saved with `record spec` is recorded by the next `record build`, `record polish` or QA run, with the same effect; `record build` then also marks Polish and QA owed again. An edit to the brief file is not read until it is saved with `record brief`: until then the build reads the saved brief, and doctor warns `build_brief.input_unsaved`. Intake now also refuses, without `--force`, to discard recorded waivers, warning accepts, stage history, an applied theme, or a recorded deploy target, preview URL, production URL, order-path depth or allowed-domains confirmation; with `--force`, it keeps stage history, archives the build, Polish and QA records it clears, and keeps the record that the inputs changed.
+Both `record` rows are tier C, because a change makes recorded stages owed again, and each `--dry-run` form is tier none: it writes nothing and appends no lifecycle entry. A CampaignSpec change that was never saved with `record spec` is recorded by the next `record build`, `record polish` or QA run, with the same effect; `record build` then also marks Polish and QA owed again. An edit to the brief file is not read until it is saved with `record brief`: until then the build reads the saved brief, and doctor warns `build_brief.input_unsaved`. Intake now also refuses, without `--force`, to discard recorded waivers, warning accepts, stage history, an applied theme, or a recorded deploy target, preview URL, production URL, order-path depth or allowed-domains confirmation; with `--force`, it keeps stage history, archives the build, Polish and QA records it clears, and keeps the record that the inputs changed.
+
+**`spec derive` and the live campaign.** Once the campaign is built (its `_site/<route>/` exists) and a public Campaigns API key resolves, `spec derive` makes the same read-only `GET {proxy-base}/api/campaign` doctor makes and refreshes the offer and package fields the spec mirrors from the Campaigns App; `--dry-run` makes it too, so the diff shows those fields. `--no-live-refs` sends nothing (its own row, tier B). `spec derive` and its `--dry-run` are tier A.
 
 ## How to read a row
 
@@ -164,8 +168,9 @@ flags that change what the invocation does to the world are listed once, in
 `vocabulary.effect_changing_flags`: `--apply`, `--browser`, `--built`, `--dry-run`,
 `--emit-packet`, `--example`, `--force`, `--from-store`, `--list`,
 `--no-live-refs`, `--no-post-verdict`, `--no-probe`, `--no-remit`, `--no-run-session`,
-`--no-write`, `--republish`, `--test-order`, `--write`, `--write-map`. Flags
-that only change the output shape (`--json`, `--report`) deliberately do not.
+`--no-write`, `--republish`, `--test-order`, `--vendor-beacons`, `--write`,
+`--write-map`. Flags that only change the output shape (`--json`, `--report`)
+deliberately do not.
 
 **"The help text" is every help block the CLI prints**, not one file's.
 `campaigns-os qa` prints its own from `src/qa-node.mjs`, and while the coverage
@@ -253,6 +258,9 @@ input resolution. They append no lifecycle entry. Accepted modes remain
 `accept`, `decline`, and `both` (case-insensitive); browser `--test-order` still
 takes precedence and does not require the legacy cart. API credentials are
 still checked only inside the legacy handler and failures there are journaled.
+A `qa run --vendor-beacons` value other than `live`, or `--vendor-beacons` on
+a run without browser `--test-order`, is likewise an argv-only refusal before
+QA input resolution.
 The nested run-record refusal scope in session closeout guards against future
 changes. No internal closeout can currently create a refusal before its
 invoking command journals.

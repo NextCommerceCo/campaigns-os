@@ -109,7 +109,11 @@ function selectedShipping(page) {
 // `is_upsell: true` on a non-upsell page. Every consumer that must
 // tell a bump from a main selector row (parity scenarios, bump deltas, the QA
 // selector-tier planner, `next`'s order-bump QA command) reads this, so a
-// marker change lands in one place.
+// marker change lands in one place. The page-type half of the contract
+// (campaigns-os#710, stated on the schema's pagePackage.is_upsell) sits with
+// the callers: on an upsell or downsell page every row is the page's offer,
+// so planScenarios puts all of them in mainRows, and the tier and bump readers
+// are only given the select, checkout_step and checkout pages of a path.
 export function isBumpRow(row) {
   return Boolean(row?.is_order_bump || row?.is_upsell);
 }
@@ -262,7 +266,9 @@ function descriptor(page, mapDoc, role, lines, options = {}) {
   const body = { lines: lines.map((line) => ({ ...line })) };
   if (array(options.vouchers).length) body.vouchers = [...options.vouchers];
 
-  const currency = mapDoc?.campaign?.currency ?? mapDoc?.currency;
+  // A run currency (`qa run --currency`) prices every scenario in that
+  // currency; otherwise the Map's campaign currency is asked for.
+  const currency = present(options.currency) ? options.currency : mapDoc?.campaign?.currency ?? mapDoc?.currency;
   if (present(currency)) body.currency = String(currency);
   if (present(options.shipping_method)) body.shipping_method = options.shipping_method;
   return { ...result, body };
@@ -270,6 +276,8 @@ function descriptor(page, mapDoc, role, lines, options = {}) {
 
 /**
  * Convert one authored page into deterministic calculate request descriptors.
+ * `options.currency`, when given, is the currency every request asks for in
+ * place of the Map's campaign currency.
  */
 export function planScenarios(page, mapDoc = {}, options = {}) {
   const rows = array(page?.packages);
@@ -310,7 +318,12 @@ export function planScenarios(page, mapDoc = {}, options = {}) {
     !pageIsUpsell || !carriedVouchers.includes(String(value.offer_code)),
   );
 
-  const shared = { attached_offers: attached, known_offer_codes: knownOfferCodes, page_rows: rows };
+  const shared = {
+    attached_offers: attached,
+    known_offer_codes: knownOfferCodes,
+    page_rows: rows,
+    ...(present(options.currency) ? { currency: String(options.currency) } : {}),
+  };
   const plan = [];
   const add = (value) => {
     if (plan.length >= maxScenarios) throw new CommercialJourneyLimitError("scenarios", maxScenarios);

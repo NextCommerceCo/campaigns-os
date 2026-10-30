@@ -1,0 +1,37 @@
+{
+  "violations": [
+    {
+      "ruleId": "CampaignCurrencies",
+      "severity": "error",
+      "message": "campaign.currency \"usd\" is not a three-letter upper-case ISO 4217 currency code. Write it as \"USD\".",
+      "path": "/campaign/currency",
+      "data": {
+        "check": "currency_code",
+        "received": "usd",
+        "suggestion": "USD"
+      }
+    },
+    {
+      "ruleId": "CampaignCurrencies",
+      "severity": "error",
+      "message": "campaign.available_currencies[1] \"US$\" is not a three-letter upper-case ISO 4217 currency code.",
+      "path": "/campaign/available_currencies/1",
+      "data": {
+        "check": "available_currency_code",
+        "received": "US$",
+        "suggestion": null
+      }
+    },
+    {
+      "ruleId": "CampaignCurrencies",
+      "severity": "error",
+      "message": "campaign.available_currencies[2] \"eur\" is not a three-letter upper-case ISO 4217 currency code. Write it as \"EUR\".",
+      "path": "/campaign/available_currencies/2",
+      "data": {
+        "check": "available_currency_code",
+        "received": "eur",
+        "suggestion": "EUR"
+      }
+    }
+  ]
+}

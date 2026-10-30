@@ -19,6 +19,7 @@
     "normalize.ts",
     "types.ts",
     "analytics-vocabulary.ts",
+    "analytics-vendors.ts",
     "rules/**/*.ts"
   ]
 }

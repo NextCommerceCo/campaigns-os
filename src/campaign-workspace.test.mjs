@@ -35,6 +35,7 @@ test("targetRepoFor resolves a declared target against the packet's directory an
 
 test("campaignSidecarPaths is the one spelling of the default sidecar locations", () => {
   assert.deepEqual(campaignSidecarPaths("/site"), {
+    runtimeDir: "/site/.campaign-runtime",
     contextPath: `/site/${BUILD_CONTEXT_REL_PATH}`,
     reportPath: `/site/${ASSEMBLY_REPORT_REL_PATH}`,
     doctorOutPath: `/site/${DOCTOR_SIDECAR_REL_PATH}`,

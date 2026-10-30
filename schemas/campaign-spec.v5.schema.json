@@ -73,13 +73,13 @@
         "id": { "type": "string", "description": "Campaign slug-style identifier (28/33 real specs)." },
         "name": { "type": "string" },
         "slug": { "type": "string" },
-        "currency": { "type": "string" },
+        "currency": { "type": "string", "description": "The campaign's default currency: a three-letter upper-case ISO 4217 code such as \"USD\". The CampaignCurrencies rule reports any other value as an error; a lower-case code can make Campaign Cart fall back to a cached USD campaign." },
         "language": { "type": "string" },
         "payment_env_key": { "type": "string" },
         "campaigns_api_key": { "type": ["string", "null"], "description": "Public-by-design, domain-allowlisted Campaigns API key (32/33 real specs)." },
         "available_payment_methods": { "type": "array" },
         "available_express_payment_methods": { "type": "array" },
-        "available_currencies": { "type": "array", "items": { "type": "string" } },
+        "available_currencies": { "type": "array", "items": { "type": "string" }, "description": "Every currency the campaign sells in, the default currency included, as three-letter upper-case ISO 4217 code strings. The Campaigns API returns { code, label } objects here; write the code strings. This is the CampaignSpec field: the Campaigns App API's additional_currencies is the same list without the default and is not part of the spec. The CampaignCurrencies rule reports a malformed entry as an error, and a default currency missing from a non-empty list as a warning." },
         "available_shipping_countries": {
           "description": "Arrives in THREE incompatible shapes in real exports: bare string \"all\" (5 specs), an array of country-code strings incl. [] (22+), and an array of { code, label } objects (5). All three are accepted here; normalization to one canonical shape is deliberately deferred to a later change.",
           "anyOf": [
@@ -260,7 +260,7 @@
         "product_purchase_availability": { "type": ["string", "null"] },
         "product_inventory_availability": { "type": ["string", "null"] },
         "image": { "type": ["string", "null"] },
-        "is_upsell": { "type": "boolean", "description": "Boolean role flag. There is no 'role' field in real exports — role is expressed by the is_upsell/is_order_bump/default_selected boolean trio." },
+        "is_upsell": { "type": "boolean", "description": "Boolean role flag. There is no 'role' field in real exports — role is expressed by the is_upsell/is_order_bump/default_selected boolean trio. What the flag means depends on the page type. On an upsell or downsell page every package row is that page's post-purchase offer and never an order bump, whatever is_upsell says, so a plain { ref_id, qty } row and one with is_upsell: true are both the page's offer. On any other page (checkout, checkout_step, select), is_upsell: true or is_order_bump: true marks the row as an add-on (an order bump) offered beside the main package; a row with neither flag is a main package." },
         "is_order_bump": { "type": "boolean" },
         "default_selected": { "type": "boolean" },
         "configurable": { "type": "boolean", "description": "Fixture/authoring extension marking quantity-configurable package rows." },
@@ -422,6 +422,22 @@
               "pixelId": { "type": "string" },
               "endpoint": { "type": "string" },
               "transform": { "type": "string" },
+              "blockedEvents": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        "vendors": {
+          "type": "object",
+          "description": "Starter-template vendor adapters, keyed by vendor key (ga4, axon, taboola, triplewhale, tiktok, northbeam, snap, pinterest), as the Map Builder emits them. Each is switched on by a flat key in the campaign's _data/campaigns.json entry; see AnalyticsVendor in campaign-spec/types.ts.",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "enabled": { "type": "boolean" },
+              "id": { "type": "string" },
+              "platform": { "type": "string" },
+              "identityEnabled": { "type": "boolean" },
+              "allowedEvents": { "type": "array", "items": { "type": "string" } },
               "blockedEvents": { "type": "array", "items": { "type": "string" } }
             }
           }

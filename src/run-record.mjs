@@ -12,13 +12,14 @@ import { localSpecIdentityFields, resolveCampaignIdentity } from "./spec-source-
 
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { ADAPTER_DECISION_STRATEGY_FIELDS } from "./adapter-decision-contract.mjs";
 import { currentBuildFingerprint } from "./polish-gate.mjs";
 import { qaRecordedBuildFingerprint, qaRecordedForCurrentBuild } from "./stage-ledger.mjs";
 
 export const RUN_RECORD_SCHEMA = "campaigns-os-run-record/v0";
 export const RUN_RECORDS_DIR_REL_PATH = ".campaign-runtime/run-records";
+const RUNTIME_DIR_REL_PATH = ".campaign-runtime";
 
 // Improvement-surface taxonomy: a list, not an enum — real signal is rarely
 // one surface (see Improvement-Surface Taxonomy in the design).
@@ -377,12 +378,19 @@ function sanitizeRunId(runId) {
 }
 
 /**
- * Resolve where a Run Record is written: <baseDir>/.campaign-runtime/
- * run-records/<run_id>.json. baseDir is the run root (the CLI passes the
- * packet's directory) so the records sit next to the findings journal.
+ * Resolve where a Run Record is written: <baseDir>/<runtime dir>/run-records/
+ * <run_id>.json. baseDir is the run root (the CLI passes the packet's
+ * directory) so the records sit next to the findings journal. The runtime
+ * directory is the packet's (packetRuntimeRelPath in campaign-workspace.mjs):
+ * `.campaign-runtime` unless the packet is one of several funnels in its
+ * project, so each funnel keeps its own records.
  */
-export function resolveRunRecordPath(runId, baseDir = process.cwd()) {
-  return join(resolve(baseDir), RUN_RECORDS_DIR_REL_PATH, `${sanitizeRunId(runId)}.json`);
+export function resolveRunRecordPath(runId, baseDir = process.cwd(), runtimeRelPath = RUNTIME_DIR_REL_PATH) {
+  return join(runRecordsDir(baseDir, runtimeRelPath), `${sanitizeRunId(runId)}.json`);
+}
+
+function runRecordsDir(baseDir, runtimeRelPath = RUNTIME_DIR_REL_PATH) {
+  return join(resolve(baseDir), runtimeRelPath, relative(RUNTIME_DIR_REL_PATH, RUN_RECORDS_DIR_REL_PATH));
 }
 
 function extractDoctorObservations(doctor) {
@@ -758,13 +766,13 @@ export function assembleRunRecord({
  * invalid record (a malformed manifest is a build-tooling bug, not run state
  * to swallow). Returns the written path.
  */
-export function writeRunRecord(record, { baseDir = process.cwd() } = {}) {
+export function writeRunRecord(record, { baseDir = process.cwd(), runtimeRelPath = RUNTIME_DIR_REL_PATH } = {}) {
   const validation = validateRunRecord(record);
   if (!validation.ok) {
     const detail = validation.errors.map((error) => `[${error.code}] ${error.message}`).join("; ");
     throw new Error(`Run Record failed validation; refusing to write: ${detail}`);
   }
-  const path = resolveRunRecordPath(record.run_id, baseDir);
+  const path = resolveRunRecordPath(record.run_id, baseDir, runtimeRelPath);
   mkdirSync(dirname(path), { recursive: true });
   const tmpPath = `${path}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
   writeFileSync(tmpPath, `${JSON.stringify(record, null, 2)}\n`);
@@ -831,9 +839,9 @@ export function orderRunRecordFileNames(names) {
   });
 }
 
-export function readRunRecordsForTarget(baseDir) {
+export function readRunRecordsForTarget(baseDir, runtimeRelPath = RUNTIME_DIR_REL_PATH) {
   try {
-    const dir = join(resolve(baseDir), RUN_RECORDS_DIR_REL_PATH);
+    const dir = runRecordsDir(baseDir, runtimeRelPath);
     if (!existsSync(dir) || !statSync(dir).isDirectory()) return [];
     const names = orderRunRecordFileNames(readdirSync(dir).filter((name) => RUN_RECORD_FILE_NAME_PATTERN.test(name)))
       .slice(0, RUN_RECORDS_SCAN_LIMIT);

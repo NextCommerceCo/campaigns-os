@@ -124,6 +124,18 @@ import v4CheckoutChainUpgradedExpected from './expected/v4-checkout-chain-upgrad
 import onAcceptOffOfferPage from './on-accept-off-offer-page.json' with { type: 'json' }
 import onAcceptOffOfferPageExpected from './expected/on-accept-off-offer-page.expected.json' with { type: 'json' }
 
+import checkoutPathMissingPackages from './checkout-path-missing-packages.json' with { type: 'json' }
+import checkoutPathMissingPackagesExpected from './expected/checkout-path-missing-packages.expected.json' with { type: 'json' }
+
+import selectSellsCheckoutEmpty from './select-sells-checkout-empty.json' with { type: 'json' }
+import selectSellsCheckoutEmptyExpected from './expected/select-sells-checkout-empty.expected.json' with { type: 'json' }
+
+import badCurrencyCodes from './bad-currency-codes.json' with { type: 'json' }
+import badCurrencyCodesExpected from './expected/bad-currency-codes.expected.json' with { type: 'json' }
+
+import currencyNotAvailable from './currency-not-available.json' with { type: 'json' }
+import currencyNotAvailableExpected from './expected/currency-not-available.expected.json' with { type: 'json' }
+
 export interface NamedFixture extends Fixture {
   name: string
 }
@@ -178,6 +190,10 @@ export const corpus: NamedFixture[] = [
   build('checkout-step-route-fields', checkoutStepRouteFields, checkoutStepRouteFieldsExpected),
   build('v4-checkout-chain-upgraded', v4CheckoutChainUpgraded, v4CheckoutChainUpgradedExpected),
   build('on-accept-off-offer-page', onAcceptOffOfferPage, onAcceptOffOfferPageExpected),
+  build('checkout-path-missing-packages', checkoutPathMissingPackages, checkoutPathMissingPackagesExpected),
+  build('select-sells-checkout-empty', selectSellsCheckoutEmpty, selectSellsCheckoutEmptyExpected),
+  build('bad-currency-codes', badCurrencyCodes, badCurrencyCodesExpected),
+  build('currency-not-available', currencyNotAvailable, currencyNotAvailableExpected),
 ]
 
 export function fixtureByName(name: string): NamedFixture {

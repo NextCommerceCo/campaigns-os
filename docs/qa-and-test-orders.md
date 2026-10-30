@@ -134,6 +134,21 @@ waiver commands keep them strict. Progress
 snapshots record a carried-forward gate as `not_applicable`, because their
 schema has no carried-forward state.
 
+### Polish advisory for a page-only change
+
+After launch, a change that touches only some pages' HTML and leaves checkout,
+commerce markup, routes, scripts and the campaign's Page Kit config alone is a
+page-only change ([what a change owes](campaigns-os-build-flow.md#what-a-change-owes)).
+On any target, its stale Polish evidence (`polish.evidence_missing` after
+`record build`, `polish.stale`, `polish.output_drift`, and the
+`polish.hidden_eager_media.capture_stale` checkpoint) is carried forward with
+the `page_only_change` policy. Doctor reports it as a warning starting
+"Advisory for a page-only change"; `next` and `record deploy` move past Polish;
+QA records it as a `skipped` row, so it does not hold the verdict to
+`ready_with_exceptions`. A Polish recorded as blocked, incomplete or
+self-certified stays blocking, and so does a stage a brief or spec change
+requires.
+
 ## Resolve
 
 Use resolve before a full run:
@@ -381,6 +396,40 @@ default currency. The persisted verdict redacts every URL query, so the
 currency is recorded as `evidence.currency` on the entry page's
 `http:<page_id>` assertion; an entry URL that does not parse gets no currency,
 and its row records `evidence.currency_not_applied` with the reason instead.
+
+The run also checks that the currency took. Campaign Cart falls back to the
+campaign's default currency when the requested one is not available, so a page
+can load with `?currency=GBP` and still take a USD order:
+
+- Each test order gets a `browser-order-currency:<path>` row comparing the
+  created order's `currency` (read from the order API response) with the run
+  currency. An order in any other currency fails as a blocker, and so does a
+  verified order whose currency was not recorded. The row's evidence is
+  `{ requested, order_currency }`.
+- Automatic commercial parity (below) asks the calculate endpoint for expected
+  totals in the run currency, in place of the Map's `campaign.currency`. When
+  the endpoint answers in another currency, the campaign does not price in the
+  run currency: a `commercial-currency:<RUN>:<ANSWERED>` row (family `pricing`)
+  fails as a blocker, and the commercial report lists the
+  `calculate_currency_mismatch` issue, so its status reads `incomplete`. The
+  row's id names the answered code upper-cased, one row per answered currency,
+  and it is written even when the verdict's assertion budget is used up.
+- Commercial parity reads prices from each page's source HTML, where a bound
+  price such as `data-next-display="bundle.main.price"` holds the authored
+  fallback text in the Map's `campaign.currency` (Campaign Cart replaces it at
+  runtime). When the run currency is not the Map's `campaign.currency`, those
+  price and recurring-price claims are not compared with the run-currency
+  totals: they count as unresolved, and the commercial report records
+  `unresolved_money_claims_reason: "static_source_not_in_run_currency"`. A
+  correctly built multi-currency page gets no `price-claim-mismatch` warning,
+  and the commercial status reads `incomplete` instead of `pass`. With
+  `--currency` set to the Map's own currency, the claims are compared as
+  before.
+
+Either blocker makes the verdict `blocked` and the command exit `4`. Without
+`--currency` neither row is written and expected totals use
+`campaign.currency`, as before.
+
 `--currency` sets the currency only. Test orders still ship to the address the
 `--test-*` flags give, a US address by default (see
 [Test customer and shipping address](#test-customer-and-shipping-address)). A
@@ -389,6 +438,25 @@ prints a warning on stderr and the run goes ahead. Only the missing flag is
 checked: a currency such as EUR covers many countries, so an explicit
 `--test-country` is taken as meant. `qa run --site` takes `--currency` the same
 way and tags the slug's entry page.
+
+`--page <page_id>` (repeatable) checks only the named pages. It pays the QA a
+page-only change owes: `doctor --ci` and `next` name the changed pages by
+their route ids (`upsell1` for `upsell1/index.html`), and the CampaignSpec page
+id is accepted too. It needs `--packet`, places no test orders (it refuses
+`--test-order` and `--legacy-api-test-order` other than `off`, and
+`--vendor-beacons`), and refuses before checking anything when the
+output on disk is not the recorded build (run `record build` first), when the
+change since the build QA reviewed touches commerce, when a changed page is
+left out, when the QA it would extend did not complete (a blocked full run
+owes a full run), or when QA's inputs (the brief's `qa_policy` and the
+CampaignSpec) changed or cannot be confirmed current. Every other page gets a
+`page-scope:<page_id>` row, `skipped` with `outside_page_scope`. The QA stage
+it records carries `evidence.page_scope` (`pages`, `owed_pages`,
+`base_build_fingerprint`) and keeps the `purchase_proof` of the full run it
+extends. Its `evidence.qc_results` holds the rows for the scoped pages only,
+so until the next full run the QC handoff coverage reports the earlier full
+run's other QA checks (order paths and tracking among them) as not captured.
+QA already recorded in full for the current build is re-run without `--page`.
 
 ### Automatic commercial parity
 
@@ -440,7 +508,11 @@ readback consumes. It is written for every finalized disposition, blocked
 included: the sidecar records what QA concluded, it is not a pass mark. A run
 that dies before verdict finalization or fails local validation never touches
 an existing sidecar. Packet-less runs (`--site`, raw map-id) have no packet
-home and write no sidecar.
+home and write no sidecar. For a project's second and later funnels the sidecar
+is `.campaign-runtime/funnels/<route>/qa-verdict.json` beside that funnel's
+packet, the runtime directory its `assembly.runtime_dir` names (see
+[Several funnels in one project](build-packet.md#several-funnels-in-one-project));
+`qa promote` and `qa publish` read and write the same file.
 
 The sidecar is an allowlist **projection** of the full verdict, same schema
 (`1.0`), stamped with its own `generated_at` at promotion time. Full verdicts
@@ -1336,6 +1408,80 @@ terminal URL recognized in that selected topology. Missing accept/decline
 controls on an ordinary or unknown page remain blockers; they are not treated
 as evidence that a receipt was reached. Cross-origin handoffs count as terminal
 navigation, but not as Campaigns OS receipt rendering or persisted-receipt proof.
+
+### Analytics vendor beacons (`--vendor-beacons live`)
+
+A test order is a real purchase on the page, so the page reports it to every
+analytics vendor the campaign loads. To keep test orders out of vendor data, a
+`qa run --test-order` run answers the vendors' beacon requests locally. A
+beacon is the request a vendor script sends to report a page view or an event,
+as opposed to the loader, the request that downloads the vendor script. Every
+browser context the run opens (page checks, analytics capture and the orders)
+answers a request to a listed beacon endpoint with an empty `204` response, so
+nothing reaches the vendor. Those contexts also block service workers, because
+a request a page's service worker makes on the page's behalf would bypass the
+local answer. Loader scripts load normally: a blocked loader would leave the
+vendor script undefined, and the page would send nothing to observe.
+
+| Vendor | Beacon endpoints answered locally | Loaders that still load |
+|---|---|---|
+| GA4 (`ga4`) | `*.google-analytics.com/g/…`, `analytics.google.com/g/…`, `stats.g.doubleclick.net/g/…`, `www.google.com/g/collect` | `www.googletagmanager.com/gtag/js` |
+| Meta (`meta`) | `www.facebook.com/tr`, `www.facebook.com/privacy_sandbox/…` | `connect.facebook.net` |
+| TikTok (`tiktok`) | `analytics.tiktok.com/api/v2/…`, `analytics-ipv6.tiktokw.us` | `analytics.tiktok.com/i18n/pixel/…` |
+| Snap (`snap`) | `tr.snapchat.com`, `tr6.snapchat.com`, `tr-shadow.snapchat.com` | `sc-static.net` |
+| Pinterest (`pinterest`) | `ct.pinterest.com/v3/…`, `/user/…`, `/stats/…` | `s.pinimg.com`, `ct.pinterest.com/static/…` and `/ct.html` |
+| Taboola (`taboola`) | `trc.taboola.com` | `cdn.taboola.com` |
+| Triple Whale (`triplewhale`) | `api.config-security.com` (all but `/first`), `api.whaledb.io/keep-alive` | `api.config-security.com/first`, `conf.config-security.com` |
+| AppLovin Axon (`axon`) | `b.applovin.com/v1/pixel` | `s.axon.ai`, `c.albss.com`, `res4.applovin.com` |
+
+Each endpoint was read from the vendor's public loader script or public
+documentation; the source is recorded per vendor in
+`src/qa-vendor-endpoints.mjs`. Two vendor keys are not intercepted, and the
+verdict names them:
+
+- `northbeam`: its beacon host could not be confirmed (the loader is per client
+  and the public docs name no beacon host), so Northbeam still receives what
+  the page sends it, test purchases included.
+- `gtm`: Google Tag Manager sends nothing of its own. The tags it loads send to
+  their own vendors, held back only when that vendor is in the table. A GTM tag
+  for any other vendor (Google Ads, an affiliate pixel) still sends.
+
+`qa parity` orders are not intercepted.
+
+Every request to a listed endpoint is recorded, and the verdict carries one
+informational row, `browser-test-order:vendor-beacons` (status `pass`, severity
+`info`). Its `evidence` gives, per vendor seen, the request count, whether one
+of the requests named a purchase event (`purchase_seen`; `null` for Axon, whose
+event field could not be confirmed), and the ids, event names and endpoints
+(origin and path only, never a query string); `configured_not_seen` lists the
+vendors the CampaignSpec analytics block declares that sent nothing to a listed
+endpoint; `configured_not_observable` lists the declared vendors with no listed
+endpoint (GTM, Northbeam), which the row cannot see either way; and
+`not_intercepted` lists the two vendors above with the reason for each (with
+`live`, every vendor). The row is evidence only. A
+request the page sent proves the page sent it, not that the vendor received it,
+so it never counts as vendor purchase proof and never blocks the run. Purchase
+proof stays with `analytics-correctness:purchase-fires` (the dataLayer
+purchase, a Meta Purchase pixel request, or a GA4 purchase hit); with
+interception on, the Meta and GA4 requests behind it are still observed, just
+answered locally. The same requests feed the analytics inventory and parity
+legs as tag fires.
+
+To send the beacons to the vendors, pass `--vendor-beacons live`. `live` is
+the only value; any other value is refused before anything runs, and so is the
+flag on a run without `--test-order`, where it would change nothing. The row
+then records the requests as sent.
+
+```bash
+npm run campaigns-os -- qa run \
+  --packet campaign-runtime.build.json \
+  --test-order common \
+  --vendor-beacons live
+```
+
+Do not hold beacons back with `?ignore=true` on the campaign URL: from SDK
+0.4.42 it stops the SDK's `dl_*` events entirely, so the run would prove no
+purchase event at all.
 
 ### Purchase-proof coverage (`--test-order off` is a diagnostic)
 

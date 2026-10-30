@@ -849,7 +849,8 @@ async function runImageProbe({ session, mainFrame, documentContextChanged, probe
 // screenshot failed, crop_unavailable; so does every crop taken when the
 // bound ends before the re-read. crop_ms runs from the first crop step to the
 // end of the re-read.
-// Returns { status, capped, coverage_gaps, elements, crops, probe_ms, crop_ms }.
+// Returns { status, capped, coverage_gaps, elements, crops, layout, probe_ms,
+// crop_ms }; layout only when the probe read it.
 async function probeReadabilityDocument(options) {
   const token = { cancelled: false };
   const cropToken = { cancelled: false };
@@ -946,6 +947,7 @@ async function runReadabilityProbe({ session, mainFrame, documentContextChanged,
     coverage_gaps: read.coverage_gaps,
     elements,
     crops,
+    ...(read.layout ? { layout: read.layout } : {}),
     probe_ms: probeMs,
     crop_ms: cropMs,
   };

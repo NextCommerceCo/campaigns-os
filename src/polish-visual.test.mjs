@@ -253,6 +253,14 @@ test("Reference read roots: source links cannot escape, while contained output a
   assert.deepEqual(escapedRows.map((r) => [r.check, r.result, r.reason_code, locationMembers(r)]).sort(), [
     ["visual.diff", "unexercised", "reference_not_usable", [OUTSIDE_LOCATION]],
     ["visual.reference", "unexercised", "reference_unverifiable", [OUTSIDE_LOCATION]]]);
+  // #707: the location does not depend on the build, so a stale-bound row
+  // (a later build) still names it.
+  const staleReference = VISUAL_QC_RULES.evaluate(escaped, { staleBinding: true })
+    .find((r) => r.check === "visual.reference" && r.subject.key === "ref:desktop");
+  assert.deepEqual([staleReference.reason_code, locationMembers(staleReference)], ["stale_binding", [OUTSIDE_LOCATION]]);
+  const staleHtml = VISUAL_QC_RULES.evaluate(escaped, { staleBinding: true })
+    .find((r) => r.check === "visual.reference" && r.subject.key === "source_html");
+  assert.deepEqual([staleHtml.reason_code, staleHtml.members], ["stale_binding", []], "a reference refused for nothing keeps no members");
   // A file refused for what it is, not where it is, names no location.
   const notPng = evaluateVisualReference({ verification: { level: "unverifiable", reason: "not_png" }, provenance: { class: "declared_source", reasons: [] } });
   assert.deepEqual([notPng.reason_code, locationMembers(notPng)], ["reference_unverifiable", []]);

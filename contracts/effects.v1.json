@@ -1,7 +1,7 @@
 {
   "schema": "campaigns-os-effects/v1",
   "_note": "The declared effect of every supported invocation: what it writes, what it sends, and the test case that proves it. One row per command, per subcommand and per effect-changing flag (vocabulary.effect_changing_flags). A row is not publishable without its effect test — scripts/check-effects.mjs refuses one, and refuses a flag from that list that a help usage line carries and no row declares. Read this with docs/effects.md.",
-  "contract_version": "1.2.0",
+  "contract_version": "1.3.0",
   "vocabulary": {
     "annotations": {
       "readOnlyHint": "The invocation changes nothing: no file under the target, the working directory or the user's machine, and no request off the machine. The command-lifecycle journal counts — a journal append is a write like any other, so every readOnlyHint: true row is an invocation the CLI exempts from lifecycle capture (the converse does not hold: some journal-exempt invocations, such as demo and the --no-write forms, still write other declared files).",
@@ -18,8 +18,10 @@
     },
     "locations": {
       "{target}": "The target the invocation names: the directory given to --target, or the Page Kit target repository the Build Packet points at.",
+      "{runtime}": "The funnel's runtime directory under {target}: {target}/.campaign-runtime for a Build Packet that records no assembly.runtime_dir (every packet from before per-funnel records, and the first funnel of a project), else {target}/<assembly.runtime_dir>, which prepare-build sets to .campaign-runtime/funnels/<public_route_slug> for each later funnel of the same project. The Build Context, Assembly Report, doctor output, theme output and intake inputs of a funnel live here.",
       "{cwd}": "The working directory the invocation runs in.",
       "{packet}": "The Build Packet the invocation names (--packet), wherever it lives — it need not be the copy inside the target repository.",
+      "{packet-runtime}": "The same funnel runtime directory beside the Build Packet: <packet directory>/.campaign-runtime, or <packet directory>/<assembly.runtime_dir> when the packet records one. The committed QA verdict sidecar and the Run Records live here.",
       "{spec}": "The CampaignSpec file the Build Packet names (spec.local_path), which need not live inside the target repository.",
       "{home}": "The user's machine: the home directory and the config root under it (XDG_CONFIG_HOME when set).",
       "{lifecycle-journal}": "The command-lifecycle journal wherever it was selected for the invocation — the active run session's journal, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG.",
@@ -58,6 +60,7 @@
       "--no-write",
       "--republish",
       "--test-order",
+      "--vendor-beacons",
       "--write",
       "--write-map"
     ],
@@ -332,7 +335,7 @@
       "sends": [],
       "effect_test": "effects: a refused invocation",
       "test_scope": "full",
-      "notes": "An unknown command, an unknown subcommand refused before its handler runs, or a flag the command refuses up front. A refused invocation writes no file of its own and appends no lifecycle entry. The generated case runs the unknown-command shape; the companion case \"effects: the other two refused shapes write nothing either\" runs the other two under the same five conditions. The one exception is declared on the start/prepare-build/build/run start/run end rows: those close out a STALE session at the root they are about to act on BEFORE argv is refused."
+      "notes": "An unknown command, an unknown subcommand refused before its handler runs, or a flag the command refuses up front. A refused invocation writes no file of its own and appends no lifecycle entry. The generated case runs the unknown-command shape; the companion case \"effects: the other two refused shapes write nothing either\" runs the other two under the same five conditions. The one exception is declared on the start/prepare-build/build/run start/run end rows: those close out a STALE session at the root they are about to act on BEFORE argv is refused, except when argv holds a --flag=value token, which is refused with nothing done first (its value, which can name the root or a remit control, is never read)."
     },
     {
       "command": "page-kit",
@@ -360,17 +363,31 @@
         "--dry-run"
       ],
       "annotations": {
-        "readOnlyHint": true,
+        "readOnlyHint": false,
         "destructiveHint": false,
-        "openWorldHint": false,
+        "openWorldHint": true,
         "idempotentHint": true
       },
-      "tier": "none",
+      "tier": "A",
       "writes": [],
-      "sends": [],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/campaign",
+          "what": "one GET of the live campaign (its packages, offers and shipping methods) under X-Campaign-Key, the public Campaigns API key; no request body and no Admin or store credential. The body refreshes the spec's mirrored offer and package fields (#721).",
+          "when": "the packet's built _site/<route>/ exists, a public Campaigns API key resolves from the packet, its local CampaignSpec or the declared campaign-key env var, and --no-live-refs is not given",
+          "requires_consent": false,
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        }
+      ],
       "effect_test": "effects: spec derive --dry-run",
       "test_scope": "full",
-      "notes": "spec derive --dry-run runs every check the real invocation runs and prints what it would do; it writes nothing under the target, appends no lifecycle entry (the command is declared `dryRun` in src/invocation.mjs) and runs no stale-session closeout."
+      "notes": "spec derive --dry-run runs every check the real invocation runs and prints what it would do; it writes nothing under the target, appends no lifecycle entry (the command is declared `dryRun` in src/invocation.mjs) and runs no stale-session closeout. It makes the same one live campaign read the real invocation makes, so the diff it prints names the offer and package fields that would change; it is not readOnlyHint because of that read. --no-live-refs skips it."
     },
     {
       "command": "install-skills",
@@ -813,7 +830,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the packet edit invalidates the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -824,7 +841,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "--order-path-depth is given and the report exists — the report's proof_policy mirror is refreshed through the ledger write",
           "observed_in": [
             "no_session",
@@ -861,13 +878,13 @@
       "tier": "B",
       "writes": [
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "the parity render completes — stages.assembly.evidence.local_proof.production_parity is recorded",
           "observed_in": [],
           "not_observed_reason": "the offline fixture is not a local-serve deploy target and has no page-kit renderer to build with, so the command refuses before the verdict is recorded"
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the recorded parity verdict invalidates the retained doctor sidecar",
           "observed_in": [],
           "not_observed_reason": "the parity verdict the stamp follows is never recorded offline"
@@ -1027,7 +1044,7 @@
       "tier": "A",
       "writes": [
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "always under --write — the doctor sidecar is (re)written",
           "observed_in": [
             "no_session",
@@ -1038,7 +1055,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "the run's doctor evidence on the assembly report changes",
           "observed_in": [
             "no_session",
@@ -1092,7 +1109,7 @@
       "tier": "B",
       "writes": [
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "always under --write — the doctor sidecar is (re)written",
           "observed_in": [
             "no_session",
@@ -1103,7 +1120,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "the run's doctor evidence on the assembly report changes",
           "observed_in": [
             "no_session",
@@ -1140,7 +1157,7 @@
       "tier": "B",
       "writes": [
         {
-          "path": "{target}/.campaign-runtime/theme/theme-report.json",
+          "path": "{runtime}/theme/theme-report.json",
           "when": "always — the generated brand theme report is written",
           "observed_in": [
             "no_session",
@@ -1151,13 +1168,13 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/theme/**",
+          "path": "{runtime}/theme/**",
           "when": "the generated CSS and token files, when --out-dir is not redirected",
           "observed_in": [],
           "not_observed_reason": "the offline fixture's packet has no generatable brand source, so generation stops at the report"
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the theme decision invalidates the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -1196,7 +1213,7 @@
       "tier": "C",
       "writes": [
         {
-          "path": "{target}/.campaign-runtime/theme/theme-report.json",
+          "path": "{runtime}/theme/theme-report.json",
           "when": "always — the generated brand theme report is written",
           "observed_in": [
             "no_session",
@@ -1207,13 +1224,13 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/theme/**",
+          "path": "{runtime}/theme/**",
           "when": "the generated CSS and token files, when --out-dir is not redirected",
           "observed_in": [],
           "not_observed_reason": "the offline fixture's packet has no generatable brand source, so generation stops at the report"
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the theme decision invalidates the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -1261,7 +1278,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the sync invalidates the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -1292,14 +1309,14 @@
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
-        "openWorldHint": false,
+        "openWorldHint": true,
         "idempotentHint": true
       },
-      "tier": "B",
+      "tier": "A",
       "writes": [
         {
           "path": "{spec}",
-          "when": "the target repo states a field the spec does not (SDK pin, page_url, analytics ids)",
+          "when": "the target repo states a field the spec does not (SDK pin, page_url, analytics ids; after handoff, pages added to or removed from the page tree), or the live campaign states a mirrored offer or package field the spec does not",
           "observed_in": [
             "no_session",
             "ambient_session",
@@ -1309,7 +1326,71 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
+          "when": "the derive invalidates the retained doctor sidecar",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/campaign",
+          "what": "one GET of the live campaign (its packages, offers and shipping methods) under X-Campaign-Key, the public Campaigns API key; no request body and no Admin or store credential. The body refreshes the spec's mirrored offer and package fields (#721).",
+          "when": "the packet's built _site/<route>/ exists, a public Campaigns API key resolves from the packet, its local CampaignSpec or the declared campaign-key env var, and --no-live-refs is not given",
+          "requires_consent": false,
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        }
+      ],
+      "effect_test": "effects: spec derive",
+      "test_scope": "full",
+      "notes": "Repo-derived fields, plus the offer and package fields the spec mirrors from the Campaigns App when the live campaign is read. That read is the one doctor makes: when the packet's built _site/<route>/ exists and a public Campaigns API key resolves, one read-only GET of {proxy-base}/api/campaign under X-Campaign-Key (--proxy-base names the proxy, else the canonical one); a failed read leaves those fields as they are, with a warning. --no-live-refs skips it (its own row). The write lands on the packet's local CampaignSpec (spec.local_path), which is outside the target repo in the shipped example layout — hence the {spec} location token."
+    },
+    {
+      "command": "spec",
+      "subcommand": "derive",
+      "flags": [
+        "--no-live-refs"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false,
+        "idempotentHint": true
+      },
+      "tier": "B",
+      "writes": [
+        {
+          "path": "{spec}",
+          "when": "the target repo states a field the spec does not (SDK pin, page_url, analytics ids; after handoff, pages added to or removed from the page tree, and the routing and routing hint on each edge that names one)",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{runtime}/doctor-output.json",
           "when": "the derive invalidates the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -1329,9 +1410,9 @@
         }
       ],
       "sends": [],
-      "effect_test": "effects: spec derive",
+      "effect_test": "effects: spec derive --no-live-refs",
       "test_scope": "full",
-      "notes": "Repo-derived fields only and no network by default. The write lands on the packet's local CampaignSpec (spec.local_path), which is outside the target repo in the shipped example layout — hence the {spec} location token."
+      "notes": "The derive with the live campaign read switched off: nothing is sent even when the packet's built _site/<route>/ exists and a public Campaigns API key resolves, and the spec's offer and package fields are left as they are (the result's live_campaign records not_run with reason disabled). Everything else is the plain row."
     },
     {
       "command": "findings",
@@ -1448,7 +1529,7 @@
       "tier": "C",
       "writes": [
         {
-          "path": "{cwd}/.campaign-runtime/qa-verdict.json",
+          "path": "{packet-runtime}/qa-verdict.json",
           "when": "always — the named verdict is projected over the committed sidecar",
           "observed_in": [
             "no_session",
@@ -1690,7 +1771,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the recomputed gates invalidate the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -1755,7 +1836,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the recomputed gates invalidate the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -1820,7 +1901,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the recomputed gates invalidate the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -1885,7 +1966,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the recomputed gates invalidate the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -1950,7 +2031,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the recomputed gates invalidate the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -2015,7 +2096,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the recomputed gates invalidate the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -2082,7 +2163,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the recomputed gates invalidate the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -2206,7 +2287,7 @@
           ]
         },
         {
-          "path": "{cwd}/.campaign-runtime/qa-verdict.json",
+          "path": "{packet-runtime}/qa-verdict.json",
           "when": "always — the committed verdict sidecar is projected from the attempt",
           "observed_in": [
             "no_session",
@@ -2217,7 +2298,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the QA stage outcome is recorded on the report",
           "observed_in": [
             "no_session",
@@ -2239,7 +2320,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the QA outcome invalidates the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -2310,7 +2391,7 @@
       ],
       "effect_test": "effects: qa run",
       "test_scope": "full",
-      "notes": "Destructive and not idempotent: each attempt overwrites the committed verdict sidecar and the report's QA stage, and a ready verdict clears the ambient run session. It SENDS on a blocked attempt too: the QA stage progress observation to {proxy-base}/api/progress under persisted consent for the endpoint, and the verdict to {proxy-base}/api/qa/verdicts under the same consent unless the base URL is a local address, which keeps the verdict local by default (#486; --post-verdict still sends it). Publishing rides the telemetry consent seam rather than a flag of its own, so the four consent-off conditions saw neither request. Local-spec packets retain verdicts in the repository and never send a QA verdict or progress to the Map portal, even with --post-verdict. When a served page was read and a public Campaigns API key resolves, it also makes one read-only GET of {proxy-base}/api/campaign under X-Campaign-Key to check the served pages' shipping and package refs against the live campaign (#533); without a key or a page, or on a failed read, the verdict records the check as not_run with its reason. --no-live-refs skips that read (its own row)."
+      "notes": "Destructive and not idempotent: each attempt overwrites the committed verdict sidecar and the report's QA stage, and a ready verdict clears the ambient run session. It SENDS on a blocked attempt too: the QA stage progress observation to {proxy-base}/api/progress under persisted consent for the endpoint, and the verdict to {proxy-base}/api/qa/verdicts under the same consent unless the base URL is a local address, which keeps the verdict local by default (#486; --post-verdict still sends it). Publishing rides the telemetry consent seam rather than a flag of its own, so the four consent-off conditions saw neither request. Local-spec packets retain verdicts in the repository and never send a QA verdict or progress to the Map portal, even with --post-verdict. When a served page was read and a public Campaigns API key resolves, it also makes one read-only GET of {proxy-base}/api/campaign under X-Campaign-Key to check the served pages' shipping and package refs against the live campaign (#533); without a key or a page, or on a failed read, the verdict records the check as not_run with its reason. --no-live-refs skips that read (its own row). --page narrows the checks to the named pages and adds no effect: when the run cannot pay the QA a page-only change owes it stops before checking any page, writing no verdict and no stage record; otherwise it writes what this row declares."
     },
     {
       "command": "qa",
@@ -2338,7 +2419,7 @@
           ]
         },
         {
-          "path": "{cwd}/.campaign-runtime/qa-verdict.json",
+          "path": "{packet-runtime}/qa-verdict.json",
           "when": "always — the committed verdict sidecar is projected from the attempt",
           "observed_in": [
             "no_session",
@@ -2349,7 +2430,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the QA stage outcome is recorded on the report",
           "observed_in": [
             "no_session",
@@ -2371,7 +2452,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the QA outcome invalidates the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -2461,7 +2542,7 @@
           ]
         },
         {
-          "path": "{cwd}/.campaign-runtime/qa-verdict.json",
+          "path": "{packet-runtime}/qa-verdict.json",
           "when": "always — the committed verdict sidecar is projected from the attempt",
           "observed_in": [
             "no_session",
@@ -2472,7 +2553,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the QA stage outcome is recorded on the report",
           "observed_in": [
             "no_session",
@@ -2494,7 +2575,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the QA outcome invalidates the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -2585,7 +2666,7 @@
           ]
         },
         {
-          "path": "{cwd}/.campaign-runtime/qa-verdict.json",
+          "path": "{packet-runtime}/qa-verdict.json",
           "when": "always — the committed verdict sidecar is projected from the attempt",
           "observed_in": [
             "no_session",
@@ -2596,7 +2677,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the QA stage outcome is recorded on the report",
           "observed_in": [
             "no_session",
@@ -2618,7 +2699,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the QA outcome invalidates the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -2689,7 +2770,148 @@
       ],
       "effect_test": "effects: qa run --test-order",
       "test_scope": "full",
-      "notes": "The most consequential row in the file: --test-order places REAL orders against the store under test. Destructive, open-world, not idempotent. It SENDS on a blocked attempt too: the QA stage progress observation to {proxy-base}/api/progress under persisted consent for the endpoint, and the verdict to {proxy-base}/api/qa/verdicts under the same consent unless the base URL is a local address, which keeps the verdict local by default (#486; --post-verdict still sends it). Publishing rides the telemetry consent seam rather than a flag of its own, so the four consent-off conditions saw neither request. Local-spec packets retain verdicts in the repository and never send a QA verdict or progress to the Map portal, even with --post-verdict. When a served page was read and a public Campaigns API key resolves, it also makes one read-only GET of {proxy-base}/api/campaign under X-Campaign-Key to check the served pages' shipping and package refs against the live campaign (#533); without a key or a page, or on a failed read, the verdict records the check as not_run with its reason. --no-live-refs skips that read (its own row)."
+      "notes": "The most consequential row in the file: --test-order places REAL orders against the store under test. Destructive, open-world, not idempotent. It SENDS on a blocked attempt too: the QA stage progress observation to {proxy-base}/api/progress under persisted consent for the endpoint, and the verdict to {proxy-base}/api/qa/verdicts under the same consent unless the base URL is a local address, which keeps the verdict local by default (#486; --post-verdict still sends it). Publishing rides the telemetry consent seam rather than a flag of its own, so the four consent-off conditions saw neither request. Local-spec packets retain verdicts in the repository and never send a QA verdict or progress to the Map portal, even with --post-verdict. When a served page was read and a public Campaigns API key resolves, it also makes one read-only GET of {proxy-base}/api/campaign under X-Campaign-Key to check the served pages' shipping and package refs against the live campaign (#533); without a key or a page, or on a failed read, the verdict records the check as not_run with its reason. --no-live-refs skips that read (its own row). Vendor beacons are held back: by default every browser context the run opens answers page requests to the listed analytics vendor beacon endpoints (GA4, Meta, TikTok, Snap, Pinterest, Taboola, Triple Whale, AppLovin Axon; the list is in docs/qa-and-test-orders.md) locally with a 204, so the test purchases never reach those vendors, and records each request on the browser-test-order:vendor-beacons verdict row as evidence. Vendor loader scripts still load from their hosts, and vendors the list does not intercept (Northbeam, and tags GTM loads for vendors outside the list) still receive what the page sends them; the row names them. --vendor-beacons live lets the listed endpoints through (its own row)."
+    },
+    {
+      "command": "qa",
+      "subcommand": "run",
+      "flags": [
+        "--test-order",
+        "--vendor-beacons"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": true,
+        "idempotentHint": false
+      },
+      "tier": "C",
+      "writes": [
+        {
+          "path": "{target}/qa-output/**",
+          "when": "always — the full verdict for the attempt is written to the qa-output tree",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{packet-runtime}/qa-verdict.json",
+          "when": "always — the committed verdict sidecar is projected from the attempt",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{runtime}/assembly-report.json",
+          "when": "always — the QA stage outcome is recorded on the report",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/progress/**",
+          "when": "always — the QA stage progress snapshot is captured locally",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{runtime}/doctor-output.json",
+          "when": "the QA outcome invalidates the retained doctor sidecar",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/run-session.json",
+          "when": "an ambient run session is resolved; a blocked attempt keeps it open, a ready verdict clears it",
+          "observed_in": [
+            "ambient_session"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/qa/verdicts",
+          "what": "the QA verdict for the attempt, published to the QA portal",
+          "when": "--post-verdict is given; or, by default (no --no-post-verdict), the base URL is not a local address (localhost, *.localhost, 127.x.x.x, 0.0.0.0, [::1], an IPv4-mapped loopback) and the consent seam allows it — Run Telemetry consent on for the endpoint, or a portal-managed campaign; never for a local-spec packet",
+          "requires_consent": true,
+          "observed_in": [],
+          "not_observed_reason": "the offline fixture serves the campaign from a 127.0.0.1 base URL, a local address, so the default keeps the verdict local (#486); qa publish proves this send"
+        },
+        {
+          "destination": "{base-url}",
+          "what": "HTTP requests against the campaign under test, INCLUDING order creation against the live store",
+          "when": "always",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the offline fixture is blocked before the order ladder is reached; the mode is proved by the gate refusing without placing an order"
+        },
+        {
+          "destination": "{proxy-base}/api/runs",
+          "what": "the Run Record / progress remit envelope for this run",
+          "when": "Run Telemetry consent is on for the endpoint and --no-remit was not given",
+          "requires_consent": true,
+          "observed_in": [],
+          "not_observed_reason": "a blocked attempt assembles no Run Record, so nothing is remitted"
+        },
+        {
+          "destination": "{proxy-base}/api/progress",
+          "what": "the stage progress observation — the snapshot just captured locally, POSTed under X-Campaign-Key",
+          "when": "Run Telemetry consent is on for the endpoint, --no-remit was not given, and the packet's campaign key resolves; never for a local-spec packet",
+          "requires_consent": true,
+          "observed_in": [
+            "persisted_consent"
+          ]
+        },
+        {
+          "destination": "{proxy-base}/api/campaign",
+          "what": "one GET of the live campaign (its packages and shipping methods) under X-Campaign-Key, the public Campaigns API key; no request body and no Admin or store credential, and the read writes nothing",
+          "when": "at least one served page was read and a public Campaigns API key resolves from the packet, the CampaignSpec or the declared campaign-key env var",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the offline fixture is blocked at the theme/proof gate before a served page is read, so there is no page to compare and the live campaign is not read"
+        },
+        {
+          "destination": "the analytics vendor beacon endpoints listed in docs/qa-and-test-orders.md (GA4, Meta, TikTok, Snap, Pinterest, Taboola, Triple Whale, AppLovin Axon)",
+          "what": "the page under test's own analytics requests to those vendors, test purchases included, let through as the page makes them instead of answered locally; each is still recorded on the browser-test-order:vendor-beacons verdict row",
+          "when": "a browser test order opens a campaign page that loads one of those vendors",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the offline fixture is blocked before a browser opens; the vendor-beacons browser test proves a listed endpoint is let through with live and answered locally without it"
+        }
+      ],
+      "effect_test": "effects: qa run --test-order --vendor-beacons",
+      "test_scope": "full",
+      "notes": "The `qa run --test-order` row's writes and sends, plus the vendor beacons: with --vendor-beacons live no browser context is routed, so the page's requests to the listed analytics vendor endpoints reach the vendors, test purchases included. The verdict's browser-test-order:vendor-beacons row still records them, as sent. live is the only value the flag takes; any other is refused before anything runs."
     },
     {
       "command": "qa",
@@ -2717,7 +2939,7 @@
           ]
         },
         {
-          "path": "{cwd}/.campaign-runtime/qa-verdict.json",
+          "path": "{packet-runtime}/qa-verdict.json",
           "when": "always — the committed verdict sidecar is projected from the attempt",
           "observed_in": [
             "no_session",
@@ -2728,7 +2950,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the QA stage outcome is recorded on the report",
           "observed_in": [
             "no_session",
@@ -2750,7 +2972,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the QA outcome invalidates the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -2833,10 +3055,10 @@
       "preflight": {
         "may_write": [
           "{target}/qa-output/**",
-          "{cwd}/.campaign-runtime/qa-verdict.json",
-          "{target}/.campaign-runtime/assembly-report.json",
+          "{packet-runtime}/qa-verdict.json",
+          "{runtime}/assembly-report.json",
           "{target}/.campaign-runtime/progress/**",
-          "{target}/.campaign-runtime/doctor-output.json",
+          "{runtime}/doctor-output.json",
           "{target}/.campaign-runtime/run-session.json",
           "{lifecycle-journal}"
         ],
@@ -2872,7 +3094,7 @@
           ]
         },
         {
-          "path": "{cwd}/.campaign-runtime/qa-verdict.json",
+          "path": "{packet-runtime}/qa-verdict.json",
           "when": "always — the committed verdict sidecar is projected from the attempt",
           "observed_in": [
             "no_session",
@@ -2883,7 +3105,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the QA stage outcome is recorded on the report",
           "observed_in": [
             "no_session",
@@ -2905,7 +3127,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the QA outcome invalidates the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -2997,7 +3219,7 @@
           ]
         },
         {
-          "path": "{cwd}/.campaign-runtime/qa-verdict.json",
+          "path": "{packet-runtime}/qa-verdict.json",
           "when": "always — the committed verdict sidecar is projected from the attempt",
           "observed_in": [
             "no_session",
@@ -3008,7 +3230,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the QA stage outcome is recorded on the report",
           "observed_in": [
             "no_session",
@@ -3030,7 +3252,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the QA outcome invalidates the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -3113,7 +3335,7 @@
           ]
         },
         {
-          "path": "{cwd}/.campaign-runtime/qa-verdict.json",
+          "path": "{packet-runtime}/qa-verdict.json",
           "when": "always — the committed verdict sidecar is projected from the attempt",
           "observed_in": [
             "no_session",
@@ -3124,7 +3346,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the QA stage outcome is recorded on the report",
           "observed_in": [
             "no_session",
@@ -3146,7 +3368,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the QA outcome invalidates the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -3230,7 +3452,7 @@
           ]
         },
         {
-          "path": "{cwd}/.campaign-runtime/qa-verdict.json",
+          "path": "{packet-runtime}/qa-verdict.json",
           "when": "always — the committed verdict sidecar is projected from the attempt",
           "observed_in": [
             "no_session",
@@ -3241,7 +3463,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the QA stage outcome is recorded on the report",
           "observed_in": [
             "no_session",
@@ -3263,7 +3485,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the QA outcome invalidates the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -3326,7 +3548,141 @@
       ],
       "effect_test": "effects: qa run --test-order --no-live-refs",
       "test_scope": "full",
-      "notes": "The `qa run --test-order` row's writes and sends, without the {proxy-base}/api/campaign read: the verdict records the live-campaign-refs check skipped with reason disabled, never a pass. The other sends keep their own conditions and opt-outs."
+      "notes": "The `qa run --test-order` row's writes and sends, without the {proxy-base}/api/campaign read: the verdict records the live-campaign-refs check skipped with reason disabled, never a pass. The other sends keep their own conditions and opt-outs. Vendor beacons are held back: by default every browser context the run opens answers page requests to the listed analytics vendor beacon endpoints (GA4, Meta, TikTok, Snap, Pinterest, Taboola, Triple Whale, AppLovin Axon; the list is in docs/qa-and-test-orders.md) locally with a 204, so the test purchases never reach those vendors, and records each request on the browser-test-order:vendor-beacons verdict row as evidence. Vendor loader scripts still load from their hosts, and vendors the list does not intercept (Northbeam, and tags GTM loads for vendors outside the list) still receive what the page sends them; the row names them. --vendor-beacons live lets the listed endpoints through (its own row)."
+    },
+    {
+      "command": "qa",
+      "subcommand": "run",
+      "flags": [
+        "--test-order",
+        "--vendor-beacons",
+        "--no-live-refs"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": true,
+        "idempotentHint": false
+      },
+      "tier": "C",
+      "writes": [
+        {
+          "path": "{target}/qa-output/**",
+          "when": "always — the full verdict for the attempt is written to the qa-output tree",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{packet-runtime}/qa-verdict.json",
+          "when": "always — the committed verdict sidecar is projected from the attempt",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{runtime}/assembly-report.json",
+          "when": "always — the QA stage outcome is recorded on the report",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/progress/**",
+          "when": "always — the QA stage progress snapshot is captured locally",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{runtime}/doctor-output.json",
+          "when": "the QA outcome invalidates the retained doctor sidecar",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/run-session.json",
+          "when": "an ambient run session is resolved; a blocked attempt keeps it open, a ready verdict clears it",
+          "observed_in": [
+            "ambient_session"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/qa/verdicts",
+          "what": "the QA verdict for the attempt, published to the QA portal",
+          "when": "--post-verdict is given; or, by default (no --no-post-verdict), the base URL is not a local address (localhost, *.localhost, 127.x.x.x, 0.0.0.0, [::1], an IPv4-mapped loopback) and the consent seam allows it — Run Telemetry consent on for the endpoint, or a portal-managed campaign; never for a local-spec packet",
+          "requires_consent": true,
+          "observed_in": [],
+          "not_observed_reason": "the offline fixture serves the campaign from a 127.0.0.1 base URL, a local address, so the default keeps the verdict local (#486); qa publish proves this send"
+        },
+        {
+          "destination": "{base-url}",
+          "what": "HTTP requests against the campaign under test, INCLUDING order creation against the live store",
+          "when": "always",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the offline fixture is blocked before the order ladder is reached; the mode is proved by the gate refusing without placing an order"
+        },
+        {
+          "destination": "{proxy-base}/api/runs",
+          "what": "the Run Record / progress remit envelope for this run",
+          "when": "Run Telemetry consent is on for the endpoint and --no-remit was not given",
+          "requires_consent": true,
+          "observed_in": [],
+          "not_observed_reason": "a blocked attempt assembles no Run Record, so nothing is remitted"
+        },
+        {
+          "destination": "{proxy-base}/api/progress",
+          "what": "the stage progress observation — the snapshot just captured locally, POSTed under X-Campaign-Key",
+          "when": "Run Telemetry consent is on for the endpoint, --no-remit was not given, and the packet's campaign key resolves; never for a local-spec packet",
+          "requires_consent": true,
+          "observed_in": [
+            "persisted_consent"
+          ]
+        },
+        {
+          "destination": "the analytics vendor beacon endpoints listed in docs/qa-and-test-orders.md (GA4, Meta, TikTok, Snap, Pinterest, Taboola, Triple Whale, AppLovin Axon)",
+          "what": "the page under test's own analytics requests to those vendors, test purchases included, let through as the page makes them instead of answered locally; each is still recorded on the browser-test-order:vendor-beacons verdict row",
+          "when": "a browser test order opens a campaign page that loads one of those vendors",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the offline fixture is blocked before a browser opens; the vendor-beacons browser test proves a listed endpoint is let through with live and answered locally without it"
+        }
+      ],
+      "effect_test": "effects: qa run --test-order --vendor-beacons --no-live-refs",
+      "test_scope": "full",
+      "notes": "The `qa run --test-order --vendor-beacons` row's writes and sends, without the {proxy-base}/api/campaign read: the verdict records the live-campaign-refs check skipped with reason disabled, never a pass."
     },
     {
       "command": "qa",
@@ -3355,7 +3711,7 @@
           ]
         },
         {
-          "path": "{cwd}/.campaign-runtime/qa-verdict.json",
+          "path": "{packet-runtime}/qa-verdict.json",
           "when": "always — the committed verdict sidecar is projected from the attempt",
           "observed_in": [
             "no_session",
@@ -3366,7 +3722,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the QA stage outcome is recorded on the report",
           "observed_in": [
             "no_session",
@@ -3388,7 +3744,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the QA outcome invalidates the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -3463,10 +3819,10 @@
       "preflight": {
         "may_write": [
           "{target}/qa-output/**",
-          "{cwd}/.campaign-runtime/qa-verdict.json",
-          "{target}/.campaign-runtime/assembly-report.json",
+          "{packet-runtime}/qa-verdict.json",
+          "{runtime}/assembly-report.json",
           "{target}/.campaign-runtime/progress/**",
-          "{target}/.campaign-runtime/doctor-output.json",
+          "{runtime}/doctor-output.json",
           "{target}/.campaign-runtime/run-session.json",
           "{lifecycle-journal}"
         ],
@@ -3673,7 +4029,7 @@
       "tier": "C",
       "writes": [
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the waiver is recorded at stages.qa.waivers[<assertion>] (reason, waived_by, waived_at) and appended to the report's evidence[]",
           "observed_in": [
             "no_session",
@@ -3684,7 +4040,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the waiver invalidates the retained doctor sidecar — the report edit postdates the doctor snapshot",
           "observed_in": [
             "no_session",
@@ -3779,7 +4135,7 @@
       "tier": "A",
       "writes": [
         {
-          "path": "{cwd}/.campaign-runtime/run-records/*.json",
+          "path": "{packet-runtime}/run-records/*.json",
           "when": "always — the assembled Run Record is written (re-emitted in place for an existing run id)",
           "observed_in": [
             "no_session",
@@ -3832,7 +4188,7 @@
       "tier": "B",
       "writes": [
         {
-          "path": "{cwd}/.campaign-runtime/run-records/*.json",
+          "path": "{packet-runtime}/run-records/*.json",
           "when": "always — the assembled Run Record is written",
           "observed_in": [
             "no_session",
@@ -3889,7 +4245,7 @@
           ]
         },
         {
-          "path": "{cwd}/.campaign-runtime/run-records/*.json",
+          "path": "{packet-runtime}/run-records/*.json",
           "when": "a STALE run session at the root the command is about to act on is closed out before argv is read",
           "observed_in": [
             "stale_session"
@@ -3916,7 +4272,7 @@
       ],
       "effect_test": "effects: run start",
       "test_scope": "full",
-      "notes": "Opening a session is not idempotent: a second `run start` with a session already active is refused (exit 1). A STALE session at the root is closed out first — Run Record assembled and remitted under the usual consent — which is a declared effect of this command even when argv is then refused."
+      "notes": "Opening a session is not idempotent: a second `run start` with a session already active is refused (exit 1). A STALE session at the root is closed out first — Run Record assembled and remitted under the usual consent — which is a declared effect of this command even when argv is then refused (not for a --flag=value token, which skips the closeout)."
     },
     {
       "command": "run",
@@ -3954,7 +4310,7 @@
           ]
         },
         {
-          "path": "{cwd}/.campaign-runtime/run-records/*.json",
+          "path": "{packet-runtime}/run-records/*.json",
           "when": "a STALE run session at the root the command is about to act on is closed out before argv is read",
           "observed_in": [
             "stale_session"
@@ -3996,7 +4352,7 @@
       "tier": "C",
       "writes": [
         {
-          "path": "{cwd}/.campaign-runtime/run-records/*.json",
+          "path": "{packet-runtime}/run-records/*.json",
           "when": "a session is active (or stale) at the root — the aggregated Run Record is written",
           "observed_in": [
             "ambient_session",
@@ -4097,7 +4453,7 @@
       "tier": "C",
       "writes": [
         {
-          "path": "{cwd}/.campaign-runtime/run-records/*.json",
+          "path": "{packet-runtime}/run-records/*.json",
           "when": "a session is active (or stale) at the root — the aggregated Run Record is written",
           "observed_in": [
             "ambient_session",
@@ -4187,13 +4543,13 @@
       "tier": "B",
       "writes": [
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "an accept is recorded — every listed result is a current accept-eligible warning that was on record before the command; the accepts are appended to qc_accepts[] and evidence[], and nothing already there is replaced",
           "observed_in": [],
           "not_observed_reason": "the offline fixture names a synthetic result ref that matches no current result, so its accept is refused (changed_since_handoff) before the one write; the case proves the refusal writes nothing"
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "an accept is recorded; it marks the retained doctor sidecar stale",
           "observed_in": [],
           "not_observed_reason": "the offline fixture names a synthetic result ref that matches no current result, so its accept is refused (changed_since_handoff) before the one write; the case proves the refusal writes nothing"
@@ -4227,7 +4583,7 @@
       "tier": "C",
       "writes": [
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the waiver is recorded on the report",
           "observed_in": [
             "no_session",
@@ -4238,7 +4594,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the waiver invalidates the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -4275,7 +4631,7 @@
       "tier": "C",
       "writes": [
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the theme-gate waiver is recorded on the report",
           "observed_in": [
             "no_session",
@@ -4286,7 +4642,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the waiver invalidates the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -4334,7 +4690,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/build-context.json",
+          "path": "{runtime}/build-context.json",
           "when": "always — the build context sidecar",
           "observed_in": [
             "no_session",
@@ -4345,7 +4701,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the assembly report for the run",
           "observed_in": [
             "no_session",
@@ -4356,7 +4712,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/input/*",
+          "path": "{runtime}/input/*",
           "when": "always — the normalized brief and the design source package",
           "observed_in": [
             "no_session",
@@ -4374,7 +4730,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/theme/theme-report.json",
+          "path": "{runtime}/theme/theme-report.json",
           "when": "the theme policy is not off",
           "observed_in": [
             "no_session",
@@ -4385,7 +4741,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the intake runs doctor — `start` and `build` do, `prepare-build` alone does not",
           "observed_in": [
             "no_session",
@@ -4427,7 +4783,7 @@
           ]
         },
         {
-          "path": "{cwd}/.campaign-runtime/run-records/*.json",
+          "path": "{packet-runtime}/run-records/*.json",
           "when": "a STALE run session at the root the command is about to act on is closed out before argv is read",
           "observed_in": [
             "stale_session"
@@ -4493,7 +4849,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/build-context.json",
+          "path": "{runtime}/build-context.json",
           "when": "always — the build context sidecar",
           "observed_in": [
             "no_session",
@@ -4504,7 +4860,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the assembly report for the run",
           "observed_in": [
             "no_session",
@@ -4515,7 +4871,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/input/*",
+          "path": "{runtime}/input/*",
           "when": "always — the normalized brief and the design source package",
           "observed_in": [
             "no_session",
@@ -4533,7 +4889,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/theme/theme-report.json",
+          "path": "{runtime}/theme/theme-report.json",
           "when": "the theme policy is not off",
           "observed_in": [
             "no_session",
@@ -4544,7 +4900,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the intake runs doctor — `start` and `build` do, `prepare-build` alone does not",
           "observed_in": [
             "no_session",
@@ -4586,7 +4942,7 @@
           ]
         },
         {
-          "path": "{cwd}/.campaign-runtime/run-records/*.json",
+          "path": "{packet-runtime}/run-records/*.json",
           "when": "a STALE run session at the root the command is about to act on is closed out before argv is read",
           "observed_in": [
             "stale_session"
@@ -4624,7 +4980,7 @@
       ],
       "effect_test": "effects: start --force",
       "test_scope": "full",
-      "notes": "DESTRUCTIVE: --force overwrites an assembly report that carries stage evidence, stage history or operator decisions, and the packet's recorded deploy target, preview URL, production URL, order-path depth and allowed-domains confirmation, printing the stage keys and the operator state it cleared. It archives completed build, Polish and QA records into stage history, which is kept, and keeps each stage's record that its inputs changed. This is the flag that makes `start` destructive; the base form refuses instead. It also regenerates a stale Design Source Package that this intake synthesized itself: the previous Assembly Report records origin \"synthesized\" and the package bytes still match it. An adopted or hand-edited package is never replaced. The declared writes already cover that path."
+      "notes": "DESTRUCTIVE: --force overwrites an assembly report that carries stage evidence, stage history or operator decisions, and the packet's recorded deploy target, preview URL, production URL, order-path depth and allowed-domains confirmation, printing the stage keys and the operator state it cleared. It archives completed build, Polish and QA records into stage history, which is kept, and keeps each stage's record that its inputs changed. This is the flag that makes `start` destructive; the base form refuses instead. It also regenerates a stale Design Source Package that this intake synthesized itself: the previous Assembly Report records origin \"synthesized\" and the package bytes still match it. An adopted or hand-edited package is never replaced. The declared writes already cover that path. With --out naming the Build Packet of another route, it also replaces that funnel with this one (renaming its route): the packet is rewritten for this route, and when that funnel kept the project-level records they are regenerated for this route in place. Without --force that run is refused, so naming a path never replaces another funnel."
     },
     {
       "command": "start",
@@ -4652,7 +5008,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/build-context.json",
+          "path": "{runtime}/build-context.json",
           "when": "always — the build context sidecar",
           "observed_in": [
             "no_session",
@@ -4663,7 +5019,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the assembly report for the run",
           "observed_in": [
             "no_session",
@@ -4674,7 +5030,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/input/*",
+          "path": "{runtime}/input/*",
           "when": "always — the normalized brief and the design source package",
           "observed_in": [
             "no_session",
@@ -4692,7 +5048,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/theme/theme-report.json",
+          "path": "{runtime}/theme/theme-report.json",
           "when": "the theme policy is not off",
           "observed_in": [
             "no_session",
@@ -4703,7 +5059,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the intake runs doctor — `start` and `build` do, `prepare-build` alone does not",
           "observed_in": [
             "no_session",
@@ -4781,7 +5137,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/build-context.json",
+          "path": "{runtime}/build-context.json",
           "when": "always — the build context sidecar",
           "observed_in": [
             "no_session",
@@ -4792,7 +5148,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the assembly report for the run",
           "observed_in": [
             "no_session",
@@ -4803,7 +5159,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/input/*",
+          "path": "{runtime}/input/*",
           "when": "always — the normalized brief and the design source package",
           "observed_in": [
             "no_session",
@@ -4821,7 +5177,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/theme/theme-report.json",
+          "path": "{runtime}/theme/theme-report.json",
           "when": "the theme policy is not off",
           "observed_in": [
             "no_session",
@@ -4852,7 +5208,7 @@
           ]
         },
         {
-          "path": "{cwd}/.campaign-runtime/run-records/*.json",
+          "path": "{packet-runtime}/run-records/*.json",
           "when": "a STALE run session at the root the command is about to act on is closed out before argv is read",
           "observed_in": [
             "stale_session"
@@ -4918,7 +5274,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/build-context.json",
+          "path": "{runtime}/build-context.json",
           "when": "always — the build context sidecar",
           "observed_in": [
             "no_session",
@@ -4929,7 +5285,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the assembly report for the run",
           "observed_in": [
             "no_session",
@@ -4940,7 +5296,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/input/*",
+          "path": "{runtime}/input/*",
           "when": "always — the normalized brief and the design source package",
           "observed_in": [
             "no_session",
@@ -4958,7 +5314,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/theme/theme-report.json",
+          "path": "{runtime}/theme/theme-report.json",
           "when": "the theme policy is not off",
           "observed_in": [
             "no_session",
@@ -5027,7 +5383,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/build-context.json",
+          "path": "{runtime}/build-context.json",
           "when": "always — the build context sidecar",
           "observed_in": [
             "no_session",
@@ -5038,7 +5394,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the assembly report for the run",
           "observed_in": [
             "no_session",
@@ -5049,7 +5405,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/input/*",
+          "path": "{runtime}/input/*",
           "when": "always — the normalized brief and the design source package",
           "observed_in": [
             "no_session",
@@ -5067,7 +5423,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/theme/theme-report.json",
+          "path": "{runtime}/theme/theme-report.json",
           "when": "the theme policy is not off",
           "observed_in": [
             "no_session",
@@ -5098,7 +5454,7 @@
           ]
         },
         {
-          "path": "{cwd}/.campaign-runtime/run-records/*.json",
+          "path": "{packet-runtime}/run-records/*.json",
           "when": "a STALE run session at the root the command is about to act on is closed out before argv is read",
           "observed_in": [
             "stale_session"
@@ -5136,7 +5492,7 @@
       ],
       "effect_test": "effects: prepare-build --force",
       "test_scope": "full",
-      "notes": "DESTRUCTIVE: --force overwrites an assembly report that carries stage evidence, stage history or operator decisions, and the packet's recorded deploy target, preview URL, production URL, order-path depth and allowed-domains confirmation, printing the stage keys and the operator state it cleared. It archives completed build, Polish and QA records into stage history, which is kept, and keeps each stage's record that its inputs changed. This is the flag that makes `prepare-build` destructive; the base form refuses instead. It also regenerates a stale Design Source Package that this intake synthesized itself: the previous Assembly Report records origin \"synthesized\" and the package bytes still match it. An adopted or hand-edited package is never replaced. The declared writes already cover that path. Everything else it writes is the base form's intake."
+      "notes": "DESTRUCTIVE: --force overwrites an assembly report that carries stage evidence, stage history or operator decisions, and the packet's recorded deploy target, preview URL, production URL, order-path depth and allowed-domains confirmation, printing the stage keys and the operator state it cleared. It archives completed build, Polish and QA records into stage history, which is kept, and keeps each stage's record that its inputs changed. This is the flag that makes `prepare-build` destructive; the base form refuses instead. It also regenerates a stale Design Source Package that this intake synthesized itself: the previous Assembly Report records origin \"synthesized\" and the package bytes still match it. An adopted or hand-edited package is never replaced. The declared writes already cover that path. With --out naming the Build Packet of another route, it also replaces that funnel with this one (renaming its route): the packet is rewritten for this route, and when that funnel kept the project-level records they are regenerated for this route in place. Without --force that run is refused, so naming a path never replaces another funnel. Everything else it writes is the base form's intake."
     },
     {
       "command": "build",
@@ -5162,7 +5518,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/build-context.json",
+          "path": "{runtime}/build-context.json",
           "when": "always — the build context sidecar",
           "observed_in": [
             "no_session",
@@ -5173,7 +5529,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the assembly report for the run",
           "observed_in": [
             "no_session",
@@ -5184,7 +5540,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/input/*",
+          "path": "{runtime}/input/*",
           "when": "always — the normalized brief and the design source package",
           "observed_in": [
             "no_session",
@@ -5202,7 +5558,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/theme/theme-report.json",
+          "path": "{runtime}/theme/theme-report.json",
           "when": "the theme policy is not off",
           "observed_in": [
             "no_session",
@@ -5213,7 +5569,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the intake runs doctor — `start` and `build` do, `prepare-build` alone does not",
           "observed_in": [
             "no_session",
@@ -5244,7 +5600,7 @@
           ]
         },
         {
-          "path": "{cwd}/.campaign-runtime/run-records/*.json",
+          "path": "{packet-runtime}/run-records/*.json",
           "when": "a STALE run session at the root the command is about to act on is closed out before argv is read",
           "observed_in": [
             "stale_session"
@@ -5310,7 +5666,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/build-context.json",
+          "path": "{runtime}/build-context.json",
           "when": "always — the build context sidecar",
           "observed_in": [
             "no_session",
@@ -5321,7 +5677,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the assembly report for the run",
           "observed_in": [
             "no_session",
@@ -5332,7 +5688,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/input/*",
+          "path": "{runtime}/input/*",
           "when": "always — the normalized brief and the design source package",
           "observed_in": [
             "no_session",
@@ -5350,7 +5706,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/theme/theme-report.json",
+          "path": "{runtime}/theme/theme-report.json",
           "when": "the theme policy is not off",
           "observed_in": [
             "no_session",
@@ -5361,7 +5717,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the intake runs doctor — `start` and `build` do, `prepare-build` alone does not",
           "observed_in": [
             "no_session",
@@ -5430,7 +5786,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/build-context.json",
+          "path": "{runtime}/build-context.json",
           "when": "always — the build context sidecar",
           "observed_in": [
             "no_session",
@@ -5441,7 +5797,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "always — the assembly report for the run",
           "observed_in": [
             "no_session",
@@ -5452,7 +5808,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/input/*",
+          "path": "{runtime}/input/*",
           "when": "always — the normalized brief and the design source package",
           "observed_in": [
             "no_session",
@@ -5470,7 +5826,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/theme/theme-report.json",
+          "path": "{runtime}/theme/theme-report.json",
           "when": "the theme policy is not off",
           "observed_in": [
             "no_session",
@@ -5481,7 +5837,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the intake runs doctor — `start` and `build` do, `prepare-build` alone does not",
           "observed_in": [
             "no_session",
@@ -5512,7 +5868,7 @@
           ]
         },
         {
-          "path": "{cwd}/.campaign-runtime/run-records/*.json",
+          "path": "{packet-runtime}/run-records/*.json",
           "when": "a STALE run session at the root the command is about to act on is closed out before argv is read",
           "observed_in": [
             "stale_session"
@@ -5550,7 +5906,7 @@
       ],
       "effect_test": "effects: build --force",
       "test_scope": "full",
-      "notes": "DESTRUCTIVE: --force overwrites an assembly report that carries stage evidence, stage history or operator decisions, and the packet's recorded deploy target, preview URL, production URL, order-path depth and allowed-domains confirmation, printing the stage keys and the operator state it cleared. It archives completed build, Polish and QA records into stage history, which is kept, and keeps each stage's record that its inputs changed. This is the flag that makes `build` destructive; the base form refuses instead. It also regenerates a stale Design Source Package that this intake synthesized itself: the previous Assembly Report records origin \"synthesized\" and the package bytes still match it. An adopted or hand-edited package is never replaced. The declared writes already cover that path. Everything else it writes is the base form's intake."
+      "notes": "DESTRUCTIVE: --force overwrites an assembly report that carries stage evidence, stage history or operator decisions, and the packet's recorded deploy target, preview URL, production URL, order-path depth and allowed-domains confirmation, printing the stage keys and the operator state it cleared. It archives completed build, Polish and QA records into stage history, which is kept, and keeps each stage's record that its inputs changed. This is the flag that makes `build` destructive; the base form refuses instead. It also regenerates a stale Design Source Package that this intake synthesized itself: the previous Assembly Report records origin \"synthesized\" and the package bytes still match it. An adopted or hand-edited package is never replaced. The declared writes already cover that path. With --out naming the Build Packet of another route, it also replaces that funnel with this one (renaming its route): the packet is rewritten for this route, and when that funnel kept the project-level records they are regenerated for this route in place. Without --force that run is refused, so naming a path never replaces another funnel. Everything else it writes is the base form's intake."
     },
     {
       "command": "spec",
@@ -5589,6 +5945,14 @@
           "requires_consent": false,
           "observed_in": [],
           "not_observed_reason": "the gateway is unreachable offline and the fixture holds no credential; the case proves the refusal (exit 2) writes nothing"
+        },
+        {
+          "destination": "{proxy-base}/api/campaign",
+          "what": "one GET of the live campaign (its packages, offers and shipping methods) under X-Campaign-Key, the public Campaigns API key; no request body and no Admin or store credential. The body refreshes the spec's mirrored offer and package fields (#721).",
+          "when": "the packet's built _site/<route>/ exists, a public Campaigns API key resolves from the packet, its local CampaignSpec or the declared campaign-key env var, and --no-live-refs is not given",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the fixture has no built _site/, so no live campaign read is due"
         }
       ],
       "effect_test": "effects: spec derive --from-store (preflight)",
@@ -5627,7 +5991,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "the derive invalidates the retained doctor sidecar",
           "observed_in": [
             "no_session",
@@ -5638,7 +6002,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "the Map write succeeds and is recorded on the report's evidence[]",
           "observed_in": [],
           "not_observed_reason": "the Map write is not reachable against a loopback stand-in"
@@ -5673,6 +6037,14 @@
           "requires_consent": false,
           "observed_in": [],
           "not_observed_reason": "the loopback stand-in cannot satisfy the Map read's precondition, so the PUT is never reached"
+        },
+        {
+          "destination": "{proxy-base}/api/campaign",
+          "what": "one GET of the live campaign (its packages, offers and shipping methods) under X-Campaign-Key, the public Campaigns API key; no request body and no Admin or store credential. The body refreshes the spec's mirrored offer and package fields (#721).",
+          "when": "the packet's built _site/<route>/ exists, a public Campaigns API key resolves from the packet, its local CampaignSpec or the declared campaign-key env var, and --no-live-refs is not given",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the fixture has no built _site/, so no live campaign read is due"
         }
       ],
       "effect_test": "effects: spec derive --write-map (preflight)",
@@ -5681,7 +6053,7 @@
       "preflight": {
         "may_write": [
           "{spec}",
-          "{target}/.campaign-runtime/doctor-output.json",
+          "{runtime}/doctor-output.json",
           "{lifecycle-journal}"
         ],
         "may_contact": [
@@ -5708,7 +6080,7 @@
           "not_observed_reason": "the capture is refused before the browser is launched"
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "the capture completes and its evidence is recorded",
           "observed_in": [],
           "not_observed_reason": "the capture is refused before the browser is launched"
@@ -5766,7 +6138,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/input/*",
+          "path": "{runtime}/input/*",
           "when": "the save changes the brief (outcome saved or saved_with_invalidation) — the normalized brief, re-derived from the saved brief file",
           "observed_in": [
             "no_session",
@@ -5777,7 +6149,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/build-context.json",
+          "path": "{runtime}/build-context.json",
           "when": "the save changes the brief (outcome saved or saved_with_invalidation) — the brief summary, its bindings and the brief's prompts",
           "observed_in": [
             "no_session",
@@ -5788,7 +6160,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "the save changes the brief (outcome saved or saved_with_invalidation) — the brief summary and bindings, and stages.prepare_build re-derived from the brief's blockers; on a material change (saved_with_invalidation) build, Polish and QA become required (QA alone when only qa_policy changed), each recording input_change and keeping the record it replaced in its history, and evidence[] gains a line",
           "observed_in": [
             "no_session",
@@ -5799,7 +6171,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "a save changes the brief (outcome saved or saved_with_invalidation) and a retained doctor sidecar exists — the write postdates the doctor snapshot, so it is stamped stale",
           "observed_in": [
             "no_session",
@@ -5855,7 +6227,7 @@
       "tier": "C",
       "writes": [
         {
-          "path": "{target}/.campaign-runtime/input/*",
+          "path": "{runtime}/input/*",
           "when": "the refresh runs (outcome refreshed) and the brief re-derived from the brief file last saved by intake or `record brief` (or from the generated draft) differs from what is bound, or the normalized brief on disk no longer holds the re-derived brief's material — the normalized brief",
           "observed_in": [
             "no_session",
@@ -5866,8 +6238,20 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/build-context.json",
-          "when": "the refresh runs (outcome refreshed) — spec.hash, spec.material_hash and the active pages' labels; the brief summary and bindings when the re-derived brief is saved",
+          "path": "{packet}",
+          "when": "the active pages changed in a way record spec binds (#531, #721): a move of routes alone, or on a handed-off campaign (deploy or QA completed) a page added or removed — source_html.pages[].page_kit re-projected for every page, an added page recorded with origin repo, a removed page's entry dropped, and design_source_package's sha256 and material_fingerprint when the package is rewritten; also, without a page rebind, design_source_package alone when an earlier record spec stopped after rewriting the package and its pending provenance record vouches for the bytes on disk",
+          "observed_in": [],
+          "not_observed_reason": "the effects seed changes a package qty, not the active pages, so no page rebind is due"
+        },
+        {
+          "path": "{runtime}/input/design-source-package.json",
+          "when": "that page rebind changes a kept page's Surface Identity (its route, page-kit target or label) — the package prepare-build synthesized is rewritten at the same path, written first, with a pending provenance record beside it until the report records its new sha256",
+          "observed_in": [],
+          "not_observed_reason": "the effects seed changes a package qty, not the active pages, so no page rebind is due"
+        },
+        {
+          "path": "{runtime}/build-context.json",
+          "when": "the refresh runs (outcome refreshed) — spec.hash, spec.material_hash, spec.route_masked_material_hash and the active pages' labels; the brief summary and bindings when the re-derived brief is saved; on a page rebind, spec.active_pages, page_map and design_source_package too; design_source_package when an interrupted earlier run left it naming the old package",
           "observed_in": [
             "no_session",
             "ambient_session",
@@ -5877,8 +6261,8 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
-          "when": "the refresh runs (outcome refreshed) — identity.spec_hash and identity.spec_material_hash become the CampaignSpec's; each build, Polish and QA record made against other CampaignSpec or brief content becomes required, recording input_change and keeping the record it replaced in its history; evidence[] gains a line",
+          "path": "{runtime}/assembly-report.json",
+          "when": "the refresh runs (outcome refreshed) — identity.spec_hash and identity.spec_material_hash become the CampaignSpec's; each build, Polish and QA record made against other CampaignSpec or brief content becomes required, recording input_change and keeping the record it replaced in its history (on a page rebind that moved nothing the build wrote, each is restamped instead; when the set of built pages changes, a completed deploy recorded without a build fingerprint becomes required too; design_source_package when an interrupted earlier run left it naming the old package); evidence[] gains a line",
           "observed_in": [
             "no_session",
             "ambient_session",
@@ -5888,7 +6272,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "a refresh runs (outcome refreshed) and a retained doctor sidecar exists — the write postdates the doctor snapshot, so it is stamped stale",
           "observed_in": [
             "no_session",
@@ -5910,7 +6294,7 @@
       "sends": [],
       "effect_test": "effects: record spec",
       "test_scope": "full",
-      "notes": "Destructive: build, Polish and QA records made against earlier CampaignSpec or brief content become owed again, each moving to that stage's history, which keeps the last five per stage and is never used as current proof. Waivers, warning accepts, the applied theme and deploy settings are kept. Idempotent: a repeat reads unchanged. When the bound CampaignSpec material is the spec's and no stage's recorded CampaignSpec or brief content differs from the current inputs it reads unchanged and writes nothing but the lifecycle entry. The Build Packet is read, not written; the brief is re-read from the brief file last saved by intake or `record brief`, never rediscovered. For a saved-Map or gateway packet it compares the copy intake fetched and sends nothing. Refused, writing nothing but the lifecycle entry, when the CampaignSpec cannot be read as a JSON object, names another campaign (local_spec_id or map_id) than the Build Packet or the Assembly Report binds, or its active pages (ids, order or routes) changed (that needs intake), or when that brief file is over 1 MiB or names more than 512 design_authority entries, names a file Campaigns OS writes itself, or is missing or not a readable regular file."
+      "notes": "Destructive: build, Polish and QA records made against earlier CampaignSpec or brief content become owed again, each moving to that stage's history, which keeps the last five per stage and is never used as current proof. Waivers, warning accepts, the applied theme and deploy settings are kept. Idempotent: a repeat reads unchanged. When the bound CampaignSpec material is the spec's and no stage's recorded CampaignSpec or brief content differs from the current inputs it reads unchanged and writes nothing but the lifecycle entry. The Build Packet is read, and written only on a page rebind (a move of routes alone, or after handoff a page added or removed), which also rewrites the Design Source Package prepare-build synthesized; the brief is re-read from the brief file last saved by intake or `record brief`, never rediscovered. For a saved-Map or gateway packet it compares the copy intake fetched and sends nothing. Refused, writing nothing but the lifecycle entry, when the CampaignSpec cannot be read as a JSON object, names another campaign (local_spec_id or map_id) than the Build Packet or the Assembly Report binds, or its active pages are in another order, or a page was added or removed before handoff (those need intake), or a page rebind would move the route root or slug, leave a routing hint stale, put two pages on one page-kit target, or rewrite a Design Source Package prepare-build did not synthesize or that was edited since, or when that brief file is over 1 MiB or names more than 512 design_authority entries, names a file Campaigns OS writes itself, or is missing or not a readable regular file."
     },
     {
       "command": "record",
@@ -5944,7 +6328,7 @@
       "tier": "C",
       "writes": [
         {
-          "path": "{target}/.campaign-runtime/build-context.json",
+          "path": "{runtime}/build-context.json",
           "when": "the record passes every check — scaffold.required becomes false (handoff to build)",
           "observed_in": [
             "no_session",
@@ -5955,7 +6339,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "the record passes every check — stages.setup becomes completed",
           "observed_in": [
             "no_session",
@@ -5966,7 +6350,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "a retained doctor sidecar exists — the record postdates the doctor snapshot, so it is stamped stale",
           "observed_in": [
             "no_session",
@@ -6022,7 +6406,7 @@
       "tier": "C",
       "writes": [
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "the record passes every check — stages.assembly becomes completed with build_fingerprint set to doctor's derived.build_output_fingerprint.value and the brief and CampaignSpec content it was made against, keeping the record it replaced in its history. When the replaced completed record was made against other brief or CampaignSpec content, the record writes input_change and stages.polish and stages.qa become required; otherwise stages.polish becomes required unless its evidence is bound to that exact output. Output identical to the build that change superseded keeps input_change, unless --deviation-reason records the operator's reason (status completed_with_warnings)",
           "observed_in": [
             "no_session",
@@ -6033,7 +6417,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "a retained doctor sidecar exists — the record postdates the doctor snapshot, so it is stamped stale",
           "observed_in": [
             "no_session",
@@ -6089,7 +6473,7 @@
       "tier": "C",
       "writes": [
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "the record passes every check — stages.polish becomes the file's status (completed, blocked with blockers, or skipped with skip_reason) and evidence, bound to doctor's current fingerprint and, for a completed status, the brief and CampaignSpec content it was made against, keeping the record it replaced in its history; theme.repair_loop_defect when the file sets it",
           "observed_in": [
             "no_session",
@@ -6100,7 +6484,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "a retained doctor sidecar exists — the record postdates the doctor snapshot, so it is stamped stale",
           "observed_in": [
             "no_session",
@@ -6156,7 +6540,7 @@
       "tier": "C",
       "writes": [
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "the record passes every check — theme.status becomes applied with load_order after-next-core, css_path, commerce_pages and per-page evidence read from the built pages; any earlier theme waiver is cleared",
           "observed_in": [
             "no_session",
@@ -6167,7 +6551,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "a retained doctor sidecar exists — the record postdates the doctor snapshot, so it is stamped stale",
           "observed_in": [
             "no_session",
@@ -6234,7 +6618,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/assembly-report.json",
+          "path": "{runtime}/assembly-report.json",
           "when": "the record passes every check — stages.deploy becomes completed with the served URL in outputs and one evidence line per page that answered",
           "observed_in": [
             "no_session",
@@ -6245,7 +6629,7 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/doctor-output.json",
+          "path": "{runtime}/doctor-output.json",
           "when": "a retained doctor sidecar exists — the record postdates the doctor snapshot, so it is stamped stale",
           "observed_in": [
             "no_session",

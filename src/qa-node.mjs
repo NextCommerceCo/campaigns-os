@@ -1,8 +1,10 @@
 import { campaignSpecIdentity, resolveCampaignIdentity, campaignIdentitiesMatch } from "./spec-source-identity.mjs";
-import { applyLocalPreviewToCheckpoint, applyLocalPreviewToPolishGate, carriedForwardMessage, CARRIED_FORWARD, ensureUrlTrailingSlash, normalizeQaBaseUrl, starterResidueIsExpected } from "./local-preview-policy.mjs";
+import { applyLocalPreviewToCheckpoint, applyLocalPreviewToPolishGate, applyPageOnlyChangeToCheckpoint, applyPageOnlyChangeToPolishGate, carriedForwardMessage, CARRIED_FORWARD, ensureUrlTrailingSlash, isPageOnlyCarry, normalizeQaBaseUrl, starterResidueIsExpected } from "./local-preview-policy.mjs";
+import { assessEvidenceDebt } from "./evidence-debt.mjs";
+import { routePageIdForUrl } from "./change-scope.mjs";
 import { expectedBinding, createBindingScriptLoader, observeBinding, bindingAssertion, scriptParseAssertion } from './qa-binding-evidence.mjs';
 import { shellToken } from "./shell-token.mjs";
-import { currentBriefMaterial } from "./input-currency.mjs";
+import { currentBriefMaterial, deriveInputCurrency } from "./input-currency.mjs";
 import { applyQaBuildScope, specForQaScope } from "./qa-build-scope.mjs";
 import { requiredActionText } from "./gate-actions.mjs";
 import { parseOrderPathDepthFlag } from "./proof-policy.mjs";
@@ -37,6 +39,7 @@ import { assessReceiptPurchase } from "./qa-analytics-correctness.mjs";
 import { trackingQaAssertion, trackingRunScopeRows } from "./qa-tracking-params.mjs";
 import { contentParamNotRequestedRows, contentParamQaAssertion } from "./qa-content-params.mjs";
 import { policyLinkNotRequestedRows, policyLinkQaAssertion } from "./qa-policy-links.mjs";
+import { createVendorBeaconLedger, QA_VENDOR_BEACONS, vendorBeaconAssertion, vendorBeaconMode } from "./qa-vendor-beacons.mjs";
 import { createVerdict, formatTestOrderSummary, isFindingAssertion, QA_ASSERTION_FAMILY_VOCABULARY, SESSION_ENDING_DISPOSITIONS, SEVERITY, STATUS, validateVerdict } from "./qa-verdict.mjs";
 import { normalizeSdkMetaName, lookupSdkIgnoredMetaTag } from "./sdk-meta-tags.mjs";
 import { annotateQaAssertionCauses, formatCauseReportLines, formatCauseTag } from "./finding-cause.mjs";
@@ -78,12 +81,12 @@ import {
 } from "./polish-capture.mjs";
 import { resolveConsent } from "./consent.mjs";
 import { markDoctorSidecarStale } from "./doctor-sidecar.mjs";
-import { commitAssemblyReport } from "./stage-ledger.mjs";
+import { commitAssemblyReport, qaExtendedBuildFingerprint } from "./stage-ledger.mjs";
 // Tags a refusal raised before a qa handler runs, so the CLI's lifecycle
 // persist step suppresses the journal append from one place. lifecycle.mjs
 // imports nothing from this repository, so this cannot be circular.
 import { refused, refusing } from "./lifecycle.mjs";
-import { campaignSidecarPaths, explicitReportPath, resolveCampaignWorkspace, targetRepoFor } from "./campaign-workspace.mjs";
+import { campaignSidecarPaths, explicitReportPath, packetRuntimeRelPath, resolveCampaignWorkspace, targetRepoFor } from "./campaign-workspace.mjs";
 import { loadParityFixture } from "./qa-parity-fixture.mjs";
 import { assessParityCapture, resolveParityScenario, runParityCapture } from "./qa-parity-capture.mjs";
 import { loadPageKitCampaignEntry, PAGE_KIT_CAMPAIGNS_REL_PATH } from "./page-kit-campaign-config.mjs";
@@ -131,7 +134,7 @@ const HELP = `campaigns-os qa — Node/npm spec-aware QA
 Usage:
   campaigns-os qa parity --fixture <parity-fixture.json> --scenario <scenario-id> [--base-url <override>] [--baseline <url>] [--parity-order-json <file>] [--no-post-verdict]
   campaigns-os qa resolve --packet <campaign-runtime.build.json> [--base-url <url>] [--no-probe] [--probe-timeout-ms <ms>] [--json]
-  campaigns-os qa run --packet <campaign-runtime.build.json> [--base-url <url>] [--currency <code>] [--output-dir <dir>] [--no-remit] [--no-live-refs] [--json]
+  campaigns-os qa run --packet <campaign-runtime.build.json> [--base-url <url>] [--currency <code>] [--page <page_id>]... [--output-dir <dir>] [--no-remit] [--no-live-refs] [--json]
   campaigns-os qa policy set --packet <campaign-runtime.build.json> [--allowed-domains-confirmed true|false] [--deploy-target <target>] [--preview-url <url>] [--production-url <url>] [--order-path-depth <off|common|full>] [--json]
   campaigns-os qa waive --packet <campaign-runtime.build.json> --assertion analytics-correctness:purchase-fires --reason "<why>" [--waived-by <who>] [--report <assembly-report.json>] [--json]
   campaigns-os qa promote --packet <campaign-runtime.build.json> --verdict <full-verdict.json> [--json]   # project one explicit qa-output verdict to the committed .campaign-runtime/qa-verdict.json sidecar
@@ -147,6 +150,9 @@ Options:
   --baseline <url>                Optional live analytics baseline for qa parity.
   --parity-order-json <path>      Assessment-only saved order + analytics capture bundle; skips Playwright.
   --packet <path>                 Read Map ID, local CampaignSpec, deploy URL, and QA metadata from a Build Packet.
+  --page <page_id>                Check only this page; repeat for more pages. Pays the QA a page-only change
+                                  owes on those pages (doctor --ci and next name them). Packet QA only; places no
+                                  test orders, and refuses a change that touches commerce or leaves a changed page out.
   --site <path>                   L7 non-packet QA: resolve scope (pages + funnel types) from a built page-kit _site/.
                                   Requires --base-url and --family. No Map ID / CampaignSpec needed.
   --spec <path>                   Local exported CampaignSpec JSON for the non-packet Map ID flow.
@@ -195,7 +201,10 @@ Options:
   --currency <code>               qa run: enter each funnel's entry page with ?currency=<CODE> (three letters, e.g. GBP),
                                   keeping its existing query. The flag takes one code per run (given twice, the
                                   last one is used); the verdict records it as evidence.currency on the entry
-                                  page's http:<page> row. Not supported by qa parity or --legacy-api-test-order.
+                                  page's http:<page> row. Expected totals are calculated in the code, and a test
+                                  order or calculate response in another currency is a blocker (exit 4) on its
+                                  browser-order-currency:<path> or commercial-currency:<CODE>:<ANSWERED> row.
+                                  Not supported by qa parity or --legacy-api-test-order.
   --auth-cookie <cookie>          Cookie header for protected previews.
   --browser                       Run Playwright-rendered browser checks after static Node checks.
                                   Requires one-time setup: campaigns-os qa install-browser
@@ -229,6 +238,15 @@ Options:
   --max-order-creations <n>       Hard bound on REAL order creations in this run, reserved before each submit
                                   click. Default: the planned path count. A path whose failure is confirmed to
                                   have created an order is inspected read-only, never resubmitted.
+  --vendor-beacons live           qa run --test-order: let the page's analytics vendor beacons reach the vendors.
+                                  By default a test-order run answers requests to the listed vendor beacon
+                                  endpoints (GA4, Meta, TikTok, Snap, Pinterest, Taboola, Triple Whale, AppLovin
+                                  Axon) locally in every browser context, so test purchases stay out of vendor
+                                  data; loader scripts still load. The verdict row browser-test-order:vendor-beacons
+                                  records the requests per vendor as evidence, never as purchase proof, and names
+                                  the vendors not intercepted (Northbeam; GTM, which sends nothing of its own).
+                                  live is the only value; any other is refused, as is the flag without
+                                  --test-order.
   --allowed-domains-confirmed <bool>
                                   qa policy set: persist non-localhost SDK-origin confirmation.
                                   Localhost on any port is a global Development domain with analytics suppressed.
@@ -524,12 +542,25 @@ async function resolveQaInputs(args, {
     hiddenEagerMediaGate,
     packet,
     baseUrl: stringArg(args["base-url"]),
+    evidenceDebt: checkpointPreflight?.evidenceDebt || null,
   });
   const qaWaivers = resolveQaWaivers({ packetPath, report: checkpointPreflight?.runtimeReport });
-  const qaScope = applyQaBuildScope(topologies, {
+  const buildScope = applyQaBuildScope(topologies, {
     packet, report: checkpointPreflight?.runtimeReport,
     targetRepo: checkpointPreflight?.targetRepo, publicRouteSlug,
   });
+  const requestedPages = qaPageArgs(args);
+  const pageScope = applyQaPageScope(buildScope.topologies, {
+    pages: requestedPages,
+    baseUrl,
+    debt: checkpointPreflight?.evidenceDebt || null,
+    report: checkpointPreflight?.runtimeReport,
+    // Read against the spec this run judges, as doctor reads it.
+    qaInputCurrency: requestedPages
+      ? deriveInputCurrency({ packet, packetPath, report: checkpointPreflight?.runtimeReport || null, spec: isPlainObject(rawSpec) ? rawSpec : null }).stages.qa
+      : undefined,
+  });
+  const qaScope = { ...buildScope, topologies: pageScope.topologies };
   const brandContract = loadBrandContract(templateFamily);
   const localServeAnalytics = resolveLocalServeAnalytics({
     packet,
@@ -565,6 +596,7 @@ async function resolveQaInputs(args, {
     commerceStructureContract,
     topologies: qaScope.topologies,
     excludedPages: qaScope.excludedPages,
+    pageScope: pageScope.scope,
     checkpointGates: checkpointPreflight?.checkpointGates || nonPacketCheckpointGates(),
     // The report the checkpoint gates were evaluated on, and the target repo
     // whose default it may or may not be: what the printed remediation names.
@@ -637,13 +669,18 @@ function resolvePacketCheckpointPreflight(args, {
       waivers: report?.waivers,
       required: true,
     }),
-    applyLocalPreviewToCheckpoint(
-      evaluateRecordedHiddenEagerMediaCheckpoint({ packet, report }),
-      { packet, report, baseUrl: stringArg(args["base-url"]) },
-    ),
   ];
   const runtimeReport = reportMatchesPacketIdentity(report, packet) ? report : null;
+  // The evidence debt doctor and readback assess: a page-only change since
+  // Polish last reviewed the campaign makes Polish advisory (#720), and a
+  // page-scoped run (--page) pays the QA it owes.
+  const evidenceDebt = assessEvidenceDebt({ packet, packetPath, report: runtimeReport });
+  checkpointGates.push(applyPageOnlyChangeToCheckpoint(applyLocalPreviewToCheckpoint(
+    evaluateRecordedHiddenEagerMediaCheckpoint({ packet, report }),
+    { packet, report, baseUrl: stringArg(args["base-url"]) },
+  ), evidenceDebt));
   return {
+    evidenceDebt,
     packetPath,
     packet,
     specPath,
@@ -980,22 +1017,125 @@ function currentBuiltOutputFingerprint(packetPath) {
   }
 }
 
+// qa run --page <page_id> (#720): repeat the flag or separate ids with
+// commas. Null when the run is not page-scoped.
+function qaPageArgs(args) {
+  if (args.page === undefined) return null;
+  const values = Array.isArray(args.page) ? args.page : [args.page];
+  const ids = values.flatMap((value) => (typeof value === "string" ? value.split(",") : [""])).map((id) => id.trim());
+  if (!ids.length || ids.some((id) => !id)) {
+    throw refused("--page takes a page id: the id `doctor --ci` or `next` names for a changed page, or the CampaignSpec page id. Repeat --page for more pages.");
+  }
+  return [...new Set(ids)];
+}
+
+// A page-scoped run checks pages, not purchases: it pays the QA a page-only
+// change owes, and a change that owes test orders owes a full run.
+function refuseBadPageScope(args) {
+  if (qaPageArgs(args) === null) return;
+  if (!stringArg(args.packet)) throw refused("--page needs --packet: a page-scoped run pays the QA a recorded build owes, which only a Build Packet's Assembly Report records.");
+  for (const flag of ["test-order", "legacy-api-test-order"]) {
+    if (args[flag] !== undefined && String(args[flag]).toLowerCase() !== "off") {
+      throw refused(`--page cannot be combined with --${flag}: a page-scoped run checks the named pages and places no test orders. Run ${cmd("qa")} run without --page for purchase proof.`);
+    }
+  }
+  if (args["vendor-beacons"] !== undefined) {
+    throw refused("--page cannot be combined with --vendor-beacons: a page-scoped run places no test orders, so there are no vendor beacons to route. Drop --vendor-beacons.");
+  }
+}
+
+// Narrow the QA topology to the pages --page names, after checking that the
+// run can pay what QA owes: the output on disk is the recorded build, the
+// change since the build QA reviewed is page-only, and the named pages cover
+// every changed page. The run extends a completed QA, and QA's inputs (the
+// brief's qa_policy and the CampaignSpec) are current: `qaInputCurrency` is
+// derived.input_currency.stages.qa, and a QA an input change owes, or whose
+// inputs cannot be confirmed, owes a full run. Re-running a page-scoped
+// record for the same build is allowed too. Each requested id is a topology
+// page id or the page id of its route (the id the change lists use).
+export function applyQaPageScope(topologies, { pages, baseUrl, debt, report, qaInputCurrency = undefined } = {}) {
+  if (!pages) return { topologies, scope: null };
+  const all = topologies.flatMap((topology) => topology.pages || []);
+  const idsOf = (page) => [String(page.page_id), page.url && baseUrl ? routePageIdForUrl(page.url, baseUrl) : null].filter(Boolean);
+  const known = new Set(all.flatMap(idsOf));
+  const unknown = pages.filter((id) => !known.has(id));
+  if (unknown.length) {
+    throw new Error(`qa run --page: ${unknown.map((id) => JSON.stringify(id)).join(", ")} is not a page of this campaign's QA topology. Pages: ${[...new Set(all.map((page) => String(page.page_id)))].join(", ") || "none"}.`);
+  }
+  const selected = new Set(pages);
+  const isSelected = (page) => idsOf(page).some((id) => selected.has(id));
+  const selectedRouteIds = new Set(all.filter(isSelected).flatMap(idsOf));
+  const qa = debt?.qa;
+  const changes = debt?.changes;
+  if (!qa || !changes?.current_build_fingerprint) {
+    throw new Error("qa run --page needs the Assembly Report and the built output under _site/<public_route_slug>/ to read what QA owes; run it without --page.");
+  }
+  if (changes.recorded_build_fingerprint !== changes.current_build_fingerprint) {
+    throw new Error(`qa run --page: the built output is not the recorded build; run ${cmd("record")} build --packet <packet> first, so the page-scoped verdict is bound to the output it checked.`);
+  }
+  const extended = qaExtendedBuildFingerprint(report);
+  const previousScope = report?.stages?.qa?.evidence?.page_scope;
+  let base = qa.change?.since_build_fingerprint || qa.recorded_build_fingerprint;
+  if (qa.status === "current") {
+    const previousPages = Array.isArray(previousScope?.owed_pages) ? previousScope.owed_pages : null;
+    if (!previousPages || !previousPages.every((id) => selectedRouteIds.has(id))) {
+      throw new Error(`qa run --page: QA is already recorded for this build. Run ${cmd("qa")} run without --page to re-run it in full.`);
+    }
+    base = previousScope.base_build_fingerprint || base;
+  } else if (qa.status !== "owed" || qa.scope !== "pages") {
+    const kind = qa.change?.kind === "commerce_affecting" ? "commerce-affecting"
+      : qa.status === "owed" && qa.change?.kind === "page_only"
+        ? extended ? "page-only, but QA is required again by an input change" : "page-only, but the QA recorded before it did not complete"
+        : "not classified as page-only";
+    throw new Error(`qa run --page: the change since the build QA reviewed is ${kind}${(qa.change?.reasons || []).length ? ` (${[...new Set(qa.change.reasons.map((reason) => reason.code))].join(", ")})` : ""}, so it owes a full QA run. Run ${cmd("qa")} run without --page.`);
+  } else {
+    const uncovered = qa.owed_pages.filter((page) => !selectedRouteIds.has(page.page_id));
+    if (uncovered.length) {
+      throw new Error(`qa run --page: QA is owed on ${qa.owed_pages.map((page) => page.page_id).join(", ")}; add ${uncovered.map((page) => `--page ${page.page_id}`).join(" ")}.`);
+    }
+  }
+  if (qaInputCurrency === "owed" || qaInputCurrency === "unknown") {
+    throw new Error(`qa run --page: ${qaInputCurrency === "owed" ? "an input change (the brief's qa_policy or the CampaignSpec) owes QA again" : "QA's inputs (the brief and the CampaignSpec) cannot be confirmed current"}, so it owes a full QA run. Run ${cmd("qa")} run without --page.`);
+  }
+  if (!extended) {
+    throw new Error(`qa run --page: the QA recorded before this change did not complete${report?.stages?.qa?.status ? ` (status ${JSON.stringify(String(report.stages.qa.status))})` : ""}, so there is no passed QA to extend and it owes a full QA run. Run ${cmd("qa")} run without --page.`);
+  }
+  const excluded = new Map();
+  const scoped = topologies.map((topology) => {
+    const kept = (topology.pages || []).filter(isSelected);
+    for (const page of topology.pages || []) if (!isSelected(page)) excluded.set(String(page.page_id), page);
+    return kept.length === (topology.pages || []).length ? topology : { ...topology, partial_build_scope: true, pages: kept };
+  }).filter((topology) => (topology.pages || []).length);
+  const owedPages = qa.status === "current" ? previousScope.owed_pages : qa.owed_pages.map((page) => page.page_id);
+  return {
+    topologies: scoped,
+    scope: {
+      pages: [...new Set(all.filter(isSelected).map((page) => String(page.page_id)))],
+      owed_pages: owedPages,
+      base_build_fingerprint: base,
+      build_fingerprint: changes.current_build_fingerprint,
+      excluded: [...excluded.values()].filter((page) => !all.some((other) => isSelected(other) && String(other.page_id) === String(page.page_id))),
+    },
+  };
+}
+
 function resolvePolishGate({
   packetPath,
   report: reportOverride = undefined,
   hiddenEagerMediaGate = undefined,
   packet = null,
   baseUrl = null,
+  evidenceDebt = null,
 }) {
   const report = reportOverride === undefined
     ? loadRuntimeArtifact(packetPath, "assembly-report.json")
     : reportOverride;
-  const gate = applyLocalPreviewToPolishGate(evaluatePolishGate({
+  const gate = applyPageOnlyChangeToPolishGate(applyLocalPreviewToPolishGate(evaluatePolishGate({
     report,
     required: true,
     hiddenEagerMediaGate,
     currentOutputFingerprint: currentBuiltOutputFingerprint(packetPath),
-  }), { packet, checkpointGate: hiddenEagerMediaGate, baseUrl });
+  }), { packet, checkpointGate: hiddenEagerMediaGate, baseUrl }), { debt: evidenceDebt, checkpointGate: hiddenEagerMediaGate });
   gate.scope_source = report ? "assembly_report" : "missing_assembly_report";
   return gate;
 }
@@ -1099,6 +1239,19 @@ function polishGateAssertion(gate) {
         problems: gate.problems || [],
         required_actions: gate.required_actions || [],
       },
+    });
+  }
+  if (isPageOnlyCarry(gate)) {
+    // Advisory for a page-only change (#720): reported, not a warning that
+    // would hold the verdict to ready_with_exceptions.
+    return assertion({
+      id: gate.code,
+      family: "polish_gate",
+      page,
+      status: STATUS.SKIPPED,
+      expected: "current structured Polish evidence, or a page-only change since Polish last reviewed the campaign",
+      actual: carriedForwardMessage(gate),
+      evidence: { ...evidence, reason: gate.reason, carried_forward: gate.carried_forward },
     });
   }
   if (gate.status === CARRIED_FORWARD) {
@@ -1419,6 +1572,9 @@ function hiddenEagerMediaGateAssertion(gate) {
   if (summary.status === "waived") {
     return assertion({ ...common, status: STATUS.WARN, severity: SEVERITY.WARN, waiver: summary.waiver });
   }
+  if (isPageOnlyCarry(summary)) {
+    return assertion({ ...common, status: STATUS.SKIPPED, actual: `${summary.code}: ${carriedForwardMessage(summary)}` });
+  }
   if (summary.status === CARRIED_FORWARD) {
     return assertion({ ...common, status: STATUS.WARN, severity: SEVERITY.WARN, actual: `${summary.code}: ${carriedForwardMessage(summary)}` });
   }
@@ -1624,7 +1780,7 @@ function serializeThrownValue(error) {
 // `derived.assembly_report_path` handling — so the printed remediations can
 // name it and a default-report campaign's output is unchanged.
 function reportPathField(resolved) {
-  const reportPath = explicitReportPath(resolved?.reportPath, resolved?.targetRepo);
+  const reportPath = explicitReportPath(resolved?.reportPath, resolved?.targetRepo, packetRuntimeRelPath(resolved?.packet));
   return reportPath ? { report_path: reportPath } : {};
 }
 
@@ -1919,6 +2075,7 @@ function updateQaPolicy(args) {
     // #171: packet edits change what doctor would conclude; the retained
     // doctor sidecar (if any) now predates them.
     markDoctorSidecarStale(targetRepoFor(packetPath, packet), {
+      path: campaignSidecarPaths(targetRepoFor(packetPath, packet), packetRuntimeRelPath(packet)).doctorOutPath,
       command: "qa policy set",
       reason: staleReason,
     });
@@ -2285,6 +2442,7 @@ async function runQa(args, options = {}) {
   // Fail-fast before anything resolves or launches. The authoritative check
   // lives on the creation budget itself, which every browser path builds.
   refuseBadOrderCreationLimit(args);
+  refuseBadPageScope(args);
   warnCurrencyWithoutTestCountry(args);
   // Match dispatch: an active browser mode takes precedence over legacy API
   // diagnostics. Only the selected legacy path requires a cart and API mode.
@@ -2293,6 +2451,7 @@ async function runQa(args, options = {}) {
   if (browserMode === "off" && legacyMode !== "off") {
     refusing(() => legacyTestOrderInputs({ ...args, "test-order": legacyMode }));
   }
+  vendorBeaconMode(args);
   const resolved = await resolveQaInputs(args);
   return runResolvedQa(args, resolved, options);
 }
@@ -2385,12 +2544,20 @@ async function runResolvedQa(args, resolvedInputs, { runSessionActive = false, l
       actual: "out_of_build_scope",
       evidence: { reason: "out_of_build_scope" },
     })),
+    ...(resolved.pageScope?.excluded || []).map(page => assertion({
+      id: `page-scope:${page.page_id}`, family: "funnel-flow", page,
+      status: STATUS.SKIPPED,
+      expected: "A page-scoped run (--page) checks only the named pages",
+      actual: "outside_page_scope",
+      evidence: { reason: "outside_page_scope" },
+    })),
     ...(polishGate?.owned_checkpoint_only ? [] : [polishGateAssertion(polishGate)]),
     themeGateAssertion(gate),
   ];
   const contractAssertion = templateBrandContractAssertion(resolved);
   if (contractAssertion) assertions.push(contractAssertion);
-  const commercialPlanning = planCommercialParity(specForQaScope(resolved.rawSpec || resolved.spec, resolved.excludedPages));
+  // Under --currency the expected totals are calculated in the run currency.
+  const commercialPlanning = planCommercialParity(specForQaScope(resolved.rawSpec || resolved.spec, [...(resolved.excludedPages || []), ...(resolved.pageScope?.excluded || [])]), { currency });
   const sourceLoader = createPageSourceLoader({ authCookie: args["auth-cookie"] });
   const commercialIds = new Set(commercialPlanning.pages
     .filter((page) => page?.id !== undefined && page?.id !== null)
@@ -2435,6 +2602,12 @@ async function runResolvedQa(args, resolvedInputs, { runSessionActive = false, l
       proxyBase: resolved.proxyBase,
     });
   assertions.push(...liveCampaignRefAssertions({ pages: [...livePages.values()], spec: liveSpec, liveCampaign: liveRead }));
+  // A test-order run answers vendor beacons locally in every browser context
+  // it opens, unless --vendor-beacons live; the ledger rides on args to each
+  // browser leg and becomes one evidence row (qa-vendor-beacons.mjs).
+  const vendorBeaconRun = vendorBeaconMode(args);
+  const vendorBeacons = vendorBeaconRun ? createVendorBeaconLedger({ mode: vendorBeaconRun, analytics: resolved.spec?.analytics }) : null;
+  if (vendorBeacons) args = { ...args, [QA_VENDOR_BEACONS]: vendorBeacons };
   const qcResults = [];
   if (args.browser === true) {
     const browserAssertions = await runBrowserChecks(resolved.topologies, args, {
@@ -2470,6 +2643,7 @@ async function runResolvedQa(args, resolvedInputs, { runSessionActive = false, l
   }
 
   const testOrders = await runAnalyticsOrderSequence({ args, resolved, runId, assertions, qcResults });
+  if (vendorBeacons) assertions.push(vendorBeaconAssertion(vendorBeacons));
   const remainingAssertionBudget = Math.max(0, QA_VERDICT_ASSERTION_LIMIT - assertions.length);
   let commercialResult;
   try {
@@ -2478,6 +2652,7 @@ async function runResolvedQa(args, resolvedInputs, { runSessionActive = false, l
       captures: [...capturesByPageId.values()],
       planning: commercialPlanning,
       maxAssertions: remainingAssertionBudget,
+      currency,
     });
   } catch (error) {
     commercialResult = {
@@ -2692,6 +2867,7 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
   // `external:qa_verdict` whenever that is not the packet directory.
   const causeSummary = annotateQaAssertionCauses(assertions, {
     baseDir: resolved.packetPath ? dirname(resolved.packetPath) : null,
+    runtimeRelPath: resolved.packetPath ? packetRuntimeRelPath(resolved.packet) : undefined,
     targetRepo: resolved.packetPath ? targetRepoFor(resolved.packetPath, resolved.packet) : null,
     mapId: resolved.mapId,
     localSpecId: resolved.localSpecId,
@@ -2807,6 +2983,9 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
     // The QC rows the QA stage records; readers re-derive them from the qc.*
     // assertions of the verdict written above.
     qc_results: qcResults,
+    // qa run --page: the pages this run checked and the change it pays for,
+    // which the QA stage record keeps (cli.mjs recordQaStageOutcome).
+    ...(resolved.pageScope ? { page_scope: resolved.pageScope } : {}),
     verdict,
   };
 }
@@ -2824,7 +3003,8 @@ function analyticsCaptureScope(resolved) {
   const rootUrl = rootCaptureUrl(resolved?.analyticsCaptureTarget?.url);
   const topologies = topologyList(resolved?.topologies);
   const partial = topologies.some((topology) => topology?.partial_build_scope)
-    || (Array.isArray(resolved?.excludedPages) && resolved.excludedPages.length > 0);
+    || (Array.isArray(resolved?.excludedPages) && resolved.excludedPages.length > 0)
+    || Boolean(resolved?.pageScope?.excluded?.length);
   const rootInScope = !rootUrl || !partial || topologies.some((topology) =>
     (Array.isArray(topology?.pages) ? topology.pages : []).some((page) =>
       typeof page?.url === "string" && isSameAnalyticsCapturePage(page.url, rootUrl)));

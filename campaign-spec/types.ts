@@ -608,12 +608,17 @@ export interface Campaign {
  *
  * Modeled on real production-funnel usage, NOT the idealized "SDK fires the
  * canonical dl_* set" view. The field reality the block must express:
- *   - Events fire from three sources: SDK auto, SDK-blocked-then-manual
- *     (`blockedEvents` suppresses the SDK event, a side script re-fires it via
- *     raw fbq/gtag to control timing), and fully out-of-band pixels loaded via
- *     GTM (Everflow / TriplePixel / Northbeam / RudderStack) that never touch
- *     the dataLayer. So outbound pixel fires — not dataLayer events — are the
- *     QA source of truth.
+ *   - Events reach vendors four ways: SDK providers (`providers`: GTM, Meta,
+ *     RudderStack, a custom endpoint, configured through config.js);
+ *     SDK-blocked-then-manual (`blockedEvents` suppresses the SDK event, a
+ *     side script re-fires it via raw fbq/gtag to control timing); the starter
+ *     templates' vendor adapters (`vendors`: GA4, Axon, Taboola, Triple Whale,
+ *     TikTok, Northbeam, Snapchat, Pinterest, switched on by a campaigns.json
+ *     key, riding the SDK's dl_* stream through the template forwarder); and
+ *     out-of-band pixels a merchant loads some other way, typically through
+ *     their own GTM container (`out_of_band_pixels`, e.g. Everflow), which
+ *     never touch the dataLayer. So outbound pixel fires, not dataLayer
+ *     events, are the QA source of truth.
  *   - A custom provider may carry an endpoint + transform (cookie injection).
  *   - Querystring params split into two classes: CONTENT (param.* → visibility
  *     via data-next-hide) and TRACKING (utm params, gclid, fbclid, subN, click-ids that
@@ -640,10 +645,36 @@ export interface AnalyticsProvider {
   [key: string]: unknown
 }
 
-/** A pixel/tag fired OUTSIDE the SDK (via GTM or a raw snippet) — QA must still
- * expect it on a live run even though it never appears in the dataLayer. */
+/**
+ * One starter-template vendor adapter, keyed in `analytics.vendors` by the
+ * vendor key (ga4 | axon | taboola | triplewhale | tiktok | northbeam | snap |
+ * pinterest; registry: analytics-vendors.ts). This is the shape the Map
+ * Builder emits; its spec compiler writes the matching flat keys into the
+ * campaign's `_data/campaigns.json` entry, and `spec derive` mirrors the id
+ * back from there.
+ */
+export interface AnalyticsVendor {
+  /** false turns the vendor off (no campaigns.json key is compiled). */
+  enabled?: boolean
+  /** The vendor id: the value of the vendor's campaigns.json id key (`ga4_id`, `triplewhale_name`, …). */
+  id?: string
+  /** Triple Whale only: `triplewhale_platform` (e.g. SHOPIFY). The template default, custom-msp, is omitted. */
+  platform?: string
+  /** Turns on the vendor's identity / advanced-matching flag (raw email and phone; the `*_enabled` key). */
+  identityEnabled?: boolean
+  /** dl_* events the adapter forwards (`<vendor>_allowed_events`); absent means all. */
+  allowedEvents?: string[]
+  /** dl_* events the adapter drops (`<vendor>_blocked_events`), e.g. purchases on a Shop Sync store. */
+  blockedEvents?: string[]
+  [key: string]: unknown
+}
+
+/** A pixel/tag fired OUTSIDE the SDK and the template adapters (via the
+ * merchant's GTM container or a raw snippet). QA must still expect it on a
+ * live run even though it never appears in the dataLayer. A vendor the starter
+ * templates ship an adapter for belongs in `vendors`, not here. */
 export interface OutOfBandPixel {
-  vendor: string                       // everflow | triplepixel | northbeam | axon | rudderstack | …
+  vendor: string                       // everflow | …
   loaded_via?: 'gtm' | 'script' | (string & {})
   id?: string
 }
@@ -689,9 +720,13 @@ export interface UtmTransfer {
 }
 
 export interface AnalyticsContract {
+  /** false turns the whole contract off, as mode "disabled" does. */
+  enabled?: boolean
   mode?: AnalyticsMode
-  /** Keyed by provider kind: gtm | facebook | rudderstack | custom | … */
+  /** SDK providers, keyed by provider kind: gtm | facebook | rudderstack | custom | … */
   providers?: Record<string, AnalyticsProvider>
+  /** Starter-template vendor adapters, keyed by vendor key (see AnalyticsVendor). */
+  vendors?: Record<string, AnalyticsVendor>
   out_of_band_pixels?: OutOfBandPixel[]
   manual_events?: ManualEvent[]
   utmTransfer?: UtmTransfer

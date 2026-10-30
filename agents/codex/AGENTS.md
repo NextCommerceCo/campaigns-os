@@ -7,6 +7,7 @@ A NEXT campaign is one connected commerce journey: the pages the CampaignSpec de
 - Read `campaign-runtime.build.json` first.
 - To pick up an existing campaign, run `npx --no-install campaigns-os readback .` and `npx --no-install campaigns-os next --packet campaign-runtime.build.json` before reading artifacts by hand; `next` blocks polish and QA again whenever the built output changes. The committed `.campaign-runtime/qa-verdict.json` keeps no order records or URLs: its `browser-test-order:<path>` assertions are the typed-card proof, and the full verdict is under `qa-output/`.
 - If `.campaign-runtime/build-context.json` or `.campaign-runtime/assembly-report.json` exists, read them before editing campaign files.
+- A project that holds several funnels has one Build Packet per funnel: `campaign-runtime.build.json` for the first funnel set up, whose records are directly under `.campaign-runtime/`, and `campaign-runtime-<route>.build.json` for each other funnel, whose records are under `.campaign-runtime/funnels/<route>/` (its `assembly.runtime_dir`). Pass that funnel's packet with `--packet` to every command, `readback . --packet` included; without one, readback refuses and names the packets.
 - Run `npx --no-install campaigns-os doctor --packet campaign-runtime.build.json` before build work.
 - Treat CampaignSpec validation as owned by the public `@nextcommerce/campaigns-os/campaign-spec` rules surfaced through doctor `spec.validation` findings; use structured rule/path detail when available.
 - Respect the selected template family's `agentContract`.
@@ -37,10 +38,13 @@ A NEXT campaign is one connected commerce journey: the pages the CampaignSpec de
    Readback's `evidence_debt` compares the build on disk with the builds Polish and QA were recorded for.
    Changed pages are listed against the recorded assembly build manifest; an owed stage with an empty page list still means evidence is owed.
 2. For pages built from a provided design, the Design Source Package is the authority, not the punch list's wording.
-3. Before opening the pull request, after the final edit, rebuild, then run `npx --no-install campaigns-os record build --packet campaign-runtime.build.json`,
-   `npx --no-install campaigns-os polish capture --packet campaign-runtime.build.json --base-url <served-current-build-url>` for the whole route,
-   and `npx --no-install campaigns-os record polish --packet campaign-runtime.build.json --evidence <polish-evidence.json>`, in that order.
-   When QA is owed, run `npx --no-install campaigns-os qa run --packet campaign-runtime.build.json` against that build.
+3. Before opening the pull request, after the final edit, rebuild, then run `npx --no-install campaigns-os record build --packet campaign-runtime.build.json`.
+   When `next` or the pull-request check says the change is page-only, run
+   `npx --no-install campaigns-os qa run --packet campaign-runtime.build.json --page <page_id>` against that build,
+   with one `--page` for each changed page it names; Polish is optional for it.
+   Otherwise run `npx --no-install campaigns-os polish capture --packet campaign-runtime.build.json --base-url <served-current-build-url>` for the whole route
+   and `npx --no-install campaigns-os record polish --packet campaign-runtime.build.json --evidence <polish-evidence.json>`, in that order,
+   and when QA is owed, run `npx --no-install campaigns-os qa run --packet campaign-runtime.build.json` against that build.
 4. In the pull request body, put the design reference and the preview of each changed page side by side.
 
 The standing pull-request check is `npx --no-install campaigns-os doctor --ci --packet campaign-runtime.build.json --no-live-refs`, report-only unless the repo opts in.

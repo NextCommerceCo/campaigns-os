@@ -1,7 +1,8 @@
 // Doctor entry points: the doctor command, packet inspection and built-output inspection.
 import { resolveCampaignIdentity } from "../spec-source-identity.mjs";
 import { assessDoctorCi, doctorCiFailure } from "./ci.mjs";
-import { applyLocalPreviewToCheckpoint, applyLocalPreviewToPolishGate, carriedForwardMessage, CARRIED_FORWARD } from "../local-preview-policy.mjs";
+import { applyLocalPreviewToCheckpoint, applyLocalPreviewToPolishGate, applyPageOnlyChangeToCheckpoint, applyPageOnlyChangeToPolishGate, carriedForwardMessage, CARRIED_FORWARD } from "../local-preview-policy.mjs";
+import { assessEvidenceDebt } from "../evidence-debt.mjs";
 import { withHtmlScanSnapshot } from "../html-scan.mjs";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -11,7 +12,7 @@ import { commitAssemblyReport, recordProducerStageOutcome } from "../stage-ledge
 import { annotateDoctorIssueCauses } from "../finding-cause.mjs";
 import { DOCTOR_SIDECAR_SCHEMA } from "../doctor-sidecar.mjs";
 import { recordQcResults } from "../qc-results.mjs";
-import { resolveCampaignWorkspace } from "../campaign-workspace.mjs";
+import { packetRuntimeRelPath, resolveCampaignWorkspace } from "../campaign-workspace.mjs";
 import { normalizePublicRouteSlug } from "../route-identity.mjs";
 import { DEFAULT_PROXY_BASE } from "../spec-fetch.mjs";
 import { disabledLiveRead, liveRefsDisabled, readLiveCampaignForPacket } from "../live-campaign-refs.mjs";
@@ -458,6 +459,16 @@ export function doctorBuiltOutput(args) {
   };
 }
 
+// Inspection already refused a packet whose runtime directory is unreadable;
+// the history lookup then falls back to the project-level directory.
+function packetRuntimeRelPathOrDefault(packetPath) {
+  try {
+    return packetRuntimeRelPath(JSON.parse(readFileSync(resolve(packetPath), "utf8")));
+  } catch {
+    return undefined;
+  }
+}
+
 export function doctorPacket(packetPath, options = {}) {
   const result = withHtmlScanSnapshot(() => inspectDoctorPacket(packetPath, options));
   // Per-finding cause classification lives HERE, at the single production
@@ -487,6 +498,7 @@ export function doctorPacket(packetPath, options = {}) {
     errors: result.errors,
     warnings: result.warnings,
     baseDir: comparableIdentity ? dirname(resolve(packetPath)) : null,
+    runtimeRelPath: comparableIdentity ? packetRuntimeRelPathOrDefault(packetPath) : undefined,
     mapId: result.derived?.map_id || null,
     localSpecId: result.derived?.local_spec_id || null,
   });
@@ -587,16 +599,21 @@ function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath =
 
   // The local preview policy (local-preview-policy.mjs) carries missing
   // polish and page-load evidence forward as warnings on a local-serve packet.
-  const polishCheckpointGate = applyLocalPreviewToCheckpoint(
+  // A page-only change since Polish last reviewed the campaign carries its
+  // stale evidence on any target: Polish is advisory for it (#720). The
+  // evidence debt is the one readback and doctor --ci assess.
+  const evidenceDebt = assessEvidenceDebt({ packet, packetPath, report });
+  derived.evidence_debt = evidenceDebt;
+  const polishCheckpointGate = applyPageOnlyChangeToCheckpoint(applyLocalPreviewToCheckpoint(
     evaluateRecordedHiddenEagerMediaCheckpoint({ packet, report }),
     { packet, report },
-  );
+  ), evidenceDebt);
   derived.polish_checkpoint_gate = polishCheckpointGate;
-  const polishGate = applyLocalPreviewToPolishGate(evaluatePolishGate({
+  const polishGate = applyPageOnlyChangeToPolishGate(applyLocalPreviewToPolishGate(evaluatePolishGate({
     report,
     hiddenEagerMediaGate: polishCheckpointGate,
     currentOutputFingerprint: derived.build_output_fingerprint?.value || null,
-  }), { packet, checkpointGate: polishCheckpointGate });
+  }), { packet, checkpointGate: polishCheckpointGate }), { debt: evidenceDebt, checkpointGate: polishCheckpointGate });
   derived.polish_gate = polishGate;
   if (polishGate.status === "blocked" && !polishGate.owned_checkpoint_only) {
     pushGateIssue({ errors, warnings }, gateIssue("polish_gate", polishGate));

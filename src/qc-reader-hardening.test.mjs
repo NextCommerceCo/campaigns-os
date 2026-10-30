@@ -322,7 +322,7 @@ test("silence: recorded QA and Polish legs list every applicable check without a
   const handoff = handoffOf(await runNext(f, qcStandIns));
   const tuples = (leg) => [...new Set((handoff.coverage || []).filter((entry) => entry.leg === leg).map((entry) => JSON.stringify([entry.check, entry.result, entry.reason_code])))].map((text) => JSON.parse(text)).sort();
   assert.deepEqual(tuples("qa"), QA_UNIT_CHECKS.map((check) => [check, "unexercised", NOT_CAPTURED]).sort(), `QA coverage: ${JSON.stringify(handoff.coverage)}`);
-  assert.deepEqual(tuples("polish"), [["media.oversize", "unexercised", NOT_CAPTURED], ["parity.element", "unexercised", NOT_CAPTURED], ["readability.contrast", "unexercised", NOT_CAPTURED], ["visual.diff", "unexercised", NOT_CAPTURED], ["visual.reference", "unexercised", NOT_CAPTURED]], `Polish coverage: ${JSON.stringify(handoff.coverage)}`);
+  assert.deepEqual(tuples("polish"), [["layout.conventions", "unexercised", NOT_CAPTURED], ["media.oversize", "unexercised", NOT_CAPTURED], ["parity.element", "unexercised", NOT_CAPTURED], ["readability.contrast", "unexercised", NOT_CAPTURED], ["visual.diff", "unexercised", NOT_CAPTURED], ["visual.reference", "unexercised", NOT_CAPTURED]], `Polish coverage: ${JSON.stringify(handoff.coverage)}`);
   assert.ok((handoff.open || []).some((entry) => entry.leg === "polish" && entry.check === "media.weight"), "the Polish media.weight warnings stay open");
 });
 
@@ -435,7 +435,7 @@ test("QA pairing: a qc.* assertion with malformed evidence.qc beside a healthy p
 test("silence: a recorded Polish stage without page_load or media_weight lists 1.3 as not_captured_by_this_version; only a failed module reads evidence_not_reproducible", async (t) => {
   const { handoffCoverage } = await import("./qc-results.mjs");
   const polishTuples = (coverage) => [...new Set(coverage.filter((entry) => entry.leg === "polish").map((entry) => JSON.stringify([entry.check, entry.result, entry.reason_code])))].map((text) => JSON.parse(text)).sort();
-  const everyPolish = (reasonCode) => [["media.oversize", "unexercised", reasonCode], ["media.weight", "unexercised", reasonCode], ["parity.element", "unexercised", reasonCode], ["readability.contrast", "unexercised", reasonCode], ["visual.diff", "unexercised", reasonCode], ["visual.reference", "unexercised", reasonCode]];
+  const everyPolish = (reasonCode) => [["layout.conventions", "unexercised", reasonCode], ["media.oversize", "unexercised", reasonCode], ["media.weight", "unexercised", reasonCode], ["parity.element", "unexercised", reasonCode], ["readability.contrast", "unexercised", reasonCode], ["visual.diff", "unexercised", reasonCode], ["visual.reference", "unexercised", reasonCode]];
   const polishStage = (patch) => ({ stage: "polish", status: "completed", inputs: [], outputs: [], commands: ["campaigns-os polish capture"], blockers: [], warnings: [], ...patch });
 
   const { pageLoad } = twoCellFixture([{ path: HERO, bytes: 600_000 }]);
@@ -461,7 +461,7 @@ test("silence: a recorded Polish stage without page_load or media_weight lists 1
       polish: polishStage({ evidence: { visual_review: { page_load: {}, media_weight: {}, readability: {}, captures: {} } } }),
     },
   };
-  const allChecks = ["tracking.url", "tracking.order", "tracking.tag", "media.weight", "media.oversize", "readability.contrast", "visual.reference", "visual.diff"];
+  const allChecks = ["tracking.url", "tracking.order", "tracking.tag", "media.weight", "media.oversize", "readability.contrast", "layout.conventions", "visual.reference", "visual.diff"];
   const reasons = (rederivers) => {
     const coverage = handoffCoverage({ report, spec: {}, results: [], rederivers });
     return [...new Set(coverage.map((entry) => entry.reason_code))];
@@ -543,6 +543,17 @@ async function assertPairAcceptsLapse(t, tamper, label) {
   assert.ok(rows.length > 0 && rows.every((row) => row.result === "unexercised" && row.reason_code === E), `${label}: every row reads unexercised / ${E}`);
   assert.deepEqual(assess(rows), everyLapsed(4), `${label}: every prior pair accept reads lapsed / ${E}, never orphaned`);
 }
+
+// #707: the readability reader treats an absent build output the way the
+// captures reader does: undefined reads without the output check, null is drift.
+test("readability reader: an undefined buildOutput passes through unchanged, as in the captures reader", async (t) => {
+  const { read, kit } = await readabilityReader(t);
+  const record = readabilityRecord(kit);
+  const bound = read(record);
+  assert.ok(bound.length && bound.every((row) => row.reason_code !== "stale_binding"), "setup: the bound record reads current");
+  assert.deepEqual(read(record, { buildOutput: undefined }), bound, "no build output: no output check");
+  assert.ok(read(record, { buildOutput: null }).some((row) => row.reason_code === "stale_binding"), "a null build output is drift");
+});
 
 test("readability reader: a record whose thresholds differ from the constants still names its pair rows, so prior pair accepts lapse", async (t) => {
   await assertPairAcceptsLapse(t, (record) => {

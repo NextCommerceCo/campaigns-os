@@ -14,6 +14,7 @@ import {
 } from "../adapter-decision-contract.mjs";
 import { createDoctorCheckRegistry, runDoctorCheckRegistry } from "../doctor-check-registry.mjs";
 import { evaluateSourcePreparation } from "../source-prep.mjs";
+import { staleRoutingHints } from "../spec-derive.mjs";
 import { isLoopbackHostname } from "../remit.mjs";
 import {
   HOST_STRIPPED_CODE,
@@ -26,6 +27,7 @@ import {
   SOURCE_HTML_MANIFEST_SCHEMA,
 } from "../source-html-manifest.mjs";
 import { validateAssemblyReportThemeBlock, validateThemeContextBlock } from "../brand-theme.mjs";
+import { packetRuntimeRelPath } from "../campaign-workspace.mjs";
 import { singleLineDetail, singleLineField } from "../text-safety.mjs";
 import {
   campaignRouteRoot,
@@ -34,6 +36,7 @@ import {
   normalizePublicRouteSlug,
   packetRouteRoot,
   runtimeRelativeRouteForSpecValue,
+  specPublicRouteSlug,
   stripPublicRoutePrefix,
 } from "../route-identity.mjs";
 import { evaluatePageKitBuildSummary } from "../page-kit-build-summary.mjs";
@@ -102,6 +105,7 @@ import {
 import { loadPageKitCampaignEntry, pageKitIgnoresAssetsHtml, projectPageKitCampaignLoad } from "../page-kit-campaign-config.mjs";
 import { evaluatePageKitStoreProfile, PAGE_KIT_STORE_PROFILE_SCOPE, storeProfileIntentionallyEmptyNote } from "../page-kit-store-profile.mjs";
 import { evaluatePageKitSdkVersion, PAGE_KIT_SDK_VERSION_SCOPE } from "../page-kit-sdk-version.mjs";
+import { evaluatePageKitAnalyticsVendors, PAGE_KIT_ANALYTICS_VENDORS_SCOPE } from "../page-kit-analytics-vendors.mjs";
 // ADR-003: the public, canonical CampaignSpec rule registry. The doctor and any
 // campaign authoring UI (e.g. a Map Builder bundle) import the same rules, so a
 // spec check is authored once and reaches internal teams and agencies alike.
@@ -383,6 +387,11 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
     run: ({ spec, errors, warnings, ready, derived, buildState }) => validateTargetStoreProfile(spec, errors, warnings, ready, derived, buildState),
   },
   {
+    id: PAGE_KIT_ANALYTICS_VENDORS_SCOPE,
+    phase: "target",
+    run: ({ spec, warnings, ready, buildState }) => validateTargetAnalyticsVendors(spec, warnings, ready, buildState),
+  },
+  {
     id: "spec.shipping_countries",
     phase: "spec",
     run: ({ spec, warnings, ready }) => validateSpecShippingCountries(spec, warnings, ready),
@@ -391,6 +400,11 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
     id: "spec.routing_meta_tags",
     phase: "spec",
     run: ({ spec, packet, warnings, ready, derived, buildState }) => validateSpecRoutingMetaTags(spec, packet, warnings, ready, derived, buildState),
+  },
+  {
+    id: "spec.routing_hint_stale",
+    phase: "spec",
+    run: ({ spec, packet, errors, ready }) => validateSpecRoutingHintsCurrent(spec, packet, errors, ready),
   },
   {
     id: "spec.routing_host_prefix",
@@ -1416,6 +1430,18 @@ function validateTargetStoreProfile(spec, errors, warnings, ready, derived, buil
     + storeProfileIntentionallyEmptyNote(intentionallyEmpty));
 }
 
+// The starter-template vendor keys against analytics.vendors: advisory only,
+// one warning per vendor the two sides disagree on (#689).
+function validateTargetAnalyticsVendors(spec, warnings, ready, buildState) {
+  const result = evaluatePageKitAnalyticsVendors({ spec, targetLoad: buildState?.pageKitCampaignConfig });
+  for (const finding of result.findings) {
+    addIssue(warnings, finding.code, finding.message, { vendor: finding.vendor, id_key: finding.id_key, repair: finding.repair });
+  }
+  if (result.status === "ok" && result.vendors.length) {
+    ready.push(`Target campaigns.json vendor keys match the CampaignSpec analytics.vendors (${result.vendors.join(", ")}).`);
+  }
+}
+
 function validateSpecShippingCountries(spec, warnings, ready) {
   const countries = spec?.campaign?.available_shipping_countries;
   if (countries === "all" || (Array.isArray(countries) && countries.length === 0)) {
@@ -1557,11 +1583,7 @@ export function validateRouteSlugIdentity(spec, packet, errors, ready) {
   const mapId = optionalString(spec?.spec_identity?.map_id)
     || optionalString(spec?.map_id)
     || optionalString(packet?.spec?.map_id);
-  const specSlug = normalizePublicRouteSlug(
-    optionalString(spec?.spec_identity?.public_route_slug)
-    || optionalString(spec?.campaign?.slug)
-    || optionalString(spec?.campaign?.id)
-  );
+  const specSlug = specPublicRouteSlug(spec);
   const specDeclaresMapIdSlug = Boolean(specSlug) && Boolean(mapId) && specSlug === mapId;
 
   if (mapId && packetSlug === mapId && !specDeclaresMapIdSlug) {
@@ -1689,6 +1711,31 @@ export function validateSpecRoutingMetaTags(spec, packet, warnings, ready, deriv
     warnings,
     "routing_meta.runtime_root",
     `CampaignSpec sdk_hints.meta_tags routing values must render as campaign-rooted paths before QA. Expected values like "${routeRoot}upsell/" for ${SDK_ROUTING_META_TAGS.join(", ")}; found ${sample}${more}.`
+  );
+}
+
+// #531: a routing hint (`sdk_hints.meta_tags` next-success-url and the upsell
+// accept/decline urls) that does not match the route of the page its routing
+// field names. Nothing else catches it once the build exists: the built meta
+// check compares the built page against the hint, and QA derives its
+// expectation from the hint, so a moved upsell with checkout still pointing
+// at the old path passes both and sends shoppers to a 404 after payment. It
+// blocks on every read, before and after the build, and record spec refuses a
+// routes-only bind on the same function (spec-derive.mjs staleRoutingHints).
+export function validateSpecRoutingHintsCurrent(spec, packet, errors, ready) {
+  const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  const stale = staleRoutingHints(spec, { publicRouteSlug });
+  if (!stale.length) {
+    if (activeSpecPages(spec).some((page) => isObject(page.sdk_hints?.meta_tags))) ready.push("CampaignSpec routing hints match the routes of the pages they name");
+    return;
+  }
+  const sample = stale.slice(0, 5).map((hint) => `${hint.page_id}:${hint.tag} ${JSON.stringify(hint.value)} but page "${hint.target_page_id}" routes to ${JSON.stringify(hint.derived_route)}`).join("; ");
+  const more = stale.length > 5 ? `; plus ${stale.length - 5} more` : "";
+  addIssue(
+    errors,
+    "spec.routing_hint_stale",
+    `CampaignSpec routing hint(s) name a route the page they point at no longer has: ${sample}${more}. The built meta tag follows the hint, so the SDK would send shoppers to the old path. Edit each hint to the route shown in the spec (or, while the Map is still the spec's source, re-save the Map, which regenerates them), then run record spec.`,
+    { hints: stale },
   );
 }
 
@@ -3264,6 +3311,12 @@ function scanMarketSensitiveCopy(spec, warnings, ready, derived) {
   }
 }
 
+// CampaignSpec owns `campaign.available_currencies`: every currency the
+// campaign sells in, the default included (the CampaignCurrencies rule checks
+// its codes). `additional_currencies` is the Campaigns App API's name for the
+// same list without the default and is not a spec field; both market scopes
+// still read it, and its camelCase spelling, so a spec copied from an API body
+// gets the copy review it needs.
 function deriveMarketScope(spec) {
   const campaign = spec?.campaign || {};
   const defaultCurrency = normalizeCurrency(campaign.currency);
@@ -3711,6 +3764,25 @@ function validateSourceCoverage(packet, packetPath, spec, errors, warnings, read
     }
     if (!activeIds.has(page.page_id)) {
       addIssue(warnings, "source_html.pages.extra", `Source mapping "${page.page_id}" is not an active CampaignSpec page.`);
+    }
+    // A page added from the repo's page tree after handoff (#721): its source
+    // is the target page file itself, so it is mapped and, once that file
+    // exists, a build candidate like any other.
+    if (page.origin === "repo") {
+      const repoFile = optionalString(page.page_kit?.output_path) && derived.target_repo ? resolve(derived.target_repo, page.page_kit.output_path) : null;
+      if (!repoFile || !existsSync(repoFile) || !statSync(repoFile).isFile()) {
+        addIssue(errors, "source_html.pages.repo_page_missing", `Page "${page.page_id}" was added from the repo's page tree, but its page file ${page.page_kit?.output_path || "(no page_kit.output_path)"} is not in the target repo. Restore the file, or run spec derive and record spec to remove the page.`, { page_id: page.page_id, output_path: page.page_kit?.output_path || null });
+      } else if (specPage) {
+        builtPages.push({
+          page_id: specPage.id,
+          type: specPage.type || "page",
+          role: pageRole(specPage.type),
+          route: builtRoute,
+          source_path: null,
+          repo_source: page.page_kit.output_path,
+        });
+      }
+      continue;
     }
     if (page.path) {
       const fullPath = resolve(sourceRoot, page.path);
@@ -4625,7 +4697,7 @@ export function validateBuiltContentResidue(packet, errors, warnings, ready, der
   const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
   const siteRoot = derived.target_repo && publicRouteSlug ? join(derived.target_repo, "_site", publicRouteSlug) : null;
   if (!siteRoot || !existsSync(siteRoot) || !statSync(siteRoot).isDirectory()) return;
-  const brief = loadBriefPayload(derived.target_repo);
+  const brief = loadBriefPayload(derived.target_repo, packetRuntimeRelPath(packet));
   const urgencyVerified = briefUrgencyVerified(brief?.payload);
   const findings = scanBuiltOutputContentResidue(siteRoot, { urgencyVerified });
   if (!findings.length) {
@@ -4694,7 +4766,7 @@ export function validateBuiltContentResidue(packet, errors, warnings, ready, der
 // non-shipped, non-usable assets stay warnings (the attestation queue), so a
 // producer that correctly excluded them is not blocked.
 export function validateProofAttestation(packet, errors, warnings, ready, derived, buildState = {}) {
-  const brief = loadBriefPayload(derived.target_repo);
+  const brief = loadBriefPayload(derived.target_repo, packetRuntimeRelPath(packet));
   if (!brief) return; // not an AI-assembled run — no brief payload, no gate
   if (brief.error) {
     // Fail closed: the brief payload is the source of attestation state. If

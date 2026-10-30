@@ -37,6 +37,7 @@
         {
           "id": "f-c",
           "type": "checkout",
+          "packages": [{ "ref_id": 1, "qty": 1 }],
           "success_url": "/existing-campaign/receipt/"
         }
       ]

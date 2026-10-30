@@ -27,6 +27,7 @@
 
 import { SEVERITY, STATUS } from "./qa-verdict.mjs";
 import { redactUrlQuery } from "./qa-url-privacy.mjs";
+import { readVendorBeacon, VENDOR_KEYS, vendorBeaconFor } from "./qa-vendor-endpoints.mjs";
 
 // Data layers the SDK and legacy funnels push through. The SDK's GTMAdapter
 // mirrors every `dl_*` event to window.dataLayer AND window.ElevarDataLayer;
@@ -280,6 +281,12 @@ export async function attachAnalyticsCapture(page, options = {}) {
     const url = typeof request.url === "function" ? request.url() : request.url;
     const fire = classifyTagFire(url, extraHosts);
     if (!fire) return;
+    // A listed vendor beacon can carry its id in the body (Snap, TikTok).
+    if (!fire.id) {
+      let body = null;
+      try { body = typeof request.postData === "function" ? request.postData() : null; } catch { /* no body */ }
+      fire.id = readVendorBeacon(url, body)?.ids[0] || null;
+    }
     let documentUrl = safePageUrl();
     try {
       let frame = typeof request.frame === "function" ? request.frame() : null;
@@ -420,6 +427,14 @@ export function classifyTagFire(urlString, extraHostSubstrings = []) {
   const fire = (kind, id) => ({ kind, id: id ? String(id) : null, host, params });
   const subs = [...DEFAULT_EXTRA_ANALYTICS_HOST_SUBSTRINGS, ...extraHostSubstrings];
 
+  // A listed vendor beacon (qa-vendor-endpoints.mjs) is that vendor's fire,
+  // answered locally or not, with the id from its query or path when it has one.
+  const beacon = vendorBeaconFor(url.href);
+  if (beacon) {
+    const pathId = beacon.idPath ? path.match(beacon.idPath)?.[1] : null;
+    return fire(beacon.vendor, pathId || (beacon.id && !beacon.id.includes(".") ? params[beacon.id] : null) || null);
+  }
+
   if (hostMatches(host, "googletagmanager.com")) {
     const id = params.id || null;
     if (id && /^GTM-/i.test(id)) return fire("gtm", id);
@@ -539,6 +554,7 @@ export function normalizeCapture({ events = [], tagFires = [] } = {}) {
   }
 
   const inventory = { gtm: [], ga4: [], google_ads: [], meta: [], tiktok: [], everflow: [], other: [] };
+  for (const vendor of VENDOR_KEYS) inventory[vendor] ||= [];
   // Pixel ids seen on a facebook.com request, apart from in-page fbq calls.
   const metaRequestIds = [];
   let metaPurchaseEventId = null;
@@ -787,7 +803,7 @@ export function diffAnalyticsParity(baseline, candidate, options = {}) {
 
   // 6. Carried-over tag regression — any baseline container/pixel absent on the
   //    candidate is a WARN (likely attribution regression; human confirms drop).
-  const kinds = ["gtm", "ga4", "google_ads", "meta", "tiktok", "everflow", "other"];
+  const kinds = [...new Set(["gtm", "ga4", "google_ads", "meta", "tiktok", "everflow", "other", ...VENDOR_KEYS])];
   for (const kind of kinds) {
     const baselineIds = (b.inventory?.[kind]) || [];
     const candidateIds = new Set((c.inventory?.[kind]) || []);

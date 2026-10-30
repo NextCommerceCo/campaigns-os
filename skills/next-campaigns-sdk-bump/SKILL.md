@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-sdk-bump
-version: 1.0.7
+version: 1.0.8
 description: Bump a live campaign's Campaign Cart SDK from one 0.4.x release to a later 0.4.x on a page-kit or static repo. Use for any request to bump, upgrade or move a campaign to SDK 0.4.x, including when the repository has its own BUMP.md. Find every pin, check the release diff and storage against the campaign's own code, prove on a preview with approved test orders, and report what is not proven.
 ---
 
-Bundle revision: 1.61.0+skills.2
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.61.0+skills.2`
+Bundle revision: 1.62.0+skills.1
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.62.0+skills.1`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -228,13 +228,18 @@ browser context. `?country=` applies only when the campaign's
 `currencyBehavior` is `auto`. Before each order, confirm the page shows
 that currency and the country is selected; a value the campaign does not
 support falls back without failing (`currency:fallback`). On `qa run`, pass
-`--currency <main>`: it tags each funnel's entry page and records the currency
-in the verdict, but the runner's separate page checks open new tabs without
+`--currency <main>`: it tags each funnel's entry page, records the currency in
+the verdict, and blocks the run when an order or the calculate endpoint comes
+back in another currency, but the runner's separate page checks open new tabs without
 it. `qa run` has no country flag.
 
 Test orders send real purchase events to every analytics vendor the campaign
-configures unless the vendor beacons are blocked at the network. `qa run` does
-not block them yet. Do not add `?ignore=true` to stop them: it turns off the
+configures unless the vendor beacons are blocked at the network. `qa run
+--test-order` answers the listed vendors' beacons locally by default, and its
+`browser-test-order:vendor-beacons` verdict row names the vendors it does not
+intercept (`--vendor-beacons live` sends them all; see
+`docs/qa-and-test-orders.md`, "Analytics vendor beacons"). Orders placed by
+hand are not held back. Do not add `?ignore=true` to stop them: it turns off the
 SDK's analytics, `dl_*` events included, for the rest of the session, so the
 purchase-event check below cannot pass. Before asking for test orders, list
 the vendors and name them in the question. On Page Kit, read every non-empty
@@ -296,8 +301,9 @@ Cover:
   real purchase on each load. Count purchase events across the whole run, and
   list those pages' listeners as not proven on cached reloads;
 - where a purchase capture is hand-wired, one reload of the page it runs on,
-  with the vendor beacons blocked at the network, and the purchase sent only
-  once for that order.
+  with the vendor beacons blocked at the network (`qa run --test-order` blocks
+  the listed vendors by default; a reload by hand does not), and the purchase
+  sent only once for that order.
 
 Read each order back in the store admin (the packet run's verdict under
 `qa-output/` also lists the orders it created) and keep the order numbers for

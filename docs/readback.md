@@ -295,6 +295,20 @@ carries no parseable value — the readback does not choose. It names the
 candidates on stderr, says `--packet` is required, and exits `2`. No JSON object
 is emitted in that case.
 
+**Freshness chooses among runs of one funnel, never among funnels.** A project
+that holds several funnels has one packet per funnel
+(`campaign-runtime-<route>.build.json` beside the default; see
+[Several funnels in one project](build-packet.md#several-funnels-in-one-project)).
+When the valid candidates name more than one `campaign.public_route_slug`, the
+readback refuses the same way, naming each packet with its route, and exits
+`2`. Pass `--packet` to project one funnel. The doctor output, Build Context,
+Assembly Report, QA verdict and findings export rows then read from the runtime
+directory that packet records (`assembly.runtime_dir`), or from
+`.campaign-runtime/` when it records none. A packet whose `assembly.runtime_dir`
+is not its own funnel's directory is refused with exit `2`, since the readback
+cannot tell whose records to show. An explicit `--doctor`, `--context`,
+`--report`, `--qa-verdict` or `--findings` path still wins.
+
 Values are compared at **microsecond precision** — the precision Python's
 `datetime.fromisoformat` keeps, and the precision the Python readback this
 command ports compared at; a seventh or later fractional digit is truncated, not
@@ -495,11 +509,31 @@ If the built page map cannot be resolved (for example, output contains assets
 but no HTML), page changes are unknown with `build_output_pages_unresolved`;
 stage bindings still follow the fingerprint comparison.
 
+`changes.kind` classifies this drift (`none`, `page_only`,
+`commerce_affecting` or `unknown`) and `changes.reasons` lists why it counts as
+commerce, each `{ "code", "path"? }`. The rule is in
+[what a change owes](campaigns-os-build-flow.md#what-a-change-owes).
+
 The assembly baseline is explicit because it need not equal an older stage's
-binding. If a later `record build` replaced that manifest, readback can still
-report older Polish/QA bindings as owed, but cannot reconstruct which pages
-changed from those older builds. An empty **known** list then means only that
-no files differ from the retained assembly manifest. If recording removed a
+binding. If a later `record build` replaced that manifest, `changes` can be
+empty while older Polish/QA bindings are still owed. An empty **known** list then means only that
+no files differ from the retained assembly manifest. The pages changed since
+the build a stage reviewed are on that stage instead. An owed stage carries:
+
+- `change`: `{ "kind", "since_build_fingerprint", "changed_pages",
+  "unmapped_files", "reasons" }`, read from the rebuilds `record build` kept in
+  `stages.assembly.build_changes` plus the drift on disk. `kind` is `unknown`
+  when that history does not reach the reviewed build (reason
+  `change_history_unavailable`) or the drift cannot be read. `null` on a stage
+  that is not owed.
+- Polish only, `advisory`: `true` when the change is `page_only` and no brief or
+  spec change requires Polish. Advisory Polish is reported; `next`, `doctor
+  --ci` and the QA gate do not require it.
+- QA only, `scope` and `owed_pages`: `pages` with the changed pages when the
+  change is `page_only` (`qa run --page` pays it), `full` otherwise, `null`
+  when QA is not owed.
+
+If recording removed a
 stage binding entirely, that stage reads unknown unless its recorded status is
 `required`, which reports owed. `current` is a build-binding
 assessment only; input currency, stage completion, waivers and verdicts remain
@@ -548,7 +582,8 @@ failure lines up with a completed stage. This too is the readback's own layer.
 4. **`divergences` is empty.**
 5. **`doctor.error_count` is zero.**
 6. **Neither `evidence_debt.polish.status` nor `evidence_debt.qa.status` is
-   `owed`.** Built output that moved since recorded evidence cannot read clean.
+   `owed`**, except Polish marked `advisory` for a page-only change. Built
+   output that moved since recorded evidence cannot read clean.
    An `unknown` status does not independently make this integrity flag false;
    it remains unknown, never a claim that no evidence is owed. Callers must
    inspect `evidence_debt` even when `clean` is true.

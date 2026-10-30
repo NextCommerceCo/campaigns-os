@@ -111,6 +111,12 @@ export const commandNames = () => Object.keys(COMMANDS);
 
 export const subcommandNames = (command) => (Object.hasOwn(COMMANDS, command) && COMMANDS[command].subcommands) || frozen([]);
 
+// The flag names parseArgs met spelled `--flag=value` (in argv order), kept off
+// the enumerable keys. The invocation is refused at dispatch, and it does
+// nothing first: its values were dropped, so the root the stale sweep would
+// act on, and the --no-remit / --proxy-base it would inherit, are unknown.
+export const JOINED_FLAGS = Symbol("campaigns-os.joined-flags");
+
 // A run opted out of sessions altogether: no stale sweep, and no intake
 // auto-start (which reads this predicate from here).
 export const optsOutOfRunSession = (args) => args["no-run-session"] === true;
@@ -133,7 +139,7 @@ export function resolveInvocationPolicy(command, args) {
   const noWrite = args["no-write"] === true;
   const implementsDryRun = rule.dryRun === true;
   const help = Boolean(args.help);
-  const sweepSuppressed = help || optsOutOfRunSession(args) || noWrite || (Object.hasOwn(args, "dry-run") && implementsDryRun);
+  const sweepSuppressed = help || optsOutOfRunSession(args) || noWrite || (Object.hasOwn(args, "dry-run") && implementsDryRun) || Boolean(args[JOINED_FLAGS]?.length);
   const inspection = Boolean(rule.journalExemptWhen && args[rule.journalExemptWhen.given] && args[rule.journalExemptWhen.unlessBare] !== true);
   return Object.freeze({
     class: rule.class,

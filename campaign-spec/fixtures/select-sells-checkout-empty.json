@@ -1,0 +1,61 @@
+{
+  "schema_version": "5.0",
+  "spec_identity": {
+    "map_id": "fixture-select-sells-checkout-empty"
+  },
+  "campaign": {
+    "ref_id": 1,
+    "slug": "select-sells-checkout-empty",
+    "payment_env_key": "test_key"
+  },
+  "runtime": {
+    "sdk_version": "0.4.0"
+  },
+  "shipping_methods": [
+    {
+      "ref_id": "ship-standard"
+    }
+  ],
+  "funnels": [
+    {
+      "id": "f1",
+      "name": "Primary",
+      "hypothesis": "Two-step family: the select page carries the bundle picker and the Checkout carries no packages.",
+      "weight": 100,
+      "pages": [
+        {
+          "id": "select-1",
+          "type": "select",
+          "label": "Select bundle",
+          "next_page": "checkout-1",
+          "packages": [
+            { "ref_id": 10, "qty": 1 },
+            { "ref_id": 10, "qty": 2, "default_selected": true },
+            { "ref_id": 10, "qty": 3 }
+          ]
+        },
+        {
+          "id": "checkout-1",
+          "type": "checkout",
+          "label": "Checkout",
+          "success_url": "upsell-1"
+        },
+        {
+          "id": "upsell-1",
+          "type": "upsell",
+          "label": "Upsell",
+          "on_accept": "thankyou-1",
+          "on_decline": "thankyou-1",
+          "packages": [
+            { "ref_id": 30, "qty": 1, "is_upsell": true }
+          ]
+        },
+        {
+          "id": "thankyou-1",
+          "type": "thankyou",
+          "label": "Thank you"
+        }
+      ]
+    }
+  ]
+}

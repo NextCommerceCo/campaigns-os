@@ -32,6 +32,7 @@
         {
           "id": "checkout-control",
           "type": "checkout",
+          "packages": [{ "ref_id": 1, "qty": 1 }],
           "label": "Control Checkout",
           "success_url": "thankyou-control"
         },
@@ -57,6 +58,7 @@
         {
           "id": "checkout-variant",
           "type": "checkout",
+          "packages": [{ "ref_id": 1, "qty": 1 }],
           "label": "Variant Checkout",
           "success_url": "upsell-variant"
         },

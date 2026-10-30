@@ -439,6 +439,34 @@ function readabilityReviewCrop(row) {
   return typeof ref?.path === "string" ? ref.path : undefined;
 }
 
+// A layout.conventions warning in words, from its observation: each
+// floating CTA container that holds more than its control, with what else it
+// holds, or each CTA label under the minimum size with its measured size.
+// Null for any other row.
+function layoutSummary(row) {
+  if (row?.check !== "layout.conventions" || row.result !== "warning" || !isPlainObject(row.observation)) return null;
+  const flagged = new Set((Array.isArray(row.members) ? row.members : []).filter((member) => member?.result === "warning").map((member) => member.key));
+  const where = `${row.subject?.page ?? "(no page)"}${row.subject?.viewport ? ` ${row.subject.viewport}` : ""}`;
+  if (row.subject?.key === "floating_cta") {
+    const containers = (Array.isArray(row.observation.containers) ? row.observation.containers : []).filter((entry) => flagged.has(entry?.selector_path));
+    if (!containers.length) return null;
+    const texts = containers.map((entry) => {
+      const controls = Array.isArray(entry.controls) ? entry.controls.length : 0;
+      const other = Array.isArray(entry.other_text) ? entry.other_text : [];
+      const more = Number.isInteger(entry.other_text_count) && entry.other_text_count > other.length ? `, +${entry.other_text_count - other.length} more` : "";
+      const text = entry.other_text_count ? `; other text ${other.join(", ")}${more}` : "";
+      return `${entry.selector_path} (${entry.position}) holds ${controls} control${controls === 1 ? "" : "s"}${text}`;
+    });
+    return `${where}: floating CTA should hold its control alone: ${texts.join(" | ")}`;
+  }
+  if (row.subject?.key === "cta_label_size") {
+    const small = (Array.isArray(row.observation.members) ? row.observation.members : []).filter((member) => flagged.has(member?.selector_path));
+    if (!small.length) return null;
+    return `${where}: CTA label under ${row.observation.min_font_size_px}px: ${small.map((member) => `${member.selector_path} ${member.font_size_px}px (${member.role})`).join(", ")}`;
+  }
+  return null;
+}
+
 function visualSummary(row) {
   const item = row.observation;
   if (!item || !row.check?.startsWith("visual.")) return null;
@@ -467,7 +495,7 @@ function handoffEntry(row) {
     reason_code: row.reason_code,
     accept_eligible: row.accept_eligible === true,
     members: Array.isArray(row.members) ? row.members : [],
-    summary: designAccessSummary(row) ?? parityRowSummary(row) ?? visualSummary(row) ?? readabilityPairSummary([row]) ?? `${row.check} ${row.result}${row.reason_code ? ` (${row.reason_code})` : ""} on ${row.subject?.page ?? "(no page)"}${row.subject?.key == null ? "" : `: ${row.subject.key}`}`,
+    summary: designAccessSummary(row) ?? parityRowSummary(row) ?? visualSummary(row) ?? layoutSummary(row) ?? readabilityPairSummary([row]) ?? `${row.check} ${row.result}${row.reason_code ? ` (${row.reason_code})` : ""} on ${row.subject?.page ?? "(no page)"}${row.subject?.key == null ? "" : `: ${row.subject.key}`}`,
     ...(crop === undefined ? {} : { crop }),
   };
 }

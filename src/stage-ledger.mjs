@@ -11,6 +11,7 @@ import {
   NEXT_STAGE_CONTRACTS,
   NEXT_STAGE_OWNERS,
   stageIsBlocked,
+  stageIsTerminal,
 } from "./orchestration-stage-contract.mjs";
 
 const PRODUCER_STAGES = new Set(["doctor", "qa"]);
@@ -224,6 +225,20 @@ export function restorePolishKeptWithOutput(polish, { fingerprint, sourcePackage
     if (Object.hasOwn(superseded, field)) restored[field] = JSON.parse(JSON.stringify(superseded[field]));
   }
   return { ...restored, stage: "polish", ...stamps };
+}
+
+/**
+ * True when the campaign has been handed off (#721): its deploy or its QA was
+ * completed, as the live record or as a record the stage's history keeps
+ * (a deploy or QA made owed again by a later change still happened). From
+ * then on the repo, not the design source, is the authority for which pages
+ * the funnel has, so `spec derive` adds and removes pages from the page tree
+ * and `record spec` binds that change without intake.
+ */
+export function campaignHandedOff(report) {
+  const completedIn = (stage) => isPlainObject(stage) && (isCompletedStatus(stage.status)
+    || (Array.isArray(stage.history) && stage.history.some((entry) => isPlainObject(entry) && isCompletedStatus(entry.status))));
+  return completedIn(report?.stages?.deploy) || completedIn(report?.stages?.qa);
 }
 
 /**
@@ -573,6 +588,30 @@ export function qaRecordedBuildFingerprint(report) {
     || optionalString(report?.stages?.qa?.evidence?.source_build_fingerprint);
 }
 
+// #720: the build whose completed QA a page-scoped run extends. A completed
+// QA record extends its own build. A page-scoped run that did not complete
+// extends the build of the full QA it was based on, which was completed when
+// that run was accepted. Any other record (blocked or pending full QA, a
+// skip, a required stage) extends nothing, so it owes a full QA run.
+const QA_EXTENDABLE_STATUSES = Object.freeze(["completed", "completed_with_warnings"]);
+export function qaExtendedBuildFingerprint(report) {
+  const qa = report?.stages?.qa;
+  if (QA_EXTENDABLE_STATUSES.includes(qa?.status)) return qaRecordedBuildFingerprint(report);
+  if (qa?.status === "blocked") return optionalString(qa?.evidence?.page_scope?.base_build_fingerprint);
+  return null;
+}
+
+// The build Polish last reviewed: the output a terminal Polish is bound to,
+// or, once a rebuild has made it required, the build that rebuild kept for
+// it. A blocked or pending Polish reviewed nothing.
+export function polishReviewedBuild(polish) {
+  if (stageIsTerminal(String(polish?.status || ""))) return optionalString(polish.source_build_fingerprint);
+  // A brief or spec change since then (input_change, which only a restored
+  // or new Polish clears) owes the full review, whatever the build change.
+  if (Object.hasOwn(polish || {}, "input_change")) return null;
+  return polish?.status === "required" && polish.required_by === "build" ? optionalString(polish.owed_since_build_fingerprint) : null;
+}
+
 export function qaRecordedForCurrentBuild(report, buildFingerprint) {
   const recorded = qaRecordedBuildFingerprint(report);
   const current = optionalString(buildFingerprint);
@@ -716,7 +755,7 @@ function commitAssemblyReportUnderLock(workspace, mutate, {
       const doctor = refreshDoctor(outcome);
       if (doctor !== null && doctor !== undefined) writeDoctorSidecar(doctorOutPath, doctor, { command: command.trim(), targetRepo });
     } else if (outcome.written) {
-      markDoctorSidecarStale(targetRepo, { command: command.trim(), reason: staleReason.trim() });
+      markDoctorSidecarStale(targetRepo, { command: command.trim(), reason: staleReason.trim(), ...(doctorOutPath ? { path: doctorOutPath } : {}) });
     }
     return outcome;
   };
