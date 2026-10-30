@@ -98,7 +98,9 @@ export function formatDoctorCi(result) {
     return [
       `## Campaign evidence: could not evaluate (exit ${result.exit_code ?? DOCTOR_CI_EXIT_CODES.usage})`, "",
       ...(result.errors || []).map((issue) => `- ${code(issue.code)}: ${text(issue.message)}`), "",
-      "Remedy: correct the packet or inspection failure and re-run `campaigns-os doctor --packet <packet> --ci --no-live-refs`.",
+      result.errors?.[0]?.code === "doctor.ci.usage"
+        ? "Remedy: correct the command's flags (each value as the next argument, `--flag value`) and re-run `campaigns-os doctor --packet <packet> --ci --no-live-refs`."
+        : "Remedy: correct the packet or inspection failure and re-run `campaigns-os doctor --packet <packet> --ci --no-live-refs`.",
     ].join("\n");
   }
   const lines = [`## Campaign evidence: ${text(ci.status)} (exit ${ci.exit_code})`, ""];

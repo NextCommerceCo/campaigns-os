@@ -339,6 +339,9 @@ test("doctor --ci packet usage errors exit 2", (t) => {
   const joined = spawnSync(process.execPath, [cli, "doctor", "--ci", "--no-live-refs", "--json", `--packet=${f.packetPath}`], { cwd: f.root, encoding: "utf8" });
   assert.equal(joined.status, 2, joined.stderr || joined.stdout);
   assert.equal(JSON.parse(joined.stdout).errors[0].code, "doctor.ci.usage");
+  const joinedMarkdown = spawnSync(process.execPath, [cli, "doctor", "--ci", "--no-live-refs", `--packet=${f.packetPath}`], { cwd: f.root, encoding: "utf8" });
+  assert.match(joinedMarkdown.stdout, /Remedy: correct the command's flags/);
+  assert.doesNotMatch(joinedMarkdown.stdout, /correct the packet/);
   writeFileSync(f.packetPath, "{ broken json");
   assert.equal(run(f, "--ci", "--json").status, 2);
 });

@@ -335,7 +335,7 @@
       "sends": [],
       "effect_test": "effects: a refused invocation",
       "test_scope": "full",
-      "notes": "An unknown command, an unknown subcommand refused before its handler runs, or a flag the command refuses up front. A refused invocation writes no file of its own and appends no lifecycle entry. The generated case runs the unknown-command shape; the companion case \"effects: the other two refused shapes write nothing either\" runs the other two under the same five conditions. The one exception is declared on the start/prepare-build/build/run start/run end rows: those close out a STALE session at the root they are about to act on BEFORE argv is refused."
+      "notes": "An unknown command, an unknown subcommand refused before its handler runs, or a flag the command refuses up front. A refused invocation writes no file of its own and appends no lifecycle entry. The generated case runs the unknown-command shape; the companion case \"effects: the other two refused shapes write nothing either\" runs the other two under the same five conditions. The one exception is declared on the start/prepare-build/build/run start/run end rows: those close out a STALE session at the root they are about to act on BEFORE argv is refused, except when argv holds a --flag=value token, which is refused with nothing done first (its value, which can name the root or a remit control, is never read)."
     },
     {
       "command": "page-kit",
@@ -4272,7 +4272,7 @@
       ],
       "effect_test": "effects: run start",
       "test_scope": "full",
-      "notes": "Opening a session is not idempotent: a second `run start` with a session already active is refused (exit 1). A STALE session at the root is closed out first — Run Record assembled and remitted under the usual consent — which is a declared effect of this command even when argv is then refused."
+      "notes": "Opening a session is not idempotent: a second `run start` with a session already active is refused (exit 1). A STALE session at the root is closed out first — Run Record assembled and remitted under the usual consent — which is a declared effect of this command even when argv is then refused (not for a --flag=value token, which skips the closeout)."
     },
     {
       "command": "run",
