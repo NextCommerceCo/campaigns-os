@@ -3992,7 +3992,23 @@ test("F2.3-W5: an upsell page added to a handed-off funnel's page tree is record
   });
 });
 
-test("F2.3-W6: a page whose built file is gone is removed by spec derive on a handed-off funnel and bound by record spec", async () => {
+test("F2.3-W5b: spec derive reads a page file's next_step and step_number from real frontmatter, so an added step is a step and a select page is a select page", async () => {
+  await guardedLifecycle(async (f) => {
+    await handedOff(f);
+    const tree = writePageTree(f);
+    const stepFile = (name, extra) => writeFileSync(join(tree, `${name}.html`), `---\npage_type: checkout\nnext_url: /${f.slug}/receipt/\nnext_step: "/${f.slug}/checkout/"\n${extra}---\n<h1>${name}</h1>\n`);
+    stepFile("step-2", "step_number: 1\n");
+    stepFile("pick", "");
+    const derive = runJson(["spec", "derive", "--packet", f.packetPath, "--no-live-refs", "--dry-run"], f.dir);
+    assert.equal(derive.status, 0, derive.stderr);
+    const v5 = /^5(\.|$)/.test(String(readJson(specPathOf(f)).schema_version ?? "").trim());
+    const added = Object.fromEntries(derive.json.changes.filter((row) => row.op === "insert" && row.path[0] === "funnels").map((row) => [row.page_id, row.after]));
+    assert.deepEqual(added["step-2"], { id: "step-2", type: v5 ? "checkout_step" : "checkout", page_url: "step-2/", next_page: "checkout" });
+    assert.deepEqual(added.pick, { id: "pick", type: "select", page_url: "pick/", next_page: "checkout" });
+  });
+});
+
+test("F2.3-W6:a page whose built file is gone is removed by spec derive on a handed-off funnel and bound by record spec", async () => {
   await guardedLifecycle(async (f) => {
     await handedOff(f);
     const tree = writePageTree(f);

@@ -1748,6 +1748,27 @@ test("planSpecDerive adds a checkout file that carries next_step as a step or a 
   // to the Checkout, which the v5 upgrade reads back as a checkout_step.
   assert.deepEqual(insertOf(specFixture(), withStep({ step_number: "1" }))[1], { id: "step-2", type: "checkout", page_url: "step-2/", next_page: "checkout" });
 
+  // A v4 step kept on a later derive forwards by its file's next_step: its
+  // next_url is the Checkout's destination, never its own link.
+  const v4WithStep = () => specFixture((draft) => {
+    draft.funnels[0].pages[0].next_page = "step";
+    draft.funnels[0].pages.push({ id: "step", type: "checkout", page_url: "step/", next_page: "checkout" });
+  });
+  const kept = planSpecDerive({
+    spec: v4WithStep(),
+    entry: CONFIGURED_ENTRY,
+    pageFiles: [
+      ...TREE_WITH_LINKS.map((file) => (file.basename === "checkout" ? { ...file, next_url: "/runtime-packet-demo/upsell-2/" } : file)),
+      { path: "step.html", basename: "step", route: "step/", permalink: null, page_type: "checkout", next_url: "/runtime-packet-demo/upsell-2/", next_step: "/runtime-packet-demo/checkout/", step_number: "1" },
+      { path: "upsell-2.html", basename: "upsell-2", route: "upsell-2/", permalink: null, page_type: "upsell", next_url: "/runtime-packet-demo/upsell/", decline_url: "/runtime-packet-demo/upsell/" },
+    ],
+    packetBindings: new Map([...PROJECTED, ["step", "step.html"]]),
+    publicRouteSlug: "runtime-packet-demo",
+    handedOff: true,
+  });
+  assert.deepEqual(kept.page_scope.added.map((row) => row.page_id), ["upsell-2"]);
+  assert.equal(kept.changes.some((row) => row.page_id === "step" && row.field.endsWith(".next_page")), false, "the step still forwards to the Checkout");
+
   const odd = planSpecDerive({ spec: specFixture(), entry: CONFIGURED_ENTRY, pageFiles: [...TREE_WITH_LINKS, { path: "odd.html", basename: "odd", route: "odd/", permalink: null, page_type: "toString" }], packetBindings: PROJECTED, publicRouteSlug: "runtime-packet-demo", handedOff: true });
   assert.deepEqual([odd.page_scope.added, odd.not_derived.map((row) => row.reason)], [[], ["page_type_unknown"]]);
 });

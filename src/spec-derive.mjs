@@ -571,7 +571,10 @@ function planPageScope({ spec, activePages, pageFiles, packetBindings, boundFile
   for (const { page, path } of activePages) {
     if (removedIds.has(page.id)) continue;
     const file = fileByPageId.get(page.id);
-    for (const [key, linkField] of linkFieldsForType(page.type)) {
+    // A v4 spec states a step as a checkout; its file carries next_step,
+    // which only a page before the Checkout has, and that is its forward link.
+    const linkType = page.type === "checkout" && isNonEmptyString(file?.next_step) ? "checkout_step" : page.type;
+    for (const [key, linkField] of linkFieldsForType(linkType)) {
       // A checkout with no success_url forwards through next_page (the
       // generic fallback, campaign-spec/routing.ts), so that is the field
       // its next_url re-points.
