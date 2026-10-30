@@ -518,7 +518,8 @@ test("standardize refuses unknown flags instead of running as if they were absen
 
     const joined = runStandardize(home, ["--target", target, "--json", "--no-doctor=maybe"]);
     assert.equal(joined.status, 1);
-    assert.match(joined.stderr, /Unknown flag for standardize: --no-doctor=maybe\. A flag takes its value as the next argument \(--flag value\), not --flag=value\./);
+    assert.match(joined.stderr, /--no-doctor=… is not accepted: a flag takes its value as the next argument \(--flag value\), not --flag=value\. Write `--no-doctor <value>`, or `--no-doctor` alone for an on\/off flag\./);
+    assert.doesNotMatch(joined.stderr, /maybe/, "the value is never echoed");
 
     const known = runStandardize(home, ["--target", target, "--no-doctor", "--json"]);
     assert.notEqual(known.status, 1, known.stderr);

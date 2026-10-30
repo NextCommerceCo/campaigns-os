@@ -1345,6 +1345,15 @@ export function parseArgs(argv) {
       args._.push(token);
       continue;
     }
+    // A flag takes its value as the next token. `--flag=value` would parse as
+    // an unknown key and be silently ignored (`qa run --page=x` widening to a
+    // full run), so it is refused. Only the name is quoted: the value can be
+    // a secret, such as an --auth-cookie.
+    const equal = token.indexOf("=");
+    if (equal > 2) {
+      const name = token.slice(0, equal);
+      throw refused(`${name}=… is not accepted: a flag takes its value as the next argument (--flag value), not --flag=value. Write \`${name} <value>\`, or \`${name}\` alone for an on/off flag.`);
+    }
     const key = token.slice(2);
     const next = argv[index + 1];
     if (!next || next.startsWith("--")) {
@@ -2589,11 +2598,8 @@ function rejectUnknownStandardizeFlags(args) {
   const known = new Set(STANDARDIZE_FLAGS);
   const unknown = Object.keys(args).filter((key) => key !== "_" && !known.has(key));
   if (!unknown.length) return;
-  const valueHint = unknown.some((key) => key.includes("="))
-    ? " A flag takes its value as the next argument (--flag value), not --flag=value."
-    : "";
   throw refused(
-    `Unknown flag${unknown.length > 1 ? "s" : ""} for standardize: ${unknown.map((key) => `--${key}`).join(", ")}.${valueHint} Known flags: ${STANDARDIZE_FLAGS.map((key) => `--${key}`).join(", ")}.`,
+    `Unknown flag${unknown.length > 1 ? "s" : ""} for standardize: ${unknown.map((key) => `--${key}`).join(", ")}. Known flags: ${STANDARDIZE_FLAGS.map((key) => `--${key}`).join(", ")}.`,
   );
 }
 
@@ -3372,8 +3378,7 @@ export function pageKitSyncCommand(args) {
   // Assembly Report whose waivers are honoured below.
   const unknown = Object.keys(args).filter((key) => key !== "_" && !PAGE_KIT_SYNC_FLAGS.includes(key));
   if (unknown.length) {
-    const valueHint = unknown.some((key) => key.includes("=")) ? " A flag takes its value as the next argument (--flag value), not --flag=value." : "";
-    throw refused(`Unknown flag${unknown.length > 1 ? "s" : ""} for page-kit sync: ${unknown.map((key) => `--${key}`).join(", ")}.${valueHint} Known flags: ${PAGE_KIT_SYNC_FLAGS.map((key) => `--${key}`).join(", ")}.`);
+    throw refused(`Unknown flag${unknown.length > 1 ? "s" : ""} for page-kit sync: ${unknown.map((key) => `--${key}`).join(", ")}. Known flags: ${PAGE_KIT_SYNC_FLAGS.map((key) => `--${key}`).join(", ")}.`);
   }
   const packetPath = resolve(requireArg(args, "packet"));
   const dryRun = isDryRun(args);
@@ -3732,8 +3737,7 @@ export function specDeriveCommand(args, { store: storeRead = null, liveCampaign 
   // the Assembly Report whose waivers are honoured below.
   const unknown = Object.keys(args).filter((key) => key !== "_" && !SPEC_DERIVE_FLAGS.includes(key));
   if (unknown.length) {
-    const valueHint = unknown.some((key) => key.includes("=")) ? " A flag takes its value as the next argument (--flag value), not --flag=value." : "";
-    throw refused(`Unknown flag${unknown.length > 1 ? "s" : ""} for spec derive: ${unknown.map((key) => `--${key}`).join(", ")}.${valueHint} Known flags: ${SPEC_DERIVE_FLAGS.map((key) => `--${key}`).join(", ")}.`);
+    throw refused(`Unknown flag${unknown.length > 1 ? "s" : ""} for spec derive: ${unknown.map((key) => `--${key}`).join(", ")}. Known flags: ${SPEC_DERIVE_FLAGS.map((key) => `--${key}`).join(", ")}.`);
   }
   // The store read is supplied by specDeriveFromStoreCommand; this function
   // never touches the network itself, so a --from-store call that reaches it
@@ -8120,9 +8124,9 @@ const ARGV_SHAPE_PRIVATE_FLAGS = new Set(["auth-cookie", "no-remit", "no-write",
 
 // argv SHAPE = selected flag NAMES present, never their values (minimization).
 // Sorted + de-duplicated for deterministic records; opt-out and endpoint flags
-// stay private. A `--flag=value` token parses as a single key, so split on "="
-// and keep only the name — otherwise a value (e.g. --auth-cookie=SECRET) would
-// leak into a persisted, potentially-remitted shape, breaking the guarantee.
+// stay private. parseArgs refuses a `--flag=value` token; the split on "=" stays
+// as a second guard, so a value (e.g. --auth-cookie=SECRET) can never leak into
+// a persisted, potentially-remitted shape, whatever builds the args.
 function argvShape(args) {
   const names = new Set();
   for (const key of Object.keys(args)) {

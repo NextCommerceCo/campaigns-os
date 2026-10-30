@@ -36,6 +36,7 @@ This release makes the path from a Map to a working campaign shorter to start an
 ### Fixed
 
 - Directory locks (#514): a command that finds the target lock or the progress allocation lock held by a live process of another Campaigns OS release refuses at once and names that process (`ELOCKFORMAT`), instead of racing it. Lock owner records carry `lock_format: 2`, so a holder from an earlier release is refused too; dead holders are still recovered. Two releases that start in the same instant are still not detected, so run one release against a target at a time. The holder also removes `.abandoned-<token>` directories left by an interrupted recovery, and an unreadable directory at the lock path is named as such.
+- Every command refuses a `--flag=value` token before it reads anything, and says to write `--flag value` (the message names the flag, never the value). The shared parser read the token as an unknown key and dropped it, so `qa run --page=upsell1` ran a full QA and `--test-order=common` placed no orders. `standardize`, `page-kit sync` and `spec derive` already refused it as an unknown flag.
 - 1.61.0 residuals (#707): the changed-page list survives `record build`; a reference refused for its location keeps its `location` on a stale-bound row; the readability reader passes an undefined `buildOutput` through unchanged.
 
 ## [1.61.0+agent.2] - 2026-10-29

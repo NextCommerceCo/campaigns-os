@@ -979,7 +979,7 @@ test("spec derive names every malformed target state, a map_id mismatch, a missi
     assert.deepEqual(array.errors.map((issue) => issue.code), ["spec.derive.packet_invalid"]);
     assert.match(array.errors[0].message, /must be a JSON object/);
     assert.equal(readFileSync(specPath, "utf8"), before, "no precondition failure touched the spec");
-    assert.throws(() => specDeriveCommand({ _: ["spec", "derive"], packet: packetPath, "dry-run=true": true }), /A flag takes its value as the next argument/);
+    assert.throws(() => specDeriveCommand({ _: ["spec", "derive"], packet: packetPath, "dry-run=true": true }), /Unknown flag for spec derive: --dry-run=true\./);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

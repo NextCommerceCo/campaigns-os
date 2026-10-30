@@ -284,6 +284,12 @@ test("qa run --page from the CLI: argv refusals, then a commerce change stops be
   assert.notEqual(withBeacons.status, 0);
   assert.match(withBeacons.stderr, /--page cannot be combined with --vendor-beacons/);
   assert.doesNotMatch(withBeacons.stderr, /add --test-order/);
+  // --page=<id> is refused rather than read as an unknown key, which would
+  // widen the run to a full QA.
+  const joined = run("--packet", f.packetPath, "--page=upsell1");
+  assert.notEqual(joined.status, 0);
+  assert.match(joined.stderr, /--page=… is not accepted: a flag takes its value as the next argument/);
+  assert.match(run("--packet", f.packetPath, "--test-order=common").stderr, /`--test-order <value>`/);
   const empty = run("--packet", f.packetPath, "--page");
   assert.notEqual(empty.status, 0);
   assert.match(empty.stderr, /--page takes a page id/);
