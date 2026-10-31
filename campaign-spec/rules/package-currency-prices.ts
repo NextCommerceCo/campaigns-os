@@ -106,7 +106,7 @@ export const PackageCurrencyPrices: Rule = {
                 path: `${path}/${index}`,
                 data: { check: 'price_entry_shape', pageId: page.id, ref_id: pkg.ref_id, received: entry },
               })
-            } else if (seen.has(currency)) {
+            } else if (isCurrencyCode(currency) && seen.has(currency)) {
               violations.push({
                 ruleId: 'PackageCurrencyPrices',
                 severity: 'warning',
