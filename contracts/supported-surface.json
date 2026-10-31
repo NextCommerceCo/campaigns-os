@@ -70,10 +70,10 @@
       "sha256": "1e309c5dad8c5eeef26ef6fd3b6b90b72440c5104319a161002b17f1359fbd76"
     },
     "schemas/campaign-spec.v4.schema.json": {
-      "sha256": "37c8326883507894865630d7b471e8c21f61fde25cf5bfe08b548c8429c8518e"
+      "sha256": "4e9a092c1426429b727aaa6ef5622ae2c6c6dad59270f08636987847b63f5001"
     },
     "schemas/campaign-spec.v5.schema.json": {
-      "sha256": "c0009de5f80b9781afa9e784c48792534ecbfff91188de2c45c4ae74ae8733f7"
+      "sha256": "24d04c8d3ede920de161fadf914dc497a3f61e126f377cb01dd0aeff12b53c4f"
     },
     "schemas/campaigns-os-legacy-migration-inventory.v0.schema.json": {
       "sha256": "d6edc4572900d15fdaf6b8c59916b0d885303c1d398bdadeb7c58285522c9049"

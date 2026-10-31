@@ -15,20 +15,43 @@
  *   2. A row with `prices` has an entry for every currency in
  *      campaign.available_currencies and for campaign.currency.
  *
- * A row without `prices` is silent: older Maps and hand-written specs carry
- * the default currency's price only (`price`), and nothing is known about the
- * others. Every finding is a warning, since a missing price is fixed in the
- * Campaigns App, not in the spec.
+ * A row without `prices` (absent or null) is silent: older Maps and
+ * hand-written specs carry the default currency's price only (`price`), and
+ * nothing is known about the others. Every finding is a warning, since a
+ * missing price is fixed in the Campaigns App, not in the spec.
+ *
+ * The selling currencies are the spec's own `campaign.currency` and
+ * `campaign.available_currencies`. The Campaigns App API's
+ * `additional_currencies` is not a CampaignSpec field (CampaignCurrencies), so
+ * it is not read here either.
  */
 
 import type { CampaignSpec, Rule, Violation } from '../types.ts'
 import { isCurrencyCode } from './campaign-currencies.ts'
 
+// A non-negative amount: a finite number, or a plain decimal string ("49.99").
+// Hex, binary and exponent strings ("0x10", "1e3") are not prices.
 function isPrice(value: unknown): boolean {
-  if (typeof value !== 'number' && typeof value !== 'string') return false
-  if (typeof value === 'string' && value.trim() === '') return false
-  const n = Number(value)
-  return Number.isFinite(n) && n >= 0
+  if (typeof value === 'number') return Number.isFinite(value) && value >= 0
+  return typeof value === 'string' && /^\d+(\.\d+)?$/.test(value.trim())
+}
+
+// An optional amount: absent, null, or a price.
+function isOptionalPrice(value: unknown): boolean {
+  return value === undefined || value === null || isPrice(value)
+}
+
+// What is wrong with one prices[] entry, or null when it is well formed.
+function entryDefect(entry: unknown): string | null {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return 'is not a { currency, price } object'
+  const row = entry as Record<string, unknown>
+  const defects: string[] = []
+  if (!isCurrencyCode(row.currency)) defects.push('a three-letter upper-case ISO 4217 currency')
+  if (!isPrice(row.price)) defects.push('a non-negative decimal price')
+  for (const field of ['price_retail', 'price_recurring'] as const) {
+    if (!isOptionalPrice(row[field])) defects.push(`a non-negative decimal ${field} (or none)`)
+  }
+  return defects.length ? `needs ${defects.join(' and ')}` : null
 }
 
 // The currencies the campaign sells in: the valid listed codes and a valid
@@ -70,13 +93,16 @@ export const PackageCurrencyPrices: Rule = {
 
           const seen = new Set<string>()
           prices.forEach((entry: unknown, index: number) => {
-            const row = entry && typeof entry === 'object' && !Array.isArray(entry) ? (entry as Record<string, unknown>) : null
-            const currency = row?.currency
-            if (!row || !isCurrencyCode(currency) || !isPrice(row.price)) {
+            const currency = entry && typeof entry === 'object' && !Array.isArray(entry) ? (entry as Record<string, unknown>).currency : undefined
+            const defect = entryDefect(entry)
+            // A malformed entry with a valid currency still counts that
+            // currency as listed: the entry's own finding names the fix, and a
+            // second "has no EUR price" finding would report it twice.
+            if (defect) {
               violations.push({
                 ruleId: 'PackageCurrencyPrices',
                 severity: 'warning',
-                message: `${label}: prices[${index}] needs a three-letter upper-case ISO 4217 currency and a non-negative price.`,
+                message: `${label}: prices[${index}] ${defect}.`,
                 path: `${path}/${index}`,
                 data: { check: 'price_entry_shape', pageId: page.id, ref_id: pkg.ref_id, received: entry },
               })

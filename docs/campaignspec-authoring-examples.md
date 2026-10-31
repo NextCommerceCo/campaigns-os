@@ -136,7 +136,10 @@ A page package row can also carry its price in each currency, as `prices[]`:
   Campaigns App has a price for in that currency, so a package with no EUR
   price is missing from the campaign for a shopper paying in EUR. Map Builder
   fills `prices[]` when it refreshes from the API; set prices in the
-  Campaigns App, not in the spec.
+  Campaigns App, not in the spec. `campaigns-os spec derive` refreshes `price`
+  and `price_retail` from one default-currency read and leaves `prices[]` as
+  it was, so after changing a non-default price, refresh the Map in Map
+  Builder.
 - `prices[]` is optional. A row without it says nothing about other
   currencies and is not checked. A row with it should list every currency in
   `available_currencies` and `campaign.currency`; the `PackageCurrencyPrices`

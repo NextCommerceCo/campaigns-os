@@ -3,7 +3,7 @@
     {
       "ruleId": "PackageCurrencyPrices",
       "severity": "warning",
-      "message": "\"Checkout\" — Package \"Bundle\": prices[1] needs a three-letter upper-case ISO 4217 currency and a non-negative price.",
+      "message": "\"Checkout\" — Package \"Bundle\": prices[1] needs a three-letter upper-case ISO 4217 currency.",
       "path": "/funnels/0/pages/0/packages/1/prices/1",
       "data": {
         "check": "price_entry_shape",
@@ -45,7 +45,7 @@
     {
       "ruleId": "PackageCurrencyPrices",
       "severity": "warning",
-      "message": "\"Upsell\" — Package \"Refill\": prices[1] needs a three-letter upper-case ISO 4217 currency and a non-negative price.",
+      "message": "\"Upsell\" — Package \"Refill\": prices[1] needs a non-negative decimal price.",
       "path": "/funnels/0/pages/1/packages/0/prices/1",
       "data": {
         "check": "price_entry_shape",

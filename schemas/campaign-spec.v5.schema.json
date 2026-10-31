@@ -255,8 +255,8 @@
         "price": { "type": ["string", "number", "null"] },
         "price_retail": { "type": ["string", "number", "null"] },
         "prices": {
-          "type": "array",
-          "description": "The package's price in each currency the Campaigns App prices it in, one entry per currency, read from the Campaigns API (GET /campaigns/?currency=<code>), which returns only the packages priced in the requested currency. price and price_retail stay the default currency's. Optional: a row without prices says nothing about other currencies. A row with prices should list every currency in campaign.available_currencies and campaign.currency; the PackageCurrencyPrices rule warns when one is missing, since the campaign leaves the package out in that currency.",
+          "type": ["array", "null"],
+          "description": "The package's price in each currency the Campaigns App prices it in, one entry per currency, read from the Campaigns API (GET /campaigns/?currency=<code>), which returns only the packages priced in the requested currency. price and price_retail stay the default currency's. Optional: a row without prices (absent or null) says nothing about other currencies. A row with prices should list every currency in campaign.available_currencies and campaign.currency; the PackageCurrencyPrices rule warns when one is missing, since the campaign leaves the package out in that currency.",
           "items": {
             "type": "object",
             "additionalProperties": true,

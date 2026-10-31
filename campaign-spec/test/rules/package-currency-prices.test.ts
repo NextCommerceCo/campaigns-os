@@ -60,9 +60,30 @@ describe('PackageCurrencyPrices rule', () => {
     ])
   })
 
-  test('a negative or non-numeric price is malformed', () => {
-    const violations = check(usdEur, { ref_id: 1, prices: [{ currency: 'USD', price: '-1' }, { currency: 'EUR', price: 'free' }] })
+  test('a negative, non-numeric or non-decimal price is malformed', () => {
+    const prices = ['-1', 'free', '0x10', '1e3'].map((price, i) => ({ currency: ['USD', 'EUR', 'GBP', 'JPY'][i], price }))
+    const violations = check({ currency: 'USD', available_currencies: ['USD', 'EUR', 'GBP', 'JPY'] }, { ref_id: 1, prices })
+    expect(violations.map((v) => v.data?.check)).toEqual(['price_entry_shape', 'price_entry_shape', 'price_entry_shape', 'price_entry_shape'])
+  })
+
+  test('a malformed retail or recurring price is named, and null is accepted', () => {
+    const violations = check(usdEur, {
+      ref_id: 1,
+      prices: [{ currency: 'USD', price: '10', price_retail: 'free' }, { currency: 'EUR', price: '9', price_retail: null, price_recurring: -5 }],
+    })
     expect(violations.map((v) => v.data?.check)).toEqual(['price_entry_shape', 'price_entry_shape'])
+    expect(violations[0].message.includes('price_retail')).toBe(true)
+    expect(violations[0].message.includes('currency')).toBe(false)
+    expect(violations[1].message.includes('price_recurring')).toBe(true)
+  })
+
+  test('an entry that is not an object is malformed', () => {
+    const violations = check(usdEur, { ref_id: 1, prices: [null, 'USD 10', [], { currency: 'USD', price: '10' }, { currency: 'EUR', price: '9' }] })
+    expect(violations.map((v) => [v.path, v.data?.check])).toEqual([
+      ['/funnels/0/pages/0/packages/0/prices/0', 'price_entry_shape'],
+      ['/funnels/0/pages/0/packages/0/prices/1', 'price_entry_shape'],
+      ['/funnels/0/pages/0/packages/0/prices/2', 'price_entry_shape'],
+    ])
   })
 
   test('runs in the fast and spec-only presets', () => {
