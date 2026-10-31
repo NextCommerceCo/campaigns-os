@@ -10426,7 +10426,7 @@
       "kind": "release",
       "surface_version": "1.63.0",
       "changelog_section": "1.63.0",
-      "changelog_sha256": "c392a39118c6807a29c07e2d8516a9b3d80dcc9bf51b8d0b0a25a6586834e2a5",
+      "changelog_sha256": "709a63c33ef9f64e9fceb7e52e7ba1a7b35e2e8fb4404bb56aa0eac8c0702707",
       "agent_impact": "A page package row may carry prices[] ({ currency, price, price_retail?, price_recurring? } per currency, read from GET /campaigns/?currency=<code>); price and price_retail stay the default currency's. CampaignSpec validation adds PackageCurrencyPrices, a warning for a row whose prices[] lacks a currency the campaign sells in, has a malformed entry, or lists a currency twice. A row without prices[] is unchanged and unchecked. Refresh skills to 1.63.0+skills.1 (a revision restamp; the skill text is otherwise unchanged).",
       "compatibility": "additive",
       "migration": "none",
@@ -10678,7 +10678,7 @@
           "summary": "Carry the advanced bundle revision and matching per-skill version."
         }
       ],
-      "entry_sha256": "1f65e166193ed4989ad586d2b53a8b8774cae78a90891c3611f3477cc170d0f7"
+      "entry_sha256": "a5fe5aad03d3bf64be6fd7af32b8038867982fad1ee0c8a91a733eccdb46106b"
     }
   ]
 }
