@@ -1,0 +1,62 @@
+{
+  "schema_version": "5.0",
+  "spec_identity": { "map_id": "fixture-package-currency-prices" },
+  "campaign": {
+    "ref_id": 21,
+    "slug": "package-currency-prices",
+    "payment_env_key": "test_key",
+    "currency": "USD",
+    "available_currencies": ["USD", "EUR", "GBP"]
+  },
+  "runtime": { "sdk_version": "0.4.0" },
+  "shipping_methods": [{ "ref_id": "ship-standard" }],
+  "funnels": [
+    {
+      "id": "f",
+      "name": "F",
+      "hypothesis": "Package rows priced in some, but not all, of the campaign's currencies.",
+      "weight": 100,
+      "pages": [
+        {
+          "id": "f-co",
+          "type": "checkout",
+          "label": "Checkout",
+          "success_url": "f-up",
+          "packages": [
+            {
+              "ref_id": 1, "qty": 1, "name": "Starter", "price": "49.99",
+              "prices": [
+                { "currency": "USD", "price": "49.99", "price_retail": "79.99" },
+                { "currency": "EUR", "price": "46.99", "price_retail": "74.99" },
+                { "currency": "GBP", "price": "39.99", "price_retail": "64.99" }
+              ]
+            },
+            {
+              "ref_id": 2, "qty": 1, "name": "Bundle", "price": "89.99",
+              "prices": [
+                { "currency": "USD", "price": "89.99" },
+                { "currency": "usd", "price": "89.99" },
+                { "currency": "USD", "price": "89.99" }
+              ]
+            },
+            { "ref_id": 3, "qty": 1, "name": "Warranty", "price": "4.99", "is_order_bump": true }
+          ]
+        },
+        {
+          "id": "f-up",
+          "type": "upsell",
+          "label": "Upsell",
+          "on_accept": "f-ty",
+          "on_decline": "f-ty",
+          "packages": [
+            {
+              "ref_id": 4, "qty": 1, "name": "Refill", "price": "19.99",
+              "prices": [{ "currency": "USD", "price": "19.99" }, { "currency": "EUR", "price": "" }]
+            }
+          ]
+        },
+        { "id": "f-ty", "type": "thankyou", "label": "Thank you" }
+      ]
+    }
+  ]
+}

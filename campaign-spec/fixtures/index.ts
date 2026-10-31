@@ -135,6 +135,8 @@ import badCurrencyCodesExpected from './expected/bad-currency-codes.expected.jso
 
 import currencyNotAvailable from './currency-not-available.json' with { type: 'json' }
 import currencyNotAvailableExpected from './expected/currency-not-available.expected.json' with { type: 'json' }
+import packageCurrencyPrices from './package-currency-prices.json' with { type: 'json' }
+import packageCurrencyPricesExpected from './expected/package-currency-prices.expected.json' with { type: 'json' }
 
 export interface NamedFixture extends Fixture {
   name: string
@@ -194,6 +196,7 @@ export const corpus: NamedFixture[] = [
   build('select-sells-checkout-empty', selectSellsCheckoutEmpty, selectSellsCheckoutEmptyExpected),
   build('bad-currency-codes', badCurrencyCodes, badCurrencyCodesExpected),
   build('currency-not-available', currencyNotAvailable, currencyNotAvailableExpected),
+  build('package-currency-prices', packageCurrencyPrices, packageCurrencyPricesExpected),
 ]
 
 export function fixtureByName(name: string): NamedFixture {

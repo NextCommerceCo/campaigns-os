@@ -2,6 +2,15 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.63.0] - 2026-10-31
+
+CampaignSpec can carry a page package's price in each currency the campaign sells in, and validation warns when a package has no price in one of them. To take it, pin `@nextcommerce/campaigns-os@1.63.0` and refresh the installed skills to `1.63.0+skills.1`; the skill text changes only in its stated revision.
+
+### Added
+
+- **`prices[]` on a page package (#714).** A row in `funnels[].pages[].packages[]` may carry `prices: [{ currency, price, price_retail?, price_recurring? }]`, one entry per currency the Campaigns App prices the package in, read from the Campaigns API in that currency (`GET /campaigns/?currency=<code>`). `price` and `price_retail` stay the default currency's. The field is optional and additive in schemas v4 and v5 and in the `PagePackage` type (with `PackageCurrencyPrice`), and the authoring guide's Campaign Currencies section shows it.
+- **`PackageCurrencyPrices` rule (#714).** A warning, tagged `fast` and `spec-only`, so `doctor` and Map Builder both run it. For a row that carries `prices[]`, it reports a currency in `campaign.available_currencies` or `campaign.currency` with no entry, since the Campaigns API leaves an unpriced package out of the campaign in that currency; an entry without an ISO 4217 `currency` or a non-negative `price`; and a currency listed twice. A row without `prices[]` is not checked, and malformed campaign currency codes stay with `CampaignCurrencies`.
+
 ## [1.62.0] - 2026-10-30
 
 This release makes the path from a Map to a working campaign shorter to start and cheaper to maintain. CampaignSpec validation catches a checkout nothing sells into and malformed currencies, and it carries the starter templates' analytics vendors. One project can hold several funnels. After handoff, `spec derive` keeps the spec in step with the repo's pages and the live campaign. A change to some pages' copy owes QA on those pages only. `qa run --test-order` holds test purchases back from the analytics vendors it can intercept (all of the template vendors except Northbeam), and `qa run --currency` blocks when the currency did not take. To take it, pin `@nextcommerce/campaigns-os@1.62.0` and refresh the installed skills to `1.62.0+skills.1`.

@@ -40,7 +40,7 @@ function knownIsoCodes(): Set<string> | null {
   return isoCodes
 }
 
-function isCurrencyCode(value: unknown): value is string {
+export function isCurrencyCode(value: unknown): value is string {
   if (typeof value !== 'string' || !CODE_SHAPE.test(value)) return false
   const known = knownIsoCodes()
   return known === null || known.has(value)

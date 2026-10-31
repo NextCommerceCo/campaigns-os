@@ -116,6 +116,33 @@ Generator checklist:
 These checks are the `CampaignCurrencies` validator rule, which
 `campaigns-os doctor` runs with the rest of the spec rules.
 
+A page package row can also carry its price in each currency, as `prices[]`:
+
+```json
+{
+  "ref_id": 101, "qty": 1, "price": "49.99", "price_retail": "79.99",
+  "prices": [
+    { "currency": "USD", "price": "49.99", "price_retail": "79.99" },
+    { "currency": "EUR", "price": "46.99", "price_retail": "74.99" }
+  ]
+}
+```
+
+- `price` and `price_retail` stay the default currency's. Each `prices[]`
+  entry has a `currency` code and a `price`, plus `price_retail` and, for a
+  subscription package, `price_recurring` when the Campaigns App has them.
+- The values come from the Campaigns API read in each currency
+  (`GET /campaigns/?currency=EUR`). That read returns only the packages the
+  Campaigns App has a price for in that currency, so a package with no EUR
+  price is missing from the campaign for a shopper paying in EUR. Map Builder
+  fills `prices[]` when it refreshes from the API; set prices in the
+  Campaigns App, not in the spec.
+- `prices[]` is optional. A row without it says nothing about other
+  currencies and is not checked. A row with it should list every currency in
+  `available_currencies` and `campaign.currency`; the `PackageCurrencyPrices`
+  rule warns on a missing currency, a malformed entry and a currency listed
+  twice.
+
 ## Order Bump Notes
 
 An order bump is still a checkout package/offer surface. It should be encoded as
