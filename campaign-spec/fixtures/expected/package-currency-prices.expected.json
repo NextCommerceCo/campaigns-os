@@ -1,0 +1,75 @@
+{
+  "violations": [
+    {
+      "ruleId": "PackageCurrencyPrices",
+      "severity": "warning",
+      "message": "\"Checkout\" — Package \"Bundle\": prices[1] needs a three-letter upper-case ISO 4217 currency.",
+      "path": "/funnels/0/pages/0/packages/1/prices/1",
+      "data": {
+        "check": "price_entry_shape",
+        "pageId": "f-co",
+        "ref_id": 2,
+        "received": {
+          "currency": "usd",
+          "price": "89.99"
+        }
+      }
+    },
+    {
+      "ruleId": "PackageCurrencyPrices",
+      "severity": "warning",
+      "message": "\"Checkout\" — Package \"Bundle\": prices lists USD more than once.",
+      "path": "/funnels/0/pages/0/packages/1/prices/2",
+      "data": {
+        "check": "price_currency_repeated",
+        "pageId": "f-co",
+        "ref_id": 2,
+        "currency": "USD"
+      }
+    },
+    {
+      "ruleId": "PackageCurrencyPrices",
+      "severity": "warning",
+      "message": "\"Checkout\" — Package \"Bundle\" has no EUR or GBP price, so the campaign leaves it out in those currencies. Add the price in the Campaigns App, then refresh the Map.",
+      "path": "/funnels/0/pages/0/packages/1/prices",
+      "data": {
+        "check": "price_currency_missing",
+        "pageId": "f-co",
+        "ref_id": 2,
+        "missing": [
+          "EUR",
+          "GBP"
+        ]
+      }
+    },
+    {
+      "ruleId": "PackageCurrencyPrices",
+      "severity": "warning",
+      "message": "\"Upsell\" — Package \"Refill\": prices[1] needs a non-negative decimal price.",
+      "path": "/funnels/0/pages/1/packages/0/prices/1",
+      "data": {
+        "check": "price_entry_shape",
+        "pageId": "f-up",
+        "ref_id": 4,
+        "received": {
+          "currency": "EUR",
+          "price": ""
+        }
+      }
+    },
+    {
+      "ruleId": "PackageCurrencyPrices",
+      "severity": "warning",
+      "message": "\"Upsell\" — Package \"Refill\" has no GBP price, so the campaign leaves it out in that currency. Add the price in the Campaigns App, then refresh the Map.",
+      "path": "/funnels/0/pages/1/packages/0/prices",
+      "data": {
+        "check": "price_currency_missing",
+        "pageId": "f-up",
+        "ref_id": 4,
+        "missing": [
+          "GBP"
+        ]
+      }
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 {
   "_note": "The downstream contract manifest. Everything listed here is SUPPORTED SURFACE: consumers (campaigns-agent, campaign-builder, the private ops repo, page-kit campaign repos) may depend on it, and changing it is a deliberate act — hashed entries require a surface_version bump in the same change (check-supported-surface.mjs --base, mirroring the skills.json bump gate), named entries must keep existing at their path, cli_commands must keep resolving in the CLI dispatch, package_exports must stay exported, and every entry must ship in the npm pack (files[] coverage). Anything NOT listed here — src/** internals, scripts/** checkers, examples/**, prompts/**, contracts/** other than this file and the entries named[] below (the orientation contract, the release ledger, and the consumer-facing orientation fixtures) — is implementation: consumers may read it for context but must not build on it, and it can change without notice. Rationale and the compatibility promise: docs/supported-surface.md.",
-  "surface_version": "1.62.0",
+  "surface_version": "1.63.0",
   "package_exports": [
     "./commercial-journey",
     "./commercial-parity",
@@ -52,7 +52,7 @@
       "sha256": "53269453dfdaac4b286124d445b60b0c46205dfbaf8037ac61b30254a32df53a"
     },
     "contracts/runtime-recipe.campaigns-os-node-v1.json": {
-      "sha256": "3a960f347a8b7de7d9f223fb2bc1ae35091c943d480bca931bf8afa5e70fa83f"
+      "sha256": "4755be6c700463e99b609ceaebeb92cb1df5c54805aeaea3e6fd68e87ebcd6ef"
     },
     "schemas/campaign-build-brief.v1.schema.json": {
       "sha256": "d524003184131398dc15fdb84385af1be0de0c69d6c5ede7278689a5b6101b81"
@@ -70,10 +70,10 @@
       "sha256": "1e309c5dad8c5eeef26ef6fd3b6b90b72440c5104319a161002b17f1359fbd76"
     },
     "schemas/campaign-spec.v4.schema.json": {
-      "sha256": "587df2fdd5707b515a9b8685d30070bcf4bdac9e15de7a94df82224ef4fd91b6"
+      "sha256": "4e9a092c1426429b727aaa6ef5622ae2c6c6dad59270f08636987847b63f5001"
     },
     "schemas/campaign-spec.v5.schema.json": {
-      "sha256": "c606453dc57d210a5a5ed8a099bf868546ae8f5996cf9ba0f8e71a50b2b03fa4"
+      "sha256": "24d04c8d3ede920de161fadf914dc497a3f61e126f377cb01dd0aeff12b53c4f"
     },
     "schemas/campaigns-os-legacy-migration-inventory.v0.schema.json": {
       "sha256": "d6edc4572900d15fdaf6b8c59916b0d885303c1d398bdadeb7c58285522c9049"
