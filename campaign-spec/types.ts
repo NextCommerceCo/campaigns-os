@@ -171,7 +171,7 @@ export interface PagePackage {
    * that carries it should list every currency the campaign sells in
    * (PackageCurrencyPrices).
    */
-  prices?: PackageCurrencyPrice[]
+  prices?: PackageCurrencyPrice[] | null
   product_name?: string | null
   product_sku?: string | null
   product_variant_name?: string | null
