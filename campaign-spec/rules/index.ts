@@ -44,6 +44,7 @@ import { CampaignMetadata } from './campaign-metadata.ts'
 import { ShippingMethodsPresent } from './shipping-methods-present.ts'
 import { ShippingCountriesShape } from './shipping-countries-shape.ts'
 import { CampaignCurrencies } from './campaign-currencies.ts'
+import { PackageCurrencyPrices } from './package-currency-prices.ts'
 import { PackagePricingSanity } from './package-pricing-sanity.ts'
 import { OfferRefIntegrity } from './offer-ref-integrity.ts'
 import { ExitIntentValidation } from './exit-intent-validation.ts'
@@ -82,6 +83,7 @@ export { PackagePricingSanity } from './package-pricing-sanity.ts'
 export { ShippingMethodsPresent } from './shipping-methods-present.ts'
 export { ShippingCountriesShape } from './shipping-countries-shape.ts'
 export { CampaignCurrencies } from './campaign-currencies.ts'
+export { PackageCurrencyPrices } from './package-currency-prices.ts'
 export { OfferRefIntegrity } from './offer-ref-integrity.ts'
 export { ExitIntentValidation } from './exit-intent-validation.ts'
 export { PromoCodeInputValidation } from './promo-code-input-validation.ts'
@@ -130,6 +132,7 @@ export const allRules: RuleSet = [
   ShippingMethodsPresent,
   ShippingCountriesShape,
   CampaignCurrencies,
+  PackageCurrencyPrices,
   OfferRefIntegrity,
   ExitIntentValidation,
   PromoCodeInputValidation,

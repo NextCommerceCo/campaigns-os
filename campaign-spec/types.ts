@@ -145,6 +145,15 @@ export interface PageOffer {
   [key: string]: unknown
 }
 
+/** One currency's price for a page package (#714). */
+export interface PackageCurrencyPrice {
+  /** Three-letter upper-case ISO 4217 code. */
+  currency: string
+  price: number | string
+  price_retail?: number | string | null
+  price_recurring?: number | string | null
+}
+
 export interface PagePackage {
   ref_id?: string | number
   /**
@@ -155,6 +164,14 @@ export interface PagePackage {
   name?: string | null
   price?: number | string | null
   price_retail?: number | string | null
+  /**
+   * The package's price in each currency the Campaigns App prices it in,
+   * read from the Campaigns API (`GET /campaigns/?currency=<code>`). `price`
+   * and `price_retail` above stay the default currency's. Optional; a row
+   * that carries it should list every currency the campaign sells in
+   * (PackageCurrencyPrices).
+   */
+  prices?: PackageCurrencyPrice[]
   product_name?: string | null
   product_sku?: string | null
   product_variant_name?: string | null

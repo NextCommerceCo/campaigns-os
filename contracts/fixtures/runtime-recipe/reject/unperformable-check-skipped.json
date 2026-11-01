@@ -131,6 +131,7 @@
       "campaign-spec/rules/index.ts",
       "campaign-spec/rules/offer-ref-integrity.ts",
       "campaign-spec/rules/one-checkout-per-path.ts",
+      "campaign-spec/rules/package-currency-prices.ts",
       "campaign-spec/rules/package-pricing-sanity.ts",
       "campaign-spec/rules/page-count.ts",
       "campaign-spec/rules/page-id-uniqueness.ts",
