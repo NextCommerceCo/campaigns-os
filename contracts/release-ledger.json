@@ -10679,6 +10679,27 @@
         }
       ],
       "entry_sha256": "a5fe5aad03d3bf64be6fd7af32b8038867982fad1ee0c8a91a733eccdb46106b"
+    },
+    {
+      "id": "RL-0314",
+      "sequence": 302,
+      "date": "2026-11-02",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.63.0+agent.1",
+      "changelog_sha256": "1760a2faac69afe8b237e5267104cce662c7d397a7fd9f2ead2112346ab52826",
+      "agent_impact": "PagePackage.prices is typed PackageCurrencyPrice[] | null, matching schemas v4/v5 and the PackageCurrencyPrices rule, which treat null as absent. Code that reads prices from the type should handle null as it already handles undefined. No spec, rule or skill change.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/types.ts",
+          "surface_entry": null,
+          "summary": "PagePackage.prices accepts null, like the schema."
+        }
+      ],
+      "entry_sha256": "3eb5308cfdb11cb8376acbfd4c8ff5aac4938cbe564bd2081452397be7a5cec5"
     }
   ]
 }
