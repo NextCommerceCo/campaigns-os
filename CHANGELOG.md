@@ -2,6 +2,15 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.63.0+agent.1] - 2026-11-02
+
+The `PagePackage` type accepts `prices: null`, as the schemas and the `PackageCurrencyPrices` rule already did. No pin change is needed to read specs; TypeScript callers that pass `null` stop failing type checks on the next release.
+
+### Fixed
+
+- `PagePackage.prices` is typed `PackageCurrencyPrice[] | null`, like the package's other nullable fields. Schemas v4 and v5 allow `null`, and the rule treats it as absent, so a spec that validated could fail to type-check. (#714)
+- The authoring guide's `prices[]` section says to refresh the Map after any price change: `spec derive` refreshes `price` and `price_retail` but not `prices[]`, so a default-currency change otherwise leaves `price` and that currency's `prices[]` entry disagreeing.
+
 ## [1.63.0] - 2026-10-31
 
 CampaignSpec can carry a page package's price in each currency the campaign sells in, and validation warns when a package has no price in one of them. To take it, pin `@nextcommerce/campaigns-os@1.63.0` and refresh the installed skills to `1.63.0+skills.1`; the skill text changes only in its stated revision.

@@ -139,8 +139,8 @@ A page package row can also carry its price in each currency, as `prices[]`:
   Campaigns App, not in the spec. `campaigns-os spec derive` refreshes `price`
   and `price_retail` from one default-currency read and leaves `prices[]` as
   it was, so after changing any price, refresh the Map in Map Builder: a
-  default-currency change otherwise leaves `price` and the first `prices[]`
-  entry disagreeing.
+  default-currency change otherwise leaves `price` and the default currency's
+  `prices[]` entry disagreeing.
 - `prices[]` is optional. A row without it says nothing about other
   currencies and is not checked. A row with it should list every currency in
   `available_currencies` and `campaign.currency`; the `PackageCurrencyPrices`
