@@ -417,9 +417,28 @@ test("rows a budget dropped from a batch are still named as a gap", async () => 
   assert.deepEqual(incompleteIds(result), ["commercial-parity:incomplete:commercial_coverage_incomplete"]);
 });
 
+test("a nearly full verdict still lists proven mismatches in its exceptions", async () => {
+  const spec = rawRecurringSpec();
+  const result = await runCommercialParity({
+    resolved: { rawSpec: spec, spec, proxyBase: "https://proxy.example.test" },
+    captures: [captureCommercialClaims({ page_id: "page_mt104ehn_11" }, `
+      <span data-next-display="bundle.main.price" data-next-format="currency">$30.00</span>
+      <div data-next-package-toggle><strong data-next-package-id="5">Game Club</strong> then $59.98 every two months</div>
+    `)],
+    maxAssertions: commercialAssertionBudget(500, 490),
+    fetchImpl: async (_url, options) => new Response(JSON.stringify(calculateBody(JSON.parse(options.body).scenario)), { status: 200 }),
+  });
+  assert.equal(result.commercial.status, "mismatch");
+  assert.equal(result.commercial.finding_count, 2);
+  assert.deepEqual(result.assertions.map((entry) => entry.id), ["commercial-parity:additional-findings"]);
+});
+
 test("the commercial budget keeps the verdict under the receiver's cap with every cause named", () => {
   assert.equal(commercialAssertionBudget(500, 100), 388);
-  assert.equal(commercialAssertionBudget(500, 488), 0);
+  // Room for the overflow row, so proven mismatches still reach exceptions[].
+  assert.equal(commercialAssertionBudget(500, 488), 1);
+  assert.equal(commercialAssertionBudget(500, 499), 1);
+  assert.equal(commercialAssertionBudget(500, 500), 0);
   assert.equal(commercialAssertionBudget(500, 900), 0);
   // Over-counts on purpose: every cause at once, which no single run reaches.
   const everyCause = commercialIncompleteReasons({

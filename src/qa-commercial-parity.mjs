@@ -598,7 +598,7 @@ export function commercialIncompleteReasons(commercial, journey = null, captures
       "commercial_page_stale",
       stale.length,
       `Calculate priced ${stale.length} page(s) against older spec or catalog data: ${pageList(stale)}.`,
-      "Re-run qa run. If it repeats, check the spec's catalog import time against the campaign.",
+      "Re-run qa run. If it repeats, check the spec's stored spec_hash and its catalog import time against the campaign.",
     ));
   }
   if (inexact.length) return reasons;
@@ -728,9 +728,14 @@ function withScenarioOverflowPages(journey, plannedPages) {
 // so they do not carry a verdict past the receiver's assertion cap.
 const INCOMPLETE_ROW_RESERVE = 12;
 
-/** How many finding rows the commercial lane may write into a verdict. */
+/**
+ * How many finding rows the commercial lane may write into a verdict. While the
+ * verdict has room this stays at 1 or more: at 0 the lane writes no overflow row
+ * either, and proven mismatches would be missing from exceptions[].
+ */
 export function commercialAssertionBudget(limit, used) {
-  return Math.max(0, limit - used - INCOMPLETE_ROW_RESERVE);
+  if (used >= limit) return 0;
+  return Math.max(1, limit - used - INCOMPLETE_ROW_RESERVE);
 }
 
 export function unavailableCommercialReport(code, { status = "not_run" } = {}) {
