@@ -1,6 +1,6 @@
 ---
 name: next-campaigns-polish
-version: 1.1.55
+version: 1.1.56
 description: Run the visual/runtime polish pass after build and before QA for a Campaigns OS campaign.
 ---
 

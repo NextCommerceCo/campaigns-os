@@ -319,6 +319,13 @@ function seedDerivableBuiltSite(seed) {
   seedBuiltSite(seed);
 }
 
+/** A saved-Map packet on a checkout without its fetched copy, as a clone from before it was committed is. */
+function seedMissingFetchedSpec(seed) {
+  const packet = readJson(seed.packetPath);
+  packet.spec.local_path = relative(dirname(seed.packetPath), join(seed.targetRepo, ".campaign-runtime/fetched-specs", `${packet.spec.map_id}.json`));
+  writeJson(seed.packetPath, packet);
+}
+
 /** A Git checkout with a manifest, which `sdk storage-check` refuses to run without. */
 function seedStorageScan(seed) {
   execFileSync("git", ["init", "-q"], { cwd: seed.targetRepo });
@@ -641,6 +648,8 @@ const intake = (command, seed, extra = []) => [
  * receiver serves the seeded spec at `/api/spec/<map-id>`, so the fetch and the
  * fetched copy it writes are observed rather than declared on trust. The other
  * four conditions keep `--spec`, so both spec sources are proved per row.
+ * `serveSpec: true` marks a row that always reads the Map, so the receiver
+ * serves the spec under every condition.
  */
 const INVOCATIONS = {
   "help": { argv: () => ["help"] },
@@ -697,6 +706,7 @@ const INVOCATIONS = {
   "spec derive|--dry-run": { prepare: seedDerivableBuiltSite, argv: (s, receiver) => ["spec", "derive", "--packet", s.packetPath, "--dry-run", "--proxy-base", receiver, "--json"] },
   "spec derive|--from-store": { prepare: seedDerivablePin, argv: (s) => ["spec", "derive", "--packet", s.packetPath, "--from-store", "examplestore", "--json"] },
   "spec derive|--write-map": { prepare: seedDerivablePin, argv: (s, receiver) => ["spec", "derive", "--packet", s.packetPath, "--write-map", "--proxy-base", receiver, "--json"] },
+  "spec fetch": { prepare: seedMissingFetchedSpec, serveSpec: true, argv: (s, receiver) => ["spec", "fetch", "--packet", s.packetPath, "--proxy-base", receiver, "--json"] },
   "polish capture": { argv: (s, receiver) => ["polish", "capture", "--packet", s.packetPath, "--base-url", receiver, "--json"] },
   "record brief": { prepare: seedBriefChange, expect: recordInputSucceeded("brief", "saved_with_invalidation"), argv: (s) => ["record", "brief", "--packet", s.packetPath, "--json"] },
   "record brief|--dry-run": { prepare: seedBriefChange, expect: recordInputDryRunSucceeded("brief", "saved_with_invalidation", BRIEF_SAVE_WRITES), argv: (s) => ["record", "brief", "--packet", s.packetPath, "--dry-run", "--json"] },
@@ -850,6 +860,9 @@ async function runCondition(row, invocation, condition) {
     if (persisted && invocation.fetchSpec) {
       seed.fetchMapId = readJson(seed.packetPath).spec.map_id;
       receiver.routes.set(`/api/spec/${seed.fetchMapId}`, { ok: true, data: readJson(seed.specPath) });
+    }
+    if (invocation.serveSpec) {
+      receiver.routes.set(`/api/spec/${readJson(seed.packetPath).spec.map_id}`, { ok: true, data: readJson(seed.specPath) });
     }
     if (persisted) {
       // The grant the operator would make: consent recorded on the machine for

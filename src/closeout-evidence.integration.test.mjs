@@ -435,6 +435,7 @@ test("an old-format report is read, advised about, and migrated without loss", (
   assert.equal(legacy.stage, "done", "an unknown proof summary must not un-finish an existing campaign");
   assert.match(legacy.prompt, /QA passed with exceptions;/);
   assert.match(legacy.prompt, /Run Record is assembled and the session closes\. QA passed with exceptions/);
+  assert.match(legacy.prompt, /The built output is not on this checkout, so these records were not compared with it/);
   const nextActions = doctorPacket(fixture.packetPath).next.actions;
   assert.ok(nextActions.some((entry) => /All stages are recorded as terminal; run/.test(entry)));
   assert.ok(nextActions.some((entry) => /QA passed with exceptions/.test(entry)));

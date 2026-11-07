@@ -98,6 +98,10 @@ are on every row for those three commands. The effect test runs each row with
 the one condition whose `--proxy-base` is the loopback receiver, so the fetch
 and the write are observed rather than taken on trust.
 
+`spec fetch` sends the same request and writes the same file, only when the
+packet's copy is missing, and it never replaces one. It also writes the target's
+`.gitignore` when the managed block is missing or still lists `fetched-specs/`.
+
 ### The live campaign read
 
 `doctor --packet` (with or without `--write` / `--no-write`) and every `qa run`

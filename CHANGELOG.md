@@ -25,6 +25,24 @@ A QA run whose commercial parity stopped short no longer reads as a clean result
   - A run that was `ready` only because the gap was invisible now records its QA stage as `completed_with_warnings`, and its Run Record lists `pricing` among its gap classes. Both dispositions still end a run session.
 - **A crash in the commercial check is reported the same way.** It used to leave status `not_run` and the verdict untouched, with a line on stderr. It now reads `incomplete` with the cause `commercial_runner_error`. Runs a gate blocks keep `not_run`, since those verdicts are already `blocked`.
 - The verdict schema's `disposition` and `commercial.status` descriptions say the above, and it documents `commercial.incomplete_reasons`.
+## [1.64.0] - 2026-11-07
+
+Developers changing a live funnel from a fresh clone can now get going, and the reports say what they compared. To take it, pin `@nextcommerce/campaigns-os@1.64.0`, run `spec fetch` once on each repository set up from a saved Map, and commit the file it writes. These come from the first post-handoff trial on #716.
+
+### Added
+
+- **`spec fetch` (#716).** `campaigns-os spec fetch --packet <packet>` restores a saved-Map packet's CampaignSpec on a checkout that lacks it, by the same fetch intake makes. It never replaces a copy on disk, because that copy can hold `spec derive` edits the Map doesn't have, and it doesn't write the packet or the records. Its `bound` result says whether the copy matches the spec the records were made against. A doctor `spec.local_path` error for a missing Map copy now names the command.
+- **`built_output.absent` doctor warning (#716).** When the build stage is complete and `_site/<route>/` isn't there, doctor says the records were not compared with this checkout, and `next` says so at `done`. A fresh clone used to read as finished however much source had moved.
+
+### Changed
+
+- **The fetched CampaignSpec is committed (#716).** `.campaign-runtime/fetched-specs/` leaves the managed `.gitignore` block, and an existing block loses the line on the next setup command or `spec fetch`. The committed records are bound to this file and `spec derive` writes into it, so another machine can't rebuild it from the Map once it has been derived.
+- **`doctor --ci` names what it compared (#716).** Each owed stage's report line gives the build it last checked, with the date when QA completed. When the latest change alone is page-only but an earlier rebuild since that check wasn't, the report names that rebuild, so it no longer seems to contradict `record build`. `evidence_debt.<stage>.change` gains `commerce_rebuild`, and `evidence_debt.qa` gains `reviewed_at` when QA completed, each only when there is a value.
+- **Clearer wording for a pre-1.62 build (#716).** `commerce_signature_unavailable` now reads as a build from before the markup hashes existed.
+
+### Fixed
+
+- **The docs on pre-1.62 records (#716).** They said such a change reads as `unknown` until `record build` records a signature. It reads as `commerce_affecting`, and `record build` doesn't clear it. Page-only changes start after one full QA on 1.62.0 or later, and the docs now say so.
 
 ## [1.63.0+agent.1] - 2026-11-02
 
