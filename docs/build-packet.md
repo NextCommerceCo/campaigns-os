@@ -2138,7 +2138,7 @@ The result's `bound` compares the copy with the spec the records were made again
 | `differs` | The Map changed since they were made, or the earlier copy held `spec derive` edits the Map doesn't have. Doctor shows build, Polish and QA owed until `record spec` binds it (warning `spec.fetch.differs_from_records`). |
 | `unknown` | The report records no spec material to compare with. |
 
-The command exits 2 for a packet that names no saved Map, for one whose `spec.local_path` is a local file rather than the Map's copy, and when the fetch fails.
+The command exits 2 for a packet that names no saved Map, for one whose `spec.local_path` is not the Map's copy, when the Map returns a spec for another campaign (`spec.fetch.identity_mismatch`), and when the fetch fails.
 
 ### Refreshing after a CampaignSpec change
 

@@ -115,8 +115,13 @@ test("doctor --ci names its basis and the unreviewed rebuild behind a page-only 
   const { stdout, status } = ci(f);
   assert.equal(status, 3);
   assert.match(stdout, /Change found: commerce-affecting/);
+  // The commerce rebuild as the latest change has nothing page-only to explain.
+  const latest = fixture(t);
+  latest.writePage("upsell1", PAGES.upsell1.replace("</body>", "<script src=\"/tracking.js\"></script></body>"));
+  latest.recordBuild();
+  assert.doesNotMatch(ci(latest).stdout, /The latest change alone/);
   assert.match(stdout, /QA change is read against the build it last reviewed \(`[0-9a-f]{12}`, 2026-10-23\), counting every rebuild since\./);
-  assert.match(stdout, /The full stages are owed for an earlier rebuild recorded \d{4}-\d{2}-\d{2} \(`[0-9a-f]{12}`\) that no Polish or QA has reviewed\./);
+  assert.match(stdout, /The latest change alone is page-only\. Polish and QA still owe the full stage for an earlier rebuild recorded \d{4}-\d{2}-\d{2} \(`[0-9a-f]{12}`\) since that review\./);
 });
 
 test("a recorded build with no markup hashes reads as commerce-affecting, and a later record build does not clear it", (t) => {
@@ -431,7 +436,7 @@ test("a page-scoped run that did not complete stays page-scoped from the full QA
   const afterFirst = f.readReport().stages.assembly.build_fingerprint;
   // Stand-in for a blocked page-scoped QA record on the first rebuild.
   editReport(f, (stages) => Object.assign(stages.qa, {
-    status: "blocked", blockers: ["upsell copy overflows"],
+    status: "blocked", blockers: ["upsell copy overflows"], checked_at: "2026-10-30T00:00:00Z",
     evidence: { qc_build_fingerprint: afterFirst, qc_results: [], page_scope: { pages: ["upsell1"], owed_pages: ["upsell1"], base_build_fingerprint: f.original.fingerprint } },
   }));
   // The fix, plus a second page-only edit.
@@ -440,6 +445,7 @@ test("a page-scoped run that did not complete stays page-scoped from the full QA
   const debt = f.debt();
   assert.equal(debt.qa.scope, "pages");
   assert.equal(debt.qa.change.since_build_fingerprint, f.original.fingerprint, "read from the completed QA's build");
+  assert.equal(debt.qa.reviewed_at, undefined, "the blocked run's date is not that QA's");
   assert.deepEqual(debt.qa.owed_pages.map((page) => page.page_id), ["landing", "upsell1"], "the unpaid page stays owed");
   const base = `http://127.0.0.1:9/${SLUG}/`;
   const topologies = [{ pages: ["landing", "upsell1"].map((page) => ({ page_id: page, url: `${base}${page}/` })) }];

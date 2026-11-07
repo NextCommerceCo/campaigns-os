@@ -74,11 +74,15 @@ function changeBasisLine(stage, record) {
   return `- ${stageNames[stage]} change is read against the build it last reviewed (${code(shortBuild(since))}${at ? `, ${at}` : ""}), counting every rebuild since.`;
 }
 
-function uncoveredRebuildLine(ci) {
-  const rebuild = [ci.polish, ci.qa].map((stage) => stage?.change?.commerce_rebuild).find(Boolean);
-  if (!rebuild || ["commerce_affecting", "unknown"].includes(ci.changes?.kind)) return null;
+// Polish and QA read back along one chain of rebuilds, so when both have a
+// commerce rebuild behind a page-only edit it is the same one.
+function uncoveredRebuildLine(ci, stages) {
+  const behind = stages.filter((stage) => ci[stage].change?.commerce_rebuild?.latest_change_kind === "page_only");
+  if (!behind.length) return null;
+  const rebuild = ci[behind[0]].change.commerce_rebuild;
   const at = /^\d{4}-\d{2}-\d{2}/.exec(String(rebuild.recorded_at ?? ""))?.[0];
-  return `- The latest change alone is ${ci.changes?.kind === "none" ? "already recorded" : "page-only"}. The full stages are owed for an earlier rebuild${at ? ` recorded ${at}` : ""} (${code(shortBuild(rebuild.build_fingerprint))}) that no Polish or QA has reviewed.`;
+  const names = behind.map((stage) => stageNames[stage]).join(" and ");
+  return `- The latest change alone is page-only. ${names} still ${behind.length > 1 ? "owe" : "owes"} the full stage for an earlier rebuild${at ? ` recorded ${at}` : ""} (${code(shortBuild(rebuild.build_fingerprint))}) since that review.`;
 }
 
 const requiredStageReasons = new Map([
@@ -155,7 +159,7 @@ export function formatDoctorCi(result) {
     const basis = changeBasisLine(stage, ci[stage]);
     if (basis) lines.push(basis);
   }
-  const uncovered = uncoveredRebuildLine(ci);
+  const uncovered = uncoveredRebuildLine(ci, owed);
   if (uncovered) lines.push(uncovered);
   // The pages changed since the builds the owed stages reviewed, which
   // record build keeps; without them, the drift from the assembly manifest.

@@ -233,8 +233,9 @@ export function worseChangeKind(a, b) {
  * changed_pages, unmapped_files, reasons, commerce_rebuild }`; `kind` is
  * unknown when the history does not reach `anchor` or the drift cannot be read.
  * `commerce_rebuild`, when there is one, is the latest recorded rebuild since
- * `anchor` that was not page-only, so a page-only edit on top of it can say why
- * it still owes the full stages.
+ * `anchor` that was not page-only, with the kind of the latest change
+ * (`latest_change_kind`), so a page-only edit on top of it can say why it still
+ * owes the full stages.
  */
 export function changeSince(anchor, { assembly, drift, driftClassification }) {
   const recorded = typeof assembly?.build_fingerprint === "string" ? assembly.build_fingerprint : null;
@@ -266,6 +267,10 @@ export function changeSince(anchor, { assembly, drift, driftClassification }) {
   }
   if (drift?.status !== "known") kind = "unknown";
   else add(drift, driftClassification?.kind || "unknown", driftClassification?.reasons);
+  if (result.commerce_rebuild) {
+    const driftKind = driftClassification?.kind || "unknown";
+    result.commerce_rebuild.latest_change_kind = driftKind === "none" ? segments.at(-1).kind : driftKind;
+  }
   return {
     ...result,
     kind,

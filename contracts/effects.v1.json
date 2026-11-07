@@ -381,7 +381,7 @@
         },
         {
           "path": "{target}/.gitignore",
-          "when": "the managed block is missing, or an older one still lists fetched-specs/",
+          "when": "the command succeeds and the managed block is missing, lacks an entry the toolkit requires, or still lists fetched-specs/",
           "observed_in": [
             "no_session",
             "stale_session",

@@ -99,6 +99,43 @@ test("a failed fetch writes nothing and reports the failure", async (t) => {
   assert.equal(existsSync(f.cachePath), false);
 });
 
+test("spec fetch refuses a spec that identifies another campaign and writes nothing", async (t) => {
+  for (const data of [{ ...SPEC, spec_identity: { map_id: "another-map" } }, { ...SPEC, spec_identity: { map_id: MAP_ID, public_route_slug: "another-route" } }]) {
+    const f = fixture(t);
+    const result = await specFetchCommand({ _: ["spec", "fetch"], packet: f.packetPath }, {
+      fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ ok: true, data }) }),
+    });
+    assert.equal(result.ok, false);
+    assert.deepEqual(result.errors.map((issue) => issue.code), ["spec.fetch.identity_mismatch"]);
+    assert.equal(existsSync(f.cachePath), false);
+  }
+});
+
+test("a corrupt copy or report is a reported failure, not a crash", async (t) => {
+  const copy = fixture(t);
+  mkdirSync(dirname(copy.cachePath), { recursive: true });
+  writeFileSync(copy.cachePath, "{ not json");
+  assert.deepEqual((await copy.run()).errors.map((issue) => issue.code), ["spec.fetch.failed"]);
+  const report = fixture(t);
+  writeFileSync(join(report.root, ".campaign-runtime/assembly-report.json"), "{ not json");
+  assert.deepEqual((await report.run()).errors.map((issue) => issue.code), ["spec.fetch.failed"]);
+  assert.equal(report.calls.length, 0);
+});
+
+test("the text result carries the comparison and the .gitignore change", async (t) => {
+  const older = [RUNTIME_STATE_IGNORE_MARKER, ".campaign-runtime/fetched-specs/", ...RUNTIME_STATE_REQUIRED_IGNORED_PATHS].join("\n");
+  const f = fixture(t, { gitignore: `${older}\n` });
+  const { ready } = await f.run();
+  assert.ok(ready.some((line) => /matches the spec the campaign's records were made against/.test(line)));
+  assert.ok(ready.some((line) => /Took fetched-specs\/ out of the managed \.gitignore block/.test(line)));
+});
+
+test("spec fetch refuses a --proxy-base with no value before anything is sent", async (t) => {
+  const f = fixture(t);
+  await assert.rejects(f.run({ "proxy-base": true }), /--proxy-base needs a URL/);
+  assert.equal(f.calls.length, 0);
+});
+
 test("spec fetch refuses an unknown flag before doing anything", async (t) => {
   const f = fixture(t);
   await assert.rejects(f.run({ force: true }), /Unknown flag for spec fetch: --force/);

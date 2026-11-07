@@ -347,7 +347,7 @@ Usage:
   campaigns-os checkpoint waive --packet <campaign-runtime.build.json> --gate <checkpoint-id> [--page <page_id>] --reason "<why>" --waived-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"] [--report <json>] [--dry-run] [--json]   # one bound is required; registered gates: page_kit.store_profile, page_kit.sdk_version, polish.hidden_eager_media, built_output.upsell_selector_scope, source_html.producer_provenance (per page: --page <page_id> is required, for a Figma-typed page whose approved source is hand-written HTML). --dry-run runs every check (named human, bounds, registered and waivable gate) and prints the waiver it would write, without touching the report
   campaigns-os checkpoint accept --packet <campaign-runtime.build.json> --result <result_id>@<fingerprint12> [--result ...] --reason "<the operator's reason>" --accepted-by "<named human>" [--expires-at <ISO>] [--review-condition "<trigger>"] [--report <json>] [--dry-run] [--json]   # record the operator's accept of a measured QC warning, as the QC handoff of next prints it; changes no readiness and lapses when the measured state or the build changes. --dry-run runs every check and prints the accepts it would record, without touching the report
   campaigns-os page-kit sync --packet <campaign-runtime.build.json> [--dry-run] [--json]   # write the CampaignSpec's Store Profile fields (campaign.store_*) and SDK pin (global_config.sdk_version, runtime.sdk_version alias) into the target's _data/campaigns.json entry for the packet's route, printing a field-by-field diff; the recovery for a doctor blocked on page_kit.store_profile / page_kit.sdk_version after a fresh scaffold. Writes only those ten fields, only from usable spec values (a bad pin, a non-http URL, a non-tel: phone URI or the demo value itself is reported as not synced, status PARTIAL); exit 2 when the entry or the spec is missing, or the spec identifies another campaign.
-  campaigns-os spec fetch --packet <campaign-runtime.build.json> [--proxy-base <url>] [--json]   # restore a saved-Map packet's CampaignSpec to spec.local_path on a checkout that does not have it, then commit it. Sends one GET of {proxy-base}/api/spec/<map-id>. A copy already on disk is never replaced and nothing is sent, because it can hold spec derive edits the Map does not. Takes fetched-specs/ out of an older managed .gitignore block so the file can be committed. Reports whether the content matches the records (bound: matches, differs or unknown); differs means doctor will show build, Polish and QA owed. Exit 2 when the packet is not a saved-Map packet or the fetch fails.
+  campaigns-os spec fetch --packet <campaign-runtime.build.json> [--proxy-base <url>] [--json]   # restore a saved-Map packet's CampaignSpec to spec.local_path on a checkout that does not have it, then commit it. Sends one GET of {proxy-base}/api/spec/<map-id>. A copy already on disk is never replaced and nothing is sent, because it can hold spec derive edits the Map does not. Takes fetched-specs/ out of an older managed .gitignore block so the file can be committed. Reports whether the content matches the records (bound: matches, differs or unknown); differs means doctor will show build, Polish and QA owed. Exit 2 when the packet is not a saved-Map packet, the Map returns another campaign's spec, or the fetch fails.
   campaigns-os spec derive --packet <campaign-runtime.build.json> [--dry-run] [--json] [--report <json>] [--no-live-refs] [--from-store <subdomain> [--store-token-source env:<VAR>]] [--write-map] [--proxy-base <url>]   # write the fields the target repo already states into the packet's local CampaignSpec (spec.local_path): the SDK pin from _data/campaigns.json[<route>].sdk_version (global_config.sdk_version, and the runtime.sdk_version alias when declared), each page's page_url from the page tree under src/<route>/ (filename or permalink), and the analytics ids the entry carries (gtm_id -> analytics.providers.gtm.containerId, fb_pixel_id -> analytics.providers.facebook.pixelId, and each starter-template vendor's id key, such as ga4_id or triplewhale_name -> analytics.vendors.<vendor>.id); prints a field-by-field before -> after diff and writes nothing else. On a handed-off campaign (deploy or QA completed, now or in the stage's history) the page tree also adds pages (a file with a page-kit page_type no spec page binds; id from the file name, appended to the funnel, routing from its next_url/decline_url/next_step frontmatter) and removes pages (one whose built file the packet named is gone), matched by page id; page order is reported as not derived. When the packet's built _site/<route>/ exists and a public Campaigns API key resolves, it also makes the one read-only GET of {proxy-base}/api/campaign doctor makes and refreshes the fields the spec mirrors from the Campaigns App (each page package's name, price, product, variant and availability; the offer records and each page's offer copies; live offers missing from offers[] are added) — a price is never written from the repo; --no-live-refs sends nothing and leaves those fields as they are; --proxy-base names the proxy. Otherwise repo-derived fields only; --from-store <subdomain> (the <store> of <store>.29next.store) also reads through campaigns-os login gateway credentials (--store-token-source env:<VAR> explicitly selects the warned break-glass Admin path; a token never goes on the command line) and writes the nine campaign.store_* Store Profile fields: store_name and store_url (primary domain) and store_phone/store_phone_tel from GET /store/, and store_terms/privacy/contact/returns/shipping as https://<primary domain>/<slug>/ from the one storefront page (GET /pages/) whose slug or title names each policy; an empty store field, no page or several never empties the spec's value. A field the repo or store cannot state (a scaffold's seeded pin, an unbound page, an empty or malformed id, an active page_kit.sdk_version waiver, an empty store field, an unbound policy page) is reported as not derived, status PARTIAL; exit 2 when the packet, the spec or the target entry is missing, the spec identifies another campaign, or the store cannot be read (credential missing, 401/403, no such store, unreachable). --write-map also records the derived pin into the saved Map's Build hints (Campaign Cart SDK version) through the proxy Worker (PUT /api/maps/<spec.map_id> under X-Campaign-Key, the packet's Campaigns API key, with the Map's spec_hash as the X-Spec-Hash precondition): written when the Map declares no pin or one behind the repo, unchanged when equal, refused (warning, exit 0) when the Map pin is ahead or cannot be ordered, failed (error, exit 2) when the key is missing or mismatched, the Map is gone, was saved in between, or the proxy refuses the body; the write is recorded on the Assembly Report evidence[] and in the result's map object. --proxy-base overrides the canonical proxy (https, or a loopback host over http); --dry-run reads the Map and reports would_write without a PUT.
   campaigns-os page-kit parity --packet <campaign-runtime.build.json> [--report <json>] [--json]   # local proof mode (deploy.target local-serve): render the current source in development and production through the target's page-kit into temp dirs, assert the served _site/ is the current development render and that production differs from it only in environment-gated output (same page set, same route slugs, same Campaign Cart pin and next-api-key); records stages.assembly.evidence.local_proof.production_parity, which doctor reads as local_proof.production_parity. Exit 2 on a non-gated difference.
   campaigns-os polish capture --packet <campaign-runtime.build.json> --base-url <url> [--report <json>] [--headed] [--auth-cookie <cookie>] [--json]
@@ -3763,6 +3763,7 @@ export async function specFetchCommand(args, { fetchImpl = undefined } = {}) {
   if (unknown.length) {
     throw refused(`Unknown flag${unknown.length > 1 ? "s" : ""} for spec fetch: ${unknown.map((key) => `--${key}`).join(", ")}. Known flags: --packet, --proxy-base, --json.`);
   }
+  if (args["proxy-base"] === true) throw refused("spec fetch: --proxy-base needs a URL (https, or a loopback host); nothing was written.");
   const packetPath = resolve(requireArg(args, "packet"));
   const result = { ok: false, status: "blocked", packet_path: packetPath, spec_path: null, map_id: null, bound: "unknown", gitignore: null, errors: [], warnings: [], ready: [] };
   const workspace = (() => {
@@ -3785,31 +3786,42 @@ export async function specFetchCommand(args, { fetchImpl = undefined } = {}) {
   const specPath = resolveFromFile(packetPath, localPath);
   result.spec_path = specPath;
   if (specPath !== cachePath) {
-    addIssue(result.errors, "spec.fetch.not_saved_map", `spec.local_path is ${localPath}, not this Map's copy under .campaign-runtime/fetched-specs/, so this packet was set up from a local file. Restore that file instead.`);
+    addIssue(result.errors, "spec.fetch.not_saved_map", `spec.local_path is ${localPath}, not this Map's copy (.campaign-runtime/fetched-specs/${basename(cachePath)}), so spec fetch cannot restore it. Restore that file from where it is kept.`);
     return result;
   }
-  const report = existsSync(workspace.reportPath) ? readJson(workspace.reportPath) : null;
-  const boundMaterial = specMaterialStamp(report?.identity?.spec_material_hash);
+  let boundMaterial;
   let specMaterial;
-  if (existsSync(specPath)) {
-    result.status = "present";
-    specMaterial = currentSpecMaterial(readJson(specPath));
-    result.ready.push(`${localPath} is already here; it was left as it is and nothing was fetched.`);
-  } else {
-    try {
+  try {
+    const report = existsSync(workspace.reportPath) ? readJson(workspace.reportPath) : null;
+    boundMaterial = specMaterialStamp(report?.identity?.spec_material_hash);
+    if (existsSync(specPath)) {
+      specMaterial = currentSpecMaterial(readJson(specPath));
+      result.status = "present";
+      result.ready.push(`${localPath} is already here; it was left as it is and nothing was fetched.`);
+    } else {
       assertFetchedSpecCacheWritable(workspace.targetRepo, cachePath);
       const fetched = await fetchSpecByMapId(mapId, { proxyBase: optionalString(args["proxy-base"]) || DEFAULT_PROXY_BASE, fetchImpl });
+      // This file is what the records and spec derive read, so it must be this campaign's.
+      const fetchedMapId = optionalString(fetched?.spec_identity?.map_id) || optionalString(fetched?.map_id);
+      const fetchedSlug = specPublicRouteSlug(fetched);
+      const packetSlug = normalizePublicRouteSlug(workspace.packet?.campaign?.public_route_slug);
+      if ((fetchedMapId && fetchedMapId !== mapId) || (fetchedSlug && packetSlug && fetchedSlug !== packetSlug)) {
+        addIssue(result.errors, "spec.fetch.identity_mismatch", `The Map returned a spec for ${singleLineField(fetchedMapId || mapId)} on route "${singleLineField(fetchedSlug || "")}", but this packet is ${singleLineField(mapId)} on route "${singleLineField(packetSlug || "")}"; nothing was written.`);
+        return result;
+      }
       // The same reduction intake made, so the copy reads as the records' did.
       const { spec } = stripHostPrefixedRoutes(fetched);
+      // Again at the write: the links can change during the request.
+      assertFetchedSpecCacheWritable(workspace.targetRepo, cachePath);
       mkdirSync(dirname(cachePath), { recursive: true });
       replaceFetchedSpec(cachePath, `${JSON.stringify(spec, null, 2)}\n`);
       specMaterial = currentSpecMaterial(spec);
-    } catch (error) {
-      addIssue(result.errors, "spec.fetch.failed", singleLineDetail(error.message));
-      return result;
+      result.status = "restored";
+      result.ready.push(`Restored ${localPath} from the saved Map. Commit it so the next checkout has it.`);
     }
-    result.status = "restored";
-    result.ready.push(`Restored ${localPath} from the saved Map. Commit it so the next checkout has it.`);
+  } catch (error) {
+    addIssue(result.errors, "spec.fetch.failed", singleLineDetail(error.message));
+    return result;
   }
   result.ok = true;
   const current = specMaterialStamp(specMaterial);
@@ -3817,8 +3829,11 @@ export async function specFetchCommand(args, { fetchImpl = undefined } = {}) {
   if (result.bound === "differs") {
     addIssue(result.warnings, "spec.fetch.differs_from_records", "This spec differs from the one the campaign's records were made against: the Map changed since then, or the earlier copy held `spec derive` edits the Map does not. Doctor will show build, Polish and QA owed until `record spec` binds it.");
   }
+  if (result.bound === "matches") result.ready.push("It matches the spec the campaign's records were made against.");
+  if (result.bound === "unknown") result.ready.push("The report records no spec to compare it with.");
   // The file has to be committable, and older repositories' managed block says otherwise.
   result.gitignore = ensureRuntimeStateIgnored(workspace.targetRepo);
+  if (result.gitignore.removed_entries?.length) result.ready.push("Took fetched-specs/ out of the managed .gitignore block.");
   return result;
 }
 
