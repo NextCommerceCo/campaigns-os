@@ -36,7 +36,7 @@ const commerceReasonText = new Map([
   ["page_removed", "a page was removed"],
   ["checkout_page", "a checkout page changed"],
   ["commerce_markup_changed", "package, offer, shipping, upsell, route or script markup changed"],
-  ["commerce_signature_unavailable", "the recorded build has no commerce signature to compare against"],
+  ["commerce_signature_unavailable", "the recorded build predates the markup hashes page-only changes are read from (Campaigns OS 1.62), so this change cannot be shown to be page-only"],
   ["campaign_config_changed", "the campaign's Page Kit config (SDK pin, analytics ids, store fields) changed"],
   ["campaign_config_unavailable", "the campaign's Page Kit config entry could not be read"],
   ["change_history_unavailable", "the rebuilds since the reviewed build were not kept"],
@@ -61,6 +61,29 @@ const unavailablePageChanges = new Map([
   ["build_output_pages_unresolved", "the built output could not be mapped to pages."],
   ["build_manifest_unavailable", "no usable assembly manifest is available."],
 ]);
+
+// What an owed stage's change was read against, for a report that can disagree
+// with the last `record build` because it counts every rebuild since that
+// stage's own review.
+const shortBuild = (value) => String(value).replace(/^sha256:/, "").slice(0, 12);
+const stageNames = { polish: "Polish", qa: "QA" };
+function changeBasisLine(stage, record) {
+  const since = record?.change?.since_build_fingerprint;
+  if (!since) return null;
+  const at = /^\d{4}-\d{2}-\d{2}/.exec(String(record.reviewed_at ?? ""))?.[0];
+  return `- ${stageNames[stage]} change is read against the build it last checked (${code(shortBuild(since))}${at ? `, ${at}` : ""}), counting every rebuild since.`;
+}
+
+// Polish and QA read back along one chain of rebuilds, so when both have a
+// commerce rebuild behind a page-only edit it is the same one.
+function uncoveredRebuildLine(ci, stages) {
+  const behind = stages.filter((stage) => ci[stage].change?.commerce_rebuild?.latest_change_kind === "page_only");
+  if (!behind.length) return null;
+  const rebuild = ci[behind[0]].change.commerce_rebuild;
+  const at = /^\d{4}-\d{2}-\d{2}/.exec(String(rebuild.recorded_at ?? ""))?.[0];
+  const names = behind.map((stage) => stageNames[stage]).join(" and ");
+  return `- The latest change alone is page-only. ${names} still ${behind.length > 1 ? "owe" : "owes"} the full stage for an earlier rebuild${at ? ` recorded ${at}` : ""} (${code(shortBuild(rebuild.build_fingerprint))}) since that check.`;
+}
 
 const requiredStageReasons = new Map([
   ["stage_required_by_build", "the build requires this stage again"],
@@ -132,6 +155,12 @@ export function formatDoctorCi(result) {
   for (const stage of advisory) {
     lines.push(`- Advisory ${stage}: the change since its last review is page-only, so it is reported and not required.`);
   }
+  for (const stage of [...owed, ...advisory]) {
+    const basis = changeBasisLine(stage, ci[stage]);
+    if (basis) lines.push(basis);
+  }
+  const uncovered = uncoveredRebuildLine(ci, owed);
+  if (uncovered) lines.push(uncovered);
   // The pages changed since the builds the owed stages reviewed, which
   // record build keeps; without them, the drift from the assembly manifest.
   const sincePages = new Map();

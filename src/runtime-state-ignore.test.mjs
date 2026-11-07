@@ -11,6 +11,7 @@ import {
   RUNTIME_STATE_IGNORE_BLOCK,
   RUNTIME_STATE_IGNORE_MARKER,
   RUNTIME_STATE_IGNORED_PATHS,
+  RUNTIME_STATE_REQUIRED_IGNORED_PATHS,
 } from "./runtime-state-ignore.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -33,16 +34,32 @@ test("the ignore list names the machine-local set and never the readback bundle"
     ".campaign-runtime/command-lifecycle.jsonl",
     ".campaign-runtime/agent-deviations.jsonl",
     ".campaign-runtime/run-records/",
-    ".campaign-runtime/fetched-specs/",
     ".campaign-runtime/progress/",
     "qa-output/",
   ]) {
     assert.ok(RUNTIME_STATE_IGNORED_PATHS.includes(ignored), ignored);
   }
-  for (const committed of ["build-context.json", "assembly-report.json", "doctor-output.json", "qa-verdict.json", "input/", "theme/", "agent-context/", "setup-handoff.json"]) {
+  for (const committed of ["build-context.json", "assembly-report.json", "doctor-output.json", "qa-verdict.json", "fetched-specs/", "input/", "theme/", "agent-context/", "setup-handoff.json"]) {
     assert.ok(!RUNTIME_STATE_IGNORED_PATHS.some((entry) => entry.includes(committed)), `${committed} must stay committable`);
   }
   assert.ok(!RUNTIME_STATE_IGNORED_PATHS.includes(".campaign-runtime/"), "never ignore the whole directory");
+});
+
+test("an older managed block loses the fetched-specs line; the operator's own line elsewhere stays", () => {
+  withTempDir((dir) => {
+    const older = [RUNTIME_STATE_IGNORE_MARKER, ".campaign-runtime/run-records/", ".campaign-runtime/fetched-specs/", ...RUNTIME_STATE_REQUIRED_IGNORED_PATHS].join("\n");
+    writeFileSync(join(dir, ".gitignore"), `node_modules/\n\n${older}\n\n.campaign-runtime/fetched-specs/\n`);
+    const dry = ensureRuntimeStateIgnored(dir, { dryRun: true });
+    assert.deepEqual(dry.removed_entries, [".campaign-runtime/fetched-specs/"]);
+    assert.match(readFileSync(join(dir, ".gitignore"), "utf8"), /run-records\/\n\.campaign-runtime\/fetched-specs\/\n/, "a dry run writes nothing");
+    const result = ensureRuntimeStateIgnored(dir);
+    assert.equal(result.action, "updated");
+    assert.deepEqual(result.removed_entries, [".campaign-runtime/fetched-specs/"]);
+    const text = readFileSync(join(dir, ".gitignore"), "utf8");
+    assert.ok(text.includes(`${RUNTIME_STATE_IGNORE_MARKER}\n.campaign-runtime/run-records/\n${RUNTIME_STATE_REQUIRED_IGNORED_PATHS[0]}`));
+    assert.ok(text.endsWith("\n\n.campaign-runtime/fetched-specs/\n"), "outside the block, the line is the operator's");
+    assert.equal(ensureRuntimeStateIgnored(dir).action, "present");
+  });
 });
 
 test("ensureRuntimeStateIgnored creates .gitignore, is idempotent on the marker, and preserves existing content", () => {
