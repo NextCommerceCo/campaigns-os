@@ -725,7 +725,10 @@ function withScenarioOverflowPages(journey, plannedPages) {
 }
 
 // No run names more causes than this. The findings' budget leaves room for them,
-// so they do not carry a verdict past the receiver's assertion cap.
+// so they stay under the receiver's assertion cap unless other QA legs alone write
+// 489 rows or more. Past that, the overflow row and every named cause are kept and
+// the verdict can go over the cap: a refused publish still leaves the local verdict,
+// and a dropped row would hide why the proof stopped short.
 const INCOMPLETE_ROW_RESERVE = 12;
 
 /**
