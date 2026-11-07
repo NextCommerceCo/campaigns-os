@@ -553,24 +553,39 @@ test("a blocked run leaves QA resting on the baseline, and the reports keep sayi
   assert.ok(doctorPacket(f.packetPath).warnings.some((issue) => issue.code === "qa.baseline_accepted"));
 });
 
-test("a baseline over a blocked QA keeps what was blocking it, and a moved build names record build then baseline", (t) => {
+test("a baseline keeps what it replaced, and a moved build names record build then baseline", (t) => {
   const f = legacyFixture(t);
   const report = f.readReport();
-  Object.assign(report.stages.qa, { status: "blocked", blockers: ["checkout total wrong"] });
+  Object.assign(report.stages.qa, { status: "completed_with_warnings", warnings: ["contrast on upsell"] });
   Object.assign(report.stages.polish, { status: "skipped", skip_reason: "no design source" });
   writeFileSync(f.reportPath, JSON.stringify(report));
   const moved = legacyFixture(t);
-  copyEdit(moved);
   moved.writePage("landing", PAGES.landing.replace("Landing headline", "Moved"));
   assert.throws(() => recordBaseline(moved), (error) => {
     assert.doesNotMatch(error.message, /polish capture/);
     assert.match(error.message, /record baseline|baseline again/);
     return true;
   });
-  const result = recordBaseline(f);
-  assert.deepEqual(f.readReport().commerce_baseline.replaced_qa.blockers, ["checkout total wrong"]);
-  assert.equal(f.readReport().commerce_baseline.replaced_polish.skip_reason, "no design source");
-  assert.ok(result.ready.some((line) => /The QA this replaces was blocked \(1 blocker/.test(line)));
+  recordBaseline(f);
+  const { replaced_qa: qa, replaced_polish: polish } = f.readReport().commerce_baseline;
+  assert.deepEqual(qa.warnings, ["contrast on upsell"]);
+  assert.equal(polish.skip_reason, "no design source");
+});
+
+test("a baseline is refused over a blocked QA and where no QA ever completed, and names the fix", (t) => {
+  const blocked = legacyFixture(t);
+  let report = blocked.readReport();
+  Object.assign(report.stages.qa, { status: "blocked", blockers: ["browser-test-order: checkout failed"] });
+  writeFileSync(blocked.reportPath, JSON.stringify(report));
+  const before = readFileSync(blocked.reportPath, "utf8");
+  assert.throws(() => recordBaseline(blocked), /The last QA was blocked \(browser-test-order: checkout failed\).*Run a full .*qa.* run/s);
+  assert.equal(readFileSync(blocked.reportPath, "utf8"), before, "a refusal writes nothing");
+
+  const neverRan = legacyFixture(t);
+  report = neverRan.readReport();
+  report.stages.qa = { stage: "qa", status: "pending" };
+  writeFileSync(neverRan.reportPath, JSON.stringify(report));
+  assert.throws(() => recordBaseline(neverRan), /No QA has completed on this funnel.*Run a full .*qa.* run/s);
 });
 
 test("a commerce change after a baseline owes the full stages, and a second baseline is refused", (t) => {

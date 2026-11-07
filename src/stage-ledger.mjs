@@ -257,6 +257,13 @@ export function campaignHandedOff(report) {
   return completedIn(report?.stages?.deploy) || completedIn(report?.stages?.qa);
 }
 
+// True when QA has ever completed, now or in the stage's history.
+export function qaEverCompleted(report) {
+  const qa = report?.stages?.qa;
+  return isPlainObject(qa) && (isCompletedStatus(qa.status)
+    || (Array.isArray(qa.history) && qa.history.some((entry) => isPlainObject(entry) && isCompletedStatus(entry.status))));
+}
+
 /**
  * True when any stage of `report` carries a non-empty history: recorded
  * operator-visible state an intake must not silently drop.

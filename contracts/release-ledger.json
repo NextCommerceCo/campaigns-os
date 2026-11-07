@@ -10891,7 +10891,7 @@
       "kind": "release",
       "surface_version": "1.65.0",
       "changelog_section": "1.65.0",
-      "changelog_sha256": "f2e01438a24efd22757998f9b6b669004032c5d2e7be862fb018da97ee448cdd",
+      "changelog_sha256": "630d9a6e5d9430bac932399ee7230462e272db9db287f7a70c4c0103df10528b",
       "agent_impact": "New record baseline accepts a handed-off funnel from before markup hashes as the starting point, one time per funnel, without testing it. New stage status baseline_accepted on stages.polish and stages.qa: terminal for the ladder, never completed, no purchase proof. Treat it as accepted and untested, never as a pass; a reader that does not recognize it should read unknown. Doctor adds the warning qa.baseline_accepted. evidence_debt.qa gains optional baseline, and the Assembly Report gains optional commerce_baseline. Refresh skills to 1.65.0+skills.1 (a revision restamp; the skill text is otherwise unchanged).",
       "compatibility": "additive",
       "migration": "none",
@@ -11065,7 +11065,7 @@
           "summary": "The CI report says when QA rests on a baseline."
         }
       ],
-      "entry_sha256": "2e4921cf8d2f5b51f30433db0fd24b2122cc8c3f59815f810d4fe19a77a12767"
+      "entry_sha256": "bc9a7aa4816b47d9d47f7be000e76eb0753723a9738c083ee9b83087f965fa89"
     }
   ]
 }

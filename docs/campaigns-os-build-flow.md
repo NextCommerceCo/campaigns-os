@@ -122,8 +122,10 @@ proof stops counting. After that:
   say QA rests on a baseline and no purchase has been tested since.
 - A completed full `qa run` ends it. A blocked one leaves the baseline in place.
 
-A funnel gets one baseline. The command refuses a funnel with no completed deploy
-or QA, one whose records have markup hashes, and one where no full QA is owed.
+A funnel gets one baseline. The command refuses a funnel whose last QA was
+blocked, one where no QA ever completed, one whose records have markup hashes,
+and one where no full QA is owed. For the first two, run a full `qa run`. Once it
+passes, page-only changes work without a baseline.
 
 The PR comment opens with the kind it found and what that owes, for example
 "Change found: page-only. It owes QA on `upsell1`; Polish is advisory." A

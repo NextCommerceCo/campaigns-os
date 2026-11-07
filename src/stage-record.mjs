@@ -39,6 +39,7 @@ import { isLoopbackHostname } from "./remit.mjs";
 import { campaignRouteRoot, normalizePublicRouteSlug } from "./route-identity.mjs";
 import { buildChangeEntry, buildCommerceSignature, nextBuildChanges, rebuiltFromBuildWithoutSignature } from "./change-scope.mjs";
 import { isNamedHuman } from "./checkpoint-waiver.mjs";
+import { singleLineDetail } from "./text-safety.mjs";
 import { assessEvidenceDebt } from "./evidence-debt.mjs";
 import { writeJsonAtomic } from "./doctor-sidecar.mjs";
 import { doctorPacket } from "./doctor/inspect.mjs";
@@ -55,7 +56,7 @@ import {
 import { evaluateRecordedHiddenEagerMediaCheckpoint } from "./polish-node.mjs";
 import { effectiveStageStatus, effectiveStatusIsTerminal, inputStamps, stageWriteInputs } from "./input-currency.mjs";
 import { demoteStages, recordBrief, recordSpec } from "./input-refresh.mjs";
-import { applyDerivedAssemblyReportSummary, archiveStageRecord, archiveForBaseline, archiveSupersededRecord, assemblyReportMatchesPacket, campaignHandedOff, commitAssemblyReport, inputChangeFor, polishReviewedBuild, qaExtendedBuildFingerprint, qaRecordedBuildFingerprint, restorePolishKeptWithOutput } from "./stage-ledger.mjs";
+import { applyDerivedAssemblyReportSummary, archiveStageRecord, archiveForBaseline, archiveSupersededRecord, assemblyReportMatchesPacket, campaignHandedOff, qaEverCompleted, commitAssemblyReport, inputChangeFor, polishReviewedBuild, qaExtendedBuildFingerprint, qaRecordedBuildFingerprint, restorePolishKeptWithOutput } from "./stage-ledger.mjs";
 import { withTargetLockSync } from "./target-lock.mjs";
 import { commerceScopeFromScope } from "./theme-gate.mjs";
 
@@ -498,13 +499,23 @@ function composeBaseline(report, { now, recordedBy, fingerprint, input, inputs, 
   if (!rebuiltFromBuildWithoutSignature(report.stages?.assembly)) {
     throw refuseRecord("baseline", [`This funnel's records have markup hashes (Campaigns OS 1.62.0 or later), or ${cmd("record")} build has not run on this toolkit. Page-only changes can be read from a full QA; a baseline is only for records from before those hashes. If you have not, run ${cmd("record")} build first.`]);
   }
+  // A baseline stands in for a QA that passed on an older toolkit, so it needs
+  // one. A blocked QA found a problem a sign-off cannot vouch for.
+  const lastQa = stageObject(report, "qa");
+  if (lastQa.status === "blocked" || (Array.isArray(lastQa.blockers) && lastQa.blockers.length)) {
+    const blockers = (lastQa.blockers || []).slice(0, 3).map((blocker) => singleLineDetail(typeof blocker === "string" ? blocker : blocker?.message || blocker?.code || "")).filter(Boolean);
+    throw refuseRecord("baseline", [`The last QA was blocked${blockers.length ? ` (${blockers.join("; ")})` : ""}, so it cannot be accepted untested. Run a full ${cmd("qa")} run; once it passes, page-only changes work without a baseline.`]);
+  }
+  if (!qaEverCompleted(report)) {
+    throw refuseRecord("baseline", [`No QA has completed on this funnel, so there is no result to start from. Run a full ${cmd("qa")} run; once it passes, page-only changes work without a baseline.`]);
+  }
   const debt = assessEvidenceDebt({ packet, packetPath, report }).qa;
   if (debt.status !== "owed" || debt.scope !== "full") {
     throw refuseRecord("baseline", [`A full QA is not owed (QA reads ${debt.status}${debt.scope ? `, scope ${debt.scope}` : ""}), so there is nothing to accept.`]);
   }
   const stamps = currentStamps(inputs);
-  // History keeps no blockers, and a baseline over a blocked stage must still
-  // say what was blocking it.
+  // History keeps no warnings or skip reasons, and a baseline must still say
+  // what it replaced.
   const replacedRecord = (key) => {
     const before = stageObject(report, key);
     return { status: before.status ?? null, blockers: before.blockers ?? [], warnings: before.warnings ?? [], ...(before.skip_reason ? { skip_reason: before.skip_reason } : {}) };
@@ -1252,7 +1263,6 @@ export function recordStageCommand(args, { now = () => new Date(), beforeLock = 
     ...(stage === "build" ? buildChangeReadyLines(composed.report.stages.assembly) : []),
     ...(stage === "build" ? [`stages.polish.status = ${composed.report.stages.polish.status}`] : []),
     ...(stage === "baseline" ? [`Polish and QA read baseline_accepted: ${baseline.acceptedBy} accepted build ${facts.fingerprint}. Nothing was tested, and no purchase is proven from here until a full ${cmd("qa")} run.`] : []),
-    ...(stage === "baseline" && composed.report.commerce_baseline.replaced_qa.status === "blocked" ? [`The QA this replaces was blocked (${composed.report.commerce_baseline.replaced_qa.blockers.length} blocker(s)); they are kept on commerce_baseline.replaced_qa.`] : []),
     ...(stage === "build" && composed.report.stages.deploy?.required_by === "build" ? [`stages.deploy.status = ${composed.report.stages.deploy.status} (the recorded deploy probed other output; run ${cmd("record")} deploy again)`] : []),
     ...(composed.context ? ["Build Context scaffold.required = false"] : []),
   ];

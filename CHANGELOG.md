@@ -8,9 +8,9 @@ Funnels handed off before 1.62.0 can now reach small checks without a test order
 
 ### Added
 
-- **`record baseline` (#716).** `campaigns-os record baseline --packet <packet> --accepted-by "<named person>" --reason "<why>"` accepts a handed-off funnel from before markup hashes as the starting point, one time per funnel. It tests nothing and places no orders. After it, a page-only change owes QA on that page alone, and a commerce-affecting change still owes the full Polish and QA. It refuses a funnel with no completed deploy or QA, one whose records have markup hashes, and one where no full QA is owed.
+- **`record baseline` (#716).** `campaigns-os record baseline --packet <packet> --accepted-by "<named person>" --reason "<why>"` accepts a handed-off funnel from before markup hashes as the starting point, one time per funnel. It tests nothing and places no orders. After it, a page-only change owes QA on that page alone, and a commerce-affecting change still owes the full Polish and QA. It refuses a funnel whose last QA was blocked, one where no QA ever completed, one whose records have markup hashes, and one where no full QA is owed.
 - **The stage status `baseline_accepted`.** Polish and QA take it from `record baseline`. It ends the ladder, so `next` moves on, but it is never `completed` and never hands a campaign off. What those stages held moves to history, so its purchase proof stops counting. A passing `qa run --page` leaves QA at this status, and only a completed full QA ends it. Progress snapshots read it as `unknown`.
-- **Reports say what it is.** Doctor warns `qa.baseline_accepted`, and `doctor --ci`, readback and `next` say QA rests on a baseline and no purchase has been tested since. `evidence_debt.qa` gains `baseline`, and the Assembly Report gains a top-level `commerce_baseline`.
+- **Reports say what it is.** Doctor warns `qa.baseline_accepted`, and `doctor --ci`, readback and `next` say QA rests on a baseline and no purchase has been tested since. `evidence_debt.qa` gains `baseline`, and the Assembly Report gains a top-level `commerce_baseline`, which keeps the status, warnings and skip reason of what it replaced.
 
 ## [1.64.0] - 2026-11-07
 
