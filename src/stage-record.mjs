@@ -503,6 +503,10 @@ function composeBaseline(report, { now, recordedBy, fingerprint, input, inputs, 
     throw refuseRecord("baseline", [`A full QA is not owed (QA reads ${debt.status}${debt.scope ? `, scope ${debt.scope}` : ""}), so there is nothing to accept.`]);
   }
   const stamps = currentStamps(inputs);
+  // History keeps no blockers, and a baseline over a blocked QA must still say
+  // what was blocking it.
+  const qaBefore = stageObject(report, "qa");
+  const replacedQa = { status: qaBefore.status ?? null, blockers: qaBefore.blockers ?? [], warnings: qaBefore.warnings ?? [], ...(qaBefore.skip_reason ? { skip_reason: qaBefore.skip_reason } : {}) };
   const replace = (key, fields) => {
     const previous = stageObject(report, key);
     return archiveForBaseline({
@@ -521,7 +525,7 @@ function composeBaseline(report, { now, recordedBy, fingerprint, input, inputs, 
   return {
     report: {
       ...report,
-      commerce_baseline: { accepted_by: input.acceptedBy, accepted_at: now, reason: input.reason, build_fingerprint: fingerprint },
+      commerce_baseline: { accepted_by: input.acceptedBy, accepted_at: now, reason: input.reason, build_fingerprint: fingerprint, replaced_qa: replacedQa },
       stages: {
         ...report.stages,
         polish: replace("polish", { source_build_fingerprint: fingerprint }),
@@ -1091,7 +1095,7 @@ function doctorFacts(stage, doctor, report, packet) {
       throw refuseRecord(stage, [`Build is not recorded (stages.assembly needs a completed status and build_fingerprint); run ${cmd("record")} build first.`]);
     }
     if (recorded !== fingerprint) {
-      throw refuseRecord(stage, [stage === "theme" || stage === "deploy"
+      throw refuseRecord(stage, [stage === "theme" || stage === "deploy" || stage === "baseline"
         ? `The built output changed since build was recorded (recorded ${recorded}, current ${fingerprint}); run ${cmd("record")} build, then record ${stage} again.`
         : `The built output changed since build was recorded (recorded ${recorded}, current ${fingerprint}); run ${cmd("record")} build, then ${cmd("polish")} capture, then record polish again.`]);
     }
@@ -1246,6 +1250,7 @@ export function recordStageCommand(args, { now = () => new Date(), beforeLock = 
     ...(stage === "build" ? buildChangeReadyLines(composed.report.stages.assembly) : []),
     ...(stage === "build" ? [`stages.polish.status = ${composed.report.stages.polish.status}`] : []),
     ...(stage === "baseline" ? [`Polish and QA read baseline_accepted: ${baseline.acceptedBy} accepted build ${facts.fingerprint}. Nothing was tested, and no purchase is proven from here until a full ${cmd("qa")} run.`] : []),
+    ...(stage === "baseline" && composed.report.commerce_baseline.replaced_qa.status === "blocked" ? [`The QA this replaces was blocked (${composed.report.commerce_baseline.replaced_qa.blockers.length} blocker(s)); they are kept on commerce_baseline.replaced_qa.`] : []),
     ...(stage === "build" && composed.report.stages.deploy?.required_by === "build" ? [`stages.deploy.status = ${composed.report.stages.deploy.status} (the recorded deploy probed other output; run ${cmd("record")} deploy again)`] : []),
     ...(composed.context ? ["Build Context scaffold.required = false"] : []),
   ];

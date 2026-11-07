@@ -113,7 +113,7 @@ const HISTORY_ENTRY_FIELDS = Object.freeze([
 // chapter, and archives nothing.
 const HISTORY_IDENTITY_FIELDS = Object.freeze([
   "build_fingerprint", "source_build_fingerprint", "source_package_material_fingerprint",
-  "source_brief_material", "source_spec_material_hash", "verdict_run_id", "purchase_proof", "outputs", "evidence",
+  "source_brief_material", "source_spec_material_hash", "verdict_run_id", "purchase_proof", "outputs", "evidence", "baseline_accepted_at",
 ]);
 export const HISTORY_ARCHIVED_BY = Object.freeze(["record brief", "record spec", "record build", "record polish", "record baseline", "qa run", "prepare-build --force"]);
 export const HISTORY_REASON_CODES = Object.freeze(["brief_presentation_changed", "brief_qa_policy_changed", "spec_material_changed", "rerecorded", "force_reset", "build_output_changed", "baseline_accepted"]);
@@ -201,6 +201,13 @@ function appendHistoryEntry(stage, entry) {
  */
 export function archiveSupersededRecord(stage, previous, { by, reason, at }) {
   return appendHistoryEntry(isPlainObject(stage) ? { ...stage } : {}, historyEntry(previous, { by, reason, at }));
+}
+
+// The baseline QA rests on, or null. The marker on the record is the rule, not
+// its status: a blocked page-scoped run or an input change leaves QA resting on
+// the baseline, and only a completed full QA clears the marker.
+export function qaRestsOnBaseline(report) {
+  return report?.stages?.qa?.baseline_accepted_at && isPlainObject(report?.commerce_baseline) ? report.commerce_baseline : null;
 }
 
 // A stage's baseline record, with what the stage held moved to its history.

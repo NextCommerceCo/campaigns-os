@@ -6,7 +6,7 @@ import { accessSync, constants as fsConstants, existsSync, readdirSync, readFile
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { describeSdkIgnoredMetaTags, isSdkIgnoredMetaTag } from "../sdk-meta-tags.mjs";
 import { ORDER_PATH_DEPTH_DRIFT_CODE, orderPathDepthDriftText, orderPathDepthsDisagree } from "../proof-policy.mjs";
-import { QA_GATE_PLACEHOLDER_TEXT_RESIDUE, qaGatePassedForCurrentBuild } from "../stage-ledger.mjs";
+import { QA_GATE_PLACEHOLDER_TEXT_RESIDUE, qaGatePassedForCurrentBuild, qaRestsOnBaseline } from "../stage-ledger.mjs";
 import {
   validateAdapterDecisionGates,
   validateAdapterDecisionShape,
@@ -440,8 +440,8 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
     id: "qa.baseline_accepted",
     phase: "built-output",
     run: ({ warnings, buildState }) => {
-      const baseline = buildState.report?.commerce_baseline;
-      if (!baseline || buildState.report?.stages?.qa?.status !== "baseline_accepted") return;
+      const baseline = qaRestsOnBaseline(buildState.report);
+      if (!baseline) return;
       addIssue(warnings, "qa.baseline_accepted", `QA rests on a baseline ${baseline.accepted_by} accepted at ${baseline.accepted_at}, not a test. No purchase has been tested since; a full \`campaigns-os qa run\` ends it.`, { accepted_by: baseline.accepted_by, accepted_at: baseline.accepted_at });
     },
   },

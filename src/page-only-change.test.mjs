@@ -541,6 +541,36 @@ test("after a baseline a copy edit owes QA on that page, the pass stays a baseli
   assert.ok(qa.baseline_accepted_at);
 });
 
+test("a blocked run leaves QA resting on the baseline, and the reports keep saying so", (t) => {
+  const f = legacyFixture(t);
+  recordBaseline(f);
+  const blocked = { run_id: "full-blocked", campaign_slug: "synthetic-map", disposition: "blocked", completed_at: "2026-11-08T00:00:00Z", assertions: [{ id: "x", status: "fail", actual: "broken" }], spec_hash: null, qc_results: [], test_orders: [] };
+  assert.equal(recordQaStageOutcome({ _: ["qa", "run"], packet: f.packetPath }, { verdict: blocked }), true);
+  const qa = f.readReport().stages.qa;
+  assert.equal(qa.status, "blocked");
+  assert.ok(qa.baseline_accepted_at, "a run that proved nothing does not end the baseline");
+  assert.equal(f.debt().qa.baseline.accepted_by, "Pat Rivera");
+  assert.ok(doctorPacket(f.packetPath).warnings.some((issue) => issue.code === "qa.baseline_accepted"));
+});
+
+test("a baseline over a blocked QA keeps what was blocking it, and a moved build names record build then baseline", (t) => {
+  const f = legacyFixture(t);
+  const report = f.readReport();
+  Object.assign(report.stages.qa, { status: "blocked", blockers: ["checkout total wrong"] });
+  writeFileSync(f.reportPath, JSON.stringify(report));
+  const moved = legacyFixture(t);
+  copyEdit(moved);
+  moved.writePage("landing", PAGES.landing.replace("Landing headline", "Moved"));
+  assert.throws(() => recordBaseline(moved), (error) => {
+    assert.doesNotMatch(error.message, /polish capture/);
+    assert.match(error.message, /record baseline|baseline again/);
+    return true;
+  });
+  const result = recordBaseline(f);
+  assert.deepEqual(f.readReport().commerce_baseline.replaced_qa.blockers, ["checkout total wrong"]);
+  assert.ok(result.ready.some((line) => /The QA this replaces was blocked \(1 blocker/.test(line)));
+});
+
 test("a commerce change after a baseline owes the full stages, and a second baseline is refused", (t) => {
   const f = legacyFixture(t);
   recordBaseline(f);

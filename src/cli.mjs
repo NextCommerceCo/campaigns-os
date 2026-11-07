@@ -32,7 +32,7 @@ import { routeMaskedSpecMaterialHash, specMaterialHash, specHashesMatch } from "
 // The same predicate stage-ledger.mjs judges a mutator's result with, imported
 // rather than re-stated so the waive preview and the commit agree by identity.
 import { isPlainObject } from "./repo-scan.mjs";
-import { applyDerivedAssemblyReportSummary, campaignHandedOff, commitAssemblyReport, QA_GATE_PLACEHOLDER_TEXT_RESIDUE, recordProducerStageOutcome } from "./stage-ledger.mjs";
+import { applyDerivedAssemblyReportSummary, campaignHandedOff, commitAssemblyReport, QA_GATE_PLACEHOLDER_TEXT_RESIDUE, recordProducerStageOutcome, qaRestsOnBaseline } from "./stage-ledger.mjs";
 import { SESSION_ENDING_DISPOSITIONS, summarizePlaceholderTextGate, summarizePurchaseProof } from "./qa-verdict.mjs";
 import { assessRunRecordCloseout, identityMatches, latestMatchingRunRecord, reasonIsRemitRecovery } from "./run-record-closeout.mjs";
 import {
@@ -723,16 +723,18 @@ function hasDoneRecommendation(session) {
 }
 
 // A page-scoped pass on a baseline paid for those pages and proved nothing
-// else, so QA still reads baseline_accepted. Only a full QA ends the baseline.
+// else, so QA still reads baseline_accepted. Only a completed full QA ends the
+// baseline: a blocked run proved nothing, so it leaves the marker alone.
 function settleQaBaseline(onBaseline, report) {
   const qa = report.stages?.qa;
-  if (!isObject(qa)) return report;
-  if (!onBaseline) delete qa.baseline_accepted_at;
-  else if (String(qa.status).startsWith("completed")) {
-    qa.status = "baseline_accepted";
-    delete qa.completed_at;
-    delete qa.purchase_proof;
+  if (!isObject(qa) || !String(qa.status).startsWith("completed")) return report;
+  if (!onBaseline) {
+    delete qa.baseline_accepted_at;
+    return report;
   }
+  qa.status = "baseline_accepted";
+  delete qa.completed_at;
+  delete qa.purchase_proof;
   return report;
 }
 
@@ -4754,7 +4756,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
         errors,
         warnings,
         ready,
-        prompt: `Pipeline complete. All stages in the assembly report are in a terminal status. To repeat build work, do the work and run \`${cmd("record")} build --packet <path>\`; this makes downstream stages owed as needed. \`${cmd("record")} deploy\` records the served deploy, a loopback URL for a local-serve target or an https URL for a hosted one. Run \`${cmd("qa")} run\` for QA. Then call \`${cmd("next")}\` again. If a run session is active, finish it with \`${cmd("run")} end\` so the Run Record is assembled and the session closes.${report?.stages?.qa?.status === "completed_with_warnings" ? " QA passed with exceptions; report them to the operator without clearing or waiving them or changing markup just to make them pass." : ""}${report?.commerce_baseline && report?.stages?.qa?.status === "baseline_accepted" ? ` QA rests on a baseline ${report.commerce_baseline.accepted_by} accepted, not a test; say so when you report this campaign.` : ""}${warnings.some((issue) => issue.code === "built_output.absent") ? " The built output is not on this checkout, so these records were not compared with it; build before treating the campaign as current." : ""}`,
+        prompt: `Pipeline complete. All stages in the assembly report are in a terminal status. To repeat build work, do the work and run \`${cmd("record")} build --packet <path>\`; this makes downstream stages owed as needed. \`${cmd("record")} deploy\` records the served deploy, a loopback URL for a local-serve target or an https URL for a hosted one. Run \`${cmd("qa")} run\` for QA. Then call \`${cmd("next")}\` again. If a run session is active, finish it with \`${cmd("run")} end\` so the Run Record is assembled and the session closes.${report?.stages?.qa?.status === "completed_with_warnings" ? " QA passed with exceptions; report them to the operator without clearing or waiving them or changing markup just to make them pass." : ""}${qaRestsOnBaseline(report) ? ` QA rests on a baseline ${report.commerce_baseline.accepted_by} accepted, not a test; say so when you report this campaign.` : ""}${warnings.some((issue) => issue.code === "built_output.absent") ? " The built output is not on this checkout, so these records were not compared with it; build before treating the campaign as current." : ""}`,
       });
     }
     stage = picked.stage;
