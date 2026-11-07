@@ -103,6 +103,7 @@ import {
 import {
   captureCommercialClaims,
   COMMERCIAL_QA_LIMITS,
+  commercialAssertionBudget,
   commercialIncompleteAssertions,
   commercialIncompleteReasons,
   mapConcurrent,
@@ -2648,7 +2649,7 @@ async function runResolvedQa(args, resolvedInputs, { runSessionActive = false, l
 
   const testOrders = await runAnalyticsOrderSequence({ args, resolved, runId, assertions, qcResults });
   if (vendorBeacons) assertions.push(vendorBeaconAssertion(vendorBeacons));
-  const remainingAssertionBudget = Math.max(0, QA_VERDICT_ASSERTION_LIMIT - assertions.length);
+  const remainingAssertionBudget = commercialAssertionBudget(QA_VERDICT_ASSERTION_LIMIT, assertions.length);
   let commercialResult;
   try {
     commercialResult = await runCommercialParity({
