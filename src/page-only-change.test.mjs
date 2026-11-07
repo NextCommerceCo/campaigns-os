@@ -585,7 +585,26 @@ test("a baseline is refused over a blocked QA and where no QA ever completed, an
   report = neverRan.readReport();
   report.stages.qa = { stage: "qa", status: "pending" };
   writeFileSync(neverRan.reportPath, JSON.stringify(report));
+  assert.equal(neverRan.readReport().stages.deploy.status, "completed", "handed off by its deploy alone");
   assert.throws(() => recordBaseline(neverRan), /No QA has completed on this funnel.*Run a full .*qa.* run/s);
+});
+
+test("a QA that completed and was then made owed again still counts as a result to start from", (t) => {
+  const f = legacyFixture(t);
+  const report = f.readReport();
+  const { status, evidence } = report.stages.qa;
+  report.stages.qa = { stage: "qa", status: "required", required_by: "build", history: [{ status, evidence, archived_at: "2026-10-01T00:00:00.000Z", archived_by: "record build", reason_code: "build_output_changed" }] };
+  writeFileSync(f.reportPath, JSON.stringify(report));
+  recordBaseline(f);
+  assert.equal(f.readReport().stages.qa.status, "baseline_accepted");
+});
+
+test("a blocker with Markdown characters reads as written in the refusal", (t) => {
+  const f = legacyFixture(t);
+  const report = f.readReport();
+  Object.assign(report.stages.qa, { status: "blocked", blockers: ["qa_order_depth: checkout failed"] });
+  writeFileSync(f.reportPath, JSON.stringify(report));
+  assert.throws(() => recordBaseline(f), (error) => error.message.includes("(qa_order_depth: checkout failed)"));
 });
 
 test("a commerce change after a baseline owes the full stages, and a second baseline is refused", (t) => {

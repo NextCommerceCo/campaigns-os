@@ -257,7 +257,9 @@ export function campaignHandedOff(report) {
   return completedIn(report?.stages?.deploy) || completedIn(report?.stages?.qa);
 }
 
-// True when QA has ever completed, now or in the stage's history.
+// True when QA has ever completed, now or in the stage's history. Not
+// campaignHandedOff: a baseline stands in for a QA result, and a completed
+// deploy is not one.
 export function qaEverCompleted(report) {
   const qa = report?.stages?.qa;
   return isPlainObject(qa) && (isCompletedStatus(qa.status)
