@@ -156,7 +156,7 @@ test("createVerdict carries the compact commercial evidence section", () => {
   assert.deepEqual(validateVerdict(verdict), []);
 });
 
-test("commercial disposition changes only for proven mismatches, not incomplete proof", () => {
+test("commercial disposition changes for proven mismatches and incomplete proof, and neither blocks", () => {
   const pass = {
     id: "http:checkout",
     family: "funnel-flow",
@@ -189,10 +189,14 @@ test("commercial disposition changes only for proven mismatches, not incomplete 
     },
   }).disposition;
 
-  assert.equal(disposition([pass], "incomplete"), "ready");
+  assert.equal(disposition([pass], "pass"), "ready");
+  assert.equal(disposition([pass], "not_applicable"), "ready");
+  assert.equal(disposition([pass], "not_run"), "ready");
+  assert.equal(disposition([pass], "incomplete"), "ready_with_exceptions");
   assert.equal(disposition([pass], "mismatch"), "ready_with_exceptions");
   assert.equal(disposition([pass, warn], "incomplete"), "ready_with_exceptions");
   assert.equal(disposition([blocker], "mismatch"), "blocked");
+  assert.equal(disposition([blocker], "incomplete"), "blocked");
 });
 
 test("commercial mismatch keeps an exception disposition when the flat assertion budget is exhausted", () => {

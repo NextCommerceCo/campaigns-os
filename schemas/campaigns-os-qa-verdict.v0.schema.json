@@ -94,7 +94,7 @@
     "disposition": {
       "type": "string",
       "enum": ["ready", "ready_with_exceptions", "blocked"],
-      "description": "Derived from the assertions (and the commercial section's status): any unwaived failing blocker => blocked; any warn/manual_review/waived assertion or a proven commercial mismatch => ready_with_exceptions; otherwise ready. Waived is never clean. ready_with_waivers is the doctor/next checkpoint term, never a verdict disposition."
+      "description": "Derived from the assertions (and the commercial section's status): any unwaived failing blocker => blocked; any warn/manual_review/waived assertion, a proven commercial mismatch or incomplete commercial coverage => ready_with_exceptions; otherwise ready. Waived is never clean. ready_with_waivers is the doctor/next checkpoint term, never a verdict disposition."
     },
     "assertions": {
       "type": "array",
@@ -417,7 +417,7 @@
         "status": {
           "type": "string",
           "enum": ["pass", "mismatch", "incomplete", "not_applicable", "not_run"],
-          "description": "mismatch keeps the verdict at ready_with_exceptions; incomplete preserves the disposition derived from ordinary assertions and never invents an exception."
+          "description": "mismatch and incomplete each keep the verdict at ready_with_exceptions at least, and neither blocks it. incomplete also writes a warn commercial-parity:incomplete:<code> assertion for each named cause, and never invents a mismatch."
         },
         "coverage_complete": { "type": "boolean" },
         "findings": {
@@ -436,6 +436,21 @@
             }
           },
           "description": "Sanitized capture/proxy/limit issue codes with counts. An issue records incomplete evidence; it never invents a mismatch."
+        },
+        "incomplete_reasons": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["code", "summary", "fix"],
+            "properties": {
+              "code": { "type": "string", "minLength": 1 },
+              "count": { "type": "integer" },
+              "summary": { "type": "string", "description": "What this run did not compare, and why." },
+              "fix": { "type": "string", "description": "What to do about it. Some causes have nothing to repair and say so." }
+            }
+          },
+          "description": "Present when status is incomplete: one entry per named cause, the same causes the commercial-parity:incomplete:<code> assertions carry. Empty when every cause already has a row of its own. Absent on verdicts emitted before the field existed."
         }
       },
       "description": "The compact commercial-parity report: counters over checked pages, scenarios, and claims, plus findings and issues. Counter fields are additive and not individually contracted here."

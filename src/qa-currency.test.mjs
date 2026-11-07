@@ -582,7 +582,7 @@ test("the commercial-currency row id names the answered currency upper-cased, on
 test("a full assertion budget never hides the currency blocker or its issue", async () => {
   const resolved = { rawSpec: PRICED_SPEC, spec: PRICED_SPEC, proxyBase: "https://proxy.example.test" };
   const { assertions, commercial } = await runCommercialParity({ resolved, captures: [], fetchImpl: pricePreview("USD").fetchImpl, currency: "GBP", maxAssertions: 0 });
-  assert.deepEqual(assertions.map((entry) => [entry.id, entry.status, entry.severity]), [["commercial-currency:GBP:USD", "fail", "blocker"]]);
+  assert.deepEqual(assertions.filter((entry) => entry.severity === "blocker").map((entry) => [entry.id, entry.status, entry.severity]), [["commercial-currency:GBP:USD", "fail", "blocker"]]);
   assert.ok(commercial.issues.some((issue) => issue.code === "calculate_currency_mismatch"));
 });
 
@@ -603,7 +603,12 @@ test("under a run currency the Map does not name, the source's fallback prices s
   };
 
   const gbp = await runCommercialParity({ resolved, captures: captures(), fetchImpl: priced, currency: "GBP" });
-  assert.deepEqual(gbp.assertions, []);
+  // Nothing to repair on the page, and nothing proven wrong: one warn row says
+  // what this run did not compare.
+  assert.deepEqual(gbp.assertions.map((entry) => [entry.id, entry.status, entry.severity]), [
+    ["commercial-parity:incomplete:static_source_not_in_run_currency", "warn", "warn"],
+  ]);
+  assert.match(gbp.assertions[0].actual, /Fix: No page repair is owed/);
   assert.equal(gbp.commercial.finding_count, 0);
   assert.equal(gbp.commercial.status, "incomplete");
   assert.equal(gbp.commercial.extracted_price_claims, 1);

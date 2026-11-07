@@ -88,7 +88,9 @@ export function computeDisposition(assertions) {
 function dispositionWithCommercial(assertions, commercial) {
   const disposition = computeDisposition(assertions);
   if (disposition === "blocked") return disposition;
-  return commercial?.status === "mismatch"
+  // Warn-only either way: a proven mismatch and a proof that stopped short are
+  // both things the operator has to hear about, and neither ever blocks.
+  return commercial?.status === "mismatch" || commercial?.status === "incomplete"
     ? "ready_with_exceptions"
     : disposition;
 }

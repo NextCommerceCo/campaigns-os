@@ -2,6 +2,20 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.65.0] - 2026-11-07
+
+A QA run whose commercial parity stopped short no longer reads as a clean result. Commercial status `incomplete` now keeps the verdict at `ready_with_exceptions` and names the cause and the fix in `exceptions[]`. It stays warn-only: nothing new blocks, and the exit code does not change. To take it, pin `@nextcommerce/campaigns-os@1.65.0` and refresh the installed skills to `1.65.0+skills.1`.
+
+### Changed
+
+- **Incomplete commercial coverage is an exception.** A spec with no `campaign.campaigns_api_key`, for example, used to run 0 of its calculate scenarios and could still report `ready`, with the gap visible only under `verdict.commercial`. The verdict is now `ready_with_exceptions`, with a warn row `commercial-parity:incomplete:missing_campaigns_api_key` whose `actual` says what was not compared and how to fix it.
+  - Each cause gets its own row: `missing_campaigns_api_key`, `unsupported_campaigns_api_key_source`, `price_preview_failed`, `price_preview_fetch_unavailable`, `commercial_capture_invalid`, `commercial_page_not_captured`, `commercial_capture_unmatched`, `commercial_page_not_exact`, `commercial_claims_unresolved`, `static_source_not_in_run_currency`, the three limit codes and `commercial_runner_error`. A cause an earlier one already explains writes no second row, and the rows sit outside the assertion budget. `docs/qa-and-test-orders.md` lists each code and its fix.
+  - Not every cause has a repair. A store coupon, two bound prices on one page, a run in a currency other than the Map's and a funnel over the check's limits say what this run did not compare, and these runs stay at `ready_with_exceptions`.
+  - The committed sidecar keeps the row's id, which names the cause. The verdict's `commercial` section gains `incomplete_reasons` with the same causes, and `qa run` prints them under its commercial line.
+  - A run that was `ready` only because the gap was invisible now records its QA stage as `completed_with_warnings`, and its Run Record lists `pricing` among its gap classes. Both dispositions still end a run session.
+- **A crash in the commercial check is reported the same way.** It used to leave status `not_run` and the verdict untouched, with a line on stderr. It now reads `incomplete` with the cause `commercial_runner_error`. Runs a gate blocks keep `not_run`, since those verdicts are already `blocked`.
+- The verdict schema's `disposition` and `commercial.status` descriptions say the above, and it documents `commercial.incomplete_reasons`.
+
 ## [1.63.0+agent.1] - 2026-11-02
 
 The `PagePackage` type accepts `prices: null`, as the schemas and the `PackageCurrencyPrices` rule already did. No pin change is needed to read specs; TypeScript callers that pass `null` stop failing type checks on the next release.

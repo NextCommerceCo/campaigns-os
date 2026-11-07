@@ -466,6 +466,165 @@ function captureIssues(captures) {
   return issues;
 }
 
+// Issues that already write a row of their own into the assertions, so a second
+// row saying the same thing would only pad the exceptions list.
+const ISSUES_WITH_THEIR_OWN_ROW = new Set(["calculate_currency_mismatch", "recurring_claim_absent"]);
+
+const PAGE_LIMIT_FIX = "This funnel is over the check's limits, so no re-run will cover it: check these prices by hand and tell the operator.";
+
+// What each stop means and what to do about it, for an agent that reads nothing
+// but the exceptions list. Text only, never a key or a URL: it is persisted.
+const INCOMPLETE_ISSUE_REASONS = Object.freeze({
+  missing_campaigns_api_key: {
+    summary: ({ planned }) => `No campaign key was resolved, so 0 of ${planned} planned calculate scenarios ran and no price was compared.`,
+    fix: "Set campaign.campaigns_api_key in the CampaignSpec (or the Build Packet) to the campaign's API key, then re-run qa run.",
+  },
+  unsupported_campaigns_api_key_source: {
+    summary: ({ planned }) => `The packet's campaign.api_key_source names an environment variable QA refuses to read, so 0 of ${planned} planned calculate scenarios ran.`,
+    fix: "Use env:CAMPAIGNS_API_KEY, or set campaign.campaigns_api_key in the CampaignSpec, then re-run qa run.",
+  },
+  price_preview_fetch_unavailable: {
+    summary: ({ planned }) => `This runtime has no fetch, so 0 of ${planned} planned calculate scenarios ran.`,
+    fix: "Re-run qa run on a supported Node version.",
+  },
+  commercial_html_claims_limit: {
+    summary: () => "A page carries more commercial claims than the per-page limit, so its claims were not compared.",
+    fix: PAGE_LIMIT_FIX,
+  },
+  commercial_aggregate_claim_limit: {
+    summary: ({ commercial }) => `The funnel carries ${commercial.observed_claims} commercial claims, over the limit of ${commercial.claim_limit}, so none were compared.`,
+    fix: PAGE_LIMIT_FIX,
+  },
+  commercial_scenario_limit: {
+    summary: () => "The funnel plans more calculate scenarios than the limit, so none ran.",
+    fix: PAGE_LIMIT_FIX,
+  },
+  commercial_runner_error: {
+    summary: () => "The commercial parity check crashed before it finished, so no price was compared.",
+    fix: "Re-run qa run. If it crashes again, record it with findings add and tell the operator.",
+  },
+});
+
+function incompleteReason(code, count, summary, fix, extra = {}) {
+  return { code, count, summary, fix, ...extra };
+}
+
+function pageList(pages) {
+  return pages.map((page) => page?.page_id ?? "(no id)").join(", ");
+}
+
+/**
+ * Name why a run's commercial proof is incomplete, each cause with its fix.
+ * Causes are not all of one kind: a missing key is a repair, a store coupon or
+ * a run in another currency has nothing to repair and only says what was not
+ * compared. Later rows stay quiet when an earlier cause already explains them,
+ * so a missing key does not also report every page as unpriced.
+ */
+export function commercialIncompleteReasons(commercial, journey = null) {
+  const planned = commercial.planned_scenarios ?? 0;
+  const issues = array(commercial.issues).filter((issue) => !ISSUES_WITH_THEIR_OWN_ROW.has(issue.code));
+  const reasons = [];
+  const previewFailures = [];
+  issues.forEach((issue) => {
+    const known = INCOMPLETE_ISSUE_REASONS[issue.code];
+    if (known) {
+      reasons.push(incompleteReason(issue.code, issue.count, known.summary({ planned, commercial }), known.fix));
+    } else {
+      previewFailures.push(issue);
+    }
+  });
+  if (previewFailures.length) {
+    const failed = previewFailures.reduce((sum, issue) => sum + (issue.count || 0), 0);
+    reasons.push(incompleteReason(
+      "price_preview_failed",
+      failed,
+      `The calculate endpoint failed for ${failed} of ${planned} planned scenarios (${previewFailures.map((issue) => issue.code).join(", ")}).`,
+      "Check that the key belongs to this campaign and that the proxy is reachable, then re-run qa run.",
+      { issue_codes: previewFailures.map((issue) => issue.code) },
+    ));
+  }
+  const claimsLimited = issues.find((issue) => issue.code === "commercial_html_claims_limit")?.count || 0;
+  if (commercial.invalid_capture_count > claimsLimited) {
+    reasons.push(incompleteReason(
+      "commercial_capture_invalid",
+      commercial.invalid_capture_count,
+      `${commercial.invalid_capture_count} page(s) could not be read for commercial claims: ${pageList(array(commercial.invalid_captures))}.`,
+      "Fix the page's fetch failure or its malformed data-next-package-id or data-next-bundle-vouchers markup, then re-run qa run.",
+    ));
+  }
+  // A page whose capture was refused above also counts as missing from the
+  // comparison; it was fetched, so it is not a second cause.
+  const refused = new Set(array(commercial.invalid_captures).map((capture) => capture.page_id));
+  const notFetched = array(commercial.missing_pages).filter((page) => !refused.has(page.page_id));
+  if (notFetched.length) {
+    reasons.push(incompleteReason(
+      "commercial_page_not_captured",
+      notFetched.length,
+      `${notFetched.length} planned page(s) were never fetched: ${pageList(notFetched)}.`,
+      "Check that the spec's page URL is in the tested funnel and reachable, then re-run qa run.",
+    ));
+  }
+  if (commercial.unmatched_page_count > 0) {
+    reasons.push(incompleteReason(
+      "commercial_capture_unmatched",
+      commercial.unmatched_page_count,
+      `${commercial.unmatched_page_count} fetched page(s) match no planned page: ${pageList(array(commercial.unmatched_pages))}.`,
+      "Compare the page ids in the spec with the pages the funnel serves.",
+    ));
+  }
+  if (reasons.length) return reasons;
+
+  const inexact = array(journey?.pages).filter((page) => page?.state !== PricingState.Exact);
+  if (inexact.length) {
+    const named = inexact.map((page) => `${page.page_id} (${page.reason || page.representative_total?.reason || page.state})`);
+    reasons.push(incompleteReason(
+      "commercial_page_not_exact",
+      inexact.length,
+      `Calculate gave no exact total for ${inexact.length} page(s): ${named.join(", ")}.`,
+      "Correct the spec where the reason names it (a package not on the campaign, an invalid row). A store coupon cannot be previewed, so check that page's prices by hand.",
+    ));
+    return reasons;
+  }
+  if (present(commercial.unresolved_money_claims_reason)) {
+    const count = commercial.unresolved_price_claims + commercial.unresolved_recurrence_claims;
+    reasons.push(incompleteReason(
+      String(commercial.unresolved_money_claims_reason),
+      count,
+      `${count} price claim(s) in the page source hold the Map currency's fallback text, so they were not compared with totals in the run currency.`,
+      "No page repair is owed. A qa run in the campaign's own currency compares them.",
+    ));
+    return reasons;
+  }
+  const unresolved = commercial.unresolved_price_claims + commercial.unresolved_recurrence_claims + commercial.unresolved_voucher_claims;
+  if (unresolved > 0) {
+    reasons.push(incompleteReason(
+      "commercial_claims_unresolved",
+      unresolved,
+      `${unresolved} claim(s) could not be tied to one calculated value (${commercial.unresolved_price_claims} price, ${commercial.unresolved_recurrence_claims} recurring, ${commercial.unresolved_voucher_claims} voucher).`,
+      "A page with more than one bound bundle price, or a voucher the plan cannot price, stays uncompared: check these by hand, or declare the voucher in the spec.",
+    ));
+  }
+  return reasons;
+}
+
+/** One warn row per named cause: what `exceptions[]` carries and the sidecar keeps. */
+export function commercialIncompleteAssertions(reasons) {
+  return array(reasons).map((entry) => ({
+    id: `commercial-parity:incomplete:${entry.code}`,
+    family: "pricing",
+    page: "campaign",
+    status: "warn",
+    severity: "warn",
+    expected: "the page's commercial claims compared with calculated totals",
+    actual: `${entry.summary} Fix: ${entry.fix}`,
+    evidence: {
+      code: entry.code,
+      count: entry.count,
+      ...(entry.issue_codes ? { issue_codes: entry.issue_codes } : {}),
+    },
+  }));
+}
+
 function compactReport(report, journey, plan, executed, issues, observedClaims, claimLimit, plannedScenarioCount = plan.length) {
   const exactPages = array(journey?.pages).filter((page) => page?.state === PricingState.Exact).length;
   const stalePages = array(journey?.pages).filter((page) => page?.state === PricingState.Stale).length;
@@ -715,17 +874,34 @@ export async function runCommercialParity({
     maxAssertions: Math.max(0, maxAssertions - parity.assertions.length),
   });
   parity.recurring_claim_absences = absences;
+  const commercial = compactReport(
+    parity,
+    parityJourney,
+    plan,
+    executed,
+    issues,
+    observedClaims,
+    limits.max_aggregate_claims,
+    commercialPlanning.observed_scenarios ?? plan.length,
+  );
+  const assertions = [...currencyAssertions, ...parity.assertions, ...absentAssertions];
+  if (commercial.status !== "incomplete") return { assertions, commercial };
+  // An incomplete run always names a cause in the exceptions list. A cause that
+  // already has a row (a currency blocker, an absent rebill claim) needs no
+  // other, unless the assertion budget cost it that row.
+  let reasons = commercialIncompleteReasons(commercial, parityJourney);
+  if (!reasons.length && !currencyAssertions.length && !absentAssertions.length) {
+    reasons = [incompleteReason(
+      "commercial_coverage_incomplete",
+      1,
+      `Commercial parity stopped short: issues ${array(commercial.issues).map((issue) => issue.code).join(", ") || "none"}.`,
+      "Read verdict.commercial for what was and was not compared, and tell the operator.",
+    )];
+  }
+  // These sit outside the assertion budget like the currency rows: there are
+  // few of them, and a full budget must not hide why the proof stopped short.
   return {
-    assertions: [...currencyAssertions, ...parity.assertions, ...absentAssertions],
-    commercial: compactReport(
-      parity,
-      parityJourney,
-      plan,
-      executed,
-      issues,
-      observedClaims,
-      limits.max_aggregate_claims,
-      commercialPlanning.observed_scenarios ?? plan.length,
-    ),
+    assertions: [...assertions, ...commercialIncompleteAssertions(reasons)],
+    commercial: { ...commercial, incomplete_reasons: reasons },
   };
 }

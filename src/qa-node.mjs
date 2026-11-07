@@ -103,6 +103,8 @@ import {
 import {
   captureCommercialClaims,
   COMMERCIAL_QA_LIMITS,
+  commercialIncompleteAssertions,
+  commercialIncompleteReasons,
   mapConcurrent,
   createPageSourceLoader,
   planCommercialParity,
@@ -2655,9 +2657,11 @@ async function runResolvedQa(args, resolvedInputs, { runSessionActive = false, l
       currency,
     });
   } catch (error) {
+    const commercial = unavailableCommercialReport("commercial_runner_error", { status: "incomplete" });
+    const reasons = commercialIncompleteReasons(commercial);
     commercialResult = {
-      assertions: [],
-      commercial: unavailableCommercialReport("commercial_runner_error"),
+      assertions: commercialIncompleteAssertions(reasons),
+      commercial: { ...commercial, incomplete_reasons: reasons },
     };
     reportCommercialRunnerError(args, error);
   }
@@ -3795,6 +3799,9 @@ function output(value, args) {
     printThemeGateLines(value.theme_gate, value.packet_path, value.report_path);
     if (value.commercial) {
       console.log(`Commercial parity: ${value.commercial.status} (${value.commercial.finding_count || 0} findings, ${value.commercial.checked_pages || 0} pages checked)`);
+      for (const entry of value.commercial.incomplete_reasons || []) {
+        console.log(`  ${entry.code}: ${entry.summary} Fix: ${entry.fix}`);
+      }
     }
     console.log(`Local copy: ${value.local_path}`);
     if (value.posted?.ok && value.dashboard_url) {
