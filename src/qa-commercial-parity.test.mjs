@@ -440,6 +440,8 @@ test("package.price rows do not repeat a cause an earlier one explains, and bund
     "commercial-parity:incomplete:commercial_claims_unresolved",
   ]);
   assert.match(both.assertions.at(-1).actual, /2 price, 0 recurring, 0 voucher/);
+});
+
 test("a stale page is named as stale, not as a page calculate could not price", () => {
   const commercial = { planned_scenarios: 1, issues: [], invalid_captures: [], missing_pages: [], unmatched_pages: [], unresolved_price_claims: 0, unresolved_recurrence_claims: 0, unresolved_voucher_claims: 0 };
   const reasons = commercialIncompleteReasons(commercial, {
