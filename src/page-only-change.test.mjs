@@ -557,6 +557,7 @@ test("a baseline over a blocked QA keeps what was blocking it, and a moved build
   const f = legacyFixture(t);
   const report = f.readReport();
   Object.assign(report.stages.qa, { status: "blocked", blockers: ["checkout total wrong"] });
+  Object.assign(report.stages.polish, { status: "skipped", skip_reason: "no design source" });
   writeFileSync(f.reportPath, JSON.stringify(report));
   const moved = legacyFixture(t);
   copyEdit(moved);
@@ -568,6 +569,7 @@ test("a baseline over a blocked QA keeps what was blocking it, and a moved build
   });
   const result = recordBaseline(f);
   assert.deepEqual(f.readReport().commerce_baseline.replaced_qa.blockers, ["checkout total wrong"]);
+  assert.equal(f.readReport().commerce_baseline.replaced_polish.skip_reason, "no design source");
   assert.ok(result.ready.some((line) => /The QA this replaces was blocked \(1 blocker/.test(line)));
 });
 

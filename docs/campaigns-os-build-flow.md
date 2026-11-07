@@ -120,7 +120,7 @@ proof stops counting. After that:
 - A CampaignSpec or brief change owes the stages again.
 - Doctor warns `qa.baseline_accepted`, and `doctor --ci`, readback and `next` all
   say QA rests on a baseline and no purchase has been tested since.
-- A full `qa run` ends it.
+- A completed full `qa run` ends it. A blocked one leaves the baseline in place.
 
 A funnel gets one baseline. The command refuses a funnel with no completed deploy
 or QA, one whose records have markup hashes, and one where no full QA is owed.

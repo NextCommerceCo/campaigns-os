@@ -503,10 +503,12 @@ function composeBaseline(report, { now, recordedBy, fingerprint, input, inputs, 
     throw refuseRecord("baseline", [`A full QA is not owed (QA reads ${debt.status}${debt.scope ? `, scope ${debt.scope}` : ""}), so there is nothing to accept.`]);
   }
   const stamps = currentStamps(inputs);
-  // History keeps no blockers, and a baseline over a blocked QA must still say
-  // what was blocking it.
-  const qaBefore = stageObject(report, "qa");
-  const replacedQa = { status: qaBefore.status ?? null, blockers: qaBefore.blockers ?? [], warnings: qaBefore.warnings ?? [], ...(qaBefore.skip_reason ? { skip_reason: qaBefore.skip_reason } : {}) };
+  // History keeps no blockers, and a baseline over a blocked stage must still
+  // say what was blocking it.
+  const replacedRecord = (key) => {
+    const before = stageObject(report, key);
+    return { status: before.status ?? null, blockers: before.blockers ?? [], warnings: before.warnings ?? [], ...(before.skip_reason ? { skip_reason: before.skip_reason } : {}) };
+  };
   const replace = (key, fields) => {
     const previous = stageObject(report, key);
     return archiveForBaseline({
@@ -525,7 +527,7 @@ function composeBaseline(report, { now, recordedBy, fingerprint, input, inputs, 
   return {
     report: {
       ...report,
-      commerce_baseline: { accepted_by: input.acceptedBy, accepted_at: now, reason: input.reason, build_fingerprint: fingerprint, replaced_qa: replacedQa },
+      commerce_baseline: { accepted_by: input.acceptedBy, accepted_at: now, reason: input.reason, build_fingerprint: fingerprint, replaced_polish: replacedRecord("polish"), replaced_qa: replacedRecord("qa") },
       stages: {
         ...report.stages,
         polish: replace("polish", { source_build_fingerprint: fingerprint }),

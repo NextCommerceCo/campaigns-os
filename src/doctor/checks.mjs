@@ -442,7 +442,7 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
     run: ({ warnings, buildState }) => {
       const baseline = qaRestsOnBaseline(buildState.report);
       if (!baseline) return;
-      addIssue(warnings, "qa.baseline_accepted", `QA rests on a baseline ${baseline.accepted_by} accepted at ${baseline.accepted_at}, not a test. No purchase has been tested since; a full \`campaigns-os qa run\` ends it.`, { accepted_by: baseline.accepted_by, accepted_at: baseline.accepted_at });
+      addIssue(warnings, "qa.baseline_accepted", `QA rests on a baseline ${baseline.accepted_by} accepted at ${baseline.accepted_at}, not a test. No purchase has been tested since; a completed full \`campaigns-os qa run\` ends it.`, { accepted_by: baseline.accepted_by, accepted_at: baseline.accepted_at });
     },
   },
   {
