@@ -56,8 +56,10 @@ export function reportKeyForCliStage(cliStage) {
  * decided on its effective status (src/input-currency.mjs), which the `next`
  * picker and the Assembly Report's derived summary (src/stage-ledger.mjs)
  * read: a stage owed again is not done, whatever status it records.
+ * "baseline_accepted" is terminal without being completed: a named person
+ * accepted the build (`record baseline`), and nothing tested it.
  */
-export const STAGE_TERMINAL_STATUS_PREFIXES = Object.freeze(["completed", "skipped"]);
+export const STAGE_TERMINAL_STATUS_PREFIXES = Object.freeze(["completed", "skipped", "baseline_accepted"]);
 
 export function stageIsTerminal(status) {
   const normalized = String(status || "");

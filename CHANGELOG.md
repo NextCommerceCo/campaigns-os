@@ -2,6 +2,16 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.65.0] - 2026-11-07
+
+Funnels handed off before 1.62.0 can now reach small checks without a test order. To take it, pin `@nextcommerce/campaigns-os@1.65.0`. Nothing changes for a funnel unless a named person runs the new command.
+
+### Added
+
+- **`record baseline` (#716).** `campaigns-os record baseline --packet <packet> --accepted-by "<named person>" --reason "<why>"` accepts a handed-off funnel from before markup hashes as the starting point, one time per funnel. It tests nothing and places no orders. After it, a page-only change owes QA on that page alone, and a commerce-affecting change still owes the full Polish and QA. It refuses a funnel with no completed deploy or QA, one whose records have markup hashes, and one where no full QA is owed.
+- **The stage status `baseline_accepted`.** Polish and QA take it from `record baseline`. It ends the ladder, so `next` moves on, but it is never `completed` and never hands a campaign off. What those stages held moves to history, so its purchase proof stops counting. A passing `qa run --page` leaves QA at this status, and only a full QA ends it. Progress snapshots read it as `unknown`.
+- **Reports say what it is.** Doctor warns `qa.baseline_accepted`, and `doctor --ci`, readback and `next` say QA rests on a baseline and no purchase has been tested since. `evidence_debt.qa` gains `baseline`, and the Assembly Report gains a top-level `commerce_baseline`.
+
 ## [1.64.0] - 2026-11-07
 
 Developers changing a live funnel from a fresh clone can now get going, and the reports say what they compared. To take it, pin `@nextcommerce/campaigns-os@1.64.0`, run `spec fetch` once on each repository set up from a saved Map, and commit the file it writes. These come from the first post-handoff trial on #716.

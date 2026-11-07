@@ -37,7 +37,8 @@ import { LOCAL_PROOF_BUILD_ENVIRONMENT, LOCAL_PROOF_PRODUCTION_ENVIRONMENT, isLo
 import { polishCarriedForwardForLadder } from "./local-preview-policy.mjs";
 import { isLoopbackHostname } from "./remit.mjs";
 import { campaignRouteRoot, normalizePublicRouteSlug } from "./route-identity.mjs";
-import { buildChangeEntry, buildCommerceSignature, nextBuildChanges } from "./change-scope.mjs";
+import { buildChangeEntry, buildCommerceSignature, nextBuildChanges, rebuiltFromBuildWithoutSignature } from "./change-scope.mjs";
+import { isNamedHuman } from "./checkpoint-waiver.mjs";
 import { assessEvidenceDebt } from "./evidence-debt.mjs";
 import { writeJsonAtomic } from "./doctor-sidecar.mjs";
 import { doctorPacket } from "./doctor/inspect.mjs";
@@ -54,7 +55,7 @@ import {
 import { evaluateRecordedHiddenEagerMediaCheckpoint } from "./polish-node.mjs";
 import { effectiveStageStatus, effectiveStatusIsTerminal, inputStamps, stageWriteInputs } from "./input-currency.mjs";
 import { demoteStages, recordBrief, recordSpec } from "./input-refresh.mjs";
-import { applyDerivedAssemblyReportSummary, archiveStageRecord, archiveSupersededRecord, assemblyReportMatchesPacket, commitAssemblyReport, inputChangeFor, polishReviewedBuild, qaExtendedBuildFingerprint, qaRecordedBuildFingerprint, restorePolishKeptWithOutput } from "./stage-ledger.mjs";
+import { applyDerivedAssemblyReportSummary, archiveStageRecord, archiveForBaseline, archiveSupersededRecord, assemblyReportMatchesPacket, campaignHandedOff, commitAssemblyReport, inputChangeFor, polishReviewedBuild, qaExtendedBuildFingerprint, qaRecordedBuildFingerprint, restorePolishKeptWithOutput } from "./stage-ledger.mjs";
 import { withTargetLockSync } from "./target-lock.mjs";
 import { commerceScopeFromScope } from "./theme-gate.mjs";
 
@@ -71,7 +72,9 @@ const BUILD_RECORD_FLAGS = Object.freeze(["build-environment", "adapter-decision
 // discovery finds it).
 const BRIEF_RECORD_FLAGS = Object.freeze(["brief"]);
 // `record spec` binds the CampaignSpec as it is now; it takes no extra flag.
-const RECORD_SUBCOMMANDS = Object.freeze([...RECORD_STAGES, "brief", "spec"]);
+// `record baseline` accepts the current build as the starting point: who, and why.
+const BASELINE_RECORD_FLAGS = Object.freeze(["accepted-by", "reason"]);
+const RECORD_SUBCOMMANDS = Object.freeze([...RECORD_STAGES, "brief", "spec", "baseline"]);
 // The page-kit environment the built output was rendered in, recorded on
 // stages.assembly.evidence.build_environment (local proof mode builds in
 // development; doctor and page-kit parity read it).
@@ -174,7 +177,7 @@ export function parseRecordArgs(args) {
   if (!RECORD_SUBCOMMANDS.includes(stage) || args._.length !== 2) {
     throw refused(`Use: ${cmd("record")} <${RECORD_SUBCOMMANDS.join("|")}> --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--dry-run] [--json]; record polish also takes --evidence <polish-evidence.json>, record deploy --base-url <served url>, record build [--build-environment <${BUILD_ENVIRONMENTS.join("|")}>] [--adapter-decision <key=value[,key=value...]>], and record brief [--brief <yaml|json>].`);
   }
-  const known = new Set([...RECORD_FLAGS, ...(stage === "polish" ? POLISH_RECORD_FLAGS : []), ...(stage === "deploy" ? DEPLOY_RECORD_FLAGS : []), ...(stage === "build" ? BUILD_RECORD_FLAGS : []), ...(stage === "brief" ? BRIEF_RECORD_FLAGS : [])]);
+  const known = new Set([...RECORD_FLAGS, ...(stage === "polish" ? POLISH_RECORD_FLAGS : []), ...(stage === "deploy" ? DEPLOY_RECORD_FLAGS : []), ...(stage === "build" ? BUILD_RECORD_FLAGS : []), ...(stage === "brief" ? BRIEF_RECORD_FLAGS : []), ...(stage === "baseline" ? BASELINE_RECORD_FLAGS : [])]);
   const unknown = Object.keys(args).filter((key) => key !== "_" && !known.has(key));
   if (unknown.length) {
     throw refused(`Unknown flag${unknown.length > 1 ? "s" : ""} for record ${stage}: ${unknown.map((key) => `--${key}`).join(", ")}. Known flags: ${[...known].map((key) => `--${key}`).join(", ")}.`);
@@ -186,6 +189,10 @@ export function parseRecordArgs(args) {
     throw refused(`--dry-run takes no value (got ${JSON.stringify(args["dry-run"])}); write \`--dry-run\` on its own, after the other flags.`);
   }
   if (Object.hasOwn(args, "json") && args.json !== true) throw refused("--json is a boolean flag and takes no value.");
+  if (stage === "baseline") {
+    if (!isNamedHuman(args["accepted-by"])) throw refused("record baseline: --accepted-by needs the named person accepting this build; placeholders and automation identities are not accepted.");
+    if (!optionalString(args.reason)) throw refused("record baseline: --reason needs the reason this build is being accepted untested.");
+  }
   const buildEnvironment = Object.hasOwn(args, "build-environment") ? args["build-environment"] : null;
   if (buildEnvironment !== null && !BUILD_ENVIRONMENTS.includes(buildEnvironment)) {
     throw refused(`--build-environment must be one of: ${BUILD_ENVIRONMENTS.join(", ")} (got ${JSON.stringify(buildEnvironment)}).`);
@@ -201,6 +208,7 @@ export function parseRecordArgs(args) {
     adapterDecisions,
     briefPath: stage === "brief" && Object.hasOwn(args, "brief") ? resolve(args.brief) : null,
     deviationReason: optionalString(args["deviation-reason"]),
+    baseline: stage === "baseline" ? { acceptedBy: args["accepted-by"].trim().replace(/\s+/g, " "), reason: args.reason.trim() } : null,
   };
 }
 
@@ -322,7 +330,7 @@ function composeSetup(report, context, { now, recordedBy }) {
 // operator decision that applies only to the record that carried it.
 const STAMP_FIELDS = Object.freeze(["source_brief_material", "source_spec_material_hash"]);
 // A replaced record in any of these statuses is checked for an input change.
-const REPLACED_COMPLETED_STATUSES = Object.freeze(["completed", "completed_with_warnings", "completed_partial"]);
+const REPLACED_COMPLETED_STATUSES = Object.freeze(["completed", "completed_with_warnings", "completed_partial", "baseline_accepted"]);
 
 // The stamps a completed record writes: the inputs current at this write
 // (the absent brief value for a packet without a brief). A value that cannot
@@ -471,6 +479,57 @@ function deployAfterBuild(previousDeploy, fingerprint, now) {
     required_for: ["qa"],
   };
   return archiveSupersededRecord(demoted, previousDeploy, { by: "record build", reason: "build_output_changed", at: now });
+}
+
+// `record baseline`: a named person accepts a funnel from before markup hashes
+// as the starting point for page-only changes, without testing it. Polish and
+// QA take the status baseline_accepted, which ends the ladder but is never
+// completed; what they held moves to history, so its purchase proof stops
+// counting. One time per funnel: report.commerce_baseline stays after a later
+// full QA, so this can never be a way past QA that a commerce change owes.
+function composeBaseline(report, { now, recordedBy, fingerprint, input, inputs, packet, packetPath }) {
+  const earlier = report.commerce_baseline;
+  if (isObject(earlier)) {
+    throw refuseRecord("baseline", [`${earlier.accepted_by} accepted a baseline for this funnel at ${earlier.accepted_at}, and a funnel gets one. Run ${cmd("qa")} run for what is owed now.`]);
+  }
+  if (!campaignHandedOff(report)) {
+    throw refuseRecord("baseline", ["This funnel has no completed deploy or QA, now or in its history. A baseline is for a funnel already handed off; run the full stages."]);
+  }
+  if (!rebuiltFromBuildWithoutSignature(report.stages?.assembly)) {
+    throw refuseRecord("baseline", [`This funnel's records have markup hashes (Campaigns OS 1.62.0 or later), or ${cmd("record")} build has not run on this toolkit. Page-only changes can be read from a full QA; a baseline is only for records from before those hashes. If you have not, run ${cmd("record")} build first.`]);
+  }
+  const debt = assessEvidenceDebt({ packet, packetPath, report }).qa;
+  if (debt.status !== "owed" || debt.scope !== "full") {
+    throw refuseRecord("baseline", [`A full QA is not owed (QA reads ${debt.status}${debt.scope ? `, scope ${debt.scope}` : ""}), so there is nothing to accept.`]);
+  }
+  const stamps = currentStamps(inputs);
+  const replace = (key, fields) => {
+    const previous = stageObject(report, key);
+    return archiveForBaseline({
+      stage: key,
+      status: "baseline_accepted",
+      recorded_by: recordedBy,
+      checked_at: now,
+      baseline_accepted_at: now,
+      ...stamps,
+      blockers: [],
+      warnings: [],
+      outputs: [],
+      ...fields,
+    }, previous, { at: now });
+  };
+  return {
+    report: {
+      ...report,
+      commerce_baseline: { accepted_by: input.acceptedBy, accepted_at: now, reason: input.reason, build_fingerprint: fingerprint },
+      stages: {
+        ...report.stages,
+        polish: replace("polish", { source_build_fingerprint: fingerprint }),
+        qa: replace("qa", { evidence: { source_build_fingerprint: fingerprint } }),
+      },
+    },
+    context: null,
+  };
 }
 
 function composePolish(report, { now, recordedBy, fingerprint, input, inputs = {} }) {
@@ -1009,7 +1068,7 @@ function doctorFacts(stage, doctor, report, packet) {
   const binding = bindingProblems(doctor, report, packet);
   if (binding.length) throw refuseRecord(stage, binding);
   // The brand layer is applied to built output, so theme is checked as polish is.
-  const ladder = ladderProblems(stage === "theme" ? "polish" : stage, doctor, report);
+  const ladder = ladderProblems(stage === "theme" || stage === "baseline" ? "polish" : stage, doctor, report);
   if (ladder.length) throw refuseRecord(stage, ladder);
   if (stage === "setup") {
     const outputDir = optionalString(derived.target_output_dir);
@@ -1026,7 +1085,7 @@ function doctorFacts(stage, doctor, report, packet) {
   if (stage === "build" && derived.scaffold_required === true) {
     throw refuseRecord(stage, [`Setup is still required (${derived.scaffold_reason || "Build Context scaffold.required is true"}); run ${cmd("record")} setup first.`]);
   }
-  if (stage === "polish" || stage === "theme" || stage === "deploy") {
+  if (stage === "polish" || stage === "theme" || stage === "deploy" || stage === "baseline") {
     const recorded = optionalString(report?.stages?.assembly?.build_fingerprint);
     if (!String(report?.stages?.assembly?.status || "").startsWith("completed") || !recorded) {
       throw refuseRecord(stage, [`Build is not recorded (stages.assembly needs a completed status and build_fingerprint); run ${cmd("record")} build first.`]);
@@ -1143,12 +1202,12 @@ function readPacketFile(stage, packetPath) {
  * composed or written.
  */
 export function recordStageCommand(args, { now = () => new Date(), beforeLock = null, afterDoctorRead = null, probe = null } = {}) {
-  const { stage, packetPath, evidencePath, dryRun, buildEnvironment, adapterDecisions, deviationReason } = parseRecordArgs(args);
+  const { stage, packetPath, evidencePath, dryRun, buildEnvironment, adapterDecisions, deviationReason, baseline } = parseRecordArgs(args);
   if (!existsSync(packetPath)) throw new Error(`record ${stage}: Build Packet not found at ${packetPath}; run ${cmd("start")} or ${cmd("prepare-build")} first.`);
   if (stage === "deploy" && !probe) throw new Error("record deploy needs the served-route probe; run it through recordCommand.");
   // Operator input, not target state: no campaigns-os writer produces it.
   // For deploy, the probe of the running server (probeLocalPreview).
-  const input = stage === "polish" ? readPolishEvidenceFile(evidencePath) : stage === "deploy" ? probe : null;
+  const input = stage === "polish" ? readPolishEvidenceFile(evidencePath) : stage === "deploy" ? probe : baseline;
   const sidecars = {
     contextPath: args.context ? resolve(args.context) : undefined,
     reportPath: args.report ? resolve(args.report) : undefined,
@@ -1169,7 +1228,7 @@ export function recordStageCommand(args, { now = () => new Date(), beforeLock = 
   const recorded = dryRun ? run() : withTargetLockSync(lockedTarget, run, { command: `record ${stage}` });
   const { composed, facts, layer, reportPath, contextPath, after } = recorded;
 
-  const stageKey = stage === "build" ? "assembly" : stage;
+  const stageKey = stage === "build" ? "assembly" : stage === "baseline" ? "qa" : stage;
   const writes = [...(composed.context ? [contextPath] : []), ...(composed.packet ? [packetPath] : []), reportPath];
   const ready = stage === "deploy" ? [
     `stages.deploy.status = completed; deploy.preview_url = ${input.url}`,
@@ -1186,6 +1245,7 @@ export function recordStageCommand(args, { now = () => new Date(), beforeLock = 
     ...(stage === "build" && adapterDecisions ? Object.entries(adapterDecisions).map(([key, value]) => `report.adapter_decisions.${key} = ${value}`) : []),
     ...(stage === "build" ? buildChangeReadyLines(composed.report.stages.assembly) : []),
     ...(stage === "build" ? [`stages.polish.status = ${composed.report.stages.polish.status}`] : []),
+    ...(stage === "baseline" ? [`Polish and QA read baseline_accepted: ${baseline.acceptedBy} accepted build ${facts.fingerprint}. Nothing was tested, and no purchase is proven from here until a full ${cmd("qa")} run.`] : []),
     ...(stage === "build" && composed.report.stages.deploy?.required_by === "build" ? [`stages.deploy.status = ${composed.report.stages.deploy.status} (the recorded deploy probed other output; run ${cmd("record")} deploy again)`] : []),
     ...(composed.context ? ["Build Context scaffold.required = false"] : []),
   ];
@@ -1200,7 +1260,7 @@ export function recordStageCommand(args, { now = () => new Date(), beforeLock = 
     ...(dryRun ? { would_write: writes } : { written: writes }),
     build_fingerprint: facts.fingerprint || null,
     // The manifest is kept in the report, not echoed: it lists every built file.
-    record: stage === "theme" ? composed.report.theme : stage === "build" ? withoutKeys(composed.report.stages.assembly, ["build_manifest", "commerce_signature"]) : composed.report.stages[stageKey],
+    record: stage === "baseline" ? composed.report.commerce_baseline : stage === "theme" ? composed.report.theme : stage === "build" ? withoutKeys(composed.report.stages.assembly, ["build_manifest", "commerce_signature"]) : composed.report.stages[stageKey],
     ...(stage === "build" ? { polish: composed.report.stages.polish } : {}),
     ...(composed.context ? { scaffold: composed.context.scaffold } : {}),
     ...(stage === "polish" && input.hasRepairLoopDefect ? { repair_loop_defect: input.repairLoopDefect } : {}),
@@ -1273,7 +1333,9 @@ function recordUnderLock({ stage, packetPath, sidecars, lockedTarget, input, dry
           ? composeTheme(report, { now: timestamp, recordedBy, layer })
           : stage === "deploy"
             ? composeDeploy(report, packet, { now: timestamp, recordedBy, probe: input, fingerprint: facts.fingerprint })
-            : composePolish(report, { now: timestamp, recordedBy, fingerprint: facts.fingerprint, input, inputs: recordInputs(doctor) });
+            : stage === "baseline"
+              ? composeBaseline(report, { now: timestamp, recordedBy, fingerprint: facts.fingerprint, input, inputs: recordInputs(doctor), packet, packetPath })
+              : composePolish(report, { now: timestamp, recordedBy, fingerprint: facts.fingerprint, input, inputs: recordInputs(doctor) });
     applyDerivedAssemblyReportSummary(next.report, recordInputs(doctor));
     // The packet's one new value, deploy.preview_url, is checked by
     // deployPreviewUrl; the rest of the packet is as the operator left it.
@@ -1290,7 +1352,7 @@ function recordUnderLock({ stage, packetPath, sidecars, lockedTarget, input, dry
   // Already inside the target lock, which commitAssemblyReport re-enters.
   commitAssemblyReport(workspace, compose, {
     command: `record ${stage}`,
-    staleReason: `${stage === "theme" ? "theme" : `stages.${stage === "build" ? "assembly" : stage}`} was recorded after this doctor snapshot. Re-run ${cmd("doctor")} (or next) for current state.`,
+    staleReason: `${stage === "theme" ? "theme" : stage === "baseline" ? "a baseline" : `stages.${stage === "build" ? "assembly" : stage}`} was recorded after this doctor snapshot. Re-run ${cmd("doctor")} (or next) for current state.`,
     ...(dryRun ? { lock: false } : {}),
   });
   const after = dryRun ? null : doctorPacket(packetPath, sidecars);

@@ -465,3 +465,125 @@ test("a page-scoped run refuses QA that an input change owes, or whose inputs ca
   assert.throws(() => scope("unknown"), /cannot be confirmed current, so it owes a full QA run/);
   assert.deepEqual(scope("current").scope.owed_pages, ["upsell1"]);
 });
+
+// `record baseline`: a funnel from before markup hashes, accepted as the
+// starting point by a named person, so small checks work without a test order.
+const ACCEPTED = { "accepted-by": "Pat Rivera", reason: "Live and selling since before markup hashes" };
+const recordBaseline = (f, extra = {}) => recordStageCommand({ _: ["record", "baseline"], packet: f.packetPath, ...ACCEPTED, ...extra });
+
+function legacyFixture(t) {
+  const f = fixture(t);
+  const report = f.readReport();
+  delete report.stages.assembly.commerce_signature;
+  writeFileSync(f.reportPath, JSON.stringify(report));
+  copyEdit(f);
+  f.recordBuild();
+  return f;
+}
+
+test("a baseline is its own status, keeps no purchase proof, and says what it is", (t) => {
+  const f = legacyFixture(t);
+  assert.equal(f.debt().qa.scope, "full", "before it, the first change on a pre-1.62 build owes everything");
+  const before = f.readReport().stages.qa;
+  assert.ok(before.purchase_proof);
+  const result = recordBaseline(f);
+  assert.equal(result.record.accepted_by, "Pat Rivera");
+  const report = f.readReport();
+  for (const key of ["polish", "qa"]) {
+    assert.equal(report.stages[key].status, "baseline_accepted");
+    assert.equal(report.stages[key].completed_at, undefined, "never completed");
+  }
+  assert.equal(report.stages.qa.purchase_proof, undefined, "the old purchase proof stops counting");
+  assert.equal(report.stages.qa.verdict_run_id, undefined);
+  assert.deepEqual(report.stages.qa.history.at(-1).purchase_proof, before.purchase_proof, "it is kept in history");
+  const debt = f.debt();
+  assert.equal(debt.qa.status, "current");
+  assert.equal(debt.qa.baseline.accepted_by, "Pat Rivera");
+  assert.equal(debt.polish.status, "current");
+  const { stdout, status } = ci(f);
+  assert.equal(status, 0);
+  assert.match(stdout, /QA rests on a baseline Pat Rivera accepted on \d{4}-\d{2}-\d{2}, not a test\. No purchase has been tested since\./);
+  assert.ok(doctorPacket(f.packetPath).warnings.some((issue) => issue.code === "qa.baseline_accepted"));
+  const readback = runReadbackCommand({ _: ["readback", f.root], json: true, packet: f.packetPath });
+  assert.equal(JSON.parse(readback.text).evidence_debt.qa.baseline.accepted_by, "Pat Rivera");
+});
+
+test("after a baseline a copy edit owes QA on that page, the pass stays a baseline, and it never gains purchase proof", (t) => {
+  const f = legacyFixture(t);
+  recordBaseline(f);
+  f.writePage("landing", PAGES.landing.replace("Landing headline", "A new headline"));
+  f.recordBuild();
+  const debt = f.debt();
+  assert.equal(debt.qa.scope, "pages");
+  assert.deepEqual(debt.qa.owed_pages.map((page) => page.page_id), ["landing"]);
+  assert.equal(debt.polish.advisory, true);
+  assert.equal(debt.qa.baseline.accepted_by, "Pat Rivera", "a change owed on pages still rests on the baseline");
+  const base = `http://127.0.0.1:9/${SLUG}/`;
+  const scoped = applyQaPageScope([{ pages: [{ page_id: "landing", url: `${base}landing/` }] }], { pages: ["landing"], baseUrl: base, debt, report: f.readReport() });
+  const verdict = { run_id: "page-run", campaign_slug: "synthetic-map", disposition: "ready", completed_at: "2026-11-08T00:00:00Z", assertions: [], spec_hash: null, qc_results: [] };
+  assert.equal(recordQaStageOutcome({ _: ["qa", "run"], packet: f.packetPath }, { verdict, page_scope: scoped.scope }), true);
+  const qa = f.readReport().stages.qa;
+  assert.equal(qa.status, "baseline_accepted", "a page-scoped pass proves those pages, not the funnel");
+  assert.equal(qa.purchase_proof, undefined);
+  assert.equal(qa.completed_at, undefined);
+  assert.ok(qa.baseline_accepted_at);
+});
+
+test("a commerce change after a baseline owes the full stages, and a second baseline is refused", (t) => {
+  const f = legacyFixture(t);
+  recordBaseline(f);
+  f.writePage("upsell1", PAGES.upsell1.replace("</body>", "<script src=\"/tracking.js\"></script></body>"));
+  f.recordBuild();
+  const debt = f.debt();
+  assert.equal(debt.qa.status, "owed");
+  assert.equal(debt.qa.scope, "full");
+  assert.equal(debt.qa.change.kind, "commerce_affecting");
+  assert.throws(() => recordBaseline(f), /a funnel gets one/);
+});
+
+test("a full QA ends the baseline, and the funnel does not get another", (t) => {
+  const f = legacyFixture(t);
+  recordBaseline(f);
+  const verdict = { run_id: "full-run", campaign_slug: "synthetic-map", disposition: "ready", completed_at: "2026-11-08T00:00:00Z", assertions: [], spec_hash: null, qc_results: [], test_orders: [] };
+  assert.equal(recordQaStageOutcome({ _: ["qa", "run"], packet: f.packetPath }, { verdict }), true);
+  const report = f.readReport();
+  assert.equal(report.stages.qa.status, "completed");
+  assert.equal(report.stages.qa.baseline_accepted_at, undefined);
+  assert.equal(f.debt().qa.baseline, undefined);
+  assert.ok(report.commerce_baseline, "kept, so it stays one time per funnel");
+  assert.throws(() => recordBaseline(f), /a funnel gets one/);
+});
+
+test("a baseline is refused for a funnel with hashes, one not handed off, and one with nothing owed", (t) => {
+  const hashed = fixture(t);
+  hashed.writePage("upsell1", PAGES.upsell1.replace("</body>", "<script src=\"/tracking.js\"></script></body>"));
+  hashed.recordBuild();
+  assert.throws(() => recordBaseline(hashed), /only for records from before those hashes/);
+
+  const fresh = legacyFixture(t);
+  const report = fresh.readReport();
+  for (const key of ["deploy", "qa"]) { report.stages[key].status = "pending"; delete report.stages[key].history; }
+  writeFileSync(fresh.reportPath, JSON.stringify(report));
+  assert.throws(() => recordBaseline(fresh), /already handed off/);
+
+  assert.throws(() => recordBaseline(fixture(t)), /only for records from before those hashes/, "an unchanged funnel has nothing to accept");
+});
+
+test("a baseline needs a named person and a reason, and a dry run writes nothing", (t) => {
+  const f = legacyFixture(t);
+  assert.throws(() => recordBaseline(f, { "accepted-by": "operator" }), /--accepted-by needs the named person/);
+  assert.throws(() => recordBaseline(f, { "accepted-by": "Claude Code" }), /--accepted-by needs the named person/);
+  assert.throws(() => recordBaseline(f, { reason: true }), /--reason needs/);
+  const before = readFileSync(f.reportPath, "utf8");
+  assert.equal(recordBaseline(f, { "dry-run": true }).status, "dry_run");
+  assert.equal(readFileSync(f.reportPath, "utf8"), before);
+});
+
+test("a spec change after a baseline owes the stage again", (t) => {
+  const f = legacyFixture(t);
+  recordBaseline(f);
+  assert.equal(doctorPacket(f.packetPath).derived.input_currency.stages.qa, "current");
+  const specPath = join(f.root, "missing-spec.json");
+  writeFileSync(specPath, JSON.stringify({ ...JSON.parse(readFileSync(specPath, "utf8")), edited: true }));
+  assert.equal(doctorPacket(f.packetPath).derived.input_currency.stages.qa, "owed");
+});

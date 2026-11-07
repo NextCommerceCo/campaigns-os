@@ -63,7 +63,7 @@ const BRIEF_MAX_BYTES = 1024 * 1024;
 const BRIEF_MAX_DESIGN_AUTHORITY_ENTRIES = 512;
 const BRIEF_PROMPT_PREFIX = "BUILD_BRIEF_";
 const BRIEF_GATE_PREFIX = "build_brief.";
-const COMPLETED_STATUSES = Object.freeze(["completed", "completed_with_warnings", "completed_partial"]);
+const COMPLETED_STATUSES = Object.freeze(["completed", "completed_with_warnings", "completed_partial", "baseline_accepted"]);
 
 const isBriefBlocker = (entry) => typeof entry?.code === "string" && (entry.code.startsWith(BRIEF_PROMPT_PREFIX) || entry.code.startsWith(BRIEF_GATE_PREFIX));
 

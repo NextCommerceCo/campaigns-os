@@ -1310,6 +1310,7 @@ function renderEvidenceDebt(debt, lines) {
         : `evidence currency is unknown (${stage.reason}); absence of proof is not no debt`;
     lines.push(`  ${name}: ${stage.status} — ${explanation}`);
     lines.push(`    recorded: ${stage.recorded_build_fingerprint ?? "unknown"}; current: ${stage.current_build_fingerprint ?? "unknown"}`);
+    if (stage.baseline) lines.push(`    baseline: accepted by ${oneLine(stage.baseline.accepted_by)} at ${oneLine(stage.baseline.accepted_at)}, not tested; no purchase tested since`);
     if (stage.change) {
       const owes = stage.advisory ? "advisory: reported, not required"
         : stage.scope === "pages" ? `owed on ${stage.owed_pages.map((page) => oneLine(page.page_id)).join(", ")} (qa run --page)` : "the full stage is owed";

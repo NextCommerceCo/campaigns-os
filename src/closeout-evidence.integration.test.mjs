@@ -416,6 +416,24 @@ test("an intentional no-order diagnostic policy still reaches done unchanged", (
 // Old-format leg. Shape reproduced from the pre-#308 report on record: stages
 // with no `checked_at`, a `completed_at` on a stage that is not completed, and a
 // hand-authored verdict_run_id / evidence pair. Synthesized, not copied.
+test("a baseline ends the ladder at done, and next says it is not a test", () => {
+  const fixture = target({
+    prefix: "closeout-evidence-baseline-",
+    mutateReport(report) {
+      report.commerce_baseline = { accepted_by: "Pat Rivera", accepted_at: "2026-11-07T00:00:00.000Z", reason: "Live before markup hashes", build_fingerprint: BUILD_FINGERPRINT };
+      report.stages.polish = { ...report.stages.polish, status: "baseline_accepted", baseline_accepted_at: "2026-11-07T00:00:00.000Z" };
+      delete report.stages.polish.completed_at;
+      const { source_brief_material, source_spec_material_hash } = report.stages.polish;
+      report.stages.qa = { ...report.stages.qa, status: "baseline_accepted", baseline_accepted_at: "2026-11-07T00:00:00.000Z", evidence: { source_build_fingerprint: BUILD_FINGERPRINT }, source_brief_material, source_spec_material_hash };
+    },
+  });
+  const next = runNext(fixture.packetPath);
+  assert.equal(next.stage, "done", next.reason);
+  assert.match(next.prompt, /QA rests on a baseline Pat Rivera accepted, not a test/);
+  assert.equal(action(next, "qa_run"), null);
+  assert.ok(doctorPacket(fixture.packetPath).warnings.some((issue) => issue.code === "qa.baseline_accepted"));
+});
+
 test("an old-format report is read, advised about, and migrated without loss", () => {
   const fixture = target({
     prefix: "closeout-evidence-legacy-",

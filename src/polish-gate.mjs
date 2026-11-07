@@ -393,6 +393,16 @@ function evaluateStructuredPolishGate({ report, required = false, now = Date.now
   }
 
   const buildFingerprint = currentBuildFingerprint(report);
+  // A baseline reviewed nothing, so it grants no pass; it only stands for its
+  // own build. The stale check below handles it once the build has moved on.
+  if (report.stages?.polish?.status === "baseline_accepted" && normalizeString(report.stages.polish.source_build_fingerprint) === buildFingerprint) {
+    return {
+      status: "not_applicable",
+      code: "polish.baseline_accepted",
+      reason: "Polish was not run for this build: a named person accepted it as a baseline.",
+      build_fingerprint: buildFingerprint,
+    };
+  }
   const currentSourcePackageFingerprint = currentSourcePackageMaterialFingerprint(report);
   const assemblySourcePackageFingerprint = assemblySourcePackageMaterialFingerprint(report);
   const waiverAssessment = assessAssemblySourcePackageFreshnessWaivers(report, now);

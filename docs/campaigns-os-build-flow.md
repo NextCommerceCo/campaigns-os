@@ -95,9 +95,35 @@ rebuild since, not just the latest. So a copy edit that `record build` calls
 QA was commerce-affecting. The report names that QA's build and date, and that
 rebuild.
 
-Page-only changes start after one full QA on 1.62.0 or later. A build recorded
-before 1.62.0 has no markup hashes to compare with, so the first change on it
-reads as commerce-affecting.
+Page-only changes start after one full QA on 1.62.0 or later, or after a
+baseline. A build recorded before 1.62.0 has no markup hashes to compare with,
+so the first change on it reads as commerce-affecting.
+
+### Accepting a funnel from before 1.62.0
+
+A funnel handed off before 1.62.0 owes the full Polish and QA on its first
+change, whatever the change. To start from where it is instead, a named person
+can accept it:
+
+```bash
+campaigns-os record build --packet <packet>
+campaigns-os record baseline --packet <packet> --accepted-by "<named person>" --reason "<why>"
+```
+
+This tests nothing and places no orders. Polish and QA read `baseline_accepted`,
+which is never `completed`. What they held moves to history, so its purchase
+proof stops counting. After that:
+
+- A page-only change owes QA on that page only. A passing `qa run --page` leaves
+  QA at `baseline_accepted`, because it proved those pages and not the funnel.
+- A commerce-affecting change owes the full Polish and QA.
+- A CampaignSpec or brief change owes the stages again.
+- Doctor warns `qa.baseline_accepted`, and `doctor --ci`, readback and `next` all
+  say QA rests on a baseline and no purchase has been tested since.
+- A full `qa run` ends it.
+
+A funnel gets one baseline. The command refuses a funnel with no completed deploy
+or QA, one whose records have markup hashes, and one where no full QA is owed.
 
 The PR comment opens with the kind it found and what that owes, for example
 "Change found: page-only. It owes QA on `upsell1`; Polish is advisory." A

@@ -102,6 +102,10 @@ and the write are observed rather than taken on trust.
 packet's copy is missing, and it never replaces one. It also writes the target's
 `.gitignore` when the managed block is missing or still lists `fetched-specs/`.
 
+`record baseline` writes only the Assembly Report and sends nothing. It is tier C
+because it replaces the live Polish and QA records, so any purchase proof they
+held stops counting. History keeps them.
+
 ### The live campaign read
 
 `doctor --packet` (with or without `--write` / `--no-write`) and every `qa run`

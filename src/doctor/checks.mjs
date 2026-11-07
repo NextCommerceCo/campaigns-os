@@ -437,6 +437,15 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
     run: ({ packet, errors, warnings, ready, derived, buildState }) => validateBuildOutputFingerprint(packet, errors, warnings, ready, derived, buildState),
   },
   {
+    id: "qa.baseline_accepted",
+    phase: "built-output",
+    run: ({ warnings, buildState }) => {
+      const baseline = buildState.report?.commerce_baseline;
+      if (!baseline || buildState.report?.stages?.qa?.status !== "baseline_accepted") return;
+      addIssue(warnings, "qa.baseline_accepted", `QA rests on a baseline ${baseline.accepted_by} accepted at ${baseline.accepted_at}, not a test. No purchase has been tested since; a full \`campaigns-os qa run\` ends it.`, { accepted_by: baseline.accepted_by, accepted_at: baseline.accepted_at });
+    },
+  },
+  {
     id: "built_output.pages",
     phase: "built-output",
     run: ({ spec, packet, errors, warnings, ready, derived, buildState }) => validateBuiltOutputPages(spec, packet, errors, warnings, ready, derived, buildState),

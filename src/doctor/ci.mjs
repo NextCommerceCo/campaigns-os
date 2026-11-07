@@ -85,6 +85,11 @@ function uncoveredRebuildLine(ci, stages) {
   return `- The latest change alone is page-only. ${names} still ${behind.length > 1 ? "owe" : "owes"} the full stage for an earlier rebuild${at ? ` recorded ${at}` : ""} (${code(shortBuild(rebuild.build_fingerprint))}) since that review.`;
 }
 
+function baselineLine(baseline) {
+  const at = /^\d{4}-\d{2}-\d{2}/.exec(String(baseline.accepted_at ?? ""))?.[0];
+  return `QA rests on a baseline ${text(baseline.accepted_by)} accepted${at ? ` on ${at}` : ""}, not a test. No purchase has been tested since.`;
+}
+
 const requiredStageReasons = new Map([
   ["stage_required_by_build", "the build requires this stage again"],
   ["stage_required_by_brief", "the brief requires this stage again"],
@@ -197,6 +202,7 @@ export function formatDoctorCi(result) {
       lines.push("", "Remedy: rebuild, then run `campaigns-os record build --packet <packet>`, `campaigns-os polish capture --packet <packet> --base-url <served-current-build-url>` for the whole route, and `campaigns-os record polish --packet <packet> --evidence <polish-evidence.json>`, in that order. When QA is owed, run `campaigns-os qa run --packet <packet>` against that build.");
     }
   }
+  if (ci.qa.baseline) lines.push("", baselineLine(ci.qa.baseline));
   lines.push("", `Doctor inspection: ${(result.errors || []).length} error(s), ${(result.warnings || []).length} warning(s); CI exit status depends only on evidence debt.`);
   if (result.errors?.length) {
     lines.push(`Doctor errors: ${[...new Set(result.errors.map((issue) => issue.code))].map(code).join(", ")}.`);

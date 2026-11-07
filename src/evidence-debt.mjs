@@ -158,5 +158,9 @@ export function assessEvidenceDebt({ packet = null, packetPath = null, report = 
     qa.scope = null;
     qa.owed_pages = [];
   }
+  if (qaRecord?.status === "baseline_accepted" && report?.commerce_baseline) {
+    const { accepted_by, accepted_at, reason: acceptedFor, build_fingerprint } = report.commerce_baseline;
+    qa.baseline = { accepted_by, accepted_at, reason: acceptedFor, build_fingerprint };
+  }
   return { polish, qa, changes };
 }
