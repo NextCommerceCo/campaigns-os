@@ -502,6 +502,22 @@ this run did not compare. A `commercial-currency:<RUN>:<ANSWERED>` blocker and a
 `commercial_parity.recurring_claim_absent` warning are their own rows and add no
 `commercial-parity:incomplete:` row.
 
+Bound prices are read two ways, because the two bindings mean different things in
+the source. `bundle.<id>.price` is compared as authored in the source HTML, against
+the page's calculated total. `package.price` and `package.<ref>.price` are compared
+as rendered, because what the source holds there is the template's placeholder (a
+starter upsell ships `$9.99`). Under `qa run --browser`, QA reads each visible node
+once the SDK has written it, which it knows by the `display-visible` class the SDK
+adds, and compares it with calculate's `unit_price` for that package's row on the
+page: one unit, after offers. So a page printing `package.price`, which is the list
+price, beside a live offer gets a `price-claim-mismatch` warning. The package is the
+id in the path, or else the nearest `data-next-package-id`, `data-next-package` or
+`data-package-id`, which is how the SDK scopes it. The source is only read to learn
+that these claims exist, so a run without `--browser` reports them as
+`package_price_not_rendered`. `verdict.commercial.package_price_claims` counts them.
+Under a `--currency` that is not the Map's they stay unresolved, like the source
+prices above, because the browser pass does not load pages in the run currency.
+
 Only contract-governed claims are compared, and only against `Exact` normalized
 truth. Proven differences emit warn-severity `pricing` assertions named
 `price-claim-mismatch`, `cadence-disclosure-mismatch`, or

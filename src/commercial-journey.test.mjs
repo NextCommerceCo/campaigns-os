@@ -61,6 +61,23 @@ test("raw page rows survive planning and drive quantity-aware recurrence truth",
   assert.equal(row.recurring_annotation, "then $59.98 / 30 days");
 });
 
+test("a row keeps the unit price after offers beside its list price, and only when calculate sent it", () => {
+  const page = { id: "upsell", type: "upsell", order: 1, packages: [{ ref_id: "3", qty: 1 }] };
+  const spec = { schema_version: "4.3", campaign: { currency: "USD" }, funnels: [{ id: "default", pages: [page] }] };
+  const plan = planScenarios(page, spec);
+  const journeyWith = (fields) => normalizeJourney(plan, plan.map((descriptor) => {
+    const envelope = calculateEnvelope(descriptor);
+    envelope.id = descriptor.id;
+    envelope.response.lines = envelope.response.lines.map((line) => ({ ...line, ...fields }));
+    return envelope;
+  }), spec, {});
+
+  const [row] = journeyWith({ original_unit_price: "59.99", unit_price: "49.99" }).pages[0].rows;
+  assert.equal(row.unit_price.state, PricingState.Exact);
+  assert.equal(row.unit_price.value, "49.99");
+  assert.equal(Object.hasOwn(journeyWith({}).pages[0].rows[0], "unit_price"), false);
+});
+
 test("an invalid recurrence never leaks a numeric recurring annotation", () => {
   const page = {
     id: "checkout",
