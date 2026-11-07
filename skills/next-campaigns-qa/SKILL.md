@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-qa
-version: 1.3.54
+version: 1.3.55
 description: Run spec-aware QA from a saved Map or local-spec Build Packet and tested campaign URL after build, polish, and deploy/local evidence exist, including Playwright typed-card test-order proof.
 ---
 
-Bundle revision: 1.64.0+skills.1
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.64.0+skills.1`
+Bundle revision: 1.65.0+skills.1
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.65.0+skills.1`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -75,7 +75,7 @@ Inputs:
 Rules:
 
 - Use the public Node/npm `campaigns-os qa` commands for campaign QA runs.
-- Canonical `qa run` automatically runs commercial parity for enabled pages with package rows when their source evidence is available. It reuses each page's read-only source fetch and the existing read-only `POST /api/price-preview`; neither creates carts, orders, or transactions. The lane is warn-first: proven price, recurring-cadence, and voucher mismatches become warn-severity `pricing` assertions, with compact coverage and findings at top-level `verdict.commercial`. Omitted or otherwise unprovable claims emit no mismatch assertion and do not change an otherwise-ready disposition; incomplete coverage remains visible in `verdict.commercial`.
+- Canonical `qa run` automatically runs commercial parity for enabled pages with package rows when their source evidence is available. It reuses each page's read-only source fetch and the existing read-only `POST /api/price-preview`; neither creates carts, orders, or transactions. The lane is warn-first: proven price, recurring-cadence, and voucher mismatches become warn-severity `pricing` assertions, with compact coverage and findings at top-level `verdict.commercial`. Unprovable claims never read as a mismatch. Incomplete coverage (for example a spec with no `campaign.campaigns_api_key`, so no scenario ran) keeps the run at `ready_with_exceptions` at least, never `blocked`, with a warn row `commercial-parity:incomplete:<code>` in `exceptions[]` that names the cause and the fix. Report it to the operator, and do not call a run whose commercial status is `incomplete` fully proven.
 - Use `qa parity` for migration cells that carry a parity fixture; select the fixture scenario and drive that offer through the candidate funnel.
 - Parity capture blocking proof is the voucher-adjusted persisted line from typed-card order readback. Browser totals and client state do not replace the persisted-line voucher guard.
 - Read client purchase values per event. A whole-cart `dl_purchase` must not mask or supply an offer-level upsell purchase expectation.
