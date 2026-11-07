@@ -7,12 +7,22 @@ import test from "node:test";
 import {
   captureCommercialClaims,
   commercialSpecPages,
+  crashedCommercialResult,
   createPageSourceLoader,
   planCommercialParity,
   resolveCommercialApiKey,
   runCommercialParity,
 } from "./qa-commercial-parity.mjs";
 import { __qaNodeTestHooks } from "./qa-node.mjs";
+import { createVerdict } from "./qa-verdict.mjs";
+
+function incompleteIds(result) {
+  return result.assertions.map((entry) => entry.id).filter((id) => id.startsWith("commercial-parity:incomplete:"));
+}
+
+function provenAssertions(result) {
+  return result.assertions.filter((entry) => !entry.id.startsWith("commercial-parity:incomplete:"));
+}
 
 function rawRecurringSpec() {
   return {
@@ -210,7 +220,8 @@ test("missing credentials and malformed proxy JSON are incomplete, never clean o
   });
   assert.equal(missingKey.commercial.status, "incomplete");
   assert.deepEqual(missingKey.commercial.issues, [{ code: "missing_campaigns_api_key", count: 1 }]);
-  assert.deepEqual(missingKey.assertions, []);
+  assert.deepEqual(incompleteIds(missingKey), ["commercial-parity:incomplete:missing_campaigns_api_key"]);
+  assert.equal(missingKey.assertions.some((entry) => entry.id.startsWith("price-claim-mismatch")), false);
 
   const unsupportedEnv = await runCommercialParity({
     resolved: {
@@ -226,7 +237,7 @@ test("missing credentials and malformed proxy JSON are incomplete, never clean o
     code: "unsupported_campaigns_api_key_source",
     count: 1,
   }]);
-  assert.deepEqual(unsupportedEnv.assertions, []);
+  assert.deepEqual(incompleteIds(unsupportedEnv), ["commercial-parity:incomplete:unsupported_campaigns_api_key_source"]);
 
   rawSpec.campaign.campaigns_api_key = "campaign-secret";
   const malformed = await runCommercialParity({
@@ -236,7 +247,224 @@ test("missing credentials and malformed proxy JSON are incomplete, never clean o
   });
   assert.equal(malformed.commercial.status, "incomplete");
   assert.equal(malformed.commercial.failed_scenarios, 2);
-  assert.deepEqual(malformed.assertions, []);
+  assert.deepEqual(incompleteIds(malformed), ["commercial-parity:incomplete:price_preview_failed"]);
+  assert.match(malformed.assertions[0].actual, /2 of 2 planned scenarios \(price_preview_invalid_json\)/);
+});
+
+test("incomplete coverage names its cause and its fix in a warn row, and stays warn-only", async () => {
+  const rawSpec = rawRecurringSpec();
+  delete rawSpec.campaign.campaigns_api_key;
+  const result = await runCommercialParity({
+    resolved: { rawSpec, spec: rawSpec, proxyBase: "https://proxy.example.test" },
+    captures: [captureCommercialClaims({ page_id: "page_mt104ehn_11" }, "<main></main>")],
+    fetchImpl: async () => { throw new Error("must not fetch"); },
+  });
+
+  // A page with no calculated total is a consequence of the missing key, so
+  // the only row is the key: one cause, one thing for the agent to do.
+  const [row, ...others] = result.assertions;
+  assert.deepEqual(others, []);
+  assert.equal(row.id, "commercial-parity:incomplete:missing_campaigns_api_key");
+  assert.equal(row.family, "pricing");
+  assert.equal(row.status, "warn");
+  assert.equal(row.severity, "warn");
+  assert.match(row.actual, /0 of 2 planned calculate scenarios/);
+  assert.match(row.actual, /Fix: Set campaign\.campaigns_api_key/);
+  assert.equal(JSON.stringify(row).includes("campaign-secret"), false);
+
+  // Reaches exceptions[] through the ordinary projection, without blocking.
+  const verdict = createVerdict({
+    runId: "run",
+    mapId: "map",
+    specVersion: "4.3",
+    specHash: "hash",
+    startedAt: "2026-11-07T00:00:00.000Z",
+    completedAt: "2026-11-07T00:00:00.000Z",
+    runtime: "node",
+    assertions: result.assertions,
+    commercial: result.commercial,
+  });
+  assert.equal(verdict.disposition, "ready_with_exceptions");
+  assert.deepEqual(verdict.exceptions.map((entry) => [entry.id, entry.severity]), [[row.id, "warn"]]);
+  assert.match(verdict.exceptions[0].actual, /Fix: /);
+  assert.deepEqual(result.commercial.incomplete_reasons.map((entry) => entry.code), ["missing_campaigns_api_key"]);
+});
+
+test("each cause of incomplete coverage gets its own named row", async () => {
+  const priced = async (_url, options) => {
+    const { scenario } = JSON.parse(options.body);
+    return new Response(JSON.stringify(calculateBody(scenario)), { status: 200 });
+  };
+  const resolvedFor = (spec) => ({ rawSpec: spec, spec, proxyBase: "https://proxy.example.test" });
+  const pageId = "page_mt104ehn_11";
+  const claims = (html) => captureCommercialClaims({ page_id: pageId }, html);
+  const readable = '<div data-next-package-toggle><strong data-next-package-id="5">Game Club</strong> then $29.99 every 30 days</div>';
+
+  // A page that was planned but never fetched.
+  const notFetched = await runCommercialParity({ resolved: resolvedFor(rawRecurringSpec()), captures: [], fetchImpl: priced });
+  assert.deepEqual(incompleteIds(notFetched), ["commercial-parity:incomplete:commercial_pages_unread"]);
+  assert.match(notFetched.assertions[0].actual, new RegExp(pageId));
+
+  // A page whose markup could not be read.
+  const malformed = await runCommercialParity({
+    resolved: resolvedFor(rawRecurringSpec()),
+    captures: [claims(`${readable}<div data-next-package-id="not-a-number"></div>`)],
+    fetchImpl: priced,
+  });
+  assert.deepEqual(incompleteIds(malformed), ["commercial-parity:incomplete:commercial_pages_unread"]);
+
+  // A fetched page the plan has no row for: the runner never does this.
+  const unmatched = await runCommercialParity({
+    resolved: resolvedFor(rawRecurringSpec()),
+    captures: [claims(readable), captureCommercialClaims({ page_id: "elsewhere" }, "<main></main>")],
+    fetchImpl: priced,
+  });
+  assert.deepEqual(incompleteIds(unmatched), ["commercial-parity:incomplete:commercial_coverage_incomplete"], "no named cause, so the catch-all still reports the gap");
+
+  // Calculate answers, but the page's package is not on the campaign.
+  const notOnCampaign = await runCommercialParity({
+    resolved: resolvedFor(rawRecurringSpec()),
+    captures: [claims(readable)],
+    fetchImpl: async () => new Response(JSON.stringify({
+      ok: true,
+      status: 200,
+      data: { lines: [], offer_discounts: [], voucher_discounts: [], subtotal: "0.00", total_discount: "0.00", total: "0.00", currency: "USD" },
+    }), { status: 200 }),
+  });
+  assert.deepEqual(incompleteIds(notOnCampaign), ["commercial-parity:incomplete:commercial_page_not_exact"]);
+  assert.match(notOnCampaign.assertions[0].actual, /page_mt104ehn_11 \(Unresolved: package not on campaign\)/);
+
+  // Two bound prices on one page: nothing says which is the page's total.
+  const twoBindings = await runCommercialParity({
+    resolved: resolvedFor(rawRecurringSpec()),
+    captures: [claims(`${readable}
+      <span data-next-display="bundle.a.price" data-next-format="currency">$29.99</span>
+      <span data-next-display="bundle.b.price" data-next-format="currency">$29.99</span>`)],
+    fetchImpl: priced,
+  });
+  assert.deepEqual(incompleteIds(twoBindings), ["commercial-parity:incomplete:commercial_claims_unresolved"]);
+  assert.match(twoBindings.assertions[0].actual, /2 price, 0 recurring, 0 voucher/);
+
+  // A cause that already writes its own row does not get a second one.
+  const absent = await runCommercialParity({
+    resolved: resolvedFor(rawRecurringSpec()),
+    captures: [claims('<div data-next-package-toggle><strong data-next-package-id="5">Game Club</strong></div>')],
+    fetchImpl: priced,
+  });
+  assert.deepEqual(incompleteIds(absent), []);
+  assert.equal(absent.assertions.length, 1);
+  assert.match(absent.assertions[0].id, /^commercial_parity\.recurring_claim_absent:/);
+
+  // An exhausted budget costs that row, so the generic one still names the gap.
+  const absentNoBudget = await runCommercialParity({
+    resolved: resolvedFor(rawRecurringSpec()),
+    captures: [claims('<div data-next-package-toggle><strong data-next-package-id="5">Game Club</strong></div>')],
+    fetchImpl: priced,
+    maxAssertions: 0,
+  });
+  assert.deepEqual(incompleteIds(absentNoBudget), ["commercial-parity:incomplete:commercial_coverage_incomplete"]);
+  assert.match(absentNoBudget.assertions[0].actual, /recurring_claim_absent/);
+});
+
+test("package.price claims reach the run as compared, mismatched or named as uncompared", async () => {
+  const spec = rawRecurringSpec();
+  const run = (capture) => runCommercialParity({
+    resolved: { rawSpec: spec, spec, proxyBase: "https://proxy.example.test" },
+    captures: [capture],
+    fetchImpl: async (_url, options) => {
+      const { scenario } = JSON.parse(options.body);
+      const body = calculateBody(scenario);
+      body.data.lines = body.data.lines.map((line) => ({ ...line, original_unit_price: "39.99", unit_price: "29.99" }));
+      return new Response(JSON.stringify(body), { status: 200 });
+    },
+  });
+  const source = captureCommercialClaims({ page_id: "page_mt104ehn_11" }, `
+    <div data-next-package-toggle data-next-package-id="5">
+      <span data-next-display="package.price" data-next-format="currency">$9.99</span> then $29.99 every 30 days
+    </div>
+  `);
+  const rendered = (text, filled = true) => [{ binding: "package.price", package_id: 5, filled, text }];
+
+  // The placeholder source alone: nothing compared, and the row says why.
+  const sourceOnly = await run(source);
+  assert.equal(sourceOnly.commercial.status, "incomplete");
+  assert.equal(sourceOnly.commercial.compared_price_claims, 0);
+  assert.deepEqual(incompleteIds(sourceOnly), ["commercial-parity:incomplete:package_price_not_rendered"]);
+  assert.match(sourceOnly.assertions[0].actual, /Fix: Run qa run with --browser/);
+
+  const matched = await run({ ...source, rendered_package_prices: rendered("$29.99") });
+  assert.equal(matched.commercial.status, "pass");
+  assert.equal(matched.commercial.compared_price_claims, 1);
+  assert.deepEqual(matched.commercial.package_price_claims, { extracted: 1, compared: 1, unresolved: {} });
+  assert.deepEqual(matched.assertions, []);
+
+  // Printed $39.99, the list price, against $29.99 after offers.
+  const listPrice = await run({ ...source, rendered_package_prices: rendered("$39.99") });
+  assert.equal(listPrice.commercial.status, "mismatch");
+  assert.deepEqual(listPrice.assertions.map((entry) => [entry.id, entry.expected, entry.actual]), [
+    ["price-claim-mismatch:page_mt104ehn_11:package.5.price", "29.99", "39.99"],
+  ]);
+
+  const unfilled = await run({ ...source, rendered_package_prices: rendered(null, false) });
+  assert.equal(unfilled.commercial.status, "incomplete");
+  assert.deepEqual(incompleteIds(unfilled), ["commercial-parity:incomplete:package_price_not_filled"]);
+  assert.match(unfilled.assertions[0].actual, /placeholder price/);
+
+  const noScope = await run({ ...source, rendered_package_prices: [{ binding: "package.price", package_id: null, filled: true, text: "$29.99" }] });
+  assert.deepEqual(incompleteIds(noScope), ["commercial-parity:incomplete:package_price_unresolved"]);
+
+  const notVisible = await run({ ...source, rendered_package_prices: [] });
+  assert.equal(notVisible.commercial.status, "incomplete");
+  assert.deepEqual(incompleteIds(notVisible), ["commercial-parity:incomplete:package_price_not_rendered"]);
+});
+
+test("package.price rows do not repeat a cause an earlier one explains, and bundle claims keep their own count", async () => {
+  const spec = rawRecurringSpec();
+  delete spec.campaign.campaigns_api_key;
+  const noKey = await runCommercialParity({
+    resolved: { rawSpec: spec, spec, proxyBase: "https://proxy.example.test" },
+    captures: [captureCommercialClaims({ page_id: "page_mt104ehn_11" }, '<div data-next-package-id="5"><span data-next-display="package.price">$9.99</span></div>')],
+    fetchImpl: async () => { throw new Error("must not fetch"); },
+  });
+  assert.deepEqual(incompleteIds(noKey), ["commercial-parity:incomplete:missing_campaigns_api_key"]);
+
+  const keyed = rawRecurringSpec();
+  const both = await runCommercialParity({
+    resolved: { rawSpec: keyed, spec: keyed, proxyBase: "https://proxy.example.test" },
+    captures: [captureCommercialClaims({ page_id: "page_mt104ehn_11" }, `
+      <div data-next-package-toggle data-next-package-id="5"><span data-next-display="package.price">$9.99</span> then $29.99 every 30 days</div>
+      <span data-next-display="bundle.a.price" data-next-format="currency">$29.99</span>
+      <span data-next-display="bundle.b.price" data-next-format="currency">$29.99</span>
+    `)],
+    fetchImpl: async (_url, options) => new Response(JSON.stringify(calculateBody(JSON.parse(options.body).scenario)), { status: 200 }),
+  });
+  assert.deepEqual(incompleteIds(both), [
+    "commercial-parity:incomplete:package_price_not_rendered",
+    "commercial-parity:incomplete:commercial_claims_unresolved",
+  ]);
+  assert.match(both.assertions.at(-1).actual, /2 price, 0 recurring, 0 voucher/);
+});
+
+test("a crash in the check reports like any other stop", () => {
+  const { assertions, commercial } = crashedCommercialResult();
+  assert.equal(commercial.status, "incomplete");
+  assert.deepEqual(assertions.map((entry) => [entry.id, entry.status, entry.severity]), [["commercial-parity:incomplete:commercial_runner_error", "warn", "warn"]]);
+  assert.deepEqual(commercial.incomplete_reasons.map((entry) => entry.code), ["commercial_runner_error"]);
+});
+
+test("a commercial pass or an empty plan writes no incomplete row", async () => {
+  const spec = rawRecurringSpec();
+  const pass = await runCommercialParity({
+    resolved: { rawSpec: spec, spec, proxyBase: "https://proxy.example.test" },
+    captures: [captureCommercialClaims({ page_id: "page_mt104ehn_11" }, '<div data-next-package-toggle><strong data-next-package-id="5">Game Club</strong> then $29.99 every 30 days</div>')],
+    fetchImpl: async (_url, options) => {
+      const { scenario } = JSON.parse(options.body);
+      return new Response(JSON.stringify(calculateBody(scenario)), { status: 200 });
+    },
+  });
+  assert.equal(pass.commercial.status, "pass");
+  assert.deepEqual(pass.assertions, []);
+  assert.equal(Object.hasOwn(pass.commercial, "incomplete_reasons"), false);
 });
 
 test("an empty commercial plan is explicitly not applicable", async () => {
@@ -398,7 +626,7 @@ test("aggregate claim cap emits no partial mismatch assertions and keeps the ver
 
   assert.equal(fetched, false);
   assert.equal(indexedVoucherReads, 0);
-  assert.deepEqual(result.assertions, []);
+  assert.deepEqual(provenAssertions(result), []);
   assert.equal(result.commercial.status, "incomplete");
   assert.equal(result.commercial.observed_claims, 257);
   assert.equal(result.commercial.claim_limit, 256);
@@ -451,7 +679,7 @@ test("simultaneous aggregate and scenario ceilings keep aggregate as the canonic
     { code: "commercial_aggregate_claim_limit", count: 1 },
     { code: "commercial_scenario_limit", count: 1 },
   ]);
-  assert.deepEqual(result.assertions, []);
+  assert.deepEqual(provenAssertions(result), []);
   assert.equal(result.commercial.status, "incomplete");
 });
 
@@ -495,7 +723,7 @@ test("aggregate count-only overflow excludes unmatched claims without walking th
   assert.equal(result.commercial.unresolved_voucher_claims, 1);
   assert.deepEqual(result.commercial.unmatched_pages, [{ page_id: "other-page" }]);
   assert.deepEqual(result.commercial.findings, []);
-  assert.deepEqual(result.assertions, []);
+  assert.deepEqual(provenAssertions(result), []);
 });
 
 test("per-document and aggregate claim ceilings keep distinct issue codes", async () => {
@@ -561,7 +789,7 @@ test("simultaneous per-document and aggregate claim ceilings preserve both issue
     { code: "commercial_aggregate_claim_limit", count: 1 },
     { code: "commercial_html_claims_limit", count: 1 },
   ]);
-  assert.deepEqual(result.assertions, []);
+  assert.deepEqual(provenAssertions(result), []);
   assert.equal(result.commercial.status, "incomplete");
 });
 
@@ -587,6 +815,53 @@ test("compact verdict evidence preserves sanitized missing, unmatched, invalid, 
   assert.deepEqual(result.commercial.missing_pages, [{ page_id: "page_mt104ehn_11" }]);
   assert.deepEqual(result.commercial.findings, []);
 });
+
+function resolvedQaFixture({ packetPath, rawSpec, pageUrl }) {
+  return {
+    themeGate: {
+      status: "not_applicable",
+      code: "theme_gate.no_theme_context",
+      reason: "Test fixture has no theme context.",
+    },
+    polishGate: {
+      status: "not_applicable",
+      code: "polish.not_applicable",
+      reason: "Test fixture has no assembly report.",
+    },
+    checkpointGates: [],
+    qaWaivers: {},
+    analyticsCaptureTarget: { url: null, source: "unresolved" },
+    brandContract: null,
+    brandContractStatus: "not_evaluated",
+    packetPath,
+    packet: null,
+    mapId: "commercial-integration",
+    publicRouteSlug: "commercial-integration",
+    proxyBase: "https://proxy.example.test",
+    baseUrl: "https://preview.example.test/",
+    specPath: null,
+    specSource: "test",
+    portalManaged: false,
+    rawSpec,
+    spec: rawSpec,
+    specVersion: "4.3",
+    specHash: "sha256:test",
+    templateFamily: null,
+    commerceStructureContract: null,
+    topologies: [{
+      funnel_id: "default",
+      funnel_name: "Default",
+      weight: 100,
+      pages: [{
+        page_id: "page_mt104ehn_11",
+        page_type: "checkout",
+        label: "Checkout",
+        url: pageUrl,
+        packages: rawSpec.funnels[0].pages[0].packages,
+      }],
+    }],
+  };
+}
 
 test("canonical resolved qa run fetches HTML once and writes deterministic commercial assertions into the verdict", async () => {
   const outputDir = mkdtempSync(join(tmpdir(), "campaigns-os-commercial-qa-"));
@@ -619,50 +894,7 @@ test("canonical resolved qa run fetches HTML once and writes deterministic comme
   };
 
   try {
-    const resolved = {
-      themeGate: {
-        status: "not_applicable",
-        code: "theme_gate.no_theme_context",
-        reason: "Test fixture has no theme context.",
-      },
-      polishGate: {
-        status: "not_applicable",
-        code: "polish.not_applicable",
-        reason: "Test fixture has no assembly report.",
-      },
-      checkpointGates: [],
-      qaWaivers: {},
-      analyticsCaptureTarget: { url: null, source: "unresolved" },
-      brandContract: null,
-      brandContractStatus: "not_evaluated",
-      packetPath,
-      packet: null,
-      mapId: "commercial-integration",
-      publicRouteSlug: "commercial-integration",
-      proxyBase: "https://proxy.example.test",
-      baseUrl: "https://preview.example.test/",
-      specPath: null,
-      specSource: "test",
-      portalManaged: false,
-      rawSpec,
-      spec: rawSpec,
-      specVersion: "4.3",
-      specHash: "sha256:test",
-      templateFamily: null,
-      commerceStructureContract: null,
-      topologies: [{
-        funnel_id: "default",
-        funnel_name: "Default",
-        weight: 100,
-        pages: [{
-          page_id: "page_mt104ehn_11",
-          page_type: "checkout",
-          label: "Checkout",
-          url: pageUrl,
-          packages: rawSpec.funnels[0].pages[0].packages,
-        }],
-      }],
-    };
+    const resolved = resolvedQaFixture({ packetPath, rawSpec, pageUrl });
     const result = await __qaNodeTestHooks.runResolvedQa({
       _: ["qa", "run"],
       "output-dir": outputDir,
@@ -695,6 +927,44 @@ test("canonical resolved qa run fetches HTML once and writes deterministic comme
     );
     assert.equal(sidecar.commercial, undefined, "the committed sidecar retains its strict allowlist projection");
     assert.doesNotMatch(JSON.stringify(result.verdict), /campaign-secret/);
+  } finally {
+    globalThis.fetch = originalFetch;
+    rmSync(outputDir, { recursive: true, force: true });
+  }
+});
+
+test("a real qa run with no campaign key reports the gap in exceptions and the sidecar, and still exits ready", async () => {
+  const outputDir = mkdtempSync(join(tmpdir(), "campaigns-os-commercial-qa-"));
+  const packetPath = join(outputDir, "campaign-runtime.build.json");
+  writeFileSync(packetPath, `${JSON.stringify({ schema_version: "campaign-runtime-build-packet/v0" })}\n`);
+  const originalFetch = globalThis.fetch;
+  const rawSpec = rawRecurringSpec();
+  delete rawSpec.campaign.campaigns_api_key;
+  const pageUrl = "https://preview.example.test/checkout/";
+  globalThis.fetch = async (url, options = {}) => {
+    if (String(url) === pageUrl && !options.method) {
+      return new Response('<div data-next-package-toggle><strong data-next-package-id="5">Game Club</strong> then $29.99 every 30 days</div>', { status: 200 });
+    }
+    throw new Error(`Unexpected fetch: ${String(url)}`);
+  };
+  try {
+    const result = await __qaNodeTestHooks.runResolvedQa({
+      _: ["qa", "run"],
+      "output-dir": outputDir,
+      "no-post-verdict": true,
+    }, resolvedQaFixture({ packetPath, rawSpec, pageUrl }));
+
+    const id = "commercial-parity:incomplete:missing_campaigns_api_key";
+    assert.equal(result.ok, true, "warn-only: the run is not blocked");
+    assert.equal(result.verdict.disposition, "ready_with_exceptions");
+    assert.equal(result.verdict.commercial.status, "incomplete");
+    const exception = result.verdict.exceptions.find((entry) => entry.id === id);
+    assert.equal(exception.severity, "warn");
+    assert.match(exception.actual, /Fix: Set campaign\.campaigns_api_key/);
+    assert.deepEqual(result.verdict.commercial.incomplete_reasons.map((entry) => entry.code), ["missing_campaigns_api_key"]);
+    const sidecar = JSON.parse(readFileSync(result.qa_sidecar.path, "utf8"));
+    assert.equal(sidecar.disposition, "ready_with_exceptions");
+    assert.ok(sidecar.exceptions.some((entry) => entry.id === id), "the sidecar keeps the cause in the row's id");
   } finally {
     globalThis.fetch = originalFetch;
     rmSync(outputDir, { recursive: true, force: true });

@@ -1,8 +1,11 @@
 /**
  * Dependency-free extraction and Exact-only commercial parity comparison.
  *
- * Source HTML is intentional: Campaign Cart replaces authored placeholders
- * after readiness, which can hide an authored mismatch in the rendered DOM.
+ * Source HTML is intentional for bundle prices: Campaign Cart replaces authored
+ * placeholders after readiness, which can hide an authored mismatch in the
+ * rendered DOM. package.price is the other way round: its authored text is a
+ * template placeholder no shopper is meant to read, so only its rendered value
+ * is compared and the source merely says the claim exists.
  */
 
 import {
@@ -416,6 +419,48 @@ function governedPriceBinding(value) {
   return typeof value === "string" && /^bundle\.[^.]+\.price$/.test(value.trim());
 }
 
+// The SDK's own package.price paths: an id in the path, or none and the nearest
+// package id around the node. No other package.* field is a price claim here.
+const PACKAGE_PRICE_BINDING = /^package\.(?:([1-9]\d*)\.)?price$/;
+const PACKAGE_CONTEXT_ATTRIBUTES = Object.freeze(["data-next-package-id", "data-next-package", "data-package-id"]);
+
+export const PACKAGE_PRICE_NOT_RENDERED = "package_price_not_rendered";
+export const PACKAGE_PRICE_NOT_FILLED = "package_price_not_filled";
+export const PACKAGE_PRICE_UNRESOLVED = "package_price_unresolved";
+
+function packageContextId(node) {
+  for (let current = node; current; current = current.parent) {
+    for (const attribute of PACKAGE_CONTEXT_ATTRIBUTES) {
+      const id = positiveInteger(current.attrs?.[attribute]);
+      if (id !== null) return id;
+    }
+  }
+  return null;
+}
+
+// Lists the claims, deliberately without their text: what the source holds is
+// the template's placeholder, and comparing it would report every starter page.
+function extractPackagePrices(nodeIndex, consumeClaim) {
+  const seen = new Set();
+  const claims = [];
+  nodeIndex.nodes.forEach((node) => {
+    const binding = String(node.attrs?.["data-next-display"] || "").trim();
+    const match = PACKAGE_PRICE_BINDING.exec(binding);
+    const format = String(node.attrs?.["data-next-format"] || "currency").trim().toLowerCase();
+    if (!match
+      || format !== "currency"
+      || nodeIndex.hidden.get(node) === true
+      || nodeIndex.comparison.get(node) === true) return;
+    const packageId = positiveInteger(match[1]) ?? packageContextId(node);
+    const key = `${binding}\u0000${packageId}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    consumeClaim();
+    claims.push({ binding, package_id: packageId });
+  });
+  return claims;
+}
+
 function extractPrices(nodeIndex, consumeClaim) {
   const seen = new Set();
   const prices = [];
@@ -529,6 +574,7 @@ export function extractCommercialClaims(html, options = {}) {
     }
   };
   const priceClaims = extractPrices(nodeIndex, consumeClaim);
+  const packagePriceClaims = extractPackagePrices(nodeIndex, consumeClaim);
   const recurrenceClaims = extractRecurrences(nodeIndex, extractionErrors, consumeClaim);
   const vouchers = extractVouchers(nodeIndex, extractionErrors, consumeClaim);
   return {
@@ -537,6 +583,7 @@ export function extractCommercialClaims(html, options = {}) {
     price_claims: priceClaims,
     recurrence_claims: recurrenceClaims,
     vouchers,
+    ...(packagePriceClaims.length ? { package_price_claims: packagePriceClaims } : {}),
     ...(extractionErrors.length ? { extraction_errors: extractionErrors } : {}),
   };
 }
@@ -563,8 +610,23 @@ function validVoucherClaim(claim) {
   return record(claim) && typeof claim.code === "string" && present(claim.code);
 }
 
+function validPackagePriceClaim(claim) {
+  return record(claim)
+    && typeof claim.binding === "string"
+    && PACKAGE_PRICE_BINDING.test(claim.binding)
+    && (claim.package_id === null || positiveInteger(claim.package_id) !== null);
+}
+
+function validRenderedPackagePrice(claim) {
+  return validPackagePriceClaim(claim)
+    && typeof claim.filled === "boolean"
+    && (claim.text === null || typeof claim.text === "string");
+}
+
 function validCaptureEnvelope(capture) {
   if (!record(capture)) return false;
+  if (capture.package_price_claims !== undefined && !Array.isArray(capture.package_price_claims)) return false;
+  if (capture.rendered_package_prices !== undefined && !Array.isArray(capture.rendered_package_prices)) return false;
   if (capture.page_id !== undefined
     && capture.page_id !== null
     && (typeof capture.page_id !== "string" || !present(capture.page_id))) return false;
@@ -580,7 +642,9 @@ function validCapture(capture) {
   return validCaptureEnvelope(capture)
     && capture.price_claims.every(validPriceClaim)
     && capture.recurrence_claims.every(validRecurrenceClaim)
-    && capture.vouchers.every(validVoucherClaim);
+    && capture.vouchers.every(validVoucherClaim)
+    && array(capture.package_price_claims).every(validPackagePriceClaim)
+    && array(capture.rendered_package_prices).every(validRenderedPackagePrice);
 }
 
 function captureCandidates(capturesValue) {
@@ -624,6 +688,64 @@ function priceComparisonClaims(capture, page) {
     : (bindings.length === 1 ? bindings[0] : null);
   const compared = binding ? claims.filter((claim) => String(claim.binding) === binding) : [];
   return { compared, unresolved: claims.length - compared.length };
+}
+
+// Printed money as the SDK formats it: a symbol or code around one amount. A
+// decimal comma or anything else stays unread, so it is unresolved, not wrong.
+function renderedMoney(text) {
+  const match = decodeEntities(String(text ?? "")).replace(/[\u00a0\s]+/g, " ").trim()
+    .match(/^[^\d-]*(\d[\d,]*(?:\.\d{1,2})?)\s*[A-Za-z]*$/);
+  return match ? normalizeMoney(match[1]) : null;
+}
+
+// One distinct Exact per-unit price for the package on this page, or nothing:
+// two rows of one package at different unit prices (quantity tiers, say) do not
+// say which one a generic package.price means.
+function exactPackageUnitPrice(page, packageId) {
+  const prices = new Set(array(page?.rows)
+    .filter((row) => String(row?.package_id) === String(packageId))
+    .map((row) => (row?.state === PricingState.Exact ? exactMoneyFact(row?.unit_price)?.value : null)));
+  return prices.size === 1 ? [...prices][0] ?? null : null;
+}
+
+// The rendered read is the authority once it found any. When it found none, the
+// source still says the claims exist, so they are not allowed to disappear.
+export function packagePriceClaimCount(capture) {
+  const rendered = array(capture?.rendered_package_prices);
+  return rendered.length || array(capture?.package_price_claims).length;
+}
+
+/**
+ * Sort a page's package.price claims into compared and unresolved. Only a
+ * rendered value the SDK filled is ever compared. Each unresolved claim names
+ * its reason, so the run can say what to do about it. Distinct claims only: one
+ * price repeated around an upsell page is one claim.
+ */
+function packagePriceComparisonClaims(capture, page) {
+  const rendered = array(capture?.rendered_package_prices);
+  if (!rendered.length) {
+    return {
+      compared: [],
+      unresolved: array(capture?.package_price_claims).map(() => PACKAGE_PRICE_NOT_RENDERED),
+    };
+  }
+  const compared = [];
+  const unresolved = [];
+  const voucherUnpriced = voucherComparisonClaims(capture, page).unresolved > 0;
+  rendered.forEach((claim) => {
+    if (!claim?.filled) {
+      unresolved.push(PACKAGE_PRICE_NOT_FILLED);
+      return;
+    }
+    const value = renderedMoney(claim.text);
+    const truth = claim.package_id === null || voucherUnpriced ? null : exactPackageUnitPrice(page, claim.package_id);
+    if (!value || !truth) {
+      unresolved.push(PACKAGE_PRICE_UNRESOLVED);
+      return;
+    }
+    compared.push({ package_id: claim.package_id, value, truth });
+  });
+  return { compared, unresolved };
 }
 
 function pageForCapture(capture, journey) {
@@ -745,6 +867,19 @@ export function diffCommercialParity(capturesValue, journey, options = {}) {
       });
     }
 
+    (compareMoney ? packagePriceComparisonClaims(capture, page).compared : []).forEach(({ package_id: packageId, value, truth }) => {
+      if (moneyToCents(value) === moneyToCents(truth)) return;
+      findings.push({
+        type: "price-claim-mismatch",
+        page_id: pageId,
+        ...source,
+        binding: `package.${packageId}.price`,
+        package_id: packageId,
+        claimed: value,
+        calculated: truth,
+      });
+    });
+
     (compareMoney ? recurrenceComparisonClaims(capture, page).compared : []).forEach(({ claim, truth }) => {
       const packageId = positiveInteger(claim?.package_id);
       const claimed = {
@@ -817,7 +952,11 @@ function assertionForFinding(finding, id) {
       ...common,
       expected: finding.calculated,
       actual: finding.claimed,
-      evidence: { type: finding.type, binding: finding.binding },
+      evidence: {
+        type: finding.type,
+        binding: finding.binding,
+        ...(finding.package_id !== undefined ? { package_id: finding.package_id } : {}),
+      },
     };
   }
   if (finding.type === "cadence-disclosure-mismatch") {
@@ -952,7 +1091,7 @@ export function createCommercialParityReport(capturesValue, journey, options = {
     .filter((page) => !pageKeys.has(String(page?.page_id ?? "page")))
     .map((page) => ({ page_id: present(page?.page_id) ? String(page.page_id) : null }));
   const extractedPriceClaims = matched.reduce(
-    (sum, { capture }) => sum + capture.price_claims.length,
+    (sum, { capture }) => sum + capture.price_claims.length + packagePriceClaimCount(capture),
     0,
   );
   const extractedRecurrenceClaims = matched.reduce(
@@ -963,12 +1102,22 @@ export function createCommercialParityReport(capturesValue, journey, options = {
     (sum, { capture }) => sum + capture.vouchers.length,
     0,
   );
+  const packagePriceCounts = {
+    extracted: matched.reduce((sum, { capture }) => sum + packagePriceClaimCount(capture), 0),
+    compared: 0,
+  };
+  const packagePriceUnresolved = {};
   const priceComparisonCounts = countsOnly || moneyReason
     ? { compared: 0, unresolved: extractedPriceClaims }
     : matched.reduce((counts, { capture, page }) => {
       const comparison = priceComparisonClaims(capture, page);
-      counts.compared += comparison.compared.length;
-      counts.unresolved += comparison.unresolved;
+      const packagePrices = packagePriceComparisonClaims(capture, page);
+      packagePriceCounts.compared += packagePrices.compared.length;
+      packagePrices.unresolved.forEach((code) => {
+        packagePriceUnresolved[code] = (packagePriceUnresolved[code] || 0) + 1;
+      });
+      counts.compared += comparison.compared.length + packagePrices.compared.length;
+      counts.unresolved += comparison.unresolved + packagePrices.unresolved.length;
       return counts;
     }, { compared: 0, unresolved: 0 });
   const recurrenceComparisonCounts = countsOnly || moneyReason
@@ -1007,6 +1156,7 @@ export function createCommercialParityReport(capturesValue, journey, options = {
     extracted_price_claims: extractedPriceClaims,
     compared_price_claims: priceComparisonCounts.compared,
     unresolved_price_claims: priceComparisonCounts.unresolved,
+    package_price_claims: { ...packagePriceCounts, unresolved: packagePriceUnresolved },
     extracted_recurrence_claims: extractedRecurrenceClaims,
     compared_recurrence_claims: recurrenceComparisonCounts.compared,
     unresolved_recurrence_claims: recurrenceComparisonCounts.unresolved,

@@ -9,8 +9,12 @@ import {
 import {
   COMMERCIAL_PARITY_SCHEMA_VERSION,
   CommercialParityLimitError,
+  PACKAGE_PRICE_NOT_FILLED,
+  PACKAGE_PRICE_NOT_RENDERED,
+  PACKAGE_PRICE_UNRESOLVED,
   createCommercialParityReport,
   extractCommercialClaims,
+  packagePriceClaimCount,
   recurringClaimAbsences,
   recurringClaimAbsentAssertions,
 } from "./commercial-parity.mjs";
@@ -450,6 +454,7 @@ function catalogImportedAt(spec) {
 
 function captureClaimCount(capture) {
   return array(capture?.price_claims).length
+    + packagePriceClaimCount(capture)
     + array(capture?.recurrence_claims).length
     + array(capture?.vouchers).length;
 }
@@ -464,6 +469,108 @@ function captureIssues(captures) {
     });
   });
   return issues;
+}
+
+// One reason a run's commercial proof stopped short: what was not compared and
+// what to do about it, for an agent that reads only the exceptions list. Text
+// only, never a key or a URL: it is persisted.
+function cause(code, summary, fix, count = 1) {
+  return { code, count, summary, fix };
+}
+
+// What each reason a package.price went uncompared means for the operator.
+const PACKAGE_PRICE_CAUSES = Object.freeze({
+  [PACKAGE_PRICE_NOT_RENDERED]: {
+    summary: (count) => `${count} package.price claim(s) in the page source were not read from a rendered page, so they were not compared.`,
+    fix: "Run qa run with --browser. If it did, check that the tested URL served this page; prices hidden on purpose need no repair.",
+  },
+  [PACKAGE_PRICE_NOT_FILLED]: {
+    summary: (count) => `The SDK never filled ${count} visible package.price node(s), so a shopper may be reading the template's placeholder price.`,
+    fix: "Check that the SDK loaded and that the package ref is on the campaign, then re-run qa run.",
+  },
+  [PACKAGE_PRICE_UNRESOLVED]: {
+    summary: (count) => `${count} package.price claim(s) could not be tied to one calculated price: no package id around the node, no single exact row for the package on the page, or text that is not a money amount.`,
+    fix: "Put data-next-package-id around the price, or check it by hand.",
+  },
+});
+
+const OVER_LIMITS_FIX = "This funnel is over the check's limits, so no re-run will cover it: check these prices by hand and tell the operator.";
+
+/**
+ * The causes of an incomplete proof, the ones found while running first. Later
+ * causes stay quiet when an earlier one explains them, so a missing key does not
+ * also report every page as unpriced. Not every cause has a repair: a store
+ * coupon or a run in another currency only says what was not compared.
+ */
+function incompleteCauses(stopped, commercial, journey) {
+  const causes = [...stopped];
+  // A page whose capture was refused also counts as missing from the comparison.
+  const refused = new Set(array(commercial.invalid_captures).map((capture) => capture.page_id));
+  const unread = [
+    ...array(commercial.invalid_captures),
+    ...array(commercial.missing_pages).filter((page) => !refused.has(page.page_id)),
+  ];
+  if (unread.length) {
+    causes.push(cause(
+      "commercial_pages_unread",
+      `${unread.length} page(s) could not be read for commercial claims: ${unread.map((page) => page.page_id ?? "(no id)").join(", ")}.`,
+      "Fix the page's fetch failure, its URL in the spec or its malformed markup, then re-run qa run. A page over the claim limit needs its prices checked by hand.",
+      unread.length,
+    ));
+  }
+  if (causes.length) return causes;
+
+  const inexact = array(journey?.pages).filter((page) => page?.state !== PricingState.Exact);
+  if (inexact.length) {
+    const named = inexact.map((page) => `${page.page_id} (${page.reason || page.representative_total?.reason || page.state})`);
+    return [cause(
+      "commercial_page_not_exact",
+      `Calculate gave no exact total for ${inexact.length} page(s): ${named.join(", ")}.`,
+      "Correct the spec where the reason names it. A store coupon cannot be previewed, so check that page's prices by hand. Re-run qa run if the reason is Stale.",
+      inexact.length,
+    )];
+  }
+  if (present(commercial.unresolved_money_claims_reason)) {
+    const count = commercial.unresolved_price_claims + commercial.unresolved_recurrence_claims;
+    return [cause(
+      String(commercial.unresolved_money_claims_reason),
+      `${count} price claim(s) in the page source hold the Map currency's fallback text, so they were not compared with totals in the run currency.`,
+      "No page repair is owed. A qa run in the campaign's own currency compares them.",
+      count,
+    )];
+  }
+  const packagePrices = Object.entries(commercial.package_price_claims?.unresolved || {});
+  packagePrices.forEach(([code, count]) => {
+    causes.push(cause(code, PACKAGE_PRICE_CAUSES[code].summary(count), PACKAGE_PRICE_CAUSES[code].fix, count));
+  });
+  const unresolvedPrices = commercial.unresolved_price_claims - packagePrices.reduce((sum, [, count]) => sum + count, 0);
+  const unresolved = unresolvedPrices + commercial.unresolved_recurrence_claims + commercial.unresolved_voucher_claims;
+  if (unresolved > 0) {
+    causes.push(cause(
+      "commercial_claims_unresolved",
+      `${unresolved} claim(s) could not be tied to one calculated value (${unresolvedPrices} price, ${commercial.unresolved_recurrence_claims} recurring, ${commercial.unresolved_voucher_claims} voucher).`,
+      "A page with more than one bound bundle price, or a voucher the plan cannot price, stays uncompared: check these by hand, or declare the voucher in the spec.",
+      unresolved,
+    ));
+  }
+  return causes;
+}
+
+/** One warn row per named cause: what `exceptions[]` carries and the sidecar keeps. */
+function commercialIncompleteAssertions(reasons) {
+  return array(reasons).map((entry) => ({
+    id: `commercial-parity:incomplete:${entry.code}`,
+    family: "pricing",
+    page: "campaign",
+    status: "warn",
+    severity: "warn",
+    expected: "the page's commercial claims compared with calculated totals",
+    actual: `${entry.summary} Fix: ${entry.fix}`,
+    evidence: {
+      code: entry.code,
+      count: entry.count,
+    },
+  }));
 }
 
 function compactReport(report, journey, plan, executed, issues, observedClaims, claimLimit, plannedScenarioCount = plan.length) {
@@ -498,6 +605,7 @@ function compactReport(report, journey, plan, executed, issues, observedClaims, 
     extracted_price_claims: report.extracted_price_claims,
     compared_price_claims: report.compared_price_claims,
     unresolved_price_claims: report.unresolved_price_claims,
+    package_price_claims: report.package_price_claims,
     extracted_recurrence_claims: report.extracted_recurrence_claims,
     compared_recurrence_claims: report.compared_recurrence_claims,
     unresolved_recurrence_claims: report.unresolved_recurrence_claims,
@@ -568,6 +676,7 @@ export function unavailableCommercialReport(code, { status = "not_run" } = {}) {
     extracted_price_claims: 0,
     compared_price_claims: 0,
     unresolved_price_claims: 0,
+    package_price_claims: { extracted: 0, compared: 0, unresolved: {} },
     extracted_recurrence_claims: 0,
     compared_recurrence_claims: 0,
     unresolved_recurrence_claims: 0,
@@ -583,6 +692,19 @@ export function unavailableCommercialReport(code, { status = "not_run" } = {}) {
     finding_counts: {},
     findings: [],
     issues: [{ code, count: 1 }],
+  };
+}
+
+/** What a crash in the check reports: the same warn row as any other stop. */
+export function crashedCommercialResult() {
+  const reason = cause(
+    "commercial_runner_error",
+    "The commercial parity check crashed before it finished, so no price was compared.",
+    "Re-run qa run. If it crashes again, record it with findings add and tell the operator.",
+  );
+  return {
+    assertions: commercialIncompleteAssertions([reason]),
+    commercial: { ...unavailableCommercialReport(reason.code, { status: "incomplete" }), incomplete_reasons: [reason] },
   };
 }
 
@@ -641,13 +763,15 @@ export async function runCommercialParity({
   const observedClaims = array(captures).reduce((sum, capture) => sum + captureClaimCount(capture), 0);
   const aggregateClaimOverflow = observedClaims > limits.max_aggregate_claims;
   const orderedPreflightIssues = [
-    { exceeded: aggregateClaimOverflow, code: "commercial_aggregate_claim_limit" },
-    { exceeded: scenarioOverflow, code: "commercial_scenario_limit" },
-  ];
+    { exceeded: aggregateClaimOverflow, code: "commercial_aggregate_claim_limit", summary: `The funnel carries ${observedClaims} commercial claims, over the limit of ${limits.max_aggregate_claims}, so none were compared.` },
+    { exceeded: scenarioOverflow, code: "commercial_scenario_limit", summary: "The funnel plans more calculate scenarios than the limit, so none ran." },
+  ].filter((issue) => issue.exceeded);
   const issues = [
     ...captureIssues(captures),
-    ...orderedPreflightIssues.filter((issue) => issue.exceeded).map(({ code }) => ({ code })),
+    ...orderedPreflightIssues.map(({ code }) => ({ code })),
   ];
+  // Why calculate did not give this run its answers, said where it is found.
+  const stopped = orderedPreflightIssues.map(({ code, summary }) => cause(code, summary, OVER_LIMITS_FIX));
   const apiKeyResolution = resolveCommercialApiKey(resolved);
   const apiKey = apiKeyResolution.value;
   let executed = [];
@@ -657,8 +781,18 @@ export async function runCommercialParity({
     // preflight issues above remain visible when multiple ceilings are hit.
   } else if (apiKeyResolution.unsupported) {
     issues.push({ code: "unsupported_campaigns_api_key_source" });
+    stopped.push(cause(
+      "unsupported_campaigns_api_key_source",
+      `The packet's campaign.api_key_source names an environment variable QA refuses to read, so 0 of ${plan.length} planned calculate scenarios ran.`,
+      "Use env:CAMPAIGNS_API_KEY, or set campaign.campaigns_api_key in the CampaignSpec, then re-run qa run.",
+    ));
   } else if (plan.some((descriptor) => !descriptor?.unresolved) && !present(apiKey)) {
     issues.push({ code: "missing_campaigns_api_key" });
+    stopped.push(cause(
+      "missing_campaigns_api_key",
+      `No campaign key was resolved, so 0 of ${plan.length} planned calculate scenarios ran and no price was compared.`,
+      "Set campaign.campaigns_api_key in the CampaignSpec (or the Build Packet) to the campaign's API key, then re-run qa run.",
+    ));
   } else if (typeof fetchImpl !== "function") {
     issues.push({ code: "price_preview_fetch_unavailable" });
   } else {
@@ -669,9 +803,17 @@ export async function runCommercialParity({
       fetchImpl,
       limits,
     }));
-    executed.filter((entry) => entry?.ok === false).forEach((entry) => {
-      issues.push({ code: entry.error_code || "price_preview_failed" });
-    });
+    const failures = executed.filter((entry) => entry?.ok === false)
+      .map((entry) => entry.error_code || "price_preview_failed");
+    failures.forEach((code) => issues.push({ code }));
+    if (failures.length) {
+      stopped.push(cause(
+        "price_preview_failed",
+        `The calculate endpoint failed for ${failures.length} of ${plan.length} planned scenarios (${[...new Set(failures)].join(", ")}).`,
+        "Check that the key belongs to this campaign and that the proxy is reachable, then re-run qa run.",
+        failures.length,
+      ));
+    }
   }
 
   const journey = normalizeJourney(
@@ -715,17 +857,30 @@ export async function runCommercialParity({
     maxAssertions: Math.max(0, maxAssertions - parity.assertions.length),
   });
   parity.recurring_claim_absences = absences;
+  const commercial = compactReport(
+    parity,
+    parityJourney,
+    plan,
+    executed,
+    issues,
+    observedClaims,
+    limits.max_aggregate_claims,
+    commercialPlanning.observed_scenarios ?? plan.length,
+  );
+  const assertions = [...currencyAssertions, ...parity.assertions, ...absentAssertions];
+  if (commercial.status !== "incomplete") return { assertions, commercial };
+  // An incomplete run always names a cause in the exceptions list. A currency
+  // blocker or an absent rebill claim already wrote its own row.
+  const reasons = incompleteCauses(stopped, commercial, parityJourney);
+  if (!reasons.length && !currencyAssertions.length && !absentAssertions.length) {
+    reasons.push(cause(
+      "commercial_coverage_incomplete",
+      `Commercial parity stopped short: issues ${array(commercial.issues).map((issue) => issue.code).join(", ") || "none"}.`,
+      "Read verdict.commercial for what was and was not compared, and tell the operator.",
+    ));
+  }
   return {
-    assertions: [...currencyAssertions, ...parity.assertions, ...absentAssertions],
-    commercial: compactReport(
-      parity,
-      parityJourney,
-      plan,
-      executed,
-      issues,
-      observedClaims,
-      limits.max_aggregate_claims,
-      commercialPlanning.observed_scenarios ?? plan.length,
-    ),
+    assertions: [...assertions, ...commercialIncompleteAssertions(reasons)],
+    commercial: { ...commercial, incomplete_reasons: reasons },
   };
 }
