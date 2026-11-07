@@ -421,10 +421,11 @@ can load with `?currency=GBP` and still take a USD order:
   price and recurring-price claims are not compared with the run-currency
   totals: they count as unresolved, and the commercial report records
   `unresolved_money_claims_reason: "static_source_not_in_run_currency"`. A
-  correctly built multi-currency page gets no `price-claim-mismatch` warning,
-  and the commercial status reads `incomplete` instead of `pass`. With
-  `--currency` set to the Map's own currency, the claims are compared as
-  before.
+  correctly built multi-currency page gets no `price-claim-mismatch` warning.
+  The commercial status reads `incomplete` instead of `pass`, and a
+  `commercial-parity:incomplete:static_source_not_in_run_currency` warn row says
+  what was not compared. With `--currency` set to the Map's own currency, the
+  claims are compared as before.
 
 Either blocker makes the verdict `blocked` and the command exit `4`. Without
 `--currency` neither row is written and expected totals use
@@ -480,16 +481,49 @@ claims per document, 256 claims across the run, 1 MiB per price-preview
 response, 256 calculate scenarios, four concurrent proxy requests, and 20
 seconds per request. A limit, missing key, malformed response,
 or unavailable page records incomplete commercial evidence; it never invents
-a mismatch. `commercial.status = "incomplete"` preserves the disposition
-derived from the ordinary QA assertions; it does not create an exception by
-itself. QA dispositions remain `ready`, `ready_with_exceptions`, or `blocked` —
-`ready_with_waivers` is the doctor/`next` checkpoint-readiness term.
+a mismatch. QA dispositions remain `ready`, `ready_with_exceptions`, or
+`blocked` — `ready_with_waivers` is the doctor/`next` checkpoint-readiness term.
+
+`commercial.status = "incomplete"` makes the verdict at least
+`ready_with_exceptions`. It stays warn-only: it never makes a run `blocked` and
+never changes the exit code. Each cause writes one warn row in family `pricing`,
+`commercial-parity:incomplete:<code>`, for example
+`commercial-parity:incomplete:missing_campaigns_api_key`. The row's `actual` says
+what was not compared and how to fix it, so an agent reading only `exceptions[]`
+sees the gap. The committed sidecar keeps the id, which names the cause. The report
+repeats the causes as `commercial.incomplete_reasons`, and `qa run` prints them under
+its commercial line. A cause an earlier one explains writes no second row, so a
+missing key does not also report every page as unpriced.
+
+Read the row for what to do, not the code: the set of codes is not a contract and
+can change. Not every cause has a repair. A store coupon, two bound prices on one
+page, a run in another currency and a funnel over the check's limits only say what
+this run did not compare. A `commercial-currency:<RUN>:<ANSWERED>` blocker and a
+`commercial_parity.recurring_claim_absent` warning are their own rows and add no
+`commercial-parity:incomplete:` row.
+
+Bound prices are read two ways, because the two bindings mean different things in
+the source. `bundle.<id>.price` is compared as authored in the source HTML, against
+the page's calculated total. `package.price` and `package.<ref>.price` are compared
+as rendered, because what the source holds there is the template's placeholder (a
+starter upsell ships `$9.99`). Under `qa run --browser`, QA reads each visible node
+once the SDK has written it, which it knows by the `display-visible` class the SDK
+adds, and compares it with calculate's `unit_price` for that package's row on the
+page: one unit, after offers. So a page printing `package.price`, which is the list
+price, beside a live offer gets a `price-claim-mismatch` warning. The package is the
+id in the path, or else the nearest `data-next-package-id`, `data-next-package` or
+`data-package-id`, which is how the SDK scopes it. The source is only read to learn
+that these claims exist, so a run without `--browser` reports them as
+`package_price_not_rendered`. `verdict.commercial.package_price_claims` counts them.
+Under a `--currency` that is not the Map's they stay unresolved, like the source
+prices above, because the browser pass does not load pages in the run currency.
 
 Only contract-governed claims are compared, and only against `Exact` normalized
 truth. Proven differences emit warn-severity `pricing` assertions named
 `price-claim-mismatch`, `cadence-disclosure-mismatch`, or
-`voucher-not-applied`. Decorative, ambiguous, stale, unresolved, or malformed
-claims remain silent. A page showing a voucher the normalized plan cannot price
+`voucher-not-applied`. Decorative claims are ignored, and ambiguous, stale,
+unresolved, or malformed claims never read as a mismatch: they leave the proof
+incomplete, as above. A page showing a voucher the normalized plan cannot price
 (no calculated pair for its code, for example a live voucher on an upsell)
 leaves that page's price claims unresolved: the plan's only Exact truth for
 the page is then the list price, which a voucher-priced page is expected to

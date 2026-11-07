@@ -632,6 +632,9 @@ function normalizeLine(echo, state, packages) {
     })),
     final: moneyFact(line.total, state),
     savings: moneyFact(line.total_discount, state),
+    // What one unit costs after offers: the figure a printed per-unit price is
+    // held against. A response without it leaves that claim unresolved.
+    ...(present(line.unit_price) ? { unit_price: moneyFact(line.unit_price, state) } : {}),
   };
 }
 

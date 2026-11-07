@@ -103,6 +103,7 @@ import {
 import {
   captureCommercialClaims,
   COMMERCIAL_QA_LIMITS,
+  crashedCommercialResult,
   mapConcurrent,
   createPageSourceLoader,
   planCommercialParity,
@@ -2609,8 +2610,10 @@ async function runResolvedQa(args, resolvedInputs, { runSessionActive = false, l
   const vendorBeacons = vendorBeaconRun ? createVendorBeaconLedger({ mode: vendorBeaconRun, analytics: resolved.spec?.analytics }) : null;
   if (vendorBeacons) args = { ...args, [QA_VENDOR_BEACONS]: vendorBeacons };
   const qcResults = [];
+  const renderedPackagePrices = new Map();
   if (args.browser === true) {
     const browserAssertions = await runBrowserChecks(resolved.topologies, args, {
+      renderedPackagePrices,
       brandContract: resolved.brandContract,
       // With no generatable brand theme on the local preview, the starter
       // template is the design: its residue is a warning (local-preview-policy.mjs).
@@ -2649,16 +2652,15 @@ async function runResolvedQa(args, resolvedInputs, { runSessionActive = false, l
   try {
     commercialResult = await runCommercialParity({
       resolved,
-      captures: [...capturesByPageId.values()],
+      captures: [...capturesByPageId.entries()].map(([pageId, capture]) => (renderedPackagePrices.has(pageId)
+        ? { ...capture, rendered_package_prices: renderedPackagePrices.get(pageId) }
+        : capture)),
       planning: commercialPlanning,
       maxAssertions: remainingAssertionBudget,
       currency,
     });
   } catch (error) {
-    commercialResult = {
-      assertions: [],
-      commercial: unavailableCommercialReport("commercial_runner_error"),
-    };
+    commercialResult = crashedCommercialResult();
     reportCommercialRunnerError(args, error);
   }
   assertions.push(...commercialResult.assertions);
@@ -3795,6 +3797,9 @@ function output(value, args) {
     printThemeGateLines(value.theme_gate, value.packet_path, value.report_path);
     if (value.commercial) {
       console.log(`Commercial parity: ${value.commercial.status} (${value.commercial.finding_count || 0} findings, ${value.commercial.checked_pages || 0} pages checked)`);
+      for (const entry of value.commercial.incomplete_reasons || []) {
+        console.log(`  ${entry.code}: ${entry.summary} Fix: ${entry.fix}`);
+      }
     }
     console.log(`Local copy: ${value.local_path}`);
     if (value.posted?.ok && value.dashboard_url) {

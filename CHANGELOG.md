@@ -2,15 +2,39 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.65.0] - 2026-11-07
+## [1.66.0] - 2026-11-07
 
-Funnels handed off before 1.62.0 can now reach small checks without a test order. To take it, pin `@nextcommerce/campaigns-os@1.65.0`. Nothing changes for a funnel unless a named person runs the new command.
+Funnels handed off before 1.62.0 can now reach small checks without a test order. To take it, pin `@nextcommerce/campaigns-os@1.66.0`. Nothing changes for a funnel unless a named person runs the new command.
 
 ### Added
 
 - **`record baseline` (#716).** `campaigns-os record baseline --packet <packet> --accepted-by "<named person>" --reason "<why>"` accepts a handed-off funnel from before markup hashes as the starting point, one time per funnel. It tests nothing and places no orders. After it, a page-only change owes QA on that page alone, and a commerce-affecting change still owes the full Polish and QA. It refuses a funnel whose last QA was blocked, one where no QA ever completed, one whose records have markup hashes, and one where no full QA is owed.
 - **The stage status `baseline_accepted`.** Polish and QA take it from `record baseline`. It ends the ladder, so `next` moves on, but it is never `completed` and never hands a campaign off. What those stages held moves to history, so its purchase proof stops counting. A passing `qa run --page` leaves QA at this status, and only a completed full QA ends it. Progress snapshots read it as `unknown`.
 - **Reports say what it is.** Doctor warns `qa.baseline_accepted`, and `doctor --ci`, readback and `next` say QA rests on a baseline and no purchase has been tested since. `evidence_debt.qa` gains `baseline`, and the Assembly Report gains a top-level `commerce_baseline`, which keeps the status, warnings and skip reason of what it replaced.
+
+## [1.65.0+agent.1] - 2026-11-07
+
+Commercial parity now checks `package.price` as well as `bundle.*.price`. Starter upsells use `package.price`, so a funnel could pass every calculate scenario with no printed price compared. No pin change is needed to read verdicts; the behavior ships in the next release.
+
+### Changed
+
+- **`package.price` and `package.<ref>.price` are compared as rendered.** Under `qa run --browser`, each visible node the SDK has filled is compared with calculate's `unit_price` for that package's row on the page. The source holds a template placeholder (`$9.99` on a starter upsell), so the source text is never compared. A difference is the existing warn-only `price-claim-mismatch`. That includes a page printing `package.price`, the list price, beside a live offer.
+- **What cannot be compared is named.** A run without `--browser`, a rendered page that showed none of the claims, a visible node the SDK never wrote, or a claim with no package id, no single exact row or unreadable text each writes a `commercial-parity:incomplete:<code>` warn row and never a mismatch. A run without `--browser` on a page with these claims now reads `incomplete`, so it stays at `ready_with_exceptions`.
+- `verdict.commercial.package_price_claims` counts these claims, and they count toward `extracted_price_claims`, `compared_price_claims` and `unresolved_price_claims`. Journey rows from the `./commercial-journey` export carry `unit_price` when calculate sends it, and captures from `./commercial-parity` carry `package_price_claims`.
+
+## [1.65.0] - 2026-11-07
+
+A QA run whose commercial parity stopped short no longer reads as a clean result. Commercial status `incomplete` now keeps the verdict at `ready_with_exceptions` and names the cause and the fix in `exceptions[]`. It stays warn-only: nothing new blocks, and the exit code does not change. To take it, pin `@nextcommerce/campaigns-os@1.65.0` and refresh the installed skills to `1.65.0+skills.1`.
+
+### Changed
+
+- **Incomplete commercial coverage is an exception.** A spec with no `campaign.campaigns_api_key`, for example, used to run 0 of its calculate scenarios and could still report `ready`, with the gap visible only under `verdict.commercial`. The verdict is now `ready_with_exceptions`, with a warn row `commercial-parity:incomplete:missing_campaigns_api_key` whose `actual` says what was not compared and how to fix it.
+  - A cause an earlier one already explains writes no second row, so a missing key does not also report every page as unpriced. Read the row for what to do: the set of codes is not a contract.
+  - Not every cause has a repair. A store coupon, two bound prices on one page, a run in a currency other than the Map's and a funnel over the check's limits say what this run did not compare, and these runs stay at `ready_with_exceptions`.
+  - The committed sidecar keeps the row's id, which names the cause. The verdict's `commercial` section gains `incomplete_reasons` with the same causes, and `qa run` prints them under its commercial line.
+  - A run that was `ready` only because the gap was invisible now records its QA stage as `completed_with_warnings`, and its Run Record lists `pricing` among its gap classes. Both dispositions still end a run session.
+- **A crash in the commercial check is reported the same way.** It used to leave status `not_run` and the verdict untouched, with a line on stderr. It now reads `incomplete` with the cause `commercial_runner_error`. Runs a gate blocks keep `not_run`, since those verdicts are already `blocked`.
+- The verdict schema's `disposition` and `commercial.status` descriptions say the above, and it documents `commercial.incomplete_reasons`.
 
 ## [1.64.0] - 2026-11-07
 
