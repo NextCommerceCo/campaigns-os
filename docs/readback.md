@@ -536,6 +536,9 @@ the build a stage reviewed are on that stage instead. An owed stage carries:
   when QA is not owed.
 - QA only, `reviewed_at`: when the completed QA the change is read from was
   checked. Absent when QA did not complete.
+- QA only, `baseline`: `{ "accepted_by", "accepted_at", "reason",
+  "build_fingerprint" }` while QA rests on a baseline (`record baseline`), which
+  is not a test. Present on a QA that is current as well as one that is owed.
 
 If recording removed a
 stage binding entirely, that stage reads unknown unless its recorded status is

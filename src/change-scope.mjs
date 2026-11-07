@@ -149,11 +149,12 @@ export function classifyDrift({ changes, baseline, outputRoot, targetRepo, publi
   if (changes?.status !== "known") return { kind: "unknown", reasons: [] };
   if (!changes.changed_pages.length && !changes.unmapped_files.length) return { kind: "none", reasons: [] };
   const reasons = [];
-  for (const path of changes.unmapped_files) reasons.push({ code: "unmapped_file", path });
   const signature = recordedSignature(baseline);
+  // First, so the list's cap never drops it: `record baseline` reads it.
   if (!signature) reasons.push({ code: "commerce_signature_unavailable" });
-  else if (signature.campaign_config.startsWith("unavailable:")
-    || campaignConfigFingerprint(targetRepo, publicRouteSlug) !== signature.campaign_config) {
+  for (const path of changes.unmapped_files) reasons.push({ code: "unmapped_file", path });
+  if (signature && (signature.campaign_config.startsWith("unavailable:")
+    || campaignConfigFingerprint(targetRepo, publicRouteSlug) !== signature.campaign_config)) {
     reasons.push({ code: signature.campaign_config.startsWith("unavailable:") ? "campaign_config_unavailable" : "campaign_config_changed" });
   }
   for (const page of changes.changed_pages) {
@@ -175,6 +176,13 @@ export function classifyDrift({ changes, baseline, outputRoot, targetRepo, publi
     }
   }
   return { kind: reasons.length ? "commerce_affecting" : "page_only", reasons: capped(reasons) };
+}
+
+// True when a kept rebuild was read against a build recorded before markup
+// hashes existed (pre-1.62), the one kind of record `record baseline` is for.
+export function rebuiltFromBuildWithoutSignature(assembly) {
+  return Array.isArray(assembly?.build_changes) && assembly.build_changes.some((entry) => Array.isArray(entry?.reasons)
+    && entry.reasons.some((reason) => reason?.code === "commerce_signature_unavailable" && !reason.path));
 }
 
 /**

@@ -12,7 +12,7 @@ import {
 import { changeSince, classifyDrift } from "./change-scope.mjs";
 import { normalizePublicRouteSlug } from "./route-identity.mjs";
 import { isFileReadFailure } from "./cart-placeholders.mjs";
-import { polishReviewedBuild, qaExtendedBuildFingerprint, qaRecordedBuildFingerprint, qaRecordedForCurrentBuild } from "./stage-ledger.mjs";
+import { polishReviewedBuild, qaExtendedBuildFingerprint, qaRecordedBuildFingerprint, qaRecordedForCurrentBuild, qaRestsOnBaseline } from "./stage-ledger.mjs";
 
 export const EVIDENCE_DEBT_STATUSES = Object.freeze(["current", "owed", "unknown"]);
 
@@ -157,6 +157,11 @@ export function assessEvidenceDebt({ packet = null, packetPath = null, report = 
     qa.change = null;
     qa.scope = null;
     qa.owed_pages = [];
+  }
+  const baseline = qaRestsOnBaseline(report);
+  if (baseline) {
+    const { accepted_by, accepted_at, reason: acceptedFor, build_fingerprint } = baseline;
+    qa.baseline = { accepted_by, accepted_at, reason: acceptedFor, build_fingerprint };
   }
   return { polish, qa, changes };
 }

@@ -3536,7 +3536,7 @@ for (const [label, save] of [
 test("record with an unknown subcommand names every record subcommand, brief and spec included", () => {
   const result = runCli(["record", "bogus", "--packet", "campaign-runtime.build.json"], ROOT);
   assert.equal(result.status, 1, result.stderr);
-  assert.match(result.stderr, /record <setup\|build\|polish\|theme\|deploy\|brief\|spec>/);
+  assert.match(result.stderr, /record <setup\|build\|polish\|theme\|deploy\|brief\|spec\|baseline>/);
 });
 
 // ----- record spec without brief inputs, and doctor over unreadable inputs ----

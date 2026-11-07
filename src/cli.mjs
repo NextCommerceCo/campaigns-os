@@ -32,7 +32,7 @@ import { routeMaskedSpecMaterialHash, specMaterialHash, specHashesMatch } from "
 // The same predicate stage-ledger.mjs judges a mutator's result with, imported
 // rather than re-stated so the waive preview and the commit agree by identity.
 import { isPlainObject } from "./repo-scan.mjs";
-import { applyDerivedAssemblyReportSummary, campaignHandedOff, commitAssemblyReport, QA_GATE_PLACEHOLDER_TEXT_RESIDUE, recordProducerStageOutcome } from "./stage-ledger.mjs";
+import { applyDerivedAssemblyReportSummary, campaignHandedOff, commitAssemblyReport, QA_GATE_PLACEHOLDER_TEXT_RESIDUE, recordProducerStageOutcome, qaRestsOnBaseline } from "./stage-ledger.mjs";
 import { SESSION_ENDING_DISPOSITIONS, summarizePlaceholderTextGate, summarizePurchaseProof } from "./qa-verdict.mjs";
 import { assessRunRecordCloseout, identityMatches, latestMatchingRunRecord, reasonIsRemitRecovery } from "./run-record-closeout.mjs";
 import {
@@ -355,6 +355,7 @@ Usage:
   campaigns-os record spec --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--dry-run] [--json]
   campaigns-os record setup --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--dry-run] [--json]   # record setup complete once the campaign output directory exists: Build Context scaffold.required=false and stages.setup completed, validated against their schemas before either is written
   campaigns-os record build --packet <campaign-runtime.build.json> [--build-environment <development|production>] [--adapter-decision <key>=<value>[,<key>=<value>...]] [--context <json>] [--report <json>] [--dry-run] [--json]   # after page-kit build: records scalar adapter decisions on the Assembly Report (all pairs in one flag; a repeated flag keeps only the last), stamps stages.assembly.build_fingerprint from doctor's derived.build_output_fingerprint.value (and the Design Source Package material fingerprint when present), and makes Polish required unless its evidence is bound to this output; --build-environment records stages.assembly.evidence.build_environment (local proof mode records development)
+  campaigns-os record baseline --packet <campaign-runtime.build.json> --accepted-by "<named person>" --reason "<why>" [--context <json>] [--report <json>] [--dry-run] [--json]   # one time per funnel, for a handed-off funnel whose records predate markup hashes (before 1.62.0) and whose last QA completed: accept the recorded build as the starting point without testing it, so a later page-only change owes QA on that page alone. Polish and QA read baseline_accepted, never completed, and what they held moves to history. A commerce-affecting change still owes the full stages. Run record build first. Writes the Assembly Report.
   campaigns-os record polish --packet <campaign-runtime.build.json> --evidence <polish-evidence.json> [--context <json>] [--report <json>] [--dry-run] [--json]   # after polish capture: stages.polish from the file's status (completed, completed_with_warnings, blocked with blockers, or skipped with skip_reason), evidence and optional repair_loop_defect, bound to doctor's current fingerprint; a completed status is refused, writing nothing, unless the polish gate doctor evaluates would pass. --dry-run runs every check and writes nothing
   campaigns-os record theme --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--dry-run] [--json]   # after the brand layer is linked and build is recorded: report.theme becomes applied with load_order after-next-core, css_path, commerce_pages and per-page evidence, only when each built commerce page that loads next-core.css loads brand-theme.css (or checkout-brand.css) after it and at least one does; a page loading neither is left out as the design's own markup; refused, writing nothing, otherwise. --dry-run runs every check and writes nothing
   campaigns-os record deploy --packet <campaign-runtime.build.json> --base-url <served url> [--context <json>] [--report <json>] [--dry-run] [--json]   # a served deploy after polish is recorded: GETs every built page under the URL (the campaign route root), then records deploy.preview_url on the packet and stages.deploy completed with the URL in outputs and the build fingerprint it probed (a later record build of other output makes deploy required again). A local-serve packet takes a loopback URL and each page must answer 2xx; any other deploy target takes an https URL (plain http only on a loopback host), each page must answer 200, and every script and stylesheet the built pages load from that origin must be served byte-identical (sha256) to the built output (HTML is not compared). Refused, writing nothing, when the URL breaks those rules or is not the route root, a page does not answer, a served asset differs or is missing, the build changed since it was recorded, or the theme gate is blocked. --dry-run runs every check, the requests included, and writes nothing
@@ -721,6 +722,22 @@ function hasDoneRecommendation(session) {
   return session?.last_recommendation?.stage === "done";
 }
 
+// A page-scoped pass on a baseline paid for those pages and proved nothing
+// else, so QA still reads baseline_accepted. Only a completed full QA ends the
+// baseline: a blocked run proved nothing, so it leaves the marker alone.
+function settleQaBaseline(onBaseline, report) {
+  const qa = report.stages?.qa;
+  if (!isObject(qa) || !String(qa.status).startsWith("completed")) return report;
+  if (!onBaseline) {
+    delete qa.baseline_accepted_at;
+    return report;
+  }
+  qa.status = "baseline_accepted";
+  delete qa.completed_at;
+  delete qa.purchase_proof;
+  return report;
+}
+
 export function recordQaStageOutcome(args, result) {
   try {
     const packetArg = optionalString(args.packet);
@@ -758,7 +775,8 @@ export function recordQaStageOutcome(args, result) {
         throw new Error("The build was recorded again during this page-scoped QA run; report evidence was not changed. Re-run qa run --page against the recorded build.");
       }
       const evidence = qaStageGateEvidence(verdict, report, result);
-      return recordProducerStageOutcome(report, {
+      const onBaseline = Boolean(pageScope && report.stages?.qa?.baseline_accepted_at);
+      return settleQaBaseline(onBaseline, recordProducerStageOutcome(report, {
         stage: "qa",
         disposition: verdict.disposition,
         timestamp: verdict.completed_at,
@@ -784,12 +802,14 @@ export function recordQaStageOutcome(args, result) {
         // path from a `--test-order off` diagnostic. A page-scoped run places
         // no orders and the change it pays touches no commerce, so the
         // purchase proof of the full run it extends is kept.
-        proof: pageScope && isObject(report.stages?.qa?.purchase_proof)
+        // On a baseline there is none to keep, and a zero from this run would
+        // read as a purchase that failed, not one nobody tested.
+        proof: pageScope && (isObject(report.stages?.qa?.purchase_proof) || onBaseline)
           ? report.stages.qa.purchase_proof
           : summarizePurchaseProof({ verdict, proofPolicy: packet.qa?.proof_policy }),
         stamps: qaStamps,
         inputs: qaInputs,
-      });
+      }));
     }, {
       stage: "qa",
       // The sidecar names this refresh as its producer (generated_by, #312).
@@ -4736,7 +4756,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
         errors,
         warnings,
         ready,
-        prompt: `Pipeline complete. All stages in the assembly report are in a terminal status. To repeat build work, do the work and run \`${cmd("record")} build --packet <path>\`; this makes downstream stages owed as needed. \`${cmd("record")} deploy\` records the served deploy, a loopback URL for a local-serve target or an https URL for a hosted one. Run \`${cmd("qa")} run\` for QA. Then call \`${cmd("next")}\` again. If a run session is active, finish it with \`${cmd("run")} end\` so the Run Record is assembled and the session closes.${report?.stages?.qa?.status === "completed_with_warnings" ? " QA passed with exceptions; report them to the operator without clearing or waiving them or changing markup just to make them pass." : ""}${warnings.some((issue) => issue.code === "built_output.absent") ? " The built output is not on this checkout, so these records were not compared with it; build before treating the campaign as current." : ""}`,
+        prompt: `Pipeline complete. All stages in the assembly report are in a terminal status. To repeat build work, do the work and run \`${cmd("record")} build --packet <path>\`; this makes downstream stages owed as needed. \`${cmd("record")} deploy\` records the served deploy, a loopback URL for a local-serve target or an https URL for a hosted one. Run \`${cmd("qa")} run\` for QA. Then call \`${cmd("next")}\` again. If a run session is active, finish it with \`${cmd("run")} end\` so the Run Record is assembled and the session closes.${report?.stages?.qa?.status === "completed_with_warnings" ? " QA passed with exceptions; report them to the operator without clearing or waiving them or changing markup just to make them pass." : ""}${qaRestsOnBaseline(report) ? ` QA rests on a baseline ${report.commerce_baseline.accepted_by} accepted, not a test; say so when you report this campaign.` : ""}${warnings.some((issue) => issue.code === "built_output.absent") ? " The built output is not on this checkout, so these records were not compared with it; build before treating the campaign as current." : ""}`,
       });
     }
     stage = picked.stage;

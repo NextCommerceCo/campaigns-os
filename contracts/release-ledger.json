@@ -11045,6 +11045,189 @@
         }
       ],
       "entry_sha256": "496d52b07c935958a0c890e29bb11ccbe018e15cf8ee5877fabab67a0023fe40"
+    },
+    {
+      "id": "RL-0318",
+      "sequence": 306,
+      "date": "2026-11-07",
+      "kind": "release",
+      "surface_version": "1.66.0",
+      "changelog_section": "1.66.0",
+      "changelog_sha256": "8d1fd62f2ad654ac9fbde2adf31615cb2753f499a10d0d24843f33277201be85",
+      "agent_impact": "New record baseline accepts a handed-off funnel from before markup hashes as the starting point, one time per funnel, without testing it. New stage status baseline_accepted on stages.polish and stages.qa: terminal for the ladder, never completed, no purchase proof. Treat it as accepted and untested, never as a pass; a reader that does not recognize it should read unknown. Doctor adds the warning qa.baseline_accepted. evidence_debt.qa gains optional baseline, and the Assembly Report gains optional commerce_baseline. Refresh skills to 1.66.0+skills.1 (a revision restamp; the skill text is otherwise unchanged).",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "compatibility.json",
+          "surface_entry": "compatibility.json",
+          "summary": "Version advances to 1.66.0."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/effects.v1.json",
+          "surface_entry": "contracts/effects.v1.json",
+          "summary": "New record baseline rows: the Assembly Report and the doctor stale stamp, nothing sent. contract_version 1.5.0."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "surface_version 1.66.0 and a refreshed hash for the effects contract."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Page-only changes can also start after a baseline."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/campaigns-os-build-flow.md",
+          "surface_entry": "docs/campaigns-os-build-flow.md",
+          "summary": "How to accept a funnel from before 1.62.0, and what a baseline does and doesn't do."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/effects.md",
+          "surface_entry": "docs/effects.md",
+          "summary": "Declares what record baseline writes."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Install pins @nextcommerce/campaigns-os@1.66.0."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerated at surface 1.66.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/readback.md",
+          "surface_entry": "docs/readback.md",
+          "summary": "Lists evidence_debt.qa.baseline."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerated at surface 1.66.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Examples name 1.66.0+skills.1."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "Names record baseline."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Version 1.66.0."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Version 1.66.0."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "bundle_revision 1.66.0+skills.1; each skill one patch higher."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.66.0+skills.1; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.66.0+skills.1; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.66.0+skills.1; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.66.0+skills.1; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.66.0+skills.1; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.66.0+skills.1; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.66.0+skills.1; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.66.0+skills.1; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.66.0+skills.1; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-sdk-bump/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.66.0+skills.1; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "Help line for record baseline; a page-scoped pass on a baseline stays baseline_accepted with no purchase proof; next says at done when QA rests on one."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": null,
+          "summary": "New qa.baseline_accepted warning."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/ci.mjs",
+          "surface_entry": null,
+          "summary": "The CI report says when QA rests on a baseline."
+        }
+      ],
+      "entry_sha256": "7ab1be1f56e4738dc0fc7127361611f1e625881d8dce7f5035d3c0243396325d"
     }
   ]
 }

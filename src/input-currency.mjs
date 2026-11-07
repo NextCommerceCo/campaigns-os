@@ -16,8 +16,10 @@ import { isObject, optionalString, resolveFromFile } from "./cli-helpers.mjs";
 import { specMaterialHash } from "./spec-identity.mjs";
 
 // Every raw stage status the lifecycle writes. Any other value reads unknown.
-export const RECOGNIZED_STAGE_STATUSES = Object.freeze(["pending", "blocked", "required", "completed", "completed_with_warnings", "completed_partial", "skipped"]);
-const COMPLETED_STATUSES = Object.freeze(["completed", "completed_with_warnings", "completed_partial"]);
+export const RECOGNIZED_STAGE_STATUSES = Object.freeze(["pending", "blocked", "required", "completed", "completed_with_warnings", "completed_partial", "skipped", "baseline_accepted"]);
+// Read for currency, not for proof: a baseline carries input stamps, so a later
+// spec or brief change owes the stage again.
+const COMPLETED_STATUSES = Object.freeze(["completed", "completed_with_warnings", "completed_partial", "baseline_accepted"]);
 const NOT_APPLICABLE_STATUSES = Object.freeze(["pending", "blocked", "required", "skipped"]);
 const TERMINAL_EFFECTIVE_STATUSES = Object.freeze([...COMPLETED_STATUSES, "skipped"]);
 

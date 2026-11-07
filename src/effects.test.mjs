@@ -473,6 +473,21 @@ function seedDeployReady(seed) {
   writeJson(seed.packetPath, packet);
 }
 
+/** A handed-off funnel rebuilt from a pre-1.62 record, the one kind `record baseline` accepts. */
+function seedBaselineReady(seed) {
+  seedDeployReady(seed);
+  const report = readJson(seed.reportPath);
+  const current = report.stages.assembly.build_fingerprint;
+  const older = `sha256:${"0".repeat(64)}`;
+  report.stages.assembly.build_changes = [{
+    from_build_fingerprint: older, build_fingerprint: current, recorded_at: "2026-11-01T00:00:00.000Z", kind: "commerce_affecting",
+    changed_pages: [], unmapped_files: [], unmapped_file_count: 0, reasons: [{ code: "commerce_signature_unavailable" }],
+  }];
+  report.stages.deploy = { ...report.stages.deploy, status: "completed" };
+  report.stages.qa = { stage: "qa", status: "completed", evidence: { source_build_fingerprint: older } };
+  writeJson(seed.reportPath, report);
+}
+
 /**
  * What a `record <stage> --dry-run` row must print besides writing nothing:
  * exit 0 and the dry-run result naming the files a real record would write.
@@ -722,6 +737,8 @@ const INVOCATIONS = {
   "record theme|--dry-run": { prepare: seedThemeReady, expect: recordDryRunSucceeded("theme", ["target-page-kit/.campaign-runtime/assembly-report.json"]), argv: (s) => ["record", "theme", "--packet", s.packetPath, "--dry-run", "--json"] },
   "record deploy": { prepare: seedDeployReady, argv: (s, receiver) => ["record", "deploy", "--packet", s.packetPath, "--base-url", `${receiver}/${readJson(s.packetPath).campaign.public_route_slug}/`, "--json"] },
   "record deploy|--dry-run": { prepare: seedDeployReady, expect: recordDryRunSucceeded("deploy", ["build-packet.basic.json", "target-page-kit/.campaign-runtime/assembly-report.json"]), argv: (s, receiver) => ["record", "deploy", "--packet", s.packetPath, "--base-url", `${receiver}/${readJson(s.packetPath).campaign.public_route_slug}/`, "--dry-run", "--json"] },
+  "record baseline": { prepare: seedBaselineReady, argv: (s) => ["record", "baseline", "--packet", s.packetPath, "--accepted-by", "Pat Rivera", "--reason", "Live since before markup hashes", "--json"] },
+  "record baseline|--dry-run": { prepare: seedBaselineReady, expect: recordDryRunSucceeded("baseline", ["target-page-kit/.campaign-runtime/assembly-report.json"]), argv: (s) => ["record", "baseline", "--packet", s.packetPath, "--accepted-by", "Pat Rivera", "--reason", "Live since before markup hashes", "--dry-run", "--json"] },
   "validate-assembly-report": { argv: (s) => ["validate-assembly-report", "--report", s.reportPath, "--json"] },
   "install-skills": { argv: () => ["install-skills", "--platform", "claude", "--json"], target: () => "home" },
   "install-skills|--dry-run": { argv: () => ["install-skills", "--platform", "claude", "--dry-run", "--json"], target: () => "home" },

@@ -1586,7 +1586,7 @@ existed has no signature, and its next change reads as commerce-affecting, with
 the reason `commerce_signature_unavailable`, whatever the change was. `record
 build` keeps a signature from then on, but the QA it would extend is still
 anchored before that rebuild. So page-only changes start after one full QA on
-1.62.0 or later.
+1.62.0 or later, or after [a baseline](campaigns-os-build-flow.md#accepting-a-funnel-from-before-1620).
 
 A stale or missing Assembly Source Package Fingerprint is waivable only as an
 exceptional Source Freshness Waiver. The waiver must be structured in
