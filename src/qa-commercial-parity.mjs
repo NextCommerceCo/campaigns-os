@@ -9,6 +9,9 @@ import {
 import {
   COMMERCIAL_PARITY_SCHEMA_VERSION,
   CommercialParityLimitError,
+  PACKAGE_PRICE_NOT_FILLED,
+  PACKAGE_PRICE_NOT_RENDERED,
+  PACKAGE_PRICE_UNRESOLVED,
   createCommercialParityReport,
   extractCommercialClaims,
   recurringClaimAbsences,
@@ -450,6 +453,7 @@ function catalogImportedAt(spec) {
 
 function captureClaimCount(capture) {
   return array(capture?.price_claims).length
+    + array(capture?.rendered_package_prices ?? capture?.package_price_claims).length
     + array(capture?.recurrence_claims).length
     + array(capture?.vouchers).length;
 }
@@ -502,6 +506,21 @@ const INCOMPLETE_ISSUE_REASONS = Object.freeze({
   commercial_runner_error: {
     summary: () => "The commercial parity check crashed before it finished, so no price was compared.",
     fix: "Re-run qa run. If it crashes again, record it with findings add and tell the operator.",
+  },
+});
+
+const PACKAGE_PRICE_REASONS = Object.freeze({
+  [PACKAGE_PRICE_NOT_RENDERED]: {
+    summary: (count) => `${count} package.price claim(s) are filled in by the SDK at runtime, and this run read no rendered page for them.`,
+    fix: "Re-run qa run with --browser. If it already ran with --browser, the page did not load: fix that first.",
+  },
+  [PACKAGE_PRICE_NOT_FILLED]: {
+    summary: (count) => `The SDK never filled ${count} visible package.price node(s), so a shopper may be reading the template's placeholder price.`,
+    fix: "Check that the SDK loaded and that the package ref is on the campaign, then re-run qa run.",
+  },
+  [PACKAGE_PRICE_UNRESOLVED]: {
+    summary: (count) => `${count} package.price claim(s) could not be tied to one calculated price: no package id around the node, no single exact row for the package on the page, or text that is not a money amount.`,
+    fix: "Put data-next-package-id around the price, or check it by hand.",
   },
 });
 
@@ -595,12 +614,18 @@ export function commercialIncompleteReasons(commercial, journey = null) {
     ));
     return reasons;
   }
-  const unresolved = commercial.unresolved_price_claims + commercial.unresolved_recurrence_claims + commercial.unresolved_voucher_claims;
+  const packagePrices = Object.entries(commercial.package_price_claims?.unresolved || {});
+  packagePrices.forEach(([code, count]) => {
+    const known = PACKAGE_PRICE_REASONS[code];
+    reasons.push(incompleteReason(code, count, known.summary(count), known.fix));
+  });
+  const unresolvedPrices = commercial.unresolved_price_claims - packagePrices.reduce((sum, [, count]) => sum + count, 0);
+  const unresolved = unresolvedPrices + commercial.unresolved_recurrence_claims + commercial.unresolved_voucher_claims;
   if (unresolved > 0) {
     reasons.push(incompleteReason(
       "commercial_claims_unresolved",
       unresolved,
-      `${unresolved} claim(s) could not be tied to one calculated value (${commercial.unresolved_price_claims} price, ${commercial.unresolved_recurrence_claims} recurring, ${commercial.unresolved_voucher_claims} voucher).`,
+      `${unresolved} claim(s) could not be tied to one calculated value (${unresolvedPrices} price, ${commercial.unresolved_recurrence_claims} recurring, ${commercial.unresolved_voucher_claims} voucher).`,
       "A page with more than one bound bundle price, or a voucher the plan cannot price, stays uncompared: check these by hand, or declare the voucher in the spec.",
     ));
   }
@@ -657,6 +682,7 @@ function compactReport(report, journey, plan, executed, issues, observedClaims, 
     extracted_price_claims: report.extracted_price_claims,
     compared_price_claims: report.compared_price_claims,
     unresolved_price_claims: report.unresolved_price_claims,
+    package_price_claims: report.package_price_claims,
     extracted_recurrence_claims: report.extracted_recurrence_claims,
     compared_recurrence_claims: report.compared_recurrence_claims,
     unresolved_recurrence_claims: report.unresolved_recurrence_claims,
@@ -727,6 +753,7 @@ export function unavailableCommercialReport(code, { status = "not_run" } = {}) {
     extracted_price_claims: 0,
     compared_price_claims: 0,
     unresolved_price_claims: 0,
+    package_price_claims: { extracted: 0, compared: 0, unresolved: {} },
     extracted_recurrence_claims: 0,
     compared_recurrence_claims: 0,
     unresolved_recurrence_claims: 0,

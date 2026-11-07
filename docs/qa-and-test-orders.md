@@ -506,6 +506,9 @@ report every page as unpriced.
 | `commercial_capture_unmatched` | A fetched page matches no planned page | Compare the spec's page ids with the funnel |
 | `commercial_page_not_exact` | Calculate gave no exact total for a page; the row names the reason | Correct the spec where the reason names it. A store coupon cannot be previewed: check by hand |
 | `commercial_claims_unresolved` | A claim could not be tied to one calculated value, for example a page with two bound bundle prices | Check by hand, or declare the voucher in the spec |
+| `package_price_not_rendered` | The page has `package.price` claims and this run read no rendered page for them | `qa run --browser` |
+| `package_price_not_filled` | The SDK never filled a visible `package.price` node, so a shopper may be reading the placeholder | Check that the SDK loaded and the package ref is on the campaign |
+| `package_price_unresolved` | A `package.price` could not be tied to one calculated price: no package id, no single exact row, or text that is not money | Put `data-next-package-id` around it, or check by hand |
 | `static_source_not_in_run_currency` | Under `--currency`, the source holds the Map currency's fallback text | Nothing to repair: a run in the campaign's own currency compares them |
 | `commercial_html_claims_limit`, `commercial_aggregate_claim_limit`, `commercial_scenario_limit` | The funnel is over this check's limits | Check by hand and tell the operator |
 | `commercial_runner_error` | The check crashed; `commercial.status` is `incomplete` for this cause too | Re-run; record a finding if it repeats |
@@ -516,6 +519,22 @@ a `commercial-currency:<RUN>:<ANSWERED>` blocker and a
 a store coupon, two bound prices on one page, a run in another currency and a
 funnel over the limits say what this run did not compare, and the disposition
 says so too.
+
+Bound prices are read two ways, because the two bindings mean different things in
+the source. `bundle.<id>.price` is compared as authored in the source HTML, against
+the page's calculated total. `package.price` and `package.<ref>.price` are compared
+as rendered, because what the source holds there is the template's placeholder (a
+starter upsell ships `$9.99`). Under `qa run --browser`, QA reads each visible node
+once the SDK has written it, which it knows by the `display-visible` class the SDK
+adds, and compares it with calculate's `unit_price` for that package's row on the
+page: one unit, after offers. So a page printing `package.price`, which is the list
+price, beside a live offer gets a `price-claim-mismatch` warning. The package is the
+id in the path, or else the nearest `data-next-package-id`, `data-next-package` or
+`data-package-id`, which is how the SDK scopes it. The source is only read to learn
+that these claims exist, so a run without `--browser` reports them as
+`package_price_not_rendered`. `verdict.commercial.package_price_claims` counts them.
+Under a `--currency` that is not the Map's they stay unresolved, like the source
+prices above, because the browser pass does not load pages in the run currency.
 
 Only contract-governed claims are compared, and only against `Exact` normalized
 truth. Proven differences emit warn-severity `pricing` assertions named

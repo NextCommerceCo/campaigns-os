@@ -1130,6 +1130,12 @@ async function runPageBrowserChecks(context, page, args, options = {}, policyLin
     assertions.push(...await templatePlaceholderTextAssertions(browserPage, page, options));
     assertions.push(...await templateDemoAssetAssertions(browserPage, page, options));
     assertions.push(...await pricingVisibilityAssertions(browserPage, page, options));
+    // Commercial parity compares these with calculated prices once the browser
+    // pass is over; a page never read here stays unresolved there.
+    if (options.renderedPackagePrices && !options.renderedPackagePrices.has(String(page.page_id))) {
+      const rendered = await readRenderedPackagePrices(browserPage);
+      if (rendered) options.renderedPackagePrices.set(String(page.page_id), rendered);
+    }
     observation.inspection_ms = elapsedMilliseconds(inspectionStarted);
     const debuggerStarted = performance.now();
     assertions.push(...await sdkDebuggerAssertions(context, page, args));
@@ -3102,6 +3108,45 @@ async function pricingVisibilityAssertions(browserPage, page, options = {}) {
     return [checkoutPriceVisibilityAssertion({ page, selectors, visibleCount, totalSelectors, totalVisibleCount, emptyEntry })];
   }
   return [];
+}
+
+// Runs in the page. Every visible package.price node as the shopper reads it. The
+// SDK adds `display-visible` when it writes a node, and nothing else does, so a
+// node without it still holds the template's placeholder, whatever that says.
+// Same package scope as the SDK: the id in the path, then the nearest package id.
+// A price the page multiplies by a live quantity is not a unit price: it keeps no
+// text, so it stays unresolved instead of being compared.
+function collectRenderedPackagePrices() {
+  const claims = new Map();
+  for (const element of document.querySelectorAll('[data-next-display^="package."]')) {
+    const binding = (element.getAttribute("data-next-display") || "").trim();
+    const match = /^package\.(?:(\d+)\.)?price$/.exec(binding);
+    if (!match) continue;
+    const format = (element.getAttribute("data-next-format") || "currency").trim().toLowerCase();
+    if (format !== "currency" || element.closest("del, s, strike")) continue;
+    if (!element.checkVisibility({ checkVisibilityCSS: true })) continue;
+    let packageId = match[1] ? Number(match[1]) : null;
+    for (let current = element; packageId === null && current; current = current.parentElement) {
+      for (const attribute of ["data-next-package-id", "data-next-package", "data-package-id"]) {
+        const value = (current.getAttribute(attribute) || "").trim();
+        if (packageId === null && /^[1-9]\d*$/.test(value)) packageId = Number(value);
+      }
+    }
+    const filled = element.classList.contains("display-visible");
+    const multiplied = element.hasAttribute("data-next-multiply-quantity");
+    const text = filled && !multiplied ? element.textContent.replace(/\s+/g, " ").trim() : null;
+    claims.set(`${binding}|${packageId}|${filled}|${text}`, { binding, package_id: packageId, filled, text });
+  }
+  return [...claims.values()];
+}
+
+async function readRenderedPackagePrices(browserPage, { timeoutMs = DEFAULT_SETTLE_TIMEOUT_MS } = {}) {
+  await browserPage.waitForFunction(
+    `(${collectRenderedPackagePrices.toString()})().every((claim) => claim.filled)`,
+    null,
+    { timeout: timeoutMs },
+  ).catch(() => {});
+  return browserPage.evaluate(collectRenderedPackagePrices).catch(() => null);
 }
 
 // The SDK renders a bundle or upsell price through data-next-bundle-display as
@@ -9028,6 +9073,7 @@ export const __qaBrowserTestHooks = Object.freeze({
   ASSET_FETCH_MAX_BYTES,
   paymentChromeResidueAssertion,
   pricingVisibilityAssertions,
+  readRenderedPackagePrices,
   upsellPriceVisibilityAssertion,
   checkoutPriceVisibilityAssertion,
   assessReceiptRendering,

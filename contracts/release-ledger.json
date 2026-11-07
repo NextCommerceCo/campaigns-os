@@ -10841,6 +10841,27 @@
         }
       ],
       "entry_sha256": "eb6a82e86b111cbe53058a6d5227c0302b9d34b7ce46855531871d647cfeec0d"
+    },
+    {
+      "id": "RL-0317",
+      "sequence": 304,
+      "date": "2026-11-07",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.65.0+agent.1",
+      "changelog_sha256": "bd4035ead418f5e45b7a0f4b212844b280bea0f722c81db2783f6a81fa3000af",
+      "agent_impact": "Commercial parity compares rendered package.price and package.<ref>.price with calculate's unit_price under qa run --browser. A difference is a warn-only price-claim-mismatch. A run without --browser on a page with these claims reads commercial status incomplete, with a commercial-parity:incomplete:package_price_not_rendered row; run qa run --browser to compare them. package_price_not_filled and package_price_unresolved name the other uncompared cases. No schema, pin or skill change.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Commercial parity covers package.price as rendered; lists its three uncompared cause codes."
+        }
+      ],
+      "entry_sha256": "8542bf11d70c4fef99dd2951da2b54f028dbbd22dd7ec6ef2082c1b1f926097f"
     }
   ]
 }

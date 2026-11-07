@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -371,4 +372,134 @@ test("recurring claim absences skip a capture with no page id instead of keying 
   assert.deepEqual(recurringClaimAbsences([{ ...rendered(undefined), page_id: "" }], subscriptions), []);
   // The page-keyed capture is still read.
   assert.deepEqual(recurringClaimAbsences([rendered("checkout")], subscriptions).map((entry) => [entry.page_id, entry.package_id]), [["checkout", "5"]]);
+});
+
+const STARTER_UPSELL = new URL("../fixtures/certified-families/_site/apollo-mv-single-step/upsell-single/index.html", import.meta.url);
+
+function packagePricePage(rows = [{ package_id: 3, state: "Exact", unit_price: { state: "Exact", value: "49.99" } }], extra = {}) {
+  return { page_id: "upsell", representative_total: { state: "Exact", value: "49.99" }, rows, offers: [], ...extra };
+}
+
+function renderedCapture(rendered, extra = {}) {
+  return { page_id: "upsell", price_claims: [], recurrence_claims: [], vouchers: [], rendered_package_prices: rendered, ...extra };
+}
+
+function renderedClaim(text, overrides = {}) {
+  return { binding: "package.price", package_id: 3, filled: true, text, ...overrides };
+}
+
+test("a starter page's placeholder package.price is listed as a claim, and is never compared", () => {
+  const html = readFileSync(STARTER_UPSELL, "utf8");
+  assert.match(html, /data-next-display="package\.price"[^>]*>\$9\.99/, "precondition: the starter holds a placeholder price");
+  const capture = extractCommercialClaims(html, { pageId: "upsell" });
+
+  assert.deepEqual(capture.price_claims, []);
+  assert.ok(capture.package_price_claims.length > 0);
+  assert.equal(JSON.stringify(capture.package_price_claims).includes("9.99"), false, "the placeholder text is not kept");
+
+  // The placeholder differs from the calculated price, and nothing reports it.
+  const report = createCommercialParityReport([capture], {
+    pages: [packagePricePage([{ package_id: 77, state: "Exact", unit_price: { state: "Exact", value: "49.99" } }])],
+  });
+  assert.deepEqual(report.findings, []);
+  assert.equal(report.compared_price_claims, 0);
+  assert.equal(report.unresolved_price_claims, capture.package_price_claims.length);
+  assert.deepEqual(report.package_price_claims.unresolved, { package_price_not_rendered: capture.package_price_claims.length });
+  assert.equal(report.coverage_complete, false);
+});
+
+test("package.price claims take the SDK's package scope, and only visible price nodes count", () => {
+  const { package_price_claims: claims } = extractCommercialClaims(`
+    <div data-next-package-id="3">
+      <span data-next-display="package.price" data-next-format="currency">$9.99</span>
+      <span data-next-display="package.price">$9.99</span>
+      <span data-next-display="package.8.price">$0.00</span>
+      <span data-next-display="package.price" data-next-package-id="4">$0.00</span>
+      <span data-next-display="package.name">Knife</span>
+      <span data-next-display="package.price_retail" data-next-format="currency">$19.99</span>
+      <span data-next-display="package.price" data-next-format="number">1</span>
+      <del><span data-next-display="package.price" data-next-package-id="5">$1.00</span></del>
+      <span hidden data-next-display="package.price" data-next-package-id="6">$1.00</span>
+    </div>
+    <span data-next-display="package.price">$1.00</span>
+  `);
+  assert.deepEqual(claims, [
+    { binding: "package.price", package_id: 3 },
+    { binding: "package.8.price", package_id: 8 },
+    { binding: "package.price", package_id: 4 },
+    { binding: "package.price", package_id: null },
+  ]);
+});
+
+test("a filled package.price is compared per unit with what calculate charges", () => {
+  const matching = createCommercialParityReport([renderedCapture([renderedClaim("$49.99"), renderedClaim("USD 49.99", { binding: "package.3.price" })])], { pages: [packagePricePage()] });
+  assert.deepEqual(matching.findings, []);
+  assert.equal(matching.extracted_price_claims, 2);
+  assert.equal(matching.compared_price_claims, 2);
+  assert.equal(matching.unresolved_price_claims, 0);
+  assert.equal(matching.coverage_complete, true);
+
+  // A page printing the list price beside a live offer: the shopper pays less.
+  const offered = createCommercialParityReport([renderedCapture([renderedClaim("$89.99")], { url: "https://shop.example/upsell/" })], { pages: [packagePricePage()] });
+  assert.deepEqual(offered.findings, [{
+    type: "price-claim-mismatch",
+    page_id: "upsell",
+    url: "https://shop.example/upsell/",
+    binding: "package.3.price",
+    package_id: 3,
+    claimed: "89.99",
+    calculated: "49.99",
+  }]);
+  assert.deepEqual(offered.assertions.map((entry) => [entry.id, entry.status, entry.severity, entry.expected, entry.actual, entry.evidence.package_id]), [
+    ["price-claim-mismatch:upsell:package.3.price", "warn", "warn", "49.99", "89.99", 3],
+  ]);
+});
+
+test("a package.price that cannot be proven is unresolved under a named code, never a mismatch", () => {
+  const unresolved = (claim, page = packagePricePage(), extra = {}) => {
+    const report = createCommercialParityReport([renderedCapture([claim], extra)], { pages: [page] });
+    assert.deepEqual(report.findings, []);
+    assert.equal(report.compared_price_claims, 0);
+    assert.equal(report.unresolved_price_claims, 1);
+    assert.equal(report.coverage_complete, false);
+    return Object.keys(report.package_price_claims.unresolved);
+  };
+
+  assert.deepEqual(unresolved(renderedClaim(null, { filled: false })), ["package_price_not_filled"]);
+  assert.deepEqual(unresolved(renderedClaim("$49.99", { package_id: null })), ["package_price_unresolved"], "no package scope");
+  assert.deepEqual(unresolved(renderedClaim("$49.99", { package_id: 99 })), ["package_price_unresolved"], "no row for the package");
+  assert.deepEqual(unresolved(renderedClaim("N/A")), ["package_price_unresolved"], "the SDK wrote its error text");
+  assert.deepEqual(unresolved(renderedClaim("49,99 €")), ["package_price_unresolved"], "a decimal comma is unread, not wrong");
+  assert.deepEqual(unresolved(renderedClaim(null)), ["package_price_unresolved"], "a price multiplied by a live quantity keeps no text");
+  assert.deepEqual(unresolved(renderedClaim("$49.99"), packagePricePage([{ package_id: 3, state: "Exact" }])), ["package_price_unresolved"], "a response without unit_price");
+  assert.deepEqual(unresolved(renderedClaim("$49.99"), packagePricePage([{ package_id: 3, state: "Unresolved", unit_price: { state: "Exact", value: "49.99" } }])), ["package_price_unresolved"], "a row that is not exact");
+  assert.deepEqual(unresolved(renderedClaim("$49.99"), packagePricePage([
+    { package_id: 3, state: "Exact", unit_price: { state: "Exact", value: "49.99" } },
+    { package_id: 3, state: "Exact", unit_price: { state: "Exact", value: "44.99" } },
+  ])), ["package_price_unresolved"], "two unit prices for one package");
+  assert.deepEqual(unresolved(renderedClaim("$49.99"), packagePricePage(), { vouchers: [{ code: "FIRE" }] }), ["package_price_unresolved"], "a voucher the plan cannot price");
+
+  // Two rows that agree still give one truth.
+  const agreeing = createCommercialParityReport([renderedCapture([renderedClaim("$49.99")])], {
+    pages: [packagePricePage([
+      { package_id: 3, state: "Exact", unit_price: { state: "Exact", value: "49.99" } },
+      { package_id: 3, state: "Exact", unit_price: { state: "Exact", value: "49.99" } },
+    ])],
+  });
+  assert.equal(agreeing.compared_price_claims, 1);
+});
+
+test("a run in another currency leaves rendered package prices uncompared", () => {
+  const report = createCommercialParityReport([renderedCapture([renderedClaim("$89.99")])], { pages: [packagePricePage()] }, {
+    unresolvedMoneyClaims: "static_source_not_in_run_currency",
+  });
+  assert.deepEqual(report.findings, []);
+  assert.equal(report.unresolved_price_claims, 1);
+  assert.equal(report.unresolved_money_claims_reason, "static_source_not_in_run_currency");
+});
+
+test("a malformed rendered price invalidates the capture instead of reading as coverage", () => {
+  const report = createCommercialParityReport([renderedCapture([{ binding: "bundle.main.price", package_id: 3, filled: true, text: "$1.00" }])], { pages: [packagePricePage()] });
+  assert.equal(report.invalid_capture_count, 1);
+  assert.equal(report.coverage_complete, false);
 });

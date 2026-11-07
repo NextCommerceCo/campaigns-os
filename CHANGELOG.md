@@ -2,6 +2,16 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.65.0+agent.1] - 2026-11-07
+
+Commercial parity now checks `package.price` as well as `bundle.*.price`. Starter upsells use `package.price`, so a funnel could pass every calculate scenario with no printed price compared. No pin change is needed to read verdicts; the behavior ships in the next release.
+
+### Changed
+
+- **`package.price` and `package.<ref>.price` are compared as rendered.** Under `qa run --browser`, each visible node the SDK has filled is compared with calculate's `unit_price` for that package's row on the page. The source holds a template placeholder (`$9.99` on a starter upsell), so the source text is never compared. A difference is the existing warn-only `price-claim-mismatch`. That includes a page printing `package.price`, the list price, beside a live offer.
+- **What cannot be compared is named.** `package_price_not_rendered` is a run without `--browser`, `package_price_not_filled` is a visible node the SDK never wrote, and `package_price_unresolved` is no package id, no single exact row or unreadable text. Each is a `commercial-parity:incomplete:<code>` warn row and never a mismatch. A run without `--browser` on a page with these claims now reads `incomplete`, so it stays at `ready_with_exceptions`.
+- `verdict.commercial.package_price_claims` counts these claims, and they count toward `extracted_price_claims`, `compared_price_claims` and `unresolved_price_claims`. Journey rows from the `./commercial-journey` export carry `unit_price` when calculate sends it, and captures from `./commercial-parity` carry `package_price_claims`.
+
 ## [1.65.0] - 2026-11-07
 
 A QA run whose commercial parity stopped short no longer reads as a clean result. Commercial status `incomplete` now keeps the verdict at `ready_with_exceptions` and names the cause and the fix in `exceptions[]`. It stays warn-only: nothing new blocks, and the exit code does not change. To take it, pin `@nextcommerce/campaigns-os@1.65.0` and refresh the installed skills to `1.65.0+skills.1`.

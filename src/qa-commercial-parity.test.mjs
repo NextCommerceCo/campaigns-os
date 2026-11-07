@@ -365,6 +365,81 @@ test("each cause of incomplete coverage gets its own named row", async () => {
   assert.match(absentNoBudget.assertions[0].actual, /recurring_claim_absent/);
 });
 
+test("package.price claims reach the run as compared, mismatched or named as uncompared", async () => {
+  const spec = rawRecurringSpec();
+  const run = (capture) => runCommercialParity({
+    resolved: { rawSpec: spec, spec, proxyBase: "https://proxy.example.test" },
+    captures: [capture],
+    fetchImpl: async (_url, options) => {
+      const { scenario } = JSON.parse(options.body);
+      const body = calculateBody(scenario);
+      body.data.lines = body.data.lines.map((line) => ({ ...line, original_unit_price: "39.99", unit_price: "29.99" }));
+      return new Response(JSON.stringify(body), { status: 200 });
+    },
+  });
+  const source = captureCommercialClaims({ page_id: "page_mt104ehn_11" }, `
+    <div data-next-package-toggle data-next-package-id="5">
+      <span data-next-display="package.price" data-next-format="currency">$9.99</span> then $29.99 every 30 days
+    </div>
+  `);
+  const rendered = (text, filled = true) => [{ binding: "package.price", package_id: 5, filled, text }];
+
+  // The placeholder source alone: nothing compared, and the row says why.
+  const sourceOnly = await run(source);
+  assert.equal(sourceOnly.commercial.status, "incomplete");
+  assert.equal(sourceOnly.commercial.compared_price_claims, 0);
+  assert.deepEqual(incompleteIds(sourceOnly), ["commercial-parity:incomplete:package_price_not_rendered"]);
+  assert.match(sourceOnly.assertions[0].actual, /Fix: Re-run qa run with --browser/);
+
+  const matched = await run({ ...source, rendered_package_prices: rendered("$29.99") });
+  assert.equal(matched.commercial.status, "pass");
+  assert.equal(matched.commercial.compared_price_claims, 1);
+  assert.deepEqual(matched.commercial.package_price_claims, { extracted: 1, compared: 1, unresolved: {} });
+  assert.deepEqual(matched.assertions, []);
+
+  // Printed $39.99, the list price, against $29.99 after offers.
+  const listPrice = await run({ ...source, rendered_package_prices: rendered("$39.99") });
+  assert.equal(listPrice.commercial.status, "mismatch");
+  assert.deepEqual(listPrice.assertions.map((entry) => [entry.id, entry.expected, entry.actual]), [
+    ["price-claim-mismatch:page_mt104ehn_11:package.5.price", "29.99", "39.99"],
+  ]);
+
+  const unfilled = await run({ ...source, rendered_package_prices: rendered(null, false) });
+  assert.equal(unfilled.commercial.status, "incomplete");
+  assert.deepEqual(incompleteIds(unfilled), ["commercial-parity:incomplete:package_price_not_filled"]);
+  assert.match(unfilled.assertions[0].actual, /placeholder price/);
+
+  const noScope = await run({ ...source, rendered_package_prices: [{ binding: "package.price", package_id: null, filled: true, text: "$29.99" }] });
+  assert.deepEqual(incompleteIds(noScope), ["commercial-parity:incomplete:package_price_unresolved"]);
+});
+
+test("package.price rows do not repeat a cause an earlier one explains, and bundle claims keep their own count", async () => {
+  const spec = rawRecurringSpec();
+  delete spec.campaign.campaigns_api_key;
+  const noKey = await runCommercialParity({
+    resolved: { rawSpec: spec, spec, proxyBase: "https://proxy.example.test" },
+    captures: [captureCommercialClaims({ page_id: "page_mt104ehn_11" }, '<div data-next-package-id="5"><span data-next-display="package.price">$9.99</span></div>')],
+    fetchImpl: async () => { throw new Error("must not fetch"); },
+  });
+  assert.deepEqual(incompleteIds(noKey), ["commercial-parity:incomplete:missing_campaigns_api_key"]);
+
+  const keyed = rawRecurringSpec();
+  const both = await runCommercialParity({
+    resolved: { rawSpec: keyed, spec: keyed, proxyBase: "https://proxy.example.test" },
+    captures: [captureCommercialClaims({ page_id: "page_mt104ehn_11" }, `
+      <div data-next-package-toggle data-next-package-id="5"><span data-next-display="package.price">$9.99</span> then $29.99 every 30 days</div>
+      <span data-next-display="bundle.a.price" data-next-format="currency">$29.99</span>
+      <span data-next-display="bundle.b.price" data-next-format="currency">$29.99</span>
+    `)],
+    fetchImpl: async (_url, options) => new Response(JSON.stringify(calculateBody(JSON.parse(options.body).scenario)), { status: 200 }),
+  });
+  assert.deepEqual(incompleteIds(both), [
+    "commercial-parity:incomplete:package_price_not_rendered",
+    "commercial-parity:incomplete:commercial_claims_unresolved",
+  ]);
+  assert.match(both.assertions.at(-1).actual, /2 price, 0 recurring, 0 voucher/);
+});
+
 test("a commercial pass or an empty plan writes no incomplete row", async () => {
   const spec = rawRecurringSpec();
   const pass = await runCommercialParity({
