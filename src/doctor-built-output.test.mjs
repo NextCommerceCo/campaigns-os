@@ -1012,7 +1012,9 @@ test("built_output.fingerprint: skips without a built route root and never guess
     const ready = [];
     const derived = { target_repo: dir };
     validateBuildOutputFingerprint(PACKET, errors, warnings, ready, derived, { report: { stages: { assembly: { status: "completed", build_fingerprint: `sha256:${"a".repeat(64)}` } } } });
-    assert.deepEqual([errors, warnings, ready], [[], [], []]);
+    // A completed build with no output to compare is said out loud: a fresh
+    // checkout must not read as current because nothing was compared.
+    assert.deepEqual([errors, warnings.map((issue) => issue.code), ready], [[], ["built_output.absent"], []]);
     assert.equal(derived.build_output_fingerprint, undefined);
   });
 });

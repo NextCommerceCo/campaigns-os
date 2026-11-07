@@ -89,6 +89,16 @@ or when it was a page-scoped run that did not complete, in which case the
 pages are counted from the full QA that run extended, so its unpaid pages stay
 owed. A blocked or pending full QA owes a full run.
 
+A change is read against the build each stage last reviewed, counting every
+rebuild since, not just the latest. So a copy edit that `record build` calls
+`page_only` still owes the full stages when an earlier rebuild since the last
+QA was commerce-affecting. The report names that QA's build and date, and that
+rebuild.
+
+Page-only changes start after one full QA on 1.62.0 or later. A build recorded
+before 1.62.0 has no markup hashes to compare with, so the first change on it
+reads as commerce-affecting.
+
 The PR comment opens with the kind it found and what that owes, for example
 "Change found: page-only. It owes QA on `upsell1`; Polish is advisory." A
 commerce-affecting change names its reasons.

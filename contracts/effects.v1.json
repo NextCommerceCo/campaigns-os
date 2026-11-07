@@ -1,7 +1,7 @@
 {
   "schema": "campaigns-os-effects/v1",
   "_note": "The declared effect of every supported invocation: what it writes, what it sends, and the test case that proves it. One row per command, per subcommand and per effect-changing flag (vocabulary.effect_changing_flags). A row is not publishable without its effect test — scripts/check-effects.mjs refuses one, and refuses a flag from that list that a help usage line carries and no row declares. Read this with docs/effects.md.",
-  "contract_version": "1.3.0",
+  "contract_version": "1.4.0",
   "vocabulary": {
     "annotations": {
       "readOnlyHint": "The invocation changes nothing: no file under the target, the working directory or the user's machine, and no request off the machine. The command-lifecycle journal counts — a journal append is a write like any other, so every readOnlyHint: true row is an invocation the CLI exempts from lifecycle capture (the converse does not hold: some journal-exempt invocations, such as demo and the --no-write forms, still write other declared files).",
@@ -355,6 +355,67 @@
       "effect_test": "effects: page-kit sync --dry-run",
       "test_scope": "full",
       "notes": "page-kit sync --dry-run runs every check the real invocation runs and prints what it would do; it writes nothing under the target, appends no lifecycle entry (the command is declared `dryRun` in src/invocation.mjs) and runs no stale-session closeout."
+    },
+    {
+      "command": "spec",
+      "subcommand": "fetch",
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": true,
+        "idempotentHint": true
+      },
+      "tier": "A",
+      "writes": [
+        {
+          "path": "{target}/.campaign-runtime/fetched-specs/*.json",
+          "when": "the packet's saved-Map copy is not on this checkout; a copy already there is never replaced and nothing is sent",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.gitignore",
+          "when": "the managed block is missing, or an older one still lists fetched-specs/",
+          "observed_in": [
+            "no_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/spec/{map-id}",
+          "what": "the CampaignSpec fetch",
+          "when": "the packet's saved-Map copy is not on this checkout",
+          "requires_consent": false,
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        }
+      ],
+      "effect_test": "effects: spec fetch",
+      "test_scope": "full",
+      "notes": "Fills a gap only: the copy on disk can hold spec derive edits the Map does not. The packet and the records are not written; a Map that has moved since they were made is reported as bound: differs."
     },
     {
       "command": "spec",

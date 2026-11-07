@@ -92,6 +92,54 @@ function ci(f, ...flags) {
   return result;
 }
 
+// The two reports a developer reads after a copy edit on top of an unreviewed
+// commerce change: `record build` says page-only, and doctor --ci counts every
+// rebuild since the last QA. The CI report has to say why they differ.
+test("doctor --ci names its basis and the unreviewed rebuild behind a page-only edit", (t) => {
+  const f = fixture(t);
+  const report = f.readReport();
+  report.stages.qa.checked_at = "2026-10-23T00:00:00Z";
+  writeFileSync(f.reportPath, JSON.stringify(report));
+  const tracked = PAGES.upsell1.replace("</body>", "<script src=\"/tracking.js\"></script></body>");
+  f.writePage("upsell1", tracked);
+  f.recordBuild();
+  const commerceBuild = f.readReport().stages.assembly.build_fingerprint;
+  f.writePage("upsell1", tracked.replace("Add a second bottle", "Add a third bottle"));
+  f.recordBuild();
+  const assembly = f.readReport().stages.assembly;
+  assert.equal(assembly.build_changes.at(-1).kind, "page_only", "the latest rebuild alone is page-only");
+  const debt = f.debt();
+  assert.equal(debt.qa.change.kind, "commerce_affecting");
+  assert.equal(debt.qa.reviewed_at, "2026-10-23T00:00:00Z");
+  assert.equal(debt.qa.change.commerce_rebuild.build_fingerprint, commerceBuild);
+  const { stdout, status } = ci(f);
+  assert.equal(status, 3);
+  assert.match(stdout, /Change found: commerce-affecting/);
+  assert.match(stdout, /QA change is read against the build it last reviewed \(`[0-9a-f]{12}`, 2026-10-23\), counting every rebuild since\./);
+  assert.match(stdout, /The full stages are owed for an earlier rebuild recorded \d{4}-\d{2}-\d{2} \(`[0-9a-f]{12}`\) that no Polish or QA has reviewed\./);
+});
+
+test("a recorded build with no markup hashes reads as commerce-affecting, and a later record build does not clear it", (t) => {
+  const f = fixture(t);
+  const report = f.readReport();
+  delete report.stages.assembly.commerce_signature;
+  writeFileSync(f.reportPath, JSON.stringify(report));
+  copyEdit(f);
+  f.recordBuild();
+  assert.ok(f.readReport().stages.assembly.commerce_signature, "record build keeps hashes from here on");
+  assert.equal(f.debt().qa.change.kind, "commerce_affecting");
+  assert.equal(f.debt().qa.scope, "full", "the rebuild since the last QA was read without hashes, so it still owes the full stage");
+  assert.match(ci(f).stdout, /predates the markup hashes page-only changes are read from \(Campaigns OS 1\.62\)/);
+});
+
+test("doctor warns when records say complete and no build is here to compare", (t) => {
+  const f = fixture(t);
+  rmSync(f.output, { recursive: true, force: true });
+  const doctored = doctorPacket(f.packetPath);
+  assert.ok(doctored.warnings.some((issue) => issue.code === "built_output.absent"));
+  assert.equal(ci(f).status, 4, "doctor --ci already reads an absent build as unknown");
+});
+
 const copyEdit = (f) => f.writePage("upsell1", PAGES.upsell1.replace("Add a second bottle", "Add a third bottle"));
 
 test("a copy edit on one upsell page owes QA on that page and Polish is advisory, before and after record build", (t) => {

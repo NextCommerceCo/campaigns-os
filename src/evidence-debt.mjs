@@ -148,6 +148,7 @@ export function assessEvidenceDebt({ packet = null, packetPath = null, report = 
   if (qa.status === "owed") {
     const extended = qaExtendedBuildFingerprint(report);
     qa.change = changeFor(extended || qaBuild);
+    if (fingerprint(qaRecord?.checked_at)) qa.reviewed_at = qaRecord.checked_at.trim();
     qa.scope = extended && qaRecord?.status !== "required" && qa.change.kind === "page_only" ? "pages" : "full";
     qa.owed_pages = qa.scope === "pages" ? qa.change.changed_pages : [];
   } else {
