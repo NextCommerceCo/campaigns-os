@@ -124,6 +124,18 @@ test("doctor --ci names its basis and the unreviewed rebuild behind a page-only 
   assert.match(stdout, /The latest change alone is page-only\. Polish and QA still owe the full stage for an earlier rebuild recorded \d{4}-\d{2}-\d{2} \(`[0-9a-f]{12}`\) since that review\./);
 });
 
+test("a blocked full QA does not date a review it never made", (t) => {
+  const f = fixture(t);
+  const report = f.readReport();
+  Object.assign(report.stages.qa, { status: "blocked", checked_at: "2026-10-30T00:00:00Z" });
+  writeFileSync(f.reportPath, JSON.stringify(report));
+  copyEdit(f);
+  f.recordBuild();
+  const { qa } = f.debt();
+  assert.equal(qa.status, "owed");
+  assert.equal(qa.reviewed_at, undefined);
+});
+
 test("a recorded build with no markup hashes reads as commerce-affecting, and a later record build does not clear it", (t) => {
   const f = fixture(t);
   const report = f.readReport();
