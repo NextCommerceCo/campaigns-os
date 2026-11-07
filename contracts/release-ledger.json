@@ -10763,6 +10763,12 @@
         },
         {
           "class": "named_surface",
+          "path": "docs/readback.md",
+          "surface_entry": "docs/readback.md",
+          "summary": "Lists evidence_debt's new commerce_rebuild and reviewed_at."
+        },
+        {
+          "class": "named_surface",
           "path": "docs/runtime-readiness.md",
           "surface_entry": "docs/runtime-readiness.md",
           "summary": "Regenerated at surface 1.64.0."
@@ -10876,7 +10882,7 @@
           "summary": "The CI report names the build each owed stage last checked and any unreviewed rebuild behind a page-only edit; clearer pre-1.62 wording."
         }
       ],
-      "entry_sha256": "ab342beed04d4d96bdd33cef27b8ee97f4d794a37a7d5e39d0ac9b5ee72e44ae"
+      "entry_sha256": "4a790256ba4b318f5249eea2813d2af5344ed0fe301fef3e9884c276031b6934"
     }
   ]
 }

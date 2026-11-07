@@ -525,13 +525,17 @@ the build a stage reviewed are on that stage instead. An owed stage carries:
   `stages.assembly.build_changes` plus the drift on disk. `kind` is `unknown`
   when that history does not reach the reviewed build (reason
   `change_history_unavailable`) or the drift cannot be read. `null` on a stage
-  that is not owed.
+  that is not owed. It also carries `commerce_rebuild` when a recorded rebuild
+  since that build was not page-only: `{ "recorded_at", "build_fingerprint",
+  "kind", "latest_change_kind" }`.
 - Polish only, `advisory`: `true` when the change is `page_only` and no brief or
   spec change requires Polish. Advisory Polish is reported; `next`, `doctor
   --ci` and the QA gate do not require it.
 - QA only, `scope` and `owed_pages`: `pages` with the changed pages when the
   change is `page_only` (`qa run --page` pays it), `full` otherwise, `null`
   when QA is not owed.
+- QA only, `reviewed_at`: when the completed QA the change is read from was
+  checked. Absent when QA did not complete.
 
 If recording removed a
 stage binding entirely, that stage reads unknown unless its recorded status is
