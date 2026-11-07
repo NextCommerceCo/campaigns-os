@@ -505,7 +505,7 @@ report every page as unpriced.
 | `commercial_page_not_captured` | A planned page was never fetched | Check the spec's page URL |
 | `commercial_capture_unmatched` | A fetched page matches no planned page | Compare the spec's page ids with the funnel |
 | `commercial_page_not_exact` | Calculate gave no exact total for a page; the row names the reason | Correct the spec where the reason names it. A store coupon cannot be previewed: check by hand |
-| `commercial_page_stale` | Calculate answered for a page against older spec or catalog data | Re-run; if it repeats, check the spec's catalog import time |
+| `commercial_page_stale` | Calculate answered for a page against older spec or catalog data | Re-run; if it repeats, check the spec's stored `spec_hash` and its catalog import time |
 | `commercial_claims_unresolved` | A claim could not be tied to one calculated value, for example a page with two bound bundle prices | Check by hand, or declare the voucher in the spec |
 | `package_price_not_rendered` | The page has `package.price` claims and this run read no rendered page for them | `qa run --browser` |
 | `package_price_not_filled` | The SDK never filled a visible `package.price` node, so a shopper may be reading the placeholder | Check that the SDK loaded and the package ref is on the campaign |
