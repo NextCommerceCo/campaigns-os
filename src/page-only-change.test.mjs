@@ -120,8 +120,8 @@ test("doctor --ci names its basis and the unreviewed rebuild behind a page-only 
   latest.writePage("upsell1", PAGES.upsell1.replace("</body>", "<script src=\"/tracking.js\"></script></body>"));
   latest.recordBuild();
   assert.doesNotMatch(ci(latest).stdout, /The latest change alone/);
-  assert.match(stdout, /QA change is read against the build it last reviewed \(`[0-9a-f]{12}`, 2026-10-23\), counting every rebuild since\./);
-  assert.match(stdout, /The latest change alone is page-only\. Polish and QA still owe the full stage for an earlier rebuild recorded \d{4}-\d{2}-\d{2} \(`[0-9a-f]{12}`\) since that review\./);
+  assert.match(stdout, /QA change is read against the build it last checked \(`[0-9a-f]{12}`, 2026-10-23\), counting every rebuild since\./);
+  assert.match(stdout, /The latest change alone is page-only\. Polish and QA still owe the full stage for an earlier rebuild recorded \d{4}-\d{2}-\d{2} \(`[0-9a-f]{12}`\) since then\./);
 });
 
 test("a blocked full QA does not date a review it never made", (t) => {
