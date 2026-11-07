@@ -10891,7 +10891,7 @@
       "kind": "release",
       "surface_version": "1.65.0",
       "changelog_section": "1.65.0",
-      "changelog_sha256": "882ea8f26c5982e631535fe51ff06eca2b0840d7737453b96bbeacffb99551b9",
+      "changelog_sha256": "507993a6a4a315b82ec8c50534bd5cf7b172d1f6d763c3e63c4974956f5a4aca",
       "agent_impact": "A QA verdict whose commercial.status is incomplete is now at least ready_with_exceptions, never plain ready, with a warn pricing row commercial-parity:incomplete:<code> in exceptions[] naming the cause and the fix. It never blocks and does not change the exit code. Read those rows and report them to the operator; a run whose commercial status is incomplete did not compare every price. verdict.commercial gains incomplete_reasons. A commercial runner crash now reads status incomplete instead of not_run. Refresh skills to 1.65.0+skills.1.",
       "compatibility": "compatible",
       "migration": "none",
@@ -10924,7 +10924,7 @@
           "class": "named_surface",
           "path": "docs/qa-and-test-orders.md",
           "surface_entry": "docs/qa-and-test-orders.md",
-          "summary": "Incomplete commercial coverage is a warn-only exception; lists each cause code and its fix."
+          "summary": "Incomplete commercial coverage is a warn-only exception, with one named warn row per cause."
         },
         {
           "class": "named_surface",
@@ -11023,7 +11023,7 @@
           "summary": "Carry the advanced bundle revision and matching per-skill version."
         }
       ],
-      "entry_sha256": "47596a0418a072a4b49f1993f0e79e12934277a1f39054e06df92729017eb707"
+      "entry_sha256": "71e83c294538d4b39e13230a4f845fb8aca8dd5e872e0ad3d5bd040c22a54465"
     }
   ]
 }
