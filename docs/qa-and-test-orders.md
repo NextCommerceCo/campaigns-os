@@ -505,6 +505,7 @@ report every page as unpriced.
 | `commercial_page_not_captured` | A planned page was never fetched | Check the spec's page URL |
 | `commercial_capture_unmatched` | A fetched page matches no planned page | Compare the spec's page ids with the funnel |
 | `commercial_page_not_exact` | Calculate gave no exact total for a page; the row names the reason | Correct the spec where the reason names it. A store coupon cannot be previewed: check by hand |
+| `commercial_page_stale` | Calculate answered for a page against older spec or catalog data | Re-run; if it repeats, check the spec's catalog import time |
 | `commercial_claims_unresolved` | A claim could not be tied to one calculated value, for example a page with two bound bundle prices | Check by hand, or declare the voucher in the spec |
 | `static_source_not_in_run_currency` | Under `--currency`, the source holds the Map currency's fallback text | Nothing to repair: a run in the campaign's own currency compares them |
 | `commercial_html_claims_limit`, `commercial_aggregate_claim_limit`, `commercial_scenario_limit` | The funnel is over this check's limits | Check by hand and tell the operator |

@@ -6,6 +6,8 @@ import test from "node:test";
 
 import {
   captureCommercialClaims,
+  commercialAssertionBudget,
+  commercialIncompleteReasons,
   commercialSpecPages,
   createPageSourceLoader,
   planCommercialParity,
@@ -363,6 +365,75 @@ test("each cause of incomplete coverage gets its own named row", async () => {
   });
   assert.deepEqual(incompleteIds(absentNoBudget), ["commercial-parity:incomplete:commercial_coverage_incomplete"]);
   assert.match(absentNoBudget.assertions[0].actual, /recurring_claim_absent/);
+});
+
+test("a stale page is named as stale, not as a page calculate could not price", () => {
+  const commercial = { planned_scenarios: 1, issues: [], invalid_captures: [], missing_pages: [], unmatched_pages: [], unresolved_price_claims: 0, unresolved_recurrence_claims: 0, unresolved_voucher_claims: 0 };
+  const reasons = commercialIncompleteReasons(commercial, {
+    pages: [
+      { page_id: "checkout", state: "Stale" },
+      { page_id: "upsell", state: "Unresolved", reason: "Unresolved: package not on campaign" },
+    ],
+  });
+  assert.deepEqual(reasons.map((entry) => entry.code), ["commercial_page_not_exact", "commercial_page_stale"]);
+  assert.match(reasons[0].summary, /1 page\(s\): upsell \(Unresolved: package not on campaign\)/);
+  assert.match(reasons[1].summary, /older spec or catalog data: checkout/);
+  assert.doesNotMatch(reasons[1].fix, /Correct the spec/);
+});
+
+test("a page over the per-page claim limit is not also reported as unreadable", async () => {
+  const spec = rawRecurringSpec();
+  spec.funnels[0].pages.push({ ...spec.funnels[0].pages[0], id: "page_two", order: 2 });
+  const overLimit = { page_id: "page_mt104ehn_11", price_claims: [], recurrence_claims: [], vouchers: [], extraction_errors: [{ type: "commercial_html_claims_limit" }] };
+  const run = (captures) => runCommercialParity({
+    resolved: { rawSpec: spec, spec, proxyBase: "https://proxy.example.test" },
+    captures,
+    fetchImpl: async (_url, options) => new Response(JSON.stringify(calculateBody(JSON.parse(options.body).scenario)), { status: 200 }),
+  });
+
+  const alone = await run([overLimit, captureCommercialClaims({ page_id: "page_two" }, "<main></main>")]);
+  assert.deepEqual(incompleteIds(alone), ["commercial-parity:incomplete:commercial_html_claims_limit"]);
+
+  const both = await run([overLimit, { ...overLimit, page_id: "page_two", extraction_errors: [{ type: "malformed-voucher-json" }] }]);
+  const row = both.commercial.incomplete_reasons.find((entry) => entry.code === "commercial_capture_invalid");
+  assert.equal(row.count, 1);
+  assert.match(row.summary, /1 page\(s\) could not be read for commercial claims: page_two\./);
+});
+
+test("rows a budget dropped from a batch are still named as a gap", async () => {
+  const spec = rawRecurringSpec();
+  spec.funnels[0].pages[0].packages.push({ ...spec.funnels[0].pages[0].packages[0], ref_id: "6" });
+  const result = await runCommercialParity({
+    resolved: { rawSpec: spec, spec, proxyBase: "https://proxy.example.test" },
+    captures: [captureCommercialClaims({ page_id: "page_mt104ehn_11" }, `
+      <div data-next-package-toggle><strong data-next-package-id="5">One</strong></div>
+      <div data-next-package-toggle><strong data-next-package-id="6">Two</strong></div>
+    `)],
+    fetchImpl: async (_url, options) => new Response(JSON.stringify(calculateBody(JSON.parse(options.body).scenario)), { status: 200 }),
+    maxAssertions: 1,
+  });
+  assert.equal(result.commercial.recurring_claim_absences.length, 2);
+  assert.equal(result.assertions.filter((entry) => entry.id.startsWith("commercial_parity.recurring_claim_absent")).length, 1);
+  assert.deepEqual(incompleteIds(result), ["commercial-parity:incomplete:commercial_coverage_incomplete"]);
+});
+
+test("the commercial budget keeps the verdict under the receiver's cap with every cause named", () => {
+  assert.equal(commercialAssertionBudget(500, 100), 388);
+  assert.equal(commercialAssertionBudget(500, 488), 0);
+  assert.equal(commercialAssertionBudget(500, 900), 0);
+  // Over-counts on purpose: every cause at once, which no single run reaches.
+  const everyCause = commercialIncompleteReasons({
+    planned_scenarios: 1,
+    observed_claims: 1,
+    claim_limit: 1,
+    issues: ["missing_campaigns_api_key", "unsupported_campaigns_api_key_source", "price_preview_fetch_unavailable", "commercial_html_claims_limit", "commercial_aggregate_claim_limit", "commercial_scenario_limit", "commercial_runner_error", "price_preview_timeout"].map((code) => ({ code, count: 1 })),
+    invalid_captures: [{ page_id: "a" }],
+    missing_pages: [{ page_id: "b" }],
+    unmatched_pages: [{ page_id: "c" }],
+    unmatched_page_count: 1,
+  });
+  assert.equal(everyCause.length, 11);
+  assert.ok(everyCause.length <= 500 - commercialAssertionBudget(500, 0));
 });
 
 test("a commercial pass or an empty plan writes no incomplete row", async () => {
