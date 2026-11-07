@@ -10850,7 +10850,7 @@
       "surface_version": null,
       "changelog_section": "1.65.0+agent.1",
       "changelog_sha256": "217c60240a1d4b37e0552d941d7b7c7a7c822d8a77b9fc822073e646a42ef2c1",
-      "agent_impact": "Commercial parity compares rendered package.price and package.<ref>.price with calculate's unit_price under qa run --browser. A difference is a warn-only price-claim-mismatch. A run without --browser on a page with these claims reads commercial status incomplete, with a commercial-parity:incomplete:package_price_not_rendered row; run qa run --browser to compare them. package_price_not_filled and package_price_unresolved name the other uncompared cases. No schema, pin or skill change.",
+      "agent_impact": "Commercial parity compares rendered package.price and package.<ref>.price with calculate's unit_price under qa run --browser. A difference is a warn-only price-claim-mismatch. A run without --browser on a page with these claims reads commercial status incomplete, with a commercial-parity:incomplete:package_price_not_rendered row; run qa run --browser to compare them. package_price_not_visible, package_price_not_filled and package_price_unresolved name the other uncompared cases. No schema, pin or skill change.",
       "compatibility": "compatible",
       "migration": "none",
       "changes": [
@@ -10858,10 +10858,10 @@
           "class": "named_surface",
           "path": "docs/qa-and-test-orders.md",
           "surface_entry": "docs/qa-and-test-orders.md",
-          "summary": "Commercial parity covers package.price as rendered; lists its three uncompared cause codes."
+          "summary": "Commercial parity covers package.price as rendered; lists its four uncompared cause codes."
         }
       ],
-      "entry_sha256": "27e447a37d2bd0f0a390215a1b9a006d3436258a366f3b700f15c16f28fe7380"
+      "entry_sha256": "18bab7aa9c9dde68f190cde0911734e88de4e5178bcfe6c09ef5c078d2d7a5b5"
     }
   ]
 }
