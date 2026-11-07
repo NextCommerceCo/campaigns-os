@@ -742,7 +742,10 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
     } else if (!isNonEmptyString(localSpecPath)) {
       addIssue(errors, "spec.local_path", "No local CampaignSpec path is present. Assembly must use a local exported CampaignSpec JSON so page coverage, routing, meta tags, and commerce refs are not guessed.");
     } else if (!existsSync(specPath)) {
-      addIssue(errors, "spec.local_path", `CampaignSpec local_path does not exist: ${localSpecPath}`);
+      // A saved-Map copy is not on this machine: a checkout made before it was
+      // committed, or a machine that never ran the intake.
+      const restorable = isNonEmptyString(packet.spec?.map_id) && localSpecPath.includes(".campaign-runtime/fetched-specs/");
+      addIssue(errors, "spec.local_path", `CampaignSpec local_path does not exist: ${localSpecPath}${restorable ? `. Restore it from the saved Map with \`campaigns-os spec fetch --packet <packet>\`, then commit it.` : ""}`);
     } else {
       try {
         const loaded = readJson(specPath);
@@ -1910,7 +1913,20 @@ export function validateBuildOutputFingerprint(packet, errors, warnings, ready, 
   const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
   if (!targetRepo || !publicRouteSlug) return;
   const siteRoot = join(targetRepo, "_site", publicRouteSlug);
-  if (!existsSync(siteRoot) || !statSync(siteRoot).isDirectory()) return;
+  if (!existsSync(siteRoot) || !statSync(siteRoot).isDirectory()) {
+    // Nothing to compare, which is not the same as nothing changed: a fresh
+    // checkout has committed records and no _site/, and would otherwise read
+    // as finished however much source has moved since they were made.
+    if (isStageComplete(buildState.report, "assembly")) {
+      addIssue(
+        warnings,
+        "built_output.absent",
+        `_site/${publicRouteSlug}/ is not built here, so the recorded build, Polish and QA were not compared with this checkout. Build it, then run this again.`,
+        { root: `_site/${publicRouteSlug}/` },
+      );
+    }
+    return;
+  }
 
   const current = computeBuildFingerprint(siteRoot);
   // The root was a directory a moment ago; if it is not one now (removed

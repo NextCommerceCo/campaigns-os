@@ -1339,7 +1339,7 @@ than hand-adding the field. Note that a committed artifact set always reads
 stale to the readback once HEAD moves past it — freshness proof is a
 regeneration at HEAD, not a property a commit can preserve.
 
-Commit durable packet/context/report artifacts when they represent a real build handoff. The rest of `.campaign-runtime/` is machine-local and is not for the campaign repository: `run-session.json`, `command-lifecycle.jsonl`, `agent-deviations.jsonl`, `workflow-findings.jsonl`, `run-records/`, `fetched-specs/`, `progress/`, `polish-evidence/`, `evidence/`, and `*.log`/`*.tmp` are per-machine, append-only, or carry live URLs and absolute paths, and so are the full QA verdicts `qa run` writes under the target's `qa-output/`. `start`, `prepare-build`, `install-agent-context`, and `run start` write a managed ignore block for that set into the target's `.gitignore` (keyed on its marker line; edit the list beneath it freely). The block also lists `.campaign-runtime/funnels/*/run-records/` for the Run Records of a project's second and later funnels. An existing block gains `qa-output/`, `.campaign-runtime/progress/` and `.campaign-runtime/funnels/*/run-records/` when they are missing, since those hold live URLs, order references and remit records. The readback bundle (`build-context.json`, `assembly-report.json`, `doctor-output.json`, `qa-verdict.json`), `input/`, `theme/`, `agent-context/`, and `setup-handoff.json` are deliberately not ignored, at the top level or under `funnels/<route>/`. The Campaigns API key is a public, browser-side, domain-allowlisted key and may already be present in the local CampaignSpec as `campaign.campaigns_api_key`; do not duplicate it into the packet unless the spec is unavailable. Do not commit raw private API responses, backend secrets, or temporary media exports.
+Commit durable packet/context/report artifacts when they represent a real build handoff. The rest of `.campaign-runtime/` is machine-local and is not for the campaign repository: `run-session.json`, `command-lifecycle.jsonl`, `agent-deviations.jsonl`, `workflow-findings.jsonl`, `run-records/`, `progress/`, `polish-evidence/`, `evidence/`, and `*.log`/`*.tmp` are per-machine, append-only, or carry live URLs and absolute paths, and so are the full QA verdicts `qa run` writes under the target's `qa-output/`. `start`, `prepare-build`, `install-agent-context`, and `run start` write a managed ignore block for that set into the target's `.gitignore` (keyed on its marker line; edit the list beneath it freely). The block also lists `.campaign-runtime/funnels/*/run-records/` for the Run Records of a project's second and later funnels. An existing block gains `qa-output/`, `.campaign-runtime/progress/` and `.campaign-runtime/funnels/*/run-records/` when they are missing, since those hold live URLs, order references and remit records. An existing block also loses `.campaign-runtime/fetched-specs/`, which earlier versions listed. The readback bundle (`build-context.json`, `assembly-report.json`, `doctor-output.json`, `qa-verdict.json`), `fetched-specs/`, `input/`, `theme/`, `agent-context/`, and `setup-handoff.json` are deliberately not ignored, at the top level or under `funnels/<route>/`. The Campaigns API key is a public, browser-side, domain-allowlisted key and may already be present in the local CampaignSpec as `campaign.campaigns_api_key`; do not duplicate it into the packet unless the spec is unavailable. Do not commit raw private API responses, backend secrets, or temporary media exports.
 
 Packet-mode `doctor` is inspection-only by default and preserves retained evidence and active run journals, even when lifecycle capture is configured. Use `--write` to intentionally record fresh evidence; `--no-write` takes precedence. Inspection still reports current blockers and keeps the same exit status.
 
@@ -1527,7 +1527,9 @@ root and is not hashed. Build does not type the value: after page-kit build it r
 `campaigns-os record build --packet <packet>`, which stamps doctor's
 `derived.build_output_fingerprint.value` onto `stages.assembly.build_fingerprint`
 (see "Recording stage completion" below). Doctor recomputes the value on every run
-(`built_output.fingerprint`): a match is a ready line, a missing record is the
+(`built_output.fingerprint`): a match is a ready line, no built output after a
+completed build is the warning `built_output.absent` (nothing was compared with
+this checkout, so build it before reading the records as current), a missing record is the
 warning `built_output.fingerprint_missing` carrying the value to record, and a
 recorded value the output no longer matches is `built_output.fingerprint_stale`
 (blocking once assembly is complete). The polish gate, QA, and `polish capture`
@@ -1580,8 +1582,11 @@ change from a commerce-affecting one
 
 Readback's `evidence_debt.<stage>.change` and `doctor --ci` read these, so the
 changed-page list survives `record build`. A record made before these fields
-existed has no signature, and its next change reads as unknown (full Polish and
-QA) until `record build` records one.
+existed has no signature, and its next change reads as commerce-affecting, with
+the reason `commerce_signature_unavailable`, whatever the change was. `record
+build` keeps a signature from then on, but the QA it would extend is still
+anchored before that rebuild. So page-only changes start after one full QA on
+1.62.0 or later.
 
 A stale or missing Assembly Source Package Fingerprint is waivable only as an
 exceptional Source Freshness Waiver. The waiver must be structured in
@@ -1779,7 +1784,8 @@ When `--map-id <id>` is set, the CLI fetches `GET <proxy>/api/spec/<id>` (defaul
 
 Saved-Map retrieval behavior (`--map-id`):
 
-- **Re-fetch by default.** Every `start` / `prepare-build` invocation re-fetches from KV. KV is the source of truth; the cache file is a debug/inspection artifact, not a performance optimization.
+- **Re-fetch by default.** Every `start` / `prepare-build` invocation re-fetches from KV and replaces the copy, including any `spec derive` edits in it.
+- **Commit the copy.** The packet, the Build Context and the Assembly Report are bound to it, and `spec derive` writes into it, so it is the campaign's spec until the next intake. A checkout without it fails doctor with `spec.local_path`. [Restore it with `spec fetch`](#restoring-a-saved-map-spec-spec-fetch).
 - **One writer at a time.** The fetch happens first, but the fetched spec is written to the cache file only once the run holds the per-target prepare-build lock. A second run against the same target, fetching a newer Map revision, waits for the lock before replacing the cache, so the run holding it records the hash of the revision it actually parsed.
 - **`--cached-spec`** reuses the cache without a network call. Use for offline iteration or when the proxy is temporarily unreachable. The cached copy is read as it is and never rewritten.
 - **`--proxy-base <url>`** overrides the default origin. Use for staging environments or local Worker dev (`wrangler dev`). Spec retrieval carries no credential, so any reachable origin works here — but the same flag also aims the credential-bearing rails (Run Telemetry remit, QA verdict publish, `telemetry list`), and those require `https:` unless the host is loopback (`localhost`, `127.0.0.1`, `[::1]`), which is allowed over plain http with a stderr warning. A plain-http remote proxy is refused before the request. See docs/workflow-findings-sidecar.md (Remit Channel).
@@ -2113,6 +2119,26 @@ agent calls `next` → gets { stage, prompt, picked_reason } → does the work �
 records it (`campaigns-os record setup|build|polish`; deploy and QA record their
 own stages) → calls `next` again → repeat until stage="done"
 ```
+
+### Restoring a saved-Map spec (`spec fetch`)
+
+Before 1.64.0 the fetched copy was ignored by Git, so a fresh clone of those repositories doesn't have it. On that checkout, run:
+
+```bash
+campaigns-os spec fetch --packet campaign-runtime.build.json [--proxy-base <url>] [--json]
+```
+
+It fetches the Map named by the packet, writes the copy to `spec.local_path`, and takes `fetched-specs/` out of an older managed `.gitignore` block. Commit the file so the next checkout has it. A copy already on disk is never replaced and nothing is sent. The packet and the records are not written.
+
+The result's `bound` compares the copy with the spec the records were made against:
+
+| `bound` | Meaning |
+|---|---|
+| `matches` | The records still apply. |
+| `differs` | The Map changed since they were made, or the earlier copy held `spec derive` edits the Map doesn't have. Doctor shows build, Polish and QA owed until `record spec` binds it (warning `spec.fetch.differs_from_records`). |
+| `unknown` | The report records no spec material to compare with. |
+
+The command exits 2 for a packet that names no saved Map, for one whose `spec.local_path` is not the Map's copy, when the Map returns a spec for another campaign (`spec.fetch.identity_mismatch`), and when the fetch fails.
 
 ### Refreshing after a CampaignSpec change
 

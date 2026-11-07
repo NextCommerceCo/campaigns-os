@@ -92,6 +92,71 @@ function ci(f, ...flags) {
   return result;
 }
 
+// The two reports a developer reads after a copy edit on top of an unreviewed
+// commerce change: `record build` says page-only, and doctor --ci counts every
+// rebuild since the last QA. The CI report has to say why they differ.
+test("doctor --ci names its basis and the unreviewed rebuild behind a page-only edit", (t) => {
+  const f = fixture(t);
+  const report = f.readReport();
+  report.stages.qa.checked_at = "2026-10-23T00:00:00Z";
+  writeFileSync(f.reportPath, JSON.stringify(report));
+  const tracked = PAGES.upsell1.replace("</body>", "<script src=\"/tracking.js\"></script></body>");
+  f.writePage("upsell1", tracked);
+  f.recordBuild();
+  const commerceBuild = f.readReport().stages.assembly.build_fingerprint;
+  f.writePage("upsell1", tracked.replace("Add a second bottle", "Add a third bottle"));
+  f.recordBuild();
+  const assembly = f.readReport().stages.assembly;
+  assert.equal(assembly.build_changes.at(-1).kind, "page_only", "the latest rebuild alone is page-only");
+  const debt = f.debt();
+  assert.equal(debt.qa.change.kind, "commerce_affecting");
+  assert.equal(debt.qa.reviewed_at, "2026-10-23T00:00:00Z");
+  assert.equal(debt.qa.change.commerce_rebuild.build_fingerprint, commerceBuild);
+  const { stdout, status } = ci(f);
+  assert.equal(status, 3);
+  assert.match(stdout, /Change found: commerce-affecting/);
+  // The commerce rebuild as the latest change has nothing page-only to explain.
+  const latest = fixture(t);
+  latest.writePage("upsell1", PAGES.upsell1.replace("</body>", "<script src=\"/tracking.js\"></script></body>"));
+  latest.recordBuild();
+  assert.doesNotMatch(ci(latest).stdout, /The latest change alone/);
+  assert.match(stdout, /QA change is read against the build it last checked \(`[0-9a-f]{12}`, 2026-10-23\), counting every rebuild since\./);
+  assert.match(stdout, /The latest change alone is page-only\. Polish and QA still owe the full stage for an earlier rebuild recorded \d{4}-\d{2}-\d{2} \(`[0-9a-f]{12}`\) since that check\./);
+});
+
+test("a blocked full QA does not date a review it never made", (t) => {
+  const f = fixture(t);
+  const report = f.readReport();
+  Object.assign(report.stages.qa, { status: "blocked", checked_at: "2026-10-30T00:00:00Z" });
+  writeFileSync(f.reportPath, JSON.stringify(report));
+  copyEdit(f);
+  f.recordBuild();
+  const { qa } = f.debt();
+  assert.equal(qa.status, "owed");
+  assert.equal(qa.reviewed_at, undefined);
+});
+
+test("a recorded build with no markup hashes reads as commerce-affecting, and a later record build does not clear it", (t) => {
+  const f = fixture(t);
+  const report = f.readReport();
+  delete report.stages.assembly.commerce_signature;
+  writeFileSync(f.reportPath, JSON.stringify(report));
+  copyEdit(f);
+  f.recordBuild();
+  assert.ok(f.readReport().stages.assembly.commerce_signature, "record build keeps hashes from here on");
+  assert.equal(f.debt().qa.change.kind, "commerce_affecting");
+  assert.equal(f.debt().qa.scope, "full", "the rebuild since the last QA was read without hashes, so it still owes the full stage");
+  assert.match(ci(f).stdout, /predates the markup hashes page-only changes are read from \(Campaigns OS 1\.62\)/);
+});
+
+test("doctor warns when records say complete and no build is here to compare", (t) => {
+  const f = fixture(t);
+  rmSync(f.output, { recursive: true, force: true });
+  const doctored = doctorPacket(f.packetPath);
+  assert.ok(doctored.warnings.some((issue) => issue.code === "built_output.absent"));
+  assert.equal(ci(f).status, 4, "doctor --ci already reads an absent build as unknown");
+});
+
 const copyEdit = (f) => f.writePage("upsell1", PAGES.upsell1.replace("Add a second bottle", "Add a third bottle"));
 
 test("a copy edit on one upsell page owes QA on that page and Polish is advisory, before and after record build", (t) => {
@@ -383,7 +448,7 @@ test("a page-scoped run that did not complete stays page-scoped from the full QA
   const afterFirst = f.readReport().stages.assembly.build_fingerprint;
   // Stand-in for a blocked page-scoped QA record on the first rebuild.
   editReport(f, (stages) => Object.assign(stages.qa, {
-    status: "blocked", blockers: ["upsell copy overflows"],
+    status: "blocked", blockers: ["upsell copy overflows"], checked_at: "2026-10-30T00:00:00Z",
     evidence: { qc_build_fingerprint: afterFirst, qc_results: [], page_scope: { pages: ["upsell1"], owed_pages: ["upsell1"], base_build_fingerprint: f.original.fingerprint } },
   }));
   // The fix, plus a second page-only edit.
@@ -392,6 +457,7 @@ test("a page-scoped run that did not complete stays page-scoped from the full QA
   const debt = f.debt();
   assert.equal(debt.qa.scope, "pages");
   assert.equal(debt.qa.change.since_build_fingerprint, f.original.fingerprint, "read from the completed QA's build");
+  assert.equal(debt.qa.reviewed_at, undefined, "the blocked run's date is not that QA's");
   assert.deepEqual(debt.qa.owed_pages.map((page) => page.page_id), ["landing", "upsell1"], "the unpaid page stays owed");
   const base = `http://127.0.0.1:9/${SLUG}/`;
   const topologies = [{ pages: ["landing", "upsell1"].map((page) => ({ page_id: page, url: `${base}${page}/` })) }];

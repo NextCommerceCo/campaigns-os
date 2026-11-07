@@ -70,7 +70,7 @@ const COMMANDS = frozen({
   "install-agent-context": { dryRun: true },
   "install-skills": { dryRun: true },
   "page-kit": { subcommands: ["parity", "sync"] },
-  spec: { subcommands: ["derive"] },
+  spec: { subcommands: ["derive", "fetch"] },
   next: { subcommands: ["build", "deploy", "polish", "qa", "setup"] },
   qa: { subcommands: ["install-browser", "parity", "policy", "promote", "publish", "resolve", "run", "waive"] },
   findings: { subcommands: ["add", "export", "harvest", "list"] },

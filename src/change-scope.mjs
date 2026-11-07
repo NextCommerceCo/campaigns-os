@@ -230,8 +230,12 @@ export function worseChangeKind(a, b) {
  * The change a stage that reviewed `anchor` owes for: the recorded rebuilds
  * from `anchor` to the recorded build, then the drift from the recorded build
  * to the output on disk. Returns `{ kind, since_build_fingerprint,
- * changed_pages, unmapped_files, reasons }`; `kind` is unknown when the
- * history does not reach `anchor` or the drift cannot be read.
+ * changed_pages, unmapped_files, reasons, commerce_rebuild }`; `kind` is
+ * unknown when the history does not reach `anchor` or the drift cannot be read.
+ * `commerce_rebuild`, when there is one, is the latest recorded rebuild since
+ * `anchor` that was not page-only, with the kind of the latest change
+ * (`latest_change_kind`), so a page-only edit on top of it can say why it still
+ * owes the full stages.
  */
 export function changeSince(anchor, { assembly, drift, driftClassification }) {
   const recorded = typeof assembly?.build_fingerprint === "string" ? assembly.build_fingerprint : null;
@@ -257,9 +261,16 @@ export function changeSince(anchor, { assembly, drift, driftClassification }) {
     for (const path of part.unmapped_files || []) unmapped.add(path);
     result.reasons.push(...(reasons || []));
   };
-  for (const segment of segments) add(segment, segment.kind, segment.reasons);
+  for (const segment of segments) {
+    add(segment, segment.kind, segment.reasons);
+    if (!["none", "page_only"].includes(segment.kind)) result.commerce_rebuild = { recorded_at: segment.recorded_at ?? null, build_fingerprint: segment.build_fingerprint, kind: segment.kind };
+  }
   if (drift?.status !== "known") kind = "unknown";
   else add(drift, driftClassification?.kind || "unknown", driftClassification?.reasons);
+  if (result.commerce_rebuild) {
+    const driftKind = driftClassification?.kind || "unknown";
+    result.commerce_rebuild.latest_change_kind = driftKind === "none" ? segments.at(-1).kind : driftKind;
+  }
   return {
     ...result,
     kind,
