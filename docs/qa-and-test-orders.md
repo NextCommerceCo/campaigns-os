@@ -487,40 +487,20 @@ a mismatch. QA dispositions remain `ready`, `ready_with_exceptions`, or
 `commercial.status = "incomplete"` makes the verdict at least
 `ready_with_exceptions`. It stays warn-only: it never makes a run `blocked` and
 never changes the exit code. Each cause writes one warn row in family `pricing`,
-`commercial-parity:incomplete:<code>`, whose `actual` says what was not compared
-and how to fix it, so an agent reading only `exceptions[]` sees the gap. The
-committed sidecar keeps the row's id, which names the cause. The report repeats
-the same causes as `commercial.incomplete_reasons`, and `qa run` prints them under
-its commercial line. The rows sit outside the assertion budget. A cause already
-explained by an earlier one writes no second row, so a missing key does not also
-report every page as unpriced.
+`commercial-parity:incomplete:<code>`, for example
+`commercial-parity:incomplete:missing_campaigns_api_key`. The row's `actual` says
+what was not compared and how to fix it, so an agent reading only `exceptions[]`
+sees the gap. The committed sidecar keeps the id, which names the cause. The report
+repeats the causes as `commercial.incomplete_reasons`, and `qa run` prints them under
+its commercial line. A cause an earlier one explains writes no second row, so a
+missing key does not also report every page as unpriced.
 
-| Code | Meaning | Who can fix it |
-| --- | --- | --- |
-| `missing_campaigns_api_key` | No key resolved; no calculate scenario ran | Set `campaign.campaigns_api_key` in the spec or packet |
-| `unsupported_campaigns_api_key_source` | The packet names an environment variable QA refuses to read | Use `env:CAMPAIGNS_API_KEY` or the spec field |
-| `price_preview_failed` | The calculate endpoint failed for some scenarios; the row lists the underlying codes | Check the key and the proxy, then re-run |
-| `price_preview_fetch_unavailable` | The runtime has no `fetch` | Use a supported Node version |
-| `commercial_capture_invalid` | A page could not be read for claims | Fix the fetch failure or the malformed markup |
-| `commercial_page_not_captured` | A planned page was never fetched | Check the spec's page URL |
-| `commercial_capture_unmatched` | A fetched page matches no planned page | Compare the spec's page ids with the funnel |
-| `commercial_page_not_exact` | Calculate gave no exact total for a page; the row names the reason | Correct the spec where the reason names it. A store coupon cannot be previewed: check by hand |
-| `commercial_page_stale` | Calculate answered for a page against older spec or catalog data | Re-run; if it repeats, check the spec's stored `spec_hash` and its catalog import time |
-| `commercial_claims_unresolved` | A claim could not be tied to one calculated value, for example a page with two bound bundle prices | Check by hand, or declare the voucher in the spec |
-| `package_price_not_rendered` | The page has `package.price` claims and this run read no rendered page for them | `qa run --browser` |
-| `package_price_not_visible` | The source has `package.price` claims and the rendered page showed none of them | None if hidden on purpose; otherwise check the tested URL served this page |
-| `package_price_not_filled` | The SDK never filled a visible `package.price` node, so a shopper may be reading the placeholder | Check that the SDK loaded and the package ref is on the campaign |
-| `package_price_unresolved` | A `package.price` could not be tied to one calculated price: no package id, no single exact row, or text that is not money | Put `data-next-package-id` around it, or check by hand |
-| `static_source_not_in_run_currency` | Under `--currency`, the source holds the Map currency's fallback text | Nothing to repair: a run in the campaign's own currency compares them |
-| `commercial_html_claims_limit`, `commercial_aggregate_claim_limit`, `commercial_scenario_limit` | The funnel is over this check's limits | Check by hand and tell the operator |
-| `commercial_runner_error` | The check crashed; `commercial.status` is `incomplete` for this cause too | Re-run; record a finding if it repeats |
-
-Two causes keep their own rows and add no `commercial-parity:incomplete:` row:
-a `commercial-currency:<RUN>:<ANSWERED>` blocker and a
-`commercial_parity.recurring_claim_absent` warning. Not every cause has a repair:
-a store coupon, two bound prices on one page, a run in another currency and a
-funnel over the limits say what this run did not compare, and the disposition
-says so too.
+Read the row for what to do, not the code: the set of codes is not a contract and
+can change. Not every cause has a repair. A store coupon, two bound prices on one
+page, a run in another currency and a funnel over the check's limits only say what
+this run did not compare. A `commercial-currency:<RUN>:<ANSWERED>` blocker and a
+`commercial_parity.recurring_claim_absent` warning are their own rows and add no
+`commercial-parity:incomplete:` row.
 
 Bound prices are read two ways, because the two bindings mean different things in
 the source. `bundle.<id>.price` is compared as authored in the source HTML, against

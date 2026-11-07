@@ -103,9 +103,7 @@ import {
 import {
   captureCommercialClaims,
   COMMERCIAL_QA_LIMITS,
-  commercialAssertionBudget,
-  commercialIncompleteAssertions,
-  commercialIncompleteReasons,
+  crashedCommercialResult,
   mapConcurrent,
   createPageSourceLoader,
   planCommercialParity,
@@ -2649,7 +2647,7 @@ async function runResolvedQa(args, resolvedInputs, { runSessionActive = false, l
 
   const testOrders = await runAnalyticsOrderSequence({ args, resolved, runId, assertions, qcResults });
   if (vendorBeacons) assertions.push(vendorBeaconAssertion(vendorBeacons));
-  const remainingAssertionBudget = commercialAssertionBudget(QA_VERDICT_ASSERTION_LIMIT, assertions.length);
+  const remainingAssertionBudget = Math.max(0, QA_VERDICT_ASSERTION_LIMIT - assertions.length);
   let commercialResult;
   try {
     commercialResult = await runCommercialParity({
@@ -2662,12 +2660,7 @@ async function runResolvedQa(args, resolvedInputs, { runSessionActive = false, l
       currency,
     });
   } catch (error) {
-    const commercial = unavailableCommercialReport("commercial_runner_error", { status: "incomplete" });
-    const reasons = commercialIncompleteReasons(commercial);
-    commercialResult = {
-      assertions: commercialIncompleteAssertions(reasons),
-      commercial: { ...commercial, incomplete_reasons: reasons },
-    };
+    commercialResult = crashedCommercialResult();
     reportCommercialRunnerError(args, error);
   }
   assertions.push(...commercialResult.assertions);

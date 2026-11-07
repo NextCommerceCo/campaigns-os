@@ -9,7 +9,7 @@ Commercial parity now checks `package.price` as well as `bundle.*.price`. Starte
 ### Changed
 
 - **`package.price` and `package.<ref>.price` are compared as rendered.** Under `qa run --browser`, each visible node the SDK has filled is compared with calculate's `unit_price` for that package's row on the page. The source holds a template placeholder (`$9.99` on a starter upsell), so the source text is never compared. A difference is the existing warn-only `price-claim-mismatch`. That includes a page printing `package.price`, the list price, beside a live offer.
-- **What cannot be compared is named.** `package_price_not_rendered` is a run without `--browser`, `package_price_not_visible` is a rendered page that showed none of the source's claims, `package_price_not_filled` is a visible node the SDK never wrote, and `package_price_unresolved` is no package id, no single exact row or unreadable text. Each is a `commercial-parity:incomplete:<code>` warn row and never a mismatch. A run without `--browser` on a page with these claims now reads `incomplete`, so it stays at `ready_with_exceptions`.
+- **What cannot be compared is named.** A run without `--browser`, a rendered page that showed none of the claims, a visible node the SDK never wrote, or a claim with no package id, no single exact row or unreadable text each writes a `commercial-parity:incomplete:<code>` warn row and never a mismatch. A run without `--browser` on a page with these claims now reads `incomplete`, so it stays at `ready_with_exceptions`.
 - `verdict.commercial.package_price_claims` counts these claims, and they count toward `extracted_price_claims`, `compared_price_claims` and `unresolved_price_claims`. Journey rows from the `./commercial-journey` export carry `unit_price` when calculate sends it, and captures from `./commercial-parity` carry `package_price_claims`.
 
 ## [1.65.0] - 2026-11-07
@@ -19,12 +19,13 @@ A QA run whose commercial parity stopped short no longer reads as a clean result
 ### Changed
 
 - **Incomplete commercial coverage is an exception.** A spec with no `campaign.campaigns_api_key`, for example, used to run 0 of its calculate scenarios and could still report `ready`, with the gap visible only under `verdict.commercial`. The verdict is now `ready_with_exceptions`, with a warn row `commercial-parity:incomplete:missing_campaigns_api_key` whose `actual` says what was not compared and how to fix it.
-  - Each cause gets its own row: `missing_campaigns_api_key`, `unsupported_campaigns_api_key_source`, `price_preview_failed`, `price_preview_fetch_unavailable`, `commercial_capture_invalid`, `commercial_page_not_captured`, `commercial_capture_unmatched`, `commercial_page_not_exact`, `commercial_page_stale`, `commercial_claims_unresolved`, `static_source_not_in_run_currency`, the three limit codes and `commercial_runner_error`. A cause an earlier one already explains writes no second row, and the rows sit outside the assertion budget. `docs/qa-and-test-orders.md` lists each code and its fix.
+  - A cause an earlier one already explains writes no second row, so a missing key does not also report every page as unpriced. Read the row for what to do: the set of codes is not a contract.
   - Not every cause has a repair. A store coupon, two bound prices on one page, a run in a currency other than the Map's and a funnel over the check's limits say what this run did not compare, and these runs stay at `ready_with_exceptions`.
   - The committed sidecar keeps the row's id, which names the cause. The verdict's `commercial` section gains `incomplete_reasons` with the same causes, and `qa run` prints them under its commercial line.
   - A run that was `ready` only because the gap was invisible now records its QA stage as `completed_with_warnings`, and its Run Record lists `pricing` among its gap classes. Both dispositions still end a run session.
 - **A crash in the commercial check is reported the same way.** It used to leave status `not_run` and the verdict untouched, with a line on stderr. It now reads `incomplete` with the cause `commercial_runner_error`. Runs a gate blocks keep `not_run`, since those verdicts are already `blocked`.
 - The verdict schema's `disposition` and `commercial.status` descriptions say the above, and it documents `commercial.incomplete_reasons`.
+
 ## [1.64.0] - 2026-11-07
 
 Developers changing a live funnel from a fresh clone can now get going, and the reports say what they compared. To take it, pin `@nextcommerce/campaigns-os@1.64.0`, run `spec fetch` once on each repository set up from a saved Map, and commit the file it writes. These come from the first post-handoff trial on #716.

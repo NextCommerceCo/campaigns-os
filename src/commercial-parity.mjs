@@ -421,11 +421,10 @@ function governedPriceBinding(value) {
 
 // The SDK's own package.price paths: an id in the path, or none and the nearest
 // package id around the node. No other package.* field is a price claim here.
-const PACKAGE_PRICE_BINDING = /^package\.(?:(\d+)\.)?price$/;
+const PACKAGE_PRICE_BINDING = /^package\.(?:([1-9]\d*)\.)?price$/;
 const PACKAGE_CONTEXT_ATTRIBUTES = Object.freeze(["data-next-package-id", "data-next-package", "data-package-id"]);
 
 export const PACKAGE_PRICE_NOT_RENDERED = "package_price_not_rendered";
-export const PACKAGE_PRICE_NOT_VISIBLE = "package_price_not_visible";
 export const PACKAGE_PRICE_NOT_FILLED = "package_price_not_filled";
 export const PACKAGE_PRICE_UNRESOLVED = "package_price_unresolved";
 
@@ -723,17 +722,11 @@ export function packagePriceClaimCount(capture) {
  * price repeated around an upsell page is one claim.
  */
 function packagePriceComparisonClaims(capture, page) {
-  const rendered = capture?.rendered_package_prices;
-  if (!Array.isArray(rendered)) {
-    return {
-      compared: [],
-      unresolved: array(capture?.package_price_claims).map(() => PACKAGE_PRICE_NOT_RENDERED),
-    };
-  }
+  const rendered = array(capture?.rendered_package_prices);
   if (!rendered.length) {
     return {
       compared: [],
-      unresolved: array(capture?.package_price_claims).map(() => PACKAGE_PRICE_NOT_VISIBLE),
+      unresolved: array(capture?.package_price_claims).map(() => PACKAGE_PRICE_NOT_RENDERED),
     };
   }
   const compared = [];
@@ -1113,11 +1106,7 @@ export function createCommercialParityReport(capturesValue, journey, options = {
     extracted: matched.reduce((sum, { capture }) => sum + packagePriceClaimCount(capture), 0),
     compared: 0,
   };
-  // With no comparison made at all, every claim is outstanding for that one reason.
-  const uncomparedReason = moneyReason || (countsOnly ? "commercial_aggregate_claim_limit" : null);
-  const packagePriceUnresolved = uncomparedReason && packagePriceCounts.extracted
-    ? { [uncomparedReason]: packagePriceCounts.extracted }
-    : {};
+  const packagePriceUnresolved = {};
   const priceComparisonCounts = countsOnly || moneyReason
     ? { compared: 0, unresolved: extractedPriceClaims }
     : matched.reduce((counts, { capture, page }) => {

@@ -3120,21 +3120,16 @@ function collectRenderedPackagePrices() {
   const claims = new Map();
   for (const element of document.querySelectorAll('[data-next-display^="package."]')) {
     const binding = (element.getAttribute("data-next-display") || "").trim();
-    const match = /^package\.(?:(\d+)\.)?price$/.exec(binding);
+    const match = /^package\.(?:([1-9]\d*)\.)?price$/.exec(binding);
     if (!match) continue;
     const format = (element.getAttribute("data-next-format") || "currency").trim().toLowerCase();
     if (format !== "currency" || element.closest("del, s, strike")) continue;
     if (!element.checkVisibility({ checkVisibilityCSS: true })) continue;
-    // Positive whole numbers only, as the source extractor reads them, so both
-    // sides scope a node alike and an id of 0 cannot invalidate the page's capture.
-    const positive = (value) => {
-      const number = String(value ?? "").trim() === "" ? NaN : Number(value);
-      return Number.isInteger(number) && number > 0 ? number : null;
-    };
-    let packageId = positive(match[1]);
+    let packageId = match[1] ? Number(match[1]) : null;
     for (let current = element; packageId === null && current; current = current.parentElement) {
       for (const attribute of ["data-next-package-id", "data-next-package", "data-package-id"]) {
-        if (packageId === null) packageId = positive(current.getAttribute(attribute));
+        const value = (current.getAttribute(attribute) || "").trim();
+        if (packageId === null && /^[1-9]\d*$/.test(value)) packageId = Number(value);
       }
     }
     const filled = element.classList.contains("display-visible");

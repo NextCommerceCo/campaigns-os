@@ -505,7 +505,7 @@ test("source claims the rendered page did not show stay outstanding, and do not 
   assert.equal(none.extracted_price_claims, 2);
   assert.equal(none.compared_price_claims, 0);
   assert.equal(none.unresolved_price_claims, 2);
-  assert.deepEqual(none.package_price_claims, { extracted: 2, compared: 0, unresolved: { package_price_not_visible: 2 } });
+  assert.deepEqual(none.package_price_claims, { extracted: 2, compared: 0, unresolved: { package_price_not_rendered: 2 } });
   assert.equal(none.coverage_complete, false);
 
   // A page with no such claim at all has nothing outstanding.
@@ -518,14 +518,6 @@ test("source claims the rendered page did not show stay outstanding, and do not 
   const some = createCommercialParityReport([renderedCapture([renderedClaim("$49.99")], { package_price_claims: source })], { pages: [packagePricePage()] });
   assert.deepEqual(some.package_price_claims, { extracted: 1, compared: 1, unresolved: {} });
   assert.equal(some.coverage_complete, true);
-});
-
-test("the package price counters add up when no comparison was made at all", () => {
-  const capture = renderedCapture([renderedClaim("$49.99"), renderedClaim("$44.99")]);
-  const currency = createCommercialParityReport([capture], { pages: [packagePricePage()] }, { unresolvedMoneyClaims: "static_source_not_in_run_currency" });
-  assert.deepEqual(currency.package_price_claims, { extracted: 2, compared: 0, unresolved: { static_source_not_in_run_currency: 2 } });
-  const overLimit = createCommercialParityReport([capture], { pages: [packagePricePage()] }, { countsOnly: true });
-  assert.deepEqual(overLimit.package_price_claims, { extracted: 2, compared: 0, unresolved: { commercial_aggregate_claim_limit: 2 } });
 });
 
 test("a malformed rendered price invalidates the capture instead of reading as coverage", () => {
