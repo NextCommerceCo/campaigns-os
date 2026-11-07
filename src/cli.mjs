@@ -3763,7 +3763,7 @@ export async function specFetchCommand(args, { fetchImpl = undefined } = {}) {
   if (unknown.length) {
     throw refused(`Unknown flag${unknown.length > 1 ? "s" : ""} for spec fetch: ${unknown.map((key) => `--${key}`).join(", ")}. Known flags: --packet, --proxy-base, --json.`);
   }
-  if (args["proxy-base"] === true) throw refused("spec fetch: --proxy-base needs a URL (https, or a loopback host); nothing was written.");
+  if (Object.hasOwn(args, "proxy-base") && !optionalString(args["proxy-base"])) throw refused("spec fetch: --proxy-base needs a URL (https, or a loopback host); nothing was written.");
   const packetPath = resolve(requireArg(args, "packet"));
   const result = { ok: false, status: "blocked", packet_path: packetPath, spec_path: null, map_id: null, bound: "unknown", gitignore: null, errors: [], warnings: [], ready: [] };
   const workspace = (() => {
@@ -3834,6 +3834,7 @@ export async function specFetchCommand(args, { fetchImpl = undefined } = {}) {
   // The file has to be committable, and older repositories' managed block says otherwise.
   result.gitignore = ensureRuntimeStateIgnored(workspace.targetRepo);
   if (result.gitignore.removed_entries?.length) result.ready.push("Took fetched-specs/ out of the managed .gitignore block.");
+  if (result.gitignore.action === "skipped") addIssue(result.warnings, "spec.fetch.gitignore_not_updated", `Could not update .gitignore (${singleLineDetail(result.gitignore.reason)}). If it still lists .campaign-runtime/fetched-specs/, remove that line so this file can be committed.`);
   return result;
 }
 

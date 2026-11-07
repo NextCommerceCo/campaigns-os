@@ -130,9 +130,17 @@ test("the text result carries the comparison and the .gitignore change", async (
   assert.ok(ready.some((line) => /Took fetched-specs\/ out of the managed \.gitignore block/.test(line)));
 });
 
+test("spec fetch warns when it cannot update .gitignore, because the copy may not be committable", async (t) => {
+  const f = fixture(t);
+  mkdirSync(join(f.root, ".gitignore"));
+  const result = await f.run();
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.warnings.map((issue) => issue.code), ["spec.fetch.gitignore_not_updated"]);
+});
+
 test("spec fetch refuses a --proxy-base with no value before anything is sent", async (t) => {
   const f = fixture(t);
-  await assert.rejects(f.run({ "proxy-base": true }), /--proxy-base needs a URL/);
+  for (const value of [true, "", "   "]) await assert.rejects(f.run({ "proxy-base": value }), /--proxy-base needs a URL/);
   assert.equal(f.calls.length, 0);
 });
 
