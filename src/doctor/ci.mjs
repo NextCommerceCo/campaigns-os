@@ -71,7 +71,7 @@ function changeBasisLine(stage, record) {
   const since = record?.change?.since_build_fingerprint;
   if (!since) return null;
   const at = /^\d{4}-\d{2}-\d{2}/.exec(String(record.reviewed_at ?? ""))?.[0];
-  return `- ${stageNames[stage]} change is read against the build it last reviewed (${code(shortBuild(since))}${at ? `, ${at}` : ""}), counting every rebuild since.`;
+  return `- ${stageNames[stage]} change is read against the build it last checked (${code(shortBuild(since))}${at ? `, ${at}` : ""}), counting every rebuild since.`;
 }
 
 // Polish and QA read back along one chain of rebuilds, so when both have a
@@ -82,7 +82,7 @@ function uncoveredRebuildLine(ci, stages) {
   const rebuild = ci[behind[0]].change.commerce_rebuild;
   const at = /^\d{4}-\d{2}-\d{2}/.exec(String(rebuild.recorded_at ?? ""))?.[0];
   const names = behind.map((stage) => stageNames[stage]).join(" and ");
-  return `- The latest change alone is page-only. ${names} still ${behind.length > 1 ? "owe" : "owes"} the full stage for an earlier rebuild${at ? ` recorded ${at}` : ""} (${code(shortBuild(rebuild.build_fingerprint))}) since that review.`;
+  return `- The latest change alone is page-only. ${names} still ${behind.length > 1 ? "owe" : "owes"} the full stage for an earlier rebuild${at ? ` recorded ${at}` : ""} (${code(shortBuild(rebuild.build_fingerprint))}) since then.`;
 }
 
 const requiredStageReasons = new Map([
