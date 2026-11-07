@@ -508,6 +508,7 @@ report every page as unpriced.
 | `commercial_page_stale` | Calculate answered for a page against older spec or catalog data | Re-run; if it repeats, check the spec's stored `spec_hash` and its catalog import time |
 | `commercial_claims_unresolved` | A claim could not be tied to one calculated value, for example a page with two bound bundle prices | Check by hand, or declare the voucher in the spec |
 | `package_price_not_rendered` | The page has `package.price` claims and this run read no rendered page for them | `qa run --browser` |
+| `package_price_not_visible` | The source has `package.price` claims and the rendered page showed none of them | None if hidden on purpose; otherwise check the tested URL served this page |
 | `package_price_not_filled` | The SDK never filled a visible `package.price` node, so a shopper may be reading the placeholder | Check that the SDK loaded and the package ref is on the campaign |
 | `package_price_unresolved` | A `package.price` could not be tied to one calculated price: no package id, no single exact row, or text that is not money | Put `data-next-package-id` around it, or check by hand |
 | `static_source_not_in_run_currency` | Under `--currency`, the source holds the Map currency's fallback text | Nothing to repair: a run in the campaign's own currency compares them |

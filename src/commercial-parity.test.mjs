@@ -498,6 +498,36 @@ test("a run in another currency leaves rendered package prices uncompared", () =
   assert.equal(report.unresolved_money_claims_reason, "static_source_not_in_run_currency");
 });
 
+test("source claims the rendered page did not show stay outstanding, and do not read as covered", () => {
+  const source = [{ binding: "package.price", package_id: 3 }, { binding: "package.8.price", package_id: 8 }];
+  const none = createCommercialParityReport([renderedCapture([], { package_price_claims: source })], { pages: [packagePricePage()] });
+  assert.deepEqual(none.findings, []);
+  assert.equal(none.extracted_price_claims, 2);
+  assert.equal(none.compared_price_claims, 0);
+  assert.equal(none.unresolved_price_claims, 2);
+  assert.deepEqual(none.package_price_claims, { extracted: 2, compared: 0, unresolved: { package_price_not_visible: 2 } });
+  assert.equal(none.coverage_complete, false);
+
+  // A page with no such claim at all has nothing outstanding.
+  const empty = createCommercialParityReport([renderedCapture([])], { pages: [packagePricePage()] });
+  assert.equal(empty.extracted_price_claims, 0);
+  assert.equal(empty.coverage_complete, true);
+
+  // Once any is visible the rendered read is the authority: a responsive
+  // duplicate hidden by CSS is not an outstanding claim.
+  const some = createCommercialParityReport([renderedCapture([renderedClaim("$49.99")], { package_price_claims: source })], { pages: [packagePricePage()] });
+  assert.deepEqual(some.package_price_claims, { extracted: 1, compared: 1, unresolved: {} });
+  assert.equal(some.coverage_complete, true);
+});
+
+test("the package price counters add up when no comparison was made at all", () => {
+  const capture = renderedCapture([renderedClaim("$49.99"), renderedClaim("$44.99")]);
+  const currency = createCommercialParityReport([capture], { pages: [packagePricePage()] }, { unresolvedMoneyClaims: "static_source_not_in_run_currency" });
+  assert.deepEqual(currency.package_price_claims, { extracted: 2, compared: 0, unresolved: { static_source_not_in_run_currency: 2 } });
+  const overLimit = createCommercialParityReport([capture], { pages: [packagePricePage()] }, { countsOnly: true });
+  assert.deepEqual(overLimit.package_price_claims, { extracted: 2, compared: 0, unresolved: { commercial_aggregate_claim_limit: 2 } });
+});
+
 test("a malformed rendered price invalidates the capture instead of reading as coverage", () => {
   const report = createCommercialParityReport([renderedCapture([{ binding: "bundle.main.price", package_id: 3, filled: true, text: "$1.00" }])], { pages: [packagePricePage()] });
   assert.equal(report.invalid_capture_count, 1);

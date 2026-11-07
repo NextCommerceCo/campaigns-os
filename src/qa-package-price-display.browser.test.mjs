@@ -103,6 +103,19 @@ browserTest("scope follows the SDK, and repeated prices are one claim", async ()
   ]);
 });
 
+browserTest("both sides read package ids alike, and an id of 0 scopes to the surrounding package", async () => {
+  const claims = await readFrom(`
+    <div data-next-package-id="3"><span class="display-visible" data-next-display="package.0.price">$49.99</span></div>
+    <div data-next-package-id="03"><span class="display-visible" data-next-display="package.price">$29.99</span></div>
+    <div data-next-package-id="0"><span class="display-visible" data-next-display="package.price">$19.99</span></div>
+  `, { timeoutMs: 200 });
+  assert.deepEqual(claims, [
+    { binding: "package.0.price", package_id: 3, filled: true, text: "$49.99" },
+    { binding: "package.price", package_id: 3, filled: true, text: "$29.99" },
+    { binding: "package.price", package_id: null, filled: true, text: "$19.99" },
+  ]);
+});
+
 browserTest("a price no shopper reads as the price is not a claim, and an empty unfilled one still is", async () => {
   const claims = await readFrom(`
     <div data-next-package-id="3">

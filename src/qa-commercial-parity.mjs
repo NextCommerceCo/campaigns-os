@@ -11,9 +11,11 @@ import {
   CommercialParityLimitError,
   PACKAGE_PRICE_NOT_FILLED,
   PACKAGE_PRICE_NOT_RENDERED,
+  PACKAGE_PRICE_NOT_VISIBLE,
   PACKAGE_PRICE_UNRESOLVED,
   createCommercialParityReport,
   extractCommercialClaims,
+  packagePriceClaimCount,
   recurringClaimAbsences,
   recurringClaimAbsentAssertions,
 } from "./commercial-parity.mjs";
@@ -453,7 +455,7 @@ function catalogImportedAt(spec) {
 
 function captureClaimCount(capture) {
   return array(capture?.price_claims).length
-    + array(capture?.rendered_package_prices ?? capture?.package_price_claims).length
+    + packagePriceClaimCount(capture)
     + array(capture?.recurrence_claims).length
     + array(capture?.vouchers).length;
 }
@@ -513,6 +515,10 @@ const PACKAGE_PRICE_REASONS = Object.freeze({
   [PACKAGE_PRICE_NOT_RENDERED]: {
     summary: (count) => `${count} package.price claim(s) are filled in by the SDK at runtime, and this run read no rendered page for them.`,
     fix: "Re-run qa run with --browser. If it already ran with --browser, the page did not load: fix that first.",
+  },
+  [PACKAGE_PRICE_NOT_VISIBLE]: {
+    summary: (count) => `The page source has ${count} package.price claim(s), and the rendered page showed none of them, so none were compared.`,
+    fix: "If they are hidden on purpose, no repair is owed. Otherwise check that the tested URL served this page and that the prices are not hidden by mistake.",
   },
   [PACKAGE_PRICE_NOT_FILLED]: {
     summary: (count) => `The SDK never filled ${count} visible package.price node(s), so a shopper may be reading the template's placeholder price.`,
@@ -634,7 +640,7 @@ export function commercialIncompleteReasons(commercial, journey = null, captures
   const packagePrices = Object.entries(commercial.package_price_claims?.unresolved || {});
   packagePrices.forEach(([code, count]) => {
     const known = PACKAGE_PRICE_REASONS[code];
-    reasons.push(incompleteReason(code, count, known.summary(count), known.fix));
+    if (known) reasons.push(incompleteReason(code, count, known.summary(count), known.fix));
   });
   const unresolvedPrices = commercial.unresolved_price_claims - packagePrices.reduce((sum, [, count]) => sum + count, 0);
   const unresolved = unresolvedPrices + commercial.unresolved_recurrence_claims + commercial.unresolved_voucher_claims;

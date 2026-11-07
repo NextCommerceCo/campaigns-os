@@ -413,6 +413,10 @@ test("package.price claims reach the run as compared, mismatched or named as unc
 
   const noScope = await run({ ...source, rendered_package_prices: [{ binding: "package.price", package_id: null, filled: true, text: "$29.99" }] });
   assert.deepEqual(incompleteIds(noScope), ["commercial-parity:incomplete:package_price_unresolved"]);
+
+  const notVisible = await run({ ...source, rendered_package_prices: [] });
+  assert.equal(notVisible.commercial.status, "incomplete");
+  assert.deepEqual(incompleteIds(notVisible), ["commercial-parity:incomplete:package_price_not_visible"]);
 });
 
 test("package.price rows do not repeat a cause an earlier one explains, and bundle claims keep their own count", async () => {

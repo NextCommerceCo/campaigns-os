@@ -425,6 +425,7 @@ const PACKAGE_PRICE_BINDING = /^package\.(?:(\d+)\.)?price$/;
 const PACKAGE_CONTEXT_ATTRIBUTES = Object.freeze(["data-next-package-id", "data-next-package", "data-package-id"]);
 
 export const PACKAGE_PRICE_NOT_RENDERED = "package_price_not_rendered";
+export const PACKAGE_PRICE_NOT_VISIBLE = "package_price_not_visible";
 export const PACKAGE_PRICE_NOT_FILLED = "package_price_not_filled";
 export const PACKAGE_PRICE_UNRESOLVED = "package_price_unresolved";
 
@@ -708,8 +709,11 @@ function exactPackageUnitPrice(page, packageId) {
   return prices.size === 1 ? [...prices][0] ?? null : null;
 }
 
-function packagePriceClaimCount(capture) {
-  return array(capture?.rendered_package_prices ?? capture?.package_price_claims).length;
+// The rendered read is the authority once it found any. When it found none, the
+// source still says the claims exist, so they are not allowed to disappear.
+export function packagePriceClaimCount(capture) {
+  const rendered = array(capture?.rendered_package_prices);
+  return rendered.length || array(capture?.package_price_claims).length;
 }
 
 /**
@@ -724,6 +728,12 @@ function packagePriceComparisonClaims(capture, page) {
     return {
       compared: [],
       unresolved: array(capture?.package_price_claims).map(() => PACKAGE_PRICE_NOT_RENDERED),
+    };
+  }
+  if (!rendered.length) {
+    return {
+      compared: [],
+      unresolved: array(capture?.package_price_claims).map(() => PACKAGE_PRICE_NOT_VISIBLE),
     };
   }
   const compared = [];
@@ -1099,11 +1109,15 @@ export function createCommercialParityReport(capturesValue, journey, options = {
     (sum, { capture }) => sum + capture.vouchers.length,
     0,
   );
-  const packagePriceUnresolved = {};
   const packagePriceCounts = {
     extracted: matched.reduce((sum, { capture }) => sum + packagePriceClaimCount(capture), 0),
     compared: 0,
   };
+  // With no comparison made at all, every claim is outstanding for that one reason.
+  const uncomparedReason = moneyReason || (countsOnly ? "commercial_aggregate_claim_limit" : null);
+  const packagePriceUnresolved = uncomparedReason && packagePriceCounts.extracted
+    ? { [uncomparedReason]: packagePriceCounts.extracted }
+    : {};
   const priceComparisonCounts = countsOnly || moneyReason
     ? { compared: 0, unresolved: extractedPriceClaims }
     : matched.reduce((counts, { capture, page }) => {
