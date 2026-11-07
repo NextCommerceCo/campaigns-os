@@ -602,7 +602,7 @@ test("a QA that completed and was then made owed again still counts as a result 
 test("a blocker with Markdown characters reads as written in the refusal", (t) => {
   const f = legacyFixture(t);
   const report = f.readReport();
-  Object.assign(report.stages.qa, { status: "blocked", blockers: ["qa_order_depth: checkout failed"] });
+  Object.assign(report.stages.qa, { status: "blocked", blockers: ["qa_order_depth: checkout\nfailed"] });
   writeFileSync(f.reportPath, JSON.stringify(report));
   assert.throws(() => recordBaseline(f), (error) => error.message.includes("(qa_order_depth: checkout failed)"));
 });

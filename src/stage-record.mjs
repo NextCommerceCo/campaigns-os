@@ -39,7 +39,7 @@ import { isLoopbackHostname } from "./remit.mjs";
 import { campaignRouteRoot, normalizePublicRouteSlug } from "./route-identity.mjs";
 import { buildChangeEntry, buildCommerceSignature, nextBuildChanges, rebuiltFromBuildWithoutSignature } from "./change-scope.mjs";
 import { isNamedHuman } from "./checkpoint-waiver.mjs";
-import { singleLineField } from "./text-safety.mjs";
+import { singleLineFragment } from "./text-safety.mjs";
 import { assessEvidenceDebt } from "./evidence-debt.mjs";
 import { writeJsonAtomic } from "./doctor-sidecar.mjs";
 import { doctorPacket } from "./doctor/inspect.mjs";
@@ -503,7 +503,7 @@ function composeBaseline(report, { now, recordedBy, fingerprint, input, inputs, 
   // one. A blocked QA found a problem a sign-off cannot vouch for.
   const lastQa = stageObject(report, "qa");
   if (lastQa.status === "blocked") {
-    const blockers = (Array.isArray(lastQa.blockers) ? lastQa.blockers : []).slice(0, 3).map((blocker) => singleLineField(typeof blocker === "string" ? blocker : blocker?.message || blocker?.code || "")).filter(Boolean);
+    const blockers = (Array.isArray(lastQa.blockers) ? lastQa.blockers : []).slice(0, 3).map((blocker) => singleLineFragment(typeof blocker === "string" ? blocker : blocker?.message || blocker?.code || "")).filter(Boolean);
     throw refuseRecord("baseline", [`The last QA was blocked${blockers.length ? ` (${blockers.join("; ")})` : ""}, so it cannot be accepted untested. Run a full ${cmd("qa")} run; once it passes, page-only changes work without a baseline.`]);
   }
   if (!qaEverCompleted(report)) {
