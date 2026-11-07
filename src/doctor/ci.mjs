@@ -82,7 +82,7 @@ function uncoveredRebuildLine(ci, stages) {
   const rebuild = ci[behind[0]].change.commerce_rebuild;
   const at = /^\d{4}-\d{2}-\d{2}/.exec(String(rebuild.recorded_at ?? ""))?.[0];
   const names = behind.map((stage) => stageNames[stage]).join(" and ");
-  return `- The latest change alone is page-only. ${names} still ${behind.length > 1 ? "owe" : "owes"} the full stage for an earlier rebuild${at ? ` recorded ${at}` : ""} (${code(shortBuild(rebuild.build_fingerprint))}) since then.`;
+  return `- The latest change alone is page-only. ${names} still ${behind.length > 1 ? "owe" : "owes"} the full stage for an earlier rebuild${at ? ` recorded ${at}` : ""} (${code(shortBuild(rebuild.build_fingerprint))}) since that check.`;
 }
 
 const requiredStageReasons = new Map([

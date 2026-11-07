@@ -10708,8 +10708,8 @@
       "kind": "release",
       "surface_version": "1.64.0",
       "changelog_section": "1.64.0",
-      "changelog_sha256": "24b8560dbfa2f75a78f1b69a5780d0662f0f34ff954010035b7e6f32796e04ee",
-      "agent_impact": "New spec fetch restores a saved-Map packet's CampaignSpec on a checkout that lacks it and never replaces a copy on disk. .campaign-runtime/fetched-specs/ is no longer gitignored: commit it, because the records are bound to it and spec derive writes into it. Doctor adds the warning built_output.absent when the build stage is complete and _site/<route>/ is missing, so treat an unbuilt checkout as not compared rather than current. doctor --ci adds lines naming the build each owed stage last reviewed. evidence_debt gains optional change.commerce_rebuild and qa.reviewed_at. Refresh skills to 1.64.0+skills.1 (a revision restamp; the skill text is otherwise unchanged).",
+      "changelog_sha256": "ed08b5b80f306d8acf9a106236408f14742511108f31ed3c26ccfa359aad7cbc",
+      "agent_impact": "New spec fetch restores a saved-Map packet's CampaignSpec on a checkout that lacks it and never replaces a copy on disk. .campaign-runtime/fetched-specs/ is no longer gitignored: commit it, because the records are bound to it and spec derive writes into it. Doctor adds the warning built_output.absent when the build stage is complete and _site/<route>/ is missing, so treat an unbuilt checkout as not compared rather than current. doctor --ci adds lines naming the build each owed stage last checked. evidence_debt gains optional change.commerce_rebuild and qa.reviewed_at. Refresh skills to 1.64.0+skills.1 (a revision restamp; the skill text is otherwise unchanged).",
       "compatibility": "additive",
       "migration": "Run spec fetch once on each repository set up from a saved Map, or any setup command, and commit .campaign-runtime/fetched-specs/.",
       "changes": [
@@ -10741,7 +10741,7 @@
           "class": "named_surface",
           "path": "docs/campaigns-os-build-flow.md",
           "surface_entry": "docs/campaigns-os-build-flow.md",
-          "summary": "A change is read against the build each stage last reviewed; page-only changes start after one full QA on 1.62.0 or later."
+          "summary": "A change is read against the build each stage last checked; page-only changes start after one full QA on 1.62.0 or later."
         },
         {
           "class": "named_surface",
@@ -10873,10 +10873,10 @@
           "class": "cli_surface",
           "path": "src/doctor/ci.mjs",
           "surface_entry": null,
-          "summary": "The CI report names the build each owed stage last reviewed and any unreviewed rebuild behind a page-only edit; clearer pre-1.62 wording."
+          "summary": "The CI report names the build each owed stage last checked and any unreviewed rebuild behind a page-only edit; clearer pre-1.62 wording."
         }
       ],
-      "entry_sha256": "7cdcad18e70bd6eba7757fe784ef5480c359832ac6cc99accd5757a3a02b7ee4"
+      "entry_sha256": "ab342beed04d4d96bdd33cef27b8ee97f4d794a37a7d5e39d0ac9b5ee72e44ae"
     }
   ]
 }
