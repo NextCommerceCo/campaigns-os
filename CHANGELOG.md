@@ -24,7 +24,7 @@ Developers changing a live funnel from a fresh clone can now get going, and the 
 ### Changed
 
 - **The fetched CampaignSpec is committed (#716).** `.campaign-runtime/fetched-specs/` leaves the managed `.gitignore` block, and an existing block loses the line on the next setup command or `spec fetch`. The committed records are bound to this file and `spec derive` writes into it, so another machine can't rebuild it from the Map once it has been derived.
-- **`doctor --ci` names what it compared (#716).** Each owed stage's report line gives the build it last reviewed, with the date for QA. When the latest change alone is page-only but an earlier rebuild since that review wasn't, the report names that rebuild, so it no longer seems to contradict `record build`. `evidence_debt.<stage>.change` gains `commerce_rebuild` and `evidence_debt.qa` gains `reviewed_at`, each only when there is a value.
+- **`doctor --ci` names what it compared (#716).** Each owed stage's report line gives the build it last checked, with the date when QA completed. When the latest change alone is page-only but an earlier rebuild since that check wasn't, the report names that rebuild, so it no longer seems to contradict `record build`. `evidence_debt.<stage>.change` gains `commerce_rebuild`, and `evidence_debt.qa` gains `reviewed_at` when QA completed, each only when there is a value.
 - **Clearer wording for a pre-1.62 build (#716).** `commerce_signature_unavailable` now reads as a build from before the markup hashes existed.
 
 ### Fixed
