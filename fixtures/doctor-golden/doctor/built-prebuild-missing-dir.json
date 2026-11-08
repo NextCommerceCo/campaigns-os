@@ -1,0 +1,23 @@
+{
+  "base_sha": "e1c5bc9c6dc2745d6f2bd54f37f89319ce7f915a",
+  "case": "prebuild-missing-dir",
+  "entry": "built",
+  "description": "pre-build: the built directory does not exist (built_site.target early return)",
+  "output": {
+    "ok": false,
+    "status": "blocked",
+    "mode": "built_site",
+    "errors": [
+      {
+        "code": "built_site.target",
+        "message": "Built campaign directory does not exist: <fixture>/absent"
+      }
+    ],
+    "warnings": [],
+    "ready": [],
+    "derived": {
+      "mode": "built_site"
+    },
+    "next": null
+  }
+}

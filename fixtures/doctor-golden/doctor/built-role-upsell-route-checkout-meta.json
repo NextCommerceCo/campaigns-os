@@ -1,0 +1,798 @@
+{
+  "base_sha": "e1c5bc9c6dc2745d6f2bd54f37f89319ce7f915a",
+  "case": "role-upsell-route-checkout-meta",
+  "entry": "built",
+  "description": "conflicting role: an explicit upsell route keeps its role over a copied checkout meta (blocked)",
+  "output": {
+    "ok": false,
+    "status": "blocked",
+    "mode": "built_site",
+    "errors": [
+      {
+        "code": "built_output.upsell_selector_scope",
+        "message": "1 bundle selector(s) on built post-purchase page(s) sell into the live cart: \"upsell-bundle-1x\" on page \"upsell-1\" (hidden). Each lacks data-next-upsell-context and is in the default \"swap\" selection mode. Loading the page adds that selector's package to the shopper's LIVE CART with no click, and it is charged at the next checkout without appearing in that checkout's rendered order summary. Add data-next-upsell-context to each selector listed (the post-purchase basket, and upsell pricing), or delete the selector if it exists only to display a price.",
+        "detail": {
+          "checkpoint_gate": {
+            "id": "built_output.upsell_selector_scope",
+            "scope": "built_output.upsell_selector_scope",
+            "status": "blocked",
+            "code": "built_output.upsell_selector_scope",
+            "reason": "1 bundle selector(s) on built post-purchase page(s) sell into the live cart: \"upsell-bundle-1x\" on page \"upsell-1\" (hidden). Each lacks data-next-upsell-context and is in the default \"swap\" selection mode. Loading the page adds that selector's package to the shopper's LIVE CART with no click, and it is charged at the next checkout without appearing in that checkout's rendered order summary. Add data-next-upsell-context to each selector listed (the post-purchase basket, and upsell pricing), or delete the selector if it exists only to display a price.",
+            "waivable": true,
+            "subject": {
+              "public_route_slug": "example-campaign",
+              "site_root": "./_site/example-campaign"
+            },
+            "state": {
+              "findings": [
+                {
+                  "page_id": "upsell-1",
+                  "selector_id": "upsell-bundle-1x",
+                  "occurrence": 0
+                }
+              ]
+            },
+            "state_fingerprint": "sha256:a3044b85a3aa8c01d745e80cf008612c6af4707390a4260f93cf55bf0859c31b",
+            "findings": [
+              {
+                "page_id": "upsell-1",
+                "file": "./_site/example-campaign/upsell-1/index.html",
+                "selector_id": "upsell-bundle-1x",
+                "occurrence": 0,
+                "selection_mode": "swap",
+                "hidden": true
+              }
+            ],
+            "warned": [],
+            "pages_scanned": 1,
+            "selectors_scanned": 1,
+            "waiver": null,
+            "waiver_assessment": {
+              "active": null,
+              "inert_counts": {
+                "stale": 0,
+                "foreign": 0,
+                "malformed": 0,
+                "expired": 0
+              }
+            },
+            "required_actions": [
+              {
+                "id": "repair_selectors",
+                "kind": "edit",
+                "command": null,
+                "description": "Add data-next-upsell-context to \"upsell-bundle-1x\" on page \"upsell-1\" (hidden), or remove the selector, then rebuild and re-run doctor."
+              },
+              {
+                "id": "waive_checkpoint",
+                "kind": "command",
+                "command": "campaigns-os checkpoint waive --packet <packet> --gate built_output.upsell_selector_scope --reason \"<reason>\" --waived-by \"<named human>\" --review-condition \"<re-evaluation trigger>\"",
+                "description": "Record a bounded named-human decision that these exact cart-scoped selectors are intended on a post-purchase page."
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "warnings": [
+      {
+        "code": "assembly.template_family",
+        "message": "No --family given; the residue/placeholder-text/demo-asset gates need a family brand contract to run. Pass --family <family> (the family the campaign was built from)."
+      },
+      {
+        "code": "built_output.sdk_markup.upsell_page_type_missing",
+        "message": "UPSELL_PAGE_TYPE_MISSING: <div> on ./_site/example-campaign/upsell-1/index.html is an upsell offer (data-next-upsell), but the page's next-page-type meta is \"checkout\". The SDK records the upsell page view only from <meta name=\"next-page-type\" content=\"upsell\">, so reports show the purchase with no upsell view before it. Add that meta tag to the page head.",
+        "detail": {
+          "finding": {
+            "code_name": "UPSELL_PAGE_TYPE_MISSING",
+            "code": "built_output.sdk_markup.upsell_page_type_missing",
+            "severity": "warning",
+            "page_id": "upsell-1",
+            "file": "./_site/example-campaign/upsell-1/index.html",
+            "message": "UPSELL_PAGE_TYPE_MISSING: <div> on ./_site/example-campaign/upsell-1/index.html is an upsell offer (data-next-upsell), but the page's next-page-type meta is \"checkout\". The SDK records the upsell page view only from <meta name=\"next-page-type\" content=\"upsell\">, so reports show the purchase with no upsell view before it. Add that meta tag to the page head.",
+            "detail": {
+              "meta_content": "checkout"
+            }
+          },
+          "checkpoint_gate": {
+            "id": "built_output.sdk_markup",
+            "scope": "built_output.sdk_markup",
+            "waivable": false,
+            "subject": {
+              "public_route_slug": "example-campaign",
+              "site_root": "./_site/example-campaign"
+            },
+            "waiver": null,
+            "sdk_attribute_index_version": "0.4.43",
+            "campaign_sdk_version": null,
+            "status": "pass",
+            "code": "built_output.sdk_markup.advisories",
+            "reason": "SDK markup checks passed on 1 built page(s) with 1 advisory finding(s).",
+            "findings": [],
+            "warned": [
+              {
+                "code_name": "UPSELL_PAGE_TYPE_MISSING",
+                "code": "built_output.sdk_markup.upsell_page_type_missing",
+                "severity": "warning",
+                "page_id": "upsell-1",
+                "file": "./_site/example-campaign/upsell-1/index.html",
+                "message": "UPSELL_PAGE_TYPE_MISSING: <div> on ./_site/example-campaign/upsell-1/index.html is an upsell offer (data-next-upsell), but the page's next-page-type meta is \"checkout\". The SDK records the upsell page view only from <meta name=\"next-page-type\" content=\"upsell\">, so reports show the purchase with no upsell view before it. Add that meta tag to the page head.",
+                "detail": {
+                  "meta_content": "checkout"
+                }
+              }
+            ],
+            "unknown_attributes": [],
+            "pages_scanned": 1,
+            "required_actions": []
+          }
+        }
+      },
+      {
+        "code": "built_output.smoke_qc.favicon_missing",
+        "message": "smoke_qc warning on _site/example-campaign/upsell-1/index.html (favicon:link): favicon_missing.",
+        "detail": {
+          "qc_result": {
+            "schema": "campaigns-os-qc-result/v0",
+            "id": "smoke_qc:_site/example-campaign/upsell-1/index.html:favicon:link",
+            "check": "smoke_qc",
+            "leg": "doctor",
+            "result": "warning",
+            "reason_code": "favicon_missing",
+            "subject": {
+              "check": "smoke_qc",
+              "page": "_site/example-campaign/upsell-1/index.html",
+              "key": "favicon:link"
+            },
+            "state_fingerprint": "sha256:83d0e059f627c468d655ea99a2c8e2e0780ae19c00e1d8b3a737d61932f381c4",
+            "observation": {
+              "page": "_site/example-campaign/upsell-1/index.html",
+              "favicon": false
+            },
+            "members": [],
+            "accept_eligible": true,
+            "coverage": {
+              "observed": 1,
+              "expected": 1,
+              "limits": []
+            },
+            "measured_at": "2026-01-01T00:00:00.000Z",
+            "producer": "campaigns-os doctor"
+          }
+        }
+      },
+      {
+        "code": "built_output.smoke_qc.og_title_missing",
+        "message": "smoke_qc warning on _site/example-campaign/upsell-1/index.html (og:title): og_title_missing.",
+        "detail": {
+          "qc_result": {
+            "schema": "campaigns-os-qc-result/v0",
+            "id": "smoke_qc:_site/example-campaign/upsell-1/index.html:og:title",
+            "check": "smoke_qc",
+            "leg": "doctor",
+            "result": "warning",
+            "reason_code": "og_title_missing",
+            "subject": {
+              "check": "smoke_qc",
+              "page": "_site/example-campaign/upsell-1/index.html",
+              "key": "og:title"
+            },
+            "state_fingerprint": "sha256:1278fa52a7bf33ca793dc919c8bea4d9ab3a4e14d56a8a5fd8dff2ddcce281c8",
+            "observation": {
+              "page": "_site/example-campaign/upsell-1/index.html",
+              "og": {
+                "title": false,
+                "description": false,
+                "image": "absent",
+                "image_target": null
+              }
+            },
+            "members": [],
+            "accept_eligible": true,
+            "coverage": {
+              "observed": 1,
+              "expected": 1,
+              "limits": []
+            },
+            "measured_at": "2026-01-01T00:00:00.000Z",
+            "producer": "campaigns-os doctor"
+          }
+        }
+      },
+      {
+        "code": "built_output.smoke_qc.og_description_missing",
+        "message": "smoke_qc warning on _site/example-campaign/upsell-1/index.html (og:description): og_description_missing.",
+        "detail": {
+          "qc_result": {
+            "schema": "campaigns-os-qc-result/v0",
+            "id": "smoke_qc:_site/example-campaign/upsell-1/index.html:og:description",
+            "check": "smoke_qc",
+            "leg": "doctor",
+            "result": "warning",
+            "reason_code": "og_description_missing",
+            "subject": {
+              "check": "smoke_qc",
+              "page": "_site/example-campaign/upsell-1/index.html",
+              "key": "og:description"
+            },
+            "state_fingerprint": "sha256:ca0a94ebb561a60609e010db793f013a13f8880c07582f8ba2395bfa6127a4ab",
+            "observation": {
+              "page": "_site/example-campaign/upsell-1/index.html",
+              "og": {
+                "title": false,
+                "description": false,
+                "image": "absent",
+                "image_target": null
+              }
+            },
+            "members": [],
+            "accept_eligible": true,
+            "coverage": {
+              "observed": 1,
+              "expected": 1,
+              "limits": []
+            },
+            "measured_at": "2026-01-01T00:00:00.000Z",
+            "producer": "campaigns-os doctor"
+          }
+        }
+      },
+      {
+        "code": "built_output.smoke_qc.og_image_missing",
+        "message": "smoke_qc warning on _site/example-campaign/upsell-1/index.html (og:image): og_image_missing.",
+        "detail": {
+          "qc_result": {
+            "schema": "campaigns-os-qc-result/v0",
+            "id": "smoke_qc:_site/example-campaign/upsell-1/index.html:og:image",
+            "check": "smoke_qc",
+            "leg": "doctor",
+            "result": "warning",
+            "reason_code": "og_image_missing",
+            "subject": {
+              "check": "smoke_qc",
+              "page": "_site/example-campaign/upsell-1/index.html",
+              "key": "og:image"
+            },
+            "state_fingerprint": "sha256:93f7012e1e537b072dd295cdf56e8549a2937a379f801a2ce5e12e1e64edf6e0",
+            "observation": {
+              "page": "_site/example-campaign/upsell-1/index.html",
+              "og": {
+                "title": false,
+                "description": false,
+                "image": "absent",
+                "image_target": null
+              }
+            },
+            "members": [],
+            "accept_eligible": true,
+            "coverage": {
+              "observed": 1,
+              "expected": 1,
+              "limits": []
+            },
+            "measured_at": "2026-01-01T00:00:00.000Z",
+            "producer": "campaigns-os doctor"
+          }
+        }
+      }
+    ],
+    "ready": [
+      "Resolved 1 built page(s) from ./_site/example-campaign (slug \"example-campaign\")",
+      "Built output has no generic starter placeholder or promo-code residue",
+      "All 1 built page(s) agree on campaign identity (next-funnel not declared, API key not declared)",
+      "SDK markup checks passed on 1 built page(s) with 1 advisory finding(s)",
+      "Script syntax checkpoint not applicable: No built page loads a campaign-owned script from disk (1 page(s) read)."
+    ],
+    "derived": {
+      "mode": "built_site",
+      "map_id": "example-campaign",
+      "public_route_slug": "example-campaign",
+      "template_family": null,
+      "target_repo": "<fixture>",
+      "target_output_dir": "<fixture>/_site/example-campaign",
+      "site_root": "<fixture>/_site",
+      "built_pages": [
+        {
+          "page_id": "upsell-1",
+          "type": "upsell",
+          "route": "upsell-1"
+        }
+      ],
+      "doctor_checks": [
+        "built_output.upsell_selector_scope",
+        "built_output.campaign_identity",
+        "built_output.sdk_markup",
+        "built_output.script_syntax",
+        "built_output.cart_placeholders",
+        "built_output.smoke_qc"
+      ],
+      "checkpoint_gates": [
+        {
+          "id": "built_output.upsell_selector_scope",
+          "scope": "built_output.upsell_selector_scope",
+          "status": "blocked",
+          "code": "built_output.upsell_selector_scope",
+          "reason": "1 bundle selector(s) on built post-purchase page(s) sell into the live cart: \"upsell-bundle-1x\" on page \"upsell-1\" (hidden). Each lacks data-next-upsell-context and is in the default \"swap\" selection mode. Loading the page adds that selector's package to the shopper's LIVE CART with no click, and it is charged at the next checkout without appearing in that checkout's rendered order summary. Add data-next-upsell-context to each selector listed (the post-purchase basket, and upsell pricing), or delete the selector if it exists only to display a price.",
+          "waivable": true,
+          "subject": {
+            "public_route_slug": "example-campaign",
+            "site_root": "./_site/example-campaign"
+          },
+          "state": {
+            "findings": [
+              {
+                "page_id": "upsell-1",
+                "selector_id": "upsell-bundle-1x",
+                "occurrence": 0
+              }
+            ]
+          },
+          "state_fingerprint": "sha256:a3044b85a3aa8c01d745e80cf008612c6af4707390a4260f93cf55bf0859c31b",
+          "findings": [
+            {
+              "page_id": "upsell-1",
+              "file": "./_site/example-campaign/upsell-1/index.html",
+              "selector_id": "upsell-bundle-1x",
+              "occurrence": 0,
+              "selection_mode": "swap",
+              "hidden": true
+            }
+          ],
+          "warned": [],
+          "pages_scanned": 1,
+          "selectors_scanned": 1,
+          "waiver": null,
+          "waiver_assessment": {
+            "active": null,
+            "inert_counts": {
+              "stale": 0,
+              "foreign": 0,
+              "malformed": 0,
+              "expired": 0
+            }
+          },
+          "required_actions": [
+            {
+              "id": "repair_selectors",
+              "kind": "edit",
+              "command": null,
+              "description": "Add data-next-upsell-context to \"upsell-bundle-1x\" on page \"upsell-1\" (hidden), or remove the selector, then rebuild and re-run doctor."
+            },
+            {
+              "id": "waive_checkpoint",
+              "kind": "command",
+              "command": "campaigns-os checkpoint waive --packet <packet> --gate built_output.upsell_selector_scope --reason \"<reason>\" --waived-by \"<named human>\" --review-condition \"<re-evaluation trigger>\"",
+              "description": "Record a bounded named-human decision that these exact cart-scoped selectors are intended on a post-purchase page."
+            }
+          ]
+        },
+        {
+          "id": "built_output.campaign_identity",
+          "scope": "built_output.campaign_identity",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "example-campaign",
+            "site_root": "./_site/example-campaign"
+          },
+          "waiver": null,
+          "status": "pass",
+          "code": "built_output.campaign_identity.pass",
+          "reason": "All 1 built page(s) agree on campaign identity (API key not declared, next-funnel (none)).",
+          "findings": [],
+          "pages_scanned": 1,
+          "pages_skipped": [],
+          "identity": {
+            "api_key": null,
+            "api_key_source": null,
+            "funnel": null
+          },
+          "required_actions": []
+        },
+        {
+          "id": "built_output.sdk_markup",
+          "scope": "built_output.sdk_markup",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "example-campaign",
+            "site_root": "./_site/example-campaign"
+          },
+          "waiver": null,
+          "sdk_attribute_index_version": "0.4.43",
+          "campaign_sdk_version": null,
+          "status": "pass",
+          "code": "built_output.sdk_markup.advisories",
+          "reason": "SDK markup checks passed on 1 built page(s) with 1 advisory finding(s).",
+          "findings": [],
+          "warned": [
+            {
+              "code_name": "UPSELL_PAGE_TYPE_MISSING",
+              "code": "built_output.sdk_markup.upsell_page_type_missing",
+              "severity": "warning",
+              "page_id": "upsell-1",
+              "file": "./_site/example-campaign/upsell-1/index.html",
+              "message": "UPSELL_PAGE_TYPE_MISSING: <div> on ./_site/example-campaign/upsell-1/index.html is an upsell offer (data-next-upsell), but the page's next-page-type meta is \"checkout\". The SDK records the upsell page view only from <meta name=\"next-page-type\" content=\"upsell\">, so reports show the purchase with no upsell view before it. Add that meta tag to the page head.",
+              "detail": {
+                "meta_content": "checkout"
+              }
+            }
+          ],
+          "unknown_attributes": [],
+          "pages_scanned": 1,
+          "required_actions": []
+        },
+        {
+          "id": "built_output.script_syntax",
+          "scope": "built_output.script_syntax",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "example-campaign",
+            "site_root": "./_site/example-campaign"
+          },
+          "waiver": null,
+          "status": "not_applicable",
+          "code": "built_output.script_syntax.not_applicable",
+          "reason": "No built page loads a campaign-owned script from disk (1 page(s) read).",
+          "findings": [],
+          "scripts_scanned": 0,
+          "scripts_unresolved": [],
+          "scripts_outside_site": [],
+          "warned": [],
+          "pages_scanned": 1,
+          "required_actions": []
+        }
+      ],
+      "qc_results": [
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/example-campaign/upsell-1/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "sdk_pin_unknown",
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/example-campaign/upsell-1/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:503c4bf0472cddb003badeb2c55bff0304e1fcf794187f0c62b4290abf9f0b4c",
+          "observation": {
+            "page": "_site/example-campaign/upsell-1/index.html",
+            "sdk_pin": null,
+            "sdk_pin_source": null,
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 235,
+            "candidates": 0
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "sdk_pin_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/example-campaign/upsell-1/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "warning",
+          "reason_code": "favicon_missing",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/example-campaign/upsell-1/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:83d0e059f627c468d655ea99a2c8e2e0780ae19c00e1d8b3a737d61932f381c4",
+          "observation": {
+            "page": "_site/example-campaign/upsell-1/index.html",
+            "favicon": false
+          },
+          "members": [],
+          "accept_eligible": true,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/example-campaign/upsell-1/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "warning",
+          "reason_code": "og_title_missing",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/example-campaign/upsell-1/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:1278fa52a7bf33ca793dc919c8bea4d9ab3a4e14d56a8a5fd8dff2ddcce281c8",
+          "observation": {
+            "page": "_site/example-campaign/upsell-1/index.html",
+            "og": {
+              "title": false,
+              "description": false,
+              "image": "absent",
+              "image_target": null
+            }
+          },
+          "members": [],
+          "accept_eligible": true,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/example-campaign/upsell-1/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "warning",
+          "reason_code": "og_description_missing",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/example-campaign/upsell-1/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:ca0a94ebb561a60609e010db793f013a13f8880c07582f8ba2395bfa6127a4ab",
+          "observation": {
+            "page": "_site/example-campaign/upsell-1/index.html",
+            "og": {
+              "title": false,
+              "description": false,
+              "image": "absent",
+              "image_target": null
+            }
+          },
+          "members": [],
+          "accept_eligible": true,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/example-campaign/upsell-1/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "warning",
+          "reason_code": "og_image_missing",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/example-campaign/upsell-1/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:93f7012e1e537b072dd295cdf56e8549a2937a379f801a2ce5e12e1e64edf6e0",
+          "observation": {
+            "page": "_site/example-campaign/upsell-1/index.html",
+            "og": {
+              "title": false,
+              "description": false,
+              "image": "absent",
+              "image_target": null
+            }
+          },
+          "members": [],
+          "accept_eligible": true,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/example-campaign/upsell-1/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/example-campaign/upsell-1/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:52400cf631734086a8255393bc21f67a5347d133fc181d4bd64149cf99708151",
+          "observation": {
+            "page": "_site/example-campaign/upsell-1/index.html",
+            "tailwind_cdn": 0,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/example-campaign/upsell-1/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/example-campaign/upsell-1/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:9b614c2c4a16e7ddb859d2641de385692a55b90ff05ec2a3483261b672b73f4a",
+          "observation": {
+            "page": "_site/example-campaign/upsell-1/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/example-campaign/upsell-1/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/example-campaign/upsell-1/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:20861aebcf9b6ddef3c03372759aaaa5595685a553eedc2e8be6d5c459afb80b",
+          "observation": {
+            "page": "_site/example-campaign/upsell-1/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        }
+      ],
+      "brand_contract": {
+        "state": "no_family",
+        "family": null
+      },
+      "synthesized_packet": {
+        "schema_version": "campaign-runtime-build-packet/v0",
+        "_synthesized": {
+          "from": "built_site",
+          "note": "Minimal packet auto-emitted from a built _site/. Not a full Build Packet: source_html and assembly provenance are absent.",
+          "site_root": "<fixture>/_site",
+          "campaign_dir": "<fixture>/_site/example-campaign",
+          "html_count": 1
+        },
+        "campaign": {
+          "public_route_slug": "example-campaign",
+          "allowed_domains_confirmed": false
+        },
+        "spec": {
+          "map_id": "example-campaign"
+        },
+        "assembly": {
+          "target_repo": "<fixture>",
+          "output_dir": "_site/example-campaign",
+          "template_family": "undecided"
+        },
+        "deploy": {
+          "target": "unknown",
+          "preview_url": null
+        },
+        "qa": {},
+        "pages": [
+          {
+            "page_id": "upsell-1",
+            "type": "upsell",
+            "route": "upsell-1"
+          }
+        ]
+      }
+    },
+    "scope": {
+      "slug": "example-campaign",
+      "html_count": 1,
+      "pages": [
+        {
+          "page_id": "upsell-1",
+          "type": "upsell",
+          "route": "upsell-1"
+        }
+      ],
+      "campaign_dir": "<fixture>/_site/example-campaign"
+    },
+    "synthesized_packet": {
+      "schema_version": "campaign-runtime-build-packet/v0",
+      "_synthesized": {
+        "from": "built_site",
+        "note": "Minimal packet auto-emitted from a built _site/. Not a full Build Packet: source_html and assembly provenance are absent.",
+        "site_root": "<fixture>/_site",
+        "campaign_dir": "<fixture>/_site/example-campaign",
+        "html_count": 1
+      },
+      "campaign": {
+        "public_route_slug": "example-campaign",
+        "allowed_domains_confirmed": false
+      },
+      "spec": {
+        "map_id": "example-campaign"
+      },
+      "assembly": {
+        "target_repo": "<fixture>",
+        "output_dir": "_site/example-campaign",
+        "template_family": "undecided"
+      },
+      "deploy": {
+        "target": "unknown",
+        "preview_url": null
+      },
+      "qa": {},
+      "pages": [
+        {
+          "page_id": "upsell-1",
+          "type": "upsell",
+          "route": "upsell-1"
+        }
+      ]
+    },
+    "emitted_packet_path": null,
+    "next": {
+      "stage": "doctor-blocked",
+      "status": "blocked",
+      "stage_blocked": false,
+      "owner": "operator",
+      "default_skill": "next-campaigns-os",
+      "command": "campaigns-os doctor --packet <packet>",
+      "reason": "Doctor reported 1 blocker(s); resolve them before any stage runs.",
+      "actions": [
+        "Resolve packet blockers before assembly."
+      ],
+      "blocked_stages": [
+        "setup",
+        "build",
+        "polish",
+        "deploy",
+        "qa"
+      ]
+    }
+  }
+}

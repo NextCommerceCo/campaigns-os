@@ -1,0 +1,781 @@
+{
+  "base_sha": "e1c5bc9c6dc2745d6f2bd54f37f89319ce7f915a",
+  "step": "06-config-and-output-change",
+  "description": "The campaign's _data/campaigns.json entry changed (sdk_version 0.4.41) together with a landing copy edit, then record build: campaign_config_changed.",
+  "recorded_at": "2026-11-01T00:06:00.000Z",
+  "record_command": "record build",
+  "assembly_report": {
+    "schema_version": "campaign-runtime-assembly-report/v0",
+    "run_id": "synthetic-run",
+    "generated_at": "2026-10-23T00:00:00Z",
+    "status": "prepared",
+    "identity": {
+      "map_id": "synthetic-map",
+      "public_route_slug": "synthetic-campaign",
+      "campaign_directory": "synthetic-campaign",
+      "live_url_path": "/synthetic-campaign/",
+      "spec_hash": "synthetic-spec"
+    },
+    "inputs": {
+      "packet_path": "campaign-runtime.build.json",
+      "context_path": ".campaign-runtime/build-context.json",
+      "spec_path": "missing-spec.json",
+      "source": {
+        "kind": "html_funnel",
+        "root": "source"
+      },
+      "target_repo": "."
+    },
+    "template_family": {
+      "value": "olympus",
+      "locked": true
+    },
+    "decisions": [],
+    "evidence": [],
+    "blockers": [],
+    "warnings": [],
+    "next": {
+      "stage": "polish",
+      "owner": "next-campaigns-polish",
+      "action": "Run polish with this packet."
+    },
+    "stages": {
+      "prepare_build": {
+        "stage": "prepare_build",
+        "status": "completed"
+      },
+      "doctor": {
+        "stage": "doctor",
+        "status": "completed"
+      },
+      "setup": {
+        "stage": "setup",
+        "status": "completed"
+      },
+      "assembly": {
+        "stage": "assembly",
+        "status": "completed",
+        "build_fingerprint": "sha256:5e4cf2e85438d089ca16dd470e7011df279f12994a0a052695056fe0e637df7d",
+        "completed_at": "2026-11-01T00:06:00.000Z",
+        "recorded_by": "campaigns-os record build",
+        "blockers": [],
+        "history": [
+          {
+            "archived_at": "2026-11-01T00:02:00.000Z",
+            "archived_by": "record build",
+            "reason_code": "rerecorded",
+            "status": "completed",
+            "completed_at": "2026-11-01T00:01:00.000Z",
+            "recorded_by": "campaigns-os record build",
+            "build_fingerprint": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f",
+            "source_brief_material": {
+              "presentation": "absent",
+              "qa_policy": "absent"
+            },
+            "source_spec_material_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+          },
+          {
+            "archived_at": "2026-11-01T00:03:00.000Z",
+            "archived_by": "record build",
+            "reason_code": "rerecorded",
+            "status": "completed",
+            "completed_at": "2026-11-01T00:02:00.000Z",
+            "recorded_by": "campaigns-os record build",
+            "build_fingerprint": "sha256:a09cdade9cc1ed2567654b1baadc0d86aefce519c3453bd2b56ae63022f378b3",
+            "source_brief_material": {
+              "presentation": "absent",
+              "qa_policy": "absent"
+            },
+            "source_spec_material_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+          },
+          {
+            "archived_at": "2026-11-01T00:04:00.000Z",
+            "archived_by": "record build",
+            "reason_code": "rerecorded",
+            "status": "completed",
+            "completed_at": "2026-11-01T00:03:00.000Z",
+            "recorded_by": "campaigns-os record build",
+            "build_fingerprint": "sha256:b43849311698890348b8496a79beace4205a5e2949593220138baa1900e66577",
+            "source_brief_material": {
+              "presentation": "absent",
+              "qa_policy": "absent"
+            },
+            "source_spec_material_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+          },
+          {
+            "archived_at": "2026-11-01T00:05:00.000Z",
+            "archived_by": "record build",
+            "reason_code": "rerecorded",
+            "status": "completed",
+            "completed_at": "2026-11-01T00:04:00.000Z",
+            "recorded_by": "campaigns-os record build",
+            "build_fingerprint": "sha256:af92776f1ef0affa8aa66f3d9d5745239e76fbd2f45a45ecc16cc7ed62aee4b6",
+            "source_brief_material": {
+              "presentation": "absent",
+              "qa_policy": "absent"
+            },
+            "source_spec_material_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+          },
+          {
+            "archived_at": "2026-11-01T00:06:00.000Z",
+            "archived_by": "record build",
+            "reason_code": "rerecorded",
+            "status": "completed",
+            "completed_at": "2026-11-01T00:05:00.000Z",
+            "recorded_by": "campaigns-os record build",
+            "build_fingerprint": "sha256:c6310ccc680e395c739abbb3710d437e97b6b3edb48c90fbca05215ec1dac466",
+            "source_brief_material": {
+              "presentation": "absent",
+              "qa_policy": "absent"
+            },
+            "source_spec_material_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+          }
+        ],
+        "build_manifest": [
+          {
+            "path": "assets/site.css",
+            "sha256": "38e98688ab1da6b4895f419820e9d4e6830b425dde95512a90d9561ecb226bc7"
+          },
+          {
+            "path": "checkout/index.html",
+            "sha256": "8a89c11f3602a598f22e4f413b8e6fb7e0796833fa54c703fcd4a2a56dff11cd"
+          },
+          {
+            "path": "landing/index.html",
+            "sha256": "501f59708ee74561f1ec8273b5ebb90878ddfb57bfe98959b6f23ef70f6e64e4"
+          },
+          {
+            "path": "receipt/index.html",
+            "sha256": "046d52bc57ee20599cf35abc87a794f3b2c65845995e91b0893085736e5d20d6"
+          },
+          {
+            "path": "upsell1/index.html",
+            "sha256": "af25b8a9c334c0d3226d5e2bd6fd0719df3913627e51c59a23cbdaf684f25d01"
+          }
+        ],
+        "commerce_signature": {
+          "algorithm": "commerce-signature/v1",
+          "campaign_config": "sha256:c8cedbfe8c4b722af2a6b5c683a6402eead13ede671268e37a2252c98ee52045",
+          "pages": {
+            "checkout/index.html": "sha256:57aaeba6491591513cbd132266db14d2215cf3d27180a458b5124c44a76dbf79",
+            "landing/index.html": "sha256:941fda3743ee82c3c6e2b908ac82a3d444143fe05ea9847b00ac3e1e9f351b50",
+            "receipt/index.html": "sha256:3cb949b0c73538f1d5cefe60d3ec4180b0d413d2cc88ed5658b7c15f8f9476ee",
+            "upsell1/index.html": "sha256:78b22e868fce90c6c46375dc9c359442a1ce2398b3ffae7315aae98096016554"
+          }
+        },
+        "build_changes": [
+          {
+            "from_build_fingerprint": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f",
+            "build_fingerprint": "sha256:a09cdade9cc1ed2567654b1baadc0d86aefce519c3453bd2b56ae63022f378b3",
+            "recorded_at": "2026-11-01T00:02:00.000Z",
+            "kind": "page_only",
+            "changed_pages": [
+              {
+                "page_id": "landing",
+                "built_path": "landing/index.html"
+              }
+            ],
+            "unmapped_files": [],
+            "unmapped_file_count": 0,
+            "reasons": []
+          },
+          {
+            "from_build_fingerprint": "sha256:a09cdade9cc1ed2567654b1baadc0d86aefce519c3453bd2b56ae63022f378b3",
+            "build_fingerprint": "sha256:b43849311698890348b8496a79beace4205a5e2949593220138baa1900e66577",
+            "recorded_at": "2026-11-01T00:03:00.000Z",
+            "kind": "commerce_affecting",
+            "changed_pages": [],
+            "unmapped_files": [
+              "assets/site.css"
+            ],
+            "unmapped_file_count": 1,
+            "reasons": [
+              {
+                "code": "unmapped_file",
+                "path": "assets/site.css"
+              }
+            ]
+          },
+          {
+            "from_build_fingerprint": "sha256:b43849311698890348b8496a79beace4205a5e2949593220138baa1900e66577",
+            "build_fingerprint": "sha256:af92776f1ef0affa8aa66f3d9d5745239e76fbd2f45a45ecc16cc7ed62aee4b6",
+            "recorded_at": "2026-11-01T00:04:00.000Z",
+            "kind": "commerce_affecting",
+            "changed_pages": [
+              {
+                "page_id": "checkout",
+                "built_path": "checkout/index.html"
+              }
+            ],
+            "unmapped_files": [],
+            "unmapped_file_count": 0,
+            "reasons": [
+              {
+                "code": "checkout_page",
+                "path": "checkout/index.html"
+              }
+            ]
+          },
+          {
+            "from_build_fingerprint": "sha256:af92776f1ef0affa8aa66f3d9d5745239e76fbd2f45a45ecc16cc7ed62aee4b6",
+            "build_fingerprint": "sha256:c6310ccc680e395c739abbb3710d437e97b6b3edb48c90fbca05215ec1dac466",
+            "recorded_at": "2026-11-01T00:05:00.000Z",
+            "kind": "commerce_affecting",
+            "changed_pages": [
+              {
+                "page_id": "upsell1",
+                "built_path": "upsell1/index.html"
+              }
+            ],
+            "unmapped_files": [],
+            "unmapped_file_count": 0,
+            "reasons": [
+              {
+                "code": "commerce_markup_changed",
+                "path": "upsell1/index.html"
+              }
+            ]
+          },
+          {
+            "from_build_fingerprint": "sha256:c6310ccc680e395c739abbb3710d437e97b6b3edb48c90fbca05215ec1dac466",
+            "build_fingerprint": "sha256:5e4cf2e85438d089ca16dd470e7011df279f12994a0a052695056fe0e637df7d",
+            "recorded_at": "2026-11-01T00:06:00.000Z",
+            "kind": "commerce_affecting",
+            "changed_pages": [
+              {
+                "page_id": "landing",
+                "built_path": "landing/index.html"
+              }
+            ],
+            "unmapped_files": [],
+            "unmapped_file_count": 0,
+            "reasons": [
+              {
+                "code": "campaign_config_changed"
+              }
+            ]
+          }
+        ],
+        "source_brief_material": {
+          "presentation": "absent",
+          "qa_policy": "absent"
+        },
+        "source_spec_material_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+      },
+      "polish": {
+        "stage": "polish",
+        "status": "required",
+        "required_by": "build",
+        "required_for": [
+          "qa"
+        ],
+        "owed_since_build_fingerprint": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f"
+      },
+      "deploy": {
+        "stage": "deploy",
+        "status": "completed"
+      },
+      "qa": {
+        "stage": "qa",
+        "status": "completed",
+        "evidence": {
+          "qc_build_fingerprint": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f",
+          "qc_results": []
+        },
+        "purchase_proof": {
+          "order_paths_executed": 3,
+          "declared_depth": "common"
+        }
+      }
+    }
+  },
+  "evidence_debt_changes": {
+    "status": "known",
+    "reason": null,
+    "recorded_build_fingerprint": "sha256:5e4cf2e85438d089ca16dd470e7011df279f12994a0a052695056fe0e637df7d",
+    "current_build_fingerprint": "sha256:5e4cf2e85438d089ca16dd470e7011df279f12994a0a052695056fe0e637df7d",
+    "changed_pages": [],
+    "unmapped_files": [],
+    "extra": [],
+    "missing": [],
+    "changed": [],
+    "kind": "none",
+    "reasons": []
+  },
+  "change_since": {
+    "seeded_build": {
+      "anchor": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f",
+      "result": {
+        "kind": "commerce_affecting",
+        "since_build_fingerprint": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f",
+        "changed_pages": [
+          {
+            "page_id": "checkout",
+            "built_path": "checkout/index.html"
+          },
+          {
+            "page_id": "landing",
+            "built_path": "landing/index.html"
+          },
+          {
+            "page_id": "upsell1",
+            "built_path": "upsell1/index.html"
+          }
+        ],
+        "unmapped_files": [
+          "assets/site.css"
+        ],
+        "reasons": [
+          {
+            "code": "unmapped_file",
+            "path": "assets/site.css"
+          },
+          {
+            "code": "checkout_page",
+            "path": "checkout/index.html"
+          },
+          {
+            "code": "commerce_markup_changed",
+            "path": "upsell1/index.html"
+          },
+          {
+            "code": "campaign_config_changed"
+          }
+        ],
+        "commerce_rebuild": {
+          "recorded_at": "2026-11-01T00:06:00.000Z",
+          "build_fingerprint": "sha256:5e4cf2e85438d089ca16dd470e7011df279f12994a0a052695056fe0e637df7d",
+          "kind": "commerce_affecting",
+          "latest_change_kind": "commerce_affecting"
+        }
+      }
+    },
+    "previous_step_build": {
+      "anchor": "sha256:c6310ccc680e395c739abbb3710d437e97b6b3edb48c90fbca05215ec1dac466",
+      "result": {
+        "kind": "commerce_affecting",
+        "since_build_fingerprint": "sha256:c6310ccc680e395c739abbb3710d437e97b6b3edb48c90fbca05215ec1dac466",
+        "changed_pages": [
+          {
+            "page_id": "landing",
+            "built_path": "landing/index.html"
+          }
+        ],
+        "unmapped_files": [],
+        "reasons": [
+          {
+            "code": "campaign_config_changed"
+          }
+        ],
+        "commerce_rebuild": {
+          "recorded_at": "2026-11-01T00:06:00.000Z",
+          "build_fingerprint": "sha256:5e4cf2e85438d089ca16dd470e7011df279f12994a0a052695056fe0e637df7d",
+          "kind": "commerce_affecting",
+          "latest_change_kind": "commerce_affecting"
+        }
+      }
+    },
+    "polish_owed_since": {
+      "anchor": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f",
+      "result": {
+        "kind": "commerce_affecting",
+        "since_build_fingerprint": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f",
+        "changed_pages": [
+          {
+            "page_id": "checkout",
+            "built_path": "checkout/index.html"
+          },
+          {
+            "page_id": "landing",
+            "built_path": "landing/index.html"
+          },
+          {
+            "page_id": "upsell1",
+            "built_path": "upsell1/index.html"
+          }
+        ],
+        "unmapped_files": [
+          "assets/site.css"
+        ],
+        "reasons": [
+          {
+            "code": "unmapped_file",
+            "path": "assets/site.css"
+          },
+          {
+            "code": "checkout_page",
+            "path": "checkout/index.html"
+          },
+          {
+            "code": "commerce_markup_changed",
+            "path": "upsell1/index.html"
+          },
+          {
+            "code": "campaign_config_changed"
+          }
+        ],
+        "commerce_rebuild": {
+          "recorded_at": "2026-11-01T00:06:00.000Z",
+          "build_fingerprint": "sha256:5e4cf2e85438d089ca16dd470e7011df279f12994a0a052695056fe0e637df7d",
+          "kind": "commerce_affecting",
+          "latest_change_kind": "commerce_affecting"
+        }
+      }
+    },
+    "qa_evidence_build": {
+      "anchor": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f",
+      "result": {
+        "kind": "commerce_affecting",
+        "since_build_fingerprint": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f",
+        "changed_pages": [
+          {
+            "page_id": "checkout",
+            "built_path": "checkout/index.html"
+          },
+          {
+            "page_id": "landing",
+            "built_path": "landing/index.html"
+          },
+          {
+            "page_id": "upsell1",
+            "built_path": "upsell1/index.html"
+          }
+        ],
+        "unmapped_files": [
+          "assets/site.css"
+        ],
+        "reasons": [
+          {
+            "code": "unmapped_file",
+            "path": "assets/site.css"
+          },
+          {
+            "code": "checkout_page",
+            "path": "checkout/index.html"
+          },
+          {
+            "code": "commerce_markup_changed",
+            "path": "upsell1/index.html"
+          },
+          {
+            "code": "campaign_config_changed"
+          }
+        ],
+        "commerce_rebuild": {
+          "recorded_at": "2026-11-01T00:06:00.000Z",
+          "build_fingerprint": "sha256:5e4cf2e85438d089ca16dd470e7011df279f12994a0a052695056fe0e637df7d",
+          "kind": "commerce_affecting",
+          "latest_change_kind": "commerce_affecting"
+        }
+      }
+    }
+  },
+  "readback_evidence_debt": {
+    "polish": {
+      "status": "owed",
+      "matches_current_build": null,
+      "recorded_build_fingerprint": null,
+      "current_build_fingerprint": "sha256:5e4cf2e85438d089ca16dd470e7011df279f12994a0a052695056fe0e637df7d",
+      "reason": "stage_required_by_build",
+      "change": {
+        "kind": "commerce_affecting",
+        "since_build_fingerprint": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f",
+        "changed_pages": [
+          {
+            "page_id": "checkout",
+            "built_path": "checkout/index.html"
+          },
+          {
+            "page_id": "landing",
+            "built_path": "landing/index.html"
+          },
+          {
+            "page_id": "upsell1",
+            "built_path": "upsell1/index.html"
+          }
+        ],
+        "unmapped_files": [
+          "assets/site.css"
+        ],
+        "reasons": [
+          {
+            "code": "unmapped_file",
+            "path": "assets/site.css"
+          },
+          {
+            "code": "checkout_page",
+            "path": "checkout/index.html"
+          },
+          {
+            "code": "commerce_markup_changed",
+            "path": "upsell1/index.html"
+          },
+          {
+            "code": "campaign_config_changed"
+          }
+        ],
+        "commerce_rebuild": {
+          "recorded_at": "2026-11-01T00:06:00.000Z",
+          "build_fingerprint": "sha256:5e4cf2e85438d089ca16dd470e7011df279f12994a0a052695056fe0e637df7d",
+          "kind": "commerce_affecting",
+          "latest_change_kind": "commerce_affecting"
+        }
+      },
+      "advisory": false
+    },
+    "qa": {
+      "status": "owed",
+      "matches_current_build": false,
+      "recorded_build_fingerprint": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f",
+      "current_build_fingerprint": "sha256:5e4cf2e85438d089ca16dd470e7011df279f12994a0a052695056fe0e637df7d",
+      "reason": "build_fingerprint_changed",
+      "change": {
+        "kind": "commerce_affecting",
+        "since_build_fingerprint": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f",
+        "changed_pages": [
+          {
+            "page_id": "checkout",
+            "built_path": "checkout/index.html"
+          },
+          {
+            "page_id": "landing",
+            "built_path": "landing/index.html"
+          },
+          {
+            "page_id": "upsell1",
+            "built_path": "upsell1/index.html"
+          }
+        ],
+        "unmapped_files": [
+          "assets/site.css"
+        ],
+        "reasons": [
+          {
+            "code": "unmapped_file",
+            "path": "assets/site.css"
+          },
+          {
+            "code": "checkout_page",
+            "path": "checkout/index.html"
+          },
+          {
+            "code": "commerce_markup_changed",
+            "path": "upsell1/index.html"
+          },
+          {
+            "code": "campaign_config_changed"
+          }
+        ],
+        "commerce_rebuild": {
+          "recorded_at": "2026-11-01T00:06:00.000Z",
+          "build_fingerprint": "sha256:5e4cf2e85438d089ca16dd470e7011df279f12994a0a052695056fe0e637df7d",
+          "kind": "commerce_affecting",
+          "latest_change_kind": "commerce_affecting"
+        }
+      },
+      "scope": "full",
+      "owed_pages": []
+    },
+    "changes": {
+      "status": "known",
+      "reason": null,
+      "recorded_build_fingerprint": "sha256:5e4cf2e85438d089ca16dd470e7011df279f12994a0a052695056fe0e637df7d",
+      "current_build_fingerprint": "sha256:5e4cf2e85438d089ca16dd470e7011df279f12994a0a052695056fe0e637df7d",
+      "changed_pages": [],
+      "unmapped_files": [],
+      "extra": [],
+      "missing": [],
+      "changed": [],
+      "kind": "none",
+      "reasons": []
+    }
+  },
+  "before_record": {
+    "evidence_debt_changes": {
+      "status": "known",
+      "reason": null,
+      "recorded_build_fingerprint": "sha256:c6310ccc680e395c739abbb3710d437e97b6b3edb48c90fbca05215ec1dac466",
+      "current_build_fingerprint": "sha256:5e4cf2e85438d089ca16dd470e7011df279f12994a0a052695056fe0e637df7d",
+      "changed_pages": [
+        {
+          "page_id": "landing",
+          "built_path": "landing/index.html"
+        }
+      ],
+      "unmapped_files": [],
+      "extra": [],
+      "missing": [],
+      "changed": [
+        "landing/index.html"
+      ],
+      "kind": "commerce_affecting",
+      "reasons": [
+        {
+          "code": "campaign_config_changed"
+        }
+      ]
+    },
+    "change_since": {
+      "seeded_build": {
+        "anchor": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f",
+        "result": {
+          "kind": "commerce_affecting",
+          "since_build_fingerprint": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f",
+          "changed_pages": [
+            {
+              "page_id": "checkout",
+              "built_path": "checkout/index.html"
+            },
+            {
+              "page_id": "landing",
+              "built_path": "landing/index.html"
+            },
+            {
+              "page_id": "upsell1",
+              "built_path": "upsell1/index.html"
+            }
+          ],
+          "unmapped_files": [
+            "assets/site.css"
+          ],
+          "reasons": [
+            {
+              "code": "unmapped_file",
+              "path": "assets/site.css"
+            },
+            {
+              "code": "checkout_page",
+              "path": "checkout/index.html"
+            },
+            {
+              "code": "commerce_markup_changed",
+              "path": "upsell1/index.html"
+            },
+            {
+              "code": "campaign_config_changed"
+            }
+          ],
+          "commerce_rebuild": {
+            "recorded_at": "2026-11-01T00:05:00.000Z",
+            "build_fingerprint": "sha256:c6310ccc680e395c739abbb3710d437e97b6b3edb48c90fbca05215ec1dac466",
+            "kind": "commerce_affecting",
+            "latest_change_kind": "commerce_affecting"
+          }
+        }
+      },
+      "previous_step_build": {
+        "anchor": "sha256:c6310ccc680e395c739abbb3710d437e97b6b3edb48c90fbca05215ec1dac466",
+        "result": {
+          "kind": "commerce_affecting",
+          "since_build_fingerprint": "sha256:c6310ccc680e395c739abbb3710d437e97b6b3edb48c90fbca05215ec1dac466",
+          "changed_pages": [
+            {
+              "page_id": "landing",
+              "built_path": "landing/index.html"
+            }
+          ],
+          "unmapped_files": [],
+          "reasons": [
+            {
+              "code": "campaign_config_changed"
+            }
+          ]
+        }
+      },
+      "polish_owed_since": {
+        "anchor": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f",
+        "result": {
+          "kind": "commerce_affecting",
+          "since_build_fingerprint": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f",
+          "changed_pages": [
+            {
+              "page_id": "checkout",
+              "built_path": "checkout/index.html"
+            },
+            {
+              "page_id": "landing",
+              "built_path": "landing/index.html"
+            },
+            {
+              "page_id": "upsell1",
+              "built_path": "upsell1/index.html"
+            }
+          ],
+          "unmapped_files": [
+            "assets/site.css"
+          ],
+          "reasons": [
+            {
+              "code": "unmapped_file",
+              "path": "assets/site.css"
+            },
+            {
+              "code": "checkout_page",
+              "path": "checkout/index.html"
+            },
+            {
+              "code": "commerce_markup_changed",
+              "path": "upsell1/index.html"
+            },
+            {
+              "code": "campaign_config_changed"
+            }
+          ],
+          "commerce_rebuild": {
+            "recorded_at": "2026-11-01T00:05:00.000Z",
+            "build_fingerprint": "sha256:c6310ccc680e395c739abbb3710d437e97b6b3edb48c90fbca05215ec1dac466",
+            "kind": "commerce_affecting",
+            "latest_change_kind": "commerce_affecting"
+          }
+        }
+      },
+      "qa_evidence_build": {
+        "anchor": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f",
+        "result": {
+          "kind": "commerce_affecting",
+          "since_build_fingerprint": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f",
+          "changed_pages": [
+            {
+              "page_id": "checkout",
+              "built_path": "checkout/index.html"
+            },
+            {
+              "page_id": "landing",
+              "built_path": "landing/index.html"
+            },
+            {
+              "page_id": "upsell1",
+              "built_path": "upsell1/index.html"
+            }
+          ],
+          "unmapped_files": [
+            "assets/site.css"
+          ],
+          "reasons": [
+            {
+              "code": "unmapped_file",
+              "path": "assets/site.css"
+            },
+            {
+              "code": "checkout_page",
+              "path": "checkout/index.html"
+            },
+            {
+              "code": "commerce_markup_changed",
+              "path": "upsell1/index.html"
+            },
+            {
+              "code": "campaign_config_changed"
+            }
+          ],
+          "commerce_rebuild": {
+            "recorded_at": "2026-11-01T00:05:00.000Z",
+            "build_fingerprint": "sha256:c6310ccc680e395c739abbb3710d437e97b6b3edb48c90fbca05215ec1dac466",
+            "kind": "commerce_affecting",
+            "latest_change_kind": "commerce_affecting"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,2465 @@
+{
+  "base_sha": "e1c5bc9c6dc2745d6f2bd54f37f89319ce7f915a",
+  "case": "failing-cart-placeholders-b4",
+  "entry": "packet",
+  "description": "failing: the cart-placeholders b4 page as the packet's landing route beside plain pages (sdk_markup blocker plus QC warnings)",
+  "output": {
+    "schema_version": "campaigns-os-doctor-output/v0",
+    "generated_at": "2026-01-01T00:00:00.000Z",
+    "ok": false,
+    "status": "blocked",
+    "errors": [
+      {
+        "code": "built_output.sdk_markup.swap_with_add_to_cart",
+        "message": "SWAP_WITH_ADD_TO_CART: Selector data-next-selector-id=\"synthetic-bundles\" on ./_site/runtime-packet-demo/landing/index.html is in swap mode (the SDK default; no data-next-selection-mode set) and an add-to-cart button is linked to it. Both write the cart: the card click swaps the bundle in, the button adds it again. Set data-next-selection-mode=\"select\" on the selector, or remove the button.",
+        "detail": {
+          "finding": {
+            "code_name": "SWAP_WITH_ADD_TO_CART",
+            "code": "built_output.sdk_markup.swap_with_add_to_cart",
+            "severity": "error",
+            "page_id": "landing",
+            "file": "./_site/runtime-packet-demo/landing/index.html",
+            "message": "SWAP_WITH_ADD_TO_CART: Selector data-next-selector-id=\"synthetic-bundles\" on ./_site/runtime-packet-demo/landing/index.html is in swap mode (the SDK default; no data-next-selection-mode set) and an add-to-cart button is linked to it. Both write the cart: the card click swaps the bundle in, the button adds it again. Set data-next-selection-mode=\"select\" on the selector, or remove the button.",
+            "detail": {
+              "selector_id": "synthetic-bundles",
+              "selection_mode_explicit": false
+            }
+          },
+          "checkpoint_gate": {
+            "id": "built_output.sdk_markup",
+            "scope": "built_output.sdk_markup",
+            "waivable": false,
+            "subject": {
+              "public_route_slug": "runtime-packet-demo",
+              "site_root": "./_site/runtime-packet-demo"
+            },
+            "waiver": null,
+            "sdk_attribute_index_version": "0.4.43",
+            "campaign_sdk_version": "0.4.18",
+            "status": "blocked",
+            "code": "built_output.sdk_markup",
+            "reason": "1 SDK markup blocker(s) on 4 built page(s) (SWAP_WITH_ADD_TO_CART on ./_site/runtime-packet-demo/landing/index.html); each blocker is a doctor error with the repair.",
+            "findings": [
+              {
+                "code_name": "SWAP_WITH_ADD_TO_CART",
+                "code": "built_output.sdk_markup.swap_with_add_to_cart",
+                "severity": "error",
+                "page_id": "landing",
+                "file": "./_site/runtime-packet-demo/landing/index.html",
+                "message": "SWAP_WITH_ADD_TO_CART: Selector data-next-selector-id=\"synthetic-bundles\" on ./_site/runtime-packet-demo/landing/index.html is in swap mode (the SDK default; no data-next-selection-mode set) and an add-to-cart button is linked to it. Both write the cart: the card click swaps the bundle in, the button adds it again. Set data-next-selection-mode=\"select\" on the selector, or remove the button.",
+                "detail": {
+                  "selector_id": "synthetic-bundles",
+                  "selection_mode_explicit": false
+                }
+              }
+            ],
+            "warned": [],
+            "unknown_attributes": [],
+            "pages_scanned": 4,
+            "required_actions": [
+              {
+                "id": "repair_sdk_markup",
+                "kind": "edit",
+                "command": null,
+                "description": "Repair the markup each finding names (SWAP_WITH_ADD_TO_CART on ./_site/runtime-packet-demo/landing/index.html), rebuild, and re-run doctor. Not waivable: the markup provably does not do what it says."
+              }
+            ]
+          }
+        },
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      }
+    ],
+    "warnings": [
+      {
+        "code": "spec.store_profile.placeholder_store_url",
+        "message": "CampaignSpec campaign.store_url \"https://store.example.com\" looks like a local/placeholder store, not a live storefront. Localhost is valid as a Development-domain QA origin, but a real shopper cannot transact against it. Set the merchant's production store_url before launch.",
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "routing_meta.runtime_root",
+        "message": "CampaignSpec sdk_hints.meta_tags routing values must render as campaign-rooted paths before QA. Expected values like \"/runtime-packet-demo/upsell/\" for next-success-url, next-upsell-accept-url, next-upsell-decline-url; found checkout:next-success-url=upsell/; upsell:next-upsell-accept-url=receipt/; upsell:next-upsell-decline-url=receipt/.",
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "built_output.fingerprint_missing",
+        "message": "Build has not recorded stages.assembly.build_fingerprint. The current output fingerprint of _site/runtime-packet-demo/ is sha256:47417cdf5615246b4d5fa505a37b245d23936000cd2a7c353d84a896458d8717 (4 file(s); doctor --json derived.build_output_fingerprint.value); record it on stages.assembly.build_fingerprint after page-kit build.",
+        "detail": {
+          "root": "_site/runtime-packet-demo/",
+          "current": "sha256:47417cdf5615246b4d5fa505a37b245d23936000cd2a7c353d84a896458d8717",
+          "file_count": 4,
+          "assembly_complete": false
+        },
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "built_output.pre_checkout_sdk_bootstrap",
+        "message": "SDK not bootstrapped on pre-checkout page \"landing\" (type \"landing\"): missing the <meta name=\"next-page-type\"> tag. Without it, conditional visibility (param.banner/param.seen), utmTransfer (UTM carry-through to checkout — ad attribution), and SDK analytics silently no-op. Emit the same config.js → loader.js → next-funnel/next-page-type bootstrap that the checkout layout uses.",
+        "detail": {
+          "page_id": "landing",
+          "file": "./_site/runtime-packet-demo/landing/index.html",
+          "missing": {
+            "loader": false,
+            "page_type_meta": true
+          }
+        },
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "built_output.cart_placeholders.live_token",
+        "message": "cart_placeholders warning on _site/runtime-packet-demo/landing/index.html ({item.name}): live_token.",
+        "detail": {
+          "qc_result": {
+            "schema": "campaigns-os-qc-result/v0",
+            "id": "cart_placeholders:_site/runtime-packet-demo/landing/index.html:{item.name}",
+            "check": "cart_placeholders",
+            "leg": "doctor",
+            "result": "warning",
+            "reason_code": "live_token",
+            "subject": {
+              "check": "cart_placeholders",
+              "page": "_site/runtime-packet-demo/landing/index.html",
+              "key": "{item.name}"
+            },
+            "state_fingerprint": "sha256:015b19cedf9109436a44151d0e13f5243d9d65826f76fa652936fd161297ad78",
+            "observation": {
+              "page": "_site/runtime-packet-demo/landing/index.html",
+              "sdk_pin": "0.4.38",
+              "sdk_pin_source": "loader",
+              "token": "{item.name}",
+              "shape_sha256": null,
+              "known": true,
+              "occurrences": [
+                {
+                  "element_path": "html[1]/body[1]/p[1]",
+                  "where": "text",
+                  "line": 9,
+                  "sdk_owner": null
+                }
+              ]
+            },
+            "members": [],
+            "accept_eligible": true,
+            "coverage": {
+              "observed": 1,
+              "expected": 1,
+              "limits": []
+            },
+            "measured_at": "2026-01-01T00:00:00.000Z",
+            "producer": "campaigns-os doctor"
+          }
+        },
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "built_output.cart_placeholders.live_token",
+        "message": "cart_placeholders warning on _site/runtime-packet-demo/landing/index.html ({subtotal}): live_token.",
+        "detail": {
+          "qc_result": {
+            "schema": "campaigns-os-qc-result/v0",
+            "id": "cart_placeholders:_site/runtime-packet-demo/landing/index.html:{subtotal}",
+            "check": "cart_placeholders",
+            "leg": "doctor",
+            "result": "warning",
+            "reason_code": "live_token",
+            "subject": {
+              "check": "cart_placeholders",
+              "page": "_site/runtime-packet-demo/landing/index.html",
+              "key": "{subtotal}"
+            },
+            "state_fingerprint": "sha256:3f83f89bb58fbf79ef9ecc7615ce08244a2724f1bbee80992d74489995ee0c7a",
+            "observation": {
+              "page": "_site/runtime-packet-demo/landing/index.html",
+              "sdk_pin": "0.4.38",
+              "sdk_pin_source": "loader",
+              "token": "{subtotal}",
+              "shape_sha256": null,
+              "known": true,
+              "occurrences": [
+                {
+                  "element_path": "html[1]/body[1]/img[1]",
+                  "where": "attr:alt",
+                  "line": 10,
+                  "sdk_owner": null
+                }
+              ]
+            },
+            "members": [],
+            "accept_eligible": true,
+            "coverage": {
+              "observed": 1,
+              "expected": 1,
+              "limits": []
+            },
+            "measured_at": "2026-01-01T00:00:00.000Z",
+            "producer": "campaigns-os doctor"
+          }
+        },
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "built_output.smoke_qc.favicon_missing",
+        "message": "smoke_qc warning on _site/runtime-packet-demo/checkout/index.html (favicon:link): favicon_missing.",
+        "detail": {
+          "qc_result": {
+            "schema": "campaigns-os-qc-result/v0",
+            "id": "smoke_qc:_site/runtime-packet-demo/checkout/index.html:favicon:link",
+            "check": "smoke_qc",
+            "leg": "doctor",
+            "result": "warning",
+            "reason_code": "favicon_missing",
+            "subject": {
+              "check": "smoke_qc",
+              "page": "_site/runtime-packet-demo/checkout/index.html",
+              "key": "favicon:link"
+            },
+            "state_fingerprint": "sha256:41fd0838aa99a6db1e4997822775d9fd28ccf7427908c498bf0e42a7784ab66e",
+            "observation": {
+              "page": "_site/runtime-packet-demo/checkout/index.html",
+              "favicon": false
+            },
+            "members": [],
+            "accept_eligible": true,
+            "coverage": {
+              "observed": 1,
+              "expected": 1,
+              "limits": []
+            },
+            "measured_at": "2026-01-01T00:00:00.000Z",
+            "producer": "campaigns-os doctor"
+          }
+        },
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "built_output.smoke_qc.og_title_missing",
+        "message": "smoke_qc warning on _site/runtime-packet-demo/checkout/index.html (og:title): og_title_missing.",
+        "detail": {
+          "qc_result": {
+            "schema": "campaigns-os-qc-result/v0",
+            "id": "smoke_qc:_site/runtime-packet-demo/checkout/index.html:og:title",
+            "check": "smoke_qc",
+            "leg": "doctor",
+            "result": "warning",
+            "reason_code": "og_title_missing",
+            "subject": {
+              "check": "smoke_qc",
+              "page": "_site/runtime-packet-demo/checkout/index.html",
+              "key": "og:title"
+            },
+            "state_fingerprint": "sha256:9a4d818dc53621581137e452a0760e50dfa4dfee21512898db9ce543fc461138",
+            "observation": {
+              "page": "_site/runtime-packet-demo/checkout/index.html",
+              "og": {
+                "title": false,
+                "description": false,
+                "image": "absent",
+                "image_target": null
+              }
+            },
+            "members": [],
+            "accept_eligible": true,
+            "coverage": {
+              "observed": 1,
+              "expected": 1,
+              "limits": []
+            },
+            "measured_at": "2026-01-01T00:00:00.000Z",
+            "producer": "campaigns-os doctor"
+          }
+        },
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "built_output.smoke_qc.og_description_missing",
+        "message": "smoke_qc warning on _site/runtime-packet-demo/checkout/index.html (og:description): og_description_missing.",
+        "detail": {
+          "qc_result": {
+            "schema": "campaigns-os-qc-result/v0",
+            "id": "smoke_qc:_site/runtime-packet-demo/checkout/index.html:og:description",
+            "check": "smoke_qc",
+            "leg": "doctor",
+            "result": "warning",
+            "reason_code": "og_description_missing",
+            "subject": {
+              "check": "smoke_qc",
+              "page": "_site/runtime-packet-demo/checkout/index.html",
+              "key": "og:description"
+            },
+            "state_fingerprint": "sha256:e3c67407880753f19e3180c0c33ae5948051f2b5fde30a94e1907c6121292cf1",
+            "observation": {
+              "page": "_site/runtime-packet-demo/checkout/index.html",
+              "og": {
+                "title": false,
+                "description": false,
+                "image": "absent",
+                "image_target": null
+              }
+            },
+            "members": [],
+            "accept_eligible": true,
+            "coverage": {
+              "observed": 1,
+              "expected": 1,
+              "limits": []
+            },
+            "measured_at": "2026-01-01T00:00:00.000Z",
+            "producer": "campaigns-os doctor"
+          }
+        },
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "built_output.smoke_qc.og_image_missing",
+        "message": "smoke_qc warning on _site/runtime-packet-demo/checkout/index.html (og:image): og_image_missing.",
+        "detail": {
+          "qc_result": {
+            "schema": "campaigns-os-qc-result/v0",
+            "id": "smoke_qc:_site/runtime-packet-demo/checkout/index.html:og:image",
+            "check": "smoke_qc",
+            "leg": "doctor",
+            "result": "warning",
+            "reason_code": "og_image_missing",
+            "subject": {
+              "check": "smoke_qc",
+              "page": "_site/runtime-packet-demo/checkout/index.html",
+              "key": "og:image"
+            },
+            "state_fingerprint": "sha256:a4cd77bd7b17cfae40cbde9f2431a591ac6344ae197b3313f52764cf48672f9e",
+            "observation": {
+              "page": "_site/runtime-packet-demo/checkout/index.html",
+              "og": {
+                "title": false,
+                "description": false,
+                "image": "absent",
+                "image_target": null
+              }
+            },
+            "members": [],
+            "accept_eligible": true,
+            "coverage": {
+              "observed": 1,
+              "expected": 1,
+              "limits": []
+            },
+            "measured_at": "2026-01-01T00:00:00.000Z",
+            "producer": "campaigns-os doctor"
+          }
+        },
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "built_output.smoke_qc.favicon_missing",
+        "message": "smoke_qc warning on _site/runtime-packet-demo/landing/index.html (favicon:link): favicon_missing.",
+        "detail": {
+          "qc_result": {
+            "schema": "campaigns-os-qc-result/v0",
+            "id": "smoke_qc:_site/runtime-packet-demo/landing/index.html:favicon:link",
+            "check": "smoke_qc",
+            "leg": "doctor",
+            "result": "warning",
+            "reason_code": "favicon_missing",
+            "subject": {
+              "check": "smoke_qc",
+              "page": "_site/runtime-packet-demo/landing/index.html",
+              "key": "favicon:link"
+            },
+            "state_fingerprint": "sha256:9f41878f446c061b2bfd49e2f5b71b125892ae177a699235bf28d76e515297d2",
+            "observation": {
+              "page": "_site/runtime-packet-demo/landing/index.html",
+              "favicon": false
+            },
+            "members": [],
+            "accept_eligible": true,
+            "coverage": {
+              "observed": 1,
+              "expected": 1,
+              "limits": []
+            },
+            "measured_at": "2026-01-01T00:00:00.000Z",
+            "producer": "campaigns-os doctor"
+          }
+        },
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "built_output.smoke_qc.og_title_missing",
+        "message": "smoke_qc warning on _site/runtime-packet-demo/landing/index.html (og:title): og_title_missing.",
+        "detail": {
+          "qc_result": {
+            "schema": "campaigns-os-qc-result/v0",
+            "id": "smoke_qc:_site/runtime-packet-demo/landing/index.html:og:title",
+            "check": "smoke_qc",
+            "leg": "doctor",
+            "result": "warning",
+            "reason_code": "og_title_missing",
+            "subject": {
+              "check": "smoke_qc",
+              "page": "_site/runtime-packet-demo/landing/index.html",
+              "key": "og:title"
+            },
+            "state_fingerprint": "sha256:755ff10d1fcaa6972250a38f93b66f2aaa8f0f0b1e9b44c4c3a3c8a7753f1161",
+            "observation": {
+              "page": "_site/runtime-packet-demo/landing/index.html",
+              "og": {
+                "title": false,
+                "description": false,
+                "image": "absent",
+                "image_target": null
+              }
+            },
+            "members": [],
+            "accept_eligible": true,
+            "coverage": {
+              "observed": 1,
+              "expected": 1,
+              "limits": []
+            },
+            "measured_at": "2026-01-01T00:00:00.000Z",
+            "producer": "campaigns-os doctor"
+          }
+        },
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "built_output.smoke_qc.og_description_missing",
+        "message": "smoke_qc warning on _site/runtime-packet-demo/landing/index.html (og:description): og_description_missing.",
+        "detail": {
+          "qc_result": {
+            "schema": "campaigns-os-qc-result/v0",
+            "id": "smoke_qc:_site/runtime-packet-demo/landing/index.html:og:description",
+            "check": "smoke_qc",
+            "leg": "doctor",
+            "result": "warning",
+            "reason_code": "og_description_missing",
+            "subject": {
+              "check": "smoke_qc",
+              "page": "_site/runtime-packet-demo/landing/index.html",
+              "key": "og:description"
+            },
+            "state_fingerprint": "sha256:5c10b37d7f637f983703d684218a8514022cec2e378be8cc4299612b63535958",
+            "observation": {
+              "page": "_site/runtime-packet-demo/landing/index.html",
+              "og": {
+                "title": false,
+                "description": false,
+                "image": "absent",
+                "image_target": null
+              }
+            },
+            "members": [],
+            "accept_eligible": true,
+            "coverage": {
+              "observed": 1,
+              "expected": 1,
+              "limits": []
+            },
+            "measured_at": "2026-01-01T00:00:00.000Z",
+            "producer": "campaigns-os doctor"
+          }
+        },
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "built_output.smoke_qc.og_image_missing",
+        "message": "smoke_qc warning on _site/runtime-packet-demo/landing/index.html (og:image): og_image_missing.",
+        "detail": {
+          "qc_result": {
+            "schema": "campaigns-os-qc-result/v0",
+            "id": "smoke_qc:_site/runtime-packet-demo/landing/index.html:og:image",
+            "check": "smoke_qc",
+            "leg": "doctor",
+            "result": "warning",
+            "reason_code": "og_image_missing",
+            "subject": {
+              "check": "smoke_qc",
+              "page": "_site/runtime-packet-demo/landing/index.html",
+              "key": "og:image"
+            },
+            "state_fingerprint": "sha256:42d9ed85369ba29879b724b0d1d08f8989f27e462d0aa08885a95291314f8eff",
+            "observation": {
+              "page": "_site/runtime-packet-demo/landing/index.html",
+              "og": {
+                "title": false,
+                "description": false,
+                "image": "absent",
+                "image_target": null
+              }
+            },
+            "members": [],
+            "accept_eligible": true,
+            "coverage": {
+              "observed": 1,
+              "expected": 1,
+              "limits": []
+            },
+            "measured_at": "2026-01-01T00:00:00.000Z",
+            "producer": "campaigns-os doctor"
+          }
+        },
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "built_output.smoke_qc.favicon_missing",
+        "message": "smoke_qc warning on _site/runtime-packet-demo/receipt/index.html (favicon:link): favicon_missing.",
+        "detail": {
+          "qc_result": {
+            "schema": "campaigns-os-qc-result/v0",
+            "id": "smoke_qc:_site/runtime-packet-demo/receipt/index.html:favicon:link",
+            "check": "smoke_qc",
+            "leg": "doctor",
+            "result": "warning",
+            "reason_code": "favicon_missing",
+            "subject": {
+              "check": "smoke_qc",
+              "page": "_site/runtime-packet-demo/receipt/index.html",
+              "key": "favicon:link"
+            },
+            "state_fingerprint": "sha256:9f91bd499e6c13a8c3c8a50413706f966c2b75904e1e58931c8655887d6cb160",
+            "observation": {
+              "page": "_site/runtime-packet-demo/receipt/index.html",
+              "favicon": false
+            },
+            "members": [],
+            "accept_eligible": true,
+            "coverage": {
+              "observed": 1,
+              "expected": 1,
+              "limits": []
+            },
+            "measured_at": "2026-01-01T00:00:00.000Z",
+            "producer": "campaigns-os doctor"
+          }
+        },
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "built_output.smoke_qc.og_title_missing",
+        "message": "smoke_qc warning on _site/runtime-packet-demo/receipt/index.html (og:title): og_title_missing.",
+        "detail": {
+          "qc_result": {
+            "schema": "campaigns-os-qc-result/v0",
+            "id": "smoke_qc:_site/runtime-packet-demo/receipt/index.html:og:title",
+            "check": "smoke_qc",
+            "leg": "doctor",
+            "result": "warning",
+            "reason_code": "og_title_missing",
+            "subject": {
+              "check": "smoke_qc",
+              "page": "_site/runtime-packet-demo/receipt/index.html",
+              "key": "og:title"
+            },
+            "state_fingerprint": "sha256:d82f581eb7e524142f75b39fc4b7e893189e4ca988d9b015740fac5bcffc4762",
+            "observation": {
+              "page": "_site/runtime-packet-demo/receipt/index.html",
+              "og": {
+                "title": false,
+                "description": false,
+                "image": "absent",
+                "image_target": null
+              }
+            },
+            "members": [],
+            "accept_eligible": true,
+            "coverage": {
+              "observed": 1,
+              "expected": 1,
+              "limits": []
+            },
+            "measured_at": "2026-01-01T00:00:00.000Z",
+            "producer": "campaigns-os doctor"
+          }
+        },
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "built_output.smoke_qc.og_description_missing",
+        "message": "smoke_qc warning on _site/runtime-packet-demo/receipt/index.html (og:description): og_description_missing.",
+        "detail": {
+          "qc_result": {
+            "schema": "campaigns-os-qc-result/v0",
+            "id": "smoke_qc:_site/runtime-packet-demo/receipt/index.html:og:description",
+            "check": "smoke_qc",
+            "leg": "doctor",
+            "result": "warning",
+            "reason_code": "og_description_missing",
+            "subject": {
+              "check": "smoke_qc",
+              "page": "_site/runtime-packet-demo/receipt/index.html",
+              "key": "og:description"
+            },
+            "state_fingerprint": "sha256:63105d451886ca5787021d07fba5bb8430e878844f1612ee90ca3509790a05fb",
+            "observation": {
+              "page": "_site/runtime-packet-demo/receipt/index.html",
+              "og": {
+                "title": false,
+                "description": false,
+                "image": "absent",
+                "image_target": null
+              }
+            },
+            "members": [],
+            "accept_eligible": true,
+            "coverage": {
+              "observed": 1,
+              "expected": 1,
+              "limits": []
+            },
+            "measured_at": "2026-01-01T00:00:00.000Z",
+            "producer": "campaigns-os doctor"
+          }
+        },
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "built_output.smoke_qc.og_image_missing",
+        "message": "smoke_qc warning on _site/runtime-packet-demo/receipt/index.html (og:image): og_image_missing.",
+        "detail": {
+          "qc_result": {
+            "schema": "campaigns-os-qc-result/v0",
+            "id": "smoke_qc:_site/runtime-packet-demo/receipt/index.html:og:image",
+            "check": "smoke_qc",
+            "leg": "doctor",
+            "result": "warning",
+            "reason_code": "og_image_missing",
+            "subject": {
+              "check": "smoke_qc",
+              "page": "_site/runtime-packet-demo/receipt/index.html",
+              "key": "og:image"
+            },
+            "state_fingerprint": "sha256:517bfc853a46140fb17ffe4aa9250eb6d45e45fa0a1c1ed0a4b1642af68449b2",
+            "observation": {
+              "page": "_site/runtime-packet-demo/receipt/index.html",
+              "og": {
+                "title": false,
+                "description": false,
+                "image": "absent",
+                "image_target": null
+              }
+            },
+            "members": [],
+            "accept_eligible": true,
+            "coverage": {
+              "observed": 1,
+              "expected": 1,
+              "limits": []
+            },
+            "measured_at": "2026-01-01T00:00:00.000Z",
+            "producer": "campaigns-os doctor"
+          }
+        },
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "built_output.smoke_qc.favicon_missing",
+        "message": "smoke_qc warning on _site/runtime-packet-demo/upsell/index.html (favicon:link): favicon_missing.",
+        "detail": {
+          "qc_result": {
+            "schema": "campaigns-os-qc-result/v0",
+            "id": "smoke_qc:_site/runtime-packet-demo/upsell/index.html:favicon:link",
+            "check": "smoke_qc",
+            "leg": "doctor",
+            "result": "warning",
+            "reason_code": "favicon_missing",
+            "subject": {
+              "check": "smoke_qc",
+              "page": "_site/runtime-packet-demo/upsell/index.html",
+              "key": "favicon:link"
+            },
+            "state_fingerprint": "sha256:7180ee14f40f607f946fb72d9732760d4f22a4322d946757b8c632fd59110cd2",
+            "observation": {
+              "page": "_site/runtime-packet-demo/upsell/index.html",
+              "favicon": false
+            },
+            "members": [],
+            "accept_eligible": true,
+            "coverage": {
+              "observed": 1,
+              "expected": 1,
+              "limits": []
+            },
+            "measured_at": "2026-01-01T00:00:00.000Z",
+            "producer": "campaigns-os doctor"
+          }
+        },
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "built_output.smoke_qc.og_title_missing",
+        "message": "smoke_qc warning on _site/runtime-packet-demo/upsell/index.html (og:title): og_title_missing.",
+        "detail": {
+          "qc_result": {
+            "schema": "campaigns-os-qc-result/v0",
+            "id": "smoke_qc:_site/runtime-packet-demo/upsell/index.html:og:title",
+            "check": "smoke_qc",
+            "leg": "doctor",
+            "result": "warning",
+            "reason_code": "og_title_missing",
+            "subject": {
+              "check": "smoke_qc",
+              "page": "_site/runtime-packet-demo/upsell/index.html",
+              "key": "og:title"
+            },
+            "state_fingerprint": "sha256:3550e9cdcdef7a353e90097efd928f14acfadead2176f296a7aa108a1933c0b0",
+            "observation": {
+              "page": "_site/runtime-packet-demo/upsell/index.html",
+              "og": {
+                "title": false,
+                "description": false,
+                "image": "absent",
+                "image_target": null
+              }
+            },
+            "members": [],
+            "accept_eligible": true,
+            "coverage": {
+              "observed": 1,
+              "expected": 1,
+              "limits": []
+            },
+            "measured_at": "2026-01-01T00:00:00.000Z",
+            "producer": "campaigns-os doctor"
+          }
+        },
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "built_output.smoke_qc.og_description_missing",
+        "message": "smoke_qc warning on _site/runtime-packet-demo/upsell/index.html (og:description): og_description_missing.",
+        "detail": {
+          "qc_result": {
+            "schema": "campaigns-os-qc-result/v0",
+            "id": "smoke_qc:_site/runtime-packet-demo/upsell/index.html:og:description",
+            "check": "smoke_qc",
+            "leg": "doctor",
+            "result": "warning",
+            "reason_code": "og_description_missing",
+            "subject": {
+              "check": "smoke_qc",
+              "page": "_site/runtime-packet-demo/upsell/index.html",
+              "key": "og:description"
+            },
+            "state_fingerprint": "sha256:17b3ca6b1206fb26bd1fb763fee1d8d6d0bdda5a662875d69bef8916eee7796c",
+            "observation": {
+              "page": "_site/runtime-packet-demo/upsell/index.html",
+              "og": {
+                "title": false,
+                "description": false,
+                "image": "absent",
+                "image_target": null
+              }
+            },
+            "members": [],
+            "accept_eligible": true,
+            "coverage": {
+              "observed": 1,
+              "expected": 1,
+              "limits": []
+            },
+            "measured_at": "2026-01-01T00:00:00.000Z",
+            "producer": "campaigns-os doctor"
+          }
+        },
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "built_output.smoke_qc.og_image_missing",
+        "message": "smoke_qc warning on _site/runtime-packet-demo/upsell/index.html (og:image): og_image_missing.",
+        "detail": {
+          "qc_result": {
+            "schema": "campaigns-os-qc-result/v0",
+            "id": "smoke_qc:_site/runtime-packet-demo/upsell/index.html:og:image",
+            "check": "smoke_qc",
+            "leg": "doctor",
+            "result": "warning",
+            "reason_code": "og_image_missing",
+            "subject": {
+              "check": "smoke_qc",
+              "page": "_site/runtime-packet-demo/upsell/index.html",
+              "key": "og:image"
+            },
+            "state_fingerprint": "sha256:004858af8f30f199bf1764f16fd2103dc5c0d50748c0c5de5e9af6975718a52d",
+            "observation": {
+              "page": "_site/runtime-packet-demo/upsell/index.html",
+              "og": {
+                "title": false,
+                "description": false,
+                "image": "absent",
+                "image_target": null
+              }
+            },
+            "members": [],
+            "accept_eligible": true,
+            "coverage": {
+              "observed": 1,
+              "expected": 1,
+              "limits": []
+            },
+            "measured_at": "2026-01-01T00:00:00.000Z",
+            "producer": "campaigns-os doctor"
+          }
+        },
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "sdk_hints.meta_tags.missing",
+        "message": "Built page \"checkout\" is missing SDK meta tag \"next-success-url\" expected from CampaignSpec.",
+        "detail": {
+          "page_id": "checkout",
+          "file": "./_site/runtime-packet-demo/checkout/index.html"
+        },
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "sdk_hints.meta_tags.missing",
+        "message": "Built page \"upsell\" is missing SDK meta tag \"next-upsell-accept-url\" expected from CampaignSpec.",
+        "detail": {
+          "page_id": "upsell",
+          "file": "./_site/runtime-packet-demo/upsell/index.html"
+        },
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "sdk_hints.meta_tags.missing",
+        "message": "Built page \"upsell\" is missing SDK meta tag \"next-upsell-decline-url\" expected from CampaignSpec.",
+        "detail": {
+          "page_id": "upsell",
+          "file": "./_site/runtime-packet-demo/upsell/index.html"
+        },
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "built_output.build_summary_missing",
+        "message": "No Page Kit build summary at .campaign-runtime/page-kit-build-summary.json. Capture one with `npx campaign-build --json > .campaign-runtime/page-kit-build-summary.json` (requires next-campaign-page-kit >= 0.1.4) so doctor can verify resolved routes and Page Kit shape warnings instead of guessing from rendered HTML alone.",
+        "detail": {
+          "expected_path": ".campaign-runtime/page-kit-build-summary.json"
+        },
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "build_brief.missing",
+        "message": "No Campaign Build Brief artifact is referenced. Existing builds may continue, but new build intake should provide or generate .campaign-runtime/input/campaign-build-brief.normalized.json so business/design decisions are durable.",
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "deploy.preview_url",
+        "message": "No preview or production URL yet. QA remains blocked after build/polish.",
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      }
+    ],
+    "ready": [
+      "Build Packet schema campaign-runtime-build-packet/v0",
+      "Template family \"olympus\" is certified (commerce catalog + brand contract)",
+      "Template family \"olympus\" certification is current: last verified against SDK 0.4.43 (2026-10-24), the current SDK recorded by the vendored contracts.",
+      "Target campaign output directory exists",
+      "Target page-kit dependency 0.3.0",
+      "Local CampaignSpec parsed",
+      "CampaignSpec spec_identity includes map_id and public_route_slug",
+      "Packet public_route_slug \"runtime-packet-demo\" matches CampaignSpec identity and is not the Map ID",
+      "CampaignSpec public page routes are Page Kit-compatible",
+      "CampaignSpec required Store Profile fields are present for page-kit campaigns.json",
+      "Built checkout carries no paypal, klarna, apple_pay, google_pay payment-method markup (_site/runtime-packet-demo/checkout/index.html); left to browser QA: shared chrome asset upsell-payment-logos.svg",
+      "Target campaigns.json SDK version matches CampaignSpec (0.4.18).",
+      "Target campaigns.json Store Profile matches the CampaignSpec across all nine governed fields.",
+      "CampaignSpec shipping countries: all countries",
+      "CampaignSpec routing hints match the routes of the pages they name",
+      "Source mappings cover active CampaignSpec pages",
+      "All mapped CampaignSpec pages are build candidates",
+      "Mapped source pages pass the page-kit preparation check (document wrappers stripped, no leftover frontmatter, no source-file internal links)",
+      "CampaignSpec package purchase availability has no unavailable package refs in active build data",
+      "Built output root found at _site/runtime-packet-demo/",
+      "Built HTML structure and commerce refs checked in _site/runtime-packet-demo/ for 4 page(s)",
+      "Every bundle selector on 1 built post-purchase page(s) is scoped away from the live cart (0 selector(s) scanned)",
+      "All 4 built page(s) agree on campaign identity (next-funnel not declared, API key not declared)",
+      "Script syntax checkpoint not applicable: No built page loads a campaign-owned script from disk (4 page(s) read).",
+      "Built SDK meta tags checked in _site/runtime-packet-demo/ for 2 page(s)",
+      "Built routes match CampaignSpec page routes (4/4 verified)",
+      "Campaigns API key available via the packet-local CampaignSpec campaign.campaigns_api_key",
+      "Market-sensitive copy scan found no obvious US-only patterns (available_shipping_countries=all).",
+      "Hardcoded phone scan found no mismatched static phone numbers.",
+      "source_html.adapter_contract adapter decision fields loaded",
+      "Source adapter wrapper check found no document wrappers in completed source pages",
+      "qa.proof_policy loaded: browser=true, typed_card_depth=common, order_path_depth=common",
+      "Assembly report schema campaign-runtime-assembly-report/v0",
+      "report.adapter_decisions adapter decision fields loaded",
+      "report.proof_policy loaded: browser=true, typed_card_depth=common, order_path_depth=common",
+      "Pricing CSS scan skipped: campaign assets/css directory does not exist (runs after setup/build)",
+      "Hidden eager-media checkpoint not applicable before completed assembly."
+    ],
+    "derived": {
+      "packet_path": "<fixture>/build-packet.basic.json",
+      "assembly_report_path": "<fixture>/target-page-kit/.campaign-runtime/assembly-report.json",
+      "map_id": "runtime-packet-demo-k9x2",
+      "public_route_slug": "runtime-packet-demo",
+      "template_family": "olympus",
+      "source_root": "<fixture>/source-html",
+      "target_repo": "<fixture>/target-page-kit",
+      "target_output_dir": "<fixture>/target-page-kit/src/runtime-packet-demo",
+      "spec_path": "<fixture>/campaignspec.v42.basic.json",
+      "doctor_checks": [
+        "campaign-spec.rule-registry",
+        "spec.identity_export",
+        "campaign.route_slug_identity",
+        "campaign.route_root",
+        "spec.public_routes",
+        "spec.store_profile",
+        "page_kit.sdk_version",
+        "page_kit.store_profile",
+        "page_kit.analytics_vendors",
+        "spec.shipping_countries",
+        "spec.routing_meta_tags",
+        "spec.routing_hint_stale",
+        "spec.routing_host_prefix",
+        "source_html.coverage",
+        "source_html.preparation",
+        "spec.package_availability",
+        "built_output.target_root",
+        "built_output.fingerprint",
+        "qa.baseline_accepted",
+        "built_output.pages",
+        "built_output.live_campaign_refs",
+        "built_output.upsell_selector_scope",
+        "built_output.campaign_identity",
+        "built_output.sdk_markup",
+        "built_output.script_syntax",
+        "built_output.cart_placeholders",
+        "built_output.smoke_qc",
+        "built_output.sdk_meta_tags",
+        "built_output.build_summary",
+        "built_output.route_drift",
+        "built_output.content_residue",
+        "built_output.proof_attestation",
+        "campaign.api_key",
+        "assembly.commerce_catalog",
+        "market_copy",
+        "source_html.adapter_contract",
+        "qa.proof_policy",
+        "build_brief.artifact",
+        "assembly_report.shape"
+      ],
+      "checkpoint_gates": [
+        {
+          "id": "page_kit.sdk_version",
+          "scope": "page_kit.sdk_version",
+          "status": "pass",
+          "code": "page_kit.sdk_version.pass",
+          "reason": "Target SDK version exactly matches the CampaignSpec (0.4.18).",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "runtime-packet-demo",
+            "target_path": "_data/campaigns.json"
+          },
+          "state": {
+            "expected": "0.4.18",
+            "observed": "0.4.18"
+          },
+          "state_fingerprint": null,
+          "expected_sdk_version": "0.4.18",
+          "observed_sdk_version": "0.4.18",
+          "expected_source": "global_config.sdk_version",
+          "waiver": null,
+          "waiver_assessment": {
+            "active": null,
+            "inert_counts": {
+              "stale": 0,
+              "foreign": 0,
+              "malformed": 0,
+              "expired": 0
+            }
+          },
+          "required_actions": []
+        },
+        {
+          "id": "page_kit.store_profile",
+          "scope": "page_kit.store_profile",
+          "status": "pass",
+          "code": "page_kit.store_profile.pass",
+          "reason": "Target Store Profile exactly matches the CampaignSpec for all nine governed fields.",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "runtime-packet-demo",
+            "target_path": "_data/campaigns.json"
+          },
+          "state": {
+            "discrepancies": []
+          },
+          "state_fingerprint": "sha256:744eb5d132a003fdc6b56dce6b84304e5c42f899e597e886e354c95a11aae160",
+          "matrix": [
+            {
+              "field": "store_name",
+              "kind": "match",
+              "spec": "Example Store",
+              "target": "Example Store",
+              "severity": "clean"
+            },
+            {
+              "field": "store_url",
+              "kind": "match",
+              "spec": "https://store.example.com",
+              "target": "https://store.example.com",
+              "severity": "clean"
+            },
+            {
+              "field": "store_terms",
+              "kind": "match",
+              "spec": "https://store.example.com/terms",
+              "target": "https://store.example.com/terms",
+              "severity": "clean"
+            },
+            {
+              "field": "store_privacy",
+              "kind": "match",
+              "spec": "https://store.example.com/privacy",
+              "target": "https://store.example.com/privacy",
+              "severity": "clean"
+            },
+            {
+              "field": "store_contact",
+              "kind": "match",
+              "spec": "https://store.example.com/contact",
+              "target": "https://store.example.com/contact",
+              "severity": "clean"
+            },
+            {
+              "field": "store_returns",
+              "kind": "match",
+              "spec": "https://store.example.com/returns",
+              "target": "https://store.example.com/returns",
+              "severity": "clean"
+            },
+            {
+              "field": "store_shipping",
+              "kind": "match",
+              "spec": "https://store.example.com/shipping",
+              "target": "https://store.example.com/shipping",
+              "severity": "clean"
+            },
+            {
+              "field": "store_phone",
+              "kind": "match",
+              "spec": "1-800-555-0100",
+              "target": "1-800-555-0100",
+              "severity": "clean"
+            },
+            {
+              "field": "store_phone_tel",
+              "kind": "match",
+              "spec": "tel:+18005550100",
+              "target": "tel:+18005550100",
+              "severity": "clean"
+            }
+          ],
+          "blocker_fields": [],
+          "warning_fields": [],
+          "waiver": null,
+          "waiver_assessment": {
+            "active": null,
+            "inert_counts": {
+              "stale": 0,
+              "foreign": 0,
+              "malformed": 0,
+              "expired": 0
+            }
+          },
+          "required_actions": []
+        },
+        {
+          "id": "built_output.upsell_selector_scope",
+          "scope": "built_output.upsell_selector_scope",
+          "status": "pass",
+          "code": "built_output.upsell_selector_scope.pass",
+          "reason": "Every bundle selector on 1 built post-purchase page(s) is scoped away from the live cart.",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "runtime-packet-demo",
+            "site_root": "./_site/runtime-packet-demo"
+          },
+          "state": {
+            "findings": []
+          },
+          "state_fingerprint": null,
+          "findings": [],
+          "warned": [],
+          "pages_scanned": 1,
+          "selectors_scanned": 0,
+          "waiver": null,
+          "waiver_assessment": {
+            "active": null,
+            "inert_counts": {
+              "stale": 0,
+              "foreign": 0,
+              "malformed": 0,
+              "expired": 0
+            }
+          },
+          "required_actions": []
+        },
+        {
+          "id": "built_output.campaign_identity",
+          "scope": "built_output.campaign_identity",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "runtime-packet-demo",
+            "site_root": "./_site/runtime-packet-demo"
+          },
+          "waiver": null,
+          "status": "pass",
+          "code": "built_output.campaign_identity.pass",
+          "reason": "All 4 built page(s) agree on campaign identity (API key not declared, next-funnel (none)).",
+          "findings": [],
+          "pages_scanned": 4,
+          "pages_skipped": [],
+          "identity": {
+            "api_key": null,
+            "api_key_source": null,
+            "funnel": null
+          },
+          "required_actions": []
+        },
+        {
+          "id": "built_output.sdk_markup",
+          "scope": "built_output.sdk_markup",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "runtime-packet-demo",
+            "site_root": "./_site/runtime-packet-demo"
+          },
+          "waiver": null,
+          "sdk_attribute_index_version": "0.4.43",
+          "campaign_sdk_version": "0.4.18",
+          "status": "blocked",
+          "code": "built_output.sdk_markup",
+          "reason": "1 SDK markup blocker(s) on 4 built page(s) (SWAP_WITH_ADD_TO_CART on ./_site/runtime-packet-demo/landing/index.html); each blocker is a doctor error with the repair.",
+          "findings": [
+            {
+              "code_name": "SWAP_WITH_ADD_TO_CART",
+              "code": "built_output.sdk_markup.swap_with_add_to_cart",
+              "severity": "error",
+              "page_id": "landing",
+              "file": "./_site/runtime-packet-demo/landing/index.html",
+              "message": "SWAP_WITH_ADD_TO_CART: Selector data-next-selector-id=\"synthetic-bundles\" on ./_site/runtime-packet-demo/landing/index.html is in swap mode (the SDK default; no data-next-selection-mode set) and an add-to-cart button is linked to it. Both write the cart: the card click swaps the bundle in, the button adds it again. Set data-next-selection-mode=\"select\" on the selector, or remove the button.",
+              "detail": {
+                "selector_id": "synthetic-bundles",
+                "selection_mode_explicit": false
+              }
+            }
+          ],
+          "warned": [],
+          "unknown_attributes": [],
+          "pages_scanned": 4,
+          "required_actions": [
+            {
+              "id": "repair_sdk_markup",
+              "kind": "edit",
+              "command": null,
+              "description": "Repair the markup each finding names (SWAP_WITH_ADD_TO_CART on ./_site/runtime-packet-demo/landing/index.html), rebuild, and re-run doctor. Not waivable: the markup provably does not do what it says."
+            }
+          ]
+        },
+        {
+          "id": "built_output.script_syntax",
+          "scope": "built_output.script_syntax",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "runtime-packet-demo",
+            "site_root": "./_site/runtime-packet-demo"
+          },
+          "waiver": null,
+          "status": "not_applicable",
+          "code": "built_output.script_syntax.not_applicable",
+          "reason": "No built page loads a campaign-owned script from disk (4 page(s) read).",
+          "findings": [],
+          "scripts_scanned": 0,
+          "scripts_unresolved": [],
+          "scripts_outside_site": [],
+          "warned": [],
+          "pages_scanned": 4,
+          "required_actions": []
+        }
+      ],
+      "qc_results": [
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/runtime-packet-demo/checkout/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "sdk_pin_unverified",
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/runtime-packet-demo/checkout/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:ef42941b9b5770d19662bf5c0034f59e9c37160c39e4178213e09e930a708265",
+          "observation": {
+            "page": "_site/runtime-packet-demo/checkout/index.html",
+            "sdk_pin": "0.4.18",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 315,
+            "candidates": 0
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "sdk_pin_unverified"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/runtime-packet-demo/landing/index.html:{item.name}",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "warning",
+          "reason_code": "live_token",
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/runtime-packet-demo/landing/index.html",
+            "key": "{item.name}"
+          },
+          "state_fingerprint": "sha256:015b19cedf9109436a44151d0e13f5243d9d65826f76fa652936fd161297ad78",
+          "observation": {
+            "page": "_site/runtime-packet-demo/landing/index.html",
+            "sdk_pin": "0.4.38",
+            "sdk_pin_source": "loader",
+            "token": "{item.name}",
+            "shape_sha256": null,
+            "known": true,
+            "occurrences": [
+              {
+                "element_path": "html[1]/body[1]/p[1]",
+                "where": "text",
+                "line": 9,
+                "sdk_owner": null
+              }
+            ]
+          },
+          "members": [],
+          "accept_eligible": true,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/runtime-packet-demo/landing/index.html:{subtotal}",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "warning",
+          "reason_code": "live_token",
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/runtime-packet-demo/landing/index.html",
+            "key": "{subtotal}"
+          },
+          "state_fingerprint": "sha256:3f83f89bb58fbf79ef9ecc7615ce08244a2724f1bbee80992d74489995ee0c7a",
+          "observation": {
+            "page": "_site/runtime-packet-demo/landing/index.html",
+            "sdk_pin": "0.4.38",
+            "sdk_pin_source": "loader",
+            "token": "{subtotal}",
+            "shape_sha256": null,
+            "known": true,
+            "occurrences": [
+              {
+                "element_path": "html[1]/body[1]/img[1]",
+                "where": "attr:alt",
+                "line": 10,
+                "sdk_owner": null
+              }
+            ]
+          },
+          "members": [],
+          "accept_eligible": true,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/runtime-packet-demo/receipt/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "sdk_pin_unverified",
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/runtime-packet-demo/receipt/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:31ff0eeb468d4bf73e00cf6b20131a1eb941600df72c21077d8471991136f174",
+          "observation": {
+            "page": "_site/runtime-packet-demo/receipt/index.html",
+            "sdk_pin": "0.4.18",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 312,
+            "candidates": 0
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "sdk_pin_unverified"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/runtime-packet-demo/upsell/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "sdk_pin_unverified",
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/runtime-packet-demo/upsell/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:dc0ad4c1f5c2d414e96767600e48372652911e67a912431ca8ba7e1f29bf30a4",
+          "observation": {
+            "page": "_site/runtime-packet-demo/upsell/index.html",
+            "sdk_pin": "0.4.18",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 309,
+            "candidates": 0
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "sdk_pin_unverified"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/runtime-packet-demo/checkout/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "warning",
+          "reason_code": "favicon_missing",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/runtime-packet-demo/checkout/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:41fd0838aa99a6db1e4997822775d9fd28ccf7427908c498bf0e42a7784ab66e",
+          "observation": {
+            "page": "_site/runtime-packet-demo/checkout/index.html",
+            "favicon": false
+          },
+          "members": [],
+          "accept_eligible": true,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/runtime-packet-demo/checkout/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "warning",
+          "reason_code": "og_title_missing",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/runtime-packet-demo/checkout/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:9a4d818dc53621581137e452a0760e50dfa4dfee21512898db9ce543fc461138",
+          "observation": {
+            "page": "_site/runtime-packet-demo/checkout/index.html",
+            "og": {
+              "title": false,
+              "description": false,
+              "image": "absent",
+              "image_target": null
+            }
+          },
+          "members": [],
+          "accept_eligible": true,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/runtime-packet-demo/checkout/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "warning",
+          "reason_code": "og_description_missing",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/runtime-packet-demo/checkout/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:e3c67407880753f19e3180c0c33ae5948051f2b5fde30a94e1907c6121292cf1",
+          "observation": {
+            "page": "_site/runtime-packet-demo/checkout/index.html",
+            "og": {
+              "title": false,
+              "description": false,
+              "image": "absent",
+              "image_target": null
+            }
+          },
+          "members": [],
+          "accept_eligible": true,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/runtime-packet-demo/checkout/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "warning",
+          "reason_code": "og_image_missing",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/runtime-packet-demo/checkout/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:a4cd77bd7b17cfae40cbde9f2431a591ac6344ae197b3313f52764cf48672f9e",
+          "observation": {
+            "page": "_site/runtime-packet-demo/checkout/index.html",
+            "og": {
+              "title": false,
+              "description": false,
+              "image": "absent",
+              "image_target": null
+            }
+          },
+          "members": [],
+          "accept_eligible": true,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/runtime-packet-demo/checkout/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/runtime-packet-demo/checkout/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:fd2dd72151af3566b1fb516e769ec73398ed51c882f1313e42642cf88854c9bc",
+          "observation": {
+            "page": "_site/runtime-packet-demo/checkout/index.html",
+            "tailwind_cdn": 0,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/runtime-packet-demo/checkout/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/runtime-packet-demo/checkout/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:d77f02d06f278feac37bf3023d5c0b7ffe55e957c0707483a97be4f71314c50b",
+          "observation": {
+            "page": "_site/runtime-packet-demo/checkout/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/runtime-packet-demo/checkout/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/runtime-packet-demo/checkout/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:ab5490ac52a75af89df00b76b4d0da0eb75426640322e82d1853e05c59c642f0",
+          "observation": {
+            "page": "_site/runtime-packet-demo/checkout/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/runtime-packet-demo/landing/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "warning",
+          "reason_code": "favicon_missing",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/runtime-packet-demo/landing/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:9f41878f446c061b2bfd49e2f5b71b125892ae177a699235bf28d76e515297d2",
+          "observation": {
+            "page": "_site/runtime-packet-demo/landing/index.html",
+            "favicon": false
+          },
+          "members": [],
+          "accept_eligible": true,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/runtime-packet-demo/landing/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "warning",
+          "reason_code": "og_title_missing",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/runtime-packet-demo/landing/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:755ff10d1fcaa6972250a38f93b66f2aaa8f0f0b1e9b44c4c3a3c8a7753f1161",
+          "observation": {
+            "page": "_site/runtime-packet-demo/landing/index.html",
+            "og": {
+              "title": false,
+              "description": false,
+              "image": "absent",
+              "image_target": null
+            }
+          },
+          "members": [],
+          "accept_eligible": true,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/runtime-packet-demo/landing/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "warning",
+          "reason_code": "og_description_missing",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/runtime-packet-demo/landing/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:5c10b37d7f637f983703d684218a8514022cec2e378be8cc4299612b63535958",
+          "observation": {
+            "page": "_site/runtime-packet-demo/landing/index.html",
+            "og": {
+              "title": false,
+              "description": false,
+              "image": "absent",
+              "image_target": null
+            }
+          },
+          "members": [],
+          "accept_eligible": true,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/runtime-packet-demo/landing/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "warning",
+          "reason_code": "og_image_missing",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/runtime-packet-demo/landing/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:42d9ed85369ba29879b724b0d1d08f8989f27e462d0aa08885a95291314f8eff",
+          "observation": {
+            "page": "_site/runtime-packet-demo/landing/index.html",
+            "og": {
+              "title": false,
+              "description": false,
+              "image": "absent",
+              "image_target": null
+            }
+          },
+          "members": [],
+          "accept_eligible": true,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/runtime-packet-demo/landing/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/runtime-packet-demo/landing/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:31cc8aef72745ae5e36b95c4454fc722fdaa06dcdeadcde3e8f9fd189a62bf5c",
+          "observation": {
+            "page": "_site/runtime-packet-demo/landing/index.html",
+            "tailwind_cdn": 0,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/runtime-packet-demo/landing/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/runtime-packet-demo/landing/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:33c7ab4b5de784706cb60298efd9354f3f6d69c205ae9055b20ed8f9790921c1",
+          "observation": {
+            "page": "_site/runtime-packet-demo/landing/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/runtime-packet-demo/landing/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/runtime-packet-demo/landing/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:b59792beddc6f405dfe83f1c580c91c2f04db66985a17da6016062ff79346156",
+          "observation": {
+            "page": "_site/runtime-packet-demo/landing/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/runtime-packet-demo/receipt/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "warning",
+          "reason_code": "favicon_missing",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/runtime-packet-demo/receipt/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:9f91bd499e6c13a8c3c8a50413706f966c2b75904e1e58931c8655887d6cb160",
+          "observation": {
+            "page": "_site/runtime-packet-demo/receipt/index.html",
+            "favicon": false
+          },
+          "members": [],
+          "accept_eligible": true,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/runtime-packet-demo/receipt/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "warning",
+          "reason_code": "og_title_missing",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/runtime-packet-demo/receipt/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:d82f581eb7e524142f75b39fc4b7e893189e4ca988d9b015740fac5bcffc4762",
+          "observation": {
+            "page": "_site/runtime-packet-demo/receipt/index.html",
+            "og": {
+              "title": false,
+              "description": false,
+              "image": "absent",
+              "image_target": null
+            }
+          },
+          "members": [],
+          "accept_eligible": true,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/runtime-packet-demo/receipt/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "warning",
+          "reason_code": "og_description_missing",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/runtime-packet-demo/receipt/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:63105d451886ca5787021d07fba5bb8430e878844f1612ee90ca3509790a05fb",
+          "observation": {
+            "page": "_site/runtime-packet-demo/receipt/index.html",
+            "og": {
+              "title": false,
+              "description": false,
+              "image": "absent",
+              "image_target": null
+            }
+          },
+          "members": [],
+          "accept_eligible": true,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/runtime-packet-demo/receipt/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "warning",
+          "reason_code": "og_image_missing",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/runtime-packet-demo/receipt/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:517bfc853a46140fb17ffe4aa9250eb6d45e45fa0a1c1ed0a4b1642af68449b2",
+          "observation": {
+            "page": "_site/runtime-packet-demo/receipt/index.html",
+            "og": {
+              "title": false,
+              "description": false,
+              "image": "absent",
+              "image_target": null
+            }
+          },
+          "members": [],
+          "accept_eligible": true,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/runtime-packet-demo/receipt/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/runtime-packet-demo/receipt/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:b2677e25bc3ad83939873c2a2ad6dfe618ed78cc3cb5c1524fae347832dc0a9b",
+          "observation": {
+            "page": "_site/runtime-packet-demo/receipt/index.html",
+            "tailwind_cdn": 0,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/runtime-packet-demo/receipt/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/runtime-packet-demo/receipt/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:884395ee8d5b2852d4b8bd90e45be5333fbf5fa97940b14a5528e3a439eee5ed",
+          "observation": {
+            "page": "_site/runtime-packet-demo/receipt/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/runtime-packet-demo/receipt/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/runtime-packet-demo/receipt/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:b6d58dfe1390acd6e2649f779654692e7e7dd0350ff7b2417a98185760589425",
+          "observation": {
+            "page": "_site/runtime-packet-demo/receipt/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/runtime-packet-demo/upsell/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "warning",
+          "reason_code": "favicon_missing",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/runtime-packet-demo/upsell/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:7180ee14f40f607f946fb72d9732760d4f22a4322d946757b8c632fd59110cd2",
+          "observation": {
+            "page": "_site/runtime-packet-demo/upsell/index.html",
+            "favicon": false
+          },
+          "members": [],
+          "accept_eligible": true,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/runtime-packet-demo/upsell/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "warning",
+          "reason_code": "og_title_missing",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/runtime-packet-demo/upsell/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:3550e9cdcdef7a353e90097efd928f14acfadead2176f296a7aa108a1933c0b0",
+          "observation": {
+            "page": "_site/runtime-packet-demo/upsell/index.html",
+            "og": {
+              "title": false,
+              "description": false,
+              "image": "absent",
+              "image_target": null
+            }
+          },
+          "members": [],
+          "accept_eligible": true,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/runtime-packet-demo/upsell/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "warning",
+          "reason_code": "og_description_missing",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/runtime-packet-demo/upsell/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:17b3ca6b1206fb26bd1fb763fee1d8d6d0bdda5a662875d69bef8916eee7796c",
+          "observation": {
+            "page": "_site/runtime-packet-demo/upsell/index.html",
+            "og": {
+              "title": false,
+              "description": false,
+              "image": "absent",
+              "image_target": null
+            }
+          },
+          "members": [],
+          "accept_eligible": true,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/runtime-packet-demo/upsell/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "warning",
+          "reason_code": "og_image_missing",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/runtime-packet-demo/upsell/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:004858af8f30f199bf1764f16fd2103dc5c0d50748c0c5de5e9af6975718a52d",
+          "observation": {
+            "page": "_site/runtime-packet-demo/upsell/index.html",
+            "og": {
+              "title": false,
+              "description": false,
+              "image": "absent",
+              "image_target": null
+            }
+          },
+          "members": [],
+          "accept_eligible": true,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/runtime-packet-demo/upsell/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/runtime-packet-demo/upsell/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:31ac6609aeee6d2638fb7631f07ee35df8211f82417da72e328bd6002c751cb5",
+          "observation": {
+            "page": "_site/runtime-packet-demo/upsell/index.html",
+            "tailwind_cdn": 0,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/runtime-packet-demo/upsell/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/runtime-packet-demo/upsell/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:c6574ce2b0e5d72e24cb0a66d8501842fa8779ba72fadc208121cde20c9c1f8b",
+          "observation": {
+            "page": "_site/runtime-packet-demo/upsell/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/runtime-packet-demo/upsell/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/runtime-packet-demo/upsell/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:2845201859ff931bf3cf898526278d71813b4dfab9d27b9f2470b4c562937cd1",
+          "observation": {
+            "page": "_site/runtime-packet-demo/upsell/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        }
+      ],
+      "polish_checkpoint_gate": {
+        "id": "polish.hidden_eager_media",
+        "scope": "polish.hidden_eager_media",
+        "status": "not_applicable",
+        "checkpoint_status": "not_applicable",
+        "severity": "info",
+        "code": "polish.hidden_eager_media.not_applicable",
+        "reason": "Hidden eager-media page-load evidence is required only after assembly is completed.",
+        "waivable": false,
+        "subject": null,
+        "state": null,
+        "state_fingerprint": null,
+        "findings": [],
+        "waiver": null,
+        "waiver_assessment": {
+          "active": null,
+          "inert_counts": {
+            "stale": 0,
+            "foreign": 0,
+            "malformed": 0,
+            "expired": 0
+          }
+        },
+        "required_actions": []
+      },
+      "prepare_build_gate": null,
+      "brand_contract": {
+        "state": "inspected",
+        "family": "olympus"
+      },
+      "page_kit_campaign_config": {
+        "status": "ok",
+        "public_route_slug": "runtime-packet-demo",
+        "target_path": "_data/campaigns.json"
+      },
+      "scaffold_required": false,
+      "scaffold_reason": null,
+      "scope": {
+        "mode": "full",
+        "built_pages": [
+          {
+            "page_id": "landing",
+            "type": "landing",
+            "role": "visual",
+            "route": "landing/",
+            "source_path": "landing.html"
+          },
+          {
+            "page_id": "checkout",
+            "type": "checkout",
+            "role": "runtime",
+            "route": "checkout/",
+            "source_path": "checkout.html"
+          },
+          {
+            "page_id": "upsell",
+            "type": "upsell",
+            "role": "runtime",
+            "route": "upsell/",
+            "source_path": "upsell.html"
+          },
+          {
+            "page_id": "receipt",
+            "type": "thankyou",
+            "role": "runtime",
+            "route": "receipt/",
+            "source_path": "receipt.html"
+          }
+        ],
+        "out_of_scope_pages": [],
+        "out_of_scope_reasons": [],
+        "previewable_routes": [
+          {
+            "page_id": "landing",
+            "type": "landing",
+            "route": "landing/"
+          },
+          {
+            "page_id": "checkout",
+            "type": "checkout",
+            "route": "checkout/"
+          },
+          {
+            "page_id": "upsell",
+            "type": "upsell",
+            "route": "upsell/"
+          },
+          {
+            "page_id": "receipt",
+            "type": "thankyou",
+            "route": "receipt/"
+          }
+        ],
+        "blocked_runtime_pages": []
+      },
+      "source_preparation": {
+        "checked_page_count": 4,
+        "finding_codes": []
+      },
+      "build_output_fingerprint": {
+        "root": "_site/runtime-packet-demo/",
+        "algorithm": "sha256-manifest/v1",
+        "value": "sha256:47417cdf5615246b4d5fa505a37b245d23936000cd2a7c353d84a896458d8717",
+        "file_count": 4,
+        "excluded": [],
+        "recorded": null,
+        "status": "missing"
+      },
+      "live_campaign_refs": {
+        "status": "not_run",
+        "reason_code": "disabled",
+        "reason": "--no-live-refs was given, so the live campaign was not read.",
+        "checked_pages": 4,
+        "page_findings": [],
+        "drift": null
+      },
+      "input_currency": {
+        "brief": {
+          "bound": null,
+          "current": {
+            "presentation": "absent",
+            "qa_policy": "absent"
+          },
+          "status": "absent"
+        },
+        "spec": {
+          "bound": null,
+          "current": "sha256:ce1d4ed5dd469870ee6ce91b000613e0b760384e3318b347d34822d3948c94bb",
+          "snapshot_material": "unknown",
+          "remote_currency": "unconfirmed"
+        },
+        "stages": {
+          "assembly": "not_applicable",
+          "polish": "not_applicable",
+          "qa": "not_applicable"
+        },
+        "reasons": {
+          "assembly": null,
+          "polish": null,
+          "qa": null
+        }
+      },
+      "theme_gate": {
+        "status": "not_applicable",
+        "code": "theme_gate.no_theme_context",
+        "reason": "No theme context exists for this campaign; run prepare-build/theme inspect to populate it.",
+        "commerce_pages": [
+          "checkout",
+          "upsell",
+          "receipt"
+        ],
+        "commerce_pages_out_of_scope": [],
+        "waiver": null,
+        "required_actions": []
+      },
+      "evidence_debt": {
+        "polish": {
+          "status": "unknown",
+          "matches_current_build": null,
+          "recorded_build_fingerprint": null,
+          "current_build_fingerprint": "sha256:47417cdf5615246b4d5fa505a37b245d23936000cd2a7c353d84a896458d8717",
+          "reason": "assembly_build_fingerprint_missing",
+          "change": null,
+          "advisory": false
+        },
+        "qa": {
+          "status": "unknown",
+          "matches_current_build": null,
+          "recorded_build_fingerprint": null,
+          "current_build_fingerprint": "sha256:47417cdf5615246b4d5fa505a37b245d23936000cd2a7c353d84a896458d8717",
+          "reason": "assembly_build_fingerprint_missing",
+          "change": null,
+          "scope": null,
+          "owed_pages": []
+        },
+        "changes": {
+          "status": "unknown",
+          "reason": "assembly_build_fingerprint_missing",
+          "recorded_build_fingerprint": null,
+          "current_build_fingerprint": "sha256:47417cdf5615246b4d5fa505a37b245d23936000cd2a7c353d84a896458d8717",
+          "changed_pages": [],
+          "unmapped_files": [],
+          "extra": [],
+          "missing": [],
+          "changed": [],
+          "kind": "unknown",
+          "reasons": []
+        }
+      },
+      "polish_gate": {
+        "status": "not_applicable",
+        "code": "polish.not_applicable",
+        "reason": "Assembly is not completed yet; polish evidence is required after build completion."
+      }
+    },
+    "next": {
+      "stage": "doctor-blocked",
+      "status": "blocked",
+      "stage_blocked": false,
+      "owner": "operator",
+      "default_skill": "next-campaigns-os",
+      "command": "campaigns-os doctor --packet <fixture>/build-packet.basic.json",
+      "reason": "Doctor reported 1 blocker(s); resolve them before any stage runs.",
+      "actions": [
+        "Resolve packet blockers before assembly."
+      ],
+      "blocked_stages": [
+        "setup",
+        "build",
+        "polish",
+        "deploy",
+        "qa"
+      ]
+    },
+    "cause_summary": {
+      "schema_version": "campaigns-os-finding-cause/v0",
+      "surface": "doctor",
+      "total": 29,
+      "counts": {
+        "caused_by_change": 0,
+        "pre_existing": 0,
+        "test_environment": 0,
+        "upstream_drift": 0,
+        "unknown": 29
+      },
+      "prior_run_id": null,
+      "comparison": "no_prior_run"
+    }
+  }
+}

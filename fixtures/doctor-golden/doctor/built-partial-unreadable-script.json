@@ -1,0 +1,13 @@
+{
+  "base_sha": "e1c5bc9c6dc2745d6f2bd54f37f89319ce7f915a",
+  "case": "partial-unreadable-script",
+  "entry": "built",
+  "description": "partial: a page loads a local script that is chmod 000, beside an in-page anchor",
+  "output": {
+    "thrown": {
+      "name": "Error",
+      "code": "EACCES",
+      "message": "EACCES: permission denied, open '<fixture>/_site/example-campaign/js/locked.js'"
+    }
+  }
+}
