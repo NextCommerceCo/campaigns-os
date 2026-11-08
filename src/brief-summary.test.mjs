@@ -457,7 +457,7 @@ function assertWithinBound(summary) {
 function cutState(summary) {
   const line = (n) => summaryLine(summary, n);
   const pageIds = (text) => text.match(/page-\d\d/g) ?? [];
-  const avoidPart = line(7).split("; template placeholders filled: ")[0];
+  const avoidPart = line(7).split("; template placeholders blocked: ")[0];
   return {
     avoidShown: (avoidPart.match(QUOTED) ?? []).length,
     avoidMore: avoidPart.match(MORE) ?? [],
@@ -772,7 +772,7 @@ test("quoting: backslashes, quotes and control characters are escaped, so every 
     const audience = summaryLine(summary, 2).match(/^Audience: (".*") \[stated\]\.$/);
     assert.ok(audience, `${label}: line 2 is one quoted value and its marker:\n${summaryLine(summary, 2)}`);
     assert.equal(JSON.parse(audience[1]), hostile, `${label}: the audience reads back as itself`);
-    const avoid = summaryLine(summary, 7).match(/^Preserve: avoid (".*") \[stated\]; template placeholders filled: yes \[stated\]\.$/);
+    const avoid = summaryLine(summary, 7).match(/^Preserve: avoid (".*") \[stated\]; template placeholders blocked: yes \[stated\]\.$/);
     assert.ok(avoid, `${label}: line 7 is one quoted avoid item and its markers:\n${summaryLine(summary, 7)}`);
     assert.equal(JSON.parse(avoid[1]), hostile, `${label}: the avoid item reads back as itself`);
     const other = summaryLine(summary, 4).match(new RegExp(`; ${EXAMPLE_PAGE_IDS[0]} use (".*") \\[stated\\]\\.$`));
@@ -809,7 +809,7 @@ test("line provenance: a line showing a not-stated part never carries stated", a
   delete avoid.brand.avoid;
   delete avoid._meta.field_sources["brand.avoid"];
   const avoidSummary = await summarize(avoid, EXAMPLE_PAGE_IDS);
-  assert.match(summaryLine(avoidSummary, 7), /^Preserve: avoid not stated; template placeholders filled: yes \[stated\]\.$/, "setup: avoid is absent");
+  assert.match(summaryLine(avoidSummary, 7), /^Preserve: avoid not stated; template placeholders blocked: yes \[stated\]\.$/, "setup: avoid is absent");
   assert.equal(avoidSummary.lines[6].provenance, null, "line 7 with avoid not stated");
 
   const pages = statedBrief();
@@ -830,9 +830,9 @@ const BLANK_SITES = [
   ["brand.cta_style", (brief, blank) => { brief.brand.cta_style = blank; }, 5, 'Palette and buttons: palette from "landing" [stated]; button style not stated; accent "deep green" [stated].'],
   ["brand.primary_accent", (brief, blank) => { brief.brand.primary_accent = blank; }, 5, 'Palette and buttons: palette from "landing" [stated]; button style "solid pill" [stated]; accent not stated.'],
   ["campaign_intent.tone", (brief, blank) => { brief.campaign_intent.tone = blank; }, 6, "Tone: not stated."],
-  ["brand.avoid", (brief, blank) => { brief.brand.avoid = blank; }, 7, "Preserve: avoid not stated; template placeholders filled: yes [stated]."],
-  ["brand.avoid", (brief, blank) => { brief.brand.avoid = ["neon gradients", blank]; }, 7, 'Preserve: avoid "neon gradients"; not stated [stated]; template placeholders filled: yes [stated].'],
-  ["template_residue_policy.block_placeholders", (brief, blank) => { brief.template_residue_policy.block_placeholders = blank; }, 7, 'Preserve: avoid "neon gradients" [stated]; template placeholders filled: not stated.'],
+  ["brand.avoid", (brief, blank) => { brief.brand.avoid = blank; }, 7, "Preserve: avoid not stated; template placeholders blocked: yes [stated]."],
+  ["brand.avoid", (brief, blank) => { brief.brand.avoid = ["neon gradients", blank]; }, 7, 'Preserve: avoid "neon gradients"; not stated [stated]; template placeholders blocked: yes [stated].'],
+  ["template_residue_policy.block_placeholders", (brief, blank) => { brief.template_residue_policy.block_placeholders = blank; }, 7, 'Preserve: avoid "neon gradients" [stated]; template placeholders blocked: not stated.'],
 ];
 
 test("blank values: an empty or whitespace-only value reads not stated and partial wherever it is shown", async () => {

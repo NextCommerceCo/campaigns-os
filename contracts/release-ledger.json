@@ -11263,8 +11263,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.66.0+agent.4",
-      "changelog_sha256": "42589f5a156baee72452cf03270e58bc6bb26ac40f3088d47a8bf1268d720d99",
-      "agent_impact": "When the person asks for a starter template as-is, keep its pages, sections and copy; swap only what CampaignSpec owns (product names and images, prices and discount figures, promo codes, store name and support details); fill literal placeholder text from the product; and leave demo-looking content in place, listed in the handoff, unless the operator asks to remove it. promo_urgency.header_claim_source and timer_label accept the value template (keep the starter banner and timer), now the guided default when no CampaignSpec surface fills them. The brief summary line 7 reads \"template placeholders filled\".",
+      "changelog_sha256": "baaa7f6992303f8ef8f518369368081b624de8e34ee6b96f6cacad8deff8ac27",
+      "agent_impact": "When the person asks for a starter template as-is, keep its pages, sections and copy; swap only what CampaignSpec owns (product names and images, prices and discount figures, promo codes, store name and support details); fill literal placeholder text from the product; and leave demo-looking content in place, listed in the handoff, unless the operator asks to remove it. promo_urgency.header_claim_source and timer_label accept the value template (keep the starter banner and timer), now the guided default when no CampaignSpec surface fills them. In a build with a brief payload, a countdown still needs offer.urgency.verified, so blank its label there. The brief summary line 7 reads \"template placeholders blocked\".",
       "compatibility": "compatible",
       "migration": "none",
       "changes": [
@@ -11281,7 +11281,7 @@
           "summary": "The build prompt says how to build a page whose authority is the starter template: keep, swap, fill, and flag rather than remove."
         }
       ],
-      "entry_sha256": "1a241b33be4fabd2e348de08cc08fa60e9586f2bacdb0c58bc7e028b789df021"
+      "entry_sha256": "75e85b9d45254e33d9276340deeccf366dce5d7661ead7bfe75d24455c65866c"
     }
   ]
 }
