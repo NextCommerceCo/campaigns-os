@@ -12,6 +12,23 @@ an `observation` object with policy `legacy-sequential-v1`. Phase durations are
 after its event listeners are attached. Inspection excludes the title/body probe;
 these phase values are not a complete additive partition of elapsed time.
 
+After the settle wait, a page that loads the Campaign Cart SDK gets up to 15 s
+more to report itself rendered (`data-next-sdk-loading="false"` on the body, or
+`next-display-ready` on `<html>`, the readiness rule of the contrast checks)
+before QA reads it. The SDK counts as loaded when the body carries
+`data-next-sdk-loading` or the loader script sits in the document or an open
+shadow root. `sdk_display` records the outcome: `not_declared` (no SDK, no
+wait), `ready`, `timeout`, or `unreadable` (the page could not be read during
+the wait); `sdk_display_ms` is how long the wait took. A page that never
+reports ready is read after the cap, so its checks still report what they see.
+Test-order page loads take the same wait: 10 s of the running step's
+remaining time is held back for its own work, and the wait takes at most half
+of the rest and no more than 15 s. Once 10 s or less of the step is left it
+waits 250 ms. At the default 45 s step, the checkout probe gets up to 15 s and
+the entry page after it about 7 s. The checkout's card check then waits up to 8 s
+more, once, for the card iframe to attach and `next-loading-spreedly` to clear
+before it measures the fields.
+
 Debugger evidence carries policy `networkidle-plus-1000ms-v1`: navigation, network
 idle wait, and post-settle wait durations plus `errors_sampled_after_ms`, measured
 from just before debugger navigation. These relative timings use a monotonic clock,
