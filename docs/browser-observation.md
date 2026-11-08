@@ -21,8 +21,8 @@ shadow root. `sdk_display` records the outcome: `not_declared` (no SDK, no
 wait), `ready`, `timeout`, or `unreadable` (the page could not be read during
 the wait); `sdk_display_ms` is how long the wait took. A page that never
 reports ready is read after the cap, so its checks still report what they see.
-Test-order page loads take the same wait, capped by the step's remaining time
-less the 5 s settle allowance. The checkout's card check then waits up to 8 s
+Test-order page loads take the same wait, capped at half of the running
+step's remaining time. The checkout's card check then waits up to 8 s
 more, once, for the card iframe to attach and `next-loading-spreedly` to clear
 before it measures the fields.
 

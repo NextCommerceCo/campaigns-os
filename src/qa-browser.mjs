@@ -2087,26 +2087,33 @@ function isPlainObject(value) {
 // that declares the SDK (a data-next-sdk-loading body, or the loader script in
 // the document or any open shadow root) is ready once the body's
 // data-next-sdk-loading is "false" or <html> carries next-display-ready.
-// Bounded and tolerant: a page that never reports ready is read after the cap,
-// so the checks still say what they see. `budgetMs`, inside a test-order step,
-// is the step's remaining time; the wait leaves the settle allowance of it to
-// the step's own work. Resolves to { state, ms }: state is not_declared (no SDK
-// on the page), ready, timeout, or unreadable (the page could not be read, as
-// when it navigated away during the wait).
+// Whether the page declares the SDK is read once; the poll then reads only the
+// two ready signals, every 100 ms. Bounded and tolerant: a page that never
+// reports ready is read after the cap, so the checks still say what they see.
+// `budgetMs`, inside a test-order step, is that step's remaining time, and the
+// wait takes at most half of it, leaving the rest to the step's own work.
+// Resolves to { state, ms }: state is not_declared (no SDK on the page),
+// ready, timeout, or unreadable (the page could not be read, as when it
+// navigated away during the wait). It never throws.
 async function waitForSdkDisplayReady(page, budgetMs = null) {
   const started = performance.now();
-  const timeout = Math.max(250, Math.min(SDK_DISPLAY_READY_TIMEOUT_MS, budgetMs === null ? Infinity : budgetMs - DEFAULT_SETTLE_TIMEOUT_MS));
-  const state = await page.waitForFunction(() => {
-    const body = document.body;
+  const timeout = Math.max(250, Math.min(SDK_DISPLAY_READY_TIMEOUT_MS, budgetMs === null ? Infinity : budgetMs / 2));
+  const state = await page.evaluate(() => {
     const trees = [document];
     for (let i = 0; i < trees.length; i += 1) {
       for (const node of trees[i].querySelectorAll("*")) if (node.shadowRoot) trees.push(node.shadowRoot);
     }
-    const declared = Boolean(body?.hasAttribute("data-next-sdk-loading"))
+    return Boolean(document.body?.hasAttribute("data-next-sdk-loading"))
       || trees.some((tree) => Array.from(tree.querySelectorAll("script[src]")).some((script) => /campaign-cart(?:@[^"']*)?\/dist\/loader\.js/i.test(script.getAttribute("src"))));
-    if (!declared) return "not_declared";
-    return body?.getAttribute("data-next-sdk-loading") === "false" || document.documentElement.classList.contains("next-display-ready") ? "ready" : false;
-  }, null, { timeout }).then((handle) => handle.jsonValue(), (error) => (error?.name === "TimeoutError" ? "timeout" : "unreadable"));
+  }).then(
+    (declared) => (declared
+      ? page.waitForFunction(
+        () => document.body?.getAttribute("data-next-sdk-loading") === "false" || document.documentElement.classList.contains("next-display-ready"),
+        null,
+        { timeout, polling: 100 },
+      ).then(() => "ready")
+      : "not_declared"),
+  ).catch((error) => (error?.name === "TimeoutError" ? "timeout" : "unreadable"));
   return { state, ms: elapsedMilliseconds(started) };
 }
 
@@ -4383,16 +4390,19 @@ function createSelectorProbeCache() {
 // same URL is what is avoided. Anywhere else (a cached probe answer skipped the
 // load; a fresh page) the checkout is opened here, once.
 async function openCheckoutForPath({ page, checkoutPage, entry, args, budget = null, tracking = null, currencyLoad = null }) {
+  // The order budget stays at the step timeout for most of a path; the waits
+  // below take this step's own remaining time.
+  const stepEnds = budget ? Date.now() + budget() : null, stepLeft = stepEnds === null ? null : () => stepEnds - Date.now();
   const enteredViaLanding = Boolean(entry && typeof entry === "object" && entry.entered);
   if (enteredViaLanding) {
     await page.waitForLoadState("networkidle", { timeout: DEFAULT_SETTLE_TIMEOUT_MS }).catch(() => {});
-    await waitForSdkDisplayReady(page, budget ? budget() : null);
+    await waitForSdkDisplayReady(page, stepLeft ? stepLeft() : null);
     return "arrived from the entry page via SDK navigation; not re-opened";
   }
   if (checkoutUrlPredicate(checkoutPage.url)(safePageUrl(page))) {
     return "already on checkout from the selector probe; not re-opened";
   }
-  await gotoAndSettle(page, checkoutPage.url, args, tracking, currencyLoad, budget);
+  await gotoAndSettle(page, checkoutPage.url, args, tracking, currencyLoad, stepLeft);
   return null;
 }
 
@@ -4400,6 +4410,9 @@ async function openCheckoutForPath({ page, checkoutPage, entry, args, budget = n
 // itself, to `{ entered: true, ... }` when the runner came in through the entry
 // page, and throws a coded error (never a bare timeout) when it cannot.
 async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPackages, args, budget, selectorProbeCache = null, tracking = null, currencyLoad = null, startsOnCheckoutStep = false }) {
+  // This step can load two pages (the selector probe and the entry page); their
+  // SDK waits share the step's own remaining time, not the order budget.
+  const stepEnds = Date.now() + budget(), stepLeft = () => stepEnds - Date.now();
   // Probe the checkout first: whether it carries a selection surface is a fact
   // about the rendered page, not about the spec (the spec cannot say it yet —
   // that is the design half of #206). The probe's load is the checkout's only
@@ -4416,7 +4429,7 @@ async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPack
   let probe = cached ? "reused" : "loaded";
   let probeError = null;
   if (!surface) {
-    await gotoAndSettle(page, checkoutPage.url, args, tracking, currencyLoad, budget);
+    await gotoAndSettle(page, checkoutPage.url, args, tracking, currencyLoad, stepLeft);
     const probed = await page.evaluate(checkoutSelectionSurfaceScript())
       .then((value) => ({ value }), (error) => ({ value: null, error: error?.message || String(error) }));
     if (probed.value) {
@@ -4451,7 +4464,7 @@ async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPack
     );
   }
 
-  await gotoAndSettle(page, entryPage.url, args, tracking, currencyLoad, budget);
+  await gotoAndSettle(page, entryPage.url, args, tracking, currencyLoad, stepLeft);
   const sdkReady = await waitForSdkReady(page, Math.min(budget(), DEFAULT_SETTLE_TIMEOUT_MS));
   await tracking?.readDocument(page);
   const readControls = () => page.evaluate(cartEntryControlsScript(), {
