@@ -509,7 +509,7 @@ const STATUS = /^[a-z_/]+ \(ci: [a-z_/]+\)$|^[a-z0-9-]+\/v\d+$/;
 export function assertRedacted(value, { roots = [], secrets = [] } = {}) {
   // A root's own directory name (a repository or brand name) is as private as its path.
   const rootForms = roots.filter(Boolean).flatMap((root) => [resolve(root), realOrSelf(resolve(root))]);
-  const forbidden = [...new Set([...rootForms, ...rootForms.map((root) => basename(root)).filter((name) => name.length > 2),
+  const forbidden = [...new Set([...rootForms, ...rootForms.map((root) => basename(root)).filter((name) => name.length > 2 && !SAFE_SEGMENT.test(name)),
     TOOLKIT, realOrSelf(TOOLKIT), tmpdir(), realOrSelf(tmpdir()), ...(homedir() && homedir() !== "/" ? [homedir()] : []), ...secrets.filter(Boolean)])];
   const fits = (text) => {
     const bare = text.replace(/<[a-z0-9-]+>/g, "");
@@ -627,9 +627,14 @@ export function profileSummary(profile, { root = TOOLKIT, top = 25 } = {}) {
     return where ? `${frame.functionName || "(anonymous)"} ${where}:${frame.lineNumber + 1}` : null;
   };
   const inclusive = new Map();
+  // timeDeltas[i] is the gap before sample i, so sample i lasts until the next
+  // sample (the DevTools convention); the last one lasts until endTime.
   const deltas = profile.timeDeltas || [];
+  const stamps = [];
+  deltas.reduce((at, delta, index) => (stamps[index] = at + delta), profile.startTime ?? 0);
   profile.samples.forEach((id, index) => {
-    const ms = (deltas[index + 1] ?? deltas[index] ?? 0) / 1000;
+    const end = index + 1 < stamps.length ? stamps[index + 1] : profile.endTime ?? stamps[index];
+    const ms = Math.max(0, end - stamps[index]) / 1000;
     const seen = new Set();
     for (let at = id; at != null; at = parent.get(at)) {
       const key = keyOf(nodes.get(at).callFrame);

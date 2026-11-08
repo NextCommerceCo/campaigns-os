@@ -15,6 +15,7 @@
 // GOLDEN_BASE_SHA=<commit> rewrites them, which is only for a deliberate,
 // reviewed behavior change.
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -34,6 +35,11 @@ import { recordStageCommand } from "./stage-record.mjs";
 const BASE_SHA = "e1c5bc9c6dc2745d6f2bd54f37f89319ce7f915a";
 const GOLDEN_DIR = fileURLToPath(new URL("../fixtures/doctor-golden/assembly-reports/", import.meta.url));
 const UPDATING = process.env.UPDATE_GOLDEN === "1";
+// A CI run that rewrote the captures would compare the tree with itself and pass.
+if (UPDATING && process.env.CI) {
+  throw new Error("change-scope-v1-reports: UPDATE_GOLDEN=1 is refused while CI is set; regenerate locally and read the diff before committing.");
+}
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const SLUG = "synthetic-campaign";
 const TEMP_PLACEHOLDER = "<fixture>";
 
@@ -116,7 +122,22 @@ function captureBaseSha() {
     throw new Error("UPDATE_GOLDEN=1 needs GOLDEN_BASE_SHA=<the full 40-character commit whose behavior is being captured>, "
       + "with no uncommitted change under src/. Regenerate only for a deliberate, reviewed behavior change.");
   }
+  assertSourceMatches(sha);
   return sha;
+}
+
+// The non-test source on disk must be exactly the source at `sha`, so the
+// commit a capture names is the code that produced it.
+function assertSourceMatches(sha) {
+  const git = (...args) => execFileSync("git", args, { cwd: ROOT, encoding: "utf8" });
+  try {
+    git("cat-file", "-e", `${sha}^{commit}`);
+  } catch {
+    throw new Error(`GOLDEN_BASE_SHA ${sha} is not a commit in this repository.`);
+  }
+  const source = ["--", "src", ":(exclude)*.test.mjs"];
+  const changed = [git("diff", "--name-only", sha, ...source), git("ls-files", "--others", "--exclude-standard", ...source)].join("").trim();
+  if (changed) throw new Error(`src/ differs from GOLDEN_BASE_SHA ${sha}; capture only from that commit's source:\n${changed}`);
 }
 
 function stepTime(index) {
@@ -137,20 +158,28 @@ function normalizeTempPaths(value, prefixes, seen) {
     return out;
   }
   if (Array.isArray(value)) return value.map((item) => normalizeTempPaths(item, prefixes, seen));
-  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, normalizeTempPaths(item, prefixes, seen)]));
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [normalizeTempPaths(key, prefixes, seen), normalizeTempPaths(item, prefixes, seen)]));
+  }
   return value;
 }
 
 function runSequence(t) {
   const root = mkdtempSync(join(tmpdir(), "campaigns-os-change-scope-reports-"));
   const privateRoot = mkdtempSync(join(tmpdir(), "campaigns-os-change-scope-private-"));
-  const savedPrivate = process.env.PRIVATE_TEMPLATE_SOURCES_ROOT;
+  // Same hermetic environment as src/doctor-golden.test.mjs: no sibling private
+  // families, no private allowlist and no campaign key from the shell.
+  const envKeys = ["PRIVATE_TEMPLATE_SOURCES_ROOT", "PRIVATE_TEMPLATE_SOURCES_PATH", "CAMPAIGNS_API_KEY"];
+  const savedEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
   const savedFetch = globalThis.fetch;
+  for (const key of envKeys) delete process.env[key];
   process.env.PRIVATE_TEMPLATE_SOURCES_ROOT = privateRoot;
   globalThis.fetch = () => { throw new Error("change-scope-v1-reports: no network in the saved-report sequence"); };
   t.after(() => {
-    if (savedPrivate === undefined) delete process.env.PRIVATE_TEMPLATE_SOURCES_ROOT;
-    else process.env.PRIVATE_TEMPLATE_SOURCES_ROOT = savedPrivate;
+    for (const key of envKeys) {
+      if (savedEnv[key] === undefined) delete process.env[key];
+      else process.env[key] = savedEnv[key];
+    }
     globalThis.fetch = savedFetch;
     rmSync(root, { recursive: true, force: true });
     rmSync(privateRoot, { recursive: true, force: true });
@@ -256,7 +285,8 @@ function runSequence(t) {
 test("saved pre-refactor Assembly Reports: record build, readback and evidence debt reproduce the #730 captures", (t) => {
   const started = performance.now();
   const { captures, normalizedPrefixes } = runSequence(t);
-  t.diagnostic(`temp-dir prefixes normalized: ${normalizedPrefixes.length ? normalizedPrefixes.length : "none appeared"}`);
+  // The captures hold no machine path today; one appearing is a change to report, not to normalize away.
+  assert.deepEqual(normalizedPrefixes, [], "a temp-dir path appeared in a capture (key or value)");
   t.diagnostic(`sequence wall time ${Math.round(performance.now() - started)} ms`);
 
   // Sanity on the sequence itself, so a capture can never silently record a

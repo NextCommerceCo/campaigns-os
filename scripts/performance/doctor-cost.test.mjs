@@ -67,6 +67,14 @@ test("built mode on a certified family reports reads, parses and scope work", { 
   assert.ok(!text.includes(ROOT) && !text.includes(homedir()), "no absolute checkout or home path survives redaction");
 });
 
+test("a synthetic estate measures and redacts its copy directories", { skip }, () => {
+  const run = harness(["packet", "--estate", "1", "--samples", "1", "--no-plain", "--no-baseline", "--label", "synthetic-16"]);
+  assert.equal(run.status, 0, `harness exited ${run.status}: ${run.stderr}`);
+  const result = JSON.parse(run.stdout);
+  assert.equal(result.label, "synthetic-16", "label is echoed");
+  assert.ok(result.counters.reads.calls > result.counters.reads.distinct, "estate pages are read more than once, so repeated copy paths reach the redactor");
+});
+
 test("a target outside the checkout keeps neither its directory name nor its slug", { skip }, (t) => {
   const dir = scratch(t, "campaigns-os-doctor-cost-leak-");
   const built = join(dir, "acme-private-estate-zq");

@@ -102,6 +102,10 @@ campaign.
 
 ## What is normalized, and why
 
+The suite assumes POSIX paths. It runs on macOS and Linux, as CI does; on
+Windows `path.relative()` emits backslashes and the path tokens below would
+not match.
+
 Only three things:
 
 1. **The clock is frozen**, not rewritten afterwards. The test mocks `Date`

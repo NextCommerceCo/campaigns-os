@@ -28,6 +28,7 @@
 // Nothing else is touched. See fixtures/doctor-golden/README.md.
 
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   chmodSync,
@@ -61,6 +62,14 @@ const REGEN = "UPDATE_GOLDEN=1 node --test src/doctor-golden.test.mjs";
 const UPDATE = process.env.UPDATE_GOLDEN === "1";
 if (UPDATE && process.env.CI) {
   throw new Error(`doctor golden: ${REGEN} is refused while CI is set; regenerate locally and read the diff before committing.`);
+}
+// The goldens name BASE_SHA, so they may only be captured from that commit's
+// non-test source.
+if (UPDATE) {
+  const git = (...args) => execFileSync("git", args, { cwd: ROOT, encoding: "utf8" });
+  const source = ["--", "src", ":(exclude)*.test.mjs"];
+  const changed = [git("diff", "--name-only", BASE_SHA, ...source), git("ls-files", "--others", "--exclude-standard", ...source)].join("").trim();
+  if (changed) throw new Error(`doctor golden: src/ differs from BASE_SHA ${BASE_SHA}; update BASE_SHA for a reviewed behavior change first:\n${changed}`);
 }
 
 const CERTIFIED_ROOT = join(ROOT, "fixtures", "certified-families");
@@ -152,7 +161,7 @@ function normalize(value, fixtureDirs, { baseDir = null, extraForbidden = [] } =
 // base's real path and no longer or shorter, is written "<fsroot>/"; paths
 // inside the fixture carry fewer and stay as they are. This pins a base quirk
 // (root-relative public routes treated as local paths) that #730 does not
-// change.
+// change. POSIX separators only: the suite, like CI, runs on macOS and Linux.
 function stripRootEscape(baseDir) {
   const depth = realpathSync(baseDir).split(sep).filter(Boolean).length;
   const run = new RegExp(`(?<!\\.\\./)(?:\\.\\./){${depth}}(?!\\.\\./)`, "g");
@@ -341,8 +350,10 @@ function examplesCopy(t, topic) {
 }
 
 // The examples copy prepared the way the upsell checkpoint integration test
-// prepares it: commerce catalog beside the packet, a complete Build Brief and
-// an Assembly Report bound to this packet. `pages` maps a built route (""
+// prepares it: commerce catalog beside the packet, a Build Brief file and an
+// Assembly Report bound to this packet. The brief is written but not bound
+// (the examples packet has no build_brief), so packet goldens pin doctor's
+// build_brief.missing warning; brief validation is outside #730's scope. `pages` maps a built route (""
 // for the campaign root) to its HTML under _site/runtime-packet-demo/;
 // `files` maps any other path under that directory to its content. The
 // mutators edit the packet, the CampaignSpec and the Assembly Report before
