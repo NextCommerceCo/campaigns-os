@@ -11255,6 +11255,33 @@
         }
       ],
       "entry_sha256": "e161ec22042fe75d0a3287f494125ab376c5d8a98e5a7768534d479bd32d18ac"
+    },
+    {
+      "id": "RL-0320",
+      "sequence": 308,
+      "date": "2026-11-08",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.66.0+agent.4",
+      "changelog_sha256": "4e4d28b9341cda6636b52e5fc4abdcc21a44a33c77d1449f3ee5a2d65298c6ba",
+      "agent_impact": "None. Doctor output is unchanged: the same codes, messages, ordering, ready lines, checkpoint gates and causes. Doctor reads and parses less within one run, and doctor --built now shares one read-only input snapshot like packet doctor.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": null,
+          "summary": "The upsell selector-scope and SDK markup gates read the built-site scope, page bytes and parsed pages through the run's shared input snapshot, and spec-page route lookups walk the source pages once per run."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/inspect.mjs",
+          "surface_entry": null,
+          "summary": "doctor --built runs inside one read-only input snapshot, and its upsell selector-scope and SDK markup gates read through it."
+        }
+      ],
+      "entry_sha256": "069cf441ec9ac2baef42d12343538d0862c74523aba6c4206c184818aae55155"
     }
   ]
 }

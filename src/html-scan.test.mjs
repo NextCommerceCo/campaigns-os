@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
-import { htmlScanDigest, readHtmlScanText, withHtmlScanSnapshot } from './html-scan.mjs';
+import { htmlScanDigest, htmlScanDocuments, htmlScanMemo, readHtmlScanText, withHtmlScanSnapshot } from './html-scan.mjs';
 
 function fixture(t) {
   const dir = mkdtempSync(join(tmpdir(), 'html-scan-'));
@@ -116,4 +116,84 @@ test('queued reads after a throwing invocation observe fresh bytes', async t => 
   }), /abort/);
   writeFileSync(path, 'after');
   assert.equal(await pending, 'after');
+});
+
+test('a snapshot shares one tree per held file and profile across consumers, and expires it with its bytes', t => {
+  const path = fixture(t);
+  writeFileSync(path, '<meta name="next-page-type" content="upsell">');
+  let first;
+  withHtmlScanSnapshot(() => {
+    const text = readHtmlScanText(path);
+    first = htmlScanDocuments([path])(path, text);
+    writeFileSync(path, '<p>changed</p>');
+    assert.equal(htmlScanDocuments([path])(path, text), first);
+    assert.equal(htmlScanDocuments([path], 'noloc')(path, 'ignored once shared'), first);
+    assert.throws(() => htmlScanDocuments([path], 'loc'), /Unknown HTML parse profile: loc/);
+  });
+  withHtmlScanSnapshot(() => assert.notEqual(htmlScanDocuments([path])(path, readHtmlScanText(path)), first));
+  const outside = htmlScanDocuments([path]);
+  assert.notEqual(outside(path, '<p>a</p>'), outside(path, '<p>a</p>'));
+});
+
+test('a page set past the parse budget, or with a file the snapshot does not hold, is parsed per use from the text given', t => {
+  const small = fixture(t);
+  const pages = [small];
+  writeFileSync(small, '<p>small</p>');
+  // 4 x 1 MiB of bytes fits the byte budget; its estimated trees (80 MiB) do not fit the parse budget.
+  for (let i = 0; i < 4; i += 1) {
+    const page = join(dirname(small), `page-${i}.html`);
+    writeFileSync(page, Buffer.alloc(1024 * 1024, 97));
+    pages.push(page);
+  }
+  const big = join(dirname(small), 'big.html');
+  writeFileSync(big, Buffer.alloc(6 * 1024 * 1024, 97));
+  withHtmlScanSnapshot(() => {
+    for (const page of pages) readHtmlScanText(page);
+    const overBudget = htmlScanDocuments(pages);
+    assert.notEqual(overBudget(small, '<p>small</p>'), overBudget(small, '<p>small</p>'));
+    readHtmlScanText(big);
+    const unheld = htmlScanDocuments([small, big]);
+    assert.notEqual(unheld(small, '<p>small</p>'), unheld(small, '<p>small</p>'));
+    assert.equal(unheld(small, '<p>given</p>').childNodes[0].childNodes[1].childNodes[0].childNodes[0].value, 'given');
+    const alone = htmlScanDocuments([small]);
+    assert.equal(alone(small, '<p>small</p>'), alone(small, '<p>small</p>'));
+  });
+});
+
+test('a memo computes once per snapshot, read-only, and recomputes outside one', () => {
+  let calls = 0;
+  const compute = () => ({ calls: ++calls, pages: [{ id: 'a' }] });
+  withHtmlScanSnapshot(() => {
+    const value = htmlScanMemo('k', compute);
+    assert.equal(htmlScanMemo('k', compute), value);
+    assert.ok(Object.isFrozen(value) && Object.isFrozen(value.pages) && Object.isFrozen(value.pages[0]));
+  });
+  withHtmlScanSnapshot(() => assert.equal(htmlScanMemo('k', compute).calls, 2));
+  assert.equal(htmlScanMemo('k', compute).calls, 3);
+  assert.equal(htmlScanMemo('k', compute).calls, 4);
+});
+
+test('nested snapshots share one retention budget, and nesting past the depth limit runs uncached', t => {
+  const big = fixture(t);
+  const small = join(dirname(big), 'small.html');
+  writeFileSync(big, Buffer.alloc(5 * 1024 * 1024, 97));
+  writeFileSync(small, Buffer.alloc(1024 * 1024, 98));
+  withHtmlScanSnapshot(() => {
+    readHtmlScanText(big);
+    withHtmlScanSnapshot(() => {
+      // 15 MiB of the 16 MiB budget is held by the outer snapshot.
+      assert.equal(readHtmlScanText(small)[0], 'b');
+      writeFileSync(small, 'fresh');
+      assert.equal(readHtmlScanText(small), 'fresh');
+    });
+  });
+  writeFileSync(small, 'depth');
+  const nest = (depth) => withHtmlScanSnapshot(() => (depth ? nest(depth - 1) : (() => {
+    readHtmlScanText(small);
+    writeFileSync(small, 'deeper');
+    return readHtmlScanText(small);
+  })()));
+  assert.equal(nest(4), 'depth');
+  writeFileSync(small, 'depth');
+  assert.equal(nest(5), 'deeper');
 });

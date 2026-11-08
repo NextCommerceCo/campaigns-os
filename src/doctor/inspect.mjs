@@ -46,6 +46,7 @@ import {
   validatePacket,
   recordUpsellSelectorScopeGate,
   collectBuiltPageIdentityInputs,
+  sharedBuiltPages,
   recordCampaignIdentityGate,
   recordScriptSyntaxGate,
   recordSdkMarkupGate,
@@ -230,7 +231,12 @@ function recordDoctorStageOutcome(report, result, { command, doctorOutPath, targ
 // gates the family brand contract drives, and auto-emit a minimal Build Packet
 // (optionally written with --emit-packet) so QA can run against the same
 // campaign without a hand-authored packet.
+// One read-only inspection, so the gates share its inputs (html-scan.mjs, #730).
 export function doctorBuiltOutput(args) {
+  return withHtmlScanSnapshot(() => inspectBuiltOutput(args));
+}
+
+function inspectBuiltOutput(args) {
   const targetRepo = resolve(String(args.built || args.site));
   const errors = [];
   const warnings = [];
@@ -326,15 +332,13 @@ export function doctorBuiltOutput(args) {
       public_route_slug: scope.slug || null,
       site_root: relFromDir(targetRepo, scope.campaign_dir),
     },
-    pages: scope.pages.map((page) => {
-      const content = readFileSync(page.built_path, "utf8");
-      return {
-        page_id: page.page_id,
-        page_type: builtPageTypeOverRouteGuess({ route: page.route, route_type: page.page_type, content }),
-        file: relFromDir(targetRepo, page.built_path),
-        content,
-      };
-    }),
+    pages: sharedBuiltPages(scope, targetRepo).map((page) => ({
+      page_id: page.page_id,
+      page_type: builtPageTypeOverRouteGuess(page),
+      file: page.file,
+      content: page.content,
+      document: page.document,
+    })),
     waivers: null,
     errors,
     warnings,
@@ -365,7 +369,7 @@ export function doctorBuiltOutput(args) {
       public_route_slug: scope.slug || null,
       site_root: relFromDir(targetRepo, scope.campaign_dir),
     },
-    pages: collectBuiltPageIdentityInputs(scope, targetRepo),
+    pages: sharedBuiltPages(scope, targetRepo),
     errors,
     warnings,
     ready,
