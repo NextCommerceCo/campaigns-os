@@ -63,13 +63,15 @@ const UPDATE = process.env.UPDATE_GOLDEN === "1";
 if (UPDATE && process.env.CI) {
   throw new Error(`doctor golden: ${REGEN} is refused while CI is set; regenerate locally and read the diff before committing.`);
 }
-// The goldens name BASE_SHA, so they may only be captured from that commit's
-// non-test source.
-if (UPDATE) {
+// A regeneration names the commit it ran on, never BASE_SHA, and refuses
+// uncommitted non-test source, so a golden's base_sha is the code that
+// produced it. The suite then fails until BASE_SHA is moved to that commit.
+const STAMP = UPDATE ? captureCommit() : BASE_SHA;
+function captureCommit() {
   const git = (...args) => execFileSync("git", args, { cwd: ROOT, encoding: "utf8" });
-  const source = ["--", "src", ":(exclude)*.test.mjs"];
-  const changed = [git("diff", "--name-only", BASE_SHA, ...source), git("ls-files", "--others", "--exclude-standard", ...source)].join("").trim();
-  if (changed) throw new Error(`doctor golden: src/ differs from BASE_SHA ${BASE_SHA}; update BASE_SHA for a reviewed behavior change first:\n${changed}`);
+  const dirty = git("status", "--porcelain", "--", "src", ":(exclude)*.test.mjs").trim();
+  if (dirty) throw new Error(`doctor golden: commit or discard these src/ changes before regenerating, so base_sha names the code that produced the goldens:\n${dirty}`);
+  return git("rev-parse", "HEAD").trim();
 }
 
 const CERTIFIED_ROOT = join(ROOT, "fixtures", "certified-families");
@@ -207,7 +209,7 @@ function goldenCase(entry, id, description, run, { compact = null, skip = false 
       writeFileSync(join(process.env.DOCTOR_GOLDEN_DUMP, `${name}.json`), `${JSON.stringify(normalized, null, 2)}\n`);
     }
     const record = {
-      base_sha: BASE_SHA,
+      base_sha: STAMP,
       case: id,
       entry,
       description,

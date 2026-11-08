@@ -11,9 +11,8 @@
 // buildCommerceSignature, classifyDrift and the record/readback callers: a
 // refactor PR must reproduce them, never regenerate them. Each capture is
 // compared as parsed values (for a readable diff) and then byte for byte, so
-// key order and formatting are pinned too. UPDATE_GOLDEN=1 with
-// GOLDEN_BASE_SHA=<commit> rewrites them, which is only for a deliberate,
-// reviewed behavior change.
+// key order and formatting are pinned too. UPDATE_GOLDEN=1 rewrites them from
+// a committed tree, which is only for a deliberate, reviewed behavior change.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -28,10 +27,9 @@ import { assessEvidenceDebt } from "./evidence-debt.mjs";
 import { runReadbackCommand } from "./readback.mjs";
 import { recordStageCommand } from "./stage-record.mjs";
 
-// The commit the saved captures were taken from. A capture records the
-// commit named by GOLDEN_BASE_SHA when it is regenerated, never this
-// constant, so a reviewed regeneration must also update this value and the
-// README by hand.
+// The commit the saved captures were taken from. A regeneration records the
+// commit it ran on, never this constant, so a reviewed regeneration must also
+// update this value and the README by hand.
 const BASE_SHA = "e1c5bc9c6dc2745d6f2bd54f37f89319ce7f915a";
 const GOLDEN_DIR = fileURLToPath(new URL("../fixtures/doctor-golden/assembly-reports/", import.meta.url));
 const UPDATING = process.env.UPDATE_GOLDEN === "1";
@@ -113,31 +111,15 @@ const STEPS = [
   { step: "11-second-baseline-refused", refused: true, description: "A second record baseline on the same funnel: refused, a funnel gets one baseline, and the report is left byte for byte as it was." },
 ];
 
-// The commit a regenerated capture names. Required, so a regeneration can
-// never stamp the pre-refactor base onto output from a later tree.
+// A regeneration names the commit it ran on, never BASE_SHA, and refuses
+// uncommitted non-test source, so a capture's base_sha is the code that
+// produced it.
 function captureBaseSha() {
   if (!UPDATING) return BASE_SHA;
-  const sha = process.env.GOLDEN_BASE_SHA ?? "";
-  if (!/^[0-9a-f]{40}$/.test(sha)) {
-    throw new Error("UPDATE_GOLDEN=1 needs GOLDEN_BASE_SHA=<the full 40-character commit whose behavior is being captured>, "
-      + "with no uncommitted change under src/. Regenerate only for a deliberate, reviewed behavior change.");
-  }
-  assertSourceMatches(sha);
-  return sha;
-}
-
-// The non-test source on disk must be exactly the source at `sha`, so the
-// commit a capture names is the code that produced it.
-function assertSourceMatches(sha) {
   const git = (...args) => execFileSync("git", args, { cwd: ROOT, encoding: "utf8" });
-  try {
-    git("cat-file", "-e", `${sha}^{commit}`);
-  } catch {
-    throw new Error(`GOLDEN_BASE_SHA ${sha} is not a commit in this repository.`);
-  }
-  const source = ["--", "src", ":(exclude)*.test.mjs"];
-  const changed = [git("diff", "--name-only", sha, ...source), git("ls-files", "--others", "--exclude-standard", ...source)].join("").trim();
-  if (changed) throw new Error(`src/ differs from GOLDEN_BASE_SHA ${sha}; capture only from that commit's source:\n${changed}`);
+  const dirty = git("status", "--porcelain", "--", "src", ":(exclude)*.test.mjs").trim();
+  if (dirty) throw new Error(`change-scope-v1-reports: commit or discard these src/ changes before regenerating, so base_sha names the code that produced the captures:\n${dirty}`);
+  return git("rev-parse", "HEAD").trim();
 }
 
 function stepTime(index) {
@@ -327,11 +309,11 @@ test("saved pre-refactor Assembly Reports: record build, readback and evidence d
     const savedText = readFileSync(file, "utf8");
     const saved = JSON.parse(savedText);
     assert.equal(saved.base_sha, BASE_SHA, `${capture.step}: the saved capture names ${saved.base_sha}, not BASE_SHA ${BASE_SHA}. `
-      + "After a reviewed regeneration, update BASE_SHA and the README to the GOLDEN_BASE_SHA it was captured from.");
+      + "After a reviewed regeneration, update BASE_SHA and the README to the commit it was captured from.");
     for (const key of ["assembly_report", "evidence_debt_changes", "change_since", "readback_evidence_debt", "before_record", "refusal"]) {
       assert.deepEqual(capture[key], saved[key],
         `${capture.step}.${key} differs from fixtures/doctor-golden/assembly-reports/${capture.step}.json. These captures predate the #730 refactor `
-        + "and must be reproduced exactly; do not regenerate them to make a refactor pass. Regenerate (UPDATE_GOLDEN=1 GOLDEN_BASE_SHA=<commit> node --test src/change-scope-v1-reports.test.mjs) "
+        + "and must be reproduced exactly; do not regenerate them to make a refactor pass. Regenerate (UPDATE_GOLDEN=1 node --test src/change-scope-v1-reports.test.mjs) "
         + "only for a deliberate, reviewed behavior change, and read the diff.");
     }
     assert.deepEqual(capture, saved, `${capture.step}: the whole capture, including step metadata`);

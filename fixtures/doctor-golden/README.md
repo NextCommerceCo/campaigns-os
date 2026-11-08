@@ -18,7 +18,10 @@ and compares it with its file here.
   ```
 
   Only the exact value `1` regenerates, and the suite refuses to run in
-  that mode when `CI` is set.
+  that mode when `CI` is set or when non-test files under `src/` have
+  uncommitted changes. Regenerated goldens name the commit they ran on
+  (`HEAD`) as `base_sha`, and the suite fails until `BASE_SHA` in the test
+  is moved to that commit.
 - Do not edit a file by hand. A case removed from the test must have its
   file removed too; the suite fails on a file without a case.
 

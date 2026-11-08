@@ -509,7 +509,7 @@ const STATUS = /^[a-z_/]+ \(ci: [a-z_/]+\)$|^[a-z0-9-]+\/v\d+$/;
 export function assertRedacted(value, { roots = [], secrets = [] } = {}) {
   // A root's own directory name (a repository or brand name) is as private as its path.
   const rootForms = roots.filter(Boolean).flatMap((root) => [resolve(root), realOrSelf(resolve(root))]);
-  const forbidden = [...new Set([...rootForms, ...rootForms.map((root) => basename(root)).filter((name) => name.length > 2 && !SAFE_SEGMENT.test(name)),
+  const forbidden = [...new Set([...rootForms, ...rootForms.map((root) => basename(root)).filter((name) => name.length > 2),
     TOOLKIT, realOrSelf(TOOLKIT), tmpdir(), realOrSelf(tmpdir()), ...(homedir() && homedir() !== "/" ? [homedir()] : []), ...secrets.filter(Boolean)])];
   const fits = (text) => {
     const bare = text.replace(/<[a-z0-9-]+>/g, "");
@@ -628,7 +628,9 @@ export function profileSummary(profile, { root = TOOLKIT, top = 25 } = {}) {
   };
   const inclusive = new Map();
   // timeDeltas[i] is the gap before sample i, so sample i lasts until the next
-  // sample (the DevTools convention); the last one lasts until endTime.
+  // sample (the DevTools convention); the last one lasts until endTime. The
+  // gap before the first sample covers no stack and is reported on its own, so
+  // attributed time plus leading_gap_ms is profile_ms.
   const deltas = profile.timeDeltas || [];
   const stamps = [];
   deltas.reduce((at, delta, index) => (stamps[index] = at + delta), profile.startTime ?? 0);
@@ -646,6 +648,7 @@ export function profileSummary(profile, { root = TOOLKIT, top = 25 } = {}) {
   });
   return {
     profile_ms: round((profile.endTime - profile.startTime) / 1000),
+    leading_gap_ms: round((deltas[0] ?? 0) / 1000),
     functions: [...inclusive.entries()].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).slice(0, top).map(([fn, ms]) => ({ fn, inclusive_ms: round(ms) })),
   };
 }
@@ -717,7 +720,7 @@ export function measure(values) {
     };
     let estate = null;
     let estateIndex = 0;
-    const freshEstate = () => makeEstate(join(sandbox, `estate-${estateIndex++}`), { copies: estateCopies, stage: estateStage, root, env });
+    const freshEstate = () => makeEstate(join(sandbox, `synthetic-root-${estateIndex++}`), { copies: estateCopies, stage: estateStage, root, env });
     const specFor = (sampleEstate) => (sampleEstate
       ? { ...base, built: sampleEstate.built, slug: base.slug ?? sampleEstate.slug, packet: sampleEstate.packet }
       : base);
