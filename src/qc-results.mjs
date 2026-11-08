@@ -21,7 +21,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
 
-import { campaignSidecarPaths } from "./campaign-workspace.mjs";
+import { campaignSidecarPaths, packetRuntimeRelPath } from "./campaign-workspace.mjs";
 import { checkpointStateFingerprint } from "./checkpoint-waiver.mjs";
 import { contrastToolkit } from "./contrast.mjs";
 import { sameFile } from "./fs-identity.mjs";
@@ -299,10 +299,14 @@ export function readQaFullVerdict({ stage, targetRepo, packetPath = null, report
     const stats = statSync(real);
     if (!stats.isFile()) return null;
     if (!inside(realpathSync(outputDir), real)) return null;
+    // This funnel's default report and every other funnel's project-level
+    // one (#719): neither is a verdict.
+    const packet = isNonEmptyString(packetPath) ? readPacketForGuard(packetPath) : null;
     const forbidden = [
       reportPath,
       campaignSidecarPaths(targetRepo).reportPath,
-      isNonEmptyString(packetPath) ? sidecarPathForPacket(packetPath) : null,
+      packet ? campaignSidecarPaths(targetRepo, packetRuntimeRelPath(packet)).reportPath : null,
+      isNonEmptyString(packetPath) ? sidecarPathForPacket(packetPath, packet) : null,
       ...outputs.filter((path) => path !== candidates[0]),
     ].filter(isNonEmptyString);
     for (const path of forbidden) {
@@ -312,6 +316,15 @@ export function readQaFullVerdict({ stage, targetRepo, packetPath = null, report
       if (other.dev === stats.dev && other.ino === stats.ino) return null;
     }
     return JSON.parse(readFileSync(real, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function readPacketForGuard(packetPath) {
+  try {
+    const parsed = JSON.parse(readFileSync(packetPath, "utf8"));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
   } catch {
     return null;
   }
@@ -1038,30 +1051,46 @@ function readabilityCropResolves(ref, targetRepo) {
 //    the record lacks, or one over the route cap, reads page_not_captured;
 //    a recorded route outside it, or different uncaptured routes or
 //    enumeration cap, → evidence_not_reproducible;
-// 4. the rows READABILITY_QC_RULES.evaluate derives from each cell.
+// 4. the rows READABILITY_QC_RULES.evaluate derives from each cell, and,
+//    for a record that stores layout_conventions, the layout.conventions
+//    rows LAYOUT_QC_RULES.evaluate derives from it.
 // `campaignSlug` is the packet's slug; a missing one never matches.
-export function readReadability({ record, pageLoad = null, currentBuild = null, currentSource = null, buildOutput = null, campaignSlug = null, targetRepo = null, qcStandIns = null, rederivers = null } = {}) {
+export function readReadability({ record, pageLoad = null, currentBuild = null, currentSource = null, buildOutput = undefined, campaignSlug = null, targetRepo = null, qcStandIns = null, rederivers = null } = {}) {
   if (record === undefined || record === null) return [];
-  const [check] = POLISH_RECORDS.readability.checks;
+  const [check, layoutCheck = null] = POLISH_RECORDS.readability.checks;
   const measuredAt = canonicalTime(record?.measured_at) ? record.measured_at : null;
   const cells = Array.isArray(record?.cells) ? record.cells.filter(isPlainObject) : [];
-  const subjectOf = (page, viewport, key) => ({ check, page, viewport, key });
-  const rowOf = (subject, reasonCode) => unreproducedRow({ subject, check }, reasonCode, { leg: "polish", measuredAt });
+  const subjectOf = (page, viewport, key, of = check) => ({ check: of, page, viewport, key });
+  const rowOf = (subject, reasonCode) => unreproducedRow({ subject, check: subject.check }, reasonCode, { leg: "polish", measuredAt });
   const unique = (rows) => [...new Map(rows.map((row) => [row.id, row])).values()];
   let rules = null;
+  // The layout check reads only a record that stores the conventions it was
+  // measured with; its rules load on their own.
+  const layoutRecorded = isPlainObject(record) && Object.hasOwn(record, "layout_conventions") && isNonEmptyString(layoutCheck);
+  const layoutResolved = layoutRecorded ? resolvePolishRules({ check: layoutCheck, qcStandIns, rederivers }) : { status: "missing" };
+  const layoutRules = layoutResolved.status === "loaded" ? layoutResolved.rules : null;
+  const layoutRead = layoutRecorded && layoutResolved.status !== "missing";
+  const namedKeys = (rowKeys, cell) => {
+    try {
+      const named = typeof rowKeys === "function" ? rowKeys(cell) : [];
+      return Array.isArray(named) ? named.filter(isNonEmptyString) : [];
+    } catch {
+      return [];
+    }
+  };
+  // A failed cell's layout rows: one per row the layout rules name for the
+  // cell (its `cell` row among them; none at a viewport no convention
+  // applies to), or its `cell` row when the rules did not load.
+  const failLayout = (cell) => (layoutRead
+    ? [...new Set(layoutRules ? namedKeys(layoutRules.rowKeys, cell) : ["cell"])].map((key) => rowOf(subjectOf(cell?.route ?? null, cell?.viewport ?? null, key, layoutCheck), E))
+    : []);
   // A failed cell: one result per row the cell names and its `cell` row, so
   // a failed cell is never silent and an accept of one of its rows lapses
   // rather than orphans. The keys come from rules.rowKeys, which reads
   // neither the record's thresholds nor any field the checks reject.
   const failCell = (cell) => {
-    let named = [];
-    try {
-      named = typeof rules?.rowKeys === "function" ? rules.rowKeys(cell) : [];
-    } catch {
-      named = [];
-    }
-    const keys = [...new Set([...(Array.isArray(named) ? named.filter(isNonEmptyString) : []), "cell"])];
-    return keys.map((key) => rowOf(subjectOf(cell?.route ?? null, cell?.viewport ?? null, key), E));
+    const keys = [...new Set([...namedKeys(rules?.rowKeys, cell), "cell"])];
+    return [...keys.map((key) => rowOf(subjectOf(cell?.route ?? null, cell?.viewport ?? null, key), E)), ...failLayout(cell)];
   };
   // A record-level failure: every listed cell fails; every route the subject
   // or a cell names, at every recorded or fixed viewport, that no cell lists
@@ -1124,7 +1153,8 @@ export function readReadability({ record, pageLoad = null, currentBuild = null, 
     || typeof record.route_enumeration_capped !== "boolean"
     || !Array.isArray(record.cells)
     || cells.length !== record.cells.length
-    || !cells.every((cell) => rules.cellShapeOk(cell))) return failAll();
+    || !cells.every((cell) => rules.cellShapeOk(cell))
+    || (layoutRecorded && layoutRules && !sameJson(record.layout_conventions, layoutRules.thresholds))) return failAll();
   // The cell set is exactly routes × viewports: none missing, none added,
   // none twice, every cell's route and viewport in the subject.
   const gridKeys = declaredGrid(subject).map(({ route, viewport }) => cellKey(route, viewport));
@@ -1151,7 +1181,9 @@ export function readReadability({ record, pageLoad = null, currentBuild = null, 
   const bound = isNonEmptyString(currentBuild)
     && subject.build_fingerprint === currentBuild
     && subject.source_package_material_fingerprint === (isNonEmptyString(currentSource) ? currentSource : null)
-    && !outputDrifted(buildOutput ?? null);
+    // As in the captures reader: no buildOutput (undefined) reads without the
+    // output check; null is drift.
+    && !outputDrifted(buildOutput);
 
   // 3. The recomputed route set, read only when the output is the build's.
   const results = [];
@@ -1182,22 +1214,37 @@ export function readReadability({ record, pageLoad = null, currentBuild = null, 
     }
     const derived = evaluate(cell, cropAvailable);
     // Every derived subject is the cell's own page and viewport, each key once.
-    const keys = Array.isArray(derived) ? derived.map((item) => item?.subject?.key) : [];
-    if (!Array.isArray(derived) || new Set(keys).size !== keys.length || !derived.every((item) => item?.check === check
-      && validDerived(item, check)
-      && hasExactly(item.subject, ["check", "page", "viewport", "key"])
-      && item.subject.page === cell.route
-      && item.subject.viewport === cell.viewport
-      && isNonEmptyString(item.subject.key))) {
+    const derivedOk = (items, of) => {
+      const keys = Array.isArray(items) ? items.map((item) => item?.subject?.key) : [];
+      return Array.isArray(items) && new Set(keys).size === keys.length && items.every((item) => item?.check === of
+        && validDerived(item, of)
+        && hasExactly(item.subject, ["check", "page", "viewport", "key"])
+        && item.subject.page === cell.route
+        && item.subject.viewport === cell.viewport
+        && isNonEmptyString(item.subject.key));
+    };
+    if (!derivedOk(derived, check)) {
       results.push(...failCell(cell));
       continue;
     }
-    for (const item of derived) {
+    let layoutDerived = [];
+    if (layoutRead) {
+      try {
+        layoutDerived = layoutRules ? layoutRules.evaluate(cell, record.layout_conventions) : null;
+      } catch {
+        layoutDerived = null;
+      }
+      if (!derivedOk(layoutDerived, layoutCheck)) {
+        results.push(...failLayout(cell));
+        layoutDerived = [];
+      }
+    }
+    for (const item of [...derived, ...layoutDerived]) {
       const members = item.members ?? [];
       const row = {
         schema: QC_RESULT_SCHEMA,
         id: qcResultId(item.subject),
-        check,
+        check: item.check,
         leg: "polish",
         result: item.result,
         reason_code: item.result === "pass" ? null : item.reason_code,

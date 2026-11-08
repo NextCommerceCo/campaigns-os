@@ -431,6 +431,7 @@ test("F1.3-I9 report evidence from before this version (no media_weight), hidden
   assert.deepEqual(
     handoffOf(await runNext(f)).coverage,
     [
+      { check: "layout.conventions", leg: "polish", result: "unexercised", reason_code: "not_captured_by_this_version", count: 0, pages: [] },
       { check: "media.oversize", leg: "polish", result: "unexercised", reason_code: "not_captured_by_this_version", count: 0, pages: [] },
       { check: "media.weight", leg: "polish", result: "unexercised", reason_code: "not_captured_by_this_version", count: 0, pages: [] },
       { check: "parity.element", leg: "polish", result: "unexercised", reason_code: "not_captured_by_this_version", count: 0, pages: [] },

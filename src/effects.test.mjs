@@ -65,6 +65,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 import { computeBuildFingerprint } from "./built-site-scope.mjs";
+import { packetRuntimeRelPath } from "./campaign-workspace.mjs";
 import { buildPageLoadCapture } from "./polish-capture.mjs";
 import { planPolishCapture } from "./polish-node.mjs";
 import { buildPolishPageLoadEvidence } from "./polish-page-load.mjs";
@@ -312,6 +313,19 @@ function seedDerivablePin(seed) {
   writeJson(campaignsPath, campaigns);
 }
 
+/** A derivable pin and a built `_site/`, so `spec derive` also makes its live campaign read (#721). */
+function seedDerivableBuiltSite(seed) {
+  seedDerivablePin(seed);
+  seedBuiltSite(seed);
+}
+
+/** A saved-Map packet on a checkout without its fetched copy, as a clone from before it was committed is. */
+function seedMissingFetchedSpec(seed) {
+  const packet = readJson(seed.packetPath);
+  packet.spec.local_path = relative(dirname(seed.packetPath), join(seed.targetRepo, ".campaign-runtime/fetched-specs", `${packet.spec.map_id}.json`));
+  writeJson(seed.packetPath, packet);
+}
+
 /** A Git checkout with a manifest, which `sdk storage-check` refuses to run without. */
 function seedStorageScan(seed) {
   execFileSync("git", ["init", "-q"], { cwd: seed.targetRepo });
@@ -457,6 +471,21 @@ function seedDeployReady(seed) {
   const packet = readJson(seed.packetPath);
   packet.deploy = { ...packet.deploy, target: "local-serve" };
   writeJson(seed.packetPath, packet);
+}
+
+/** A handed-off funnel rebuilt from a pre-1.62 record, the one kind `record baseline` accepts. */
+function seedBaselineReady(seed) {
+  seedDeployReady(seed);
+  const report = readJson(seed.reportPath);
+  const current = report.stages.assembly.build_fingerprint;
+  const older = `sha256:${"0".repeat(64)}`;
+  report.stages.assembly.build_changes = [{
+    from_build_fingerprint: older, build_fingerprint: current, recorded_at: "2026-11-01T00:00:00.000Z", kind: "commerce_affecting",
+    changed_pages: [], unmapped_files: [], unmapped_file_count: 0, reasons: [{ code: "commerce_signature_unavailable" }],
+  }];
+  report.stages.deploy = { ...report.stages.deploy, status: "completed" };
+  report.stages.qa = { stage: "qa", status: "completed", evidence: { source_build_fingerprint: older } };
+  writeJson(seed.reportPath, report);
 }
 
 /**
@@ -634,6 +663,8 @@ const intake = (command, seed, extra = []) => [
  * receiver serves the seeded spec at `/api/spec/<map-id>`, so the fetch and the
  * fetched copy it writes are observed rather than declared on trust. The other
  * four conditions keep `--spec`, so both spec sources are proved per row.
+ * `serveSpec: true` marks a row that always reads the Map, so the receiver
+ * serves the spec under every condition.
  */
 const INVOCATIONS = {
   "help": { argv: () => ["help"] },
@@ -685,10 +716,12 @@ const INVOCATIONS = {
   "page-kit sync": { argv: (s) => ["page-kit", "sync", "--packet", s.packetPath, "--json"] },
   "page-kit sync|--dry-run": { argv: (s) => ["page-kit", "sync", "--packet", s.packetPath, "--dry-run", "--json"] },
   "page-kit parity": { argv: (s) => ["page-kit", "parity", "--packet", s.packetPath, "--json"] },
-  "spec derive": { prepare: seedDerivablePin, argv: (s) => ["spec", "derive", "--packet", s.packetPath, "--json"] },
-  "spec derive|--dry-run": { prepare: seedDerivablePin, argv: (s) => ["spec", "derive", "--packet", s.packetPath, "--dry-run", "--json"] },
+  "spec derive": { prepare: seedDerivableBuiltSite, argv: (s, receiver) => ["spec", "derive", "--packet", s.packetPath, "--proxy-base", receiver, "--json"] },
+  "spec derive|--no-live-refs": { prepare: seedDerivableBuiltSite, argv: (s, receiver) => ["spec", "derive", "--packet", s.packetPath, "--proxy-base", receiver, "--no-live-refs", "--json"] },
+  "spec derive|--dry-run": { prepare: seedDerivableBuiltSite, argv: (s, receiver) => ["spec", "derive", "--packet", s.packetPath, "--dry-run", "--proxy-base", receiver, "--json"] },
   "spec derive|--from-store": { prepare: seedDerivablePin, argv: (s) => ["spec", "derive", "--packet", s.packetPath, "--from-store", "examplestore", "--json"] },
   "spec derive|--write-map": { prepare: seedDerivablePin, argv: (s, receiver) => ["spec", "derive", "--packet", s.packetPath, "--write-map", "--proxy-base", receiver, "--json"] },
+  "spec fetch": { prepare: seedMissingFetchedSpec, serveSpec: true, argv: (s, receiver) => ["spec", "fetch", "--packet", s.packetPath, "--proxy-base", receiver, "--json"] },
   "polish capture": { argv: (s, receiver) => ["polish", "capture", "--packet", s.packetPath, "--base-url", receiver, "--json"] },
   "record brief": { prepare: seedBriefChange, expect: recordInputSucceeded("brief", "saved_with_invalidation"), argv: (s) => ["record", "brief", "--packet", s.packetPath, "--json"] },
   "record brief|--dry-run": { prepare: seedBriefChange, expect: recordInputDryRunSucceeded("brief", "saved_with_invalidation", BRIEF_SAVE_WRITES), argv: (s) => ["record", "brief", "--packet", s.packetPath, "--dry-run", "--json"] },
@@ -704,6 +737,8 @@ const INVOCATIONS = {
   "record theme|--dry-run": { prepare: seedThemeReady, expect: recordDryRunSucceeded("theme", ["target-page-kit/.campaign-runtime/assembly-report.json"]), argv: (s) => ["record", "theme", "--packet", s.packetPath, "--dry-run", "--json"] },
   "record deploy": { prepare: seedDeployReady, argv: (s, receiver) => ["record", "deploy", "--packet", s.packetPath, "--base-url", `${receiver}/${readJson(s.packetPath).campaign.public_route_slug}/`, "--json"] },
   "record deploy|--dry-run": { prepare: seedDeployReady, expect: recordDryRunSucceeded("deploy", ["build-packet.basic.json", "target-page-kit/.campaign-runtime/assembly-report.json"]), argv: (s, receiver) => ["record", "deploy", "--packet", s.packetPath, "--base-url", `${receiver}/${readJson(s.packetPath).campaign.public_route_slug}/`, "--dry-run", "--json"] },
+  "record baseline": { prepare: seedBaselineReady, argv: (s) => ["record", "baseline", "--packet", s.packetPath, "--accepted-by", "Pat Rivera", "--reason", "Live since before markup hashes", "--json"] },
+  "record baseline|--dry-run": { prepare: seedBaselineReady, expect: recordDryRunSucceeded("baseline", ["target-page-kit/.campaign-runtime/assembly-report.json"]), argv: (s) => ["record", "baseline", "--packet", s.packetPath, "--accepted-by", "Pat Rivera", "--reason", "Live since before markup hashes", "--dry-run", "--json"] },
   "validate-assembly-report": { argv: (s) => ["validate-assembly-report", "--report", s.reportPath, "--json"] },
   "install-skills": { argv: () => ["install-skills", "--platform", "claude", "--json"], target: () => "home" },
   "install-skills|--dry-run": { argv: () => ["install-skills", "--platform", "claude", "--dry-run", "--json"], target: () => "home" },
@@ -725,11 +760,13 @@ const INVOCATIONS = {
   "qa run|--no-post-verdict": { proxyBase: true, argv: (s, receiver) => ["qa", "run", "--packet", s.packetPath, "--base-url", receiver, "--no-post-verdict", "--json"] },
   "qa run|--no-remit": { proxyBase: true, argv: (s, receiver) => ["qa", "run", "--packet", s.packetPath, "--base-url", receiver, "--no-remit", "--json"] },
   "qa run|--test-order": { proxyBase: true, argv: (s, receiver) => ["qa", "run", "--packet", s.packetPath, "--base-url", receiver, "--test-order", "typed-card", "--json"] },
+  "qa run|--test-order --vendor-beacons": { proxyBase: true, argv: (s, receiver) => ["qa", "run", "--packet", s.packetPath, "--base-url", receiver, "--test-order", "typed-card", "--vendor-beacons", "live", "--json"] },
   "qa run|--browser": { proxyBase: true, argv: (s, receiver) => ["qa", "run", "--packet", s.packetPath, "--base-url", receiver, "--browser", "--json"] },
   "qa run|--no-live-refs": { proxyBase: true, argv: (s, receiver) => ["qa", "run", "--packet", s.packetPath, "--base-url", receiver, "--no-live-refs", "--json"] },
   "qa run|--no-remit --no-live-refs": { proxyBase: true, argv: (s, receiver) => ["qa", "run", "--packet", s.packetPath, "--base-url", receiver, "--no-remit", "--no-live-refs", "--json"] },
   "qa run|--no-post-verdict --no-live-refs": { proxyBase: true, argv: (s, receiver) => ["qa", "run", "--packet", s.packetPath, "--base-url", receiver, "--no-post-verdict", "--no-live-refs", "--json"] },
   "qa run|--test-order --no-live-refs": { proxyBase: true, argv: (s, receiver) => ["qa", "run", "--packet", s.packetPath, "--base-url", receiver, "--test-order", "typed-card", "--no-live-refs", "--json"] },
+  "qa run|--test-order --vendor-beacons --no-live-refs": { proxyBase: true, argv: (s, receiver) => ["qa", "run", "--packet", s.packetPath, "--base-url", receiver, "--test-order", "typed-card", "--vendor-beacons", "live", "--no-live-refs", "--json"] },
   "qa run|--browser --no-live-refs": { proxyBase: true, argv: (s, receiver) => ["qa", "run", "--packet", s.packetPath, "--base-url", receiver, "--browser", "--no-live-refs", "--json"] },
   "qa parity": {
     prepare: seedParityFixture, env: playwrightEnv,
@@ -841,6 +878,9 @@ async function runCondition(row, invocation, condition) {
       seed.fetchMapId = readJson(seed.packetPath).spec.map_id;
       receiver.routes.set(`/api/spec/${seed.fetchMapId}`, { ok: true, data: readJson(seed.specPath) });
     }
+    if (invocation.serveSpec) {
+      receiver.routes.set(`/api/spec/${readJson(seed.packetPath).spec.map_id}`, { ok: true, data: readJson(seed.specPath) });
+    }
     if (persisted) {
       // The grant the operator would make: consent recorded on the machine for
       // ONE endpoint, this receiver. Made through the CLI rather than by
@@ -908,10 +948,16 @@ async function runCondition(row, invocation, condition) {
     invocation.expect?.(result, seed, `${row.effect_test} [${condition}]`);
     const changed = changedPaths(before, snapshot(seed.dir));
 
+    const target = invocation.target ? invocation.target(seed) : "target-page-kit";
+    // The funnel runtime directory the seed packet records, under the target
+    // and beside the packet (the project-level one for this single funnel).
+    const runtime = packetRuntimeRelPath(existsSync(seed.packetPath) ? readJson(seed.packetPath) : null);
     const tokens = {
-      "{target}": invocation.target ? invocation.target(seed) : "target-page-kit",
+      "{target}": target,
+      "{runtime}": `${target}/${runtime}`,
       "{cwd}": "",
       "{home}": "home",
+      "{packet-runtime}": join(relative(seed.dir, dirname(seed.packetPath)), runtime),
       "{packet}": relative(seed.dir, seed.packetPath),
       "{spec}": relative(seed.dir, seed.specPath),
     };

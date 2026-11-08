@@ -69,6 +69,34 @@ export function isCheckoutFlowPage(page: Page | null | undefined): boolean {
 }
 
 /**
+ * A main-cart package entry: one with neither `is_upsell: true` nor
+ * `is_order_bump: true` (campaigns-os#206, ratified 2026-09-17). Either flag
+ * marks a bump on a checkout page and an offer on an upsell; real exports mark
+ * checkout bumps with `is_upsell`, so the two are read as one signal.
+ * `default_selected` says which entry a selector starts on and never changes
+ * the role. Contract: docs/template-family-contracts.md, "Main-cart entry".
+ */
+export function isMainCartPackage(entry: unknown): boolean {
+  if (!entry || typeof entry !== 'object') return false
+  const flags = entry as Record<string, unknown>
+  return flags.is_upsell !== true && flags.is_order_bump !== true
+}
+
+/**
+ * True when `page` puts a main-cart package in front of the shopper: a page
+ * that is not a post-payment page and declares at least one main-cart entry.
+ * A select page's bundle picker, a landing page's package cards and a
+ * Checkout's own selector all count; page type beyond post-payment is not
+ * consulted. Upsell, downsell and thank-you entries are post-purchase offers,
+ * never the main cart.
+ */
+export function sellsMainCartPackage(page: Page | null | undefined): boolean {
+  if (!page || (POST_PAYMENT_PAGE_TYPES as readonly string[]).includes(typeOf(page))) return false
+  const packages = (page as Record<string, unknown>).packages
+  return Array.isArray(packages) && packages.some(isMainCartPackage)
+}
+
+/**
  * Strip surrounding slashes and a `.html` suffix so a route target, a page ID
  * and a `page_url` compare on equal terms. The corpus writes targets in all
  * three dialects (`shipping`, `shipping.html`, `/shipping/`). Case is kept, as

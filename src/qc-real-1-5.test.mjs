@@ -213,6 +213,7 @@ const SMOKE_COVERAGE = [
 ];
 const NO_LEGS_COVERAGE = [
   ...SMOKE_COVERAGE,
+  legCoverage("polish", "layout.conventions", "leg_not_run"),
   legCoverage("polish", "media.oversize", "leg_not_run"),
   legCoverage("polish", "media.weight", "leg_not_run"),
   legCoverage("polish", "parity.element", "leg_not_run"),
@@ -223,6 +224,7 @@ const NO_LEGS_COVERAGE = [
 ];
 const QA_STAGE_COVERAGE = [
   ...SMOKE_COVERAGE,
+  legCoverage("polish", "layout.conventions", "leg_not_run"),
   legCoverage("polish", "media.oversize", "leg_not_run"),
   legCoverage("polish", "media.weight", "leg_not_run"),
   legCoverage("polish", "parity.element", "leg_not_run"),

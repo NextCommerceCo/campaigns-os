@@ -81,10 +81,10 @@ field before attributing the file.
 `--template-family`), `--slug`, `--sdk-support-policy`, `--field-contract`,
 `--no-doctor`, `--json`, and the two flags every command accepts,
 `--run-id` and `--lifecycle-journal`. Any other flag is refused before the
-scan starts, with the known list in the message — including the
-`--flag=value` spelling, which the parser would otherwise store as an unknown
-key (`--no-doctor=maybe` used to run the doctor anyway). Values follow the
-flag as the next argument.
+scan starts, with the known list in the message. Values follow the flag as
+the next argument: like every Campaigns OS command, standardize refuses the
+`--flag=value` spelling before the scan starts (`--no-doctor=maybe` used to
+run the doctor anyway).
 
 ### Exit codes
 

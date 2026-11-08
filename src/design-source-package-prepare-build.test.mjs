@@ -29,6 +29,7 @@ import {
   generateDesignSourcePackageReadback,
 } from "./design-source-package.mjs";
 import { portableArtifactPaths } from "./cli-helpers.mjs";
+import { LOCK_FORMAT } from "./directory-lock.mjs";
 import { doctorPacket } from "./doctor/inspect.mjs";
 import { buildQcHandoff, qcHandoffTextLines } from "./qc-accept.mjs";
 import { resultTextLines } from "./cli.mjs";
@@ -1583,15 +1584,15 @@ syncBuiltinESMExports();
   assert.equal(result.json.designSourcePackageMode, "reused");
 }));
 
-// Holds the per-target prepare-build lock from the test process (a live pid,
-// so no waiter recovers it) and preloads a shim that signals when a run finds
+// Holds the per-target prepare-build lock from the test process (a live pid
+// of this release, so no waiter recovers or refuses it) and preloads a shim that signals when a run finds
 // the lock taken. Whatever the test changes between that signal and release()
 // happened while the run was waiting for the lock, after it started.
 function holdPrepareBuildLock(fixture) {
   const dspPath = join(fixture.target, DSP_REL_PATH);
   const lockPath = join(dirname(dspPath), `.${basename(dspPath)}.lock`);
   mkdirSync(lockPath, { recursive: true });
-  writeFileSync(join(lockPath, "owner.json"), `${JSON.stringify({ pid: process.pid, token: "test-held" })}\n`);
+  writeFileSync(join(lockPath, "owner.json"), `${JSON.stringify({ pid: process.pid, token: "test-held", lock_format: LOCK_FORMAT })}\n`);
   const signalPath = join(fixture.dir, "prepare-build-lock-wait.signal");
   const preloadPath = join(fixture.dir, "prepare-build-lock-wait.cjs");
   writeFileSync(preloadPath, `

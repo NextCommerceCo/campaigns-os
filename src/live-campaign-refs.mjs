@@ -209,6 +209,7 @@ export async function readLiveCampaign({
   timeoutMs = LIVE_CAMPAIGN_TIMEOUT_MS,
   maxBytes = LIVE_CAMPAIGN_MAX_BYTES,
   warn = undefined,
+  includeCampaign = false,
 } = {}) {
   if (typeof apiKey !== "string" || !apiKey.trim()) {
     return notRun("no_key", "No public Campaigns API key resolved, so the live campaign was not read.");
@@ -307,7 +308,10 @@ export async function readLiveCampaign({
   if (picked.notRun) return { ...picked.notRun, ...requested };
   const refs = liveCampaignRefs(picked.campaign);
   if (!refs) return notRun("unexpected_body", "The live campaign did not carry package and shipping-method lists with a ref on every entry.", requested);
-  return { status: "read", ...requested, ...refs };
+  // `spec derive` refreshes the spec's mirrored offer and package fields from
+  // the same read (#721), so it asks for the campaign body as well; doctor and
+  // QA compare refs only and never carry the body in their results.
+  return { status: "read", ...requested, ...refs, ...(includeCampaign ? { campaign: picked.campaign } : {}) };
 }
 
 // The `--no-live-refs` opt-out on `doctor` and `qa run`: no request, and the
@@ -357,7 +361,7 @@ function readPacketLocalSpec(packet, packetPath) {
 // and env-name gates apply, plus the stricter env-name gate above), then one
 // read, for the campaign the CampaignSpec's `campaign.ref_id` names when it
 // names one.
-export async function readLiveCampaignForPacket({ packet, packetPath = null, spec = undefined, env = process.env, fetchImpl = null, proxyBase = null, timeoutMs, warn } = {}) {
+export async function readLiveCampaignForPacket({ packet, packetPath = null, spec = undefined, env = process.env, fetchImpl = null, proxyBase = null, timeoutMs, warn, includeCampaign = false } = {}) {
   const localSpec = spec !== undefined ? spec : readPacketLocalSpec(packet, packetPath);
   const resolved = resolveCampaignsApiKeySource(packet, packetPath, env, localSpec === undefined ? {} : { spec: localSpec });
   const refusedEnv = refusedEnvKeySource(packet, resolved);
@@ -377,6 +381,7 @@ export async function readLiveCampaignForPacket({ packet, packetPath = null, spe
     fetchImpl,
     proxyBase,
     campaignRefId: campaignRefIdFromSpec(localSpec),
+    includeCampaign,
     ...(timeoutMs ? { timeoutMs } : {}),
     ...(warn ? { warn } : {}),
   });

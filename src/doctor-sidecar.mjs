@@ -73,8 +73,9 @@ export function writeDoctorSidecar(path, doctor, { command, targetRepo = null } 
 // qa policy set) stamp the retained snapshot stale instead of leaving a green
 // lie on disk, while commands that DO recompute (doctor, prepare-build/start,
 // next) rewrite the sidecar wholesale — which clears any stale stamp.
-export function markDoctorSidecarStale(targetBaseDir, { command = null, reason = null } = {}) {
-  const path = doctorSidecarPath(targetBaseDir);
+// `path` is the funnel's own sidecar (campaign-workspace.mjs doctorOutPath);
+// without it, the project-level one under `targetBaseDir`.
+export function markDoctorSidecarStale(targetBaseDir, { command = null, reason = null, path = doctorSidecarPath(targetBaseDir) } = {}) {
   if (!existsSync(path)) return null;
   let sidecar;
   try {

@@ -1,0 +1,18 @@
+{
+  "violations": [
+    {
+      "ruleId": "CampaignCurrencies",
+      "severity": "warning",
+      "message": "campaign.currency \"USD\" is not in campaign.available_currencies. List every currency the campaign sells in, the default included, or change the default.",
+      "path": "/campaign/available_currencies",
+      "data": {
+        "check": "currency_not_available",
+        "currency": "USD",
+        "available": [
+          "EUR",
+          "GBP"
+        ]
+      }
+    }
+  ]
+}

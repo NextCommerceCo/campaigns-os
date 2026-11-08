@@ -559,6 +559,20 @@ function addSpecHints(mapping, page) {
   if (variantLabels) mapping.variant_labels = variantLabels;
 }
 
+/**
+ * The page-kit projection of every page in `specPages` (a Map of page id to
+ * projection), as intake projects a mapped page: target path, public route,
+ * page_type and the frontmatter links to the other pages. `record spec`
+ * re-projects with it when routes move or, after handoff, when pages are
+ * added or removed (#531, #721); every page is re-projected because a page's
+ * next_url and decline_url read the routes of the pages it links to.
+ */
+export function projectPageKitTargets({ specPages = [], publicRouteSlug, outputDir }) {
+  const pages = Array.isArray(specPages) ? specPages : [];
+  const pageById = new Map(pages.map((page) => [page.id, page]));
+  return new Map(pages.map((page) => [page.id, pageKitProjectionForPage(page, { pageById, publicRouteSlug, outputDir, specPages: pages })]));
+}
+
 function pageKitProjectionForPage(page, { pageById, publicRouteSlug, outputDir, specPages = [] }) {
   const specRoute = publicRouteForPage(page);
   const relativeRoute = stripPublicRoutePrefix(specRoute, publicRouteSlug);
@@ -707,7 +721,7 @@ function normalizeRootedRoute(value) {
   return normalized ? `/${normalized}` : "/";
 }
 
-function cpkPageTypeForSpecType(type) {
+export function cpkPageTypeForSpecType(type) {
   if (type === "presell" || type === "landing") return "product";
   if (type === "thankyou" || type === "receipt") return "receipt";
   if (type === "upsell" || type === "downsell") return "upsell";

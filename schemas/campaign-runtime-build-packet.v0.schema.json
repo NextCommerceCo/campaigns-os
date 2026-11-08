@@ -149,6 +149,10 @@
                 "pattern": "^[0-9a-f]{64}$",
                 "description": "Optional sha256 of the source HTML file at the time the manifest was written. Doctor compares this to the on-disk file's actual hash and warns on mismatch (Slice 6 drift detection)."
               },
+              "origin": {
+                "enum": ["repo"],
+                "description": "Set by record spec on a page added from the repo's page tree after handoff (#721): the page's source is its target page file (page_kit.output_path) in the target repo, not a file under source_html.root, so it carries no path. Doctor counts it as mapped, and as built once that file exists."
+              },
               "page_kit": {
                 "type": "object",
                 "additionalProperties": false,
@@ -331,6 +335,11 @@
         "target_repo": {
           "type": "string",
           "minLength": 1
+        },
+        "runtime_dir": {
+          "type": "string",
+          "pattern": "^\\.campaign-runtime(?:/funnels/[A-Za-z0-9_-][A-Za-z0-9._-]*)?$",
+          "description": "Where this funnel's records live, relative to target_repo (and, for the QA verdict sidecar and Run Records, to this packet's directory). prepare-build writes \".campaign-runtime/funnels/<public_route_slug>\" when the project already holds another funnel's records, so one Page Kit project can hold several funnels without one overwriting another's Build Context, Assembly Report, doctor output, theme output, inputs, QA verdict sidecar or Run Records. Absent (every packet before per-funnel records, and a project's first funnel) means the project-level \".campaign-runtime\". Any value other than those two for this packet's public_route_slug is refused."
         },
         "output_dir": {
           "type": "string",

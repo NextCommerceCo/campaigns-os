@@ -393,6 +393,18 @@ test("the order-bump cart reads the one checkout QA drives", () => {
   );
 });
 
+// campaigns-os#710: an upsell page's package row is the page's offer, so an
+// is_upsell: true row there is no checkout order bump and earns no bump run.
+test("an upsell page's is_upsell row does not make the checkout declare an order bump", () => {
+  const tier = { ref_id: "1", qty: 1, name: "Main", price: "29.00", default_selected: true };
+  const pages = [
+    { id: "checkout", type: "checkout", order: 1, success_url: "upsell", packages: [tier] },
+    { id: "upsell", type: "upsell", order: 2, on_accept: "receipt", on_decline: "receipt", packages: [{ ref_id: "5", qty: 1, is_upsell: true }] },
+    { id: "receipt", type: "thankyou", order: 3 },
+  ];
+  assert.equal(checkoutOrderBumpCart({ funnels: [{ pages }] }), null);
+});
+
 test("an intentional no-order diagnostic policy still reaches done unchanged", () => {
   const fixture = target({ prefix: "closeout-evidence-nodepth-", orderPathDepth: "off" });
   runProducer(fixture, { runId: "SYNTHRUN000000000000000001", completedAt: "2026-09-11T02:00:00.000Z", orders: 0 });
@@ -404,6 +416,24 @@ test("an intentional no-order diagnostic policy still reaches done unchanged", (
 // Old-format leg. Shape reproduced from the pre-#308 report on record: stages
 // with no `checked_at`, a `completed_at` on a stage that is not completed, and a
 // hand-authored verdict_run_id / evidence pair. Synthesized, not copied.
+test("a baseline ends the ladder at done, and next says it is not a test", () => {
+  const fixture = target({
+    prefix: "closeout-evidence-baseline-",
+    mutateReport(report) {
+      report.commerce_baseline = { accepted_by: "Pat Rivera", accepted_at: "2026-11-07T00:00:00.000Z", reason: "Live before markup hashes", build_fingerprint: BUILD_FINGERPRINT };
+      report.stages.polish = { ...report.stages.polish, status: "baseline_accepted", baseline_accepted_at: "2026-11-07T00:00:00.000Z" };
+      delete report.stages.polish.completed_at;
+      const { source_brief_material, source_spec_material_hash } = report.stages.polish;
+      report.stages.qa = { ...report.stages.qa, status: "baseline_accepted", baseline_accepted_at: "2026-11-07T00:00:00.000Z", evidence: { source_build_fingerprint: BUILD_FINGERPRINT }, source_brief_material, source_spec_material_hash };
+    },
+  });
+  const next = runNext(fixture.packetPath);
+  assert.equal(next.stage, "done", next.reason);
+  assert.match(next.prompt, /QA rests on a baseline Pat Rivera accepted, not a test/);
+  assert.equal(action(next, "qa_run"), null);
+  assert.ok(doctorPacket(fixture.packetPath).warnings.some((issue) => issue.code === "qa.baseline_accepted"));
+});
+
 test("an old-format report is read, advised about, and migrated without loss", () => {
   const fixture = target({
     prefix: "closeout-evidence-legacy-",
@@ -423,6 +453,7 @@ test("an old-format report is read, advised about, and migrated without loss", (
   assert.equal(legacy.stage, "done", "an unknown proof summary must not un-finish an existing campaign");
   assert.match(legacy.prompt, /QA passed with exceptions;/);
   assert.match(legacy.prompt, /Run Record is assembled and the session closes\. QA passed with exceptions/);
+  assert.match(legacy.prompt, /The built output is not on this checkout, so these records were not compared with it/);
   const nextActions = doctorPacket(fixture.packetPath).next.actions;
   assert.ok(nextActions.some((entry) => /All stages are recorded as terminal; run/.test(entry)));
   assert.ok(nextActions.some((entry) => /QA passed with exceptions/.test(entry)));

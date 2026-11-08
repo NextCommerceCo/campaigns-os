@@ -186,5 +186,27 @@
       "Apply My Discount Coupon"
     ],
     "rule": "If an exit-intent include or default widget ships without CampaignSpec checkout exit_intent or promo_code_input behavior, strip it or record a hard warning. If present, it must apply the mapped offer through the SDK/API coupon path and use cart.hasCoupon(\"CODE\") style conditionals for applied-state presentation."
+  },
+  "layout_conventions": {
+    "rule": "Design-independent layout conventions. polish capture measures them on every built page, in the same pass as readability, and reports each as a layout.conventions warning that checkpoint accept can accept. They never block Polish and never read or judge the merchant's copy. Polish reads this block from the shared contract; a family contract does not override it.",
+    "floating_cta": {
+      "key": "floating_cta",
+      "reason_code": "floating_cta_extra_content",
+      "viewports": ["mobile"],
+      "positions": ["fixed", "sticky"],
+      "control_selector": "a[href], button, input[type=\"submit\"], input[type=\"button\"], [role=\"button\"]",
+      "exclude_selector": "header, nav, dialog, [role=\"banner\"], [role=\"navigation\"], [role=\"dialog\"], [aria-modal=\"true\"], .announcement",
+      "form_field_selector": "input:not([type=\"hidden\"]):not([type=\"submit\"]):not([type=\"button\"]), select, textarea",
+      "max_viewport_height_share": 0.5,
+      "rule": "A floating CTA container holds the control alone: one link or button and no other visible text. A floating CTA container is the nearest box around a visible control (control_selector) whose computed position is one of positions. Boxes that match or sit inside exclude_selector, boxes that hold a visible form field (form_field_selector), and boxes taller than max_viewport_height_share of the viewport are not floating CTA containers. Visible text is text the browser renders, including CSS generated text; text inside the control does not count."
+    },
+    "cta_label": {
+      "key": "cta_label_size",
+      "reason_code": "cta_label_too_small",
+      "viewports": ["mobile"],
+      "roles": ["add_to_cart", "upsell_accept", "submit_control"],
+      "min_font_size_px": 16,
+      "rule": "The primary CTA label is at least min_font_size_px CSS px at the mobile viewport. The label is every rendered, enabled text element the readability record lists under one of roles (purchase and accept controls, and submit buttons)."
+    }
   }
 }

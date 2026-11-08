@@ -22,9 +22,19 @@ export function targetLockPath(targetRepo) {
 // holds it, only a pid, so the holder is described generically. A lock with
 // no owner record is called out on its own: it is never taken over, and the
 // operator needs to know it will not clear by waiting. So is anything at the
-// lock path that is not a lock at all, named by what it is (#514).
+// lock path that is not a lock at all, named by what it is, and a lock held
+// by a live process of another campaigns-os release, which is refused at once
+// (#514).
 function unavailable(targetRepo, lockPath, command) {
   return (error) => {
+    if (error?.code === "ELOCKFORMAT") {
+      return Object.assign(new Error(
+        `${command}: the target lock at ${lockPath} is held by process ${error.holderPid}, which runs a different campaigns-os release. `
+        + "Two releases taking this lock at the same moment can both get it, so this run stops instead of waiting. "
+        + `Let that run finish, then retry with one campaigns-os release working on ${targetRepo} at a time.`,
+        { cause: error },
+      ), { code: error.code, holderPid: error.holderPid, lockFormat: error.lockFormat });
+    }
     if (error?.code === "ENOTLOCK") {
       return Object.assign(new Error(
         `${command}: the target lock path ${lockPath} is occupied by ${error.obstruction}. `

@@ -9902,6 +9902,1332 @@
         }
       ],
       "entry_sha256": "c8d911144e956c791867afb9cc014bbbbf54be8e3faee6448bafea4a588f618c"
+    },
+    {
+      "id": "RL-0311",
+      "sequence": 299,
+      "date": "2026-10-29",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.61.0+agent.2",
+      "changelog_sha256": "077018155e9017725a3f64c0e0158a6dae9dc3381eb8869fcccbc943a22d3458",
+      "agent_impact": "An agent running next-campaigns-sdk-bump checks step 3's known-changes table for each version the range crosses. For 0.4.32 it prefers the SDK's dl_purchase; a purchase capture that stays hand-wired moves off the checkout page to the first page after checkout, reads the order's ?ref_id=, sends once per order, and step 6 reloads that page once with beacons blocked to prove it; it never re-adds an order:completed listener there. For 0.4.41 it confirms the campaign has a payment key and removes or ports the page's own Spreedly iframe script, Spreedly-global calls and v1 frame selectors in the same commit as the pin move. For 0.4.43 it checks Shop Pay, and it rebuilds or removes a hand-written modulepreload list of SDK files. For a 3-D Secure order it uses the card in docs/qa-and-test-orders.md after the developer confirms the gateway is in test mode. sdk storage-check now inventories only the tracked files under --scope, so it runs on large repositories; the old 'Cannot inventory tracked Git source files.' failure means the pinned install is npm 1.61.0 or earlier and is fixed by updating the pin. The inventory failure now reads 'Cannot inventory tracked Git source files: <reason>'; an agent matching the old exact text should match the prefix. Re-run tooling status --skills-revision 1.61.0+skills.2 and start a fresh session on mismatch.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance bundle revision to 1.61.0+skills.2 and each skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-sdk-bump/SKILL.md",
+          "surface_entry": null,
+          "summary": "Add the known-changes table (0.4.32 purchase capture with once-per-order sends, 0.4.41 Spreedly hosted fields, 0.4.42, 0.4.43, modulepreload), the 3-D Secure test card, a purchase replay check in step 6, and the update-the-pin answer to the old storage-check failure."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Update current bundle revision examples to 1.61.0+skills.2."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/sdk-storage-compatibility.md",
+          "surface_entry": "docs/sdk-storage-compatibility.md",
+          "summary": "Describe the scoped tracked-file inventory and the new 'Cannot inventory tracked Git source files: <reason>' error."
+        }
+      ],
+      "entry_sha256": "61bdc9a4d654769cbd5b3a4695c81783f607bf00d5121c048249726d475aeccc"
+    },
+    {
+      "id": "RL-0312",
+      "sequence": 300,
+      "date": "2026-10-30",
+      "kind": "release",
+      "surface_version": "1.62.0",
+      "changelog_section": "1.62.0",
+      "changelog_sha256": "ee78768231befe6d8c6d5c555a3c603312e4c0153d4bb7a4e952d0f17842e4b4",
+      "agent_impact": "In a Page Kit project with more than one funnel, an agent passes --packet campaign-runtime-<route>.build.json for a later funnel; that funnel's records live under .campaign-runtime/funnels/<route>/ (assembly.runtime_dir), readback without --packet refuses across funnels, and prepare-build refuses to replace another route's packet unless the operator agrees to --force. After deploy or QA has completed, spec derive adds and removes pages from the page tree, re-points the routing and routing hints on the edges that name them, holds a same-type file swap as page_renamed, reports an added page's packages as page_packages_not_derived (author them before doctor's CheckoutPathHasPackages / UpsellHasPackages pass), and refreshes mirrored package and offer fields from one read-only GET /api/campaign (--no-live-refs skips it); doctor blocks a stale routing hint as spec.routing_hint_stale. For a change that touches only some pages' HTML, readback's evidence_debt marks Polish advisory and QA scoped to the changed pages, and qa run --page <id> pays it without test orders. CampaignSpec validation adds CheckoutPathHasPackages (an error for a checkout path nothing sells into) and CampaignCurrencies (malformed ISO codes), and the spec carries analytics.vendors.<vendor>, which spec derive fills from campaigns.json id keys and doctor compares (page_kit.analytics_vendors, advisory). qa run --test-order answers listed vendors' beacons locally by default and records the requests as browser-test-order:vendor-beacons evidence, never purchase proof; --vendor-beacons live sends them. qa run --currency now blocks when an order or the calculate endpoint comes back in another currency. Polish warns layout.conventions for crowded floating CTA bars and CTA labels under 16px. A live lock from another Campaigns OS release is refused at once with ELOCKFORMAT. Refresh skills to 1.62.0+skills.1.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": "AGENTS.md",
+          "surface_entry": "AGENTS.md",
+          "summary": "A --flag=value token, which every command refuses, skips the stale-session closeout that otherwise precedes argument refusal."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/claude/CLAUDE.md",
+          "surface_entry": "agents/claude/CLAUDE.md",
+          "summary": "Revising a live campaign names the page-scoped QA path (qa run --page) for a page-only change."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/codex/AGENTS.md",
+          "surface_entry": "agents/codex/AGENTS.md",
+          "summary": "Revising a live campaign names the page-scoped QA path (qa run --page) for a page-only change."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/copilot/copilot-instructions.md",
+          "surface_entry": "agents/copilot/copilot-instructions.md",
+          "summary": "Revising a live campaign names the page-scoped QA path (qa run --page) for a page-only change."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/cursor/campaigns-os.mdc",
+          "surface_entry": "agents/cursor/campaigns-os.mdc",
+          "summary": "Revising a live campaign names the page-scoped QA path (qa run --page) for a page-only change."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/analytics-vendors.ts",
+          "surface_entry": null,
+          "summary": "New registry of the starter templates' analytics vendors (ANALYTICS_VENDORS, analyticsVendorByKey, isPlaceholderVendorId)."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/checkout-flow.ts",
+          "surface_entry": null,
+          "summary": "New isMainCartPackage and sellsMainCartPackage helpers for the main-cart entry contract."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/index.ts",
+          "surface_entry": null,
+          "summary": "Exports the vendor registry, the main-cart helpers and the two new rules."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/rules/analytics-contract-shape.ts",
+          "surface_entry": null,
+          "summary": "AnalyticsContractShape warns on unknown vendors, enabled vendors without an id, and non-array event lists."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/rules/campaign-currencies.ts",
+          "surface_entry": null,
+          "summary": "New CampaignCurrencies rule: ISO 4217 codes for campaign.currency and available_currencies; default missing from the list warns."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/rules/checkout-path-has-packages.ts",
+          "surface_entry": null,
+          "summary": "New CheckoutPathHasPackages rule: every entry-to-Checkout path passes a page with a main-cart package entry."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/rules/index.ts",
+          "surface_entry": null,
+          "summary": "Registers CampaignCurrencies and CheckoutPathHasPackages in the rule sets."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/tsconfig.build.json",
+          "surface_entry": null,
+          "summary": "Builds the new analytics-vendors module into campaign-spec/dist."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/types.ts",
+          "surface_entry": null,
+          "summary": "AnalyticsContract gains vendors and enabled; new AnalyticsVendor types."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "compatibility.json",
+          "surface_entry": null,
+          "summary": "Version advances to 1.62.0."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/effects.v1.json",
+          "surface_entry": "contracts/effects.v1.json",
+          "summary": "Per-funnel write locations ({runtime}, {packet-runtime}); spec derive declares its live campaign read and --no-live-refs; record spec declares page rebind writes; qa run --test-order answers vendor beacons locally, with new --vendor-beacons live rows; qa run notes name --page."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/accept/current.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/accept/current.json",
+          "summary": "Regenerated with the three new recipe inputs."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/accept/minimal.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/accept/minimal.json",
+          "summary": "Regenerated with the three new recipe inputs."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/dist-states.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/dist-states.json",
+          "summary": "Regenerated with the three new recipe inputs."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/advisory-enforcement.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/advisory-enforcement.json",
+          "summary": "Regenerated with the three new recipe inputs."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/allowlist-without-hosts.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/allowlist-without-hosts.json",
+          "summary": "Regenerated with the three new recipe inputs."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/committed-output-claim.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/committed-output-claim.json",
+          "summary": "Regenerated with the three new recipe inputs."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/engines-disagreement-warns.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/engines-disagreement-warns.json",
+          "summary": "Regenerated with the three new recipe inputs."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/lifecycle-scripts-enabled.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/lifecycle-scripts-enabled.json",
+          "summary": "Regenerated with the three new recipe inputs."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/unknown-kind.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/unknown-kind.json",
+          "summary": "Regenerated with the three new recipe inputs."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/unknown-network-policy.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/unknown-network-policy.json",
+          "summary": "Regenerated with the three new recipe inputs."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/unknown-output-check.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/unknown-output-check.json",
+          "summary": "Regenerated with the three new recipe inputs."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/unknown-revision.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/unknown-revision.json",
+          "summary": "Regenerated with the three new recipe inputs."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/unknown-step-id.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/unknown-step-id.json",
+          "summary": "Regenerated with the three new recipe inputs."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/unperformable-check-skipped.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/unperformable-check-skipped.json",
+          "summary": "Regenerated with the three new recipe inputs."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/unpinned-lockfile.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/unpinned-lockfile.json",
+          "summary": "Regenerated with the three new recipe inputs."
+        },
+        {
+          "class": "hashed_surface",
+          "path": "contracts/runtime-recipe.campaigns-os-node-v1.json",
+          "surface_entry": "contracts/runtime-recipe.campaigns-os-node-v1.json",
+          "summary": "Inputs gain campaign-spec/analytics-vendors.ts, campaign-spec/rules/campaign-currencies.ts and campaign-spec/rules/checkout-path-has-packages.ts."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "surface_version 1.62.0 and refreshed hashes for the two runtime schemas, both CampaignSpec schemas, the readback schema and the effects contract."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Several funnels in one project, spec derive after handoff (pages, routing, rename hold, page_packages_not_derived, live mirror refresh), record spec page rebinds, template analytics vendors."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/campaign-standardization-report.md",
+          "surface_entry": "docs/campaign-standardization-report.md",
+          "summary": "standardize refuses --flag=value like every command, before it reads anything."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/campaigns-os-build-flow.md",
+          "surface_entry": "docs/campaigns-os-build-flow.md",
+          "summary": "Page-only changes owe QA on the changed pages, with Polish advisory."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/design-source-package.md",
+          "surface_entry": "docs/design-source-package.md",
+          "summary": "Lock format, immediate refusal of another release's live lock, abandoned-directory sweep, unreadable lock path."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/effects.md",
+          "surface_entry": "docs/effects.md",
+          "summary": "New location tokens, spec derive's live campaign read and tiers, the --vendor-beacons flag and its refusals, and the record spec rebind rule."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Install pins @nextcommerce/campaigns-os@1.62.0."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerated at supported surface 1.62.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/progress-snapshots.md",
+          "surface_entry": "docs/progress-snapshots.md",
+          "summary": "The progress allocation lock follows the same lock-format rules."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Analytics vendor beacons, --currency blockers, page-scoped QA with --page, per-funnel QA sidecars."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/readback.md",
+          "surface_entry": "docs/readback.md",
+          "summary": "Readback refuses across funnels without --packet; evidence_debt change, advisory, scope and owed_pages."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerated at supported surface 1.62.0 with the three new recipe inputs."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Examples name bundle revision 1.62.0+skills.1."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Version advances to 1.62.0."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Version advances to 1.62.0."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaign-runtime-build-context.v0.schema.json",
+          "surface_entry": "schemas/campaign-runtime-build-context.v0.schema.json",
+          "summary": "New spec.route_masked_material_hash and page_map[].origin (repo)."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaign-runtime-build-packet.v0.schema.json",
+          "surface_entry": "schemas/campaign-runtime-build-packet.v0.schema.json",
+          "summary": "New optional assembly.runtime_dir and source_html.pages[].origin (repo)."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaign-spec.v4.schema.json",
+          "surface_entry": "schemas/campaign-spec.v4.schema.json",
+          "summary": "analytics.vendors.<vendor>; currency and available_currencies ownership; is_upsell on upsell and downsell pages (descriptions)."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaign-spec.v5.schema.json",
+          "surface_entry": "schemas/campaign-spec.v5.schema.json",
+          "summary": "analytics.vendors.<vendor>; currency and available_currencies ownership; is_upsell on upsell and downsell pages (descriptions)."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-readback.v2.schema.json",
+          "surface_entry": "schemas/campaigns-os-readback.v2.schema.json",
+          "summary": "evidence_debt stages gain change, advisory, scope and owed_pages."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance bundle revision to 1.62.0+skills.1 and each skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Builds in a multi-funnel project read and write the funnel's own records."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Setting up a second funnel: the Funnel: line, the rename steps, and asking before --force."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Per-funnel records, spec derive after handoff, and the page-only exception to full Polish and QA after launch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Report layout.conventions warnings and accept them with checkpoint accept; read a later funnel's brief and report under its runtime directory."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Default vendor-beacon interception, the --currency blockers, page-scoped QA with --page and its refusals, and a later funnel's brief and report paths."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-sdk-bump/SKILL.md",
+          "surface_entry": null,
+          "summary": "Step 6 says qa run --test-order blocks the listed vendors' beacons by default and that --currency blocks a run in another currency."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "prepare-build per-funnel packets and the --force rename; readback and tooling status across funnels; spec derive --no-live-refs and page scope; qa run --page and --vendor-beacons live in usage; every command refuses a --flag=value token, naming the flag and never the value."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": null,
+          "summary": "New page_kit.analytics_vendors advisory and blocking spec.routing_hint_stale; per-funnel sidecar paths."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/ci.mjs",
+          "surface_entry": null,
+          "summary": "doctor --ci names the change found and what each stage owes; page-only changes count QA on the changed pages; an up-front argv refusal under --ci is a usage error (doctor.ci.usage, exit 2)."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/inspect.mjs",
+          "surface_entry": null,
+          "summary": "Doctor reads the funnel's own records from the packet's runtime directory."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/next-step.mjs",
+          "surface_entry": null,
+          "summary": "next treats an advisory Polish as not required."
+        }
+      ],
+      "entry_sha256": "34151f9822332d3b3e122b637a8d49095fcfd192529bffb26fa923016d1367d5"
+    },
+    {
+      "id": "RL-0313",
+      "sequence": 301,
+      "date": "2026-10-31",
+      "kind": "release",
+      "surface_version": "1.63.0",
+      "changelog_section": "1.63.0",
+      "changelog_sha256": "709a63c33ef9f64e9fceb7e52e7ba1a7b35e2e8fb4404bb56aa0eac8c0702707",
+      "agent_impact": "A page package row may carry prices[] ({ currency, price, price_retail?, price_recurring? } per currency, read from GET /campaigns/?currency=<code>); price and price_retail stay the default currency's. CampaignSpec validation adds PackageCurrencyPrices, a warning for a row whose prices[] lacks a currency the campaign sells in, has a malformed entry, or lists a currency twice. A row without prices[] is unchanged and unchecked. Refresh skills to 1.63.0+skills.1 (a revision restamp; the skill text is otherwise unchanged).",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/rules/campaign-currencies.ts",
+          "surface_entry": null,
+          "summary": "Exports isCurrencyCode for the package price rule."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/rules/index.ts",
+          "surface_entry": null,
+          "summary": "Registers PackageCurrencyPrices in the rule sets."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/rules/package-currency-prices.ts",
+          "surface_entry": null,
+          "summary": "New PackageCurrencyPrices rule: a page package row with prices[] has a well-formed entry for every currency the campaign sells in (warning)."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/types.ts",
+          "surface_entry": null,
+          "summary": "PagePackage gains prices; new PackageCurrencyPrice type."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "compatibility.json",
+          "surface_entry": null,
+          "summary": "Version advances to 1.63.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/accept/current.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/accept/current.json",
+          "summary": "Regenerated with the new recipe input."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/accept/minimal.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/accept/minimal.json",
+          "summary": "Regenerated with the new recipe input."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/dist-states.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/dist-states.json",
+          "summary": "Regenerated with the new recipe input."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/advisory-enforcement.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/advisory-enforcement.json",
+          "summary": "Regenerated with the new recipe input."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/allowlist-without-hosts.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/allowlist-without-hosts.json",
+          "summary": "Regenerated with the new recipe input."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/committed-output-claim.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/committed-output-claim.json",
+          "summary": "Regenerated with the new recipe input."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/engines-disagreement-warns.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/engines-disagreement-warns.json",
+          "summary": "Regenerated with the new recipe input."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/lifecycle-scripts-enabled.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/lifecycle-scripts-enabled.json",
+          "summary": "Regenerated with the new recipe input."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/unknown-kind.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/unknown-kind.json",
+          "summary": "Regenerated with the new recipe input."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/unknown-network-policy.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/unknown-network-policy.json",
+          "summary": "Regenerated with the new recipe input."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/unknown-output-check.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/unknown-output-check.json",
+          "summary": "Regenerated with the new recipe input."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/unknown-revision.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/unknown-revision.json",
+          "summary": "Regenerated with the new recipe input."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/unknown-step-id.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/unknown-step-id.json",
+          "summary": "Regenerated with the new recipe input."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/unperformable-check-skipped.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/unperformable-check-skipped.json",
+          "summary": "Regenerated with the new recipe input."
+        },
+        {
+          "class": "named_surface",
+          "path": "contracts/fixtures/runtime-recipe/reject/unpinned-lockfile.json",
+          "surface_entry": "contracts/fixtures/runtime-recipe/reject/unpinned-lockfile.json",
+          "summary": "Regenerated with the new recipe input."
+        },
+        {
+          "class": "hashed_surface",
+          "path": "contracts/runtime-recipe.campaigns-os-node-v1.json",
+          "surface_entry": "contracts/runtime-recipe.campaigns-os-node-v1.json",
+          "summary": "Inputs gain campaign-spec/rules/package-currency-prices.ts."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "surface_version 1.63.0 and refreshed hashes for both CampaignSpec schemas and the runtime recipe."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Install pins @nextcommerce/campaigns-os@1.63.0."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerated at supported surface 1.63.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerated at supported surface 1.63.0 with the new recipe input."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Examples name bundle revision 1.63.0+skills.1."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Version advances to 1.63.0."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Version advances to 1.63.0."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaign-spec.v4.schema.json",
+          "surface_entry": "schemas/campaign-spec.v4.schema.json",
+          "summary": "pagePackage.prices: an optional per-currency price list."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaign-spec.v5.schema.json",
+          "surface_entry": "schemas/campaign-spec.v5.schema.json",
+          "summary": "pagePackage.prices: an optional per-currency price list."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance bundle revision to 1.63.0+skills.1 and each skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-sdk-bump/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        }
+      ],
+      "entry_sha256": "a5fe5aad03d3bf64be6fd7af32b8038867982fad1ee0c8a91a733eccdb46106b"
+    },
+    {
+      "id": "RL-0314",
+      "sequence": 302,
+      "date": "2026-11-02",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.63.0+agent.1",
+      "changelog_sha256": "1760a2faac69afe8b237e5267104cce662c7d397a7fd9f2ead2112346ab52826",
+      "agent_impact": "PagePackage.prices is typed PackageCurrencyPrice[] | null, matching schemas v4/v5 and the PackageCurrencyPrices rule, which treat null as absent. Code that reads prices from the type should handle null as it already handles undefined. No spec, rule or skill change.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/types.ts",
+          "surface_entry": null,
+          "summary": "PagePackage.prices accepts null, like the schema."
+        }
+      ],
+      "entry_sha256": "3eb5308cfdb11cb8376acbfd4c8ff5aac4938cbe564bd2081452397be7a5cec5"
+    },
+    {
+      "id": "RL-0315",
+      "sequence": 303,
+      "date": "2026-11-07",
+      "kind": "release",
+      "surface_version": "1.64.0",
+      "changelog_section": "1.64.0",
+      "changelog_sha256": "ed08b5b80f306d8acf9a106236408f14742511108f31ed3c26ccfa359aad7cbc",
+      "agent_impact": "New spec fetch restores a saved-Map packet's CampaignSpec on a checkout that lacks it and never replaces a copy on disk. .campaign-runtime/fetched-specs/ is no longer gitignored: commit it, because the records are bound to it and spec derive writes into it. Doctor adds the warning built_output.absent when the build stage is complete and _site/<route>/ is missing, so treat an unbuilt checkout as not compared rather than current. doctor --ci adds lines naming the build each owed stage last checked. evidence_debt gains optional change.commerce_rebuild and qa.reviewed_at. Refresh skills to 1.64.0+skills.1 (a revision restamp; the skill text is otherwise unchanged).",
+      "compatibility": "additive",
+      "migration": "Run spec fetch once on each repository set up from a saved Map, or any setup command, and commit .campaign-runtime/fetched-specs/.",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "compatibility.json",
+          "surface_entry": "compatibility.json",
+          "summary": "Version advances to 1.64.0."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/effects.v1.json",
+          "surface_entry": "contracts/effects.v1.json",
+          "summary": "New spec fetch row (tier A): one GET of the Map, the fetched copy, and the managed .gitignore. contract_version 1.4.0."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "surface_version 1.64.0 and a refreshed hash for the effects contract."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "fetched-specs/ is committed; spec fetch reference; built_output.absent; corrects how a pre-1.62 record reads."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/campaigns-os-build-flow.md",
+          "surface_entry": "docs/campaigns-os-build-flow.md",
+          "summary": "A change is read against the build each stage last checked; page-only changes start after one full QA on 1.62.0 or later."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/effects.md",
+          "surface_entry": "docs/effects.md",
+          "summary": "Declares what spec fetch sends and writes."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Install pins @nextcommerce/campaigns-os@1.64.0."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerated at surface 1.64.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/readback.md",
+          "surface_entry": "docs/readback.md",
+          "summary": "Lists evidence_debt's new commerce_rebuild and reviewed_at."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerated at surface 1.64.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Examples name 1.64.0+skills.1."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "Names spec fetch."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Version 1.64.0."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Version 1.64.0."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "bundle_revision 1.64.0+skills.1; each skill one patch higher."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.64.0+skills.1; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.64.0+skills.1; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.64.0+skills.1; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.64.0+skills.1; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.64.0+skills.1; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.64.0+skills.1; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.64.0+skills.1; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.64.0+skills.1; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.64.0+skills.1; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-sdk-bump/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.64.0+skills.1; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "New spec fetch subcommand and help line; next says at done when the built output is absent."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": null,
+          "summary": "New built_output.absent warning; the spec.local_path error names spec fetch for a saved Map's copy."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/ci.mjs",
+          "surface_entry": null,
+          "summary": "The CI report names the build each owed stage last checked and any unreviewed rebuild behind a page-only edit; clearer pre-1.62 wording."
+        }
+      ],
+      "entry_sha256": "4a790256ba4b318f5249eea2813d2af5344ed0fe301fef3e9884c276031b6934"
+    },
+    {
+      "id": "RL-0316",
+      "sequence": 304,
+      "date": "2026-11-07",
+      "kind": "release",
+      "surface_version": "1.65.0",
+      "changelog_section": "1.65.0",
+      "changelog_sha256": "507993a6a4a315b82ec8c50534bd5cf7b172d1f6d763c3e63c4974956f5a4aca",
+      "agent_impact": "A QA verdict whose commercial.status is incomplete is now at least ready_with_exceptions, never plain ready, with a warn pricing row commercial-parity:incomplete:<code> in exceptions[] naming the cause and the fix. It never blocks and does not change the exit code. Read those rows and report them to the operator; a run whose commercial status is incomplete did not compare every price. verdict.commercial gains incomplete_reasons. A commercial runner crash now reads status incomplete instead of not_run. Refresh skills to 1.65.0+skills.1.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "compatibility.json",
+          "surface_entry": "compatibility.json",
+          "summary": "Version advances to 1.65.0."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Surface version advances to 1.65.0; verdict schema hash updated."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Install line names 1.65.0."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerated at supported surface 1.65.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Incomplete commercial coverage is a warn-only exception, with one named warn row per cause."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerated with the new surface version."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Examples name 1.65.0+skills.1."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Version advances to 1.65.0."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Version advances to 1.65.0."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-qa-verdict.v0.schema.json",
+          "surface_entry": "schemas/campaigns-os-qa-verdict.v0.schema.json",
+          "summary": "disposition and commercial.status descriptions say incomplete coverage keeps the verdict at ready_with_exceptions; documents commercial.incomplete_reasons."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advance bundle revision to 1.65.0+skills.1 and each skill version one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Incomplete commercial coverage is an exception to report; carries the advanced bundle revision and per-skill version."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-sdk-bump/SKILL.md",
+          "surface_entry": null,
+          "summary": "Carry the advanced bundle revision and matching per-skill version."
+        }
+      ],
+      "entry_sha256": "71e83c294538d4b39e13230a4f845fb8aca8dd5e872e0ad3d5bd040c22a54465"
+    },
+    {
+      "id": "RL-0317",
+      "sequence": 305,
+      "date": "2026-11-07",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.65.0+agent.1",
+      "changelog_sha256": "46a41336482e8b0683d914ece0b2b4b7f91fc7a158d2335193c834ea676b2cde",
+      "agent_impact": "Commercial parity compares rendered package.price and package.<ref>.price with calculate's unit_price under qa run --browser. A difference is a warn-only price-claim-mismatch. A run without --browser on a page with these claims reads commercial status incomplete, with a commercial-parity:incomplete:package_price_not_rendered row; run qa run --browser to compare them. Other uncompared cases write their own named warn rows. No schema, pin or skill change.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Commercial parity covers package.price as rendered, and says what happens to a claim it cannot compare."
+        }
+      ],
+      "entry_sha256": "496d52b07c935958a0c890e29bb11ccbe018e15cf8ee5877fabab67a0023fe40"
+    },
+    {
+      "id": "RL-0318",
+      "sequence": 306,
+      "date": "2026-11-07",
+      "kind": "release",
+      "surface_version": "1.66.0",
+      "changelog_section": "1.66.0",
+      "changelog_sha256": "8d1fd62f2ad654ac9fbde2adf31615cb2753f499a10d0d24843f33277201be85",
+      "agent_impact": "New record baseline accepts a handed-off funnel from before markup hashes as the starting point, one time per funnel, without testing it. New stage status baseline_accepted on stages.polish and stages.qa: terminal for the ladder, never completed, no purchase proof. Treat it as accepted and untested, never as a pass; a reader that does not recognize it should read unknown. Doctor adds the warning qa.baseline_accepted. evidence_debt.qa gains optional baseline, and the Assembly Report gains optional commerce_baseline. Refresh skills to 1.66.0+skills.1 (a revision restamp; the skill text is otherwise unchanged).",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "compatibility.json",
+          "surface_entry": "compatibility.json",
+          "summary": "Version advances to 1.66.0."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/effects.v1.json",
+          "surface_entry": "contracts/effects.v1.json",
+          "summary": "New record baseline rows: the Assembly Report and the doctor stale stamp, nothing sent. contract_version 1.5.0."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "surface_version 1.66.0 and a refreshed hash for the effects contract."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Page-only changes can also start after a baseline."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/campaigns-os-build-flow.md",
+          "surface_entry": "docs/campaigns-os-build-flow.md",
+          "summary": "How to accept a funnel from before 1.62.0, and what a baseline does and doesn't do."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/effects.md",
+          "surface_entry": "docs/effects.md",
+          "summary": "Declares what record baseline writes."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Install pins @nextcommerce/campaigns-os@1.66.0."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerated at surface 1.66.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/readback.md",
+          "surface_entry": "docs/readback.md",
+          "summary": "Lists evidence_debt.qa.baseline."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerated at surface 1.66.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Examples name 1.66.0+skills.1."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "Names record baseline."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Version 1.66.0."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Version 1.66.0."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "bundle_revision 1.66.0+skills.1; each skill one patch higher."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.66.0+skills.1; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.66.0+skills.1; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.66.0+skills.1; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.66.0+skills.1; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.66.0+skills.1; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.66.0+skills.1; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.66.0+skills.1; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.66.0+skills.1; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.66.0+skills.1; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-sdk-bump/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.66.0+skills.1; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "Help line for record baseline; a page-scoped pass on a baseline stays baseline_accepted with no purchase proof; next says at done when QA rests on one."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": null,
+          "summary": "New qa.baseline_accepted warning."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/ci.mjs",
+          "surface_entry": null,
+          "summary": "The CI report says when QA rests on a baseline."
+        }
+      ],
+      "entry_sha256": "7ab1be1f56e4738dc0fc7127361611f1e625881d8dce7f5035d3c0243396325d"
     }
   ]
 }

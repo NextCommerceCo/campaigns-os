@@ -36,7 +36,11 @@ import { isObject, optionalString, portableArtifactPaths, readJsonIfExists, requ
 import { LOCAL_PROOF_BUILD_ENVIRONMENT, LOCAL_PROOF_PRODUCTION_ENVIRONMENT, isLocalServePacket } from "./local-proof.mjs";
 import { polishCarriedForwardForLadder } from "./local-preview-policy.mjs";
 import { isLoopbackHostname } from "./remit.mjs";
-import { campaignRouteRoot } from "./route-identity.mjs";
+import { campaignRouteRoot, normalizePublicRouteSlug } from "./route-identity.mjs";
+import { buildChangeEntry, buildCommerceSignature, nextBuildChanges, rebuiltFromBuildWithoutSignature } from "./change-scope.mjs";
+import { isNamedHuman } from "./checkpoint-waiver.mjs";
+import { singleLineFragment } from "./text-safety.mjs";
+import { assessEvidenceDebt } from "./evidence-debt.mjs";
 import { writeJsonAtomic } from "./doctor-sidecar.mjs";
 import { doctorPacket } from "./doctor/inspect.mjs";
 import { validateAssemblyReport } from "./doctor/checks.mjs";
@@ -52,7 +56,7 @@ import {
 import { evaluateRecordedHiddenEagerMediaCheckpoint } from "./polish-node.mjs";
 import { effectiveStageStatus, effectiveStatusIsTerminal, inputStamps, stageWriteInputs } from "./input-currency.mjs";
 import { demoteStages, recordBrief, recordSpec } from "./input-refresh.mjs";
-import { applyDerivedAssemblyReportSummary, archiveStageRecord, archiveSupersededRecord, assemblyReportMatchesPacket, commitAssemblyReport, inputChangeFor, restorePolishKeptWithOutput } from "./stage-ledger.mjs";
+import { applyDerivedAssemblyReportSummary, archiveStageRecord, archiveForBaseline, archiveSupersededRecord, assemblyReportMatchesPacket, campaignHandedOff, qaEverCompleted, commitAssemblyReport, inputChangeFor, polishReviewedBuild, qaExtendedBuildFingerprint, qaRecordedBuildFingerprint, restorePolishKeptWithOutput } from "./stage-ledger.mjs";
 import { withTargetLockSync } from "./target-lock.mjs";
 import { commerceScopeFromScope } from "./theme-gate.mjs";
 
@@ -69,7 +73,9 @@ const BUILD_RECORD_FLAGS = Object.freeze(["build-environment", "adapter-decision
 // discovery finds it).
 const BRIEF_RECORD_FLAGS = Object.freeze(["brief"]);
 // `record spec` binds the CampaignSpec as it is now; it takes no extra flag.
-const RECORD_SUBCOMMANDS = Object.freeze([...RECORD_STAGES, "brief", "spec"]);
+// `record baseline` accepts the current build as the starting point: who, and why.
+const BASELINE_RECORD_FLAGS = Object.freeze(["accepted-by", "reason"]);
+const RECORD_SUBCOMMANDS = Object.freeze([...RECORD_STAGES, "brief", "spec", "baseline"]);
 // The page-kit environment the built output was rendered in, recorded on
 // stages.assembly.evidence.build_environment (local proof mode builds in
 // development; doctor and page-kit parity read it).
@@ -172,7 +178,7 @@ export function parseRecordArgs(args) {
   if (!RECORD_SUBCOMMANDS.includes(stage) || args._.length !== 2) {
     throw refused(`Use: ${cmd("record")} <${RECORD_SUBCOMMANDS.join("|")}> --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--dry-run] [--json]; record polish also takes --evidence <polish-evidence.json>, record deploy --base-url <served url>, record build [--build-environment <${BUILD_ENVIRONMENTS.join("|")}>] [--adapter-decision <key=value[,key=value...]>], and record brief [--brief <yaml|json>].`);
   }
-  const known = new Set([...RECORD_FLAGS, ...(stage === "polish" ? POLISH_RECORD_FLAGS : []), ...(stage === "deploy" ? DEPLOY_RECORD_FLAGS : []), ...(stage === "build" ? BUILD_RECORD_FLAGS : []), ...(stage === "brief" ? BRIEF_RECORD_FLAGS : [])]);
+  const known = new Set([...RECORD_FLAGS, ...(stage === "polish" ? POLISH_RECORD_FLAGS : []), ...(stage === "deploy" ? DEPLOY_RECORD_FLAGS : []), ...(stage === "build" ? BUILD_RECORD_FLAGS : []), ...(stage === "brief" ? BRIEF_RECORD_FLAGS : []), ...(stage === "baseline" ? BASELINE_RECORD_FLAGS : [])]);
   const unknown = Object.keys(args).filter((key) => key !== "_" && !known.has(key));
   if (unknown.length) {
     throw refused(`Unknown flag${unknown.length > 1 ? "s" : ""} for record ${stage}: ${unknown.map((key) => `--${key}`).join(", ")}. Known flags: ${[...known].map((key) => `--${key}`).join(", ")}.`);
@@ -184,6 +190,10 @@ export function parseRecordArgs(args) {
     throw refused(`--dry-run takes no value (got ${JSON.stringify(args["dry-run"])}); write \`--dry-run\` on its own, after the other flags.`);
   }
   if (Object.hasOwn(args, "json") && args.json !== true) throw refused("--json is a boolean flag and takes no value.");
+  if (stage === "baseline") {
+    if (!isNamedHuman(args["accepted-by"])) throw refused("record baseline: --accepted-by needs the named person accepting this build; placeholders and automation identities are not accepted.");
+    if (!optionalString(args.reason)) throw refused("record baseline: --reason needs the reason this build is being accepted untested.");
+  }
   const buildEnvironment = Object.hasOwn(args, "build-environment") ? args["build-environment"] : null;
   if (buildEnvironment !== null && !BUILD_ENVIRONMENTS.includes(buildEnvironment)) {
     throw refused(`--build-environment must be one of: ${BUILD_ENVIRONMENTS.join(", ")} (got ${JSON.stringify(buildEnvironment)}).`);
@@ -199,6 +209,7 @@ export function parseRecordArgs(args) {
     adapterDecisions,
     briefPath: stage === "brief" && Object.hasOwn(args, "brief") ? resolve(args.brief) : null,
     deviationReason: optionalString(args["deviation-reason"]),
+    baseline: stage === "baseline" ? { acceptedBy: args["accepted-by"].trim().replace(/\s+/g, " "), reason: args.reason.trim() } : null,
   };
 }
 
@@ -320,7 +331,7 @@ function composeSetup(report, context, { now, recordedBy }) {
 // operator decision that applies only to the record that carried it.
 const STAMP_FIELDS = Object.freeze(["source_brief_material", "source_spec_material_hash"]);
 // A replaced record in any of these statuses is checked for an input change.
-const REPLACED_COMPLETED_STATUSES = Object.freeze(["completed", "completed_with_warnings", "completed_partial"]);
+const REPLACED_COMPLETED_STATUSES = Object.freeze(["completed", "completed_with_warnings", "completed_partial", "baseline_accepted"]);
 
 // The stamps a completed record writes: the inputs current at this write
 // (the absent brief value for a packet without a brief). A value that cannot
@@ -330,17 +341,39 @@ function currentStamps(inputs) {
   return Object.fromEntries(Object.entries(stamps).filter(([, value]) => value !== null));
 }
 
-function composeBuild(report, { now, recordedBy, fingerprint, manifest = null, buildEnvironment = null, adapterDecisions = null, fallbackAdapterDecisions = null, inputs = {}, deviationReason = null }) {
+// #707/#720: what this rebuild changed against the build recorded before it,
+// classified page-only or commerce-affecting, appended to the kept history so
+// a stage that reviewed an older build can still read its changed pages; and
+// the commerce signature of this output, for the next rebuild to compare
+// against. Read from the same packet and output doctor fingerprinted.
+function buildChangeFacts(report, { packet, packetPath, fingerprint, now }) {
+  if (!packet || !packetPath) return {};
+  const previousAssembly = stageObject(report, "assembly");
+  const targetRepo = targetRepoFor(packetPath, packet);
+  const slug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  const outputRoot = join(targetRepo, "_site", slug);
+  const signature = buildCommerceSignature({ scope: resolveBuiltSiteScope(outputRoot), outputRoot, targetRepo, publicRouteSlug: slug });
+  const from = optionalString(previousAssembly.build_fingerprint);
+  if (!from || from === fingerprint) return { signature, buildChanges: previousAssembly.build_changes };
+  const debt = assessEvidenceDebt({ packet, packetPath, report });
+  const entry = buildChangeEntry({ from, to: fingerprint, at: now, changes: debt.changes,
+    classification: { kind: debt.changes.kind, reasons: debt.changes.reasons } });
+  const anchors = [qaRecordedBuildFingerprint(report), qaExtendedBuildFingerprint(report), polishReviewedBuild(stageObject(report, "polish"))];
+  return { signature, buildChanges: nextBuildChanges(previousAssembly.build_changes, entry, anchors) };
+}
+
+function composeBuild(report, { now, recordedBy, fingerprint, manifest = null, buildEnvironment = null, adapterDecisions = null, fallbackAdapterDecisions = null, inputs = {}, deviationReason = null, packet = null, packetPath = null }) {
   const nextReport = adapterDecisions ? { ...report, adapter_decisions: { ...(report.adapter_decisions || fallbackAdapterDecisions || {}), ...adapterDecisions } } : report;
   const sourcePackageFingerprint = currentSourcePackageMaterialFingerprint(report);
   const previousAssembly = stageObject(report, "assembly");
+  const { signature, buildChanges } = buildChangeFacts(report, { packet, packetPath, fingerprint, now });
   const stamps = currentStamps(inputs);
   // A replaced completed record whose stamps differ from the current inputs
   // records the change now, if nothing recorded it before.
   const writeInputs = stageWriteInputs("assembly", inputs);
   const detected = REPLACED_COMPLETED_STATUSES.includes(previousAssembly.status) ? writeInputs.detectChange(previousAssembly) : null;
   let assembly = {
-    ...withoutKeys(previousAssembly, ["source_package_material_fingerprint", "unchanged_output_reason", "build_manifest", ...STAMP_FIELDS]),
+    ...withoutKeys(previousAssembly, ["source_package_material_fingerprint", "unchanged_output_reason", "build_manifest", "commerce_signature", "build_changes", ...STAMP_FIELDS]),
     ...(buildEnvironment ? { evidence: { ...(isObject(previousAssembly.evidence) ? previousAssembly.evidence : {}), build_environment: buildEnvironment } } : {}),
     stage: "assembly",
     status: "completed",
@@ -349,6 +382,14 @@ function composeBuild(report, { now, recordedBy, fingerprint, manifest = null, b
     // (doctor's built_output.fingerprint_stale, polish capture) can name the
     // files that differ. Left out when it cannot be read back as this value.
     ...(manifest ? { build_manifest: manifest } : {}),
+    // One hash per built page over its commerce-bearing markup, and one of
+    // the campaign's Page Kit config entry, so the next change can be read
+    // as page-only or commerce-affecting (change-scope.mjs).
+    ...(signature ? { commerce_signature: signature } : {}),
+    // The rebuilds since the builds Polish and QA last reviewed, each with
+    // its changed pages and classification, so the changed-page list
+    // survives this record (readback evidence_debt.<stage>.change).
+    ...(Array.isArray(buildChanges) && buildChanges.length ? { build_changes: buildChanges } : {}),
     ...(sourcePackageFingerprint ? { source_package_material_fingerprint: sourcePackageFingerprint } : {}),
     ...stamps,
     completed_at: now,
@@ -393,14 +434,18 @@ function composeBuild(report, { now, recordedBy, fingerprint, manifest = null, b
   if (keptPolish) return { report: { ...nextReport, stages: { ...nextReport.stages, assembly, polish: keptPolish, ...deploy } }, context: null };
   const polishStillCurrent = stageIsTerminal(String(previousPolish.status || ""))
     && optionalString(previousPolish.source_build_fingerprint) === fingerprint;
+  // The build Polish reviewed stays named once its binding is cleared, so a
+  // page-only change since then reads as advisory (evidence-debt.mjs).
+  const reviewed = polishReviewedBuild(previousPolish);
   const polish = polishStillCurrent
     ? previousPolish
     : {
-        ...withoutKeys(previousPolish, ["performed_by", "source_build_fingerprint", "source_package_material_fingerprint", "completed_at", "recorded_by", ...STAMP_FIELDS]),
+        ...withoutKeys(previousPolish, ["performed_by", "source_build_fingerprint", "source_package_material_fingerprint", "completed_at", "recorded_by", "owed_since_build_fingerprint", ...STAMP_FIELDS]),
         stage: "polish",
         status: "required",
         required_by: "build",
         required_for: ["qa"],
+        ...(reviewed ? { owed_since_build_fingerprint: reviewed } : {}),
       };
   return { report: { ...nextReport, stages: { ...nextReport.stages, assembly, polish, ...deploy } }, context: null };
 }
@@ -437,6 +482,73 @@ function deployAfterBuild(previousDeploy, fingerprint, now) {
   return archiveSupersededRecord(demoted, previousDeploy, { by: "record build", reason: "build_output_changed", at: now });
 }
 
+// `record baseline`: a named person accepts a funnel from before markup hashes
+// as the starting point for page-only changes, without testing it. Polish and
+// QA take the status baseline_accepted, which ends the ladder but is never
+// completed; what they held moves to history, so its purchase proof stops
+// counting. One time per funnel: report.commerce_baseline stays after a later
+// full QA, so this can never be a way past QA that a commerce change owes.
+function composeBaseline(report, { now, recordedBy, fingerprint, input, inputs, packet, packetPath }) {
+  const earlier = report.commerce_baseline;
+  if (isObject(earlier)) {
+    throw refuseRecord("baseline", [`${earlier.accepted_by} accepted a baseline for this funnel at ${earlier.accepted_at}, and a funnel gets one. Run ${cmd("qa")} run for what is owed now.`]);
+  }
+  if (!campaignHandedOff(report)) {
+    throw refuseRecord("baseline", ["This funnel has no completed deploy or QA, now or in its history. A baseline is for a funnel already handed off; run the full stages."]);
+  }
+  if (!rebuiltFromBuildWithoutSignature(report.stages?.assembly)) {
+    throw refuseRecord("baseline", [`This funnel's records have markup hashes (Campaigns OS 1.62.0 or later), or ${cmd("record")} build has not run on this toolkit. Page-only changes can be read from a full QA; a baseline is only for records from before those hashes. If you have not, run ${cmd("record")} build first.`]);
+  }
+  // A baseline stands in for a QA that passed on an older toolkit, so it needs
+  // one. A blocked QA found a problem a sign-off cannot vouch for.
+  const lastQa = stageObject(report, "qa");
+  if (lastQa.status === "blocked") {
+    const blockers = (Array.isArray(lastQa.blockers) ? lastQa.blockers : []).slice(0, 3).map((blocker) => singleLineFragment(typeof blocker === "string" ? blocker : blocker?.message || blocker?.code || "")).filter(Boolean);
+    throw refuseRecord("baseline", [`The last QA was blocked${blockers.length ? ` (${blockers.join("; ")})` : ""}, so it cannot be accepted untested. Run a full ${cmd("qa")} run; once it passes, page-only changes work without a baseline.`]);
+  }
+  if (!qaEverCompleted(report)) {
+    throw refuseRecord("baseline", [`No QA has completed on this funnel, so there is no result to start from. Run a full ${cmd("qa")} run; once it passes, page-only changes work without a baseline.`]);
+  }
+  const debt = assessEvidenceDebt({ packet, packetPath, report }).qa;
+  if (debt.status !== "owed" || debt.scope !== "full") {
+    throw refuseRecord("baseline", [`A full QA is not owed (QA reads ${debt.status}${debt.scope ? `, scope ${debt.scope}` : ""}), so there is nothing to accept.`]);
+  }
+  const stamps = currentStamps(inputs);
+  // History keeps no warnings or skip reasons, and a baseline must still say
+  // what it replaced.
+  const replacedRecord = (key) => {
+    const before = stageObject(report, key);
+    return { status: before.status ?? null, blockers: before.blockers ?? [], warnings: before.warnings ?? [], ...(before.skip_reason ? { skip_reason: before.skip_reason } : {}) };
+  };
+  const replace = (key, fields) => {
+    const previous = stageObject(report, key);
+    return archiveForBaseline({
+      stage: key,
+      status: "baseline_accepted",
+      recorded_by: recordedBy,
+      checked_at: now,
+      baseline_accepted_at: now,
+      ...stamps,
+      blockers: [],
+      warnings: [],
+      outputs: [],
+      ...fields,
+    }, previous, { at: now });
+  };
+  return {
+    report: {
+      ...report,
+      commerce_baseline: { accepted_by: input.acceptedBy, accepted_at: now, reason: input.reason, build_fingerprint: fingerprint, replaced_polish: replacedRecord("polish"), replaced_qa: replacedRecord("qa") },
+      stages: {
+        ...report.stages,
+        polish: replace("polish", { source_build_fingerprint: fingerprint }),
+        qa: replace("qa", { evidence: { source_build_fingerprint: fingerprint } }),
+      },
+    },
+    context: null,
+  };
+}
+
 function composePolish(report, { now, recordedBy, fingerprint, input, inputs = {} }) {
   const previous = stageObject(report, "polish");
   const completed = POLISH_COMPLETED_STATUSES.includes(input.status);
@@ -456,7 +568,7 @@ function composePolish(report, { now, recordedBy, fingerprint, input, inputs = {
     : previous.evidence;
   const sourcePackageFingerprint = currentSourcePackageMaterialFingerprint(report);
   let polish = {
-    ...withoutKeys(previous, ["source_package_material_fingerprint", "completed_at", "skip_reason", "evidence", ...STAMP_FIELDS]),
+    ...withoutKeys(previous, ["source_package_material_fingerprint", "completed_at", "skip_reason", "evidence", "owed_since_build_fingerprint", ...STAMP_FIELDS]),
     stage: "polish",
     status: input.status,
     performed_by: POLISH_PRODUCER,
@@ -519,12 +631,12 @@ const routeKey = (route) => String(route || "").replace(/^\/+|\/+$/g, "");
 // Context's theme.generated.fonts_css_path (theme generate --out-dir moves
 // it); the default path is read only when the context names none. Any page
 // that breaks the rule is a refusal naming the page.
-function brandLayerFacts(doctor, context = null) {
+function brandLayerFacts(doctor, context = null, runtimeDir = resolve(doctor.derived?.target_repo || ".", ".campaign-runtime")) {
   const derived = doctor.derived || {};
   const recordedFonts = context?.theme?.generated?.fonts_css_path;
   const generatedFonts = typeof recordedFonts === "string" && recordedFonts
     ? resolve(derived.target_repo, recordedFonts)
-    : (context?.theme?.generated ? null : resolve(derived.target_repo, ".campaign-runtime/theme", BRAND_FONTS_FILENAME));
+    : (context?.theme?.generated ? null : resolve(runtimeDir, "theme", BRAND_FONTS_FILENAME));
   const fontsRequired = Boolean(generatedFonts) && existsSync(generatedFonts);
   const insideSite = (file) => {
     const rel = relative(site.site_root, file);
@@ -616,10 +728,10 @@ function brandLayerFacts(doctor, context = null) {
       : `No built commerce page loads ${CORE_STYLESHEET} (${unstyled.join(", ")}${outOfScope.length ? `; declared but not built: ${outOfScope.join(", ")}` : ""}), so no page renders family components for a brand layer to style. If shipping without one is intended, record that with ${cmd("theme")} waive.`]);
   }
   const cssPath = relative(derived.target_repo, layers[0]);
-  const generated = resolve(derived.target_repo, ".campaign-runtime/theme/brand-theme.css");
+  const generated = resolve(runtimeDir, "theme/brand-theme.css");
   if (existsSync(generated)) {
     const same = readFileSync(generated, "utf8") === readFileSync(layers[0], "utf8");
-    evidence.push(`${cssPath} ${same ? "matches" : "differs from"} the generated .campaign-runtime/theme/brand-theme.css.`);
+    evidence.push(`${cssPath} ${same ? "matches" : "differs from"} the generated ${relative(derived.target_repo, generated).split(sep).join("/")}.`);
   }
   return {
     cssPath,
@@ -973,7 +1085,7 @@ function doctorFacts(stage, doctor, report, packet) {
   const binding = bindingProblems(doctor, report, packet);
   if (binding.length) throw refuseRecord(stage, binding);
   // The brand layer is applied to built output, so theme is checked as polish is.
-  const ladder = ladderProblems(stage === "theme" ? "polish" : stage, doctor, report);
+  const ladder = ladderProblems(stage === "theme" || stage === "baseline" ? "polish" : stage, doctor, report);
   if (ladder.length) throw refuseRecord(stage, ladder);
   if (stage === "setup") {
     const outputDir = optionalString(derived.target_output_dir);
@@ -990,13 +1102,13 @@ function doctorFacts(stage, doctor, report, packet) {
   if (stage === "build" && derived.scaffold_required === true) {
     throw refuseRecord(stage, [`Setup is still required (${derived.scaffold_reason || "Build Context scaffold.required is true"}); run ${cmd("record")} setup first.`]);
   }
-  if (stage === "polish" || stage === "theme" || stage === "deploy") {
+  if (stage === "polish" || stage === "theme" || stage === "deploy" || stage === "baseline") {
     const recorded = optionalString(report?.stages?.assembly?.build_fingerprint);
     if (!String(report?.stages?.assembly?.status || "").startsWith("completed") || !recorded) {
       throw refuseRecord(stage, [`Build is not recorded (stages.assembly needs a completed status and build_fingerprint); run ${cmd("record")} build first.`]);
     }
     if (recorded !== fingerprint) {
-      throw refuseRecord(stage, [stage === "theme" || stage === "deploy"
+      throw refuseRecord(stage, [stage === "theme" || stage === "deploy" || stage === "baseline"
         ? `The built output changed since build was recorded (recorded ${recorded}, current ${fingerprint}); run ${cmd("record")} build, then record ${stage} again.`
         : `The built output changed since build was recorded (recorded ${recorded}, current ${fingerprint}); run ${cmd("record")} build, then ${cmd("polish")} capture, then record polish again.`]);
     }
@@ -1107,12 +1219,12 @@ function readPacketFile(stage, packetPath) {
  * composed or written.
  */
 export function recordStageCommand(args, { now = () => new Date(), beforeLock = null, afterDoctorRead = null, probe = null } = {}) {
-  const { stage, packetPath, evidencePath, dryRun, buildEnvironment, adapterDecisions, deviationReason } = parseRecordArgs(args);
+  const { stage, packetPath, evidencePath, dryRun, buildEnvironment, adapterDecisions, deviationReason, baseline } = parseRecordArgs(args);
   if (!existsSync(packetPath)) throw new Error(`record ${stage}: Build Packet not found at ${packetPath}; run ${cmd("start")} or ${cmd("prepare-build")} first.`);
   if (stage === "deploy" && !probe) throw new Error("record deploy needs the served-route probe; run it through recordCommand.");
   // Operator input, not target state: no campaigns-os writer produces it.
   // For deploy, the probe of the running server (probeLocalPreview).
-  const input = stage === "polish" ? readPolishEvidenceFile(evidencePath) : stage === "deploy" ? probe : null;
+  const input = stage === "polish" ? readPolishEvidenceFile(evidencePath) : stage === "deploy" ? probe : baseline;
   const sidecars = {
     contextPath: args.context ? resolve(args.context) : undefined,
     reportPath: args.report ? resolve(args.report) : undefined,
@@ -1133,7 +1245,7 @@ export function recordStageCommand(args, { now = () => new Date(), beforeLock = 
   const recorded = dryRun ? run() : withTargetLockSync(lockedTarget, run, { command: `record ${stage}` });
   const { composed, facts, layer, reportPath, contextPath, after } = recorded;
 
-  const stageKey = stage === "build" ? "assembly" : stage;
+  const stageKey = stage === "build" ? "assembly" : stage === "baseline" ? "qa" : stage;
   const writes = [...(composed.context ? [contextPath] : []), ...(composed.packet ? [packetPath] : []), reportPath];
   const ready = stage === "deploy" ? [
     `stages.deploy.status = completed; deploy.preview_url = ${input.url}`,
@@ -1148,7 +1260,9 @@ export function recordStageCommand(args, { now = () => new Date(), beforeLock = 
     ...(stage === "build" && Array.isArray(composed.report.stages.assembly.build_manifest) ? [`stages.assembly.build_manifest lists ${composed.report.stages.assembly.build_manifest.length} file(s), so a later fingerprint mismatch names the paths that differ`] : []),
     ...(stage === "build" && buildEnvironment ? [`stages.assembly.evidence.build_environment = ${buildEnvironment}`] : []),
     ...(stage === "build" && adapterDecisions ? Object.entries(adapterDecisions).map(([key, value]) => `report.adapter_decisions.${key} = ${value}`) : []),
+    ...(stage === "build" ? buildChangeReadyLines(composed.report.stages.assembly) : []),
     ...(stage === "build" ? [`stages.polish.status = ${composed.report.stages.polish.status}`] : []),
+    ...(stage === "baseline" ? [`Polish and QA read baseline_accepted: ${baseline.acceptedBy} accepted build ${facts.fingerprint}. Nothing was tested, and no purchase is proven from here until a full ${cmd("qa")} run.`] : []),
     ...(stage === "build" && composed.report.stages.deploy?.required_by === "build" ? [`stages.deploy.status = ${composed.report.stages.deploy.status} (the recorded deploy probed other output; run ${cmd("record")} deploy again)`] : []),
     ...(composed.context ? ["Build Context scaffold.required = false"] : []),
   ];
@@ -1163,7 +1277,7 @@ export function recordStageCommand(args, { now = () => new Date(), beforeLock = 
     ...(dryRun ? { would_write: writes } : { written: writes }),
     build_fingerprint: facts.fingerprint || null,
     // The manifest is kept in the report, not echoed: it lists every built file.
-    record: stage === "theme" ? composed.report.theme : stage === "build" ? withoutKeys(composed.report.stages.assembly, ["build_manifest"]) : composed.report.stages[stageKey],
+    record: stage === "baseline" ? composed.report.commerce_baseline : stage === "theme" ? composed.report.theme : stage === "build" ? withoutKeys(composed.report.stages.assembly, ["build_manifest", "commerce_signature"]) : composed.report.stages[stageKey],
     ...(stage === "build" ? { polish: composed.report.stages.polish } : {}),
     ...(composed.context ? { scaffold: composed.context.scaffold } : {}),
     ...(stage === "polish" && input.hasRepairLoopDefect ? { repair_loop_defect: input.repairLoopDefect } : {}),
@@ -1173,6 +1287,14 @@ export function recordStageCommand(args, { now = () => new Date(), beforeLock = 
       ? "Dry run: every check passed and nothing was written. Re-run without --dry-run to record."
       : `Recorded. Run ${cmd("next")} --packet <packet> for the next stage.`,
   };
+}
+
+// One line for the rebuild this record kept, when it replaced another build.
+function buildChangeReadyLines(assembly) {
+  const latest = Array.isArray(assembly.build_changes) ? assembly.build_changes.at(-1) : null;
+  if (!latest || latest.build_fingerprint !== assembly.build_fingerprint) return [];
+  const pages = latest.changed_pages.map((page) => page.page_id).join(", ") || "none";
+  return [`stages.assembly.build_changes: this rebuild is ${latest.kind.replace("_", "-")} (changed pages: ${pages}${latest.unmapped_file_count ? `; ${latest.unmapped_file_count} file(s) outside any page` : ""})`];
 }
 
 // Everything a record reads from the target, in order, all under the target
@@ -1218,17 +1340,19 @@ function recordUnderLock({ stage, packetPath, sidecars, lockedTarget, input, dry
     }
     facts = doctorFacts(stage, doctor, report, packet);
     if (typeof afterDoctorRead === "function") afterDoctorRead();
-    if (stage === "theme") layer = brandLayerFacts(doctor, readJsonIfExists(contextPath));
+    if (stage === "theme") layer = brandLayerFacts(doctor, readJsonIfExists(contextPath), workspace.runtimeDir);
     if (stage === "deploy") deployFacts(doctor, packet, input, facts.fingerprint);
     const next = stage === "setup"
       ? composeSetup(report, context, { now: timestamp, recordedBy })
       : stage === "build"
-        ? composeBuild(report, { now: timestamp, recordedBy, fingerprint: facts.fingerprint, manifest: outputManifest(facts), buildEnvironment, adapterDecisions, fallbackAdapterDecisions: adapterDecisions && !report.adapter_decisions ? readJsonIfExists(contextPath)?.adapter_decisions || packet.source_html?.adapter_contract : null, inputs: recordInputs(doctor), deviationReason })
+        ? composeBuild(report, { now: timestamp, recordedBy, fingerprint: facts.fingerprint, manifest: outputManifest(facts), buildEnvironment, adapterDecisions, fallbackAdapterDecisions: adapterDecisions && !report.adapter_decisions ? readJsonIfExists(contextPath)?.adapter_decisions || packet.source_html?.adapter_contract : null, inputs: recordInputs(doctor), deviationReason, packet, packetPath })
         : stage === "theme"
           ? composeTheme(report, { now: timestamp, recordedBy, layer })
           : stage === "deploy"
             ? composeDeploy(report, packet, { now: timestamp, recordedBy, probe: input, fingerprint: facts.fingerprint })
-            : composePolish(report, { now: timestamp, recordedBy, fingerprint: facts.fingerprint, input, inputs: recordInputs(doctor) });
+            : stage === "baseline"
+              ? composeBaseline(report, { now: timestamp, recordedBy, fingerprint: facts.fingerprint, input, inputs: recordInputs(doctor), packet, packetPath })
+              : composePolish(report, { now: timestamp, recordedBy, fingerprint: facts.fingerprint, input, inputs: recordInputs(doctor) });
     applyDerivedAssemblyReportSummary(next.report, recordInputs(doctor));
     // The packet's one new value, deploy.preview_url, is checked by
     // deployPreviewUrl; the rest of the packet is as the operator left it.
@@ -1245,7 +1369,7 @@ function recordUnderLock({ stage, packetPath, sidecars, lockedTarget, input, dry
   // Already inside the target lock, which commitAssemblyReport re-enters.
   commitAssemblyReport(workspace, compose, {
     command: `record ${stage}`,
-    staleReason: `${stage === "theme" ? "theme" : `stages.${stage === "build" ? "assembly" : stage}`} was recorded after this doctor snapshot. Re-run ${cmd("doctor")} (or next) for current state.`,
+    staleReason: `${stage === "theme" ? "theme" : stage === "baseline" ? "a baseline" : `stages.${stage === "build" ? "assembly" : stage}`} was recorded after this doctor snapshot. Re-run ${cmd("doctor")} (or next) for current state.`,
     ...(dryRun ? { lock: false } : {}),
   });
   const after = dryRun ? null : doctorPacket(packetPath, sidecars);

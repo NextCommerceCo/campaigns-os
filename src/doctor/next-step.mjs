@@ -503,6 +503,13 @@ function pickNextStage(report, { errors = [], derived = null }, prepareBuildGate
     }
     if (cliStage === "qa" && qaRecordedBuildFingerprint(report) && currentBuildFingerprint(report)
       && !qaRecordedForCurrentBuild(report, currentBuildFingerprint(report))) {
+      // A page-only change since the build QA reviewed owes QA on the
+      // changed pages only (#720); qa run --page pays it.
+      const qaDebt = derived?.evidence_debt?.qa;
+      if (qaDebt?.scope === "pages" && qaDebt.owed_pages?.length) {
+        const pages = qaDebt.owed_pages.map((page) => `--page ${page.page_id}`).join(" ");
+        return { stage: "qa", reason: `QA was recorded for a different build, and the change since then is page-only: run QA on the changed pages with ${cmd("qa")} run --packet <packet> ${pages}.` };
+      }
       return { stage: "qa", reason: "QA was recorded for a different build; run QA against the current build." };
     }
     // A terminal QA status is not the same claim as purchase proof. QA finalizes

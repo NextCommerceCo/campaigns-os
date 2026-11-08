@@ -35,7 +35,9 @@ jobs:
       - name: Inspect evidence debt
         id: doctor
         continue-on-error: true
-        # Replace the packet path with the committed packet in this repo.
+        # Replace the packet path with the committed packet in this repo. A
+        # project with several funnels has one packet per funnel
+        # (campaign-runtime-<route>.build.json); run doctor --ci for each.
         run: |
           set +e
           # Only formatted stdout belongs in the PR comment; stderr stays in the job log.

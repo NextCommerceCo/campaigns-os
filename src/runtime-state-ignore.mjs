@@ -2,10 +2,14 @@
 // history, and which are not. Three kinds share the directory:
 //
 //   1. The readback bundle (build-context, assembly-report, doctor-output,
-//      qa-verdict) — current readback truth; docs/migration-sidecar-bundle.md
+//      qa-verdict, at the top level or under funnels/<route>/ for a project's
+//      second and later funnels) — current readback truth; docs/migration-sidecar-bundle.md
 //      names it and `bundle check` validates it. Committed by design.
 //   2. Handoff inputs and agent context (input/, theme/, agent-context/,
-//      setup-handoff.json) — durable build handoff. Committed by design.
+//      setup-handoff.json) and the CampaignSpec a Map intake fetched
+//      (fetched-specs/) — durable build handoff. The committed records are
+//      bound to that spec, and spec derive edits it, so another machine cannot
+//      get it back from the Map. Committed by design.
 //   3. Telemetry, sessions, caches, and evidence — per-machine, append-only,
 //      or carrying live URLs and absolute paths. Never meant for the repo, and
 //      nothing wrote a rule for them: three campaign repositories were found
@@ -28,7 +32,9 @@ export const RUNTIME_STATE_IGNORED_PATHS = [
   ".campaign-runtime/agent-deviations.jsonl",
   ".campaign-runtime/workflow-findings.jsonl",
   ".campaign-runtime/run-records/",
-  ".campaign-runtime/fetched-specs/",
+  // A project's second and later funnels keep their Run Records under their
+  // own runtime directory (src/campaign-workspace.mjs).
+  ".campaign-runtime/funnels/*/run-records/",
   ".campaign-runtime/progress/",
   ".campaign-runtime/polish-evidence/",
   ".campaign-runtime/evidence/",
@@ -47,14 +53,19 @@ export const RUNTIME_STATE_IGNORED_PATHS = [
 // must gain it on the next setup command rather than on the next accidental
 // commit. An entry an operator has placed anywhere else in the file counts as
 // present.
-export const RUNTIME_STATE_REQUIRED_IGNORED_PATHS = ["qa-output/", ".campaign-runtime/progress/"];
+export const RUNTIME_STATE_REQUIRED_IGNORED_PATHS = ["qa-output/", ".campaign-runtime/progress/", ".campaign-runtime/funnels/*/run-records/"];
+
+// Entries an earlier toolkit wrote into the managed block that are now meant
+// to be committed. They leave the managed block on the next setup command or
+// `spec fetch`; the same line elsewhere in the file is the operator's own.
+export const RUNTIME_STATE_RETIRED_IGNORED_PATHS = [".campaign-runtime/fetched-specs/"];
 
 export const RUNTIME_STATE_IGNORE_BLOCK = [
   RUNTIME_STATE_IGNORE_MARKER,
-  "# Sessions, journals, Run Records, spec caches, capture evidence, and full",
-  "# QA verdicts are per-machine. The readback bundle (build-context, assembly-report,",
-  "# doctor-output, qa-verdict), input/, theme/, and agent-context/ are meant",
-  "# to be committed and are deliberately not listed here.",
+  "# Sessions, journals, Run Records, capture evidence, and full QA verdicts are",
+  "# per-machine. The readback bundle (build-context, assembly-report, doctor-output,",
+  "# qa-verdict), fetched-specs/, input/, theme/, and agent-context/ are meant to be",
+  "# committed and are deliberately not listed here.",
   ...RUNTIME_STATE_IGNORED_PATHS,
 ].join("\n");
 
@@ -62,14 +73,29 @@ function ignoreRuleLines(text) {
   return new Set(text.split("\n").map((line) => line.trim()).filter((line) => line && !line.startsWith("#")));
 }
 
-// Append the missing required entries at the end of the managed block: after
-// the marker, up to the first blank line or the end of the file.
-function withRequiredEntries(existing, missing) {
-  const lines = existing.split("\n");
-  const markerIndex = lines.findIndex((line) => line.trim() === RUNTIME_STATE_IGNORE_MARKER);
+// The managed block spans the marker up to the first blank line or the end of
+// the file.
+function managedBlockEnd(lines, markerIndex) {
   let end = markerIndex + 1;
   while (end < lines.length && lines[end].trim() !== "") end += 1;
-  lines.splice(end, 0, ...missing);
+  return end;
+}
+
+function retiredEntriesInBlock(existing) {
+  const lines = existing.split("\n");
+  const markerIndex = lines.findIndex((line) => line.trim() === RUNTIME_STATE_IGNORE_MARKER);
+  return lines.slice(markerIndex + 1, managedBlockEnd(lines, markerIndex)).map((line) => line.trim())
+    .filter((line) => RUNTIME_STATE_RETIRED_IGNORED_PATHS.includes(line));
+}
+
+// Append the missing required entries at the end of the managed block and drop
+// the retired ones from it.
+function withBlockEntries(existing, missing) {
+  const lines = existing.split("\n");
+  const markerIndex = lines.findIndex((line) => line.trim() === RUNTIME_STATE_IGNORE_MARKER);
+  const end = managedBlockEnd(lines, markerIndex);
+  const block = lines.slice(markerIndex + 1, end).filter((line) => !RUNTIME_STATE_RETIRED_IGNORED_PATHS.includes(line.trim()));
+  lines.splice(markerIndex + 1, end - markerIndex - 1, ...block, ...missing);
   return lines.join("\n");
 }
 
@@ -77,10 +103,11 @@ function withRequiredEntries(existing, missing) {
  * Ensure the target's .gitignore carries the runtime-state block. Idempotent
  * on the marker line: an existing block, however edited beneath it, is left
  * alone — except for RUNTIME_STATE_REQUIRED_IGNORED_PATHS, which are appended
- * to an existing block when the file carries them nowhere. Never throws for
- * an unwritable target — the build must not fail on housekeeping — but
+ * to an existing block when the file carries them nowhere, and
+ * RUNTIME_STATE_RETIRED_IGNORED_PATHS, which are removed from it. Never throws
+ * for an unwritable target — the build must not fail on housekeeping — but
  * reports what happened so callers can surface it.
- * Returns `{ path, action: "added" | "updated" | "present" | "skipped", reason?, added_entries? }`.
+ * Returns `{ path, action: "added" | "updated" | "present" | "skipped", reason?, added_entries?, removed_entries? }`.
  */
 export function ensureRuntimeStateIgnored(targetRepo, { dryRun = false } = {}) {
   const path = join(resolve(targetRepo), ".gitignore");
@@ -94,14 +121,16 @@ export function ensureRuntimeStateIgnored(targetRepo, { dryRun = false } = {}) {
     if (existing.includes(RUNTIME_STATE_IGNORE_MARKER)) {
       const present = ignoreRuleLines(existing);
       const missing = RUNTIME_STATE_REQUIRED_IGNORED_PATHS.filter((entry) => !present.has(entry));
-      if (missing.length === 0) return { path, action: "present" };
-      if (dryRun) return { path, action: "updated", dry_run: true, added_entries: missing };
+      const retired = retiredEntriesInBlock(existing);
+      if (missing.length === 0 && retired.length === 0) return { path, action: "present" };
+      const changes = { added_entries: missing, ...(retired.length ? { removed_entries: retired } : {}) };
+      if (dryRun) return { path, action: "updated", dry_run: true, ...changes };
       try {
-        writeFileSync(path, withRequiredEntries(existing, missing));
+        writeFileSync(path, withBlockEntries(existing, missing));
       } catch (error) {
         return { path, action: "skipped", reason: `unwritable: ${error.message}` };
       }
-      return { path, action: "updated", added_entries: missing };
+      return { path, action: "updated", ...changes };
     }
   }
   if (dryRun) return { path, action: "added", dry_run: true };

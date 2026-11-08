@@ -17,14 +17,19 @@
 // record is never taken over: this module cannot produce one, so it belongs
 // to an older writer that may still be alive between its mkdir and its owner
 // write (#501). A waiter refuses it after a short grace, leaving it for the
-// documented offline procedure. (See publishStagedDirectory for the one
-// mixed-version race this cannot close, tracked in #514.) Anything else at the
-// lock path, a file or a directory holding other entries, is not a lock at
-// all: it is refused by name and never removed (#514).
+// documented offline procedure. Anything else at the lock path, a file, a
+// directory this process cannot read or a directory holding other entries, is
+// not a lock at all: it is refused by name and never removed (#514).
 //
-// Staging and released siblings a dead process left beside the lock are swept
-// by the next holder, under the lock; a sibling whose owner is alive or
-// unreadable is left alone (#514).
+// Every owner record this module writes carries LOCK_FORMAT. A lock held by a
+// live process whose record has no lock format, or a different one, belongs
+// to another release, and a waiter refuses it at once instead of waiting to
+// race that release for the next acquisition. That narrows the mixed-version
+// race publishStagedDirectory describes; it cannot close it (#514).
+//
+// Staging, recovery, released and abandoned siblings a dead process left
+// beside the lock are swept by the next holder, under the lock; a sibling
+// whose owner is alive or unreadable is left alone (#514).
 //
 // The lock is reentrant for its holder: code running inside `fn` (in the
 // same async context) that asks for the same lock enters directly instead of
@@ -36,6 +41,11 @@ import { lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSy
 import { basename, dirname, join, resolve } from "node:path";
 
 const heldLocks = new AsyncLocalStorage();
+
+// The lock format this release records in every owner record it writes.
+// Records without one come from earlier releases, including those before
+// 1.43.2 that acquired with mkdir and wrote their owner afterwards (#501).
+export const LOCK_FORMAT = 2;
 
 const readOwner = (path) => {
   try { return JSON.parse(readFileSync(path, "utf8")); } catch { return null; }
@@ -56,9 +66,11 @@ const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 // The siblings this module creates beside a lock and normally removes itself:
 // a crash leaves staging and recovery-staging ones, a release whose tomb could
-// not be put back leaves a released one. Each carries an owner.json.
+// not be put back leaves a released one, and a recovery whose removal of the
+// abandoned lock was cut short leaves an abandoned one. Each carries an
+// owner.json; an abandoned one carries the dead holder's.
 function siblingPattern(path) {
-  return new RegExp(`^${escapeRegExp(basename(path))}\\.(?:staging|recovery-staging|released)-[0-9a-f]{32}$`);
+  return new RegExp(`^${escapeRegExp(basename(path))}\\.(?:staging|recovery-staging|released|abandoned)-[0-9a-f]{32}$`);
 }
 
 // Called only by the holder of the lock, so no two sweeps race, and a
@@ -85,6 +97,9 @@ function sweepDeadSiblings(path) {
 // What a lock directory may hold besides its owner record: the recovery
 // claim. A directory without owner.json that holds anything else is not a lock.
 const LOCK_ENTRIES = new Set(["owner.json", ".recovery"]);
+// A directory at the lock path that answers these cannot be told apart from
+// a lock whose owner record is merely hidden from this process.
+const UNREADABLE_CODES = new Set(["EACCES", "EPERM"]);
 
 // The reentrancy key names the lock directory through its real parent, so a
 // holder that reached the target through a symlink still recognizes itself.
@@ -119,10 +134,13 @@ function publishStagedDirectory(stagingPath, dest) {
   try {
     // rename(2) replaces an EMPTY destination directory, so never rename over
     // an existing entry. This module never leaves an empty directory at a
-    // lock path; only an older release does, for the instant between its
-    // mkdir and its owner write. A new writer's check-then-rename can land in
-    // that instant and replace it, so running an older release and this one
-    // on the same target at the same moment is not safe (#501; tracked in #514).
+    // lock path; only a release before #501 does, for the instant between its
+    // mkdir and its owner write. A writer's check-then-rename can land in that
+    // instant and replace it, and Node has no rename that refuses to replace.
+    // The waiter's lock-format check (otherRelease) refuses such a release
+    // whenever it is seen holding the lock, but two first attempts that meet
+    // in that instant can still both enter, so running a release before #501
+    // and this one on the same target at the same moment stays unsafe (#514).
     if (exists(dest)) return false;
     try {
       renameSync(stagingPath, dest);
@@ -145,7 +163,7 @@ const OWNERLESS_GRACE_MS = 1000;
 function createLock(path, { budgetMs, unavailable, now = Date.now, ownerlessGraceMs = OWNERLESS_GRACE_MS }) {
   const token = randomBytes(16).toString("hex");
   const start = now();
-  const owner = { pid: process.pid, token };
+  const owner = { pid: process.pid, token, lock_format: LOCK_FORMAT };
   const ownerPath = join(path, "owner.json");
   const stagingPath = `${path}.staging-${token}`;
 
@@ -224,17 +242,49 @@ function createLock(path, { budgetMs, unavailable, now = Date.now, ownerlessGrac
     return current - start >= budgetMs;
   };
   const fail = (error) => unavailable(error);
+  // The refusal for a lock held by a live process of another release, else
+  // null. A record without this release's lock format was written by another
+  // release: waiting for it to release would put this waiter's rename in a
+  // race with that release's next mkdir. A dead holder is recovered as usual,
+  // and a record naming this process was written by this release.
+  const otherRelease = () => {
+    try {
+      const stat = lstatSync(path);
+      if (!stat.isDirectory() || stat.isSymbolicLink()) return null;
+    } catch {
+      return null;
+    }
+    const holder = readOwner(ownerPath);
+    if (!(Number.isInteger(holder?.pid) && holder.pid > 0 && typeof holder.token === "string")) return null;
+    if (holder.lock_format === LOCK_FORMAT || holder.pid === process.pid || ownerIsDead(holder)) return null;
+    const format = holder.lock_format === undefined ? "no lock format" : `lock format ${JSON.stringify(holder.lock_format)}`;
+    return Object.assign(
+      new Error(`Lock is held by process ${holder.pid} of another campaigns-os release (${format}; this release writes lock format ${LOCK_FORMAT}): ${path}`),
+      { code: "ELOCKFORMAT", holderPid: holder.pid, lockFormat: holder.lock_format ?? null },
+    );
+  };
   // Names what occupies the lock path when it is not a lock, else null. A
-  // file there, or a directory with no owner record that holds entries a lock
-  // never has, will not clear by waiting and is never removed here.
+  // file there, a directory this process cannot read, or a directory with no
+  // owner record that holds entries a lock never has, will not clear by
+  // waiting and is never removed here.
   const obstruction = () => {
     let stat;
     try { stat = lstatSync(path); } catch { return null; }
     if (stat.isSymbolicLink()) return "a symbolic link, not a lock";
     if (!stat.isDirectory()) return stat.isFile() ? "a regular file, not a lock" : "a special file, not a lock";
-    if (exists(ownerPath)) return null;
+    const unreadable = (error) => `a directory this process cannot read (${error.code}), so it cannot be checked for an owner record`;
+    try {
+      lstatSync(ownerPath);
+      return null;
+    } catch (error) {
+      if (UNREADABLE_CODES.has(error?.code)) return unreadable(error);
+    }
     let foreign;
-    try { foreign = readdirSync(path).filter((entry) => !LOCK_ENTRIES.has(entry)).sort(); } catch { return null; }
+    try {
+      foreign = readdirSync(path).filter((entry) => !LOCK_ENTRIES.has(entry)).sort();
+    } catch (error) {
+      return UNREADABLE_CODES.has(error?.code) ? unreadable(error) : null;
+    }
     if (foreign.length === 0) return null;
     const shown = foreign.slice(0, 3).join(", ") + (foreign.length > 3 ? `, and ${foreign.length - 3} more` : "");
     return `a directory that is not a lock (no owner.json; it holds ${shown})`;
@@ -263,7 +313,7 @@ function createLock(path, { budgetMs, unavailable, now = Date.now, ownerlessGrac
     }
   };
 
-  return { token, stage, publish, recover, heldBySelfProcess, expired, fail, contended, sweep, release };
+  return { token, stage, publish, recover, heldBySelfProcess, otherRelease, expired, fail, contended, sweep, release };
 }
 
 function reentrantKey(path) {
@@ -297,6 +347,8 @@ export async function withDirectoryLock(path, fn, options) {
       throw lock.fail(error);
     }
     if (acquired) break;
+    const mixed = lock.otherRelease();
+    if (mixed) throw lock.fail(mixed);
     if (lock.expired()) throw lock.fail(lock.contended());
     lock.recover();
     await sleep(20);
@@ -329,6 +381,8 @@ export function withDirectoryLockSync(path, fn, options) {
       throw lock.fail(error);
     }
     if (acquired) break;
+    const mixed = lock.otherRelease();
+    if (mixed) throw lock.fail(mixed);
     if (lock.expired() || lock.heldBySelfProcess()) throw lock.fail(lock.contended());
     lock.recover();
     (options.sleep ?? sleepSync)(20);

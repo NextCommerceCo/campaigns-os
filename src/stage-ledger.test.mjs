@@ -812,8 +812,9 @@ test("commitAssemblyReport does not write while another process holds the target
   const { dir, workspace } = workspaceFixture();
   const lock = targetLockPath(workspace.targetRepo);
   mkdirSync(lock, { recursive: true });
-  // A live process other than this one: the test runner.
-  writeFileSync(join(lock, "owner.json"), `${JSON.stringify({ pid: process.ppid, token: "prepare-build" })}\n`);
+  // A live process other than this one, of this release: the test runner.
+  const { LOCK_FORMAT } = await import("./directory-lock.mjs");
+  writeFileSync(join(lock, "owner.json"), `${JSON.stringify({ pid: process.ppid, token: "prepare-build", lock_format: LOCK_FORMAT })}\n`);
   const before = readFileSync(workspace.reportPath, "utf8");
   let mutated = false;
   assert.throws(
@@ -928,6 +929,32 @@ test("a stage writer names a non-lock obstruction at the target lock path and le
     },
   );
   assert.equal(readFileSync(join(lock, "notes.txt"), "utf8"), "not a lock", "the obstruction is left in place");
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("a stage writer refuses at once a target lock held by another campaigns-os release (#514)", async () => {
+  const { targetLockPath } = await import("./target-lock.mjs");
+  const { dir, workspace } = workspaceFixture();
+  const lock = targetLockPath(workspace.targetRepo);
+  mkdirSync(lock, { recursive: true });
+  // A live process (the test runner) whose owner record has no lock format.
+  const owner = `${JSON.stringify({ pid: process.ppid, token: "earlier-release" })}\n`;
+  writeFileSync(join(lock, "owner.json"), owner);
+  const before = readFileSync(workspace.reportPath, "utf8");
+  const started = Date.now();
+  assert.throws(
+    () => commitAssemblyReport(workspace, (report) => ({ ...report, note: "edited" }), { command: "unit waive", staleReason: "unit reason" }),
+    (error) => {
+      assert.match(error.message, new RegExp(`^unit waive: the target lock at .*\\.design-source-package\\.json\\.lock is held by process ${process.ppid}, which runs a different campaigns-os release`));
+      assert.match(error.message, /one campaigns-os release working on .* at a time/);
+      assert.equal(error.code, "ELOCKFORMAT");
+      assert.equal(error.holderPid, process.ppid);
+      return true;
+    },
+  );
+  assert.ok(Date.now() - started < 10_000, "refused at once, not after the one-minute budget");
+  assert.equal(readFileSync(workspace.reportPath, "utf8"), before);
+  assert.equal(readFileSync(join(lock, "owner.json"), "utf8"), owner, "the other release's lock is left alone");
   rmSync(dir, { recursive: true, force: true });
 });
 

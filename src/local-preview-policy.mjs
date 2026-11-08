@@ -22,6 +22,9 @@ import { normalizePublicRouteSlug } from "./route-identity.mjs";
 
 export const LOCAL_PREVIEW_POLICY = "local_preview";
 export const HOSTED_TEMPLATE_PREVIEW_POLICY = "hosted_template_preview";
+// A page-only change since Polish last reviewed the campaign (#720): Polish
+// is advisory for it, on any target, so its stale evidence is carried.
+export const PAGE_ONLY_CHANGE_POLICY = "page_only_change";
 export const CARRIED_FORWARD = "carried_forward";
 
 // The checks carried forward, one by one. Each is evidence the campaign does
@@ -136,7 +139,9 @@ export function carried(gate, policy = LOCAL_PREVIEW_POLICY, packet = null) {
     ...(policy === HOSTED_TEMPLATE_PREVIEW_POLICY
       ? { required_actions: [hostedTemplateQaAction(previewUrl)] }
       : {}),
-    carried_forward: { policy, from_status: gate.status, evidence: "missing" },
+    // A page-only carry stands on a review of an older build, so its evidence
+    // is stale, except where no Polish was ever recorded.
+    carried_forward: { policy, from_status: gate.status, evidence: policy === PAGE_ONLY_CHANGE_POLICY && gate.code !== "polish.evidence_missing" ? "stale" : "missing" },
   };
 }
 
@@ -156,11 +161,36 @@ export function applyLocalPreviewToCheckpoint(gate, { packet, report, baseUrl = 
 }
 
 // The polish gate folds the checkpoint in, so it is carried forward only when
-// whatever it owns from the checkpoint was carried forward too.
+// whatever it owns from the checkpoint was carried forward too. Advisory
+// Polish for a page-only change is never a ladder step.
 export function polishCarriedForwardForLadder(report, gate) {
+  if (gate?.status === CARRIED_FORWARD && gate.carried_forward?.policy === PAGE_ONLY_CHANGE_POLICY) return true;
   return gate?.status === CARRIED_FORWARD
     && !report?.theme?.waiver
     && !report?.stages?.polish?.evidence?.visual_review?.page_load;
+}
+
+// The Polish gate codes and checkpoint codes that mean "evidence for an older
+// build": the only blocks a page-only change carries. A Polish recorded as
+// blocked, self-certified or incomplete stays a block.
+const PAGE_ONLY_POLISH_CODES = Object.freeze(new Set(["polish.evidence_missing", "polish.stale", "polish.output_drift"]));
+const PAGE_ONLY_CHECKPOINT_CODES = Object.freeze(new Set(["polish.hidden_eager_media.capture_stale"]));
+
+export function isPageOnlyCarry(gate) {
+  return gate?.status === CARRIED_FORWARD && gate.carried_forward?.policy === PAGE_ONLY_CHANGE_POLICY;
+}
+
+// `debt` is assessEvidenceDebt's result for the same packet and report.
+export function applyPageOnlyChangeToCheckpoint(gate, debt) {
+  if (gate?.status !== "blocked" || debt?.polish?.advisory !== true || !PAGE_ONLY_CHECKPOINT_CODES.has(gate.code)) return gate;
+  return carried(gate, PAGE_ONLY_CHANGE_POLICY);
+}
+
+export function applyPageOnlyChangeToPolishGate(gate, { debt, checkpointGate = null } = {}) {
+  if (gate?.status !== "blocked" || debt?.polish?.advisory !== true) return gate;
+  if (gate.owned_checkpoint_only) return isPageOnlyCarry(checkpointGate) ? carried(gate, PAGE_ONLY_CHANGE_POLICY) : gate;
+  if (gate.owned_checkpoint_status === "blocked" && !isPageOnlyCarry(checkpointGate) && checkpointGate?.status !== CARRIED_FORWARD) return gate;
+  return PAGE_ONLY_POLISH_CODES.has(gate.code) ? carried(gate, PAGE_ONLY_CHANGE_POLICY) : gate;
 }
 
 export function applyLocalPreviewToPolishGate(gate, { packet, checkpointGate = null, baseUrl = null } = {}) {
@@ -189,6 +219,9 @@ export function starterResidueIsExpected(themeGate, { packet, baseUrl = null } =
 }
 
 export function carriedForwardMessage(gate) {
+  if (gate?.carried_forward?.policy === PAGE_ONLY_CHANGE_POLICY) {
+    return `Advisory for a page-only change: ${gate.reason} The change since Polish last reviewed this campaign touches only page copy, images or styling, so Polish is reported and not required; run it when the change needs a visual review.`;
+  }
   if (gate?.carried_forward?.policy === HOSTED_TEMPLATE_PREVIEW_POLICY) {
     return `Carried forward on the hosted preview: ${gate.reason} This evidence is missing, not passed; production QA still requires it.`;
   }

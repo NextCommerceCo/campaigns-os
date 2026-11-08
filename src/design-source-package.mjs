@@ -930,6 +930,42 @@ export function designSourcePackageMaterialProjection(value) {
   };
 }
 
+/**
+ * The package with each kept page's Surface Identity re-stated from the
+ * current CampaignSpec page and its re-projected page-kit target (#531):
+ * label, aliases and mappings come out as intake would write them for that
+ * page now, the surface keeps its id, and the source fields intake recorded
+ * (source_path, producer_page_type) are carried over. Surfaces of pages no
+ * longer active, and contributions, gaps and the rest, are untouched; the
+ * material fingerprint is recomputed. `projections` maps a page id to its
+ * page-kit projection; a page with none keeps the page_kit it had.
+ */
+export function rebindDesignSourcePackagePages(value, { activePages = [], projections = new Map() } = {}) {
+  const next = JSON.parse(JSON.stringify(value));
+  const pageById = new Map(arrayOrEmpty(activePages).filter((page) => isObject(page) && isNonEmptyString(page.id)).map((page) => [page.id, page]));
+  for (const surface of arrayOrEmpty(next.surface_identity)) {
+    if (!isObject(surface) || surface.kind !== "page" || !isObject(surface.mappings)) continue;
+    const pageId = optionalString(surface.mappings.campaign_spec_page_id);
+    if (!pageId || !pageById.has(pageId)) continue;
+    const projection = projections instanceof Map ? projections.get(pageId) : null;
+    const mapping = optionalString(surface.mappings.source_page_id)
+      ? {
+          page_id: pageId,
+          path: surface.mappings.source_path ?? null,
+          page_type: surface.mappings.producer_page_type ?? null,
+          page_kit: isObject(surface.mappings.page_kit) && isObject(projection) ? projection : surface.mappings.page_kit ?? null,
+        }
+      : null;
+    const expected = createSurfaceCatalog(collectPageInputs([pageById.get(pageId)], mapping ? [mapping] : []), {}).surfaces.find((entry) => entry.kind === "page");
+    if (!expected) continue;
+    surface.label = expected.label;
+    surface.aliases = expected.aliases;
+    surface.mappings = expected.mappings;
+  }
+  next.material_fingerprint = computeDesignSourcePackageMaterialFingerprint(next);
+  return next;
+}
+
 export function computeDesignSourcePackageMaterialFingerprint(value) {
   const canonical = canonicalJson(designSourcePackageMaterialProjection(value));
   return `${MATERIAL_FINGERPRINT_PREFIX}${createHash("sha256").update(canonical).digest("hex")}`;

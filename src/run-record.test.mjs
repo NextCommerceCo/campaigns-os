@@ -1188,22 +1188,19 @@ test("CLI: lifecycle persistence honors the CAMPAIGNS_OS_LIFECYCLE_LOG env var",
   });
 });
 
-test("CLI: private --auth-cookie=value is omitted entirely from argv_shape", () => {
+test("CLI: a private --auth-cookie=value is refused before anything runs, and its value is never echoed or journalled", () => {
   withTempDir((dir) => {
     const packetPath = join(dir, "campaign-runtime.build.json");
     cpSync(resolve(ROOT, "examples/build-packet.basic.json"), packetPath);
     const lcJournal = join(dir, "lc.jsonl");
-    try {
-      execFileSync("node", [
-        CLI, "doctor", "--write", "--packet", packetPath, "--run-id", "run_eq",
-        "--auth-cookie=sterling-SECRET-value", "--lifecycle-journal", lcJournal,
-      ], { encoding: "utf8", stdio: "pipe" });
-    } catch { /* exit 2 */ }
-    const { entries } = readLifecycleJournal(lcJournal);
-    const shape = entries[0].argv_shape;
-    assert.ok(!shape.includes("--auth-cookie"), "private auth flag name should be omitted");
-    assert.ok(!shape.some((flag) => flag.includes("=")), "no = in any shape token");
-    assert.ok(!shape.some((flag) => flag.includes("SECRET")), "value must never leak");
+    const run = spawnSync("node", [
+      CLI, "doctor", "--write", "--packet", packetPath, "--run-id", "run_eq",
+      "--auth-cookie=sterling-SECRET-value", "--lifecycle-journal", lcJournal,
+    ], { encoding: "utf8" });
+    assert.notEqual(run.status, 0);
+    assert.match(run.stderr, /--auth-cookie=… is not accepted/);
+    assert.ok(!`${run.stdout}${run.stderr}`.includes("SECRET"), "value must never leak to the terminal");
+    assert.ok(!readLifecycleJournal(lcJournal).entries.some((entry) => JSON.stringify(entry).includes("SECRET")), "value must never leak to the journal");
   });
 });
 

@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import fs, { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import fs, { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { syncBuiltinESMExports } from "node:module";
 import test from "node:test";
 
-import { withDirectoryLock, withDirectoryLockSync } from "./directory-lock.mjs";
+import { LOCK_FORMAT, withDirectoryLock, withDirectoryLockSync } from "./directory-lock.mjs";
 
 const MODULE_URL = new URL("./directory-lock.mjs", import.meta.url).href;
 const unavailable = (error) => Object.assign(new Error(`lock unavailable: ${error?.code ?? error?.message}`), { cause: error });
@@ -89,7 +89,7 @@ test("holders churning between the waiter's two stats never read as one ownerles
   const publishHolder = (n) => {
     const staging = join(dir, `holder-${n}`);
     mkdirSync(staging);
-    writeFileSync(join(staging, "owner.json"), `${JSON.stringify({ pid: process.ppid, token: `holder-${n}` })}\n`);
+    writeFileSync(join(staging, "owner.json"), `${JSON.stringify({ pid: process.ppid, token: `holder-${n}`, lock_format: LOCK_FORMAT })}\n`);
     renameSync(staging, lock);
   };
   publishHolder(0);
@@ -300,8 +300,10 @@ test("release never removes a lock directory another holder now owns", () => wit
 }));
 
 // Staging, recovery-staging and released siblings outlive a process that dies
-// mid-acquisition, or a release whose tomb could not be put back (#514). The
-// next holder sweeps the ones whose owner is a dead process, and only those.
+// mid-acquisition, or a release whose tomb could not be put back, and an
+// abandoned one outlives a recovery cut short before it removed the dead
+// holder's lock (#514). The next holder sweeps the ones whose owner is a dead
+// process, and only those.
 test("the holder sweeps lock siblings left by dead processes and keeps every other one (#514)", () => withScratch(async (dir) => {
   const lock = join(dir, "lock");
   // spawnSync returns only after the child has exited and been reaped.
@@ -317,6 +319,8 @@ test("the holder sweeps lock siblings left by dead processes and keeps every oth
     sibling(`lock.staging-${deadToken}`, { pid: deadPid, token: deadToken }),
     sibling(`lock.recovery-staging-${token()}`, { pid: deadPid, token: "dead-recoverer" }),
     sibling(`lock.released-${token()}`, { pid: deadPid, token: "dead-releaser" }),
+    // A recovery renamed the dead holder's lock here and died before removing it.
+    sibling(`lock.abandoned-${token()}`, { pid: deadPid, token: "dead-holder" }),
   ];
   const kept = [
     // A live process may still be staging or releasing. This process is
@@ -327,7 +331,7 @@ test("the holder sweeps lock siblings left by dead processes and keeps every oth
     sibling(`lock.staging-${token()}`, null),
     // Not a name this lock produces, whatever its owner.
     sibling("lock.staging-not-a-token", { pid: deadPid, token: "dead" }),
-    sibling(`lock.abandoned-${token()}`, { pid: deadPid, token: "dead" }),
+    sibling("lock.abandoned-not-a-token", { pid: deadPid, token: "dead" }),
     sibling(`other.staging-${token()}`, { pid: deadPid, token: "dead" }),
   ];
   writeFileSync(join(dir, `lock.released-${token()}`), "not a directory");
@@ -380,10 +384,120 @@ test("the refusal names a non-lock obstruction at the lock path and leaves it th
 
   const held = join(dir, "held-lock");
   mkdirSync(held);
-  writeFileSync(join(held, "owner.json"), `${JSON.stringify({ pid: process.ppid, token: "foreign" })}\n`);
+  writeFileSync(join(held, "owner.json"), `${JSON.stringify({ pid: process.ppid, token: "foreign", lock_format: LOCK_FORMAT })}\n`);
   const heldError = await refusal(held);
   assert.equal(heldError.code, "EEXIST");
   assert.match(heldError.message, /Lock is held/);
+}));
+
+// Two things that will not clear by waiting are named, not reported as an
+// ownerless lock: a directory this process cannot read, and (below) a lock of
+// another release.
+test("the refusal names a lock-path directory this process cannot read (#514)", { skip: process.platform === "win32" || process.getuid?.() === 0 ? "needs a non-root POSIX user" : false }, () => withScratch(async (dir) => {
+  const lock = join(dir, "sealed-lock");
+  mkdirSync(lock);
+  chmodSync(lock, 0o000);
+  try {
+    let clock = 0;
+    const options = { budgetMs: 5000, unavailable: (error) => error, now: () => clock, sleep: async () => { clock += 500; } };
+    const error = await withDirectoryLock(lock, () => assert.fail("entered"), options).then(() => null, (caught) => caught);
+    assert.equal(error?.code, "ENOTLOCK");
+    assert.equal(error.message, `Lock path is occupied by a directory this process cannot read (EACCES), so it cannot be checked for an owner record: ${lock}`);
+    clock = 0;
+    assert.throws(() => withDirectoryLockSync(lock, () => assert.fail("entered"), { ...options, sleep: () => { clock += 500; } }), { code: "ENOTLOCK", message: error.message });
+  } finally {
+    chmodSync(lock, 0o700);
+  }
+  assert.equal(existsSync(lock), true, "the directory is left in place");
+}));
+
+test("every owner record this release writes carries its lock format (#514)", () => withScratch(async (dir) => {
+  const lock = join(dir, "lock");
+  const owner = await withDirectoryLock(lock, () => JSON.parse(readFileSync(join(lock, "owner.json"), "utf8")), { budgetMs: 1000, unavailable });
+  assert.deepEqual(Object.keys(owner).sort(), ["lock_format", "pid", "token"]);
+  assert.equal(owner.lock_format, LOCK_FORMAT);
+  assert.equal(owner.pid, process.pid);
+}));
+
+// A release before #501 takes the lock with mkdir and writes its owner
+// afterwards, so a rename from this release can replace its lock in that
+// instant. A waiter that finds a live holder of another release (no lock
+// format, or a different one) stops at once instead of waiting to race it for
+// the next acquisition. A dead one is recovered as before.
+test("a lock held by a live process of another release is refused at once, not waited for (#514)", () => withScratch(async (dir) => {
+  const passThrough = (error) => error;
+  const refuse = async (record) => {
+    const lock = join(dir, `lock-${randomBytes(4).toString("hex")}`);
+    mkdirSync(lock);
+    const body = `${JSON.stringify(record)}\n`;
+    writeFileSync(join(lock, "owner.json"), body);
+    let clock = 0;
+    const error = await withDirectoryLock(lock, () => assert.fail("entered"), {
+      budgetMs: 60_000, unavailable: passThrough, now: () => clock, sleep: async () => { clock += 100; },
+    }).then(() => null, (caught) => caught);
+    assert.equal(clock, 0, "refused on the first look, without waiting");
+    assert.throws(
+      () => withDirectoryLockSync(lock, () => assert.fail("entered"), { budgetMs: 60_000, unavailable: passThrough, now: () => clock, sleep: () => { clock += 100; } }),
+      { code: "ELOCKFORMAT", message: error?.message },
+    );
+    assert.equal(clock, 0);
+    assert.equal(readFileSync(join(lock, "owner.json"), "utf8"), body, "the other release's lock is left alone");
+    return { error, lock };
+  };
+
+  const earlier = await refuse({ pid: process.ppid, token: "earlier-release" });
+  assert.equal(earlier.error.code, "ELOCKFORMAT");
+  assert.equal(earlier.error.holderPid, process.ppid);
+  assert.equal(earlier.error.lockFormat, null);
+  assert.equal(earlier.error.message, `Lock is held by process ${process.ppid} of another campaigns-os release (no lock format; this release writes lock format ${LOCK_FORMAT}): ${earlier.lock}`);
+
+  const later = await refuse({ pid: process.ppid, token: "later-release", lock_format: LOCK_FORMAT + 1 });
+  assert.equal(later.error.lockFormat, LOCK_FORMAT + 1);
+  assert.match(later.error.message, new RegExp(`\\(lock format ${LOCK_FORMAT + 1}; this release writes lock format ${LOCK_FORMAT}\\)`));
+
+  // A dead holder of an earlier release is recovered, as any dead holder is.
+  const lock = join(dir, "dead-earlier");
+  mkdirSync(lock);
+  const deadPid = spawnSync(process.execPath, ["-e", "process.exit(0)"]).pid;
+  writeFileSync(join(lock, "owner.json"), `${JSON.stringify({ pid: deadPid, token: "dead-earlier" })}\n`);
+  let entered = false;
+  await withDirectoryLock(lock, () => { entered = true; }, { budgetMs: 5000, unavailable });
+  assert.equal(entered, true);
+}));
+
+// The race itself: this release checks the lock path is free, a release before
+// #501 creates its empty lock directory, this release's rename replaces it,
+// and the earlier release then writes its owner record into the directory.
+// The fence sees a token that is not ours; the waiter must then step aside,
+// not wait for the earlier release and race it again.
+test("a rename that replaced an earlier release's fresh lock steps aside once that release records its owner (#514)", () => withScratch(async (dir) => {
+  const lock = join(dir, "lock");
+  const originalRename = fs.renameSync;
+  let raced = false;
+  fs.renameSync = function earlierReleaseInTheGap(from, to, ...rest) {
+    if (!raced && String(to) === lock && String(from).includes(".staging-")) {
+      raced = true;
+      mkdirSync(lock);
+      const result = originalRename.call(fs, from, to, ...rest);
+      writeFileSync(join(lock, "owner.json"), `${JSON.stringify({ pid: process.ppid, token: "earlier-release" })}\n`);
+      return result;
+    }
+    return originalRename.call(fs, from, to, ...rest);
+  };
+  syncBuiltinESMExports();
+  try {
+    let clock = 0;
+    const error = await withDirectoryLock(lock, () => assert.fail("entered"), {
+      budgetMs: 60_000, unavailable: (caught) => caught, now: () => clock, sleep: async () => { clock += 100; },
+    }).then(() => null, (caught) => caught);
+    assert.equal(raced, true, "the race was staged");
+    assert.equal(error?.code, "ELOCKFORMAT");
+    assert.equal(clock, 0, "stepped aside at once");
+    assert.equal(JSON.parse(readFileSync(join(lock, "owner.json"), "utf8")).token, "earlier-release", "the earlier release keeps its lock");
+  } finally {
+    fs.renameSync = originalRename;
+    syncBuiltinESMExports();
+  }
 }));
 
 test("the holder re-enters its own lock, async and sync, without waiting on itself", () => withScratch(async (dir) => {
@@ -402,7 +516,7 @@ test("the holder re-enters its own lock, async and sync, without waiting on itse
 test("the synchronous form waits out a live foreign holder and refuses a same-process holder at once", () => withScratch(async (dir) => {
   const lock = join(dir, "lock");
   mkdirSync(lock);
-  writeFileSync(join(lock, "owner.json"), `${JSON.stringify({ pid: process.ppid, token: "foreign" })}\n`);
+  writeFileSync(join(lock, "owner.json"), `${JSON.stringify({ pid: process.ppid, token: "foreign", lock_format: LOCK_FORMAT })}\n`);
   let entered = false;
   const started = Date.now();
   assert.throws(() => withDirectoryLockSync(lock, () => { entered = true; }, { budgetMs: 100, unavailable }), /lock unavailable: EEXIST/);

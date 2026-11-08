@@ -11,6 +11,7 @@ import {
   NEXT_STAGE_CONTRACTS,
   NEXT_STAGE_OWNERS,
   stageIsBlocked,
+  stageIsTerminal,
 } from "./orchestration-stage-contract.mjs";
 
 const PRODUCER_STAGES = new Set(["doctor", "qa"]);
@@ -105,20 +106,23 @@ const HISTORY_ENTRY_FIELDS = Object.freeze([
   "build_fingerprint", "source_build_fingerprint", "source_package_material_fingerprint",
   "source_brief_material", "source_spec_material_hash",
   "verdict_run_id", "checked_at", "purchase_proof",
-  "outputs", "evidence",
+  "outputs", "evidence", "baseline_accepted_at",
 ]);
 // The entry fields that say what a record was, rather than when or by whom it
 // was written: a replacement equal on all of them is a re-record, not a new
 // chapter, and archives nothing.
 const HISTORY_IDENTITY_FIELDS = Object.freeze([
   "build_fingerprint", "source_build_fingerprint", "source_package_material_fingerprint",
-  "source_brief_material", "source_spec_material_hash", "verdict_run_id", "purchase_proof", "outputs", "evidence",
+  "source_brief_material", "source_spec_material_hash", "verdict_run_id", "purchase_proof", "outputs", "evidence", "baseline_accepted_at",
 ]);
-export const HISTORY_ARCHIVED_BY = Object.freeze(["record brief", "record spec", "record build", "record polish", "qa run", "prepare-build --force"]);
-export const HISTORY_REASON_CODES = Object.freeze(["brief_presentation_changed", "brief_qa_policy_changed", "spec_material_changed", "rerecorded", "force_reset", "build_output_changed"]);
+export const HISTORY_ARCHIVED_BY = Object.freeze(["record brief", "record spec", "record build", "record polish", "record baseline", "qa run", "prepare-build --force"]);
+export const HISTORY_REASON_CODES = Object.freeze(["brief_presentation_changed", "brief_qa_policy_changed", "spec_material_changed", "rerecorded", "force_reset", "build_output_changed", "baseline_accepted"]);
 const ARCHIVED_STAGE_KEYS = Object.freeze(["assembly", "polish", "qa"]);
 
 const isCompletedStatus = (status) => typeof status === "string" && status.startsWith("completed");
+// A record a later one replaces into history. A baseline counts here, and not
+// as completed: it never hands a campaign off or proves anything.
+const isReplacedRecord = (status) => isCompletedStatus(status) || status === "baseline_accepted";
 
 // What a record says about itself, compared for the dedup. Evidence reads
 // through meaningfulEvidence (an empty block is absent) and a verdict id is
@@ -167,7 +171,7 @@ function historyEntry(previous, { by, reason, at }) {
 // verdict identity or evidence, which the QA producer has always archived.
 function archivable(stageKey, previous) {
   if (!isPlainObject(previous)) return false;
-  if (isCompletedStatus(previous.status)) return true;
+  if (isReplacedRecord(previous.status)) return true;
   return stageKey === "qa" && Boolean(recordIdentity(previous).verdict_run_id || meaningfulEvidence(previous.evidence));
 }
 
@@ -199,6 +203,19 @@ export function archiveSupersededRecord(stage, previous, { by, reason, at }) {
   return appendHistoryEntry(isPlainObject(stage) ? { ...stage } : {}, historyEntry(previous, { by, reason, at }));
 }
 
+// The baseline QA rests on, or null. The marker on the record is the rule, not
+// its status: a blocked page-scoped run or an input change leaves QA resting on
+// the baseline, and only a completed full QA clears the marker.
+export function qaRestsOnBaseline(report) {
+  return report?.stages?.qa?.baseline_accepted_at && isPlainObject(report?.commerce_baseline) ? report.commerce_baseline : null;
+}
+
+// A stage's baseline record, with what the stage held moved to its history.
+export function archiveForBaseline(record, previous, { at }) {
+  const carried = Array.isArray(previous?.history) ? { ...record, history: previous.history } : record;
+  return archiveSupersededRecord(carried, previous, { by: "record baseline", reason: "baseline_accepted", at });
+}
+
 /**
  * #668: the Polish record a CampaignSpec change moved to `polish.history`,
  * restored as the live record stamped with `stamps` (the current inputs), or
@@ -224,6 +241,29 @@ export function restorePolishKeptWithOutput(polish, { fingerprint, sourcePackage
     if (Object.hasOwn(superseded, field)) restored[field] = JSON.parse(JSON.stringify(superseded[field]));
   }
   return { ...restored, stage: "polish", ...stamps };
+}
+
+/**
+ * True when the campaign has been handed off (#721): its deploy or its QA was
+ * completed, as the live record or as a record the stage's history keeps
+ * (a deploy or QA made owed again by a later change still happened). From
+ * then on the repo, not the design source, is the authority for which pages
+ * the funnel has, so `spec derive` adds and removes pages from the page tree
+ * and `record spec` binds that change without intake.
+ */
+export function campaignHandedOff(report) {
+  const completedIn = (stage) => isPlainObject(stage) && (isCompletedStatus(stage.status)
+    || (Array.isArray(stage.history) && stage.history.some((entry) => isPlainObject(entry) && isCompletedStatus(entry.status))));
+  return completedIn(report?.stages?.deploy) || completedIn(report?.stages?.qa);
+}
+
+// True when QA has ever completed, now or in the stage's history. Not
+// campaignHandedOff: a baseline stands in for a QA result, and a completed
+// deploy is not one.
+export function qaEverCompleted(report) {
+  const qa = report?.stages?.qa;
+  return isPlainObject(qa) && (isCompletedStatus(qa.status)
+    || (Array.isArray(qa.history) && qa.history.some((entry) => isPlainObject(entry) && isCompletedStatus(entry.status))));
 }
 
 /**
@@ -286,7 +326,7 @@ export function archiveForForceReset(previousReport, nextReport, { now, detectCh
       continue;
     }
     if (Object.hasOwn(previous, "input_change")) reseeded.input_change = JSON.parse(JSON.stringify(previous.input_change));
-    if (isCompletedStatus(previous.status)) {
+    if (isReplacedRecord(previous.status)) {
       reseeded = archiveSupersededRecord(reseeded, previous, { by: "prepare-build --force", reason: "force_reset", at: now });
       const reason = typeof detectChange === "function" ? detectChange(key, previous) : null;
       if (reason) reseeded.input_change = inputChangeFor(key, previous, { at: now, reason });
@@ -390,7 +430,7 @@ export function recordProducerStageOutcome(report, {
     // A replaced completed record whose stamps differ from the current inputs
     // records the change; a verdict stamped with the current inputs then
     // clears it, the one it just recorded included; any other write carries it.
-    const detected = inputs && isCompletedStatus(previous.status) ? inputs.detectChange(previous) : null;
+    const detected = inputs && isReplacedRecord(previous.status) ? inputs.detectChange(previous) : null;
     if (detected) next.input_change = inputChangeFor("qa", previous, { at: timestamp, reason: detected });
     if (inputs && inputs.stampsCurrent(next)) delete next.input_change;
     const archived = archiveStageRecord(next, previous, next, { by: "qa run", reason: detected || "rerecorded", at: timestamp, stageKey: "qa" });
@@ -573,6 +613,31 @@ export function qaRecordedBuildFingerprint(report) {
     || optionalString(report?.stages?.qa?.evidence?.source_build_fingerprint);
 }
 
+// #720: the build whose completed QA a page-scoped run extends. A completed
+// QA record extends its own build. A page-scoped run that did not complete
+// extends the build of the full QA it was based on, which was completed when
+// that run was accepted. A baseline extends its own build too, and has no
+// purchase proof to pass on. Any other record (blocked or pending full QA, a
+// skip, a required stage) extends nothing, so it owes a full QA run.
+const QA_EXTENDABLE_STATUSES = Object.freeze(["completed", "completed_with_warnings", "baseline_accepted"]);
+export function qaExtendedBuildFingerprint(report) {
+  const qa = report?.stages?.qa;
+  if (QA_EXTENDABLE_STATUSES.includes(qa?.status)) return qaRecordedBuildFingerprint(report);
+  if (qa?.status === "blocked") return optionalString(qa?.evidence?.page_scope?.base_build_fingerprint);
+  return null;
+}
+
+// The build Polish last reviewed: the output a terminal Polish is bound to,
+// or, once a rebuild has made it required, the build that rebuild kept for
+// it. A blocked or pending Polish reviewed nothing.
+export function polishReviewedBuild(polish) {
+  if (stageIsTerminal(String(polish?.status || ""))) return optionalString(polish.source_build_fingerprint);
+  // A brief or spec change since then (input_change, which only a restored
+  // or new Polish clears) owes the full review, whatever the build change.
+  if (Object.hasOwn(polish || {}, "input_change")) return null;
+  return polish?.status === "required" && polish.required_by === "build" ? optionalString(polish.owed_since_build_fingerprint) : null;
+}
+
 export function qaRecordedForCurrentBuild(report, buildFingerprint) {
   const recorded = qaRecordedBuildFingerprint(report);
   const current = optionalString(buildFingerprint);
@@ -716,7 +781,7 @@ function commitAssemblyReportUnderLock(workspace, mutate, {
       const doctor = refreshDoctor(outcome);
       if (doctor !== null && doctor !== undefined) writeDoctorSidecar(doctorOutPath, doctor, { command: command.trim(), targetRepo });
     } else if (outcome.written) {
-      markDoctorSidecarStale(targetRepo, { command: command.trim(), reason: staleReason.trim() });
+      markDoctorSidecarStale(targetRepo, { command: command.trim(), reason: staleReason.trim(), ...(doctorOutPath ? { path: doctorOutPath } : {}) });
     }
     return outcome;
   };

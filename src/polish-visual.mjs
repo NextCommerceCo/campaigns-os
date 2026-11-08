@@ -477,8 +477,15 @@ export function evaluateVisualReference(reference) {
     : reference.provenance?.class === "declared_source" ? member("provenance", null, "pass") : member("provenance", "provenance_unknown", "review"));
   if (reference.reference_cap_reached) members.push(member("reference_cap", "reference_cap_reached"));
   // A file refused for where it is, not what it is, names that location.
-  if (level !== "decoded" && reference.verification?.reason === "path_outside_source_root") members.push(member("location", "path_outside_source_root"));
+  members.push(...referenceLocationMembers(reference));
   return aggregateQcResults(members);
+}
+
+// The location member of a reference refused for where it is. It does not
+// depend on the build, so a stale-bound row keeps it (#707).
+function referenceLocationMembers(reference) {
+  return reference?.verification?.level !== "decoded" && reference?.verification?.reason === "path_outside_source_root"
+    ? [member("location", "path_outside_source_root")] : [];
 }
 
 // The only diff decision table. Scores are intentionally absent from its predicates.
@@ -590,7 +597,7 @@ function evaluate(record, context = {}) {
       ? { ...original, reference_cap_reached: true } : original;
     row("visual.reference", ref, failure
     ? { result: "unexercised", reason_code: "evidence_not_reproducible", members: [member("evidence", failure)] }
-    : context.staleBinding ? { result: "unexercised", reason_code: "stale_binding" } : evaluateVisualReference(ref));
+    : context.staleBinding ? { result: "unexercised", reason_code: "stale_binding", members: referenceLocationMembers(ref) } : evaluateVisualReference(ref));
   }
   for (const comparison of record.comparisons) {
     if (comparison.basis === "reference" && cappedReferences.has(referenceKey(comparison))) continue;

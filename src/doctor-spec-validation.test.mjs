@@ -122,3 +122,36 @@ test("doctor reports each multi-step checkout rule from its fixture", () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("doctor blocks a checkout path that sells only bump rows, and passes the example spec (#711)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "checkout-path-sells-"));
+  try {
+    const base = JSON.parse(readFileSync(join(ROOT, "examples/build-packet.basic.json"), "utf8"));
+    const spec = JSON.parse(readFileSync(join(ROOT, "examples", base.spec.local_path), "utf8"));
+    const findings = (report) => [...(report.errors || []), ...(report.warnings || [])]
+      .filter((issue) => issue.code === "spec.validation" && issue.detail?.ruleId === "CheckoutPathHasPackages");
+
+    const run = (name, value) => {
+      writeFileSync(join(dir, `${name}.json`), JSON.stringify(value, null, 2));
+      const packet = JSON.parse(JSON.stringify(base));
+      packet.spec.local_path = `${name}.json`;
+      writeFileSync(join(dir, `${name}.packet.json`), JSON.stringify(packet, null, 2));
+      return runDoctorJson(join(dir, `${name}.packet.json`));
+    };
+
+    assert.deepEqual(findings(run("example", spec)), [], "the example spec's checkout sells a main-cart package");
+
+    const bumpOnly = JSON.parse(JSON.stringify(spec));
+    for (const page of bumpOnly.funnels.flatMap((funnel) => funnel.pages)) {
+      if (page.type === "checkout") page.packages = page.packages.map((entry) => ({ ...entry, is_order_bump: true }));
+    }
+    const report = run("bump-only", bumpOnly);
+    const [hit, ...rest] = findings(report);
+    assert.ok(hit, "a checkout reached with only bump rows must be reported");
+    assert.equal(rest.length, 0);
+    assert.ok((report.errors || []).includes(hit), "the finding is an error");
+    assert.equal(hit.detail.data.pageId, "checkout");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

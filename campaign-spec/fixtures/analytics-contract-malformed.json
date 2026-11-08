@@ -32,6 +32,7 @@
         {
           "id": "a-co",
           "type": "checkout",
+          "packages": [{ "ref_id": 1, "qty": 1 }],
           "label": "Checkout",
           "success_url": "a-ty"
         },

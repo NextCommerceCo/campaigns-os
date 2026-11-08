@@ -34,6 +34,7 @@
         {
           "id": "checkout-1",
           "type": "checkout",
+          "packages": [{ "ref_id": 1, "qty": 1 }],
           "label": "Billing",
           "success_url": "upsell-1"
         },

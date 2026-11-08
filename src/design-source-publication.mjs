@@ -413,7 +413,7 @@ function assertValidPreparedDesignSourcePackage(value, path, currentPageScope, c
 // hash if the run adopts another writer's package instead of publishing, and
 // is removed once a report has recorded the package. A retry that finds it
 // still accepts only bytes that hash to one of its entries.
-function readPriorDesignSourceProvenance(reportPath, packagePath) {
+export function readPriorDesignSourceProvenance(reportPath, packagePath) {
   const synthesized = [];
   const pending = readJsonIfExistsQuietly(pendingDesignSourceProvenancePath(packagePath));
   // All or nothing: a record with any entry that is not a digest (a torn or
@@ -452,7 +452,7 @@ function pendingDesignSourceProvenancePath(designSourcePackagePath) {
 // Written (staged, then renamed into place) before a synthesized package is
 // published, so the claim survives a crash between that publication and the
 // report's. An empty list removes the record.
-function recordPendingDesignSourceProvenance(designSourcePackagePath, sha256) {
+export function recordPendingDesignSourceProvenance(designSourcePackagePath, sha256) {
   const pendingPath = pendingDesignSourceProvenancePath(designSourcePackagePath);
   if (!sha256.length) {
     rmSync(pendingPath, { force: true });
@@ -852,9 +852,12 @@ const PUBLICATION_STEPS = ["package", "writeTheme", "publish", "publishDoctorOut
 
 // Runs `fn(publication)` inside the target lock; the handle's steps run in
 // PUBLICATION_STEPS order, and `package` and `publish` run once.
-export async function withDesignSourcePublication({ targetRepo, outputs, force = false, publishSpec = null }, fn) {
+// `runtimeDir` is the funnel's runtime directory (src/campaign-workspace.mjs):
+// the Design Source Package and the theme output go under it. The target lock
+// stays project-wide, so funnels of one project still take turns.
+export async function withDesignSourcePublication({ targetRepo, runtimeDir = resolve(targetRepo, ".campaign-runtime"), outputs, force = false, publishSpec = null }, fn) {
   const { packetPath, contextPath, reportPath, doctorOutPath, briefPath } = outputs;
-  const designSourcePackagePath = resolve(targetRepo, DESIGN_SOURCE_PACKAGE_REL_PATH);
+  const designSourcePackagePath = resolve(runtimeDir, relative(".campaign-runtime", DESIGN_SOURCE_PACKAGE_REL_PATH));
   const paths = Object.freeze({ packetPath, contextPath, reportPath, doctorOutPath, briefPath, designSourcePackagePath });
   const prepareBuildOutputPaths = [
     ["Build Packet", packetPath],
@@ -864,8 +867,8 @@ export async function withDesignSourcePublication({ targetRepo, outputs, force =
     ["Campaign Build Brief", briefPath],
   ];
   const prepareBuildThemeOutputPaths = [
-    ["Theme Report", resolve(targetRepo, ".campaign-runtime/theme/theme-report.json")],
-    ["Brand Theme CSS", resolve(targetRepo, ".campaign-runtime/theme/brand-theme.css")],
+    ["Theme Report", resolve(runtimeDir, "theme/theme-report.json")],
+    ["Brand Theme CSS", resolve(runtimeDir, "theme/brand-theme.css")],
   ];
   const prepareBuildCollisionPaths = [
     ...prepareBuildOutputPaths,

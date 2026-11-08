@@ -40,6 +40,7 @@ export type {
   AnalyticsContract,
   AnalyticsMode,
   AnalyticsProvider,
+  AnalyticsVendor,
   OutOfBandPixel,
   ManualEvent,
   ContentParam,
@@ -86,6 +87,8 @@ export {
   isCheckoutStepPage,
   isPrePaymentPage,
   isCheckoutFlowPage,
+  isMainCartPackage,
+  sellsMainCartPackage,
   resolveRouteTargetPage,
   forwardTargetPage,
   checkoutPathFrom,
@@ -132,6 +135,17 @@ export type {
   DlEventCategory,
   DlEventDefinition,
 } from './analytics-vocabulary.ts'
+
+// The starter templates' analytics vendor adapters (analytics.vendors) and the
+// campaigns.json key each one is switched on by, mirrored from the ops
+// registry. spec derive and doctor read the same table.
+export {
+  ANALYTICS_VENDORS,
+  ANALYTICS_VENDOR_KEYS,
+  analyticsVendorByKey,
+  isPlaceholderVendorId,
+} from './analytics-vendors.ts'
+export type { AnalyticsVendorDefinition } from './analytics-vendors.ts'
 
 // ── Phases ─────────────────────────────────────────────────────────────────
 

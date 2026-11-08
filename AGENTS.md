@@ -124,7 +124,8 @@ precede argument refusal: `start`, `prepare-build`, `build`, `run start` and
 before argv is refused, which is a declared effect of those commands and is
 suppressed by `--no-write`. Commands implementing `--dry-run` also suppress
 that closeout whenever the flag is present, including a value that will be
-refused (such as `run end --dry-run yes`). Every remitting command's effect
+refused (such as `run end --dry-run yes`), and any `--flag=value` token, which
+every command refuses, skips it too. Every remitting command's effect
 declaration, when published, names its destination as open-world, and the agent onboarding skill
 records an explicit telemetry choice before the first remitting command.
 

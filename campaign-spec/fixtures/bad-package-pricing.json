@@ -16,7 +16,7 @@
       "weight": 100,
       "pages": [
         { "id": "f-l", "type": "landing", "next_page": "f-c" },
-        { "id": "f-c", "type": "checkout", "success_url": "f-u" },
+        { "id": "f-c", "type": "checkout", "success_url": "f-u", "packages": [{ "ref_id": 1, "qty": 1 }] },
         {
           "id": "f-u",
           "type": "upsell",

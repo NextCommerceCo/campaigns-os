@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { scanSdkStorageCompatibility } from './sdk-storage-compatibility.mjs';
+import { scanSdkStorageCompatibility, inventoryFailure } from './sdk-storage-compatibility.mjs';
 
 // Synthetic tracked campaign sources, never merchant code or real order data.
 // A source-compatible result covers source storage access, not runtime identity.
@@ -148,4 +148,55 @@ test('a local HTML base cannot conceal an omitted script dependency', t => {
   const report = scanSdkStorageCompatibility(options(cwd));
   assert.equal(report.status, 'unknown');
   assert.ok(report.findings.some(f => f.status === 'unknown'));
+});
+
+test('a scope whose tracked-file list exceeds 1 MiB is still inventoried (#717)', t => {
+  // 6,000 tracked paths of ~210 bytes inside the scope, about 1.29 MB of
+  // `git ls-files -z` output: over Node's 1 MiB default buffer.
+  const name = 'x'.repeat(200);
+  const extra = {};
+  for (let i = 0; i < 6000; i++) extra[`campaign-a/bulk/${i}-${name}.txt`] = '';
+  const cwd = fixture(t, "sessionStorage.getItem('next-order');", { extra });
+  assert.ok(execFileSync('git', ['-C', cwd, 'ls-files', '-z', '--', 'campaign-a'], { maxBuffer: 16 * 1024 * 1024 }).byteLength > 1024 * 1024);
+  const report = scanSdkStorageCompatibility(options(cwd));
+  assert.equal(report.status, 'incompatible');
+  assert.ok(report.findings.some(f => f.key === 'next-order' && f.status === 'incompatible'));
+  assert.equal(report.files.length, 3);
+});
+
+test('a failed Git inventory names the reason in one line', t => {
+  // Git localizes its messages; pin English so the reason text is stable.
+  const locale = process.env.LC_ALL;
+  process.env.LC_ALL = 'C';
+  t.after(() => { if (locale === undefined) delete process.env.LC_ALL; else process.env.LC_ALL = locale; });
+  const cwd = fixture(t, "sessionStorage.getItem('next-order');");
+  writeFileSync(join(cwd, '.git', 'index'), 'not an index');
+  assert.throws(() => scanSdkStorageCompatibility(options(cwd)), error =>
+    /^Cannot inventory tracked Git source files: \S/.test(error.message) && /index/.test(error.message) && !error.message.includes('\n') && !error.message.includes('Command failed'));
+});
+
+test('an ENOBUFS failure asks for a narrower scope', () => {
+  let failure;
+  try { execFileSync('git', ['--version'], { stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 1 }); } catch (error) { failure = error; }
+  assert.ok(failure, 'git --version must overflow the 1-byte buffer');
+  assert.equal(failure.code, 'ENOBUFS');
+  assert.match(inventoryFailure(failure), /larger than 256 MiB; narrow --scope\.$/);
+});
+
+test('inventoryFailure falls back to the exit status and bounds long git messages', () => {
+  assert.equal(inventoryFailure({ status: 128, stderr: '' }), 'git exited 128 with no message.');
+  assert.equal(inventoryFailure({ status: null, signal: 'SIGKILL', stderr: Buffer.alloc(0) }), 'git exited SIGKILL with no message.');
+  assert.equal(inventoryFailure({ status: null, signal: null, code: 'ETIMEDOUT', stderr: '' }), 'git exited ETIMEDOUT with no message.');
+  assert.equal(inventoryFailure({ status: 1, stderr: 'fatal: bad.\nmore' }), 'fatal: bad.');
+  const long = inventoryFailure({ status: 1, stderr: 'x'.repeat(500) });
+  assert.equal(long, `${'x'.repeat(200)}….`);
+});
+
+// Windows forbids ':' in file names, and the case needs it.
+test('a scope that looks like pathspec magic is matched literally', { skip: process.platform === 'win32' }, t => {
+  // Read as magic, ':(icase)zz' would match only a folder named zz and the scope would have no files.
+  const cwd = fixture(t, '// none', { extra: { ':(icase)zz/x.js': "sessionStorage.getItem('next-order');" } });
+  const report = scanSdkStorageCompatibility({ ...options(cwd), scope: [':(icase)zz'], exclude: [] });
+  assert.deepEqual(report.files.map(f => f.path), [':(icase)zz/x.js']);
+  assert.equal(report.status, 'incompatible');
 });

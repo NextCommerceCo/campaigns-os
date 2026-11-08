@@ -29,7 +29,7 @@
             "offer_code": "FREESHIP"
           }
         },
-        { "id": "f-c", "type": "checkout", "success_url": "f-ty" },
+        { "id": "f-c", "type": "checkout", "success_url": "f-ty", "packages": [{ "ref_id": 1, "qty": 1 }] },
         { "id": "f-ty", "type": "thankyou" }
       ]
     }

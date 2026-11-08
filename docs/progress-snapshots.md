@@ -65,10 +65,13 @@ rename; a live process is never evicted. A lock directory with no owner record
 a second. If one is found, or if recovery itself is interrupted, capture fails
 closed and the warning names the affected `.allocation-lock` directory: stop
 all Campaigns OS writers for that target, then remove that directory before
-retrying `next`. A file or other non-lock entry at the lock path is named in
-the warning and never removed: move it out of the way. Do not remove a lock
-while a writer is active. Do not run an
-older Campaigns OS release against the same target at the same time.
+retrying `next`. A file, an unreadable directory or other non-lock entry at
+the lock path is named in the warning and never removed: move it out of the
+way. Do not remove a lock while a writer is active. Run one Campaigns OS
+release against a target at a time: a lock held by a live process of another
+release (its owner record has no `lock_format`, or a different one) is refused
+at once and the warning names that process. Two releases that start at the
+same instant are not detected.
 
 An unchanged projection reuses its ID, timestamp and sequence. Identity
 changes start a new stream. Each local scope retains at most 32 snapshots and

@@ -145,6 +145,13 @@ shape — `CheckoutForwardTarget`, `PrePaymentForwardTarget`,
 reads page order or page names. `paymentPageFrom`, `checkoutPathFrom` and
 `paymentPagesForFunnel` answer "which Checkout is on this path".
 
+`CheckoutPathHasPackages` adds that every path into a Checkout passes a page
+selling a main-cart package (an entry marked neither `is_upsell` nor
+`is_order_bump`; `isMainCartPackage` and `sellsMainCartPackage` in
+`checkout-flow.ts`). The selling page can be a select page, a landing page, a
+checkout step or the Checkout itself. The contract is written up in
+`../docs/template-family-contracts.md`, "Main-cart entry".
+
 ## See also
 
 - `../CONTEXT.md` — domain vocabulary.

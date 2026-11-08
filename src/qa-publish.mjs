@@ -19,9 +19,9 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 
-import { campaignSidecarPaths, targetRepoFor } from "./campaign-workspace.mjs";
+import { campaignSidecarPaths, packetRuntimeRelPath, targetRepoFor } from "./campaign-workspace.mjs";
 import { refused } from "./lifecycle.mjs";
-import { SIDECAR_RELATIVE_PATH } from "./qa-sidecar.mjs";
+import { sidecarPathForPacket } from "./qa-sidecar.mjs";
 import { qaVerdictIdentityMatch } from "./qa-verdict-discovery.mjs";
 import { publishQaVerdict, qaPortalUrl, qaVerdictPublishBlock, QA_VERDICT_PUBLISH_ENDPOINT, QA_VERDICT_PUBLISHERS } from "./qa-verdict-publish.mjs";
 import { validateVerdict } from "./qa-verdict.mjs";
@@ -108,9 +108,9 @@ export function resolveStoredVerdictSource({ args, packetPath, packet, readJsonF
   if (explicit) {
     const path = resolve(explicit);
     if (!exists(path)) return { error: refusal(QA_PUBLISH_REFUSALS.verdict_missing, `No verdict file at ${path}.`) };
-    return { path, source_kind: path === sidecarPath(packetPath) ? "sidecar_projection" : "explicit" };
+    return { path, source_kind: path === sidecarPath(packetPath, packet) ? "sidecar_projection" : "explicit" };
   }
-  const sidecar = sidecarPath(packetPath);
+  const sidecar = sidecarPath(packetPath, packet);
   if (!exists(sidecar)) {
     return {
       error: refusal(
@@ -139,8 +139,8 @@ export function resolveStoredVerdictSource({ args, packetPath, packet, readJsonF
   return { path: sidecar, source_kind: "sidecar_projection", sidecar_path: sidecar };
 }
 
-function sidecarPath(packetPath) {
-  return join(dirname(resolve(packetPath)), SIDECAR_RELATIVE_PATH);
+function sidecarPath(packetPath, packet) {
+  return sidecarPathForPacket(packetPath, packet);
 }
 
 /**
@@ -282,7 +282,8 @@ async function attemptPublish(args, operations, dryRun) {
   } catch {
     verdictDigest = null;
   }
-  const records = ops.readRecords(baseDir);
+  const runtimeRelPath = packetRuntimeRelPath(packet);
+  const records = ops.readRecords(baseDir, runtimeRelPath);
   const recordEntry = findRunRecordForVerdict({ records, packet, verdictRunId, verdictDigest });
   const priorBlock = recordEntry?.record?.qa_verdict_publish?.verdict_run_id === verdictRunId ? recordEntry.record.qa_verdict_publish : null;
   const republish = args.republish === true;
@@ -377,7 +378,7 @@ async function attemptPublish(args, operations, dryRun) {
     } else {
       try {
         const record = { ...recordEntry.record, qa_verdict_publish: stamped };
-        const path = ops.writeRecord(record, { baseDir });
+        const path = ops.writeRecord(record, { baseDir, runtimeRelPath });
         runRecord = { ...recordSummary({ path, record }, stamped), written: true, preserved: false };
       } catch (error) {
         runRecord = { ...recordSummary(recordEntry, priorBlock), written: false, preserved: false, error: singleLineFragment(error.message) };

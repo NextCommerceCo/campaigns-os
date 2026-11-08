@@ -2,6 +2,131 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.66.0] - 2026-11-07
+
+Funnels handed off before 1.62.0 can now reach small checks without a test order. To take it, pin `@nextcommerce/campaigns-os@1.66.0`. Nothing changes for a funnel unless a named person runs the new command.
+
+### Added
+
+- **`record baseline` (#716).** `campaigns-os record baseline --packet <packet> --accepted-by "<named person>" --reason "<why>"` accepts a handed-off funnel from before markup hashes as the starting point, one time per funnel. It tests nothing and places no orders. After it, a page-only change owes QA on that page alone, and a commerce-affecting change still owes the full Polish and QA. It refuses a funnel whose last QA was blocked, one where no QA ever completed, one whose records have markup hashes, and one where no full QA is owed.
+- **The stage status `baseline_accepted`.** Polish and QA take it from `record baseline`. It ends the ladder, so `next` moves on, but it is never `completed` and never hands a campaign off. What those stages held moves to history, so its purchase proof stops counting. A passing `qa run --page` leaves QA at this status, and only a completed full QA ends it. Progress snapshots read it as `unknown`.
+- **Reports say what it is.** Doctor warns `qa.baseline_accepted`, and `doctor --ci`, readback and `next` say QA rests on a baseline and no purchase has been tested since. `evidence_debt.qa` gains `baseline`, and the Assembly Report gains a top-level `commerce_baseline`, which keeps the status, warnings and skip reason of what it replaced.
+
+## [1.65.0+agent.1] - 2026-11-07
+
+Commercial parity now checks `package.price` as well as `bundle.*.price`. Starter upsells use `package.price`, so a funnel could pass every calculate scenario with no printed price compared. No pin change is needed to read verdicts; the behavior ships in the next release.
+
+### Changed
+
+- **`package.price` and `package.<ref>.price` are compared as rendered.** Under `qa run --browser`, each visible node the SDK has filled is compared with calculate's `unit_price` for that package's row on the page. The source holds a template placeholder (`$9.99` on a starter upsell), so the source text is never compared. A difference is the existing warn-only `price-claim-mismatch`. That includes a page printing `package.price`, the list price, beside a live offer.
+- **What cannot be compared is named.** A run without `--browser`, a rendered page that showed none of the claims, a visible node the SDK never wrote, or a claim with no package id, no single exact row or unreadable text each writes a `commercial-parity:incomplete:<code>` warn row and never a mismatch. A run without `--browser` on a page with these claims now reads `incomplete`, so it stays at `ready_with_exceptions`.
+- `verdict.commercial.package_price_claims` counts these claims, and they count toward `extracted_price_claims`, `compared_price_claims` and `unresolved_price_claims`. Journey rows from the `./commercial-journey` export carry `unit_price` when calculate sends it, and captures from `./commercial-parity` carry `package_price_claims`.
+
+## [1.65.0] - 2026-11-07
+
+A QA run whose commercial parity stopped short no longer reads as a clean result. Commercial status `incomplete` now keeps the verdict at `ready_with_exceptions` and names the cause and the fix in `exceptions[]`. It stays warn-only: nothing new blocks, and the exit code does not change. To take it, pin `@nextcommerce/campaigns-os@1.65.0` and refresh the installed skills to `1.65.0+skills.1`.
+
+### Changed
+
+- **Incomplete commercial coverage is an exception.** A spec with no `campaign.campaigns_api_key`, for example, used to run 0 of its calculate scenarios and could still report `ready`, with the gap visible only under `verdict.commercial`. The verdict is now `ready_with_exceptions`, with a warn row `commercial-parity:incomplete:missing_campaigns_api_key` whose `actual` says what was not compared and how to fix it.
+  - A cause an earlier one already explains writes no second row, so a missing key does not also report every page as unpriced. Read the row for what to do: the set of codes is not a contract.
+  - Not every cause has a repair. A store coupon, two bound prices on one page, a run in a currency other than the Map's and a funnel over the check's limits say what this run did not compare, and these runs stay at `ready_with_exceptions`.
+  - The committed sidecar keeps the row's id, which names the cause. The verdict's `commercial` section gains `incomplete_reasons` with the same causes, and `qa run` prints them under its commercial line.
+  - A run that was `ready` only because the gap was invisible now records its QA stage as `completed_with_warnings`, and its Run Record lists `pricing` among its gap classes. Both dispositions still end a run session.
+- **A crash in the commercial check is reported the same way.** It used to leave status `not_run` and the verdict untouched, with a line on stderr. It now reads `incomplete` with the cause `commercial_runner_error`. Runs a gate blocks keep `not_run`, since those verdicts are already `blocked`.
+- The verdict schema's `disposition` and `commercial.status` descriptions say the above, and it documents `commercial.incomplete_reasons`.
+
+## [1.64.0] - 2026-11-07
+
+Developers changing a live funnel from a fresh clone can now get going, and the reports say what they compared. To take it, pin `@nextcommerce/campaigns-os@1.64.0`, run `spec fetch` once on each repository set up from a saved Map, and commit the file it writes. These come from the first post-handoff trial on #716.
+
+### Added
+
+- **`spec fetch` (#716).** `campaigns-os spec fetch --packet <packet>` restores a saved-Map packet's CampaignSpec on a checkout that lacks it, by the same fetch intake makes. It never replaces a copy on disk, because that copy can hold `spec derive` edits the Map doesn't have, and it doesn't write the packet or the records. Its `bound` result says whether the copy matches the spec the records were made against. A doctor `spec.local_path` error for a missing Map copy now names the command.
+- **`built_output.absent` doctor warning (#716).** When the build stage is complete and `_site/<route>/` isn't there, doctor says the records were not compared with this checkout, and `next` says so at `done`. A fresh clone used to read as finished however much source had moved.
+
+### Changed
+
+- **The fetched CampaignSpec is committed (#716).** `.campaign-runtime/fetched-specs/` leaves the managed `.gitignore` block, and an existing block loses the line on the next setup command or `spec fetch`. The committed records are bound to this file and `spec derive` writes into it, so another machine can't rebuild it from the Map once it has been derived.
+- **`doctor --ci` names what it compared (#716).** Each owed stage's report line gives the build it last checked, with the date when QA completed. When the latest change alone is page-only but an earlier rebuild since that check wasn't, the report names that rebuild, so it no longer seems to contradict `record build`. `evidence_debt.<stage>.change` gains `commerce_rebuild`, and `evidence_debt.qa` gains `reviewed_at` when QA completed, each only when there is a value.
+- **Clearer wording for a pre-1.62 build (#716).** `commerce_signature_unavailable` now reads as a build from before the markup hashes existed.
+
+### Fixed
+
+- **The docs on pre-1.62 records (#716).** They said such a change reads as `unknown` until `record build` records a signature. It reads as `commerce_affecting`, and `record build` doesn't clear it. Page-only changes start after one full QA on 1.62.0 or later, and the docs now say so.
+
+## [1.63.0+agent.1] - 2026-11-02
+
+The `PagePackage` type accepts `prices: null`, as the schemas and the `PackageCurrencyPrices` rule already did. No pin change is needed to read specs; TypeScript callers that pass `null` stop failing type checks on the next release.
+
+### Fixed
+
+- `PagePackage.prices` is typed `PackageCurrencyPrice[] | null`, like the package's other nullable fields. Schemas v4 and v5 allow `null`, and the rule treats it as absent, so a spec that validated could fail to type-check. (#714)
+- The authoring guide's `prices[]` section says to refresh the Map after any price change: `spec derive` refreshes `price` and `price_retail` but not `prices[]`, so a default-currency change otherwise leaves `price` and that currency's `prices[]` entry disagreeing.
+
+## [1.63.0] - 2026-10-31
+
+CampaignSpec can carry a page package's price in each currency the campaign sells in, and validation warns when a package has no price in one of them. To take it, pin `@nextcommerce/campaigns-os@1.63.0` and refresh the installed skills to `1.63.0+skills.1`; the skill text changes only in its stated revision.
+
+### Added
+
+- **`prices[]` on a page package (#714).** A row in `funnels[].pages[].packages[]` may carry `prices: [{ currency, price, price_retail?, price_recurring? }]`, one entry per currency the Campaigns App prices the package in, read from the Campaigns API in that currency (`GET /campaigns/?currency=<code>`). `price` and `price_retail` stay the default currency's. The field is optional and additive in schemas v4 and v5 and in the `PagePackage` type (with `PackageCurrencyPrice`), and the authoring guide's Campaign Currencies section shows it.
+- **`PackageCurrencyPrices` rule (#714).** A warning, tagged `fast` and `spec-only`, so `doctor` and Map Builder both run it. For a row that carries `prices[]`, it reports a currency in `campaign.available_currencies` or `campaign.currency` with no entry, since the Campaigns API leaves an unpriced package out of the campaign in that currency; an entry without an ISO 4217 `currency` and a non-negative decimal `price`, or with a malformed `price_retail` or `price_recurring`; and a currency listed twice. A row without `prices[]` (absent or null) is not checked, and malformed campaign currency codes stay with `CampaignCurrencies`.
+
+## [1.62.0] - 2026-10-30
+
+This release makes the path from a Map to a working campaign shorter to start and cheaper to maintain. CampaignSpec validation catches a checkout nothing sells into and malformed currencies, and it carries the starter templates' analytics vendors. One project can hold several funnels. After handoff, `spec derive` keeps the spec in step with the repo's pages and the live campaign. A change to some pages' copy owes QA on those pages only. `qa run --test-order` holds test purchases back from the analytics vendors it can intercept (all of the template vendors except Northbeam), and `qa run --currency` blocks when the currency did not take. To take it, pin `@nextcommerce/campaigns-os@1.62.0` and refresh the installed skills to `1.62.0+skills.1`.
+
+### Changed
+
+- **Several funnels in one project (#719).** The first funnel set up in a Page Kit project keeps `campaign-runtime.build.json` and `.campaign-runtime/`. Each later funnel gets `campaign-runtime-<route>.build.json` and keeps its Build Context, Assembly Report, doctor output, theme output, inputs, QA verdict sidecar and Run Records under `.campaign-runtime/funnels/<route>/`, which the packet records as `assembly.runtime_dir`. Every `--packet` command reads and writes that funnel's records.
+  - `readback` without `--packet` refuses, naming each packet and its route, when the project holds more than one funnel. `tooling status` then reads no packet pin.
+  - `prepare-build` no longer replaces another funnel's Build Packet, including one named with `--out`. `--force` replaces it on purpose: `prepare-build --out campaign-runtime.build.json --force` renames the route of a project's first funnel and keeps its records where they are. When a new route is set up beside an existing funnel, prepare-build prints a `Funnel:` line with the rename steps.
+  - Two funnels set up at the same moment no longer collide: the run that waited for the target lock stops and asks to be run again.
+  - Existing single-funnel projects read their records where they already are, with no setup rerun. The managed `.gitignore` block gains `.campaign-runtime/funnels/*/run-records/`.
+- **`spec derive` after handoff (#721, #531).** A campaign is handed off once its deploy or its QA has completed. From then on derive adds a page the page tree builds that no spec page binds (id from the file name, type from its page-kit `page_type`; a checkout file with `next_step` is added as a `checkout_step` when it has a `step_number`, as a `checkout` that forwards to the Checkout in a v4 spec, and as a `select` page when it has none), removes a page whose built file is gone (matched by page id), and sets the routing on the edges that name those pages from the page files' `next_url` / `decline_url` / `next_step` frontmatter, rewriting the matching `sdk_hints.meta_tags` routing hint. A page file that is gone while a new file of the same page-kit `page_type` appears is read as a rename: neither change is applied and derive reports `page_renamed`, so the page's authored packages and offers are kept. Page order is reported as not derived, and so are an added page's packages (`page_packages_not_derived`): they are authored, and doctor blocks on `CheckoutPathHasPackages` or `UpsellHasPackages` until they are set.
+  - Once the campaign is built, derive makes the same read-only `GET /api/campaign` doctor makes and refreshes the fields the spec mirrors from the Campaigns App: each page package's name, price, recurring price, product, variant and availability, the offer records, and each page's offer copies. Which packages and offers a page carries stays authored, and a price never comes from the repo. `--no-live-refs` sends nothing; `--proxy-base` names the proxy. The effects contract declares the read on both `spec derive` rows and advances its `contract_version` to 1.3.0, because an existing row's declared effect changed.
+  - `record spec` binds a move of page routes: it re-projects every page's page-kit target in the packet and the Build Context and rewrites the Design Source Package's page surfaces and references. On a handed-off campaign it also binds a page added or removed, without intake. A respelling that projects to the same targets keeps the build, Polish and QA. A `record spec` that stopped part way is finished by the next one. It refuses a change that moves the route root or slug, leaves a routing hint stale, puts two pages on one target, or would rewrite a Design Source Package that prepare-build did not synthesize or that was edited since.
+  - Doctor blocks when a routing hint (`next-success-url`, `next-upsell-accept-url`, `next-upsell-decline-url`) names a route its page no longer has (`spec.routing_hint_stale`). `spec derive` and `record spec` use the same check.
+- **Small changes owe small checks (#720).** After launch, a change that touches only some pages' HTML and leaves checkout pages, commerce markup, routes, scripts and the campaign's Page Kit config entry alone owes QA on those pages only, and Polish is advisory for it. Any other change still owes the full Polish and QA. A page-only change extends only a review that completed and that no brief or spec change has made owed since.
+  - `record build` keeps `stages.assembly.commerce_signature` (one hash per page over its commerce-bearing markup, plus the config entry) and `stages.assembly.build_changes`, each rebuild classified `page_only`, `commerce_affecting` or `unknown`.
+  - Readback's `evidence_debt` gives each owed stage a `change` object; Polish gains `advisory`, QA gains `scope` and `owed_pages`, and `clean` ignores advisory Polish. `doctor --ci` names the change it found and what each stage owes.
+  - New `qa run --packet <packet> --page <page_id>` (repeatable) checks only the named pages and places no test orders. It pays the page-only debt and keeps the purchase proof of the full run it extends. It refuses a commerce-affecting change, an unrecorded rebuild, a changed page left out, a last QA that did not complete, QA that a `qa_policy` or CampaignSpec change owes, and `--test-order` or `--vendor-beacons`.
+- **Analytics vendors in the spec (#689).** The CampaignSpec types and both schemas add `analytics.vendors.<vendor>` for the starter templates' adapters (GA4, AppLovin Axon, Taboola, Triple Whale, TikTok, Northbeam, Snapchat, Pinterest) in the shape Map Builder saves: `enabled`, `id`, `platform`, `identityEnabled`, `allowedEvents`, `blockedEvents`. `AnalyticsContractShape` warns on an unknown vendor, an enabled vendor without an id, and event lists that are not arrays. `spec derive` copies each vendor's `_data/campaigns.json` id key (`ga4_id`, `triplewhale_name` and the rest) into `analytics.vendors.<vendor>.id` with the same empty-value and placeholder rules as GTM and Meta. The new advisory doctor check `page_kit.analytics_vendors` warns when the spec and `campaigns.json` disagree about a vendor or its id.
+- **Test orders stay out of vendor reporting (#689).** `qa run --test-order` answers requests to the known beacon endpoints of GA4, Meta, TikTok, Snap, Pinterest, Taboola, Triple Whale and AppLovin Axon with a local empty response in every browser context it opens. Loader scripts still load, and those contexts block service workers. The new `browser-test-order:vendor-beacons` row records per vendor how many requests the page sent, whether one named a purchase, and the ids and events, and it lists configured vendors that sent nothing, that it cannot observe, or that are not intercepted (Northbeam, whose beacon host is unconfirmed). The row is evidence that the page sent them, never purchase proof, and it never blocks. `--vendor-beacons live` sends them to the vendors; it is refused without `--test-order`. `qa parity` orders are not intercepted.
+- **`qa run --currency` checks the currency took (#713).** Each test order gets a `browser-order-currency:<path>` row that blocks when the order came out in another currency or recorded none. Commercial parity asks for expected totals in the run currency, and a calculate response in another currency is a `commercial-currency:<RUN>:<ANSWERED>` blocker. When the run currency is not the Map's, the fallback prices in the page source are left unresolved instead of compared. Runs without `--currency` are unchanged.
+- **Polish layout conventions (#700).** At the mobile width, Polish warns (`layout.conventions`, acceptable with `checkpoint accept`) when a fixed or sticky CTA bar holds more than its one link or button (`floating_cta`), and when a purchase, accept or submit label is under 16px (`cta_label_size`). The thresholds live in a new `layout_conventions` block in the shared commerce brand contract. Readability records captured before this release show the check as not captured until the next `polish capture`.
+- Skills: `next-campaigns-qa` covers default beacon interception, the `--currency` blockers and page-scoped QA; `next-campaigns-sdk-bump` the beacon default and the currency blockers; `next-campaigns-os` per-funnel records, `spec derive` after handoff and the page-only exception to full Polish and QA; `next-campaigns-os-setup` and `next-campaigns-build` setting up and building a later funnel; `next-campaigns-polish` the layout warnings. The QA and Polish skills read a later funnel's brief and report under its runtime directory. The installed agent context names the page-scoped QA path. Bundled skills advance to `1.62.0+skills.1`.
+
+### Added
+
+- **A checkout something sells into (#711, #206).** New CampaignSpec rule `CheckoutPathHasPackages`: every path from an entry page to a Checkout must pass a page with a main-cart package entry (one marked neither `is_upsell` nor `is_order_bump`). Bump rows alone, and packages on upsell, downsell or thank-you pages, do not count. Paths follow routing fields, never page order or names. It is an error, or a warning when `build_scope.mode` is `partial`, and doctor reports it as `spec.validation`. The main-cart entry contract is in `docs/template-family-contracts.md`.
+- **Currency codes (#714).** New CampaignSpec rule `CampaignCurrencies`: `campaign.currency` and every `campaign.available_currencies` entry must be a three-letter upper-case ISO 4217 code (an error, with the code to write for a near miss such as `"usd"`). A default currency missing from a non-empty `available_currencies` is a warning. The schemas and authoring guide say the spec owns `available_currencies`, listing every currency including the default; the Campaigns App's `additional_currencies` is not a spec field.
+- The CampaignSpec schemas and authoring guide say that on an upsell or downsell page every package row is that page's offer, never an order bump, whatever `is_upsell` says (#710). Campaigns OS already read it this way, and tests now hold it.
+
+### Fixed
+
+- Directory locks (#514): a command that finds the target lock or the progress allocation lock held by a live process of another Campaigns OS release refuses at once and names that process (`ELOCKFORMAT`), instead of racing it. Lock owner records carry `lock_format: 2`, so a holder from an earlier release is refused too; dead holders are still recovered. Two releases that start in the same instant are still not detected, so run one release against a target at a time. The holder also removes `.abandoned-<token>` directories left by an interrupted recovery, and an unreadable directory at the lock path is named as such.
+- Every command refuses a `--flag=value` token, as it refuses any flag up front, and says to write the flag alone (an on/off flag) or `--flag value`; the message names the flag, never the value. Such a command does nothing first: the stale-session closeout that otherwise precedes argument refusal is skipped, as it is for a valued `--dry-run`, because the token's value (a `--packet`, `--target` or `--proxy-base`) is not read. Under `doctor --ci` the refusal is a usage error (`doctor.ci.usage`, exit 2). The shared parser read the token as an unknown key and dropped it, so `qa run --page=upsell1` ran a full QA and `--test-order=common` placed no orders. `standardize`, `page-kit sync` and `spec derive` already refused it as an unknown flag.
+- 1.61.0 residuals (#707): the changed-page list survives `record build`; a reference refused for its location keeps its `location` on a stale-bound row; the readability reader passes an undefined `buildOutput` through unchanged.
+
+## [1.61.0+agent.2] - 2026-10-29
+
+The `next-campaigns-sdk-bump` skill (1.0.7) takes the findings from its third live run, the first on a static repository. Step 3 now has a table of known changes a bump can cross, and step 6 names the 3-D Secure test card. `sdk storage-check` no longer fails on large repositories, and its inventory error now says why. Refresh installed skills with `install-skills` to get it.
+
+### Changed
+
+The `next-campaigns-sdk-bump` skill (1.0.7, bundle `1.61.0+skills.2`) takes the third-run findings on campaigns-os#683:
+
+- Step 3 has a table of known changes by version. 0.4.32: the checkout page no longer emits `order:completed` when it creates an order. The skill prefers the SDK's `dl_purchase`, which fires once per order; a capture that stays hand-wired moves to the first page after checkout, reads the order by the order's `?ref_id=`, and sends once per order, and step 6 reloads that page once with beacons blocked to prove it. 0.4.41: the card fields are Spreedly's hosted fields loaded by NEXT's payment script, so a page's own Spreedly `iframe-v1.min.js` tag, calls on the `Spreedly` global and CSS aimed at the v1 frame ids are removed or ported in the same commit as the pin move, after confirming the campaign has a payment key. 0.4.42 points at the `next:initialized` guard and 0.4.43 at the Shop Pay check. A page with a hand-written `modulepreload` list of SDK files rebuilds it from the target tag's `dist/` or removes it.
+- Step 6 names the 3-D Secure test card from `docs/qa-and-test-orders.md`, links the platform's testing page, and asks the developer to confirm the gateway is in test mode before placing the order.
+- Step 4 says that the old storage-check failure below means the pinned Campaigns OS is npm 1.61.0 or earlier, to update the pin, and not to run the check on a copied repository, which can lose tracked files.
+
+### Fixed
+
+- `sdk storage-check` lists only the tracked files under `--scope` (`git ls-files -- <scope>`), so a large repository no longer passes Node's 1 MiB default buffer. Before this, a repository with more than about 25,000 tracked paths stopped with `Cannot inventory tracked Git source files.` (#717)
+- That error now reads `Cannot inventory tracked Git source files: <reason>`, with Git's first stderr line as the reason, or, when Git printed nothing, how it ended (its exit status, the signal that stopped it, or a spawn error code), or a request to narrow a scope whose list passes 256 MiB. `docs/sdk-storage-compatibility.md` says so.
+
 ## [1.61.0+agent.1] - 2026-10-24
 
 ### Changed

@@ -19,6 +19,7 @@ import { redactPersisted, redactUrlQueriesInText, redactUrlQuery } from "./qa-ur
 import { TRACKING_ADDED_BOUND_MS, TRACKING_OBSERVATION, createTrackingRun, trackingQaAssertion } from "./qa-tracking-params.mjs";
 import { CONTENT_PARAM_LIMITS, runContentParamChecks } from "./qa-content-params.mjs";
 import { createPolicyLinkBudget, hasPolicyLinkFields, readPageAnchors, runPolicyLinkChecks } from "./qa-policy-links.mjs";
+import { vendorBeaconLedgerFor, withVendorBeaconRouting } from "./qa-vendor-beacons.mjs";
 import {
   canonicalHttpUrl,
   commonTestOrderPaths,
@@ -462,6 +463,8 @@ async function dispatchTestOrderPlans({ context, plans, checkoutPage, args = {},
       if (displayParity) assertions.push(displayParity);
       const totalParity = orderTotalParityAssertion(pageForPlan, identifier, result.order);
       if (totalParity) assertions.push(totalParity);
+      const currencyMatch = orderCurrencyAssertion(pageForPlan, identifier, result.order, args);
+      if (currencyMatch) assertions.push(currencyMatch);
       const renderedReceiptAssertion = receiptRenderingAssertion(pageForPlan, identifier, result.order);
       if (renderedReceiptAssertion) assertions.push(renderedReceiptAssertion);
       const dataLayerAssertion = purchaseDataLayerAssertion(pageForPlan, identifier, result.order);
@@ -1127,6 +1130,12 @@ async function runPageBrowserChecks(context, page, args, options = {}, policyLin
     assertions.push(...await templatePlaceholderTextAssertions(browserPage, page, options));
     assertions.push(...await templateDemoAssetAssertions(browserPage, page, options));
     assertions.push(...await pricingVisibilityAssertions(browserPage, page, options));
+    // Commercial parity compares these with calculated prices once the browser
+    // pass is over; a page never read here stays unresolved there.
+    if (options.renderedPackagePrices && !options.renderedPackagePrices.has(String(page.page_id))) {
+      const rendered = await readRenderedPackagePrices(browserPage);
+      if (rendered) options.renderedPackagePrices.set(String(page.page_id), rendered);
+    }
     observation.inspection_ms = elapsedMilliseconds(inspectionStarted);
     const debuggerStarted = performance.now();
     assertions.push(...await sdkDebuggerAssertions(context, page, args));
@@ -3101,6 +3110,45 @@ async function pricingVisibilityAssertions(browserPage, page, options = {}) {
   return [];
 }
 
+// Runs in the page. Every visible package.price node as the shopper reads it. The
+// SDK adds `display-visible` when it writes a node, and nothing else does, so a
+// node without it still holds the template's placeholder, whatever that says.
+// Same package scope as the SDK: the id in the path, then the nearest package id.
+// A price the page multiplies by a live quantity is not a unit price: it keeps no
+// text, so it stays unresolved instead of being compared.
+function collectRenderedPackagePrices() {
+  const claims = new Map();
+  for (const element of document.querySelectorAll('[data-next-display^="package."]')) {
+    const binding = (element.getAttribute("data-next-display") || "").trim();
+    const match = /^package\.(?:([1-9]\d*)\.)?price$/.exec(binding);
+    if (!match) continue;
+    const format = (element.getAttribute("data-next-format") || "currency").trim().toLowerCase();
+    if (format !== "currency" || element.closest("del, s, strike")) continue;
+    if (!element.checkVisibility({ checkVisibilityCSS: true })) continue;
+    let packageId = match[1] ? Number(match[1]) : null;
+    for (let current = element; packageId === null && current; current = current.parentElement) {
+      for (const attribute of ["data-next-package-id", "data-next-package", "data-package-id"]) {
+        const value = (current.getAttribute(attribute) || "").trim();
+        if (packageId === null && /^[1-9]\d*$/.test(value)) packageId = Number(value);
+      }
+    }
+    const filled = element.classList.contains("display-visible");
+    const multiplied = element.hasAttribute("data-next-multiply-quantity");
+    const text = filled && !multiplied ? element.textContent.replace(/\s+/g, " ").trim() : null;
+    claims.set(`${binding}|${packageId}|${filled}|${text}`, { binding, package_id: packageId, filled, text });
+  }
+  return [...claims.values()];
+}
+
+async function readRenderedPackagePrices(browserPage, { timeoutMs = DEFAULT_SETTLE_TIMEOUT_MS } = {}) {
+  await browserPage.waitForFunction(
+    `(${collectRenderedPackagePrices.toString()})().every((claim) => claim.filled)`,
+    null,
+    { timeout: timeoutMs },
+  ).catch(() => {});
+  return browserPage.evaluate(collectRenderedPackagePrices).catch(() => null);
+}
+
 // The SDK renders a bundle or upsell price through data-next-bundle-display as
 // well as data-next-display (#532). A contract surface that lists price rows
 // also counts that attribute; an empty list stays empty so a contract that
@@ -4900,9 +4948,13 @@ export const QA_RUN_CURRENCY = Symbol("qa run --currency");
 // checkout opened directly. Campaign Cart keeps a URL currency in session
 // storage for the rest of the tab's session, so later loads in the tab are
 // the plain URL; the receipt reload in recovery is not a path load at all.
-function pathCurrencyLoad(args) {
+function runCurrency(args) {
   const code = args?.[QA_RUN_CURRENCY];
-  let pending = typeof code === "string" && /^[A-Z]{3}$/.test(code) ? code : null;
+  return typeof code === "string" && /^[A-Z]{3}$/.test(code) ? code : null;
+}
+
+function pathCurrencyLoad(args) {
+  let pending = runCurrency(args);
   return (url) => {
     if (!pending) return url;
     const entered = withQueryParam(url, "currency", pending);
@@ -6635,6 +6687,31 @@ function orderTotalParityAssertion(page, planIdentifier, order) {
     severity: parity.ok ? undefined : SEVERITY.BLOCKER,
     actual: `displayed ${parity.displayed_total}; order ${parity.order_pre_upsell_total}; delta ${parity.delta}`,
     evidence: parity,
+  });
+}
+
+// `qa run --currency <code>`: a created order must have been placed in the
+// run currency. Campaign Cart falls back to the default currency when the
+// requested one is not available, so an order recorded in any other currency
+// blocks, and so does a verified order whose currency was not recorded. No run
+// currency, or no order body read at all (the order's own row already says
+// why), gives no row.
+function orderCurrencyAssertion(page, planIdentifier, order, args) {
+  const expected = runCurrency(args);
+  if (!expected) return null;
+  const recorded = stringArg(order?.verification?.currency);
+  if (!recorded && order?.verification?.verified !== true) return null;
+  const actual = recorded ? recorded.toUpperCase() : null;
+  const ok = actual === expected;
+  return assertion({
+    id: `browser-order-currency:${planIdentifier}`,
+    family: "browser-test-order",
+    page,
+    status: ok ? STATUS.PASS : STATUS.FAIL,
+    severity: ok ? undefined : SEVERITY.BLOCKER,
+    expected: `the order is placed in the run currency ${expected}`,
+    actual: actual ? `order placed in ${actual}` : "the order's currency was not recorded",
+    evidence: { requested: expected, order_currency: actual },
   });
 }
 
@@ -8873,8 +8950,11 @@ function trim(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
 
-function launchChromium(args) {
-  return launchPackageChromium({ headed: args.headed, onMissing: qaBrowserMissing });
+// Every browser QA leg launches here, so on a test-order run every context it
+// opens answers the vendor beacon endpoints locally (qa-vendor-beacons.mjs).
+async function launchChromium(args) {
+  const browser = await launchPackageChromium({ headed: args.headed, onMissing: qaBrowserMissing });
+  return withVendorBeaconRouting(browser, vendorBeaconLedgerFor(args));
 }
 
 function qaBrowserMissing(kind, error) {
@@ -8893,6 +8973,7 @@ function qaBrowserMissing(kind, error) {
 }
 
 export const __qaBrowserTestHooks = Object.freeze({
+  orderCurrencyAssertion,
   qaBrowserMissing,
   PRIMARY_CTA_SELECTOR,
   COUPON_INPUT_SELECTORS,
@@ -8992,6 +9073,7 @@ export const __qaBrowserTestHooks = Object.freeze({
   ASSET_FETCH_MAX_BYTES,
   paymentChromeResidueAssertion,
   pricingVisibilityAssertions,
+  readRenderedPackagePrices,
   upsellPriceVisibilityAssertion,
   checkoutPriceVisibilityAssertion,
   assessReceiptRendering,

@@ -39,6 +39,16 @@ export function normalizePageKitRoute(value) {
   return clean ? `${clean}/` : "";
 }
 
+// The public route slug a CampaignSpec names for itself, normalized:
+// spec_identity.public_route_slug, else campaign.slug, else campaign.id. One
+// reading for every command that checks a spec belongs to its packet.
+export function specPublicRouteSlug(spec) {
+  for (const value of [spec?.spec_identity?.public_route_slug, spec?.campaign?.slug, spec?.campaign?.id]) {
+    if (typeof value === "string" && value.trim()) return normalizePublicRouteSlug(value);
+  }
+  return "";
+}
+
 // The route with the slug prefix removed, when it carries one: "slug/checkout/"
 // → "checkout/", "slug/" → "", "checkout/" → "checkout/".
 export function stripPublicRoutePrefix(route, publicRouteSlug) {

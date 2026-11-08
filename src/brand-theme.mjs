@@ -15,6 +15,7 @@ import {
 } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { packetRuntimeRelPath } from "./campaign-workspace.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SOURCE_DEFAULTS_PATH = "contracts/brand-theme-source-defaults.figma-sections-export.v0.json";
@@ -1557,7 +1558,7 @@ export function inspectBrandTheme({ packet, packetPath, context = null, policy =
   const contracts = loadContracts(repoRoot);
   const sourceRoot = resolveFromFile(packetPath, packet.source_html?.root);
   const targetRepo = resolveFromFile(packetPath, packet.assembly?.target_repo) || dirname(resolve(packetPath));
-  const themeOutDir = outDir ? resolve(outDir) : resolve(targetRepo, ".campaign-runtime/theme");
+  const themeOutDir = outDir ? resolve(outDir) : resolve(targetRepo, packetRuntimeRelPath(packet), "theme");
   const cssPath = resolve(themeOutDir, "brand-theme.css");
   const fontsCssPath = resolve(themeOutDir, BRAND_FONTS_FILENAME);
   const reportPath = resolve(themeOutDir, "theme-report.json");

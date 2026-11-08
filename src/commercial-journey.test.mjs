@@ -61,6 +61,23 @@ test("raw page rows survive planning and drive quantity-aware recurrence truth",
   assert.equal(row.recurring_annotation, "then $59.98 / 30 days");
 });
 
+test("a row keeps the unit price after offers beside its list price, and only when calculate sent it", () => {
+  const page = { id: "upsell", type: "upsell", order: 1, packages: [{ ref_id: "3", qty: 1 }] };
+  const spec = { schema_version: "4.3", campaign: { currency: "USD" }, funnels: [{ id: "default", pages: [page] }] };
+  const plan = planScenarios(page, spec);
+  const journeyWith = (fields) => normalizeJourney(plan, plan.map((descriptor) => {
+    const envelope = calculateEnvelope(descriptor);
+    envelope.id = descriptor.id;
+    envelope.response.lines = envelope.response.lines.map((line) => ({ ...line, ...fields }));
+    return envelope;
+  }), spec, {});
+
+  const [row] = journeyWith({ original_unit_price: "59.99", unit_price: "49.99" }).pages[0].rows;
+  assert.equal(row.unit_price.state, PricingState.Exact);
+  assert.equal(row.unit_price.value, "49.99");
+  assert.equal(Object.hasOwn(journeyWith({}).pages[0].rows[0], "unit_price"), false);
+});
+
 test("an invalid recurrence never leaks a numeric recurring annotation", () => {
   const page = {
     id: "checkout",
@@ -114,6 +131,24 @@ test("a checkout row marked is_order_bump alone is a bump, not part of the repre
     const byRole = (role) => plan.filter((descriptor) => descriptor.context.role === role).map((descriptor) => descriptor.body.lines);
     assert.deepEqual(byRole("representative"), [[{ package_id: 1, quantity: 1 }]], flag);
     assert.deepEqual(byRole("bump-with"), [[{ package_id: 1, quantity: 1 }, { package_id: 2, quantity: 1, is_upsell: true }]], flag);
+  }
+});
+
+// campaigns-os#710: on an upsell or downsell page every package row is the
+// page's offer and never an order bump, whatever is_upsell says. A flagged
+// row and a plain row both price as the representative offer, and neither
+// gets bump-with/bump-without scenarios.
+test("an upsell or downsell page's package row is its offer, never a bump, with or without is_upsell", () => {
+  for (const type of ["upsell", "downsell"]) {
+    for (const flag of [null, "is_upsell", "is_order_bump"]) {
+      const row = { ref_id: "3", qty: 1, ...(flag ? { [flag]: true } : {}) };
+      const page = { id: "offer", type, order: 3, packages: [row] };
+      const plan = planScenarios(page, { campaign: { currency: "USD" }, funnels: [{ id: "default", pages: [page] }] });
+      const label = `${type} ${flag || "plain"}`;
+      assert.deepEqual(plan.map((descriptor) => descriptor.context.role), ["representative", "row"], label);
+      const [representative] = plan;
+      assert.deepEqual(representative.body.lines.map(({ package_id, quantity }) => ({ package_id, quantity })), [{ package_id: 3, quantity: 1 }], label);
+    }
   }
 });
 

@@ -67,7 +67,7 @@
     },
     "clean": {
       "type": "boolean",
-      "description": "True only when every artifact the readback found is loaded or absent (never unreadable or unrecognized), staleness is computable and NO loaded artifact is stale, staleness.unparseable_keys is empty (no loaded artifact recorded an age the readback could not read), divergences is empty, doctor.error_count is zero, and neither evidence_debt stage is owed (any owed Polish or QA stage makes clean false). Unknown debt alone does not make clean false; consumers must inspect evidence_debt even when clean is true. A readback-integrity flag, not a verdict: a blocked QA verdict whose artifacts all read cleanly is still clean, because the readback saw exactly what Campaigns OS recorded. docs/readback.md states the rule and its limits."
+      "description": "True only when every artifact the readback found is loaded or absent (never unreadable or unrecognized), staleness is computable and NO loaded artifact is stale, staleness.unparseable_keys is empty (no loaded artifact recorded an age the readback could not read), divergences is empty, doctor.error_count is zero, and neither evidence_debt stage is owed (any owed Polish or QA stage makes clean false, except Polish marked advisory for a page-only change). Unknown debt alone does not make clean false; consumers must inspect evidence_debt even when clean is true. A readback-integrity flag, not a verdict: a blocked QA verdict whose artifacts all read cleanly is still clean, because the readback saw exactly what Campaigns OS recorded. docs/readback.md states the rule and its limits."
     }
   },
   "$defs": {
@@ -128,7 +128,60 @@
             "stage_build_fingerprint_missing"
           ],
           "description": "Null for current. Owed names a changed binding or the recorded required_by cause (build, brief, spec, or unspecified). Unknown names the unavailable input or fingerprint."
+        },
+        "change": {
+          "description": "On an owed stage, what changed since the build that stage reviewed: the rebuilds `record build` kept in stages.assembly.build_changes plus the drift on disk. Null when the stage is not owed.",
+          "oneOf": [{ "$ref": "#/$defs/evidence_debt_change" }, { "type": "null" }]
+        },
+        "advisory": {
+          "type": "boolean",
+          "description": "Polish only. True when Polish is owed but the change since it last reviewed the campaign is page-only and no brief or spec change requires it: Polish is reported and not required by next, doctor --ci or the QA gate."
+        },
+        "scope": {
+          "enum": [null, "pages", "full"],
+          "description": "QA only. pages: the change since the build QA reviewed is page-only, so QA is owed on owed_pages and qa run --page pays it. full: the change touches commerce, cannot be classified, or an input change requires QA. Null when QA is not owed."
+        },
+        "owed_pages": {
+          "type": "array",
+          "description": "QA only. The changed pages a page-scoped run must cover when scope is pages; empty otherwise.",
+          "items": { "$ref": "#/$defs/evidence_debt_page" }
         }
+      }
+    },
+    "evidence_debt_page": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["page_id", "built_path"],
+      "properties": {
+        "page_id": { "type": "string", "minLength": 1 },
+        "built_path": { "type": "string", "minLength": 1 }
+      }
+    },
+    "evidence_debt_change_kind": {
+      "enum": ["none", "page_only", "commerce_affecting", "unknown"],
+      "description": "page_only: only pages changed, and none of them is a checkout page or changed its package, offer, shipping, upsell, route or script markup, and the campaign's Page Kit config entry is unchanged. commerce_affecting: anything else that could be read. unknown: the change could not be read (no usable manifest, no commerce signature on an older record, or a rebuild history that does not reach the reviewed build)."
+    },
+    "evidence_debt_reason": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["code"],
+      "properties": {
+        "code": {
+          "enum": ["unmapped_file", "page_added", "page_removed", "checkout_page", "commerce_markup_changed", "commerce_signature_unavailable", "campaign_config_changed", "campaign_config_unavailable", "change_history_unavailable"]
+        },
+        "path": { "type": "string", "minLength": 1 }
+      }
+    },
+    "evidence_debt_change": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["kind", "since_build_fingerprint", "changed_pages", "unmapped_files", "reasons"],
+      "properties": {
+        "kind": { "$ref": "#/$defs/evidence_debt_change_kind" },
+        "since_build_fingerprint": { "$ref": "#/$defs/build_fingerprint" },
+        "changed_pages": { "type": "array", "items": { "$ref": "#/$defs/evidence_debt_page" } },
+        "unmapped_files": { "type": "array", "items": { "type": "string" }, "description": "At most 20 paths." },
+        "reasons": { "type": "array", "items": { "$ref": "#/$defs/evidence_debt_reason" }, "description": "Why the change counts as commerce-affecting or unknown; at most 20." }
       }
     },
     "evidence_debt_changes": {
@@ -223,6 +276,14 @@
             "type": "string"
           },
           "description": "Complete sorted paths modified since the retained manifest, relative to the built output root."
+        },
+        "kind": {
+          "$ref": "#/$defs/evidence_debt_change_kind",
+          "description": "This drift from the retained assembly manifest, classified."
+        },
+        "reasons": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/evidence_debt_reason" }
         }
       }
     },

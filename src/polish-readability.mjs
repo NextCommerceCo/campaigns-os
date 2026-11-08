@@ -17,14 +17,19 @@
 //   the fields the helper derives from them;
 // - coverage_gaps[]: what the probe could not measure: closed shadow roots,
 //   cross-origin frames, loading, hidden or generated-text role elements, and
-//   selected, active or expanded states not present at load.
+//   selected, active or expanded states not present at load;
+// - layout (cells of a record that carries layout_conventions, measured cells
+//   only): the viewport size and the floating CTA containers the probe found,
+//   read by the layout.conventions check (LAYOUT_QC_RULES).
 import { createHash } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join, relative, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { resolveBuiltSiteScope } from "./built-site-scope.mjs";
 import { CART_PLACEHOLDERS_LIMITS } from "./cart-placeholders.mjs";
 import { contrastToolkit } from "./contrast.mjs";
+import { canonicalJson } from "./polish-capture.mjs";
 import {
   READABILITY_ADDED_RUN_MS,
   READABILITY_CROP_RUN_MS,
@@ -35,6 +40,7 @@ import { MAX_POLISH_CAPTURE_ROUTES, POLISH_CAPTURE_VIEWPORTS } from "./polish-no
 import { QC_PRODUCERS, aggregateQcResults, polishRecordIntegrity } from "./qc-results.mjs";
 
 export const READABILITY_CHECK = "readability.contrast";
+export const LAYOUT_CHECK = "layout.conventions";
 export const READABILITY_SCHEMA = "campaigns-os-polish-readability/v0";
 export const READABILITY_PRODUCER = QC_PRODUCERS.polish;
 export const READABILITY_ROUTE_SOURCE = "built_site";
@@ -403,6 +409,162 @@ export const READABILITY_QC_RULES = Object.freeze({
 });
 
 // ---------------------------------------------------------------------------
+// Layout conventions
+
+// The layout_conventions block of the shared commerce brand contract, without
+// its prose (`rule` fields): the selectors the probe reads with and the
+// thresholds the layout.conventions check judges with. A record stores the
+// block it was measured with; a reader re-derives only with the same block.
+const SHARED_COMMERCE_CONTRACT = join(dirname(fileURLToPath(import.meta.url)), "..", "contracts", "template-brand-contract.shared-commerce.v0.json");
+const withoutProse = (value) => (isPlainObject(value)
+  ? Object.freeze(Object.fromEntries(Object.entries(value).filter(([field]) => field !== "rule").map(([field, entry]) => [field, withoutProse(entry)])))
+  : Array.isArray(value) ? Object.freeze(value.map(withoutProse)) : value);
+export const LAYOUT_CONVENTIONS = withoutProse(JSON.parse(readFileSync(SHARED_COMMERCE_CONTRACT, "utf8")).layout_conventions);
+
+// What the probe needs from the block: the floating CTA selector contract.
+const layoutProbeArgs = () => {
+  const { positions, control_selector, exclude_selector, form_field_selector } = LAYOUT_CONVENTIONS.floating_cta;
+  return { positions, control_selector, exclude_selector, form_field_selector };
+};
+
+const isRect = (value) => isPlainObject(value) && ["x", "y", "width", "height"].every((field) => Number.isFinite(value[field]));
+const isPathList = (value) => Array.isArray(value) && value.every(isNonEmptyString);
+
+// The layout a measured cell records: the probe's viewport and one entry per
+// floating CTA container, with its rect, its controls (each with its rect)
+// and the selector paths of the visible text outside them.
+export function layoutShapeOk(layout) {
+  return isPlainObject(layout)
+    && isPlainObject(layout.viewport) && Number.isFinite(layout.viewport.width) && Number.isFinite(layout.viewport.height)
+    && Array.isArray(layout.floating_ctas)
+    && layout.floating_ctas.every((entry) => isPlainObject(entry)
+      && isNonEmptyString(entry.selector_path)
+      && LAYOUT_CONVENTIONS.floating_cta.positions.includes(entry.position)
+      && isRect(entry.rect)
+      && Array.isArray(entry.controls) && entry.controls.every((control) => isPlainObject(control) && isNonEmptyString(control.selector_path) && isRect(control.rect))
+      && isPathList(entry.other_text)
+      && Number.isInteger(entry.other_text_count) && entry.other_text_count >= entry.other_text.length);
+}
+
+const FLOATING_FIELDS = Object.freeze(["selector_path", "position", "rect", "controls", "other_text", "other_text_count"]);
+
+// The layout a cell keeps from the probe's observation, or null when the
+// observation carries none.
+function cellLayout(observation) {
+  const layout = observation?.layout;
+  if (!isPlainObject(layout)) return null;
+  return {
+    viewport: { width: layout.viewport?.width, height: layout.viewport?.height },
+    floating_ctas: (Array.isArray(layout.floating_ctas) ? layout.floating_ctas : []).map((entry) => ({
+      ...pick(entry, FLOATING_FIELDS),
+      controls: (Array.isArray(entry?.controls) ? entry.controls : []).map((control) => pick(control, ["selector_path", "rect"])),
+    })),
+  };
+}
+
+// The row keys the layout check names for a cell at its viewport, and
+// `cell`; none at a viewport no convention applies to. Read without checking
+// the cell, so an accept of a row of a cell that fails its checks lapses
+// rather than orphans. Never throws.
+export function layoutRowKeys(cell) {
+  const viewport = isPlainObject(cell) ? cell.viewport : null;
+  const keys = Object.values(LAYOUT_CONVENTIONS).filter((convention) => convention.viewports.includes(viewport)).map((convention) => convention.key);
+  return keys.length ? [...keys, "cell"].sort(byCodeUnit) : [];
+}
+
+// The layout.conventions results of one cell of the readability record,
+// judged with `conventions`, one per convention that applies at the cell's
+// viewport:
+// - `floating_cta`: one member per floating CTA container no taller than
+//   max_viewport_height_share of the viewport, a warning when it holds other
+//   than one control or holds visible text outside its control; a cell with
+//   none reads pass;
+// - `cta_label_size`: one member per rendered, enabled text element of the
+//   CTA roles, a warning under min_font_size_px; a cell with none reads pass.
+//   The elements are the readability record's, so a capped cell adds the
+//   page_coverage member.
+// A cell that measured nothing reads `cell` unexercised with its status.
+export function evaluateLayoutConventions(cell, conventions = LAYOUT_CONVENTIONS) {
+  if (!isPlainObject(cell)) invalid("is not an object");
+  if (canonicalJson(conventions) !== canonicalJson(LAYOUT_CONVENTIONS)) invalid("layout conventions are not the shared contract's");
+  if (!readabilityCellShapeOk(cell)) invalid("is not in the record vocabulary");
+  const { floating_cta: floating, cta_label: label } = LAYOUT_CONVENTIONS;
+  const applies = (convention) => convention.viewports.includes(cell.viewport);
+  if (!applies(floating) && !applies(label)) return [];
+  const results = [];
+  const push = (key, members, { state, observation = {}, capReason = null }) => {
+    const aggregated = aggregateQcResults(members, { capReason });
+    const result = aggregated.result;
+    results.push({
+      check: LAYOUT_CHECK,
+      subject: { check: LAYOUT_CHECK, page: cell.route, viewport: cell.viewport, key },
+      result,
+      reason_code: result === "pass" ? null : aggregated.reason_code,
+      members: aggregated.members,
+      accept_eligible: aggregated.accept_eligible,
+      coverage: result === "unexercised" ? { observed: 0, expected: 1, limits: [aggregated.reason_code] } : { observed: 1, expected: 1, limits: [] },
+      state,
+      observation,
+    });
+  };
+
+  if (cell.cell_status !== "measured") {
+    push("cell", [{ key: "cell_status", result: "unexercised", reason_code: cell.cell_status }], { state: { reason_code: cell.cell_status } });
+    return results;
+  }
+  if (!layoutShapeOk(cell.layout)) invalid("layout is not in the record vocabulary");
+
+  if (applies(floating)) {
+    const tallest = floating.max_viewport_height_share * cell.layout.viewport.height;
+    const containers = cell.layout.floating_ctas.filter((entry) => entry.rect.height <= tallest);
+    const holdsControlOnly = (entry) => entry.controls.length === 1 && entry.other_text_count === 0;
+    const members = containers.length
+      ? containers.map((entry) => (holdsControlOnly(entry)
+        ? { key: entry.selector_path, result: "pass", reason_code: null }
+        : { key: entry.selector_path, result: "warning", reason_code: floating.reason_code }))
+      : [{ key: "no_floating_cta", result: "pass", reason_code: null }];
+    push(floating.key, members, {
+      state: { containers: sortedUnique(containers.map(({ selector_path, controls, other_text, other_text_count }) => ({ selector_path, controls: controls.map((control) => control.selector_path), other_text, other_text_count }))) },
+      observation: {
+        max_height_px: tallest,
+        containers: containers.map(({ selector_path, position, rect, controls, other_text, other_text_count }) => ({ selector_path, position, rect, controls, other_text, other_text_count })),
+      },
+    });
+  }
+
+  if (applies(label)) {
+    const labels = cell.elements.filter((element) => label.roles.includes(element.role) && element.rendered && !element.disabled);
+    const members = labels.length
+      ? labels.map((element) => (element.font_size_px >= label.min_font_size_px
+        ? { key: element.selector_path, result: "pass", reason_code: null }
+        : { key: element.selector_path, result: "warning", reason_code: label.reason_code }))
+      : [{ key: "no_cta_label", result: "pass", reason_code: null }];
+    push(label.key, members, {
+      capReason: cell.capped ? "element_cap_reached" : null,
+      state: { min_font_size_px: label.min_font_size_px, members: sortedUnique(labels.map(({ role, selector_path, font_size_px }) => ({ role, selector_path, font_size_px }))) },
+      observation: {
+        min_font_size_px: label.min_font_size_px,
+        smallest_px: labels.length ? Math.min(...labels.map((element) => element.font_size_px)) : null,
+        members: labels.map(({ role, selector_path, font_size_px }) => ({ role, selector_path, font_size_px })),
+      },
+    });
+  }
+  return results;
+}
+
+// The layout.conventions rules, read from the readability record
+// (src/qc-check-registry.mjs): `thresholds` is the conventions block a record
+// must store to be judged. The reader re-derives the check's rows only
+// for a record that stores `layout_conventions`; an earlier record holds no
+// layout and the check reads not_captured_by_this_version.
+export const LAYOUT_QC_RULES = Object.freeze({
+  thresholds: LAYOUT_CONVENTIONS,
+  vocabulary: Object.freeze({ key: Object.freeze([...Object.values(LAYOUT_CONVENTIONS).map((convention) => convention.key), "cell"]) }),
+  evaluate: evaluateLayoutConventions,
+  rowKeys: layoutRowKeys,
+});
+
+// ---------------------------------------------------------------------------
 // Probe
 
 // The page-side read of one cell. It runs in the Polish isolated world with
@@ -419,7 +581,8 @@ export const READABILITY_QC_RULES = Object.freeze({
 // (or, for one inside a frame, that frame's element); `generatedText` is
 // generatedTextRenders. Every element carries its rectangle in the main
 // frame's viewport (`rect`, clipped to its frames) for crops, which the
-// record does not keep.
+// record does not keep. With `limits.layout` it also returns `layout`: the
+// viewport and the floating CTA containers, whose rects the record keeps.
 export function readabilityProbe(toolkit, limits, closedRoots, generatedText) {
   const win = window;
   const doc = document;
@@ -684,14 +847,56 @@ export function readabilityProbe(toolkit, limits, closedRoots, generatedText) {
     if (isVisible(frame) && !readable) gap("cross_origin_text", null, frame);
   }
 
-  return { status: "measured", capped, coverage_gaps: gaps, elements, viewport };
+  // Floating CTA containers (limits.layout, the layout conventions' selector
+  // contract), in the main frame's trees: for each visible control, the
+  // nearest box at or around it whose computed position is one of
+  // `positions`, unless that box is hidden, matches or sits inside
+  // `exclude_selector`, or holds a visible form field. Each container keeps
+  // its rect, its outermost visible controls with their rects, and the
+  // selector paths of the visible text outside them (rendered or generated),
+  // the first ten listed and all counted.
+  let layout = null;
+  if (limits.layout) {
+    const { positions, control_selector: controlSelector, exclude_selector: excludeSelector, form_field_selector: fieldSelector } = limits.layout;
+    const main = { offset: { x: 0, y: 0 }, clip: null };
+    const positioned = (el) => positions.includes(win.getComputedStyle(el).getPropertyValue("position"));
+    const boxes = [];
+    for (const [el, scope] of inOrder) {
+      if (scope.win !== win || !el.matches(controlSelector) || !isVisible(el)) continue;
+      let box = el;
+      while (box && box.nodeType === 1 && !positioned(box)) box = flatParent(box);
+      if (box && box.nodeType === 1 && !boxes.includes(box)) boxes.push(box);
+    }
+    const floating_ctas = [];
+    for (const box of boxes) {
+      if (!isVisible(box) || flatClosest(box, excludeSelector)) continue;
+      const inside = flatSubtree(box);
+      if (inside.some((node) => node.matches(fieldSelector) && isVisible(node))) continue;
+      const visibleControls = inside.filter((node) => node.matches(controlSelector) && isVisible(node));
+      const controls = visibleControls.filter((node) => !visibleControls.some((other) => other !== node && flatContains(other, node)));
+      const other = inside.filter((node) => !controls.some((control) => flatContains(control, node))
+        && (toolkit.isTextBearing(node, windowOf(node)) || generatedText(node, windowOf(node))));
+      floating_ctas.push({
+        selector_path: toolkit.selectorPath(box),
+        position: win.getComputedStyle(box).getPropertyValue("position"),
+        rect: rectOf(box, main),
+        controls: controls.map((control) => ({ selector_path: toolkit.selectorPath(control), rect: rectOf(control, main) })),
+        other_text: other.slice(0, 10).map((node) => toolkit.selectorPath(node)),
+        other_text_count: other.length,
+      });
+    }
+    layout = { viewport, floating_ctas };
+  }
+
+  return { status: "measured", capped, coverage_gaps: gaps, elements, viewport, ...(layout ? { layout } : {}) };
 }
 
 // The function declaration the adapter calls in the isolated world: the
 // probe, composed with the shared contrast helper and generatedTextRenders
-// by source text.
+// by source text, its limits carrying the layout conventions' selector
+// contract.
 export function readabilityProbeSource() {
-  return `function (limits, ...closedRoots) { return (${readabilityProbe.toString()})((${contrastToolkit.toString()})(), limits, closedRoots, ${generatedTextRenders.toString()}); }`;
+  return `function (limits, ...closedRoots) { return (${readabilityProbe.toString()})((${contrastToolkit.toString()})(), Object.assign({ layout: ${JSON.stringify(layoutProbeArgs())} }, limits), closedRoots, ${generatedTextRenders.toString()}); }`;
 }
 
 // Whether an element's ::before or ::after renders text: its computed
@@ -760,6 +965,7 @@ const pick = (value, fields) => Object.fromEntries(fields.map((field) => [field,
 export function readabilityObservationOk(observation) {
   return isPlainObject(observation)
     && inVocabulary("cell_status", observation.status)
+    && (observation.layout === undefined || isPlainObject(observation.layout))
     && (observation.status !== "measured"
       || (Array.isArray(observation.elements) && observation.elements.every(isPlainObject)
         && Array.isArray(observation.coverage_gaps) && observation.coverage_gaps.every(isPlainObject)
@@ -768,7 +974,9 @@ export function readabilityObservationOk(observation) {
 
 // One cell of the record. `status` is the cell status; a measured cell's
 // `observation` is the adapter's probe read ({capped, coverage_gaps,
-// elements, crops}). Only the record's fields are kept. Each crop the adapter
+// elements, crops, layout}). Only the record's fields are kept; a layout
+// outside the record vocabulary is dropped, which the layout check reads as
+// not reproducible. Each crop the adapter
 // took (crops[] of {element, data}, base64 PNG) is written by `writeCrop`
 // and referenced by path and sha256; one that cannot be written reads
 // crop_unavailable. A measured cell outside the record vocabulary reads
@@ -789,6 +997,7 @@ export function buildReadabilityCell({ route, viewport, pageLoadIntegrity = null
       element.crop_reason = "crop_unavailable";
     }
   }
+  const layout = cellLayout(observation);
   const cell = {
     route,
     viewport,
@@ -797,13 +1006,15 @@ export function buildReadabilityCell({ route, viewport, pageLoadIntegrity = null
     capped: observation.capped,
     coverage_gaps: observation.coverage_gaps.map((entry) => pick(entry, GAP_FIELDS)),
     elements,
+    ...(layout && layoutShapeOk(layout) ? { layout } : {}),
   };
   return readabilityCellShapeOk(cell) ? cell : unmeasured("document_changed");
 }
 
 // The record for one Polish run: its cells (one per captured route ×
 // viewport), bound to the current build and source package; the built routes
-// over the route cap; whether the enumeration ceiling was reached.
+// over the route cap; whether the enumeration ceiling was reached; and, when
+// a cell recorded layout, the layout conventions it was measured with.
 export function buildReadabilityRecord({ buildFingerprint, sourceFingerprint = null, slug, routes, uncapturedRoutes = [], routeEnumerationCapped = false, cells, measuredAt = new Date().toISOString() }) {
   const record = {
     schema_version: READABILITY_SCHEMA,
@@ -819,6 +1030,7 @@ export function buildReadabilityRecord({ buildFingerprint, sourceFingerprint = n
     },
     thresholds: { ...READABILITY_THRESHOLDS },
     limits: { ...readabilityLimits() },
+    ...(cells.some((cell) => isPlainObject(cell?.layout)) ? { layout_conventions: structuredClone(LAYOUT_CONVENTIONS) } : {}),
     cells,
     uncaptured_routes: [...uncapturedRoutes],
     route_enumeration_capped: routeEnumerationCapped === true,

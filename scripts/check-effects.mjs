@@ -77,7 +77,7 @@ const read = (path) => readFileSync(resolve(root, path), "utf8");
  * allowance may be the bare `{lifecycle-journal}`, `{spec}` or `{packet}` —
  * each is a single file — but naming one of these licenses everything under it.
  */
-const DIRECTORY_LOCATIONS = new Set(["{target}", "{cwd}", "{home}"]);
+const DIRECTORY_LOCATIONS = new Set(["{target}", "{runtime}", "{cwd}", "{home}", "{packet-runtime}"]);
 
 /** The invocation a row is about, as one comparable key. */
 export const rowKey = (row) =>

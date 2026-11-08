@@ -13,7 +13,8 @@
 // - Polish checks: the record's rules, {thresholds, vocabulary,
 //   evaluate(cell, thresholds) => Derived[]} (MEDIA_WEIGHT_QC_RULES for
 //   media_weight; READABILITY_QC_RULES for readability, which also carries
-//   the record's fixed producer values, limits and route set).
+//   the record's fixed producer values, limits and route set;
+//   LAYOUT_QC_RULES for the layout conventions read from the same record).
 // - Doctor checks recompute from the built HTML on every read and are called
 //   by doctor itself; their entries name the evaluator for completeness.
 //
@@ -39,6 +40,9 @@ export const QC_CHECK_REGISTRY = Object.freeze({
   "policy.availability": Object.freeze({ leg: "qa", unit: "1.4", module: "./qa-policy-links.mjs", rederive: "rederiveQcResult" }),
   // Text readability
   "readability.contrast": Object.freeze({ leg: "polish", unit: "2.4", module: "./polish-readability.mjs", rederive: "READABILITY_QC_RULES", record: "readability" }),
+  // Layout conventions (shared commerce brand contract), read from the
+  // readability record
+  "layout.conventions": Object.freeze({ leg: "polish", unit: "2.5", module: "./polish-readability.mjs", rederive: "LAYOUT_QC_RULES", record: "readability" }),
   "visual.reference": Object.freeze({ leg: "polish", unit: "3.2", module: "./polish-visual.mjs", rederive: "VISUAL_QC_RULES", record: "captures" }),
   "visual.diff": Object.freeze({ leg: "polish", unit: "3.4", module: "./polish-visual.mjs", rederive: "VISUAL_QC_RULES", record: "captures" }),
   // Element parity against the source HTML

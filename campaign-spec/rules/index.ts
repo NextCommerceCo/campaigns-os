@@ -37,11 +37,14 @@ import { CheckoutForwardTarget } from './checkout-forward-target.ts'
 import { PrePaymentForwardTarget } from './pre-payment-forward-target.ts'
 import { CheckoutStepReachesCheckout } from './checkout-step-reaches-checkout.ts'
 import { OneCheckoutPerPath } from './one-checkout-per-path.ts'
+import { CheckoutPathHasPackages } from './checkout-path-has-packages.ts'
 import { UpsellWithoutCheckout } from './upsell-without-checkout.ts'
 import { DownsellWithoutUpsell } from './downsell-without-upsell.ts'
 import { CampaignMetadata } from './campaign-metadata.ts'
 import { ShippingMethodsPresent } from './shipping-methods-present.ts'
 import { ShippingCountriesShape } from './shipping-countries-shape.ts'
+import { CampaignCurrencies } from './campaign-currencies.ts'
+import { PackageCurrencyPrices } from './package-currency-prices.ts'
 import { PackagePricingSanity } from './package-pricing-sanity.ts'
 import { OfferRefIntegrity } from './offer-ref-integrity.ts'
 import { ExitIntentValidation } from './exit-intent-validation.ts'
@@ -73,11 +76,14 @@ export { CheckoutForwardTarget } from './checkout-forward-target.ts'
 export { PrePaymentForwardTarget } from './pre-payment-forward-target.ts'
 export { CheckoutStepReachesCheckout } from './checkout-step-reaches-checkout.ts'
 export { OneCheckoutPerPath } from './one-checkout-per-path.ts'
+export { CheckoutPathHasPackages } from './checkout-path-has-packages.ts'
 export { UpsellWithoutCheckout } from './upsell-without-checkout.ts'
 export { DownsellWithoutUpsell } from './downsell-without-upsell.ts'
 export { PackagePricingSanity } from './package-pricing-sanity.ts'
 export { ShippingMethodsPresent } from './shipping-methods-present.ts'
 export { ShippingCountriesShape } from './shipping-countries-shape.ts'
+export { CampaignCurrencies } from './campaign-currencies.ts'
+export { PackageCurrencyPrices } from './package-currency-prices.ts'
 export { OfferRefIntegrity } from './offer-ref-integrity.ts'
 export { ExitIntentValidation } from './exit-intent-validation.ts'
 export { PromoCodeInputValidation } from './promo-code-input-validation.ts'
@@ -119,11 +125,14 @@ export const allRules: RuleSet = [
   PrePaymentForwardTarget,
   CheckoutStepReachesCheckout,
   OneCheckoutPerPath,
+  CheckoutPathHasPackages,
   UpsellWithoutCheckout,
   DownsellWithoutUpsell,
   PackagePricingSanity,
   ShippingMethodsPresent,
   ShippingCountriesShape,
+  CampaignCurrencies,
+  PackageCurrencyPrices,
   OfferRefIntegrity,
   ExitIntentValidation,
   PromoCodeInputValidation,

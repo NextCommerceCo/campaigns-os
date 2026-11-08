@@ -439,12 +439,24 @@ left by a process that died is recovered automatically, and a lock directory
 without an owner record (only an older release leaves one) is never taken
 over: the command refuses it after about a second and names it. Confirm no
 campaigns-os process is working on the target, then remove it. Anything else
-at the lock path (a file, a symbolic link, or a directory with no owner record
-that holds other entries) is not a lock: once the wait ends the command names
-what is there and never removes it. The holder of the lock removes staging and
-released directories beside it whose recorded owner process no longer exists.
-Do not run an older Campaigns OS release against the same target at the same
-time. A waiver's `--dry-run` preview takes no lock.
+at the lock path (a file, a symbolic link, a directory the command cannot read,
+or a directory with no owner record that holds other entries) is not a lock:
+once the wait ends the command names what is there and never removes it. The
+holder of the lock removes staging, recovery, released and abandoned
+directories beside it whose recorded owner process no longer exists.
+
+Run one Campaigns OS release against a target at a time. Each owner record
+carries a `lock_format` number (the lock layout the writing release uses).
+Releases before 1.43.2 took the lock in two steps, creating the directory and
+then writing its owner, and a later release can replace that directory in the
+gap between them, so both runs enter. A command that finds the lock held by a
+live process whose owner record has no `lock_format`, or a different one,
+refuses at once and names that process instead of waiting for it. Every
+release before `lock_format` existed writes no number, so a holder from one of
+those is refused too, even though only releases before 1.43.2 can race. The
+check only sees a release that already holds the lock: two releases that start
+at the same instant can still meet in that gap. A dead holder from any release
+is recovered as usual. A waiver's `--dry-run` preview takes no lock.
 
 Before writing any output, `prepare-build` also requires distinct paths for the
 Build Packet, Build Context, Assembly Report, Doctor output, normalized Build

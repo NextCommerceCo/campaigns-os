@@ -1,0 +1,15 @@
+{
+  "violations": [
+    {
+      "ruleId": "CheckoutPathHasPackages",
+      "severity": "error",
+      "message": "A path from entry page \"landing-1\" reaches Checkout \"checkout-1\" without passing a page that sells a main-cart package, so the cart is empty and no order can be placed. Add a package entry not marked is_upsell or is_order_bump to the Checkout or a page before it on this path.",
+      "path": "/funnels/0/pages/1",
+      "data": {
+        "pageId": "checkout-1",
+        "entryPageId": "landing-1",
+        "isPartialScope": false
+      }
+    }
+  ]
+}

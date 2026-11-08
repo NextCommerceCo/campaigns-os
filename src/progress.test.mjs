@@ -115,6 +115,14 @@ test('abandoned allocation owners recover while a live owner remains exclusive',
  rmSync(lock,{recursive:true});assert.equal(existsSync(lock),false);assert.equal((await persistProgressObservation(observation(),{dir})).reused,true);
 }));
 
+test('an allocation lock held by another campaigns-os release is refused at once with its holder (#514)',scratch(async dir=>{
+ const lock=join(dir,'.allocation-lock');mkdirSync(lock,{recursive:true});const owner=JSON.stringify({pid:process.ppid,token:'earlier-release'});writeFileSync(join(lock,'owner.json'),owner);
+ await assert.rejects(persistProgressObservation(observation(),{dir}),error=>{
+  assert.equal(error.message,'progress.lock_unavailable');assert.equal(error.code,'ELOCKFORMAT');assert.equal(error.holderPid,process.ppid);return true;
+ });
+ assert.equal(readFileSync(join(lock,'owner.json'),'utf8'),owner,'the other release\'s lock is never removed');
+}));
+
 test('an obstruction at the allocation lock path keeps its code and is left in place (#514)',scratch(async dir=>{
  const lock=join(dir,'.allocation-lock');mkdirSync(dir,{recursive:true});writeFileSync(lock,'not a lock');
  await assert.rejects(persistProgressObservation(observation(),{dir}),error=>{
