@@ -2090,14 +2090,16 @@ function isPlainObject(value) {
 // Whether the page declares the SDK is read on the first poll and kept on the
 // page's window; later polls, every 100 ms, read only the two ready signals. Bounded and tolerant: a page that never
 // reports ready is read after the cap, so the checks still say what they see.
-// `budgetMs`, inside a test-order step, is that step's remaining time, and the
-// wait takes at most half of it, leaving the rest to the step's own work.
+// `budgetMs`, inside a test-order step, is that step's remaining time. The
+// wait first holds back two settle allowances of it (a step can load a second
+// page after this one) and takes at most half of what is left, so the step's
+// own work keeps its time; with nothing to spare it waits 250 ms.
 // Resolves to { state, ms }: state is not_declared (no SDK on the page),
 // ready, timeout, or unreadable (the page could not be read, as when it
 // navigated away during the wait). It never throws.
 async function waitForSdkDisplayReady(page, budgetMs = null) {
   const started = performance.now();
-  const timeout = Math.max(250, Math.min(SDK_DISPLAY_READY_TIMEOUT_MS, budgetMs === null ? Infinity : budgetMs / 2));
+  const timeout = Math.max(250, Math.min(SDK_DISPLAY_READY_TIMEOUT_MS, budgetMs === null ? Infinity : (budgetMs - 2 * DEFAULT_SETTLE_TIMEOUT_MS) / 2));
   const state = await page.waitForFunction(() => {
     // Declared once per document: the tree walk runs on the first poll only.
     if (window.__campaignsOsQaSdkDeclared === undefined) {
@@ -4464,7 +4466,7 @@ async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPack
   }
 
   await gotoAndSettle(page, entryPage.url, args, tracking, currencyLoad, stepLeft);
-  const sdkReady = await waitForSdkReady(page, Math.min(budget(), DEFAULT_SETTLE_TIMEOUT_MS));
+  const sdkReady = await waitForSdkReady(page, Math.min(stepLeft(), DEFAULT_SETTLE_TIMEOUT_MS));
   await tracking?.readDocument(page);
   const readControls = () => page.evaluate(cartEntryControlsScript(), {
     selector: CART_ENTRY_CONTROL_SELECTOR,
