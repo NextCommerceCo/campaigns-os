@@ -217,6 +217,16 @@ browserTest("F2.4-I43 QA CTA page with <body data-next-sdk-loading=\"true\">: br
   assert.deepEqual(outcome(entry), { status: "manual_review", reason: "sdk_not_ready" }, `browser-primary-cta reason sdk_not_ready (${entry.actual})`);
 });
 
+// A slow SDK boot: the route CTA sits under data-next-await (opacity 0 until
+// the SDK renders) and the body reports data-next-sdk-loading="true" for 2 s
+// after load, past network idle. QA reads the page once the SDK reports ready,
+// so the CTA is measured, not missed.
+browserTest("QA CTA under data-next-await on a page whose SDK reports ready 2 s after load: browser-primary-cta status pass, not missing_route_cta", async () => {
+  const late = "<script>setTimeout(function(){document.body.setAttribute(\"data-next-sdk-loading\",\"false\");document.getElementById(\"await\").style.opacity=\"1\";},2000)</script>";
+  const entry = one(await primaryCta(htmlPage(`<div id="await" data-next-await style="opacity:0">${cta("width:200px;font-size:24px;font-weight:700;color:#ffffff;background:#e0662b")}</div>${late}`, { bodyAttrs: "data-next-sdk-loading=\"true\"" })));
+  assert.equal(entry.status, "pass", `browser-primary-cta status pass (${entry.actual})`);
+});
+
 browserTest("F2.4-I44 QA CTA page with a link[rel=stylesheet] that 404s: browser-primary-cta reason styles_incomplete", async () => {
   const entry = one(await primaryCta(htmlPage(cta("color:#ffffff;background:#111111"), { head: "<link rel=\"stylesheet\" href=\"/lp/missing.css\">" })));
   assert.deepEqual(outcome(entry), { status: "manual_review", reason: "styles_incomplete" }, `browser-primary-cta reason styles_incomplete (${entry.actual})`);

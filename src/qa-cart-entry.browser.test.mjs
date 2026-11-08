@@ -79,6 +79,21 @@ const CARD_BEHAVIOURS = {
     });`,
 };
 
+// The SDK still booting when the checkout settles: the shipping country select
+// is mounted, and data-next-sdk-loading flips to "false", 3 s after load, as on
+// a slow local checkout whose address block stays empty until the SDK fills it.
+function withLateSdkBoot(html) {
+  const script = `<script>
+(function () {
+  var select = document.querySelector('[data-next-checkout-field="country"]');
+  var parent = select.parentNode, next = select.nextSibling;
+  select.remove();
+  setTimeout(function () { parent.insertBefore(select, next); document.body.setAttribute("data-next-sdk-loading", "false"); }, 3000);
+})();
+</script>`;
+  return html.replace("<body>", '<body data-next-sdk-loading="true">').replace("</body>", `${script}\n</body>`);
+}
+
 function withCardBehaviour(html, behaviour) {
   const script = `<script>
 (function () {
@@ -98,7 +113,7 @@ function withCardBehaviour(html, behaviour) {
 // Serves one fixture under /x/ plus the shim and a fake orders API.
 // cardFields "next-payment" serves checkout with SDK 0.4.41's card iframes;
 // "both" serves the iFrame v1 and 0.4.41 pairs together.
-async function serveFixture(name, { cardFields = "iframe-v1", cardBehaviour = null } = {}) {
+async function serveFixture(name, { cardFields = "iframe-v1", cardBehaviour = null, lateSdk = false } = {}) {
   const dir = join(FIXTURES, name);
   const orders = [];
   // Page-HTML loads by page name: every checkout load is an SDK boot and a
@@ -139,7 +154,7 @@ async function serveFixture(name, { cardFields = "iframe-v1", cardBehaviour = nu
       try {
         const html = await readFile(join(dir, `${page[1]}.html`), "utf8");
         const rewrite = page[1] === "checkout" ? CARD_FIELD_REWRITES[cardFields] : null;
-        const rewritten = rewrite ? rewrite(html) : html;
+        const rewritten = (lateSdk && page[1] === "checkout" ? withLateSdkBoot : (x) => x)(rewrite ? rewrite(html) : html);
         return send(200, page[1] === "checkout" && cardBehaviour ? withCardBehaviour(rewritten, cardBehaviour) : rewritten);
       } catch {
         return send(404, "not found");
@@ -182,8 +197,8 @@ const ARGS = Object.freeze({
 // beforeRun reads the served pages through the same server the run drives.
 // cardReadyTimeoutMs, when given, replaces the card step's 15 s ready wait
 // (the runner's in-process seam).
-async function runFixture(name, { withLanding = true, cardFields, cardBehaviour, beforeRun = null, cardReadyTimeoutMs } = {}) {
-  const server = await serveFixture(name, { cardFields, cardBehaviour });
+async function runFixture(name, { withLanding = true, cardFields, cardBehaviour, lateSdk, beforeRun = null, cardReadyTimeoutMs } = {}) {
+  const server = await serveFixture(name, { cardFields, cardBehaviour, lateSdk });
   try {
     if (beforeRun) await beforeRun(server);
     const result = await runBrowserTestOrders(topologies(server.base, { withLanding }), { ...ARGS }, `qa-cart-entry-${name}`, { cardReadyTimeoutMs });
@@ -332,6 +347,16 @@ browserTest("landing-link-entry: a forcePackageId link is a cart entry; the visi
   assert.equal(byName.entered_via_landing.evidence.arrived_url, `${server.base}/x/checkout/`, "query-redacted arrival at the checkout URL");
   assert.equal(byName.order_submitted.status, "ok");
   assert.equal(byName.order_submitted.evidence.cart_before_submit.count, 1, "the SDK pre-loaded the cart from forcePackageId on arrival");
+  assert.equal(server.orders.length, 1);
+  assert.equal(assertion.status, "pass", assertion.actual);
+});
+
+browserTest("checkout-selector on a slow SDK boot: the runner waits for the SDK to report ready, so the late country select is filled and the order submits", async () => {
+  const { steps, assertion, server } = await runFixture("checkout-selector", { lateSdk: true });
+  const byName = stepsByName(steps);
+  const failed = steps.find((entry) => entry.status !== "ok" && entry.status !== "skipped");
+  assert.equal(failed, undefined, failed ? `${failed.step}: ${failed.error || failed.detail}` : "");
+  assert.equal(byName.order_submitted.status, "ok", byName.order_submitted.detail);
   assert.equal(server.orders.length, 1);
   assert.equal(assertion.status, "pass", assertion.actual);
 });

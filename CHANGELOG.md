@@ -2,11 +2,17 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.66.0+agent.2] - 2026-11-08
+## [1.66.0+agent.3] - 2026-11-08
 
 ### Added
 
 - Pre-refactor characterization for the doctor shared-input work (#730, milestone 1). Nothing doctor reports changes. Goldens of doctor's current output now cover the built, packet and CI entry points: the certified families, the existing doctor fixtures, and pre-build, partial, capped, conflicting-role, waived and failing cases. Literal commerce-signature v1 vectors and saved Assembly Reports pin `buildCommerceSignature`, `classifyDrift` and the recorded build history byte for byte. `scripts/performance/doctor-cost.mjs` measures doctor's file reads, scope walks, parses and memory without changing source. These are compatibility baselines, so a later refactor that changes a golden is a regression to fix, not a file to regenerate.
+
+## [1.66.0+agent.2] - 2026-11-08
+
+### Fixed
+
+- **QA waits for the SDK to finish rendering before it reads a page.** Network idle was the only wait, capped at 5 s. On a slow SDK boot, QA read a local checkout with its card iframes, its shipping country select and its upsell price block still unmounted. It reported 0 px card fields in `browser-payment-geometry`, `sdk_not_ready` or `missing_route_cta` in `browser-primary-cta`, and a test order blocked on `Missing checkout select: country` with no order placed. A rerun of the same files passed. Now a page that loads the SDK gets up to 15 s more to report ready, by the readiness rule of the contrast checks, both in the browser checks and in test-order page loads. The checkout card check also waits for the card iframe and for `next-loading-spreedly` to clear. Inside a test-order step the wait holds back two 5 s settle allowances of that step's remaining time and takes at most half of the rest. Browser-load evidence gains `observation.sdk_display` (`not_declared`, `ready`, `timeout` or `unreadable`) and `sdk_display_ms` (`docs/browser-observation.md`). A page that never reports ready is read after the cap, as before, and adds up to 15 s to its browser checks.
 
 ## [1.66.0+agent.1] - 2026-11-08
 
