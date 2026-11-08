@@ -70,12 +70,12 @@ before they are built.
   reviews, as-seen-in logos, a demo countdown date, copy written for
   another product. Leave it in place and list each item in the handoff
   so the operator can decide. Remove it only when the operator asks.
-- **The countdown** stays like the rest, with one exception: a build
-  with a brief payload (`.campaign-runtime/input/brief-payload.json`)
-  renders a countdown only from verified offer urgency
-  (`offer.urgency.verified`). Without it doctor blocks the build
+- **The countdown** stays like the rest, with one exception. It renders
+  whenever its label is non-empty. In a build with a brief payload
+  (`.campaign-runtime/input/brief-payload.json`) and no
+  `offer.urgency.verified`, doctor blocks a rendered countdown
   (`content_residue.unverified_urgency`), so blank the countdown label
-  and say so in the handoff.
+  there and say so in the handoff.
 
 What a merchant keeps on their pages is up to them; Campaigns OS does not
 review it.
