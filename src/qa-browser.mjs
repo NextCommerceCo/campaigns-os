@@ -2101,8 +2101,10 @@ async function waitForSdkDisplayReady(page, budgetMs = null) {
   const started = performance.now();
   const timeout = Math.max(250, Math.min(SDK_DISPLAY_READY_TIMEOUT_MS, budgetMs === null ? Infinity : (budgetMs - 2 * DEFAULT_SETTLE_TIMEOUT_MS) / 2));
   const state = await page.waitForFunction(() => {
-    // Read on every poll and kept nowhere, so the page is not written to and a
-    // loader tag added after the first poll still counts.
+    // Read without writing to the page. A page that does not declare the SDK on
+    // the first poll returns at once, as the contrast check reads it: the loader
+    // is static markup in the page head, so a loader injected later by script is
+    // not waited for.
     const trees = [document];
     for (let i = 0; i < trees.length; i += 1) {
       for (const node of trees[i].querySelectorAll("*")) if (node.shadowRoot) trees.push(node.shadowRoot);
