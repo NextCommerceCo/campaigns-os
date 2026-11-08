@@ -112,13 +112,14 @@ const STEPS = [
 ];
 
 // A regeneration names the commit it ran on, never BASE_SHA, and refuses
-// uncommitted non-test source, so a capture's base_sha is the code that
-// produced it.
+// uncommitted changes anywhere in the checkout (source, examples, contracts,
+// fixtures; tests and the captures themselves excepted), so a capture's
+// base_sha names everything that produced it.
 function captureBaseSha() {
   if (!UPDATING) return BASE_SHA;
   const git = (...args) => execFileSync("git", args, { cwd: ROOT, encoding: "utf8" });
-  const dirty = git("status", "--porcelain", "--", "src", ":(exclude)*.test.mjs").trim();
-  if (dirty) throw new Error(`change-scope-v1-reports: commit or discard these src/ changes before regenerating, so base_sha names the code that produced the captures:\n${dirty}`);
+  const dirty = git("status", "--porcelain", "--", ".", ":(exclude)*.test.mjs", ":(exclude)fixtures/doctor-golden").trim();
+  if (dirty) throw new Error(`change-scope-v1-reports: commit or discard these changes before regenerating, so base_sha names the code that produced the captures:\n${dirty}`);
   return git("rev-parse", "HEAD").trim();
 }
 

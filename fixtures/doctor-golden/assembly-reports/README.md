@@ -32,7 +32,7 @@ The test compares each capture with its file as parsed values first, for a reada
 
 No temp-dir path appears in any capture. The test would replace one with `<fixture>`.
 
-**Refactor PRs must not regenerate these files.** If output differs, the refactor has changed behavior. Regenerate only for a deliberate behavior change that has been reviewed, and read the diff. `UPDATE_GOLDEN` must be exactly `1`, and regeneration refuses uncommitted non-test changes under `src/`. The commit it runs on (`HEAD`) is written into each file's `base_sha`, and the test then fails until `BASE_SHA` in the test and the base named above are updated to match:
+**Refactor PRs must not regenerate these files.** If output differs, the refactor has changed behavior. Regenerate only for a deliberate behavior change that has been reviewed, and read the diff. `UPDATE_GOLDEN` must be exactly `1`, and regeneration refuses uncommitted changes anywhere in the checkout outside test files and `fixtures/doctor-golden/`. The commit it runs on (`HEAD`) is written into each file's `base_sha`, and the test then fails until `BASE_SHA` in the test and the base named above are updated to match:
 
 ```sh
 UPDATE_GOLDEN=1 node --test src/change-scope-v1-reports.test.mjs

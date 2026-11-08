@@ -64,13 +64,15 @@ if (UPDATE && process.env.CI) {
   throw new Error(`doctor golden: ${REGEN} is refused while CI is set; regenerate locally and read the diff before committing.`);
 }
 // A regeneration names the commit it ran on, never BASE_SHA, and refuses
-// uncommitted non-test source, so a golden's base_sha is the code that
-// produced it. The suite then fails until BASE_SHA is moved to that commit.
+// uncommitted changes anywhere in the checkout (source, examples, contracts,
+// fixtures; tests and the goldens themselves excepted), so a golden's base_sha
+// names everything that produced it. The suite then fails until BASE_SHA is
+// moved to that commit.
 const STAMP = UPDATE ? captureCommit() : BASE_SHA;
 function captureCommit() {
   const git = (...args) => execFileSync("git", args, { cwd: ROOT, encoding: "utf8" });
-  const dirty = git("status", "--porcelain", "--", "src", ":(exclude)*.test.mjs").trim();
-  if (dirty) throw new Error(`doctor golden: commit or discard these src/ changes before regenerating, so base_sha names the code that produced the goldens:\n${dirty}`);
+  const dirty = git("status", "--porcelain", "--", ".", ":(exclude)*.test.mjs", ":(exclude)fixtures/doctor-golden").trim();
+  if (dirty) throw new Error(`doctor golden: commit or discard these changes before regenerating, so base_sha names the code that produced the goldens:\n${dirty}`);
   return git("rev-parse", "HEAD").trim();
 }
 
