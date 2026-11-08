@@ -202,7 +202,7 @@ function renderLines(model, cuts, valueWords) {
     model.authority.length ? `Visual authority: ${listItems(model.authority, cuts[4], group, cut, (entry) => entry.pages.length).join("; ")}.` : "Visual authority: not stated.",
     `Palette and buttons: ${model.palette.value == null ? "palette source not stated" : `palette from ${marked(model.palette.value, "stated", valueWords, cut)}`}; button style ${value(model.buttons, "not stated")}; accent ${value(model.accent, "not stated")}.`,
     `Tone: ${value(model.tone, "not stated")}.`,
-    `Preserve: ${avoid}; template placeholders removed: ${placeholders}.`,
+    `Preserve: ${avoid}; template placeholders filled: ${placeholders}.`,
     `Commerce: ${COMMERCE_TEXT}`,
     `Open brief questions: ${model.questions == null ? "not recorded" : model.questions.length ? model.questions.map(escapeControls).join(", ") : "none"}.`,
   ];

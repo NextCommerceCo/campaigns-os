@@ -2,6 +2,16 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.66.0+agent.4] - 2026-11-08
+
+### Changed
+
+- **A starter template used as-is keeps its content (F-197).** Told to use a starter as-is, a build agent removed the landing page, the stock reviews, the guarantee, the as-seen-in logos, the countdown and the promo banner, and rewrote the upsell copy. The toolkit pointed it there: the brief summary said "template placeholders removed" and, with nothing to fill them, the guided draft set the promo banner and timer to `none`. As-is now means the template is the design: keep its pages, sections and copy, swap what CampaignSpec owns (product names and images, prices and discount figures, promo codes, store name and support details), fill literal placeholder text from the product, and leave anything that looks like demo content in place, listed in the handoff for the operator to decide.
+- **The build prompt states that rule** for every page whose authority is the starter template, and for opted-in template-stock pages. Template-stock pages still need the operator's opt-in per page.
+- **The guided brief keeps the template's banner and timer.** With no CampaignSpec surface to fill them, `promo_urgency.header_claim_source` and `promo_urgency.timer_label` default to the new value `template` instead of `none`. A promo code the campaign does not have is still emptied. Question `promo_urgency_copy` gains the option to keep them as the template has them; `none` still removes them. A brief that already sets `none` is unchanged.
+- **The brief summary says "template placeholders filled"** instead of "template placeholders removed". The setting it reports, `template_residue_policy.block_placeholders`, is unchanged, and browser QA still blocks literal placeholder text.
+- **docs/entry-points.md** gains "Using a starter template as-is"; docs/campaign-build-brief.md describes the new default.
+
 ## [1.66.0+agent.3] - 2026-11-08
 
 ### Added

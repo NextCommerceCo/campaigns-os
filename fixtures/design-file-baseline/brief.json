@@ -59,8 +59,8 @@
       }
     },
     "promo_urgency": {
-      "header_claim_source": "none",
-      "timer_label": "none",
+      "header_claim_source": "template",
+      "timer_label": "template",
       "show_promo_code_in_timer": false,
       "exit_pop": {
         "enabled": false,
@@ -193,5 +193,5 @@
     ],
     "gates": []
   },
-  "summary": "Purpose: not stated.\nAudience: not stated.\nJourney: landing → checkout → upsell → receipt (CampaignSpec).\nVisual authority: landing, checkout, upsell, receipt follow the supplied design [default].\nPalette and buttons: palette source not stated; button style not stated; accent not stated.\nTone: \"clear, practical, benefit-led\" [default].\nPreserve: avoid \"template-default brand colors\" [default]; template placeholders removed: yes [default].\nCommerce: products, prices and offers come from CampaignSpec/API values; cart, checkout and post-purchase behaviour stay with the SDK.\nOpen brief questions: brand_palette_cta, bundle_pricing_presentation."
+  "summary": "Purpose: not stated.\nAudience: not stated.\nJourney: landing → checkout → upsell → receipt (CampaignSpec).\nVisual authority: landing, checkout, upsell, receipt follow the supplied design [default].\nPalette and buttons: palette source not stated; button style not stated; accent not stated.\nTone: \"clear, practical, benefit-led\" [default].\nPreserve: avoid \"template-default brand colors\" [default]; template placeholders filled: yes [default].\nCommerce: products, prices and offers come from CampaignSpec/API values; cart, checkout and post-purchase behaviour stay with the SDK.\nOpen brief questions: brand_palette_cta, bundle_pricing_presentation."
 }
