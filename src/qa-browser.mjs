@@ -84,6 +84,13 @@ import {
 
 const DEFAULT_BROWSER_TIMEOUT_MS = 30000;
 const DEFAULT_SETTLE_TIMEOUT_MS = 5000;
+// How long a page that loads the Campaign Cart SDK gets to finish rendering
+// before QA reads it. Network idle is not enough: on a slow SDK boot the
+// settle wait hits its cap while the card iframes, the shipping country select
+// and the upsell price block are still unmounted, and the read then reports
+// faults the page does not have (0 px card fields, sdk_not_ready, a missing
+// country select, a CTA still hidden under data-next-await).
+const SDK_DISPLAY_READY_TIMEOUT_MS = 15000;
 const DEFAULT_STEP_TIMEOUT_MS = 45000;
 const DEFAULT_ORDER_TIMEOUT_MS = 240000;
 // Grace on the outer race so per-step timeouts get first chance to record cleanly.
@@ -1091,6 +1098,9 @@ async function runPageBrowserChecks(context, page, args, options = {}, policyLin
     const settleStarted = performance.now();
     await browserPage.waitForLoadState("networkidle", { timeout: DEFAULT_SETTLE_TIMEOUT_MS }).catch(() => {});
     observation.settle_ms = elapsedMilliseconds(settleStarted);
+    const sdkWait = await waitForSdkDisplayReady(browserPage);
+    observation.sdk_display_ready = sdkWait.ready;
+    observation.sdk_display_ready_ms = sdkWait.ms;
     const status = response?.status() ?? null;
     // One read of the rendered anchors, from an isolated world. A page that
     // was not served is not read.
@@ -2073,6 +2083,24 @@ function isPlainObject(value) {
   return value && typeof value === "object" && !Array.isArray(value);
 }
 
+// The readiness rule of the contrast check's documentMeasurability: a page
+// that declares the SDK (a data-next-sdk-loading body or the loader script) is
+// ready once the body's data-next-sdk-loading is "false" or <html> carries
+// next-display-ready. A page without the SDK passes at once. Bounded and
+// tolerant: a page that never reports ready is read after the cap, so the
+// checks still say what they see. Resolves to the wait's outcome for evidence.
+async function waitForSdkDisplayReady(page, timeoutMs = SDK_DISPLAY_READY_TIMEOUT_MS) {
+  const started = performance.now();
+  const ready = await page.waitForFunction(() => {
+    const body = document.body;
+    const declared = Boolean(body?.hasAttribute("data-next-sdk-loading"))
+      || Array.from(document.querySelectorAll("script[src]")).some((script) => /campaign-cart(?:@[^"']*)?\/dist\/loader\.js/i.test(script.getAttribute("src")));
+    if (!declared) return true;
+    return body?.getAttribute("data-next-sdk-loading") === "false" || document.documentElement.classList.contains("next-display-ready");
+  }, null, { timeout: Math.max(250, timeoutMs) }).then(() => true, () => false);
+  return { ready, ms: elapsedMilliseconds(started) };
+}
+
 async function settleCheckoutCommerce(browserPage) {
   await browserPage.waitForSelector([
     '[data-next-express-checkout="buttons"] .payment-btn',
@@ -2081,6 +2109,12 @@ async function settleCheckoutCommerce(browserPage) {
     '[data-next-bundle-card]',
     '[data-next-toggle-card]',
   ].join(", "), { timeout: 8000 }).catch(() => {});
+  // The card host div is static HTML; its iframe is what the SDK mounts, and
+  // it measures 0 px while the form still carries next-loading-spreedly.
+  if (await browserPage.locator('[data-next-checkout-field="cc-number"], #spreedly-number').count().catch(() => 0)) {
+    await browserPage.waitForSelector(CARD_NUMBER_FRAME, { state: "attached", timeout: 8000 }).catch(() => {});
+    await browserPage.waitForFunction(() => !document.querySelector(".next-loading-spreedly"), null, { timeout: 8000 }).catch(() => {});
+  }
   await browserPage.waitForTimeout(1000).catch(() => {});
 }
 
@@ -4342,6 +4376,7 @@ async function openCheckoutForPath({ page, checkoutPage, entry, args, tracking =
   const enteredViaLanding = Boolean(entry && typeof entry === "object" && entry.entered);
   if (enteredViaLanding) {
     await page.waitForLoadState("networkidle", { timeout: DEFAULT_SETTLE_TIMEOUT_MS }).catch(() => {});
+    await waitForSdkDisplayReady(page);
     return "arrived from the entry page via SDK navigation; not re-opened";
   }
   if (checkoutUrlPredicate(checkoutPage.url)(safePageUrl(page))) {
@@ -4971,6 +5006,7 @@ async function gotoAndSettle(page, url, args, tracking = null, currencyLoad = nu
   const target = tracking ? tracking.runnerUrl(entered, withQueryParam) : entered;
   await page.goto(target, { waitUntil: "domcontentloaded", timeout: numberArg(args["browser-timeout"], DEFAULT_BROWSER_TIMEOUT_MS) });
   await page.waitForLoadState("networkidle", { timeout: DEFAULT_SETTLE_TIMEOUT_MS }).catch(() => {});
+  await waitForSdkDisplayReady(page);
   await page.waitForTimeout(750);
 }
 
