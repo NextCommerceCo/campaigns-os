@@ -1,0 +1,13 @@
+{
+  "base_sha": "e1c5bc9c6dc2745d6f2bd54f37f89319ce7f915a",
+  "case": "partial-unreadable-page",
+  "entry": "built",
+  "description": "partial: one built page exists but is chmod 000 (every read fails with EACCES)",
+  "output": {
+    "thrown": {
+      "name": "Error",
+      "code": "EACCES",
+      "message": "EACCES: permission denied, open '<fixture>/_site/example-campaign/locked.html'"
+    }
+  }
+}

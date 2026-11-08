@@ -1,0 +1,935 @@
+{
+  "base_sha": "e1c5bc9c6dc2745d6f2bd54f37f89319ce7f915a",
+  "case": "unknown-missing-fingerprint",
+  "entry": "ci",
+  "description": "the assembly build fingerprint is missing from the report (exit 4)",
+  "output": {
+    "result": {
+      "schema_version": "campaigns-os-doctor-output/v0",
+      "generated_at": "2026-01-01T00:00:00.000Z",
+      "ok": false,
+      "status": "blocked",
+      "errors": [
+        {
+          "code": "campaign.allowed_domains_confirmed",
+          "message": "campaign.allowed_domains_confirmed must be boolean.",
+          "cause": "unknown",
+          "cause_reason": "no_prior_run"
+        },
+        {
+          "code": "source_html.root",
+          "message": "source_html.root is required.",
+          "cause": "unknown",
+          "cause_reason": "no_prior_run"
+        },
+        {
+          "code": "source_html.pages",
+          "message": "source_html.pages must be an array.",
+          "cause": "unknown",
+          "cause_reason": "no_prior_run"
+        },
+        {
+          "code": "assembly.template_family",
+          "message": "assembly.template_family is required.",
+          "cause": "unknown",
+          "cause_reason": "no_prior_run"
+        },
+        {
+          "code": "qa",
+          "message": "qa must be an object.",
+          "cause": "unknown",
+          "cause_reason": "no_prior_run"
+        },
+        {
+          "code": "assembly.template_family",
+          "message": "Unknown template family \"undefined\".",
+          "cause": "unknown",
+          "cause_reason": "no_prior_run"
+        },
+        {
+          "code": "deploy.target",
+          "message": "Unknown deploy target \"undefined\".",
+          "cause": "unknown",
+          "cause_reason": "no_prior_run"
+        },
+        {
+          "code": "assembly.template_lock",
+          "message": "Template family must be explicitly locked before commerce wiring.",
+          "cause": "unknown",
+          "cause_reason": "no_prior_run"
+        },
+        {
+          "code": "source_html.root",
+          "message": "Source root does not exist: undefined",
+          "cause": "unknown",
+          "cause_reason": "no_prior_run"
+        },
+        {
+          "code": "spec.local_path",
+          "message": "CampaignSpec local_path does not exist: missing-spec.json",
+          "cause": "unknown",
+          "cause_reason": "no_prior_run"
+        },
+        {
+          "code": "page_kit.sdk_version.spec_unavailable",
+          "message": "Local CampaignSpec SDK pin is unavailable or malformed (missing); packet QA never fetches around missing local parity evidence.",
+          "detail": {
+            "checkpoint_gate": {
+              "id": "page_kit.sdk_version",
+              "scope": "page_kit.sdk_version",
+              "status": "blocked",
+              "code": "page_kit.sdk_version.spec_unavailable",
+              "reason": "Local CampaignSpec SDK pin is unavailable or malformed (missing); packet QA never fetches around missing local parity evidence.",
+              "waivable": false,
+              "subject": {
+                "public_route_slug": "synthetic-campaign",
+                "target_path": "_data/campaigns.json"
+              },
+              "state": {
+                "spec_status": "missing"
+              },
+              "state_fingerprint": null,
+              "expected_sdk_version": null,
+              "observed_sdk_version": "0.4.18",
+              "expected_source": null,
+              "waiver": null,
+              "waiver_assessment": {
+                "active": null,
+                "inert_counts": {
+                  "stale": 0,
+                  "foreign": 0,
+                  "malformed": 0,
+                  "expired": 0
+                }
+              },
+              "required_actions": [
+                {
+                  "id": "repair_spec",
+                  "kind": "edit",
+                  "command": null,
+                  "description": "Restore a valid packet-local CampaignSpec export before build or QA."
+                }
+              ]
+            }
+          },
+          "cause": "unknown",
+          "cause_reason": "no_prior_run"
+        },
+        {
+          "code": "page_kit.store_profile.spec_unavailable",
+          "message": "Local CampaignSpec Store Profile is unavailable or malformed (missing); packet QA never fetches around missing local parity evidence.",
+          "detail": {
+            "checkpoint_gate": {
+              "id": "page_kit.store_profile",
+              "scope": "page_kit.store_profile",
+              "status": "blocked",
+              "code": "page_kit.store_profile.spec_unavailable",
+              "reason": "Local CampaignSpec Store Profile is unavailable or malformed (missing); packet QA never fetches around missing local parity evidence.",
+              "waivable": false,
+              "subject": {
+                "public_route_slug": "synthetic-campaign",
+                "target_path": "_data/campaigns.json"
+              },
+              "state": {
+                "spec_status": "missing",
+                "discrepancies": []
+              },
+              "state_fingerprint": null,
+              "matrix": [
+                {
+                  "field": "store_name",
+                  "kind": "spec_unavailable",
+                  "spec": null,
+                  "target": "Synthetic Store",
+                  "severity": "blocker"
+                },
+                {
+                  "field": "store_url",
+                  "kind": "spec_unavailable",
+                  "spec": null,
+                  "target": "https://store.example.org",
+                  "severity": "blocker"
+                },
+                {
+                  "field": "store_terms",
+                  "kind": "spec_unavailable",
+                  "spec": null,
+                  "target": "",
+                  "severity": "blocker"
+                },
+                {
+                  "field": "store_privacy",
+                  "kind": "spec_unavailable",
+                  "spec": null,
+                  "target": "",
+                  "severity": "blocker"
+                },
+                {
+                  "field": "store_contact",
+                  "kind": "spec_unavailable",
+                  "spec": null,
+                  "target": "",
+                  "severity": "blocker"
+                },
+                {
+                  "field": "store_returns",
+                  "kind": "spec_unavailable",
+                  "spec": null,
+                  "target": "",
+                  "severity": "blocker"
+                },
+                {
+                  "field": "store_shipping",
+                  "kind": "spec_unavailable",
+                  "spec": null,
+                  "target": "",
+                  "severity": "blocker"
+                },
+                {
+                  "field": "store_phone",
+                  "kind": "spec_unavailable",
+                  "spec": null,
+                  "target": "",
+                  "severity": "blocker"
+                },
+                {
+                  "field": "store_phone_tel",
+                  "kind": "spec_unavailable",
+                  "spec": null,
+                  "target": "",
+                  "severity": "blocker"
+                }
+              ],
+              "blocker_fields": [
+                "store_name",
+                "store_url",
+                "store_terms",
+                "store_privacy",
+                "store_contact",
+                "store_returns",
+                "store_shipping",
+                "store_phone",
+                "store_phone_tel"
+              ],
+              "warning_fields": [],
+              "waiver": null,
+              "waiver_assessment": {
+                "active": null,
+                "inert_counts": {
+                  "stale": 0,
+                  "foreign": 0,
+                  "malformed": 0,
+                  "expired": 0
+                }
+              },
+              "required_actions": [
+                {
+                  "id": "repair_spec",
+                  "kind": "edit",
+                  "command": null,
+                  "description": "Restore a valid packet-local CampaignSpec export before QA."
+                }
+              ]
+            }
+          },
+          "cause": "unknown",
+          "cause_reason": "no_prior_run"
+        },
+        {
+          "code": "schema_version",
+          "message": "Expected campaign-runtime-assembly-report/v0.",
+          "cause": "unknown",
+          "cause_reason": "no_prior_run"
+        },
+        {
+          "code": "run_id",
+          "message": "run_id is required.",
+          "cause": "unknown",
+          "cause_reason": "no_prior_run"
+        },
+        {
+          "code": "generated_at",
+          "message": "generated_at is required.",
+          "cause": "unknown",
+          "cause_reason": "no_prior_run"
+        },
+        {
+          "code": "status",
+          "message": "status is required.",
+          "cause": "unknown",
+          "cause_reason": "no_prior_run"
+        },
+        {
+          "code": "identity.map_id",
+          "message": "Assembly Report requires exactly one valid map_id or local_spec_id.",
+          "cause": "unknown",
+          "cause_reason": "no_prior_run"
+        },
+        {
+          "code": "identity.public_route_slug",
+          "message": "identity.public_route_slug is required.",
+          "cause": "unknown",
+          "cause_reason": "no_prior_run"
+        },
+        {
+          "code": "inputs.packet_path",
+          "message": "inputs.packet_path is required.",
+          "cause": "unknown",
+          "cause_reason": "no_prior_run"
+        },
+        {
+          "code": "template_family.value",
+          "message": "template_family.value is required.",
+          "cause": "unknown",
+          "cause_reason": "no_prior_run"
+        },
+        {
+          "code": "stages.prepare_build",
+          "message": "prepare_build stage is required.",
+          "cause": "unknown",
+          "cause_reason": "no_prior_run"
+        },
+        {
+          "code": "stages.doctor",
+          "message": "doctor stage is required.",
+          "cause": "unknown",
+          "cause_reason": "no_prior_run"
+        },
+        {
+          "code": "stages.setup",
+          "message": "setup stage is required.",
+          "cause": "unknown",
+          "cause_reason": "no_prior_run"
+        },
+        {
+          "code": "stages.deploy",
+          "message": "deploy stage is required.",
+          "cause": "unknown",
+          "cause_reason": "no_prior_run"
+        },
+        {
+          "code": "decisions",
+          "message": "decisions must be an array.",
+          "cause": "unknown",
+          "cause_reason": "no_prior_run"
+        },
+        {
+          "code": "evidence",
+          "message": "evidence must be an array.",
+          "cause": "unknown",
+          "cause_reason": "no_prior_run"
+        },
+        {
+          "code": "blockers",
+          "message": "blockers must be an array.",
+          "cause": "unknown",
+          "cause_reason": "no_prior_run"
+        },
+        {
+          "code": "warnings",
+          "message": "warnings must be an array.",
+          "cause": "unknown",
+          "cause_reason": "no_prior_run"
+        },
+        {
+          "code": "polish.build_fingerprint_missing",
+          "message": "Current build artifact fingerprint is missing. Build must record stages.assembly.build_fingerprint before Polish/QA handoff. Required action: next-campaigns-polish | campaigns-os polish capture --packet <packet> --base-url <url>.",
+          "detail": {
+            "polish_gate": {
+              "status": "blocked",
+              "code": "polish.build_fingerprint_missing",
+              "reason": "Current build artifact fingerprint is missing. Build must record stages.assembly.build_fingerprint before Polish/QA handoff.",
+              "required_actions": [
+                {
+                  "id": "run_polish",
+                  "kind": "skill",
+                  "command": "next-campaigns-polish",
+                  "description": "Run the distinct Polish stage and record stages.polish.performed_by, source_build_fingerprint, source_package_material_fingerprint when available, completed_at, and structured evidence."
+                },
+                {
+                  "id": "polish.hidden_eager_media.repair_authority",
+                  "kind": "manual",
+                  "command": null,
+                  "description": "Repair the packet or Assembly Report campaign identity, build fingerprint, and mapped route plan before capture."
+                },
+                {
+                  "id": "polish.hidden_eager_media.capture",
+                  "kind": "command",
+                  "command": "campaigns-os polish capture --packet <packet> --base-url <url>",
+                  "description": "Capture package-owned page-load evidence for every mapped route and fixed viewport."
+                }
+              ],
+              "owned_checkpoint_id": "polish.hidden_eager_media",
+              "owned_checkpoint_status": "blocked",
+              "owned_checkpoint_only": false
+            }
+          },
+          "cause": "unknown",
+          "cause_reason": "no_prior_run"
+        },
+        {
+          "code": "polish.hidden_eager_media.capture_malformed",
+          "message": "The packet or Assembly Report authority is missing, malformed, or inconsistent; repair it before package capture. Required action: campaigns-os polish capture --packet <packet> --base-url <url>.",
+          "detail": {
+            "polish_checkpoint_gate": {
+              "id": "polish.hidden_eager_media",
+              "scope": "polish.hidden_eager_media",
+              "status": "blocked",
+              "checkpoint_status": "blocked",
+              "severity": "blocker",
+              "code": "polish.hidden_eager_media.capture_malformed",
+              "reason": "The packet or Assembly Report authority is missing, malformed, or inconsistent; repair it before package capture.",
+              "waivable": false,
+              "subject": {
+                "build_fingerprint": null,
+                "campaign_slug": "synthetic-campaign",
+                "route_scope": "all",
+                "routes": [],
+                "viewports": [
+                  "desktop",
+                  "mobile"
+                ]
+              },
+              "state": null,
+              "state_fingerprint": null,
+              "findings": [],
+              "measurement": null,
+              "waiver": null,
+              "waiver_assessment": {
+                "active": null,
+                "inert_counts": {
+                  "stale": 0,
+                  "foreign": 0,
+                  "malformed": 0,
+                  "expired": 0
+                }
+              },
+              "required_actions": [
+                {
+                  "id": "polish.hidden_eager_media.repair_authority",
+                  "kind": "manual",
+                  "command": null,
+                  "description": "Repair the packet or Assembly Report campaign identity, build fingerprint, and mapped route plan before capture."
+                },
+                {
+                  "id": "polish.hidden_eager_media.capture",
+                  "kind": "command",
+                  "command": "campaigns-os polish capture --packet <packet> --base-url <url>",
+                  "description": "Capture package-owned page-load evidence for every mapped route and fixed viewport."
+                }
+              ]
+            }
+          },
+          "cause": "unknown",
+          "cause_reason": "no_prior_run"
+        }
+      ],
+      "warnings": [
+        {
+          "code": "campaign.allowed_domains_confirmed",
+          "message": "Non-localhost preview/production origins are not confirmed in the Campaigns App SDK origin allowlist. SDK runtime checks may be blocked after deploy.",
+          "cause": "unknown",
+          "cause_reason": "no_prior_run"
+        },
+        {
+          "code": "page_kit.scaffold_required",
+          "message": "Target campaign output directory is missing; setup should run before build.",
+          "cause": "unknown",
+          "cause_reason": "no_prior_run"
+        },
+        {
+          "code": "page_kit.package_json",
+          "message": "Target repo has no package.json. Page-kit command detection is unavailable.",
+          "cause": "unknown",
+          "cause_reason": "no_prior_run"
+        },
+        {
+          "code": "campaign.api_key_source",
+          "message": "No Campaigns API key source is declared, and the local CampaignSpec does not include campaign.campaigns_api_key. API-side package/shipping/offer confirmation is deferred.",
+          "cause": "unknown",
+          "cause_reason": "no_prior_run"
+        },
+        {
+          "code": "source_html.adapter_contract",
+          "message": "source_html.adapter_contract is missing; adapter choices are not doctor-able. New prepare-build runs write source_asset_strategy, commerce_shell_adoption, route_rewrite_policy, template_files_copied, config_script_strategy, raw_html_conversion_status, wrapper_policy, frontmatter_policy, script_style_reference_policy, cta_rewrite_policy, and layout_choice.",
+          "cause": "unknown",
+          "cause_reason": "no_prior_run"
+        },
+        {
+          "code": "qa.proof_policy",
+          "message": "qa.proof_policy is missing. New packets make browser QA, typed-card depth, SDK origin allowlist state, order path depth, and approval state explicit.",
+          "cause": "unknown",
+          "cause_reason": "no_prior_run"
+        },
+        {
+          "code": "build_brief.missing",
+          "message": "No Campaign Build Brief artifact is referenced. Existing builds may continue, but new build intake should provide or generate .campaign-runtime/input/campaign-build-brief.normalized.json so business/design decisions are durable.",
+          "cause": "unknown",
+          "cause_reason": "no_prior_run"
+        },
+        {
+          "code": "spec.binding_unknown",
+          "message": "Recorded assembly, polish, qa do not say which CampaignSpec content they were made against, so they read unconfirmed, not current. Record assembly, polish, qa again (record build, record polish, qa run).",
+          "detail": {
+            "stages": [
+              "assembly",
+              "polish",
+              "qa"
+            ]
+          },
+          "cause": "unknown",
+          "cause_reason": "no_prior_run"
+        },
+        {
+          "code": "build_brief.binding_unknown",
+          "message": "Recorded assembly, polish, qa do not say which Campaign Build Brief content they were made against, so they read unconfirmed, not current. Record assembly, polish, qa again (record build, record polish, qa run).",
+          "detail": {
+            "stages": [
+              "assembly",
+              "polish",
+              "qa"
+            ]
+          },
+          "cause": "unknown",
+          "cause_reason": "no_prior_run"
+        },
+        {
+          "code": "deploy.preview_url",
+          "message": "No preview or production URL yet. QA remains blocked after build/polish.",
+          "cause": "unknown",
+          "cause_reason": "no_prior_run"
+        },
+        {
+          "code": "report.adapter_decisions",
+          "message": "report.adapter_decisions is missing; adapter choices are not doctor-able. New prepare-build runs write source_asset_strategy, commerce_shell_adoption, route_rewrite_policy, template_files_copied, config_script_strategy, raw_html_conversion_status, wrapper_policy, frontmatter_policy, script_style_reference_policy, cta_rewrite_policy, and layout_choice.",
+          "cause": "unknown",
+          "cause_reason": "no_prior_run"
+        },
+        {
+          "code": "report.proof_policy",
+          "message": "report.proof_policy is missing. Assembly Reports should mirror qa.proof_policy so browser QA, typed-card depth, SDK origin allowlist state, order path depth, and approval state are inspectable.",
+          "cause": "unknown",
+          "cause_reason": "no_prior_run"
+        }
+      ],
+      "ready": [
+        "Build Packet schema campaign-runtime-build-packet/v0",
+        "Pricing CSS scan not applicable for template family \"(none)\" (no brand contract with forbidden_css_hides)"
+      ],
+      "derived": {
+        "packet_path": "<fixture>/campaign-runtime.build.json",
+        "assembly_report_path": "<fixture>/.campaign-runtime/assembly-report.json",
+        "map_id": "synthetic-map",
+        "public_route_slug": "synthetic-campaign",
+        "template_family": null,
+        "source_root": null,
+        "target_repo": "<fixture>",
+        "target_output_dir": "<fixture>/src/synthetic-campaign",
+        "spec_path": "<fixture>/missing-spec.json",
+        "doctor_checks": [
+          "page_kit.sdk_version",
+          "page_kit.store_profile",
+          "page_kit.analytics_vendors",
+          "campaign.api_key",
+          "assembly.commerce_catalog",
+          "market_copy",
+          "source_html.adapter_contract",
+          "qa.proof_policy",
+          "build_brief.artifact",
+          "assembly_report.shape"
+        ],
+        "checkpoint_gates": [
+          {
+            "id": "page_kit.sdk_version",
+            "scope": "page_kit.sdk_version",
+            "status": "blocked",
+            "code": "page_kit.sdk_version.spec_unavailable",
+            "reason": "Local CampaignSpec SDK pin is unavailable or malformed (missing); packet QA never fetches around missing local parity evidence.",
+            "waivable": false,
+            "subject": {
+              "public_route_slug": "synthetic-campaign",
+              "target_path": "_data/campaigns.json"
+            },
+            "state": {
+              "spec_status": "missing"
+            },
+            "state_fingerprint": null,
+            "expected_sdk_version": null,
+            "observed_sdk_version": "0.4.18",
+            "expected_source": null,
+            "waiver": null,
+            "waiver_assessment": {
+              "active": null,
+              "inert_counts": {
+                "stale": 0,
+                "foreign": 0,
+                "malformed": 0,
+                "expired": 0
+              }
+            },
+            "required_actions": [
+              {
+                "id": "repair_spec",
+                "kind": "edit",
+                "command": null,
+                "description": "Restore a valid packet-local CampaignSpec export before build or QA."
+              }
+            ]
+          },
+          {
+            "id": "page_kit.store_profile",
+            "scope": "page_kit.store_profile",
+            "status": "blocked",
+            "code": "page_kit.store_profile.spec_unavailable",
+            "reason": "Local CampaignSpec Store Profile is unavailable or malformed (missing); packet QA never fetches around missing local parity evidence.",
+            "waivable": false,
+            "subject": {
+              "public_route_slug": "synthetic-campaign",
+              "target_path": "_data/campaigns.json"
+            },
+            "state": {
+              "spec_status": "missing",
+              "discrepancies": []
+            },
+            "state_fingerprint": null,
+            "matrix": [
+              {
+                "field": "store_name",
+                "kind": "spec_unavailable",
+                "spec": null,
+                "target": "Synthetic Store",
+                "severity": "blocker"
+              },
+              {
+                "field": "store_url",
+                "kind": "spec_unavailable",
+                "spec": null,
+                "target": "https://store.example.org",
+                "severity": "blocker"
+              },
+              {
+                "field": "store_terms",
+                "kind": "spec_unavailable",
+                "spec": null,
+                "target": "",
+                "severity": "blocker"
+              },
+              {
+                "field": "store_privacy",
+                "kind": "spec_unavailable",
+                "spec": null,
+                "target": "",
+                "severity": "blocker"
+              },
+              {
+                "field": "store_contact",
+                "kind": "spec_unavailable",
+                "spec": null,
+                "target": "",
+                "severity": "blocker"
+              },
+              {
+                "field": "store_returns",
+                "kind": "spec_unavailable",
+                "spec": null,
+                "target": "",
+                "severity": "blocker"
+              },
+              {
+                "field": "store_shipping",
+                "kind": "spec_unavailable",
+                "spec": null,
+                "target": "",
+                "severity": "blocker"
+              },
+              {
+                "field": "store_phone",
+                "kind": "spec_unavailable",
+                "spec": null,
+                "target": "",
+                "severity": "blocker"
+              },
+              {
+                "field": "store_phone_tel",
+                "kind": "spec_unavailable",
+                "spec": null,
+                "target": "",
+                "severity": "blocker"
+              }
+            ],
+            "blocker_fields": [
+              "store_name",
+              "store_url",
+              "store_terms",
+              "store_privacy",
+              "store_contact",
+              "store_returns",
+              "store_shipping",
+              "store_phone",
+              "store_phone_tel"
+            ],
+            "warning_fields": [],
+            "waiver": null,
+            "waiver_assessment": {
+              "active": null,
+              "inert_counts": {
+                "stale": 0,
+                "foreign": 0,
+                "malformed": 0,
+                "expired": 0
+              }
+            },
+            "required_actions": [
+              {
+                "id": "repair_spec",
+                "kind": "edit",
+                "command": null,
+                "description": "Restore a valid packet-local CampaignSpec export before QA."
+              }
+            ]
+          }
+        ],
+        "qc_results": [],
+        "polish_checkpoint_gate": {
+          "id": "polish.hidden_eager_media",
+          "scope": "polish.hidden_eager_media",
+          "status": "blocked",
+          "checkpoint_status": "blocked",
+          "severity": "blocker",
+          "code": "polish.hidden_eager_media.capture_malformed",
+          "reason": "The packet or Assembly Report authority is missing, malformed, or inconsistent; repair it before package capture.",
+          "waivable": false,
+          "subject": {
+            "build_fingerprint": null,
+            "campaign_slug": "synthetic-campaign",
+            "route_scope": "all",
+            "routes": [],
+            "viewports": [
+              "desktop",
+              "mobile"
+            ]
+          },
+          "state": null,
+          "state_fingerprint": null,
+          "findings": [],
+          "measurement": null,
+          "waiver": null,
+          "waiver_assessment": {
+            "active": null,
+            "inert_counts": {
+              "stale": 0,
+              "foreign": 0,
+              "malformed": 0,
+              "expired": 0
+            }
+          },
+          "required_actions": [
+            {
+              "id": "polish.hidden_eager_media.repair_authority",
+              "kind": "manual",
+              "command": null,
+              "description": "Repair the packet or Assembly Report campaign identity, build fingerprint, and mapped route plan before capture."
+            },
+            {
+              "id": "polish.hidden_eager_media.capture",
+              "kind": "command",
+              "command": "campaigns-os polish capture --packet <packet> --base-url <url>",
+              "description": "Capture package-owned page-load evidence for every mapped route and fixed viewport."
+            }
+          ]
+        },
+        "prepare_build_gate": null,
+        "brand_contract": {
+          "state": "no_family",
+          "family": null
+        },
+        "page_kit_campaign_config": {
+          "status": "ok",
+          "public_route_slug": "synthetic-campaign",
+          "target_path": "_data/campaigns.json"
+        },
+        "scaffold_required": true,
+        "scaffold_reason": "Target output directory does not exist: src/synthetic-campaign",
+        "scope": {
+          "mode": "unknown",
+          "built_pages": [],
+          "out_of_scope_pages": [],
+          "previewable_routes": [],
+          "blocked_runtime_pages": []
+        },
+        "input_currency": {
+          "brief": {
+            "bound": null,
+            "current": {
+              "presentation": "absent",
+              "qa_policy": "absent"
+            },
+            "status": "absent"
+          },
+          "spec": {
+            "bound": null,
+            "current": null,
+            "snapshot_material": "unknown",
+            "remote_currency": "unconfirmed"
+          },
+          "stages": {
+            "assembly": "unknown",
+            "polish": "unknown",
+            "qa": "unknown"
+          },
+          "reasons": {
+            "assembly": "input_binding_unknown",
+            "polish": "input_binding_unknown",
+            "qa": "input_binding_unknown"
+          }
+        },
+        "theme_gate": {
+          "status": "not_applicable",
+          "code": "theme_gate.no_commerce_pages",
+          "reason": "Campaign ships no commerce pages; the brand-layer gate does not apply.",
+          "commerce_pages": [],
+          "commerce_pages_out_of_scope": [],
+          "waiver": null,
+          "required_actions": []
+        },
+        "evidence_debt": {
+          "polish": {
+            "status": "unknown",
+            "matches_current_build": true,
+            "recorded_build_fingerprint": "sha256:21378ddd57f1eccadb2f9a7b3e52141aa6aae0e3ff670e0c964b6d06a35e0e57",
+            "current_build_fingerprint": "sha256:21378ddd57f1eccadb2f9a7b3e52141aa6aae0e3ff670e0c964b6d06a35e0e57",
+            "reason": "assembly_build_fingerprint_missing",
+            "change": null,
+            "advisory": false
+          },
+          "qa": {
+            "status": "unknown",
+            "matches_current_build": true,
+            "recorded_build_fingerprint": "sha256:21378ddd57f1eccadb2f9a7b3e52141aa6aae0e3ff670e0c964b6d06a35e0e57",
+            "current_build_fingerprint": "sha256:21378ddd57f1eccadb2f9a7b3e52141aa6aae0e3ff670e0c964b6d06a35e0e57",
+            "reason": "assembly_build_fingerprint_missing",
+            "change": null,
+            "scope": null,
+            "owed_pages": []
+          },
+          "changes": {
+            "status": "unknown",
+            "reason": "assembly_build_fingerprint_missing",
+            "recorded_build_fingerprint": null,
+            "current_build_fingerprint": "sha256:21378ddd57f1eccadb2f9a7b3e52141aa6aae0e3ff670e0c964b6d06a35e0e57",
+            "changed_pages": [],
+            "unmapped_files": [],
+            "extra": [],
+            "missing": [],
+            "changed": [],
+            "kind": "unknown",
+            "reasons": []
+          }
+        },
+        "polish_gate": {
+          "status": "blocked",
+          "code": "polish.build_fingerprint_missing",
+          "reason": "Current build artifact fingerprint is missing. Build must record stages.assembly.build_fingerprint before Polish/QA handoff.",
+          "required_actions": [
+            {
+              "id": "run_polish",
+              "kind": "skill",
+              "command": "next-campaigns-polish",
+              "description": "Run the distinct Polish stage and record stages.polish.performed_by, source_build_fingerprint, source_package_material_fingerprint when available, completed_at, and structured evidence."
+            },
+            {
+              "id": "polish.hidden_eager_media.repair_authority",
+              "kind": "manual",
+              "command": null,
+              "description": "Repair the packet or Assembly Report campaign identity, build fingerprint, and mapped route plan before capture."
+            },
+            {
+              "id": "polish.hidden_eager_media.capture",
+              "kind": "command",
+              "command": "campaigns-os polish capture --packet <packet> --base-url <url>",
+              "description": "Capture package-owned page-load evidence for every mapped route and fixed viewport."
+            }
+          ],
+          "owned_checkpoint_id": "polish.hidden_eager_media",
+          "owned_checkpoint_status": "blocked",
+          "owned_checkpoint_only": false
+        }
+      },
+      "next": {
+        "stage": "doctor-blocked",
+        "status": "blocked",
+        "stage_blocked": false,
+        "owner": "operator",
+        "default_skill": "next-campaigns-os",
+        "command": "campaigns-os doctor --packet <fixture>/campaign-runtime.build.json",
+        "reason": "Doctor reported 30 blocker(s); resolve them before any stage runs.",
+        "actions": [
+          "Resolve packet blockers before assembly.",
+          "Lock a template family before commerce wiring.",
+          "Target campaign output directory is missing; run campaigns-os next setup --packet <fixture>/campaign-runtime.build.json before build.",
+          "Current build artifact fingerprint is missing. Build must record stages.assembly.build_fingerprint before Polish/QA handoff. Run next-campaigns-polish and record structured evidence before deploy/QA handoff.",
+          "The packet or Assembly Report authority is missing, malformed, or inconsistent; repair it before package capture. Run campaigns-os polish capture before marking Polish complete."
+        ],
+        "blocked_stages": [
+          "setup",
+          "build",
+          "polish",
+          "deploy",
+          "qa",
+          "runtime-sdk-verification"
+        ]
+      },
+      "cause_summary": {
+        "schema_version": "campaigns-os-finding-cause/v0",
+        "surface": "doctor",
+        "total": 42,
+        "counts": {
+          "caused_by_change": 0,
+          "pre_existing": 0,
+          "test_environment": 0,
+          "upstream_drift": 0,
+          "unknown": 42
+        },
+        "prior_run_id": null,
+        "comparison": "no_prior_run"
+      },
+      "ci": {
+        "status": "unknown",
+        "exit_code": 4,
+        "polish": {
+          "status": "unknown",
+          "matches_current_build": true,
+          "recorded_build_fingerprint": "sha256:21378ddd57f1eccadb2f9a7b3e52141aa6aae0e3ff670e0c964b6d06a35e0e57",
+          "current_build_fingerprint": "sha256:21378ddd57f1eccadb2f9a7b3e52141aa6aae0e3ff670e0c964b6d06a35e0e57",
+          "reason": "assembly_build_fingerprint_missing",
+          "change": null,
+          "advisory": false
+        },
+        "qa": {
+          "status": "unknown",
+          "matches_current_build": true,
+          "recorded_build_fingerprint": "sha256:21378ddd57f1eccadb2f9a7b3e52141aa6aae0e3ff670e0c964b6d06a35e0e57",
+          "current_build_fingerprint": "sha256:21378ddd57f1eccadb2f9a7b3e52141aa6aae0e3ff670e0c964b6d06a35e0e57",
+          "reason": "assembly_build_fingerprint_missing",
+          "change": null,
+          "scope": null,
+          "owed_pages": []
+        },
+        "changes": {
+          "status": "unknown",
+          "reason": "assembly_build_fingerprint_missing",
+          "recorded_build_fingerprint": null,
+          "current_build_fingerprint": "sha256:21378ddd57f1eccadb2f9a7b3e52141aa6aae0e3ff670e0c964b6d06a35e0e57",
+          "changed_pages": [],
+          "unmapped_files": [],
+          "extra": [],
+          "missing": [],
+          "changed": [],
+          "kind": "unknown",
+          "reasons": []
+        }
+      }
+    },
+    "markdown": "## Campaign evidence: unknown (exit 4)\n\nOwed stages: none.\nChanged pages unavailable: the assembly build fingerprint is missing.\n- Unknown polish: `assembly_build_fingerprint_missing`\n- Unknown qa: `assembly_build_fingerprint_missing`\n- Unknown page changes: `assembly_build_fingerprint_missing`\n\nRemedy: rebuild, then run `campaigns-os record build --packet <packet>`, `campaigns-os polish capture --packet <packet> --base-url <served-current-build-url>` for the whole route, and `campaigns-os record polish --packet <packet> --evidence <polish-evidence.json>`, in that order. When QA is owed, run `campaigns-os qa run --packet <packet>` against that build.\n\nDoctor inspection: 30 error(s), 12 warning(s); CI exit status depends only on evidence debt.\nDoctor errors: `campaign.allowed_domains_confirmed`, `source_html.root`, `source_html.pages`, `assembly.template_family`, `qa`, `deploy.target`, `assembly.template_lock`, `spec.local_path`, `page_kit.sdk_version.spec_unavailable`, `page_kit.store_profile.spec_unavailable`, `schema_version`, `run_id`, `generated_at`, `status`, `identity.map_id`, `identity.public_route_slug`, `inputs.packet_path`, `template_family.value`, `stages.prepare_build`, `stages.doctor`, `stages.setup`, `stages.deploy`, `decisions`, `evidence`, `blockers`, `warnings`, `polish.build_fingerprint_missing`, `polish.hidden_eager_media.capture_malformed`.\nUse ordinary `doctor` or `--ci --json` for full inspection details."
+  }
+}

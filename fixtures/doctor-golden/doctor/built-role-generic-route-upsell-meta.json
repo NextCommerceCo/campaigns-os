@@ -1,0 +1,737 @@
+{
+  "base_sha": "e1c5bc9c6dc2745d6f2bd54f37f89319ce7f915a",
+  "case": "role-generic-route-upsell-meta",
+  "entry": "built",
+  "description": "conflicting role: a route that infers nothing takes its role from an upsell meta (blocked)",
+  "output": {
+    "ok": false,
+    "status": "blocked",
+    "mode": "built_site",
+    "errors": [
+      {
+        "code": "built_output.upsell_selector_scope",
+        "message": "1 bundle selector(s) on built post-purchase page(s) sell into the live cart: \"upsell-bundle-1x\" on page \"special-offer\" (hidden). Each lacks data-next-upsell-context and is in the default \"swap\" selection mode. Loading the page adds that selector's package to the shopper's LIVE CART with no click, and it is charged at the next checkout without appearing in that checkout's rendered order summary. Add data-next-upsell-context to each selector listed (the post-purchase basket, and upsell pricing), or delete the selector if it exists only to display a price.",
+        "detail": {
+          "checkpoint_gate": {
+            "id": "built_output.upsell_selector_scope",
+            "scope": "built_output.upsell_selector_scope",
+            "status": "blocked",
+            "code": "built_output.upsell_selector_scope",
+            "reason": "1 bundle selector(s) on built post-purchase page(s) sell into the live cart: \"upsell-bundle-1x\" on page \"special-offer\" (hidden). Each lacks data-next-upsell-context and is in the default \"swap\" selection mode. Loading the page adds that selector's package to the shopper's LIVE CART with no click, and it is charged at the next checkout without appearing in that checkout's rendered order summary. Add data-next-upsell-context to each selector listed (the post-purchase basket, and upsell pricing), or delete the selector if it exists only to display a price.",
+            "waivable": true,
+            "subject": {
+              "public_route_slug": "example-campaign",
+              "site_root": "./_site/example-campaign"
+            },
+            "state": {
+              "findings": [
+                {
+                  "page_id": "special-offer",
+                  "selector_id": "upsell-bundle-1x",
+                  "occurrence": 0
+                }
+              ]
+            },
+            "state_fingerprint": "sha256:39f83c91636ca706f086c1c52b9ce1c65dde9c4c7b284f6022e47692c4227d15",
+            "findings": [
+              {
+                "page_id": "special-offer",
+                "file": "./_site/example-campaign/special-offer/index.html",
+                "selector_id": "upsell-bundle-1x",
+                "occurrence": 0,
+                "selection_mode": "swap",
+                "hidden": true
+              }
+            ],
+            "warned": [],
+            "pages_scanned": 1,
+            "selectors_scanned": 1,
+            "waiver": null,
+            "waiver_assessment": {
+              "active": null,
+              "inert_counts": {
+                "stale": 0,
+                "foreign": 0,
+                "malformed": 0,
+                "expired": 0
+              }
+            },
+            "required_actions": [
+              {
+                "id": "repair_selectors",
+                "kind": "edit",
+                "command": null,
+                "description": "Add data-next-upsell-context to \"upsell-bundle-1x\" on page \"special-offer\" (hidden), or remove the selector, then rebuild and re-run doctor."
+              },
+              {
+                "id": "waive_checkpoint",
+                "kind": "command",
+                "command": "campaigns-os checkpoint waive --packet <packet> --gate built_output.upsell_selector_scope --reason \"<reason>\" --waived-by \"<named human>\" --review-condition \"<re-evaluation trigger>\"",
+                "description": "Record a bounded named-human decision that these exact cart-scoped selectors are intended on a post-purchase page."
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "warnings": [
+      {
+        "code": "assembly.template_family",
+        "message": "No --family given; the residue/placeholder-text/demo-asset gates need a family brand contract to run. Pass --family <family> (the family the campaign was built from)."
+      },
+      {
+        "code": "built_output.smoke_qc.favicon_missing",
+        "message": "smoke_qc warning on _site/example-campaign/special-offer/index.html (favicon:link): favicon_missing.",
+        "detail": {
+          "qc_result": {
+            "schema": "campaigns-os-qc-result/v0",
+            "id": "smoke_qc:_site/example-campaign/special-offer/index.html:favicon:link",
+            "check": "smoke_qc",
+            "leg": "doctor",
+            "result": "warning",
+            "reason_code": "favicon_missing",
+            "subject": {
+              "check": "smoke_qc",
+              "page": "_site/example-campaign/special-offer/index.html",
+              "key": "favicon:link"
+            },
+            "state_fingerprint": "sha256:b1780e6856a725cb8857faec5231fd1a6a35bd52c97524d845d382a3a84e7d39",
+            "observation": {
+              "page": "_site/example-campaign/special-offer/index.html",
+              "favicon": false
+            },
+            "members": [],
+            "accept_eligible": true,
+            "coverage": {
+              "observed": 1,
+              "expected": 1,
+              "limits": []
+            },
+            "measured_at": "2026-01-01T00:00:00.000Z",
+            "producer": "campaigns-os doctor"
+          }
+        }
+      },
+      {
+        "code": "built_output.smoke_qc.og_title_missing",
+        "message": "smoke_qc warning on _site/example-campaign/special-offer/index.html (og:title): og_title_missing.",
+        "detail": {
+          "qc_result": {
+            "schema": "campaigns-os-qc-result/v0",
+            "id": "smoke_qc:_site/example-campaign/special-offer/index.html:og:title",
+            "check": "smoke_qc",
+            "leg": "doctor",
+            "result": "warning",
+            "reason_code": "og_title_missing",
+            "subject": {
+              "check": "smoke_qc",
+              "page": "_site/example-campaign/special-offer/index.html",
+              "key": "og:title"
+            },
+            "state_fingerprint": "sha256:c4af4a6ad076111c3f65f49f2750f1bf60bbcdd2aa1e81b3f22521440e6d8eea",
+            "observation": {
+              "page": "_site/example-campaign/special-offer/index.html",
+              "og": {
+                "title": false,
+                "description": false,
+                "image": "absent",
+                "image_target": null
+              }
+            },
+            "members": [],
+            "accept_eligible": true,
+            "coverage": {
+              "observed": 1,
+              "expected": 1,
+              "limits": []
+            },
+            "measured_at": "2026-01-01T00:00:00.000Z",
+            "producer": "campaigns-os doctor"
+          }
+        }
+      },
+      {
+        "code": "built_output.smoke_qc.og_description_missing",
+        "message": "smoke_qc warning on _site/example-campaign/special-offer/index.html (og:description): og_description_missing.",
+        "detail": {
+          "qc_result": {
+            "schema": "campaigns-os-qc-result/v0",
+            "id": "smoke_qc:_site/example-campaign/special-offer/index.html:og:description",
+            "check": "smoke_qc",
+            "leg": "doctor",
+            "result": "warning",
+            "reason_code": "og_description_missing",
+            "subject": {
+              "check": "smoke_qc",
+              "page": "_site/example-campaign/special-offer/index.html",
+              "key": "og:description"
+            },
+            "state_fingerprint": "sha256:f6680c4a501e44e06020fdc49a0ffa7125ef22ac0695fc235b5d8b8b92ee1e26",
+            "observation": {
+              "page": "_site/example-campaign/special-offer/index.html",
+              "og": {
+                "title": false,
+                "description": false,
+                "image": "absent",
+                "image_target": null
+              }
+            },
+            "members": [],
+            "accept_eligible": true,
+            "coverage": {
+              "observed": 1,
+              "expected": 1,
+              "limits": []
+            },
+            "measured_at": "2026-01-01T00:00:00.000Z",
+            "producer": "campaigns-os doctor"
+          }
+        }
+      },
+      {
+        "code": "built_output.smoke_qc.og_image_missing",
+        "message": "smoke_qc warning on _site/example-campaign/special-offer/index.html (og:image): og_image_missing.",
+        "detail": {
+          "qc_result": {
+            "schema": "campaigns-os-qc-result/v0",
+            "id": "smoke_qc:_site/example-campaign/special-offer/index.html:og:image",
+            "check": "smoke_qc",
+            "leg": "doctor",
+            "result": "warning",
+            "reason_code": "og_image_missing",
+            "subject": {
+              "check": "smoke_qc",
+              "page": "_site/example-campaign/special-offer/index.html",
+              "key": "og:image"
+            },
+            "state_fingerprint": "sha256:202c77592ad258391a44952d4509fa950e7477db73ef34bc994cfe6f18ceb8f3",
+            "observation": {
+              "page": "_site/example-campaign/special-offer/index.html",
+              "og": {
+                "title": false,
+                "description": false,
+                "image": "absent",
+                "image_target": null
+              }
+            },
+            "members": [],
+            "accept_eligible": true,
+            "coverage": {
+              "observed": 1,
+              "expected": 1,
+              "limits": []
+            },
+            "measured_at": "2026-01-01T00:00:00.000Z",
+            "producer": "campaigns-os doctor"
+          }
+        }
+      }
+    ],
+    "ready": [
+      "Resolved 1 built page(s) from ./_site/example-campaign (slug \"example-campaign\")",
+      "Built output has no generic starter placeholder or promo-code residue",
+      "All 1 built page(s) agree on campaign identity (next-funnel not declared, API key not declared)",
+      "SDK markup checks passed on 1 built page(s)",
+      "Script syntax checkpoint not applicable: No built page loads a campaign-owned script from disk (1 page(s) read)."
+    ],
+    "derived": {
+      "mode": "built_site",
+      "map_id": "example-campaign",
+      "public_route_slug": "example-campaign",
+      "template_family": null,
+      "target_repo": "<fixture>",
+      "target_output_dir": "<fixture>/_site/example-campaign",
+      "site_root": "<fixture>/_site",
+      "built_pages": [
+        {
+          "page_id": "special-offer",
+          "type": "page",
+          "route": "special-offer"
+        }
+      ],
+      "doctor_checks": [
+        "built_output.upsell_selector_scope",
+        "built_output.campaign_identity",
+        "built_output.sdk_markup",
+        "built_output.script_syntax",
+        "built_output.cart_placeholders",
+        "built_output.smoke_qc"
+      ],
+      "checkpoint_gates": [
+        {
+          "id": "built_output.upsell_selector_scope",
+          "scope": "built_output.upsell_selector_scope",
+          "status": "blocked",
+          "code": "built_output.upsell_selector_scope",
+          "reason": "1 bundle selector(s) on built post-purchase page(s) sell into the live cart: \"upsell-bundle-1x\" on page \"special-offer\" (hidden). Each lacks data-next-upsell-context and is in the default \"swap\" selection mode. Loading the page adds that selector's package to the shopper's LIVE CART with no click, and it is charged at the next checkout without appearing in that checkout's rendered order summary. Add data-next-upsell-context to each selector listed (the post-purchase basket, and upsell pricing), or delete the selector if it exists only to display a price.",
+          "waivable": true,
+          "subject": {
+            "public_route_slug": "example-campaign",
+            "site_root": "./_site/example-campaign"
+          },
+          "state": {
+            "findings": [
+              {
+                "page_id": "special-offer",
+                "selector_id": "upsell-bundle-1x",
+                "occurrence": 0
+              }
+            ]
+          },
+          "state_fingerprint": "sha256:39f83c91636ca706f086c1c52b9ce1c65dde9c4c7b284f6022e47692c4227d15",
+          "findings": [
+            {
+              "page_id": "special-offer",
+              "file": "./_site/example-campaign/special-offer/index.html",
+              "selector_id": "upsell-bundle-1x",
+              "occurrence": 0,
+              "selection_mode": "swap",
+              "hidden": true
+            }
+          ],
+          "warned": [],
+          "pages_scanned": 1,
+          "selectors_scanned": 1,
+          "waiver": null,
+          "waiver_assessment": {
+            "active": null,
+            "inert_counts": {
+              "stale": 0,
+              "foreign": 0,
+              "malformed": 0,
+              "expired": 0
+            }
+          },
+          "required_actions": [
+            {
+              "id": "repair_selectors",
+              "kind": "edit",
+              "command": null,
+              "description": "Add data-next-upsell-context to \"upsell-bundle-1x\" on page \"special-offer\" (hidden), or remove the selector, then rebuild and re-run doctor."
+            },
+            {
+              "id": "waive_checkpoint",
+              "kind": "command",
+              "command": "campaigns-os checkpoint waive --packet <packet> --gate built_output.upsell_selector_scope --reason \"<reason>\" --waived-by \"<named human>\" --review-condition \"<re-evaluation trigger>\"",
+              "description": "Record a bounded named-human decision that these exact cart-scoped selectors are intended on a post-purchase page."
+            }
+          ]
+        },
+        {
+          "id": "built_output.campaign_identity",
+          "scope": "built_output.campaign_identity",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "example-campaign",
+            "site_root": "./_site/example-campaign"
+          },
+          "waiver": null,
+          "status": "pass",
+          "code": "built_output.campaign_identity.pass",
+          "reason": "All 1 built page(s) agree on campaign identity (API key not declared, next-funnel (none)).",
+          "findings": [],
+          "pages_scanned": 1,
+          "pages_skipped": [],
+          "identity": {
+            "api_key": null,
+            "api_key_source": null,
+            "funnel": null
+          },
+          "required_actions": []
+        },
+        {
+          "id": "built_output.sdk_markup",
+          "scope": "built_output.sdk_markup",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "example-campaign",
+            "site_root": "./_site/example-campaign"
+          },
+          "waiver": null,
+          "sdk_attribute_index_version": "0.4.43",
+          "campaign_sdk_version": null,
+          "status": "pass",
+          "code": "built_output.sdk_markup.pass",
+          "reason": "SDK markup checks passed on 1 built page(s).",
+          "findings": [],
+          "warned": [],
+          "unknown_attributes": [],
+          "pages_scanned": 1,
+          "required_actions": []
+        },
+        {
+          "id": "built_output.script_syntax",
+          "scope": "built_output.script_syntax",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "example-campaign",
+            "site_root": "./_site/example-campaign"
+          },
+          "waiver": null,
+          "status": "not_applicable",
+          "code": "built_output.script_syntax.not_applicable",
+          "reason": "No built page loads a campaign-owned script from disk (1 page(s) read).",
+          "findings": [],
+          "scripts_scanned": 0,
+          "scripts_unresolved": [],
+          "scripts_outside_site": [],
+          "warned": [],
+          "pages_scanned": 1,
+          "required_actions": []
+        }
+      ],
+      "qc_results": [
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/example-campaign/special-offer/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "sdk_pin_unknown",
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/example-campaign/special-offer/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:1c55f5062dd618d61e8c8d37c5b643932f1a5cf5800c7b672dae2340a2f443e3",
+          "observation": {
+            "page": "_site/example-campaign/special-offer/index.html",
+            "sdk_pin": null,
+            "sdk_pin_source": null,
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 233,
+            "candidates": 0
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "sdk_pin_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/example-campaign/special-offer/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "warning",
+          "reason_code": "favicon_missing",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/example-campaign/special-offer/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:b1780e6856a725cb8857faec5231fd1a6a35bd52c97524d845d382a3a84e7d39",
+          "observation": {
+            "page": "_site/example-campaign/special-offer/index.html",
+            "favicon": false
+          },
+          "members": [],
+          "accept_eligible": true,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/example-campaign/special-offer/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "warning",
+          "reason_code": "og_title_missing",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/example-campaign/special-offer/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:c4af4a6ad076111c3f65f49f2750f1bf60bbcdd2aa1e81b3f22521440e6d8eea",
+          "observation": {
+            "page": "_site/example-campaign/special-offer/index.html",
+            "og": {
+              "title": false,
+              "description": false,
+              "image": "absent",
+              "image_target": null
+            }
+          },
+          "members": [],
+          "accept_eligible": true,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/example-campaign/special-offer/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "warning",
+          "reason_code": "og_description_missing",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/example-campaign/special-offer/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:f6680c4a501e44e06020fdc49a0ffa7125ef22ac0695fc235b5d8b8b92ee1e26",
+          "observation": {
+            "page": "_site/example-campaign/special-offer/index.html",
+            "og": {
+              "title": false,
+              "description": false,
+              "image": "absent",
+              "image_target": null
+            }
+          },
+          "members": [],
+          "accept_eligible": true,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/example-campaign/special-offer/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "warning",
+          "reason_code": "og_image_missing",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/example-campaign/special-offer/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:202c77592ad258391a44952d4509fa950e7477db73ef34bc994cfe6f18ceb8f3",
+          "observation": {
+            "page": "_site/example-campaign/special-offer/index.html",
+            "og": {
+              "title": false,
+              "description": false,
+              "image": "absent",
+              "image_target": null
+            }
+          },
+          "members": [],
+          "accept_eligible": true,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/example-campaign/special-offer/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/example-campaign/special-offer/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:c74d9ed40374eb39dd26ab6c4b1cb072ca1b46128e8e07268f48db6a29ae4b6b",
+          "observation": {
+            "page": "_site/example-campaign/special-offer/index.html",
+            "tailwind_cdn": 0,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/example-campaign/special-offer/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/example-campaign/special-offer/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:6382c51708aa258c8c9788cc3eae0c9cbbdca9af066f0814467c7042aeab9fd9",
+          "observation": {
+            "page": "_site/example-campaign/special-offer/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/example-campaign/special-offer/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/example-campaign/special-offer/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:cce08481a3c70756c0357ec62809cbf6af6b450038128ec12315890a9bb3e6cf",
+          "observation": {
+            "page": "_site/example-campaign/special-offer/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        }
+      ],
+      "brand_contract": {
+        "state": "no_family",
+        "family": null
+      },
+      "synthesized_packet": {
+        "schema_version": "campaign-runtime-build-packet/v0",
+        "_synthesized": {
+          "from": "built_site",
+          "note": "Minimal packet auto-emitted from a built _site/. Not a full Build Packet: source_html and assembly provenance are absent.",
+          "site_root": "<fixture>/_site",
+          "campaign_dir": "<fixture>/_site/example-campaign",
+          "html_count": 1
+        },
+        "campaign": {
+          "public_route_slug": "example-campaign",
+          "allowed_domains_confirmed": false
+        },
+        "spec": {
+          "map_id": "example-campaign"
+        },
+        "assembly": {
+          "target_repo": "<fixture>",
+          "output_dir": "_site/example-campaign",
+          "template_family": "undecided"
+        },
+        "deploy": {
+          "target": "unknown",
+          "preview_url": null
+        },
+        "qa": {},
+        "pages": [
+          {
+            "page_id": "special-offer",
+            "type": "page",
+            "route": "special-offer"
+          }
+        ]
+      }
+    },
+    "scope": {
+      "slug": "example-campaign",
+      "html_count": 1,
+      "pages": [
+        {
+          "page_id": "special-offer",
+          "type": "page",
+          "route": "special-offer"
+        }
+      ],
+      "campaign_dir": "<fixture>/_site/example-campaign"
+    },
+    "synthesized_packet": {
+      "schema_version": "campaign-runtime-build-packet/v0",
+      "_synthesized": {
+        "from": "built_site",
+        "note": "Minimal packet auto-emitted from a built _site/. Not a full Build Packet: source_html and assembly provenance are absent.",
+        "site_root": "<fixture>/_site",
+        "campaign_dir": "<fixture>/_site/example-campaign",
+        "html_count": 1
+      },
+      "campaign": {
+        "public_route_slug": "example-campaign",
+        "allowed_domains_confirmed": false
+      },
+      "spec": {
+        "map_id": "example-campaign"
+      },
+      "assembly": {
+        "target_repo": "<fixture>",
+        "output_dir": "_site/example-campaign",
+        "template_family": "undecided"
+      },
+      "deploy": {
+        "target": "unknown",
+        "preview_url": null
+      },
+      "qa": {},
+      "pages": [
+        {
+          "page_id": "special-offer",
+          "type": "page",
+          "route": "special-offer"
+        }
+      ]
+    },
+    "emitted_packet_path": null,
+    "next": {
+      "stage": "doctor-blocked",
+      "status": "blocked",
+      "stage_blocked": false,
+      "owner": "operator",
+      "default_skill": "next-campaigns-os",
+      "command": "campaigns-os doctor --packet <packet>",
+      "reason": "Doctor reported 1 blocker(s); resolve them before any stage runs.",
+      "actions": [
+        "Resolve packet blockers before assembly."
+      ],
+      "blocked_stages": [
+        "setup",
+        "build",
+        "polish",
+        "deploy",
+        "qa"
+      ]
+    }
+  }
+}

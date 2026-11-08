@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.66.0+agent.2] - 2026-11-08
+
+### Added
+
+- Pre-refactor characterization for the doctor shared-input work (#730, milestone 1). Nothing doctor reports changes. Goldens of doctor's current output now cover the built, packet and CI entry points: the certified families, the existing doctor fixtures, and pre-build, partial, capped, conflicting-role, waived and failing cases. Literal commerce-signature v1 vectors and saved Assembly Reports pin `buildCommerceSignature`, `classifyDrift` and the recorded build history byte for byte. `scripts/performance/doctor-cost.mjs` measures doctor's file reads, scope walks, parses and memory without changing source. These are compatibility baselines, so a later refactor that changes a golden is a regression to fix, not a file to regenerate.
+
 ## [1.66.0+agent.1] - 2026-11-08
 
 ### Changed

@@ -1,0 +1,752 @@
+{
+  "base_sha": "e1c5bc9c6dc2745d6f2bd54f37f89319ce7f915a",
+  "case": "failing-sdk-markup-orphaned-upsell-action",
+  "entry": "built",
+  "description": "failing: the sdk_markup gate blocks, fixtures/sdk-markup/orphaned-upsell-action/bad",
+  "output": {
+    "ok": false,
+    "status": "blocked",
+    "mode": "built_site",
+    "errors": [
+      {
+        "code": "built_output.sdk_markup.orphaned_upsell_action",
+        "message": "ORPHANED_UPSELL_ACTION: <a> data-next-upsell-action=\"skip\" on ./_site/example-campaign/downsell-1/index.html has no ancestor carrying data-next-upsell. The SDK binds upsell actions only inside that container, so this one never fires and the shopper cannot decline the offer. Move it inside the data-next-upsell container it belongs to.",
+        "detail": {
+          "finding": {
+            "code_name": "ORPHANED_UPSELL_ACTION",
+            "code": "built_output.sdk_markup.orphaned_upsell_action",
+            "severity": "error",
+            "page_id": "downsell-1",
+            "file": "./_site/example-campaign/downsell-1/index.html",
+            "message": "ORPHANED_UPSELL_ACTION: <a> data-next-upsell-action=\"skip\" on ./_site/example-campaign/downsell-1/index.html has no ancestor carrying data-next-upsell. The SDK binds upsell actions only inside that container, so this one never fires and the shopper cannot decline the offer. Move it inside the data-next-upsell container it belongs to.",
+            "detail": {
+              "tag": "a",
+              "action": "skip"
+            }
+          },
+          "checkpoint_gate": {
+            "id": "built_output.sdk_markup",
+            "scope": "built_output.sdk_markup",
+            "waivable": false,
+            "subject": {
+              "public_route_slug": "example-campaign",
+              "site_root": "./_site/example-campaign"
+            },
+            "waiver": null,
+            "sdk_attribute_index_version": "0.4.43",
+            "campaign_sdk_version": null,
+            "status": "blocked",
+            "code": "built_output.sdk_markup",
+            "reason": "1 SDK markup blocker(s) on 1 built page(s) (ORPHANED_UPSELL_ACTION on ./_site/example-campaign/downsell-1/index.html); each blocker is a doctor error with the repair.",
+            "findings": [
+              {
+                "code_name": "ORPHANED_UPSELL_ACTION",
+                "code": "built_output.sdk_markup.orphaned_upsell_action",
+                "severity": "error",
+                "page_id": "downsell-1",
+                "file": "./_site/example-campaign/downsell-1/index.html",
+                "message": "ORPHANED_UPSELL_ACTION: <a> data-next-upsell-action=\"skip\" on ./_site/example-campaign/downsell-1/index.html has no ancestor carrying data-next-upsell. The SDK binds upsell actions only inside that container, so this one never fires and the shopper cannot decline the offer. Move it inside the data-next-upsell container it belongs to.",
+                "detail": {
+                  "tag": "a",
+                  "action": "skip"
+                }
+              }
+            ],
+            "warned": [],
+            "unknown_attributes": [],
+            "pages_scanned": 1,
+            "required_actions": [
+              {
+                "id": "repair_sdk_markup",
+                "kind": "edit",
+                "command": null,
+                "description": "Repair the markup each finding names (ORPHANED_UPSELL_ACTION on ./_site/example-campaign/downsell-1/index.html), rebuild, and re-run doctor. Not waivable: the markup provably does not do what it says."
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "warnings": [
+      {
+        "code": "assembly.template_family",
+        "message": "No --family given; the residue/placeholder-text/demo-asset gates need a family brand contract to run. Pass --family <family> (the family the campaign was built from)."
+      },
+      {
+        "code": "built_output.smoke_qc.favicon_missing",
+        "message": "smoke_qc warning on _site/example-campaign/downsell-1/index.html (favicon:link): favicon_missing.",
+        "detail": {
+          "qc_result": {
+            "schema": "campaigns-os-qc-result/v0",
+            "id": "smoke_qc:_site/example-campaign/downsell-1/index.html:favicon:link",
+            "check": "smoke_qc",
+            "leg": "doctor",
+            "result": "warning",
+            "reason_code": "favicon_missing",
+            "subject": {
+              "check": "smoke_qc",
+              "page": "_site/example-campaign/downsell-1/index.html",
+              "key": "favicon:link"
+            },
+            "state_fingerprint": "sha256:9a2725e1a6d49d6e4b2265177c38bc4c8db3d3f2a06da4473c44adc7093e9818",
+            "observation": {
+              "page": "_site/example-campaign/downsell-1/index.html",
+              "favicon": false
+            },
+            "members": [],
+            "accept_eligible": true,
+            "coverage": {
+              "observed": 1,
+              "expected": 1,
+              "limits": []
+            },
+            "measured_at": "2026-01-01T00:00:00.000Z",
+            "producer": "campaigns-os doctor"
+          }
+        }
+      },
+      {
+        "code": "built_output.smoke_qc.og_title_missing",
+        "message": "smoke_qc warning on _site/example-campaign/downsell-1/index.html (og:title): og_title_missing.",
+        "detail": {
+          "qc_result": {
+            "schema": "campaigns-os-qc-result/v0",
+            "id": "smoke_qc:_site/example-campaign/downsell-1/index.html:og:title",
+            "check": "smoke_qc",
+            "leg": "doctor",
+            "result": "warning",
+            "reason_code": "og_title_missing",
+            "subject": {
+              "check": "smoke_qc",
+              "page": "_site/example-campaign/downsell-1/index.html",
+              "key": "og:title"
+            },
+            "state_fingerprint": "sha256:b329ee66771a9dbf126c06a7b57aefca2082aea61d18a03925e2c383b26ce9eb",
+            "observation": {
+              "page": "_site/example-campaign/downsell-1/index.html",
+              "og": {
+                "title": false,
+                "description": false,
+                "image": "absent",
+                "image_target": null
+              }
+            },
+            "members": [],
+            "accept_eligible": true,
+            "coverage": {
+              "observed": 1,
+              "expected": 1,
+              "limits": []
+            },
+            "measured_at": "2026-01-01T00:00:00.000Z",
+            "producer": "campaigns-os doctor"
+          }
+        }
+      },
+      {
+        "code": "built_output.smoke_qc.og_description_missing",
+        "message": "smoke_qc warning on _site/example-campaign/downsell-1/index.html (og:description): og_description_missing.",
+        "detail": {
+          "qc_result": {
+            "schema": "campaigns-os-qc-result/v0",
+            "id": "smoke_qc:_site/example-campaign/downsell-1/index.html:og:description",
+            "check": "smoke_qc",
+            "leg": "doctor",
+            "result": "warning",
+            "reason_code": "og_description_missing",
+            "subject": {
+              "check": "smoke_qc",
+              "page": "_site/example-campaign/downsell-1/index.html",
+              "key": "og:description"
+            },
+            "state_fingerprint": "sha256:66986f367307f104a7e7c0bb051e80dd2f27cfdbcd26611e7665246119c9b427",
+            "observation": {
+              "page": "_site/example-campaign/downsell-1/index.html",
+              "og": {
+                "title": false,
+                "description": false,
+                "image": "absent",
+                "image_target": null
+              }
+            },
+            "members": [],
+            "accept_eligible": true,
+            "coverage": {
+              "observed": 1,
+              "expected": 1,
+              "limits": []
+            },
+            "measured_at": "2026-01-01T00:00:00.000Z",
+            "producer": "campaigns-os doctor"
+          }
+        }
+      },
+      {
+        "code": "built_output.smoke_qc.og_image_missing",
+        "message": "smoke_qc warning on _site/example-campaign/downsell-1/index.html (og:image): og_image_missing.",
+        "detail": {
+          "qc_result": {
+            "schema": "campaigns-os-qc-result/v0",
+            "id": "smoke_qc:_site/example-campaign/downsell-1/index.html:og:image",
+            "check": "smoke_qc",
+            "leg": "doctor",
+            "result": "warning",
+            "reason_code": "og_image_missing",
+            "subject": {
+              "check": "smoke_qc",
+              "page": "_site/example-campaign/downsell-1/index.html",
+              "key": "og:image"
+            },
+            "state_fingerprint": "sha256:e7eed9028edb6ddd17bb15d76af89a023977bde6d879410d12b0c9e871129fdc",
+            "observation": {
+              "page": "_site/example-campaign/downsell-1/index.html",
+              "og": {
+                "title": false,
+                "description": false,
+                "image": "absent",
+                "image_target": null
+              }
+            },
+            "members": [],
+            "accept_eligible": true,
+            "coverage": {
+              "observed": 1,
+              "expected": 1,
+              "limits": []
+            },
+            "measured_at": "2026-01-01T00:00:00.000Z",
+            "producer": "campaigns-os doctor"
+          }
+        }
+      }
+    ],
+    "ready": [
+      "Resolved 1 built page(s) from ./_site/example-campaign (slug \"example-campaign\")",
+      "Built output has no generic starter placeholder or promo-code residue",
+      "Every bundle selector on 1 built post-purchase page(s) is scoped away from the live cart (0 selector(s) scanned)",
+      "All 1 built page(s) agree on campaign identity (next-funnel \"Example\", API key not declared)",
+      "Script syntax checkpoint not applicable: No built page loads a campaign-owned script from disk (1 page(s) read)."
+    ],
+    "derived": {
+      "mode": "built_site",
+      "map_id": "example-campaign",
+      "public_route_slug": "example-campaign",
+      "template_family": null,
+      "target_repo": "<toolkit>/fixtures/sdk-markup/orphaned-upsell-action/bad",
+      "target_output_dir": "<toolkit>/fixtures/sdk-markup/orphaned-upsell-action/bad/_site/example-campaign",
+      "site_root": "<toolkit>/fixtures/sdk-markup/orphaned-upsell-action/bad/_site",
+      "built_pages": [
+        {
+          "page_id": "downsell-1",
+          "type": "downsell",
+          "route": "downsell-1"
+        }
+      ],
+      "doctor_checks": [
+        "built_output.upsell_selector_scope",
+        "built_output.campaign_identity",
+        "built_output.sdk_markup",
+        "built_output.script_syntax",
+        "built_output.cart_placeholders",
+        "built_output.smoke_qc"
+      ],
+      "checkpoint_gates": [
+        {
+          "id": "built_output.upsell_selector_scope",
+          "scope": "built_output.upsell_selector_scope",
+          "status": "pass",
+          "code": "built_output.upsell_selector_scope.pass",
+          "reason": "Every bundle selector on 1 built post-purchase page(s) is scoped away from the live cart.",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "example-campaign",
+            "site_root": "./_site/example-campaign"
+          },
+          "state": {
+            "findings": []
+          },
+          "state_fingerprint": null,
+          "findings": [],
+          "warned": [],
+          "pages_scanned": 1,
+          "selectors_scanned": 0,
+          "waiver": null,
+          "waiver_assessment": {
+            "active": null,
+            "inert_counts": {
+              "stale": 0,
+              "foreign": 0,
+              "malformed": 0,
+              "expired": 0
+            }
+          },
+          "required_actions": []
+        },
+        {
+          "id": "built_output.campaign_identity",
+          "scope": "built_output.campaign_identity",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "example-campaign",
+            "site_root": "./_site/example-campaign"
+          },
+          "waiver": null,
+          "status": "pass",
+          "code": "built_output.campaign_identity.pass",
+          "reason": "All 1 built page(s) agree on campaign identity (API key not declared, next-funnel \"Example\").",
+          "findings": [],
+          "pages_scanned": 1,
+          "pages_skipped": [],
+          "identity": {
+            "api_key": null,
+            "api_key_source": null,
+            "funnel": "Example"
+          },
+          "required_actions": []
+        },
+        {
+          "id": "built_output.sdk_markup",
+          "scope": "built_output.sdk_markup",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "example-campaign",
+            "site_root": "./_site/example-campaign"
+          },
+          "waiver": null,
+          "sdk_attribute_index_version": "0.4.43",
+          "campaign_sdk_version": null,
+          "status": "blocked",
+          "code": "built_output.sdk_markup",
+          "reason": "1 SDK markup blocker(s) on 1 built page(s) (ORPHANED_UPSELL_ACTION on ./_site/example-campaign/downsell-1/index.html); each blocker is a doctor error with the repair.",
+          "findings": [
+            {
+              "code_name": "ORPHANED_UPSELL_ACTION",
+              "code": "built_output.sdk_markup.orphaned_upsell_action",
+              "severity": "error",
+              "page_id": "downsell-1",
+              "file": "./_site/example-campaign/downsell-1/index.html",
+              "message": "ORPHANED_UPSELL_ACTION: <a> data-next-upsell-action=\"skip\" on ./_site/example-campaign/downsell-1/index.html has no ancestor carrying data-next-upsell. The SDK binds upsell actions only inside that container, so this one never fires and the shopper cannot decline the offer. Move it inside the data-next-upsell container it belongs to.",
+              "detail": {
+                "tag": "a",
+                "action": "skip"
+              }
+            }
+          ],
+          "warned": [],
+          "unknown_attributes": [],
+          "pages_scanned": 1,
+          "required_actions": [
+            {
+              "id": "repair_sdk_markup",
+              "kind": "edit",
+              "command": null,
+              "description": "Repair the markup each finding names (ORPHANED_UPSELL_ACTION on ./_site/example-campaign/downsell-1/index.html), rebuild, and re-run doctor. Not waivable: the markup provably does not do what it says."
+            }
+          ]
+        },
+        {
+          "id": "built_output.script_syntax",
+          "scope": "built_output.script_syntax",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "example-campaign",
+            "site_root": "./_site/example-campaign"
+          },
+          "waiver": null,
+          "status": "not_applicable",
+          "code": "built_output.script_syntax.not_applicable",
+          "reason": "No built page loads a campaign-owned script from disk (1 page(s) read).",
+          "findings": [],
+          "scripts_scanned": 0,
+          "scripts_unresolved": [],
+          "scripts_outside_site": [],
+          "warned": [],
+          "pages_scanned": 1,
+          "required_actions": []
+        }
+      ],
+      "qc_results": [
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/example-campaign/downsell-1/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "sdk_pin_unknown",
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/example-campaign/downsell-1/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:b63650d071f6b871d31c06a66fccdacff0fe9934ce6b8b03e556016d9aeb5b05",
+          "observation": {
+            "page": "_site/example-campaign/downsell-1/index.html",
+            "sdk_pin": null,
+            "sdk_pin_source": null,
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 510,
+            "candidates": 0
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "sdk_pin_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/example-campaign/downsell-1/index.html:anchor:",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/example-campaign/downsell-1/index.html",
+            "key": "anchor:"
+          },
+          "state_fingerprint": "sha256:4f5651814dd7176ae9570425a444144e172c36622685a58320535f1cc25b9618",
+          "observation": {
+            "page": "_site/example-campaign/downsell-1/index.html",
+            "target": "",
+            "outcome": "resolved",
+            "scripts_read": null,
+            "scripts_loaded": null
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/example-campaign/downsell-1/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "warning",
+          "reason_code": "favicon_missing",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/example-campaign/downsell-1/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:9a2725e1a6d49d6e4b2265177c38bc4c8db3d3f2a06da4473c44adc7093e9818",
+          "observation": {
+            "page": "_site/example-campaign/downsell-1/index.html",
+            "favicon": false
+          },
+          "members": [],
+          "accept_eligible": true,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/example-campaign/downsell-1/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "warning",
+          "reason_code": "og_title_missing",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/example-campaign/downsell-1/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:b329ee66771a9dbf126c06a7b57aefca2082aea61d18a03925e2c383b26ce9eb",
+          "observation": {
+            "page": "_site/example-campaign/downsell-1/index.html",
+            "og": {
+              "title": false,
+              "description": false,
+              "image": "absent",
+              "image_target": null
+            }
+          },
+          "members": [],
+          "accept_eligible": true,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/example-campaign/downsell-1/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "warning",
+          "reason_code": "og_description_missing",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/example-campaign/downsell-1/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:66986f367307f104a7e7c0bb051e80dd2f27cfdbcd26611e7665246119c9b427",
+          "observation": {
+            "page": "_site/example-campaign/downsell-1/index.html",
+            "og": {
+              "title": false,
+              "description": false,
+              "image": "absent",
+              "image_target": null
+            }
+          },
+          "members": [],
+          "accept_eligible": true,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/example-campaign/downsell-1/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "warning",
+          "reason_code": "og_image_missing",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/example-campaign/downsell-1/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:e7eed9028edb6ddd17bb15d76af89a023977bde6d879410d12b0c9e871129fdc",
+          "observation": {
+            "page": "_site/example-campaign/downsell-1/index.html",
+            "og": {
+              "title": false,
+              "description": false,
+              "image": "absent",
+              "image_target": null
+            }
+          },
+          "members": [],
+          "accept_eligible": true,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/example-campaign/downsell-1/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/example-campaign/downsell-1/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:e17fa87204ccf43c8aa0dc1ceb973e3a424a7b39223472345235dbdf7cf37ae2",
+          "observation": {
+            "page": "_site/example-campaign/downsell-1/index.html",
+            "tailwind_cdn": 0,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/example-campaign/downsell-1/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/example-campaign/downsell-1/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:2a992e93fb88d57b619030abe81446af3c3ad1e891c63aa4f65c1193521a7512",
+          "observation": {
+            "page": "_site/example-campaign/downsell-1/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/example-campaign/downsell-1/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/example-campaign/downsell-1/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:688fb0fed06dfafa84450e0c1033e99dc8301d85b85a6e88a3963cef4719749d",
+          "observation": {
+            "page": "_site/example-campaign/downsell-1/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        }
+      ],
+      "brand_contract": {
+        "state": "no_family",
+        "family": null
+      },
+      "synthesized_packet": {
+        "schema_version": "campaign-runtime-build-packet/v0",
+        "_synthesized": {
+          "from": "built_site",
+          "note": "Minimal packet auto-emitted from a built _site/. Not a full Build Packet: source_html and assembly provenance are absent.",
+          "site_root": "<toolkit>/fixtures/sdk-markup/orphaned-upsell-action/bad/_site",
+          "campaign_dir": "<toolkit>/fixtures/sdk-markup/orphaned-upsell-action/bad/_site/example-campaign",
+          "html_count": 1
+        },
+        "campaign": {
+          "public_route_slug": "example-campaign",
+          "allowed_domains_confirmed": false
+        },
+        "spec": {
+          "map_id": "example-campaign"
+        },
+        "assembly": {
+          "target_repo": "<toolkit>/fixtures/sdk-markup/orphaned-upsell-action/bad",
+          "output_dir": "_site/example-campaign",
+          "template_family": "undecided"
+        },
+        "deploy": {
+          "target": "unknown",
+          "preview_url": null
+        },
+        "qa": {},
+        "pages": [
+          {
+            "page_id": "downsell-1",
+            "type": "downsell",
+            "route": "downsell-1"
+          }
+        ]
+      }
+    },
+    "scope": {
+      "slug": "example-campaign",
+      "html_count": 1,
+      "pages": [
+        {
+          "page_id": "downsell-1",
+          "type": "downsell",
+          "route": "downsell-1"
+        }
+      ],
+      "campaign_dir": "<toolkit>/fixtures/sdk-markup/orphaned-upsell-action/bad/_site/example-campaign"
+    },
+    "synthesized_packet": {
+      "schema_version": "campaign-runtime-build-packet/v0",
+      "_synthesized": {
+        "from": "built_site",
+        "note": "Minimal packet auto-emitted from a built _site/. Not a full Build Packet: source_html and assembly provenance are absent.",
+        "site_root": "<toolkit>/fixtures/sdk-markup/orphaned-upsell-action/bad/_site",
+        "campaign_dir": "<toolkit>/fixtures/sdk-markup/orphaned-upsell-action/bad/_site/example-campaign",
+        "html_count": 1
+      },
+      "campaign": {
+        "public_route_slug": "example-campaign",
+        "allowed_domains_confirmed": false
+      },
+      "spec": {
+        "map_id": "example-campaign"
+      },
+      "assembly": {
+        "target_repo": "<toolkit>/fixtures/sdk-markup/orphaned-upsell-action/bad",
+        "output_dir": "_site/example-campaign",
+        "template_family": "undecided"
+      },
+      "deploy": {
+        "target": "unknown",
+        "preview_url": null
+      },
+      "qa": {},
+      "pages": [
+        {
+          "page_id": "downsell-1",
+          "type": "downsell",
+          "route": "downsell-1"
+        }
+      ]
+    },
+    "emitted_packet_path": null,
+    "next": {
+      "stage": "doctor-blocked",
+      "status": "blocked",
+      "stage_blocked": false,
+      "owner": "operator",
+      "default_skill": "next-campaigns-os",
+      "command": "campaigns-os doctor --packet <packet>",
+      "reason": "Doctor reported 1 blocker(s); resolve them before any stage runs.",
+      "actions": [
+        "Resolve packet blockers before assembly."
+      ],
+      "blocked_stages": [
+        "setup",
+        "build",
+        "polish",
+        "deploy",
+        "qa"
+      ]
+    }
+  }
+}

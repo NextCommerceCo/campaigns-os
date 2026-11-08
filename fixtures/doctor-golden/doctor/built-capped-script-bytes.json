@@ -1,0 +1,1150 @@
+{
+  "base_sha": "e1c5bc9c6dc2745d6f2bd54f37f89319ce7f915a",
+  "case": "capped-script-bytes",
+  "entry": "built",
+  "description": "capped: one page's local script is exactly 1 MiB (read: review), another page's is 1 MiB + 1 byte (script_unreadable)",
+  "output": {
+    "ok": true,
+    "status": "ready_with_warnings",
+    "mode": "built_site",
+    "errors": [],
+    "warnings": [
+      {
+        "code": "assembly.template_family",
+        "message": "No --family given; the residue/placeholder-text/demo-asset gates need a family brand contract to run. Pass --family <family> (the family the campaign was built from)."
+      },
+      {
+        "code": "built_output.smoke_qc.anchor_target_possibly_script_created",
+        "message": "smoke_qc review on _site/example-campaign/at-cap.html (anchor:later-a): anchor_target_possibly_script_created.",
+        "detail": {
+          "qc_result": {
+            "schema": "campaigns-os-qc-result/v0",
+            "id": "smoke_qc:_site/example-campaign/at-cap.html:anchor:later-a",
+            "check": "smoke_qc",
+            "leg": "doctor",
+            "result": "review",
+            "reason_code": "anchor_target_possibly_script_created",
+            "subject": {
+              "check": "smoke_qc",
+              "page": "_site/example-campaign/at-cap.html",
+              "key": "anchor:later-a"
+            },
+            "state_fingerprint": "sha256:0d30e8400708e7bd09263131386245e6049fc3af9412370a50b03c06d0dd22c4",
+            "observation": {
+              "page": "_site/example-campaign/at-cap.html",
+              "target": "later-a",
+              "outcome": "in_script",
+              "scripts_read": 1,
+              "scripts_loaded": 1
+            },
+            "members": [],
+            "accept_eligible": false,
+            "coverage": {
+              "observed": 1,
+              "expected": 1,
+              "limits": []
+            },
+            "measured_at": "2026-01-01T00:00:00.000Z",
+            "producer": "campaigns-os doctor"
+          }
+        }
+      },
+      {
+        "code": "built_output.smoke_qc.favicon_missing",
+        "message": "smoke_qc warning on _site/example-campaign/at-cap.html (favicon:link): favicon_missing.",
+        "detail": {
+          "qc_result": {
+            "schema": "campaigns-os-qc-result/v0",
+            "id": "smoke_qc:_site/example-campaign/at-cap.html:favicon:link",
+            "check": "smoke_qc",
+            "leg": "doctor",
+            "result": "warning",
+            "reason_code": "favicon_missing",
+            "subject": {
+              "check": "smoke_qc",
+              "page": "_site/example-campaign/at-cap.html",
+              "key": "favicon:link"
+            },
+            "state_fingerprint": "sha256:c78f5cf40daf88f9ff1fda85d52415880c76bc3ca18e8dce5d020fd1f38de53c",
+            "observation": {
+              "page": "_site/example-campaign/at-cap.html",
+              "favicon": false
+            },
+            "members": [],
+            "accept_eligible": true,
+            "coverage": {
+              "observed": 1,
+              "expected": 1,
+              "limits": []
+            },
+            "measured_at": "2026-01-01T00:00:00.000Z",
+            "producer": "campaigns-os doctor"
+          }
+        }
+      },
+      {
+        "code": "built_output.smoke_qc.og_title_missing",
+        "message": "smoke_qc warning on _site/example-campaign/at-cap.html (og:title): og_title_missing.",
+        "detail": {
+          "qc_result": {
+            "schema": "campaigns-os-qc-result/v0",
+            "id": "smoke_qc:_site/example-campaign/at-cap.html:og:title",
+            "check": "smoke_qc",
+            "leg": "doctor",
+            "result": "warning",
+            "reason_code": "og_title_missing",
+            "subject": {
+              "check": "smoke_qc",
+              "page": "_site/example-campaign/at-cap.html",
+              "key": "og:title"
+            },
+            "state_fingerprint": "sha256:491bcf2978c5c54190923c0787d45d1ed5c81a049948f87b45f82afdd3eb90f5",
+            "observation": {
+              "page": "_site/example-campaign/at-cap.html",
+              "og": {
+                "title": false,
+                "description": false,
+                "image": "absent",
+                "image_target": null
+              }
+            },
+            "members": [],
+            "accept_eligible": true,
+            "coverage": {
+              "observed": 1,
+              "expected": 1,
+              "limits": []
+            },
+            "measured_at": "2026-01-01T00:00:00.000Z",
+            "producer": "campaigns-os doctor"
+          }
+        }
+      },
+      {
+        "code": "built_output.smoke_qc.og_description_missing",
+        "message": "smoke_qc warning on _site/example-campaign/at-cap.html (og:description): og_description_missing.",
+        "detail": {
+          "qc_result": {
+            "schema": "campaigns-os-qc-result/v0",
+            "id": "smoke_qc:_site/example-campaign/at-cap.html:og:description",
+            "check": "smoke_qc",
+            "leg": "doctor",
+            "result": "warning",
+            "reason_code": "og_description_missing",
+            "subject": {
+              "check": "smoke_qc",
+              "page": "_site/example-campaign/at-cap.html",
+              "key": "og:description"
+            },
+            "state_fingerprint": "sha256:200bd8856ebf3fd7fe42305c3f489034a97a1065d06ee736e5cc9c4fc3bc228d",
+            "observation": {
+              "page": "_site/example-campaign/at-cap.html",
+              "og": {
+                "title": false,
+                "description": false,
+                "image": "absent",
+                "image_target": null
+              }
+            },
+            "members": [],
+            "accept_eligible": true,
+            "coverage": {
+              "observed": 1,
+              "expected": 1,
+              "limits": []
+            },
+            "measured_at": "2026-01-01T00:00:00.000Z",
+            "producer": "campaigns-os doctor"
+          }
+        }
+      },
+      {
+        "code": "built_output.smoke_qc.og_image_missing",
+        "message": "smoke_qc warning on _site/example-campaign/at-cap.html (og:image): og_image_missing.",
+        "detail": {
+          "qc_result": {
+            "schema": "campaigns-os-qc-result/v0",
+            "id": "smoke_qc:_site/example-campaign/at-cap.html:og:image",
+            "check": "smoke_qc",
+            "leg": "doctor",
+            "result": "warning",
+            "reason_code": "og_image_missing",
+            "subject": {
+              "check": "smoke_qc",
+              "page": "_site/example-campaign/at-cap.html",
+              "key": "og:image"
+            },
+            "state_fingerprint": "sha256:098c40d85a428940565f1d018bc74a3b91bb77bd42f1198934711912c641f969",
+            "observation": {
+              "page": "_site/example-campaign/at-cap.html",
+              "og": {
+                "title": false,
+                "description": false,
+                "image": "absent",
+                "image_target": null
+              }
+            },
+            "members": [],
+            "accept_eligible": true,
+            "coverage": {
+              "observed": 1,
+              "expected": 1,
+              "limits": []
+            },
+            "measured_at": "2026-01-01T00:00:00.000Z",
+            "producer": "campaigns-os doctor"
+          }
+        }
+      },
+      {
+        "code": "built_output.smoke_qc.favicon_missing",
+        "message": "smoke_qc warning on _site/example-campaign/over-cap.html (favicon:link): favicon_missing.",
+        "detail": {
+          "qc_result": {
+            "schema": "campaigns-os-qc-result/v0",
+            "id": "smoke_qc:_site/example-campaign/over-cap.html:favicon:link",
+            "check": "smoke_qc",
+            "leg": "doctor",
+            "result": "warning",
+            "reason_code": "favicon_missing",
+            "subject": {
+              "check": "smoke_qc",
+              "page": "_site/example-campaign/over-cap.html",
+              "key": "favicon:link"
+            },
+            "state_fingerprint": "sha256:6849a1b3ed42c8df547812be16b7c99a1a7bd7161426402a90c3628e25715247",
+            "observation": {
+              "page": "_site/example-campaign/over-cap.html",
+              "favicon": false
+            },
+            "members": [],
+            "accept_eligible": true,
+            "coverage": {
+              "observed": 1,
+              "expected": 1,
+              "limits": []
+            },
+            "measured_at": "2026-01-01T00:00:00.000Z",
+            "producer": "campaigns-os doctor"
+          }
+        }
+      },
+      {
+        "code": "built_output.smoke_qc.og_title_missing",
+        "message": "smoke_qc warning on _site/example-campaign/over-cap.html (og:title): og_title_missing.",
+        "detail": {
+          "qc_result": {
+            "schema": "campaigns-os-qc-result/v0",
+            "id": "smoke_qc:_site/example-campaign/over-cap.html:og:title",
+            "check": "smoke_qc",
+            "leg": "doctor",
+            "result": "warning",
+            "reason_code": "og_title_missing",
+            "subject": {
+              "check": "smoke_qc",
+              "page": "_site/example-campaign/over-cap.html",
+              "key": "og:title"
+            },
+            "state_fingerprint": "sha256:76b65726a7b797e38c1bead0d97b0d48b01017c1b2659d14c97ea484bb1c6b8b",
+            "observation": {
+              "page": "_site/example-campaign/over-cap.html",
+              "og": {
+                "title": false,
+                "description": false,
+                "image": "absent",
+                "image_target": null
+              }
+            },
+            "members": [],
+            "accept_eligible": true,
+            "coverage": {
+              "observed": 1,
+              "expected": 1,
+              "limits": []
+            },
+            "measured_at": "2026-01-01T00:00:00.000Z",
+            "producer": "campaigns-os doctor"
+          }
+        }
+      },
+      {
+        "code": "built_output.smoke_qc.og_description_missing",
+        "message": "smoke_qc warning on _site/example-campaign/over-cap.html (og:description): og_description_missing.",
+        "detail": {
+          "qc_result": {
+            "schema": "campaigns-os-qc-result/v0",
+            "id": "smoke_qc:_site/example-campaign/over-cap.html:og:description",
+            "check": "smoke_qc",
+            "leg": "doctor",
+            "result": "warning",
+            "reason_code": "og_description_missing",
+            "subject": {
+              "check": "smoke_qc",
+              "page": "_site/example-campaign/over-cap.html",
+              "key": "og:description"
+            },
+            "state_fingerprint": "sha256:375deb57af60b19bda83c921dd9607d2e1196ea861ff47eb41cb51d514779ffb",
+            "observation": {
+              "page": "_site/example-campaign/over-cap.html",
+              "og": {
+                "title": false,
+                "description": false,
+                "image": "absent",
+                "image_target": null
+              }
+            },
+            "members": [],
+            "accept_eligible": true,
+            "coverage": {
+              "observed": 1,
+              "expected": 1,
+              "limits": []
+            },
+            "measured_at": "2026-01-01T00:00:00.000Z",
+            "producer": "campaigns-os doctor"
+          }
+        }
+      },
+      {
+        "code": "built_output.smoke_qc.og_image_missing",
+        "message": "smoke_qc warning on _site/example-campaign/over-cap.html (og:image): og_image_missing.",
+        "detail": {
+          "qc_result": {
+            "schema": "campaigns-os-qc-result/v0",
+            "id": "smoke_qc:_site/example-campaign/over-cap.html:og:image",
+            "check": "smoke_qc",
+            "leg": "doctor",
+            "result": "warning",
+            "reason_code": "og_image_missing",
+            "subject": {
+              "check": "smoke_qc",
+              "page": "_site/example-campaign/over-cap.html",
+              "key": "og:image"
+            },
+            "state_fingerprint": "sha256:e9481043de99dee334e1f168574c22b038a73b77ebbb717be2e9d5a5671d67df",
+            "observation": {
+              "page": "_site/example-campaign/over-cap.html",
+              "og": {
+                "title": false,
+                "description": false,
+                "image": "absent",
+                "image_target": null
+              }
+            },
+            "members": [],
+            "accept_eligible": true,
+            "coverage": {
+              "observed": 1,
+              "expected": 1,
+              "limits": []
+            },
+            "measured_at": "2026-01-01T00:00:00.000Z",
+            "producer": "campaigns-os doctor"
+          }
+        }
+      }
+    ],
+    "ready": [
+      "Resolved 2 built page(s) from ./_site/example-campaign (slug \"example-campaign\")",
+      "Built output has no generic starter placeholder or promo-code residue",
+      "Upsell selector-scope checkpoint not applicable: no built upsell/downsell page to scan yet.",
+      "All 2 built page(s) agree on campaign identity (next-funnel not declared, API key not declared)",
+      "SDK markup checks passed on 2 built page(s)",
+      "All 2 campaign-owned script(s) loaded by built pages parse"
+    ],
+    "derived": {
+      "mode": "built_site",
+      "map_id": "example-campaign",
+      "public_route_slug": "example-campaign",
+      "template_family": null,
+      "target_repo": "<fixture>",
+      "target_output_dir": "<fixture>/_site/example-campaign",
+      "site_root": "<fixture>/_site",
+      "built_pages": [
+        {
+          "page_id": "at-cap",
+          "type": "page",
+          "route": "at-cap"
+        },
+        {
+          "page_id": "over-cap",
+          "type": "page",
+          "route": "over-cap"
+        }
+      ],
+      "doctor_checks": [
+        "built_output.upsell_selector_scope",
+        "built_output.campaign_identity",
+        "built_output.sdk_markup",
+        "built_output.script_syntax",
+        "built_output.cart_placeholders",
+        "built_output.smoke_qc"
+      ],
+      "checkpoint_gates": [
+        {
+          "id": "built_output.upsell_selector_scope",
+          "scope": "built_output.upsell_selector_scope",
+          "status": "not_applicable",
+          "code": "built_output.upsell_selector_scope.not_applicable",
+          "reason": "No built upsell or downsell page was available to scan; selector scope becomes mandatory once one is built.",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "example-campaign",
+            "site_root": "./_site/example-campaign"
+          },
+          "state": {
+            "findings": [],
+            "warned": []
+          },
+          "state_fingerprint": null,
+          "findings": [],
+          "warned": [],
+          "pages_scanned": 0,
+          "selectors_scanned": 0,
+          "waiver": null,
+          "waiver_assessment": {
+            "active": null,
+            "inert_counts": {
+              "stale": 0,
+              "foreign": 0,
+              "malformed": 0,
+              "expired": 0
+            }
+          },
+          "required_actions": []
+        },
+        {
+          "id": "built_output.campaign_identity",
+          "scope": "built_output.campaign_identity",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "example-campaign",
+            "site_root": "./_site/example-campaign"
+          },
+          "waiver": null,
+          "status": "pass",
+          "code": "built_output.campaign_identity.pass",
+          "reason": "All 2 built page(s) agree on campaign identity (API key not declared, next-funnel (none)).",
+          "findings": [],
+          "pages_scanned": 2,
+          "pages_skipped": [],
+          "identity": {
+            "api_key": null,
+            "api_key_source": null,
+            "funnel": null
+          },
+          "required_actions": []
+        },
+        {
+          "id": "built_output.sdk_markup",
+          "scope": "built_output.sdk_markup",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "example-campaign",
+            "site_root": "./_site/example-campaign"
+          },
+          "waiver": null,
+          "sdk_attribute_index_version": "0.4.43",
+          "campaign_sdk_version": null,
+          "status": "pass",
+          "code": "built_output.sdk_markup.pass",
+          "reason": "SDK markup checks passed on 2 built page(s).",
+          "findings": [],
+          "warned": [],
+          "unknown_attributes": [],
+          "pages_scanned": 2,
+          "required_actions": []
+        },
+        {
+          "id": "built_output.script_syntax",
+          "scope": "built_output.script_syntax",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "example-campaign",
+            "site_root": "./_site/example-campaign"
+          },
+          "waiver": null,
+          "status": "pass",
+          "code": "built_output.script_syntax.pass",
+          "reason": "All 2 campaign-owned script(s) loaded by 2 built page(s) parse.",
+          "findings": [],
+          "scripts_scanned": 2,
+          "scripts_unresolved": [],
+          "scripts_outside_site": [],
+          "warned": [],
+          "pages_scanned": 2,
+          "required_actions": []
+        }
+      ],
+      "qc_results": [
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/example-campaign/at-cap.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "sdk_pin_unknown",
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/example-campaign/at-cap.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:7086ea51928dcc1ab8ac0f78ae8de8f9ce3ad12a8e7f08e1585be2d50c3166b4",
+          "observation": {
+            "page": "_site/example-campaign/at-cap.html",
+            "sdk_pin": null,
+            "sdk_pin_source": null,
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 190,
+            "candidates": 0
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "sdk_pin_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/example-campaign/over-cap.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "sdk_pin_unknown",
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/example-campaign/over-cap.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:3147d45ccdd491504c5a5dd82b309230df9ea842b1c2adc0946e7ee7c7860963",
+          "observation": {
+            "page": "_site/example-campaign/over-cap.html",
+            "sdk_pin": null,
+            "sdk_pin_source": null,
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 192,
+            "candidates": 0
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "sdk_pin_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/example-campaign/at-cap.html:anchor:later-a",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "review",
+          "reason_code": "anchor_target_possibly_script_created",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/example-campaign/at-cap.html",
+            "key": "anchor:later-a"
+          },
+          "state_fingerprint": "sha256:0d30e8400708e7bd09263131386245e6049fc3af9412370a50b03c06d0dd22c4",
+          "observation": {
+            "page": "_site/example-campaign/at-cap.html",
+            "target": "later-a",
+            "outcome": "in_script",
+            "scripts_read": 1,
+            "scripts_loaded": 1
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/example-campaign/at-cap.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "warning",
+          "reason_code": "favicon_missing",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/example-campaign/at-cap.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:c78f5cf40daf88f9ff1fda85d52415880c76bc3ca18e8dce5d020fd1f38de53c",
+          "observation": {
+            "page": "_site/example-campaign/at-cap.html",
+            "favicon": false
+          },
+          "members": [],
+          "accept_eligible": true,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/example-campaign/at-cap.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "warning",
+          "reason_code": "og_title_missing",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/example-campaign/at-cap.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:491bcf2978c5c54190923c0787d45d1ed5c81a049948f87b45f82afdd3eb90f5",
+          "observation": {
+            "page": "_site/example-campaign/at-cap.html",
+            "og": {
+              "title": false,
+              "description": false,
+              "image": "absent",
+              "image_target": null
+            }
+          },
+          "members": [],
+          "accept_eligible": true,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/example-campaign/at-cap.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "warning",
+          "reason_code": "og_description_missing",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/example-campaign/at-cap.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:200bd8856ebf3fd7fe42305c3f489034a97a1065d06ee736e5cc9c4fc3bc228d",
+          "observation": {
+            "page": "_site/example-campaign/at-cap.html",
+            "og": {
+              "title": false,
+              "description": false,
+              "image": "absent",
+              "image_target": null
+            }
+          },
+          "members": [],
+          "accept_eligible": true,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/example-campaign/at-cap.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "warning",
+          "reason_code": "og_image_missing",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/example-campaign/at-cap.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:098c40d85a428940565f1d018bc74a3b91bb77bd42f1198934711912c641f969",
+          "observation": {
+            "page": "_site/example-campaign/at-cap.html",
+            "og": {
+              "title": false,
+              "description": false,
+              "image": "absent",
+              "image_target": null
+            }
+          },
+          "members": [],
+          "accept_eligible": true,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/example-campaign/at-cap.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/example-campaign/at-cap.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:42c83aa9d4aef7bb59a8d7708b4c684f77af0340765a8a10ba00739f5fe2af12",
+          "observation": {
+            "page": "_site/example-campaign/at-cap.html",
+            "tailwind_cdn": 0,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/example-campaign/at-cap.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/example-campaign/at-cap.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:8cf9aa159f88e2d19db04cfde3b709cfb27abb5f37398f90aea9335a035ce0e5",
+          "observation": {
+            "page": "_site/example-campaign/at-cap.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/example-campaign/at-cap.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/example-campaign/at-cap.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:a215e7c9aa06525a9fb4691bd053f81a936f94ae10ab1f112c76c4f3a03858d7",
+          "observation": {
+            "page": "_site/example-campaign/at-cap.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/example-campaign/over-cap.html:anchor:later-b",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "script_unreadable",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/example-campaign/over-cap.html",
+            "key": "anchor:later-b"
+          },
+          "state_fingerprint": "sha256:06265378c9a939c803d71cf36c5f7c161adb6ad95d3e1b9fcb442ef1fd7190cf",
+          "observation": {
+            "page": "_site/example-campaign/over-cap.html",
+            "target": "later-b",
+            "outcome": "script_unreadable",
+            "scripts_read": 0,
+            "scripts_loaded": 1
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "script_unreadable"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/example-campaign/over-cap.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "warning",
+          "reason_code": "favicon_missing",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/example-campaign/over-cap.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:6849a1b3ed42c8df547812be16b7c99a1a7bd7161426402a90c3628e25715247",
+          "observation": {
+            "page": "_site/example-campaign/over-cap.html",
+            "favicon": false
+          },
+          "members": [],
+          "accept_eligible": true,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/example-campaign/over-cap.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "warning",
+          "reason_code": "og_title_missing",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/example-campaign/over-cap.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:76b65726a7b797e38c1bead0d97b0d48b01017c1b2659d14c97ea484bb1c6b8b",
+          "observation": {
+            "page": "_site/example-campaign/over-cap.html",
+            "og": {
+              "title": false,
+              "description": false,
+              "image": "absent",
+              "image_target": null
+            }
+          },
+          "members": [],
+          "accept_eligible": true,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/example-campaign/over-cap.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "warning",
+          "reason_code": "og_description_missing",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/example-campaign/over-cap.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:375deb57af60b19bda83c921dd9607d2e1196ea861ff47eb41cb51d514779ffb",
+          "observation": {
+            "page": "_site/example-campaign/over-cap.html",
+            "og": {
+              "title": false,
+              "description": false,
+              "image": "absent",
+              "image_target": null
+            }
+          },
+          "members": [],
+          "accept_eligible": true,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/example-campaign/over-cap.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "warning",
+          "reason_code": "og_image_missing",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/example-campaign/over-cap.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:e9481043de99dee334e1f168574c22b038a73b77ebbb717be2e9d5a5671d67df",
+          "observation": {
+            "page": "_site/example-campaign/over-cap.html",
+            "og": {
+              "title": false,
+              "description": false,
+              "image": "absent",
+              "image_target": null
+            }
+          },
+          "members": [],
+          "accept_eligible": true,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/example-campaign/over-cap.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/example-campaign/over-cap.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:bf15f3d9cd91e4e54420b01dc84a41793ab01b63b9a70ba92f071f2628acfa15",
+          "observation": {
+            "page": "_site/example-campaign/over-cap.html",
+            "tailwind_cdn": 0,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/example-campaign/over-cap.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/example-campaign/over-cap.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:ec16c389b6812a22f0d5aff880aab9985214c658cd31e02a9b4a51e2d607266a",
+          "observation": {
+            "page": "_site/example-campaign/over-cap.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/example-campaign/over-cap.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/example-campaign/over-cap.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:f743d6781e5b1337d7e55d3db50b352102ac5bb4b4fe5c3214d5892f44d4f494",
+          "observation": {
+            "page": "_site/example-campaign/over-cap.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        }
+      ],
+      "brand_contract": {
+        "state": "no_family",
+        "family": null
+      },
+      "synthesized_packet": {
+        "schema_version": "campaign-runtime-build-packet/v0",
+        "_synthesized": {
+          "from": "built_site",
+          "note": "Minimal packet auto-emitted from a built _site/. Not a full Build Packet: source_html and assembly provenance are absent.",
+          "site_root": "<fixture>/_site",
+          "campaign_dir": "<fixture>/_site/example-campaign",
+          "html_count": 2
+        },
+        "campaign": {
+          "public_route_slug": "example-campaign",
+          "allowed_domains_confirmed": false
+        },
+        "spec": {
+          "map_id": "example-campaign"
+        },
+        "assembly": {
+          "target_repo": "<fixture>",
+          "output_dir": "_site/example-campaign",
+          "template_family": "undecided"
+        },
+        "deploy": {
+          "target": "unknown",
+          "preview_url": null
+        },
+        "qa": {},
+        "pages": [
+          {
+            "page_id": "at-cap",
+            "type": "page",
+            "route": "at-cap"
+          },
+          {
+            "page_id": "over-cap",
+            "type": "page",
+            "route": "over-cap"
+          }
+        ]
+      }
+    },
+    "scope": {
+      "slug": "example-campaign",
+      "html_count": 2,
+      "pages": [
+        {
+          "page_id": "at-cap",
+          "type": "page",
+          "route": "at-cap"
+        },
+        {
+          "page_id": "over-cap",
+          "type": "page",
+          "route": "over-cap"
+        }
+      ],
+      "campaign_dir": "<fixture>/_site/example-campaign"
+    },
+    "synthesized_packet": {
+      "schema_version": "campaign-runtime-build-packet/v0",
+      "_synthesized": {
+        "from": "built_site",
+        "note": "Minimal packet auto-emitted from a built _site/. Not a full Build Packet: source_html and assembly provenance are absent.",
+        "site_root": "<fixture>/_site",
+        "campaign_dir": "<fixture>/_site/example-campaign",
+        "html_count": 2
+      },
+      "campaign": {
+        "public_route_slug": "example-campaign",
+        "allowed_domains_confirmed": false
+      },
+      "spec": {
+        "map_id": "example-campaign"
+      },
+      "assembly": {
+        "target_repo": "<fixture>",
+        "output_dir": "_site/example-campaign",
+        "template_family": "undecided"
+      },
+      "deploy": {
+        "target": "unknown",
+        "preview_url": null
+      },
+      "qa": {},
+      "pages": [
+        {
+          "page_id": "at-cap",
+          "type": "page",
+          "route": "at-cap"
+        },
+        {
+          "page_id": "over-cap",
+          "type": "page",
+          "route": "over-cap"
+        }
+      ]
+    },
+    "emitted_packet_path": null,
+    "next": {
+      "stage": "setup",
+      "status": "ready_with_warnings",
+      "stage_blocked": false,
+      "owner": "setup",
+      "default_skill": "next-campaigns-os-setup",
+      "command": "campaigns-os next setup --packet <packet>",
+      "reason": "No assembly report on disk yet. Start with setup (assembly report should appear after prepare-build).",
+      "actions": [
+        "Run campaigns-os next setup --packet <packet>."
+      ],
+      "blocked_stages": []
+    }
+  }
+}

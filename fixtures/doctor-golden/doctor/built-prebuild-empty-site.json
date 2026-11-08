@@ -1,0 +1,33 @@
+{
+  "base_sha": "e1c5bc9c6dc2745d6f2bd54f37f89319ce7f915a",
+  "case": "prebuild-empty-site",
+  "entry": "built",
+  "description": "pre-build: _site exists with no campaign directory (built_site.scope early return)",
+  "output": {
+    "ok": false,
+    "status": "blocked",
+    "mode": "built_site",
+    "errors": [
+      {
+        "code": "built_site.scope",
+        "message": "No built HTML pages found under <fixture>/_site."
+      }
+    ],
+    "warnings": [],
+    "ready": [],
+    "derived": {
+      "mode": "built_site",
+      "scope": {
+        "ok": false,
+        "target_repo": "<fixture>",
+        "site_root": "<fixture>/_site",
+        "slug": "",
+        "campaign_dir": "<fixture>/_site",
+        "pages": [],
+        "html_count": 0,
+        "error": "No built HTML pages found under <fixture>/_site."
+      }
+    },
+    "next": null
+  }
+}

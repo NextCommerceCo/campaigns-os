@@ -1,0 +1,3854 @@
+{
+  "base_sha": "e1c5bc9c6dc2745d6f2bd54f37f89319ce7f915a",
+  "case": "certified-olympus-mv-single-step",
+  "entry": "built",
+  "description": "certified family olympus-mv-single-step rendered fixture, read in place with --family olympus-mv-single-step",
+  "output": {
+    "ok": true,
+    "status": "ready_with_warnings",
+    "mode": "built_site",
+    "errors": [],
+    "warnings": [
+      {
+        "code": "template_contract.placeholder_text_residue",
+        "message": "Assembly is recorded complete, but built output still contains literal template placeholder text (Product Name, Benefit one, Benefit two, Benefit three, Benefit four, Lorem, lorem ipsum): target:checkout/index.html:168 \"Product Name\"; target:checkout/index.html:289 \"Benefit one\"; target:checkout/index.html:293 \"Benefit two\"; target:checkout/index.html:297 \"Benefit three\"; target:checkout/index.html:301 \"Benefit four\"; target:checkout/index.html:373 \"Product Name\"; target:checkout/index.html:377 \"Lorem\"; target:checkout/index.html:377 \"lorem ipsum\"; plus 36 more. Replace with CampaignSpec/design copy; browser QA blocks on these terms."
+      },
+      {
+        "code": "template_contract.demo_asset_residue",
+        "message": "Assembly is recorded complete, but built output still references template demo assets (1x1_1.svg, 1x1_2.svg): target:checkout/index.html:194 \"1x1_1.svg\"; target:checkout/index.html:200 \"1x1_1.svg\"; target:checkout/index.html:206 \"1x1_1.svg\"; target:checkout/index.html:212 \"1x1_1.svg\"; target:checkout/index.html:218 \"1x1_1.svg\"; target:checkout/index.html:224 \"1x1_1.svg\"; target:checkout/index.html:240 \"1x1_2.svg\"; target:checkout/index.html:246 \"1x1_2.svg\"; plus 111 more. Re-skin to the campaign's real assets rather than shipping template placeholders."
+      },
+      {
+        "code": "template_contract.literal_residue",
+        "message": "Built output contains generic starter/template placeholders: target:checkout/index.html:86 \"XXCODE\"; target:js/promo-timer.js:305 \"XXCODE\"; target:upsell-bundle-stepper/index.html:153 \"Product Title\"; target:upsell-bundle-tier-cards/index.html:151 \"Product Title\"; target:upsell-bundle-tier-pills/index.html:193 \"Product Title\"; target:upsell-mv/index.html:208 \"Product Title\"; target:upsell-single/index.html:153 \"Product Title\". Replace these from CampaignSpec/API or remove dead template references."
+      }
+    ],
+    "ready": [
+      "Resolved 11 built page(s) from ./_site/olympus-mv-single-step (slug \"olympus-mv-single-step\")",
+      "Template brand/residue/pricing contract loaded for olympus-mv-single-step",
+      "Pricing CSS scan skipped: campaign assets/css directory does not exist (runs after setup/build)",
+      "Every bundle selector on 6 built post-purchase page(s) is scoped away from the live cart (8 selector(s) scanned)",
+      "All 11 built page(s) agree on campaign identity (next-funnel \"Olympus MV Single Step\", API key consistent)",
+      "SDK markup: 5 data-next-* name(s) not in the Campaign Cart 0.4.43 attribute index (advisory; the SDK does not read them): data-next-bind, data-next-catalog-component, data-next-content, data-next-modal-close, data-next-skeleton",
+      "SDK markup checks passed on 11 built page(s)",
+      "All 11 campaign-owned script(s) loaded by built pages parse",
+      "Cart placeholder check on 11 built page(s): 11 page(s) pass, 0 warning or review result(s)"
+    ],
+    "derived": {
+      "mode": "built_site",
+      "map_id": "olympus-mv-single-step",
+      "public_route_slug": "olympus-mv-single-step",
+      "template_family": "olympus-mv-single-step",
+      "target_repo": "<toolkit>/fixtures/certified-families",
+      "target_output_dir": "<toolkit>/fixtures/certified-families/_site/olympus-mv-single-step",
+      "site_root": "<toolkit>/fixtures/certified-families/_site",
+      "built_pages": [
+        {
+          "page_id": "checkout",
+          "type": "checkout",
+          "route": "checkout"
+        },
+        {
+          "page_id": "landing",
+          "type": "landing",
+          "route": "landing"
+        },
+        {
+          "page_id": "presell",
+          "type": "presell",
+          "route": "presell"
+        },
+        {
+          "page_id": "receipt",
+          "type": "receipt",
+          "route": "receipt"
+        },
+        {
+          "page_id": "upsell-bundle-stepper",
+          "type": "upsell",
+          "route": "upsell-bundle-stepper"
+        },
+        {
+          "page_id": "upsell-bundle-tier-cards",
+          "type": "upsell",
+          "route": "upsell-bundle-tier-cards"
+        },
+        {
+          "page_id": "upsell-bundle-tier-pills",
+          "type": "upsell",
+          "route": "upsell-bundle-tier-pills"
+        },
+        {
+          "page_id": "upsell-mv",
+          "type": "upsell",
+          "route": "upsell-mv"
+        },
+        {
+          "page_id": "upsell-single",
+          "type": "upsell",
+          "route": "upsell-single"
+        },
+        {
+          "page_id": "upsell-vsl",
+          "type": "upsell",
+          "route": "upsell-vsl"
+        },
+        {
+          "page_id": "variant-picker",
+          "type": "page",
+          "route": "variant-picker"
+        }
+      ],
+      "doctor_checks": [
+        "built_output.upsell_selector_scope",
+        "built_output.campaign_identity",
+        "built_output.sdk_markup",
+        "built_output.script_syntax",
+        "built_output.cart_placeholders",
+        "built_output.smoke_qc"
+      ],
+      "checkpoint_gates": [
+        {
+          "id": "built_output.upsell_selector_scope",
+          "scope": "built_output.upsell_selector_scope",
+          "status": "pass",
+          "code": "built_output.upsell_selector_scope.pass",
+          "reason": "Every bundle selector on 6 built post-purchase page(s) is scoped away from the live cart.",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "olympus-mv-single-step",
+            "site_root": "./_site/olympus-mv-single-step"
+          },
+          "state": {
+            "findings": []
+          },
+          "state_fingerprint": null,
+          "findings": [],
+          "warned": [],
+          "pages_scanned": 6,
+          "selectors_scanned": 8,
+          "waiver": null,
+          "waiver_assessment": {
+            "active": null,
+            "inert_counts": {
+              "stale": 0,
+              "foreign": 0,
+              "malformed": 0,
+              "expired": 0
+            }
+          },
+          "required_actions": []
+        },
+        {
+          "id": "built_output.campaign_identity",
+          "scope": "built_output.campaign_identity",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "olympus-mv-single-step",
+            "site_root": "./_site/olympus-mv-single-step"
+          },
+          "waiver": null,
+          "status": "pass",
+          "code": "built_output.campaign_identity.pass",
+          "reason": "All 11 built page(s) agree on campaign identity (API key present, next-funnel \"Olympus MV Single Step\").",
+          "findings": [],
+          "pages_scanned": 11,
+          "pages_skipped": [],
+          "identity": {
+            "api_key": "Fdm0h0Jcm8TfhkBvhIhP0xDQzc5F5Ev8oNHnlv91",
+            "api_key_source": "/olympus-mv-single-step/config.js nextConfig.apiKey",
+            "funnel": "Olympus MV Single Step"
+          },
+          "required_actions": []
+        },
+        {
+          "id": "built_output.sdk_markup",
+          "scope": "built_output.sdk_markup",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "olympus-mv-single-step",
+            "site_root": "./_site/olympus-mv-single-step"
+          },
+          "waiver": null,
+          "sdk_attribute_index_version": "0.4.43",
+          "campaign_sdk_version": null,
+          "status": "pass",
+          "code": "built_output.sdk_markup.pass",
+          "reason": "SDK markup checks passed on 11 built page(s).",
+          "findings": [],
+          "warned": [],
+          "unknown_attributes": [
+            {
+              "name": "data-next-bind",
+              "pages": [
+                "./_site/olympus-mv-single-step/upsell-mv/index.html"
+              ]
+            },
+            {
+              "name": "data-next-catalog-component",
+              "pages": [
+                "./_site/olympus-mv-single-step/checkout/index.html",
+                "./_site/olympus-mv-single-step/receipt/index.html",
+                "./_site/olympus-mv-single-step/upsell-bundle-stepper/index.html",
+                "./_site/olympus-mv-single-step/upsell-bundle-tier-cards/index.html",
+                "./_site/olympus-mv-single-step/upsell-bundle-tier-pills/index.html",
+                "./_site/olympus-mv-single-step/upsell-mv/index.html",
+                "./_site/olympus-mv-single-step/upsell-single/index.html",
+                "./_site/olympus-mv-single-step/upsell-vsl/index.html",
+                "./_site/olympus-mv-single-step/variant-picker/index.html"
+              ]
+            },
+            {
+              "name": "data-next-content",
+              "pages": [
+                "./_site/olympus-mv-single-step/receipt/index.html"
+              ]
+            },
+            {
+              "name": "data-next-modal-close",
+              "pages": [
+                "./_site/olympus-mv-single-step/checkout/index.html"
+              ]
+            },
+            {
+              "name": "data-next-skeleton",
+              "pages": [
+                "./_site/olympus-mv-single-step/receipt/index.html"
+              ]
+            }
+          ],
+          "pages_scanned": 11,
+          "required_actions": []
+        },
+        {
+          "id": "built_output.script_syntax",
+          "scope": "built_output.script_syntax",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "olympus-mv-single-step",
+            "site_root": "./_site/olympus-mv-single-step"
+          },
+          "waiver": null,
+          "status": "pass",
+          "code": "built_output.script_syntax.pass",
+          "reason": "All 11 campaign-owned script(s) loaded by 11 built page(s) parse.",
+          "findings": [],
+          "scripts_scanned": 11,
+          "scripts_unresolved": [],
+          "scripts_outside_site": [],
+          "warned": [],
+          "pages_scanned": 11,
+          "required_actions": []
+        }
+      ],
+      "qc_results": [
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/olympus-mv-single-step/checkout/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/olympus-mv-single-step/checkout/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:2dea9118dcec1e11722b801dbc6ca3d4ceda5bd4b5df444295678e024200fa65",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/checkout/index.html",
+            "sdk_pin": "0.4.43",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 105993,
+            "candidates": 30
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/olympus-mv-single-step/landing/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/olympus-mv-single-step/landing/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:b5b2880c00f7b36ee2fe17052101e7939f225d3cc5babd87093074c79f7331a5",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/landing/index.html",
+            "sdk_pin": "0.4.43",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 156465,
+            "candidates": 0
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/olympus-mv-single-step/presell/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/olympus-mv-single-step/presell/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:2fa36d8afda8429b0718886b001b66a9053850783b821bc90528c86aebc21750",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/presell/index.html",
+            "sdk_pin": "0.4.43",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 22131,
+            "candidates": 0
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/olympus-mv-single-step/receipt/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/olympus-mv-single-step/receipt/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:35232d6987f0588fecbd9d7dc83feed4d92af65bd9304151729caf7df0895338",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/receipt/index.html",
+            "sdk_pin": "0.4.43",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 29325,
+            "candidates": 8
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/olympus-mv-single-step/upsell-bundle-stepper/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/olympus-mv-single-step/upsell-bundle-stepper/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:d60fdf9d55a558c2cdeb3d612674577099ed3ae8326efbc3eaa6adb79e705e9b",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-bundle-stepper/index.html",
+            "sdk_pin": "0.4.43",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 30007,
+            "candidates": 0
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/olympus-mv-single-step/upsell-bundle-tier-cards/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/olympus-mv-single-step/upsell-bundle-tier-cards/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:c00dafc275c717275f7c7d74af122a16e0beb2d50df9ee8a3bf3acfe50f7d33a",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-bundle-tier-cards/index.html",
+            "sdk_pin": "0.4.43",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 31960,
+            "candidates": 0
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/olympus-mv-single-step/upsell-bundle-tier-pills/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/olympus-mv-single-step/upsell-bundle-tier-pills/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:3407e1b5d92b2215784a2b3c426b6232c9e126ed10424a25796873c946707269",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-bundle-tier-pills/index.html",
+            "sdk_pin": "0.4.43",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 31449,
+            "candidates": 0
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/olympus-mv-single-step/upsell-mv/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/olympus-mv-single-step/upsell-mv/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:4d842b9606bb27891d3005232f04a4a24b19a699644909e840a3c6f0caec6a6b",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-mv/index.html",
+            "sdk_pin": "0.4.43",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 27767,
+            "candidates": 1
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/olympus-mv-single-step/upsell-single/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/olympus-mv-single-step/upsell-single/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:225c2a09e546245e4b50a0e7d0569f16d34f5bda489ee878e8441bd7431a39ba",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-single/index.html",
+            "sdk_pin": "0.4.43",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 27223,
+            "candidates": 0
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/olympus-mv-single-step/upsell-vsl/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/olympus-mv-single-step/upsell-vsl/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:0fcaa8a2d21df34d6987c874474f0bf1717b62d18b33e853ab9e78cf3265b0b3",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-vsl/index.html",
+            "sdk_pin": "0.4.43",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 37225,
+            "candidates": 0
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/olympus-mv-single-step/variant-picker/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/olympus-mv-single-step/variant-picker/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:50fe508100064f40a181819aa19ee133cf5a9c84e21ab4e93049d5544bfba41e",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/variant-picker/index.html",
+            "sdk_pin": "0.4.43",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 14009,
+            "candidates": 1
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/checkout/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/checkout/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:271abc5799a3e4a034d6ef0b19459e40b3219176e1a7dc531bd4f0a157ca04f2",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/checkout/index.html",
+            "favicon": true
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/checkout/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/checkout/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:bded0c9fa2edc6555292e0efca12183c5f67aade0b3d501ba8cae874be06239d",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/checkout/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/checkout/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/checkout/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:b3948a10159095bc3142ace0ff859e37c7aee6d6f155efee39fc81cd2b8479c6",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/checkout/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/checkout/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/checkout/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:3d2b0a48e6d96e735387bacd750618b6c6d429ddee8d1478fc7b83ba30a30b06",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/checkout/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/checkout/index.html:og:image_target",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "og_image_base_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/checkout/index.html",
+            "key": "og:image_target"
+          },
+          "state_fingerprint": "sha256:cf6bb0543363b394b4446c74ebc69f4d4647f9bca07cab2ca54bfb42620ac2e7",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/checkout/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "og_image_base_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/checkout/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/checkout/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:408f2ca60a4a36038d014573c994a54312cd4ae6f3d645815edfc965fa45e126",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/checkout/index.html",
+            "tailwind_cdn": 0,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/checkout/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/checkout/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:b3c08e718a66fc32ff5a9aaaf00d94b8ee8a142146e09a16b9f6b8c88eb80c53",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/checkout/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/checkout/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/checkout/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:b4d9dafb95aceabfedbb1ca59e0d27ba323067d4d330b2f2291b6d1b5cb80ddb",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/checkout/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/landing/index.html:anchor:benefits",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/landing/index.html",
+            "key": "anchor:benefits"
+          },
+          "state_fingerprint": "sha256:f12648ce880396a3ee79776873bdae1d2df21a1214cde7cfbfab7434653241e6",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/landing/index.html",
+            "target": "benefits",
+            "outcome": "resolved",
+            "scripts_read": null,
+            "scripts_loaded": null
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/landing/index.html:anchor:ingredients",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/landing/index.html",
+            "key": "anchor:ingredients"
+          },
+          "state_fingerprint": "sha256:9d5a9f99c913a44ac16fd7da50a2d92ca15a1bc8de0ba17ef17dfde98d3a6592",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/landing/index.html",
+            "target": "ingredients",
+            "outcome": "resolved",
+            "scripts_read": null,
+            "scripts_loaded": null
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/landing/index.html:anchor:reviews",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/landing/index.html",
+            "key": "anchor:reviews"
+          },
+          "state_fingerprint": "sha256:d2faad4c0237ed6829c3d8a5738fda33646debce4e67fa194bc687c57fcecf4a",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/landing/index.html",
+            "target": "reviews",
+            "outcome": "resolved",
+            "scripts_read": null,
+            "scripts_loaded": null
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/landing/index.html:anchor:",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/landing/index.html",
+            "key": "anchor:"
+          },
+          "state_fingerprint": "sha256:39f67efa034b9819733191d7260d5f0f9859039d91c97f20486c5766b0de9181",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/landing/index.html",
+            "target": "",
+            "outcome": "resolved",
+            "scripts_read": null,
+            "scripts_loaded": null
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/landing/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/landing/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:6237bdbf5803677f4fb9c5e786ae3a5d7161804a7e212e83dae2628300c4630c",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/landing/index.html",
+            "favicon": true
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/landing/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/landing/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:740fc375dc43e46f3d7739048aca28716da0ae9508013c2599dafd243f5b7f09",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/landing/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/landing/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/landing/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:b28ef2b32940adcf1f87fe1b996cd1cba37b15a6b0db23124fcd3e6551e0bd15",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/landing/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/landing/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/landing/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:98319eec03a105ed78ced860cdc78f4bd756ed3623cbec1a3f6b347c551555cc",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/landing/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/landing/index.html:og:image_target",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "og_image_base_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/landing/index.html",
+            "key": "og:image_target"
+          },
+          "state_fingerprint": "sha256:eedef8bf908cfc49f99d6ad60f247006a5915167695ac8994cb1b953196b6052",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/landing/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "og_image_base_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/landing/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/landing/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:cfb2b2c4363f197841020bf2687b29d098472227f909e4b7b49d02afd867739a",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/landing/index.html",
+            "tailwind_cdn": 1,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/landing/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/landing/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:41e4abbeba9c5409f8ecaeb71d3aac10d8c52fa23b17b2998bdd946bee65b4bd",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/landing/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/landing/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/landing/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:ccbe0d3270e1204b46d3e96d3b9391e50806a529346c9f5a070f499cdce2ba6d",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/landing/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/presell/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/presell/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:6d7bca576174c64629aa784ae4e66be108b1a049ad11ce4d5841b0ae6b3e6432",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/presell/index.html",
+            "favicon": true
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/presell/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/presell/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:9aee190d79962fb0c318ca1b8b1d40d42127e01f9beb0770d3b0ce4857a7fcc8",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/presell/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/presell/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/presell/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:9b36476712dc89e5f75a27a6b104e9e0bb4deb58b09ac8dde55a58f462545c29",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/presell/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/presell/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/presell/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:bf4c9e4d77f98b4a1abed9bbc19df6db7bb48a1e34a43bc16a556fcfe1b50351",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/presell/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/presell/index.html:og:image_target",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "og_image_base_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/presell/index.html",
+            "key": "og:image_target"
+          },
+          "state_fingerprint": "sha256:f764bc05b7d45eb2c8930ec801ab132a933e8cdb460041206ff2de7564f43b9c",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/presell/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "og_image_base_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/presell/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/presell/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:180dba0f88653b224a849ab976b399ef7ee21e0ae93a6025e3d148f74673defe",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/presell/index.html",
+            "tailwind_cdn": 1,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/presell/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/presell/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:9ff28ddeb645024c50e82065b3ee3963e164bc6a652202d31a40131272db0a7a",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/presell/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/presell/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/presell/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:ea455977a47d41a5dca83dad585dbc464af5d48cb97f3bfb76ddf66d94452b0f",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/presell/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/receipt/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/receipt/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:9d1cef2e67c7f2b7b1d341216495a0575d9f531ab1a8433791ec523ad359b001",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/receipt/index.html",
+            "favicon": true
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/receipt/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/receipt/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:6730c2ad34a0a29b3de05526a3be553791505c52cffd67b72089be45fda8c19d",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/receipt/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/receipt/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/receipt/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:b19f378687a001d90f98a232869563b70bbc8c091af387f85c00396e09b7f28c",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/receipt/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/receipt/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/receipt/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:95f88e31a47c5944ecf752859659234f97df81e31e17d26e5dceff21935ff986",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/receipt/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/receipt/index.html:og:image_target",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "og_image_base_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/receipt/index.html",
+            "key": "og:image_target"
+          },
+          "state_fingerprint": "sha256:e719a00c1d8165ad7eb908a4a79530d5c93627856027a0fec610a8ffa00f7e59",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/receipt/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "og_image_base_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/receipt/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/receipt/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:00065863a351937ef671e9fce716593bd6070d997d40299dda6ebf5f95edbe34",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/receipt/index.html",
+            "tailwind_cdn": 0,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/receipt/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/receipt/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:ef8abdd4fc231d48db18516972dcdd4ef3f0a5550ae9e5f594ae8954c2d6e3a5",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/receipt/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/receipt/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/receipt/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:0d9770e75d6a0900795fffde19bd210c44c9a135c4efaead2e501360b98350b8",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/receipt/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-bundle-stepper/index.html:anchor:",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-bundle-stepper/index.html",
+            "key": "anchor:"
+          },
+          "state_fingerprint": "sha256:63a9368228c1c6318a15af22d317e05640a860511ccad8d0723ab61d358c91bc",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-bundle-stepper/index.html",
+            "target": "",
+            "outcome": "resolved",
+            "scripts_read": null,
+            "scripts_loaded": null
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-bundle-stepper/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-bundle-stepper/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:c76112e7d6f90cae63ffb5b9e8af29e6543d0d2b530ac6d0cd45ec14a8e3f31d",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-bundle-stepper/index.html",
+            "favicon": true
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-bundle-stepper/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-bundle-stepper/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:164e367a77a2601d393787c0f11f3bce04ff92d77bcd168781bddee7e3c2e855",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-bundle-stepper/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-bundle-stepper/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-bundle-stepper/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:0095b051e0da5464a4f6d1eec5f3bd418c7f19e0cb92f640e775ae3c4d391c0b",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-bundle-stepper/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-bundle-stepper/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-bundle-stepper/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:8ef229a049a933d077519adb25864830e9dffc9d0bac1ffda7cc26fb5d2bbaa9",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-bundle-stepper/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-bundle-stepper/index.html:og:image_target",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "og_image_base_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-bundle-stepper/index.html",
+            "key": "og:image_target"
+          },
+          "state_fingerprint": "sha256:7d94114a32470cf575b08a89c548ff711167ba118ebcd60e03da452a769cc9f1",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-bundle-stepper/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "og_image_base_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-bundle-stepper/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-bundle-stepper/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:7e0072c73676f2325dc577ddf831e05801baebdbfbc233d7a2200b6dad39d443",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-bundle-stepper/index.html",
+            "tailwind_cdn": 0,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-bundle-stepper/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-bundle-stepper/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:653d889f1bc7b181726fc7ad11012e331e29a1269656870ad77156a0988ca0af",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-bundle-stepper/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-bundle-stepper/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-bundle-stepper/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:93771ab234448f60ba9eae493c03e612fde0088aede9d2631733bf34a4fd6b91",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-bundle-stepper/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-bundle-tier-cards/index.html:anchor:",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-bundle-tier-cards/index.html",
+            "key": "anchor:"
+          },
+          "state_fingerprint": "sha256:13eb053fd686bbc2351a8e87bce7227d9437114b7672c1c8e3dc373e73c56558",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-bundle-tier-cards/index.html",
+            "target": "",
+            "outcome": "resolved",
+            "scripts_read": null,
+            "scripts_loaded": null
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-bundle-tier-cards/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-bundle-tier-cards/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:4cd37b45e9e15b3a73dda123030fdb94f02ea5636f1c0ed25bbb0ebb7b22538d",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-bundle-tier-cards/index.html",
+            "favicon": true
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-bundle-tier-cards/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-bundle-tier-cards/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:3db67b7d1f341836ed73b1aaee61268222619423fcb836615b0725e44e1aeb3f",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-bundle-tier-cards/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-bundle-tier-cards/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-bundle-tier-cards/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:1dce11996f0fc43bf5c15fab5de823de2e01232513fbb8006bb8daec65e712d6",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-bundle-tier-cards/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-bundle-tier-cards/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-bundle-tier-cards/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:d653fe4e467e778df41e9aa8b68e65221ec0068d57cfe7bb0e68fb081c007a8b",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-bundle-tier-cards/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-bundle-tier-cards/index.html:og:image_target",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "og_image_base_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-bundle-tier-cards/index.html",
+            "key": "og:image_target"
+          },
+          "state_fingerprint": "sha256:58d5edea98959d3a3998e70c66aad5b0a3c4a7fbc7e3d55fd50794a8d6a1784c",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-bundle-tier-cards/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "og_image_base_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-bundle-tier-cards/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-bundle-tier-cards/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:cab78ed005ef55d3f879442a7823c94e8455ad41d559862a299323c991dfd1fc",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-bundle-tier-cards/index.html",
+            "tailwind_cdn": 0,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-bundle-tier-cards/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-bundle-tier-cards/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:59704270117c211531122c6cc11f2a79043a5938f56ac7f1cc22500b6773e4e0",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-bundle-tier-cards/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-bundle-tier-cards/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-bundle-tier-cards/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:9a4b0ce4b9ed7695ec93d35b14b829398a266ade5e042fff174b79a6eb262f58",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-bundle-tier-cards/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-bundle-tier-pills/index.html:anchor:",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-bundle-tier-pills/index.html",
+            "key": "anchor:"
+          },
+          "state_fingerprint": "sha256:3b8660a4d64490b0807686a4dd754c36f261dda7269c014915291836ff64b17c",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-bundle-tier-pills/index.html",
+            "target": "",
+            "outcome": "resolved",
+            "scripts_read": null,
+            "scripts_loaded": null
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-bundle-tier-pills/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-bundle-tier-pills/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:dd9a2345b2ae4e21f444c8aedbbf7979ea10a8d5e2841f0fa5a49c90783a9a81",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-bundle-tier-pills/index.html",
+            "favicon": true
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-bundle-tier-pills/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-bundle-tier-pills/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:8fcd5decf4df108927c687bac3058c77f2d39a423444c5f9c27b5072251cd9c4",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-bundle-tier-pills/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-bundle-tier-pills/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-bundle-tier-pills/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:45542ccfd905abe8d5fd11d19c02db4286fe6c6c10d524334ac0fbc5b6b3513b",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-bundle-tier-pills/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-bundle-tier-pills/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-bundle-tier-pills/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:4aebdfefa881a955b899dd9abfe8f5f40d43985b49ac4f2bd1b9b2a7fcb0a3de",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-bundle-tier-pills/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-bundle-tier-pills/index.html:og:image_target",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "og_image_base_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-bundle-tier-pills/index.html",
+            "key": "og:image_target"
+          },
+          "state_fingerprint": "sha256:3bbbbe94ea7fce673184e4d72a4e9cb742456864e31649168a7fb073cb786e9d",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-bundle-tier-pills/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "og_image_base_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-bundle-tier-pills/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-bundle-tier-pills/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:430723318471ccce1fafadc7f49d4dc472db6053b03f4d5e4e0c9a8e5a86f740",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-bundle-tier-pills/index.html",
+            "tailwind_cdn": 0,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-bundle-tier-pills/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-bundle-tier-pills/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:0c56c5651c79244787963f613e5f83e25f59275d54a703d89ea91a8f5ac93ce4",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-bundle-tier-pills/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-bundle-tier-pills/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-bundle-tier-pills/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:35a1036e5a0371494aa43d7f6fc2b9eef21c563969fd36bda90dc29ac1916730",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-bundle-tier-pills/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-mv/index.html:anchor:",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-mv/index.html",
+            "key": "anchor:"
+          },
+          "state_fingerprint": "sha256:6b5c5d5f0a25ce5ea3a32a986269b4ef7ca5b0578fead4b19cd10610bc32b76f",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-mv/index.html",
+            "target": "",
+            "outcome": "resolved",
+            "scripts_read": null,
+            "scripts_loaded": null
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-mv/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-mv/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:4a67839c08e4359eedc3db0725a0b26f93d7dec55bee9a8db6779022913cd0a3",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-mv/index.html",
+            "favicon": true
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-mv/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-mv/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:d7da7db4ab2eb578946510f69ed07481d5b4d611f2e448dbc4c282420814a7db",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-mv/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-mv/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-mv/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:97990c3c6e4d45a81389b037c826cc0b8ed88f55e11af996a3021ca833acd7de",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-mv/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-mv/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-mv/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:8cd849726751ddeb27926f0fff42730f28146f38fc74f5310135f1430336159b",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-mv/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-mv/index.html:og:image_target",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "og_image_base_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-mv/index.html",
+            "key": "og:image_target"
+          },
+          "state_fingerprint": "sha256:c6a9d4cc01638fe88e3c0d8b049399921ab3aa7bf6aa3ea9accd09651234a9ad",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-mv/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "og_image_base_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-mv/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-mv/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:84c3bca6f875d7151abba34ecf92eed2bb6ed4bd4b466f5957fa9c1b893a44a8",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-mv/index.html",
+            "tailwind_cdn": 0,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-mv/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-mv/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:1109bc7c72c7df82f65d4a710a991ec233535f136bd36ba7798b5017f3cface9",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-mv/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-mv/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-mv/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:8dc8a0d98fc4076d321042bfd51ab18c3ae5e5f37341e861988addefdeec4b0e",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-mv/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-single/index.html:anchor:",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-single/index.html",
+            "key": "anchor:"
+          },
+          "state_fingerprint": "sha256:e176846eaa765b529d8cb51beab97d850c1654ead82a0ed8e998dcc40d6b47c1",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-single/index.html",
+            "target": "",
+            "outcome": "resolved",
+            "scripts_read": null,
+            "scripts_loaded": null
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-single/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-single/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:d9b7f426068f8d29794262c9c4c1a8e884835fadd192e711583ca57ab2a70003",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-single/index.html",
+            "favicon": true
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-single/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-single/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:e90519a0b34296ef69e10dec9907f99ff2d7bfbb0db60af0fa826ee30203c83e",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-single/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-single/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-single/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:a586b2f957847324fad5f89b2bb66e0adb2cd26c894d97504fccb53bf809a625",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-single/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-single/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-single/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:b01c0200d6b34f7a2ca3e78ecafe34b32586b23efb6ce74d6b6adb21fc4c1be7",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-single/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-single/index.html:og:image_target",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "og_image_base_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-single/index.html",
+            "key": "og:image_target"
+          },
+          "state_fingerprint": "sha256:a8d1619356af28ba0de3fbccbc33056fc0ddf5b8f499bab18ac00cb06a6ed968",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-single/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "og_image_base_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-single/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-single/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:7a1eee99c3f11745ff43d446f5382eea60e8aea7e39c6d6676c3dd8ca0f6f7d0",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-single/index.html",
+            "tailwind_cdn": 0,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-single/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-single/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:0c2fc62f2a7aa7cb3e79f92ddc40bc80277016c12bfb76284ecbac16d6770c05",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-single/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-single/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-single/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:f7dcd38239823592de54ff8fc2514efda27be87dae30332c065061bc35ab28cc",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-single/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-vsl/index.html:anchor:",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-vsl/index.html",
+            "key": "anchor:"
+          },
+          "state_fingerprint": "sha256:eee63987e58c0a816d8b02641b5f4ed8429f1ecca2ea38b8bfe2a0e9d72640ea",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-vsl/index.html",
+            "target": "",
+            "outcome": "resolved",
+            "scripts_read": null,
+            "scripts_loaded": null
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-vsl/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-vsl/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:eff8600dd69124abcdf0e6bc0c9140c3fc3fd81738a8f4bd85534cbafc0cf2c8",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-vsl/index.html",
+            "favicon": true
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-vsl/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-vsl/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:035a9a3a0dc08c29ab587c2c9ac97687d6604ec91d6079e2e0f7c65592f2ce97",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-vsl/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-vsl/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-vsl/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:64d9f37f7ead1363eca376b27fc9ab8670170902341fd2b764ab1a92bfe63ed4",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-vsl/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-vsl/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-vsl/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:ce2b6015caf51a780afb59d05422766c387770d94d18a99775ca207cb50ca2f1",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-vsl/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-vsl/index.html:og:image_target",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "og_image_base_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-vsl/index.html",
+            "key": "og:image_target"
+          },
+          "state_fingerprint": "sha256:36b620f0895fcc4571fb9e8ddf7b93dd78f59a9fae8bd7f28c6188938844969d",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-vsl/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "og_image_base_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-vsl/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-vsl/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:9b6dd3b1c473e6c1bf429e9dc3ef4a46b4ac46a8f2933a1cb6ebd889d0792eb2",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-vsl/index.html",
+            "tailwind_cdn": 0,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-vsl/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-vsl/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:682e4bb0ec9975938d5693651afdee4e8e8e84d88d09dc5ca2540e05d720ddd3",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-vsl/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/upsell-vsl/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/upsell-vsl/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:8306678bcdcb31969362e518ce9af85e5009c05b80b72f5c4bdb34171d51f776",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/upsell-vsl/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/variant-picker/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/variant-picker/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:e66bc2e8a8fedaee28acd9ed557cdd70046f9ac2b2a1aa1759de58a637e89820",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/variant-picker/index.html",
+            "favicon": true
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/variant-picker/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/variant-picker/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:56fb4a3a27e71d819621bcf6bf075506cd419c6b43cebb3ecbcc129ca2efab35",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/variant-picker/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/variant-picker/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/variant-picker/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:79e48325c3ab5ef9865ad484231812e539db2a23495752a09ea35daacbe321c1",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/variant-picker/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/variant-picker/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/variant-picker/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:356f0c24d674a0edad887c99016c5582732122f94149bf7fb15d57b8d48eb6ca",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/variant-picker/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/variant-picker/index.html:og:image_target",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "og_image_base_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/variant-picker/index.html",
+            "key": "og:image_target"
+          },
+          "state_fingerprint": "sha256:0bd01b83472b0033c12e8a933a82a699004e70c5ed23b993a7b94794ba983f22",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/variant-picker/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "og_image_base_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/variant-picker/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/variant-picker/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:5aa351cd393268fc74bf99cd36d6bb2c6657f8468935256361165baea4a37b7e",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/variant-picker/index.html",
+            "tailwind_cdn": 0,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/variant-picker/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/variant-picker/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:9ad319066d03e04b07d5fc7beec3740771c7f915666cdaefa62d231012a80a52",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/variant-picker/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/olympus-mv-single-step/variant-picker/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/olympus-mv-single-step/variant-picker/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:2846b791df1d39b3b64fc77460bc042712bc826555e44220aaabbaa1ed93ff84",
+          "observation": {
+            "page": "_site/olympus-mv-single-step/variant-picker/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        }
+      ],
+      "brand_contract": {
+        "state": "inspected",
+        "family": "olympus-mv-single-step"
+      },
+      "synthesized_packet": {
+        "schema_version": "campaign-runtime-build-packet/v0",
+        "_synthesized": {
+          "from": "built_site",
+          "note": "Minimal packet auto-emitted from a built _site/. Not a full Build Packet: source_html and assembly provenance are absent.",
+          "site_root": "<toolkit>/fixtures/certified-families/_site",
+          "campaign_dir": "<toolkit>/fixtures/certified-families/_site/olympus-mv-single-step",
+          "html_count": 11
+        },
+        "campaign": {
+          "public_route_slug": "olympus-mv-single-step",
+          "allowed_domains_confirmed": false
+        },
+        "spec": {
+          "map_id": "olympus-mv-single-step"
+        },
+        "assembly": {
+          "target_repo": "<toolkit>/fixtures/certified-families",
+          "output_dir": "_site/olympus-mv-single-step",
+          "template_family": "olympus-mv-single-step"
+        },
+        "deploy": {
+          "target": "unknown",
+          "preview_url": null
+        },
+        "qa": {},
+        "pages": [
+          {
+            "page_id": "checkout",
+            "type": "checkout",
+            "route": "checkout"
+          },
+          {
+            "page_id": "landing",
+            "type": "landing",
+            "route": "landing"
+          },
+          {
+            "page_id": "presell",
+            "type": "presell",
+            "route": "presell"
+          },
+          {
+            "page_id": "receipt",
+            "type": "receipt",
+            "route": "receipt"
+          },
+          {
+            "page_id": "upsell-bundle-stepper",
+            "type": "upsell",
+            "route": "upsell-bundle-stepper"
+          },
+          {
+            "page_id": "upsell-bundle-tier-cards",
+            "type": "upsell",
+            "route": "upsell-bundle-tier-cards"
+          },
+          {
+            "page_id": "upsell-bundle-tier-pills",
+            "type": "upsell",
+            "route": "upsell-bundle-tier-pills"
+          },
+          {
+            "page_id": "upsell-mv",
+            "type": "upsell",
+            "route": "upsell-mv"
+          },
+          {
+            "page_id": "upsell-single",
+            "type": "upsell",
+            "route": "upsell-single"
+          },
+          {
+            "page_id": "upsell-vsl",
+            "type": "upsell",
+            "route": "upsell-vsl"
+          },
+          {
+            "page_id": "variant-picker",
+            "type": "page",
+            "route": "variant-picker"
+          }
+        ]
+      }
+    },
+    "scope": {
+      "slug": "olympus-mv-single-step",
+      "html_count": 11,
+      "pages": [
+        {
+          "page_id": "checkout",
+          "type": "checkout",
+          "route": "checkout"
+        },
+        {
+          "page_id": "landing",
+          "type": "landing",
+          "route": "landing"
+        },
+        {
+          "page_id": "presell",
+          "type": "presell",
+          "route": "presell"
+        },
+        {
+          "page_id": "receipt",
+          "type": "receipt",
+          "route": "receipt"
+        },
+        {
+          "page_id": "upsell-bundle-stepper",
+          "type": "upsell",
+          "route": "upsell-bundle-stepper"
+        },
+        {
+          "page_id": "upsell-bundle-tier-cards",
+          "type": "upsell",
+          "route": "upsell-bundle-tier-cards"
+        },
+        {
+          "page_id": "upsell-bundle-tier-pills",
+          "type": "upsell",
+          "route": "upsell-bundle-tier-pills"
+        },
+        {
+          "page_id": "upsell-mv",
+          "type": "upsell",
+          "route": "upsell-mv"
+        },
+        {
+          "page_id": "upsell-single",
+          "type": "upsell",
+          "route": "upsell-single"
+        },
+        {
+          "page_id": "upsell-vsl",
+          "type": "upsell",
+          "route": "upsell-vsl"
+        },
+        {
+          "page_id": "variant-picker",
+          "type": "page",
+          "route": "variant-picker"
+        }
+      ],
+      "campaign_dir": "<toolkit>/fixtures/certified-families/_site/olympus-mv-single-step"
+    },
+    "synthesized_packet": {
+      "schema_version": "campaign-runtime-build-packet/v0",
+      "_synthesized": {
+        "from": "built_site",
+        "note": "Minimal packet auto-emitted from a built _site/. Not a full Build Packet: source_html and assembly provenance are absent.",
+        "site_root": "<toolkit>/fixtures/certified-families/_site",
+        "campaign_dir": "<toolkit>/fixtures/certified-families/_site/olympus-mv-single-step",
+        "html_count": 11
+      },
+      "campaign": {
+        "public_route_slug": "olympus-mv-single-step",
+        "allowed_domains_confirmed": false
+      },
+      "spec": {
+        "map_id": "olympus-mv-single-step"
+      },
+      "assembly": {
+        "target_repo": "<toolkit>/fixtures/certified-families",
+        "output_dir": "_site/olympus-mv-single-step",
+        "template_family": "olympus-mv-single-step"
+      },
+      "deploy": {
+        "target": "unknown",
+        "preview_url": null
+      },
+      "qa": {},
+      "pages": [
+        {
+          "page_id": "checkout",
+          "type": "checkout",
+          "route": "checkout"
+        },
+        {
+          "page_id": "landing",
+          "type": "landing",
+          "route": "landing"
+        },
+        {
+          "page_id": "presell",
+          "type": "presell",
+          "route": "presell"
+        },
+        {
+          "page_id": "receipt",
+          "type": "receipt",
+          "route": "receipt"
+        },
+        {
+          "page_id": "upsell-bundle-stepper",
+          "type": "upsell",
+          "route": "upsell-bundle-stepper"
+        },
+        {
+          "page_id": "upsell-bundle-tier-cards",
+          "type": "upsell",
+          "route": "upsell-bundle-tier-cards"
+        },
+        {
+          "page_id": "upsell-bundle-tier-pills",
+          "type": "upsell",
+          "route": "upsell-bundle-tier-pills"
+        },
+        {
+          "page_id": "upsell-mv",
+          "type": "upsell",
+          "route": "upsell-mv"
+        },
+        {
+          "page_id": "upsell-single",
+          "type": "upsell",
+          "route": "upsell-single"
+        },
+        {
+          "page_id": "upsell-vsl",
+          "type": "upsell",
+          "route": "upsell-vsl"
+        },
+        {
+          "page_id": "variant-picker",
+          "type": "page",
+          "route": "variant-picker"
+        }
+      ]
+    },
+    "emitted_packet_path": null,
+    "next": {
+      "stage": "setup",
+      "status": "ready_with_warnings",
+      "stage_blocked": false,
+      "owner": "setup",
+      "default_skill": "next-campaigns-os-setup",
+      "command": "campaigns-os next setup --packet <packet>",
+      "reason": "No assembly report on disk yet. Start with setup (assembly report should appear after prepare-build).",
+      "actions": [
+        "Replace literal template placeholder text (Lorem/Placeholder/TODO/Product Name/Benefit one…four) with CampaignSpec/design copy before QA; the browser residue gate blocks on these terms.",
+        "Re-skin template demo placeholder assets (spacer SVGs, repeated benefit icons, starter imagery) to the campaign's real assets before launch."
+      ],
+      "blocked_stages": []
+    }
+  }
+}

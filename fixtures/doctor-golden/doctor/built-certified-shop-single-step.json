@@ -1,0 +1,3214 @@
+{
+  "base_sha": "e1c5bc9c6dc2745d6f2bd54f37f89319ce7f915a",
+  "case": "certified-shop-single-step",
+  "entry": "built",
+  "description": "certified family shop-single-step rendered fixture, read in place with --family shop-single-step",
+  "output": {
+    "ok": true,
+    "status": "ready_with_warnings",
+    "mode": "built_site",
+    "errors": [],
+    "warnings": [
+      {
+        "code": "template_contract.placeholder_text_residue",
+        "message": "Assembly is recorded complete, but built output still contains literal template placeholder text (Lorem, lorem ipsum): target:upsell-bundle-stepper/index.html:166 \"Lorem\"; target:upsell-bundle-stepper/index.html:166 \"lorem ipsum\"; target:upsell-bundle-stepper/index.html:170 \"Lorem\"; target:upsell-bundle-stepper/index.html:170 \"lorem ipsum\"; target:upsell-bundle-stepper/index.html:174 \"Lorem\"; target:upsell-bundle-stepper/index.html:174 \"lorem ipsum\"; target:upsell-bundle-stepper/index.html:178 \"Lorem\"; target:upsell-bundle-stepper/index.html:178 \"lorem ipsum\"; plus 16 more. Replace with CampaignSpec/design copy; browser QA blocks on these terms."
+      },
+      {
+        "code": "template_contract.demo_asset_residue",
+        "message": "Assembly is recorded complete, but built output still references template demo assets (1x1_1.svg, 1x1_2.svg): target:landing/index.html:313 \"1x1_1.svg\"; target:landing/index.html:374 \"1x1_1.svg\"; target:landing/index.html:517 \"1x1_1.svg\"; target:landing/index.html:546 \"1x1_1.svg\"; target:landing/index.html:603 \"1x1_1.svg\"; target:landing/index.html:726 \"1x1_1.svg\"; target:landing/index.html:736 \"1x1_1.svg\"; target:landing/index.html:1103 \"1x1_1.svg\"; plus 81 more. Re-skin to the campaign's real assets rather than shipping template placeholders."
+      },
+      {
+        "code": "template_contract.literal_residue",
+        "message": "Built output contains generic starter/template placeholders: target:js/promo-timer.js:305 \"XXCODE\"; target:upsell-bundle-stepper/index.html:153 \"Product Title\"; target:upsell-bundle-tier-cards/index.html:151 \"Product Title\"; target:upsell-bundle-tier-pills/index.html:193 \"Product Title\"; target:upsell-single/index.html:161 \"Product Title\". Replace these from CampaignSpec/API or remove dead template references."
+      }
+    ],
+    "ready": [
+      "Resolved 9 built page(s) from ./_site/shop-single-step (slug \"shop-single-step\")",
+      "Template brand/residue/pricing contract loaded for shop-single-step",
+      "Pricing CSS scan skipped: campaign assets/css directory does not exist (runs after setup/build)",
+      "Every bundle selector on 5 built post-purchase page(s) is scoped away from the live cart (7 selector(s) scanned)",
+      "All 9 built page(s) agree on campaign identity (next-funnel \"Shop Single Step\", API key consistent)",
+      "SDK markup: 3 data-next-* name(s) not in the Campaign Cart 0.4.43 attribute index (advisory; the SDK does not read them): data-next-catalog-component, data-next-content, data-next-skeleton",
+      "SDK markup checks passed on 9 built page(s)",
+      "All 7 campaign-owned script(s) loaded by built pages parse",
+      "Cart placeholder check on 9 built page(s): 9 page(s) pass, 0 warning or review result(s)"
+    ],
+    "derived": {
+      "mode": "built_site",
+      "map_id": "shop-single-step",
+      "public_route_slug": "shop-single-step",
+      "template_family": "shop-single-step",
+      "target_repo": "<toolkit>/fixtures/certified-families",
+      "target_output_dir": "<toolkit>/fixtures/certified-families/_site/shop-single-step",
+      "site_root": "<toolkit>/fixtures/certified-families/_site",
+      "built_pages": [
+        {
+          "page_id": "checkout",
+          "type": "checkout",
+          "route": "checkout"
+        },
+        {
+          "page_id": "landing",
+          "type": "landing",
+          "route": "landing"
+        },
+        {
+          "page_id": "presell",
+          "type": "presell",
+          "route": "presell"
+        },
+        {
+          "page_id": "receipt",
+          "type": "receipt",
+          "route": "receipt"
+        },
+        {
+          "page_id": "upsell-bundle-stepper",
+          "type": "upsell",
+          "route": "upsell-bundle-stepper"
+        },
+        {
+          "page_id": "upsell-bundle-tier-cards",
+          "type": "upsell",
+          "route": "upsell-bundle-tier-cards"
+        },
+        {
+          "page_id": "upsell-bundle-tier-pills",
+          "type": "upsell",
+          "route": "upsell-bundle-tier-pills"
+        },
+        {
+          "page_id": "upsell-single",
+          "type": "upsell",
+          "route": "upsell-single"
+        },
+        {
+          "page_id": "upsell-vsl",
+          "type": "upsell",
+          "route": "upsell-vsl"
+        }
+      ],
+      "doctor_checks": [
+        "built_output.upsell_selector_scope",
+        "built_output.campaign_identity",
+        "built_output.sdk_markup",
+        "built_output.script_syntax",
+        "built_output.cart_placeholders",
+        "built_output.smoke_qc"
+      ],
+      "checkpoint_gates": [
+        {
+          "id": "built_output.upsell_selector_scope",
+          "scope": "built_output.upsell_selector_scope",
+          "status": "pass",
+          "code": "built_output.upsell_selector_scope.pass",
+          "reason": "Every bundle selector on 5 built post-purchase page(s) is scoped away from the live cart.",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "shop-single-step",
+            "site_root": "./_site/shop-single-step"
+          },
+          "state": {
+            "findings": []
+          },
+          "state_fingerprint": null,
+          "findings": [],
+          "warned": [],
+          "pages_scanned": 5,
+          "selectors_scanned": 7,
+          "waiver": null,
+          "waiver_assessment": {
+            "active": null,
+            "inert_counts": {
+              "stale": 0,
+              "foreign": 0,
+              "malformed": 0,
+              "expired": 0
+            }
+          },
+          "required_actions": []
+        },
+        {
+          "id": "built_output.campaign_identity",
+          "scope": "built_output.campaign_identity",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "shop-single-step",
+            "site_root": "./_site/shop-single-step"
+          },
+          "waiver": null,
+          "status": "pass",
+          "code": "built_output.campaign_identity.pass",
+          "reason": "All 9 built page(s) agree on campaign identity (API key present, next-funnel \"Shop Single Step\").",
+          "findings": [],
+          "pages_scanned": 9,
+          "pages_skipped": [],
+          "identity": {
+            "api_key": "LLbBgtusfE2zopDcjnOY9NbrlN690zSjuedqQ04J",
+            "api_key_source": "/shop-single-step/config.js nextConfig.apiKey",
+            "funnel": "Shop Single Step"
+          },
+          "required_actions": []
+        },
+        {
+          "id": "built_output.sdk_markup",
+          "scope": "built_output.sdk_markup",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "shop-single-step",
+            "site_root": "./_site/shop-single-step"
+          },
+          "waiver": null,
+          "sdk_attribute_index_version": "0.4.43",
+          "campaign_sdk_version": null,
+          "status": "pass",
+          "code": "built_output.sdk_markup.pass",
+          "reason": "SDK markup checks passed on 9 built page(s).",
+          "findings": [],
+          "warned": [],
+          "unknown_attributes": [
+            {
+              "name": "data-next-catalog-component",
+              "pages": [
+                "./_site/shop-single-step/checkout/index.html",
+                "./_site/shop-single-step/receipt/index.html",
+                "./_site/shop-single-step/upsell-bundle-stepper/index.html",
+                "./_site/shop-single-step/upsell-bundle-tier-cards/index.html",
+                "./_site/shop-single-step/upsell-bundle-tier-pills/index.html",
+                "./_site/shop-single-step/upsell-single/index.html",
+                "./_site/shop-single-step/upsell-vsl/index.html"
+              ]
+            },
+            {
+              "name": "data-next-content",
+              "pages": [
+                "./_site/shop-single-step/receipt/index.html"
+              ]
+            },
+            {
+              "name": "data-next-skeleton",
+              "pages": [
+                "./_site/shop-single-step/receipt/index.html"
+              ]
+            }
+          ],
+          "pages_scanned": 9,
+          "required_actions": []
+        },
+        {
+          "id": "built_output.script_syntax",
+          "scope": "built_output.script_syntax",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "shop-single-step",
+            "site_root": "./_site/shop-single-step"
+          },
+          "waiver": null,
+          "status": "pass",
+          "code": "built_output.script_syntax.pass",
+          "reason": "All 7 campaign-owned script(s) loaded by 9 built page(s) parse.",
+          "findings": [],
+          "scripts_scanned": 7,
+          "scripts_unresolved": [],
+          "scripts_outside_site": [],
+          "warned": [],
+          "pages_scanned": 9,
+          "required_actions": []
+        }
+      ],
+      "qc_results": [
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/shop-single-step/checkout/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/shop-single-step/checkout/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:a514de29b3be80827fa635f5c4f00a5d307252546c2e44151a9222522ec99d0c",
+          "observation": {
+            "page": "_site/shop-single-step/checkout/index.html",
+            "sdk_pin": "0.4.43",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 58985,
+            "candidates": 46
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/shop-single-step/landing/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/shop-single-step/landing/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:d7bc3d3805d184741f42d210690b9038c289ece2d783fe43838e2746343bf6e7",
+          "observation": {
+            "page": "_site/shop-single-step/landing/index.html",
+            "sdk_pin": "0.4.43",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 154949,
+            "candidates": 0
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/shop-single-step/presell/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/shop-single-step/presell/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:c187fdec0aa0c6b518c5f97a828c57258dbc8dd4400618e32af2d2a96128dc1a",
+          "observation": {
+            "page": "_site/shop-single-step/presell/index.html",
+            "sdk_pin": "0.4.43",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 21949,
+            "candidates": 0
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/shop-single-step/receipt/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/shop-single-step/receipt/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:b04bc244f5612a5a6b47a78fadbc95ba59133029b756b07eb810f2d86cc3c00d",
+          "observation": {
+            "page": "_site/shop-single-step/receipt/index.html",
+            "sdk_pin": "0.4.43",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 31482,
+            "candidates": 8
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/shop-single-step/upsell-bundle-stepper/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/shop-single-step/upsell-bundle-stepper/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:b2e8e483e390cbda324d7f583911373093125056e54d1868221c607209546adc",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-bundle-stepper/index.html",
+            "sdk_pin": "0.4.43",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 29552,
+            "candidates": 0
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/shop-single-step/upsell-bundle-tier-cards/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/shop-single-step/upsell-bundle-tier-cards/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:af9c23b51125fc8e486a3590a655ae90c483a43c3ff03c8af7f821b9ee0854aa",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-bundle-tier-cards/index.html",
+            "sdk_pin": "0.4.43",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 31505,
+            "candidates": 0
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/shop-single-step/upsell-bundle-tier-pills/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/shop-single-step/upsell-bundle-tier-pills/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:6c65060ca2c9d871a88cb3b4388b0917a08faed2e24a518b6ad1ccd207ba49ba",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-bundle-tier-pills/index.html",
+            "sdk_pin": "0.4.43",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 30994,
+            "candidates": 0
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/shop-single-step/upsell-single/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/shop-single-step/upsell-single/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:407292a3c09d47fd81c7c056679f5b35fd8fdb2bc5d82113d3e48755e5d6c7e3",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-single/index.html",
+            "sdk_pin": "0.4.43",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 27414,
+            "candidates": 0
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/shop-single-step/upsell-vsl/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/shop-single-step/upsell-vsl/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:3bc460e02e5a1fa4a31db86807c2f5ecfa0fa5078753c59950e78bd9eb6d06b7",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-vsl/index.html",
+            "sdk_pin": "0.4.43",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 37028,
+            "candidates": 0
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/checkout/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/checkout/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:a88b0ee901745e788e6925b3184fc46cb077fe884ad70a46d7c24589a9762cc8",
+          "observation": {
+            "page": "_site/shop-single-step/checkout/index.html",
+            "favicon": true
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/checkout/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/checkout/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:e20491bc3bd0e0e7bee1910636aa6b7ea825193a7aa3c31da8f53dfe8526ce23",
+          "observation": {
+            "page": "_site/shop-single-step/checkout/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/checkout/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/checkout/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:e548454916fc2a21622b0623b511933ab49d9f10ea0225a9f13866ff0e6037de",
+          "observation": {
+            "page": "_site/shop-single-step/checkout/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/checkout/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/checkout/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:c887cb052b657ccd47276359dd9545d229500909a24845948715211b853591f5",
+          "observation": {
+            "page": "_site/shop-single-step/checkout/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/checkout/index.html:og:image_target",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "og_image_base_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/checkout/index.html",
+            "key": "og:image_target"
+          },
+          "state_fingerprint": "sha256:f70fa4662ad98a6c583545334160e4b94ac86ad8c30946f68018350817cb3305",
+          "observation": {
+            "page": "_site/shop-single-step/checkout/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "og_image_base_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/checkout/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/checkout/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:e5518871e415599eeaadd60aafc993cf84fbdaa88780c0d29585a86b9235175a",
+          "observation": {
+            "page": "_site/shop-single-step/checkout/index.html",
+            "tailwind_cdn": 0,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/checkout/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/checkout/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:2d8a929e1a4fed84cbd2702bc919a68b502c7f5b0e191123bccd2b3db23ca64c",
+          "observation": {
+            "page": "_site/shop-single-step/checkout/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/checkout/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/checkout/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:778ceb11fd7d9dbbc94a4ca154fee8fac7c5a5c962039f1bb10acfa08fa0937a",
+          "observation": {
+            "page": "_site/shop-single-step/checkout/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/landing/index.html:anchor:benefits",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/landing/index.html",
+            "key": "anchor:benefits"
+          },
+          "state_fingerprint": "sha256:2a474cc7ac7e22c2b0c5e04f719b3259e38ffbbb3b8c6bda468fac2cfe9ad3e3",
+          "observation": {
+            "page": "_site/shop-single-step/landing/index.html",
+            "target": "benefits",
+            "outcome": "resolved",
+            "scripts_read": null,
+            "scripts_loaded": null
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/landing/index.html:anchor:ingredients",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/landing/index.html",
+            "key": "anchor:ingredients"
+          },
+          "state_fingerprint": "sha256:0311cf1248f9386da2990a399476cf08f14d4c535bf2889eee191b22809407b6",
+          "observation": {
+            "page": "_site/shop-single-step/landing/index.html",
+            "target": "ingredients",
+            "outcome": "resolved",
+            "scripts_read": null,
+            "scripts_loaded": null
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/landing/index.html:anchor:reviews",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/landing/index.html",
+            "key": "anchor:reviews"
+          },
+          "state_fingerprint": "sha256:13190a9c24d1bdaf0bb7bbf1aaf3073f55632969153b0c4c1b47fffec203d09c",
+          "observation": {
+            "page": "_site/shop-single-step/landing/index.html",
+            "target": "reviews",
+            "outcome": "resolved",
+            "scripts_read": null,
+            "scripts_loaded": null
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/landing/index.html:anchor:",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/landing/index.html",
+            "key": "anchor:"
+          },
+          "state_fingerprint": "sha256:a0a063380dd0f5904440f917401ffb618f8056a8b68a4a81fab9ed913a327af8",
+          "observation": {
+            "page": "_site/shop-single-step/landing/index.html",
+            "target": "",
+            "outcome": "resolved",
+            "scripts_read": null,
+            "scripts_loaded": null
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/landing/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/landing/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:fb755393e515f1edef18374e70bcbd189fe0b8e931e1b5247d8f8230d7eb50b7",
+          "observation": {
+            "page": "_site/shop-single-step/landing/index.html",
+            "favicon": true
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/landing/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/landing/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:3df695f1a526e9cfc7554ab99badf081658e90cd50eb81d33a544082af5e1c78",
+          "observation": {
+            "page": "_site/shop-single-step/landing/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/landing/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/landing/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:322a08f79f0e8f08caa1dfd8122ed6eed26750bf02a687dd46923da64e6fee47",
+          "observation": {
+            "page": "_site/shop-single-step/landing/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/landing/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/landing/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:db068cd623f146072f7dd2f39f366e66e47c9b1c663436d492a40a9678555ce1",
+          "observation": {
+            "page": "_site/shop-single-step/landing/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/landing/index.html:og:image_target",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "og_image_base_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/landing/index.html",
+            "key": "og:image_target"
+          },
+          "state_fingerprint": "sha256:5dc19827c6fafaab273690ef1f279448b392e60be13680b9656c1cffe7b13646",
+          "observation": {
+            "page": "_site/shop-single-step/landing/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "og_image_base_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/landing/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/landing/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:5ab4a513f061a5bc60e4f0ce9145661a9f159da201d95cff7ede0e2855ed2bc7",
+          "observation": {
+            "page": "_site/shop-single-step/landing/index.html",
+            "tailwind_cdn": 1,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/landing/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/landing/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:40d3b56a8d2610e4431297ab9403fbaf7bf42027112ea09d445eb7764fdee5e9",
+          "observation": {
+            "page": "_site/shop-single-step/landing/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/landing/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/landing/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:3cd3abd9df51ab80ef2850bf3fc1d5359086c5952cda16f54969e0081e35050b",
+          "observation": {
+            "page": "_site/shop-single-step/landing/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/presell/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/presell/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:a7356fc1b98b9591cea047f5a868a7c205d49d61ffdc368ea7a8ba8504b28dc3",
+          "observation": {
+            "page": "_site/shop-single-step/presell/index.html",
+            "favicon": true
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/presell/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/presell/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:d7301f5cd9ac0e5176c23dce6cae1f5a8e8e2459256556657a8b6e0ecfccf8ea",
+          "observation": {
+            "page": "_site/shop-single-step/presell/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/presell/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/presell/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:9ad3a10d243ddee8ff661eac43581036e18230e47d819d653bb8ec187741d7f3",
+          "observation": {
+            "page": "_site/shop-single-step/presell/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/presell/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/presell/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:3b6cde2d67c02cbc1ea310bcec6dd3238ea0cd8b1af5d42acacc242f873ef85f",
+          "observation": {
+            "page": "_site/shop-single-step/presell/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/presell/index.html:og:image_target",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "og_image_base_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/presell/index.html",
+            "key": "og:image_target"
+          },
+          "state_fingerprint": "sha256:0d5eab05d0e91c282051188b4a8737d98f063a5049a1a5c202e5bf8fc3d877aa",
+          "observation": {
+            "page": "_site/shop-single-step/presell/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "og_image_base_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/presell/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/presell/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:2880c2de089610683a1688b81afa274b978bdea762c3e781d3f389581bfe53dd",
+          "observation": {
+            "page": "_site/shop-single-step/presell/index.html",
+            "tailwind_cdn": 1,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/presell/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/presell/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:955bc7640ef1c3c79cda3574f828a63337b94e8f3dd9a2f1ba90ba913f36198f",
+          "observation": {
+            "page": "_site/shop-single-step/presell/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/presell/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/presell/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:0070464fe757648cb7124309634863328785279e8945299751dcb51bc5c06048",
+          "observation": {
+            "page": "_site/shop-single-step/presell/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/receipt/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/receipt/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:8bbfe6af7c0d8904e0e850da2ce4f29b47c69a8bd270b2e6bff2aab5cfb16033",
+          "observation": {
+            "page": "_site/shop-single-step/receipt/index.html",
+            "favicon": true
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/receipt/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/receipt/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:58c6f00d3b5b8c194cef9ce23f051141408faec152c825603b3b3a44b37792f8",
+          "observation": {
+            "page": "_site/shop-single-step/receipt/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/receipt/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/receipt/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:827f1f495d62eff5613286dff1c9cd31d8b05d763adc7b48382fb7b648048ea2",
+          "observation": {
+            "page": "_site/shop-single-step/receipt/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/receipt/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/receipt/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:b74c15087624b151917f5d27cc1daeb26be7423795c10cf967d22139e0188133",
+          "observation": {
+            "page": "_site/shop-single-step/receipt/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/receipt/index.html:og:image_target",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "og_image_base_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/receipt/index.html",
+            "key": "og:image_target"
+          },
+          "state_fingerprint": "sha256:cd5aa7388cf69c8c14a09da499148e0b612ccb5b68c0de0119b9dd81621e37f2",
+          "observation": {
+            "page": "_site/shop-single-step/receipt/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "og_image_base_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/receipt/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/receipt/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:a2a6317aaad26ef4c253c66a41a02d0ece6c4d399b9f97a4129ad0de43c6b30b",
+          "observation": {
+            "page": "_site/shop-single-step/receipt/index.html",
+            "tailwind_cdn": 0,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/receipt/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/receipt/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:6d866c9ea3a36178e6701aafb64ea5716fbd1e2d8eccd7c3ae8ac393e6cf8953",
+          "observation": {
+            "page": "_site/shop-single-step/receipt/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/receipt/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/receipt/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:07424cd08f8b6aa65d1fc3ad439aff6304c391e69d81c67a97425e5bfe8c072c",
+          "observation": {
+            "page": "_site/shop-single-step/receipt/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-bundle-stepper/index.html:anchor:",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-bundle-stepper/index.html",
+            "key": "anchor:"
+          },
+          "state_fingerprint": "sha256:2b9277f6c0a61063ab7d1d432dd5a224f8bb27729ab6d36ef0ff7d357cd3981a",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-bundle-stepper/index.html",
+            "target": "",
+            "outcome": "resolved",
+            "scripts_read": null,
+            "scripts_loaded": null
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-bundle-stepper/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-bundle-stepper/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:4f2f1bba26aecb80d414bbd87705e33b59342f58a8377f5cdbae6444ce576fc4",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-bundle-stepper/index.html",
+            "favicon": true
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-bundle-stepper/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-bundle-stepper/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:d3163f835d1466be99ebc99a46f1d85d439bbd29be3d42c128b8d77763032d89",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-bundle-stepper/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-bundle-stepper/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-bundle-stepper/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:2a34d8b66a59d72d05a51af5b46d23874175ab574ab86c22d2ae824cbb437c93",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-bundle-stepper/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-bundle-stepper/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-bundle-stepper/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:bd1d53d7e8b88c4894715d33c9ed03caee09673c2f33d231d78bd93538f0724a",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-bundle-stepper/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-bundle-stepper/index.html:og:image_target",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "og_image_base_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-bundle-stepper/index.html",
+            "key": "og:image_target"
+          },
+          "state_fingerprint": "sha256:fc6e78fd203a14f404109d6be66b8d61c8f2e9e2086a3921a43c79bd1401a41c",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-bundle-stepper/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "og_image_base_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-bundle-stepper/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-bundle-stepper/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:89d4f332c531003ec67c2de6decd71d66ca474663c40457a77eceafb5b92fb44",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-bundle-stepper/index.html",
+            "tailwind_cdn": 0,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-bundle-stepper/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-bundle-stepper/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:d8e9ae996ddfcefaa1606e34433eef6c5b21dbd09901ede561c0aa498f1951e6",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-bundle-stepper/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-bundle-stepper/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-bundle-stepper/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:2feaf11c63e74c2b4eebc9122293b11e26630cd3f7ac7fac642538a9463e4e8b",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-bundle-stepper/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-bundle-tier-cards/index.html:anchor:",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-bundle-tier-cards/index.html",
+            "key": "anchor:"
+          },
+          "state_fingerprint": "sha256:201a367bf415c9f2eacd4b778164906fd8c7982620ceb4fe279b444978dda629",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-bundle-tier-cards/index.html",
+            "target": "",
+            "outcome": "resolved",
+            "scripts_read": null,
+            "scripts_loaded": null
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-bundle-tier-cards/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-bundle-tier-cards/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:8e39c21671b66b5daf42b42a36dde646d6b8a1ce82c9d9b65fe7a848f35c9afa",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-bundle-tier-cards/index.html",
+            "favicon": true
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-bundle-tier-cards/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-bundle-tier-cards/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:af1914d5edafc32615c59d63636d284fb49f5b0544d6f8aef985a7ce72202c03",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-bundle-tier-cards/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-bundle-tier-cards/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-bundle-tier-cards/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:9f314f613ce7fad59d95a0590967b52ca6845ec5fd976e4de8e583a33cfe15b7",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-bundle-tier-cards/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-bundle-tier-cards/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-bundle-tier-cards/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:5c0eb1bb84a64d93b6628fcf99539d055e4ef13f6fddb6d60b7ced92a961d6e7",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-bundle-tier-cards/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-bundle-tier-cards/index.html:og:image_target",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "og_image_base_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-bundle-tier-cards/index.html",
+            "key": "og:image_target"
+          },
+          "state_fingerprint": "sha256:1b655cb2bb3529824f6ea9a5e65b90eacf2aebaefb949469750317fd641128da",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-bundle-tier-cards/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "og_image_base_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-bundle-tier-cards/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-bundle-tier-cards/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:56e8b42587c0ef5f8f980b40e39a798594594a58982bf7a88f51e5912c6ca6c5",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-bundle-tier-cards/index.html",
+            "tailwind_cdn": 0,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-bundle-tier-cards/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-bundle-tier-cards/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:dbfbf0e1e5e5414887fe80204bef1bc7fc046e3e10a385bd50bf4f1367567947",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-bundle-tier-cards/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-bundle-tier-cards/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-bundle-tier-cards/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:389412ce21d8922bbe8c978f1e7ffcf1d04f9801052183ff7d73cfe5afbd223e",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-bundle-tier-cards/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-bundle-tier-pills/index.html:anchor:",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-bundle-tier-pills/index.html",
+            "key": "anchor:"
+          },
+          "state_fingerprint": "sha256:6c3e3391155199e8abe89437ba7e7257838174a5d587c2054ff823967a44d8a2",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-bundle-tier-pills/index.html",
+            "target": "",
+            "outcome": "resolved",
+            "scripts_read": null,
+            "scripts_loaded": null
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-bundle-tier-pills/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-bundle-tier-pills/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:334f88f69be4c0f04ee4ad7bfdb78b6992b003f5afba3d837f3ed37ee0658af3",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-bundle-tier-pills/index.html",
+            "favicon": true
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-bundle-tier-pills/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-bundle-tier-pills/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:516bf2b74653c8f4632e8d57b2c0c1ba7a0c03d533ef8d05c61e78a142767cf9",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-bundle-tier-pills/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-bundle-tier-pills/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-bundle-tier-pills/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:f31aa61cf882605dcf0d952788702e483e330e3fffdd5ff9984e953c52611a78",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-bundle-tier-pills/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-bundle-tier-pills/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-bundle-tier-pills/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:b8981980764e8fbc4a78f1e61d10e9db6013ab572cbdcdc9141ae9f82bf23fcf",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-bundle-tier-pills/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-bundle-tier-pills/index.html:og:image_target",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "og_image_base_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-bundle-tier-pills/index.html",
+            "key": "og:image_target"
+          },
+          "state_fingerprint": "sha256:3c7fa2263567290a24e25f13d91c4cd4a918c349c5ac4bfeb6f21b54b81b9a07",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-bundle-tier-pills/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "og_image_base_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-bundle-tier-pills/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-bundle-tier-pills/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:185a9408eb501216dd2c5eb871736b5737ef786683ec4b6cc9a9aef103a5ef0d",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-bundle-tier-pills/index.html",
+            "tailwind_cdn": 0,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-bundle-tier-pills/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-bundle-tier-pills/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:ed69537cdc4857b7a7f02445da9cffc6ccc8b4c05151b85a9a5cfe153d1fecca",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-bundle-tier-pills/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-bundle-tier-pills/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-bundle-tier-pills/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:44bb8882a25eed755a19d7ac5d04a80533d59982f13e68d0c4f0bc5aacff3603",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-bundle-tier-pills/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-single/index.html:anchor:",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-single/index.html",
+            "key": "anchor:"
+          },
+          "state_fingerprint": "sha256:166dacc40d47cdba5215d7695d0dfe8b9b4e152d0b44c629fe1901e54d47e968",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-single/index.html",
+            "target": "",
+            "outcome": "resolved",
+            "scripts_read": null,
+            "scripts_loaded": null
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-single/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-single/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:b3119a53812855ae35ccc5379c17334d086ddea302fb7bd092d0d57bb1f93328",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-single/index.html",
+            "favicon": true
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-single/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-single/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:8a1d251eb0c7c7d4ec3b5115806f1202718635eccea345593fda19dfa01a111e",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-single/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-single/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-single/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:d3a3a11725c4a52fecf4c6828ddc4be8dab0c5c0ec39485c1bb5c52abf8a8882",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-single/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-single/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-single/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:3fa92a3f7a798dd6e7bb3246207f9803489e7c58c0642ea36816471617ea0efc",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-single/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-single/index.html:og:image_target",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "og_image_base_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-single/index.html",
+            "key": "og:image_target"
+          },
+          "state_fingerprint": "sha256:5de21ded688cf04b264ee2ef181e930d6a6014fdba8733e8076feafabdfc7620",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-single/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "og_image_base_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-single/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-single/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:5d2c334513f35d67f43448735f50860431d6ff3202a5b0aa7fe72d5e8aa68f05",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-single/index.html",
+            "tailwind_cdn": 0,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-single/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-single/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:8fc8a3e0b52e24c9436c30e8a8910b29f42ee3408735b4bca3081017e2346932",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-single/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-single/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-single/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:69a20f80391b53a37a414f50b16f0a07b3715b97864ae1f5a383e0298920ecf4",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-single/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-vsl/index.html:anchor:",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-vsl/index.html",
+            "key": "anchor:"
+          },
+          "state_fingerprint": "sha256:d47bec650c7ea89e97e1eee59ec552ca667a94a2edea4329f9d136c1fec7449b",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-vsl/index.html",
+            "target": "",
+            "outcome": "resolved",
+            "scripts_read": null,
+            "scripts_loaded": null
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-vsl/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-vsl/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:a1ce57997ceda2eacd6557288f74d07a0b40ae9f4074e0cd399ab68d21096171",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-vsl/index.html",
+            "favicon": true
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-vsl/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-vsl/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:e9b27b08cf41307720d1a13bed183cfe986c1e7a537effffdef66dbcd106acff",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-vsl/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-vsl/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-vsl/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:e152ac1d04fd94460a460064af189739893f93d808c7f4660c5577fb910cbe93",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-vsl/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-vsl/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-vsl/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:5c3fbea4a042f1bb9580fc67db9557860960554b248938b7b2c5c5b26cce1243",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-vsl/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-vsl/index.html:og:image_target",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "og_image_base_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-vsl/index.html",
+            "key": "og:image_target"
+          },
+          "state_fingerprint": "sha256:b9f72a6541f7a9b7111d1b96454cdcd5853aeeb44425e5107b414528bd1b29ed",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-vsl/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "og_image_base_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-vsl/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-vsl/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:ca1be02d9e84eed7b33de13a690386103fe4e077cf9cce55b156f9db0d2f5451",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-vsl/index.html",
+            "tailwind_cdn": 0,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-vsl/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-vsl/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:87ab47f8b15b1b5154bdf5c6554bfe27b34464102da55c36cbc36cb872148cfd",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-vsl/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-single-step/upsell-vsl/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-single-step/upsell-vsl/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:467518e5800b30be9d3379a5d2925c32bf0697e543d5b744d39d019096501fc1",
+          "observation": {
+            "page": "_site/shop-single-step/upsell-vsl/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        }
+      ],
+      "brand_contract": {
+        "state": "inspected",
+        "family": "shop-single-step"
+      },
+      "synthesized_packet": {
+        "schema_version": "campaign-runtime-build-packet/v0",
+        "_synthesized": {
+          "from": "built_site",
+          "note": "Minimal packet auto-emitted from a built _site/. Not a full Build Packet: source_html and assembly provenance are absent.",
+          "site_root": "<toolkit>/fixtures/certified-families/_site",
+          "campaign_dir": "<toolkit>/fixtures/certified-families/_site/shop-single-step",
+          "html_count": 9
+        },
+        "campaign": {
+          "public_route_slug": "shop-single-step",
+          "allowed_domains_confirmed": false
+        },
+        "spec": {
+          "map_id": "shop-single-step"
+        },
+        "assembly": {
+          "target_repo": "<toolkit>/fixtures/certified-families",
+          "output_dir": "_site/shop-single-step",
+          "template_family": "shop-single-step"
+        },
+        "deploy": {
+          "target": "unknown",
+          "preview_url": null
+        },
+        "qa": {},
+        "pages": [
+          {
+            "page_id": "checkout",
+            "type": "checkout",
+            "route": "checkout"
+          },
+          {
+            "page_id": "landing",
+            "type": "landing",
+            "route": "landing"
+          },
+          {
+            "page_id": "presell",
+            "type": "presell",
+            "route": "presell"
+          },
+          {
+            "page_id": "receipt",
+            "type": "receipt",
+            "route": "receipt"
+          },
+          {
+            "page_id": "upsell-bundle-stepper",
+            "type": "upsell",
+            "route": "upsell-bundle-stepper"
+          },
+          {
+            "page_id": "upsell-bundle-tier-cards",
+            "type": "upsell",
+            "route": "upsell-bundle-tier-cards"
+          },
+          {
+            "page_id": "upsell-bundle-tier-pills",
+            "type": "upsell",
+            "route": "upsell-bundle-tier-pills"
+          },
+          {
+            "page_id": "upsell-single",
+            "type": "upsell",
+            "route": "upsell-single"
+          },
+          {
+            "page_id": "upsell-vsl",
+            "type": "upsell",
+            "route": "upsell-vsl"
+          }
+        ]
+      }
+    },
+    "scope": {
+      "slug": "shop-single-step",
+      "html_count": 9,
+      "pages": [
+        {
+          "page_id": "checkout",
+          "type": "checkout",
+          "route": "checkout"
+        },
+        {
+          "page_id": "landing",
+          "type": "landing",
+          "route": "landing"
+        },
+        {
+          "page_id": "presell",
+          "type": "presell",
+          "route": "presell"
+        },
+        {
+          "page_id": "receipt",
+          "type": "receipt",
+          "route": "receipt"
+        },
+        {
+          "page_id": "upsell-bundle-stepper",
+          "type": "upsell",
+          "route": "upsell-bundle-stepper"
+        },
+        {
+          "page_id": "upsell-bundle-tier-cards",
+          "type": "upsell",
+          "route": "upsell-bundle-tier-cards"
+        },
+        {
+          "page_id": "upsell-bundle-tier-pills",
+          "type": "upsell",
+          "route": "upsell-bundle-tier-pills"
+        },
+        {
+          "page_id": "upsell-single",
+          "type": "upsell",
+          "route": "upsell-single"
+        },
+        {
+          "page_id": "upsell-vsl",
+          "type": "upsell",
+          "route": "upsell-vsl"
+        }
+      ],
+      "campaign_dir": "<toolkit>/fixtures/certified-families/_site/shop-single-step"
+    },
+    "synthesized_packet": {
+      "schema_version": "campaign-runtime-build-packet/v0",
+      "_synthesized": {
+        "from": "built_site",
+        "note": "Minimal packet auto-emitted from a built _site/. Not a full Build Packet: source_html and assembly provenance are absent.",
+        "site_root": "<toolkit>/fixtures/certified-families/_site",
+        "campaign_dir": "<toolkit>/fixtures/certified-families/_site/shop-single-step",
+        "html_count": 9
+      },
+      "campaign": {
+        "public_route_slug": "shop-single-step",
+        "allowed_domains_confirmed": false
+      },
+      "spec": {
+        "map_id": "shop-single-step"
+      },
+      "assembly": {
+        "target_repo": "<toolkit>/fixtures/certified-families",
+        "output_dir": "_site/shop-single-step",
+        "template_family": "shop-single-step"
+      },
+      "deploy": {
+        "target": "unknown",
+        "preview_url": null
+      },
+      "qa": {},
+      "pages": [
+        {
+          "page_id": "checkout",
+          "type": "checkout",
+          "route": "checkout"
+        },
+        {
+          "page_id": "landing",
+          "type": "landing",
+          "route": "landing"
+        },
+        {
+          "page_id": "presell",
+          "type": "presell",
+          "route": "presell"
+        },
+        {
+          "page_id": "receipt",
+          "type": "receipt",
+          "route": "receipt"
+        },
+        {
+          "page_id": "upsell-bundle-stepper",
+          "type": "upsell",
+          "route": "upsell-bundle-stepper"
+        },
+        {
+          "page_id": "upsell-bundle-tier-cards",
+          "type": "upsell",
+          "route": "upsell-bundle-tier-cards"
+        },
+        {
+          "page_id": "upsell-bundle-tier-pills",
+          "type": "upsell",
+          "route": "upsell-bundle-tier-pills"
+        },
+        {
+          "page_id": "upsell-single",
+          "type": "upsell",
+          "route": "upsell-single"
+        },
+        {
+          "page_id": "upsell-vsl",
+          "type": "upsell",
+          "route": "upsell-vsl"
+        }
+      ]
+    },
+    "emitted_packet_path": null,
+    "next": {
+      "stage": "setup",
+      "status": "ready_with_warnings",
+      "stage_blocked": false,
+      "owner": "setup",
+      "default_skill": "next-campaigns-os-setup",
+      "command": "campaigns-os next setup --packet <packet>",
+      "reason": "No assembly report on disk yet. Start with setup (assembly report should appear after prepare-build).",
+      "actions": [
+        "Replace literal template placeholder text (Lorem/Placeholder/TODO/Product Name/Benefit one…four) with CampaignSpec/design copy before QA; the browser residue gate blocks on these terms.",
+        "Re-skin template demo placeholder assets (spacer SVGs, repeated benefit icons, starter imagery) to the campaign's real assets before launch."
+      ],
+      "blocked_stages": []
+    }
+  }
+}

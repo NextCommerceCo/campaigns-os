@@ -1,0 +1,692 @@
+{
+  "base_sha": "e1c5bc9c6dc2745d6f2bd54f37f89319ce7f915a",
+  "case": "cause-prior-run",
+  "entry": "packet",
+  "description": "causes: contracts/fixtures/sidecar-bundle/production-shaped with a prior Run Record, so cause, cause_reason and cause_summary compare against it",
+  "output": {
+    "schema_version": "campaigns-os-doctor-output/v0",
+    "generated_at": "2026-01-01T00:00:00.000Z",
+    "ok": false,
+    "status": "blocked",
+    "errors": [
+      {
+        "code": "source_html.root",
+        "message": "Source root does not exist: source-html",
+        "cause": "pre_existing",
+        "cause_reason": "same_status_in_prior_run"
+      },
+      {
+        "code": "spec.local_path",
+        "message": "CampaignSpec local_path does not exist: campaignspec.v42.basic.json",
+        "cause": "caused_by_change",
+        "cause_reason": "new_since_prior_run"
+      },
+      {
+        "code": "page_kit.sdk_version.spec_unavailable",
+        "message": "Local CampaignSpec SDK pin is unavailable or malformed (missing); packet QA never fetches around missing local parity evidence.",
+        "detail": {
+          "checkpoint_gate": {
+            "id": "page_kit.sdk_version",
+            "scope": "page_kit.sdk_version",
+            "status": "blocked",
+            "code": "page_kit.sdk_version.spec_unavailable",
+            "reason": "Local CampaignSpec SDK pin is unavailable or malformed (missing); packet QA never fetches around missing local parity evidence.",
+            "waivable": false,
+            "subject": {
+              "public_route_slug": "runtime-packet-demo",
+              "target_path": "_data/campaigns.json"
+            },
+            "state": {
+              "spec_status": "missing"
+            },
+            "state_fingerprint": null,
+            "expected_sdk_version": null,
+            "observed_sdk_version": null,
+            "expected_source": null,
+            "waiver": null,
+            "waiver_assessment": {
+              "active": null,
+              "inert_counts": {
+                "stale": 0,
+                "foreign": 0,
+                "malformed": 0,
+                "expired": 0
+              }
+            },
+            "required_actions": [
+              {
+                "id": "repair_spec",
+                "kind": "edit",
+                "command": null,
+                "description": "Restore a valid packet-local CampaignSpec export before build or QA."
+              }
+            ]
+          }
+        },
+        "cause": "caused_by_change",
+        "cause_reason": "new_since_prior_run"
+      },
+      {
+        "code": "page_kit.store_profile.spec_unavailable",
+        "message": "Local CampaignSpec Store Profile is unavailable or malformed (missing); packet QA never fetches around missing local parity evidence.",
+        "detail": {
+          "checkpoint_gate": {
+            "id": "page_kit.store_profile",
+            "scope": "page_kit.store_profile",
+            "status": "blocked",
+            "code": "page_kit.store_profile.spec_unavailable",
+            "reason": "Local CampaignSpec Store Profile is unavailable or malformed (missing); packet QA never fetches around missing local parity evidence.",
+            "waivable": false,
+            "subject": {
+              "public_route_slug": "runtime-packet-demo",
+              "target_path": "_data/campaigns.json"
+            },
+            "state": {
+              "spec_status": "missing",
+              "discrepancies": []
+            },
+            "state_fingerprint": null,
+            "matrix": [
+              {
+                "field": "store_name",
+                "kind": "spec_unavailable",
+                "spec": null,
+                "target": null,
+                "severity": "blocker"
+              },
+              {
+                "field": "store_url",
+                "kind": "spec_unavailable",
+                "spec": null,
+                "target": null,
+                "severity": "blocker"
+              },
+              {
+                "field": "store_terms",
+                "kind": "spec_unavailable",
+                "spec": null,
+                "target": null,
+                "severity": "blocker"
+              },
+              {
+                "field": "store_privacy",
+                "kind": "spec_unavailable",
+                "spec": null,
+                "target": null,
+                "severity": "blocker"
+              },
+              {
+                "field": "store_contact",
+                "kind": "spec_unavailable",
+                "spec": null,
+                "target": null,
+                "severity": "blocker"
+              },
+              {
+                "field": "store_returns",
+                "kind": "spec_unavailable",
+                "spec": null,
+                "target": null,
+                "severity": "blocker"
+              },
+              {
+                "field": "store_shipping",
+                "kind": "spec_unavailable",
+                "spec": null,
+                "target": null,
+                "severity": "blocker"
+              },
+              {
+                "field": "store_phone",
+                "kind": "spec_unavailable",
+                "spec": null,
+                "target": null,
+                "severity": "blocker"
+              },
+              {
+                "field": "store_phone_tel",
+                "kind": "spec_unavailable",
+                "spec": null,
+                "target": null,
+                "severity": "blocker"
+              }
+            ],
+            "blocker_fields": [
+              "store_name",
+              "store_url",
+              "store_terms",
+              "store_privacy",
+              "store_contact",
+              "store_returns",
+              "store_shipping",
+              "store_phone",
+              "store_phone_tel"
+            ],
+            "warning_fields": [],
+            "waiver": null,
+            "waiver_assessment": {
+              "active": null,
+              "inert_counts": {
+                "stale": 0,
+                "foreign": 0,
+                "malformed": 0,
+                "expired": 0
+              }
+            },
+            "required_actions": [
+              {
+                "id": "repair_spec",
+                "kind": "edit",
+                "command": null,
+                "description": "Restore a valid packet-local CampaignSpec export before QA."
+              }
+            ]
+          }
+        },
+        "cause": "caused_by_change",
+        "cause_reason": "new_since_prior_run"
+      }
+    ],
+    "warnings": [
+      {
+        "code": "page_kit.scaffold_required",
+        "message": "Target campaign output directory is missing; setup should run before build.",
+        "cause": "caused_by_change",
+        "cause_reason": "new_since_prior_run"
+      },
+      {
+        "code": "page_kit.package_json",
+        "message": "Target repo has no package.json. Page-kit command detection is unavailable.",
+        "cause": "caused_by_change",
+        "cause_reason": "new_since_prior_run"
+      },
+      {
+        "code": "campaign.api_key_source",
+        "message": "Environment variable CAMPAIGNS_API_KEY is not set, and the local CampaignSpec does not include campaign.campaigns_api_key. API-side package/shipping/offer confirmation is deferred.",
+        "cause": "caused_by_change",
+        "cause_reason": "new_since_prior_run"
+      },
+      {
+        "code": "frontmatter.demoOnlyValues",
+        "message": "Replace demo-only starter value before launch: packages.main_package=1",
+        "cause": "caused_by_change",
+        "cause_reason": "new_since_prior_run"
+      },
+      {
+        "code": "frontmatter.demoOnlyValues",
+        "message": "Replace demo-only starter value before launch: packages.prepurchase_1=7",
+        "cause": "caused_by_change",
+        "cause_reason": "new_since_prior_run"
+      },
+      {
+        "code": "frontmatter.demoOnlyValues",
+        "message": "Replace demo-only starter value before launch: packages.prepurchase_2=9",
+        "cause": "caused_by_change",
+        "cause_reason": "new_since_prior_run"
+      },
+      {
+        "code": "frontmatter.demoOnlyValues",
+        "message": "Replace demo-only starter value before launch: shipping_methods.standard=1",
+        "cause": "caused_by_change",
+        "cause_reason": "new_since_prior_run"
+      },
+      {
+        "code": "frontmatter.demoOnlyValues",
+        "message": "Replace demo-only starter value before launch: bundles[].vouchers=FREESHIP",
+        "cause": "caused_by_change",
+        "cause_reason": "new_since_prior_run"
+      },
+      {
+        "code": "frontmatter.demoOnlyValues",
+        "message": "Replace demo-only starter value before launch: upsell_offer.package_id=3",
+        "cause": "caused_by_change",
+        "cause_reason": "new_since_prior_run"
+      },
+      {
+        "code": "frontmatter.demoOnlyValues",
+        "message": "Replace demo-only starter value before launch: upsell_offer.vouchers_json=[\"UP50\"]",
+        "cause": "caused_by_change",
+        "cause_reason": "new_since_prior_run"
+      },
+      {
+        "code": "frontmatter.demoOnlyValues",
+        "message": "Replace demo-only starter value before launch: upsell_bundle_tiers packageId=3",
+        "cause": "caused_by_change",
+        "cause_reason": "new_since_prior_run"
+      },
+      {
+        "code": "frontmatter.replaceFromSpecOrApi",
+        "message": "Must be replaced from CampaignSpec/API: packages.*",
+        "cause": "caused_by_change",
+        "cause_reason": "new_since_prior_run"
+      },
+      {
+        "code": "frontmatter.replaceFromSpecOrApi",
+        "message": "Must be replaced from CampaignSpec/API: shipping_methods.*",
+        "cause": "caused_by_change",
+        "cause_reason": "new_since_prior_run"
+      },
+      {
+        "code": "frontmatter.replaceFromSpecOrApi",
+        "message": "Must be replaced from CampaignSpec/API: bundles[].shipping_method",
+        "cause": "caused_by_change",
+        "cause_reason": "new_since_prior_run"
+      },
+      {
+        "code": "frontmatter.replaceFromSpecOrApi",
+        "message": "Must be replaced from CampaignSpec/API: bundles[].vouchers",
+        "cause": "caused_by_change",
+        "cause_reason": "new_since_prior_run"
+      },
+      {
+        "code": "frontmatter.replaceFromSpecOrApi",
+        "message": "Must be replaced from CampaignSpec/API: order_bump.*.package_id",
+        "cause": "caused_by_change",
+        "cause_reason": "new_since_prior_run"
+      },
+      {
+        "code": "frontmatter.replaceFromSpecOrApi",
+        "message": "Must be replaced from CampaignSpec/API: upsell_offer.*",
+        "cause": "caused_by_change",
+        "cause_reason": "new_since_prior_run"
+      },
+      {
+        "code": "frontmatter.replaceFromSpecOrApi",
+        "message": "Must be replaced from CampaignSpec/API: upsell_bundle_tiers[].items_json",
+        "cause": "caused_by_change",
+        "cause_reason": "new_since_prior_run"
+      },
+      {
+        "code": "frontmatter.replaceFromSpecOrApi",
+        "message": "Must be replaced from CampaignSpec/API: upsell_bundle_tiers[].vouchers_json",
+        "cause": "caused_by_change",
+        "cause_reason": "new_since_prior_run"
+      },
+      {
+        "code": "frontmatter.removeWhenUnsupported",
+        "message": "Remove when unsupported by target campaign: bundles[].vouchers when no tier-specific shipping price exists",
+        "cause": "caused_by_change",
+        "cause_reason": "new_since_prior_run"
+      },
+      {
+        "code": "frontmatter.removeWhenUnsupported",
+        "message": "Remove when unsupported by target campaign: bump includes when prepurchase packages are absent",
+        "cause": "caused_by_change",
+        "cause_reason": "new_since_prior_run"
+      },
+      {
+        "code": "frontmatter.removeWhenUnsupported",
+        "message": "Remove when unsupported by target campaign: unsupported payment method rows",
+        "cause": "caused_by_change",
+        "cause_reason": "new_since_prior_run"
+      },
+      {
+        "code": "frontmatter.removeWhenUnsupported",
+        "message": "Remove when unsupported by target campaign: upsell pages not present in the funnel",
+        "cause": "caused_by_change",
+        "cause_reason": "new_since_prior_run"
+      },
+      {
+        "code": "build_brief.missing",
+        "message": "No Campaign Build Brief artifact is referenced. Existing builds may continue, but new build intake should provide or generate .campaign-runtime/input/campaign-build-brief.normalized.json so business/design decisions are durable.",
+        "cause": "caused_by_change",
+        "cause_reason": "new_since_prior_run"
+      },
+      {
+        "code": "deploy.preview_url",
+        "message": "No preview or production URL yet. QA remains blocked after build/polish.",
+        "cause": "caused_by_change",
+        "cause_reason": "new_since_prior_run"
+      }
+    ],
+    "ready": [
+      "Build Packet schema campaign-runtime-build-packet/v0",
+      "Template family \"olympus\" is certified (commerce catalog + brand contract)",
+      "Template family \"olympus\" certification is current: last verified against SDK 0.4.43 (2026-10-24), the current SDK recorded by the vendored contracts.",
+      "Commerce catalog resolved to the running toolkit's copy; the packet's recorded path ../contracts/commerce-surface-catalog.json does not exist here (it names the checkout that ran prepare-build). Re-run prepare-build to clear the machine-local path.",
+      "Commerce catalog sharedFrontmatterVocabulary loaded",
+      "Template agentContract loaded for olympus",
+      "Template brand/residue/pricing contract loaded for olympus",
+      "Template family inventory matrix loaded for olympus",
+      "source_html.adapter_contract adapter decision fields loaded",
+      "qa.proof_policy loaded: browser=true, typed_card_depth=common, order_path_depth=common",
+      "Build context schema campaign-runtime-build-context/v0",
+      "Source commerce zones inspected; no SDK-owned commerce shell placeholders declared",
+      "context.adapter_decisions adapter decision fields loaded",
+      "Assembly report schema campaign-runtime-assembly-report/v0",
+      "report.adapter_decisions adapter decision fields loaded",
+      "report.proof_policy loaded: browser=true, typed_card_depth=common, order_path_depth=common",
+      "Pricing CSS scan skipped: target output directory does not exist (runs after setup/build)",
+      "Hidden eager-media checkpoint not applicable before completed assembly."
+    ],
+    "derived": {
+      "packet_path": "<fixture>/campaign-runtime.build.json",
+      "assembly_report_path": "<fixture>/.campaign-runtime/assembly-report.json",
+      "map_id": "runtime-packet-demo-k9x2",
+      "public_route_slug": "runtime-packet-demo",
+      "template_family": "olympus",
+      "source_root": "<fixture>/source-html",
+      "target_repo": "<fixture>",
+      "target_output_dir": "<fixture>/src/runtime-packet-demo",
+      "spec_path": "<fixture>/campaignspec.v42.basic.json",
+      "doctor_checks": [
+        "page_kit.sdk_version",
+        "page_kit.store_profile",
+        "page_kit.analytics_vendors",
+        "campaign.api_key",
+        "assembly.commerce_catalog",
+        "market_copy",
+        "source_html.adapter_contract",
+        "qa.proof_policy",
+        "build_brief.artifact",
+        "context.shape",
+        "assembly_report.shape"
+      ],
+      "checkpoint_gates": [
+        {
+          "id": "page_kit.sdk_version",
+          "scope": "page_kit.sdk_version",
+          "status": "blocked",
+          "code": "page_kit.sdk_version.spec_unavailable",
+          "reason": "Local CampaignSpec SDK pin is unavailable or malformed (missing); packet QA never fetches around missing local parity evidence.",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "runtime-packet-demo",
+            "target_path": "_data/campaigns.json"
+          },
+          "state": {
+            "spec_status": "missing"
+          },
+          "state_fingerprint": null,
+          "expected_sdk_version": null,
+          "observed_sdk_version": null,
+          "expected_source": null,
+          "waiver": null,
+          "waiver_assessment": {
+            "active": null,
+            "inert_counts": {
+              "stale": 0,
+              "foreign": 0,
+              "malformed": 0,
+              "expired": 0
+            }
+          },
+          "required_actions": [
+            {
+              "id": "repair_spec",
+              "kind": "edit",
+              "command": null,
+              "description": "Restore a valid packet-local CampaignSpec export before build or QA."
+            }
+          ]
+        },
+        {
+          "id": "page_kit.store_profile",
+          "scope": "page_kit.store_profile",
+          "status": "blocked",
+          "code": "page_kit.store_profile.spec_unavailable",
+          "reason": "Local CampaignSpec Store Profile is unavailable or malformed (missing); packet QA never fetches around missing local parity evidence.",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "runtime-packet-demo",
+            "target_path": "_data/campaigns.json"
+          },
+          "state": {
+            "spec_status": "missing",
+            "discrepancies": []
+          },
+          "state_fingerprint": null,
+          "matrix": [
+            {
+              "field": "store_name",
+              "kind": "spec_unavailable",
+              "spec": null,
+              "target": null,
+              "severity": "blocker"
+            },
+            {
+              "field": "store_url",
+              "kind": "spec_unavailable",
+              "spec": null,
+              "target": null,
+              "severity": "blocker"
+            },
+            {
+              "field": "store_terms",
+              "kind": "spec_unavailable",
+              "spec": null,
+              "target": null,
+              "severity": "blocker"
+            },
+            {
+              "field": "store_privacy",
+              "kind": "spec_unavailable",
+              "spec": null,
+              "target": null,
+              "severity": "blocker"
+            },
+            {
+              "field": "store_contact",
+              "kind": "spec_unavailable",
+              "spec": null,
+              "target": null,
+              "severity": "blocker"
+            },
+            {
+              "field": "store_returns",
+              "kind": "spec_unavailable",
+              "spec": null,
+              "target": null,
+              "severity": "blocker"
+            },
+            {
+              "field": "store_shipping",
+              "kind": "spec_unavailable",
+              "spec": null,
+              "target": null,
+              "severity": "blocker"
+            },
+            {
+              "field": "store_phone",
+              "kind": "spec_unavailable",
+              "spec": null,
+              "target": null,
+              "severity": "blocker"
+            },
+            {
+              "field": "store_phone_tel",
+              "kind": "spec_unavailable",
+              "spec": null,
+              "target": null,
+              "severity": "blocker"
+            }
+          ],
+          "blocker_fields": [
+            "store_name",
+            "store_url",
+            "store_terms",
+            "store_privacy",
+            "store_contact",
+            "store_returns",
+            "store_shipping",
+            "store_phone",
+            "store_phone_tel"
+          ],
+          "warning_fields": [],
+          "waiver": null,
+          "waiver_assessment": {
+            "active": null,
+            "inert_counts": {
+              "stale": 0,
+              "foreign": 0,
+              "malformed": 0,
+              "expired": 0
+            }
+          },
+          "required_actions": [
+            {
+              "id": "repair_spec",
+              "kind": "edit",
+              "command": null,
+              "description": "Restore a valid packet-local CampaignSpec export before QA."
+            }
+          ]
+        }
+      ],
+      "qc_results": [],
+      "polish_checkpoint_gate": {
+        "id": "polish.hidden_eager_media",
+        "scope": "polish.hidden_eager_media",
+        "status": "not_applicable",
+        "checkpoint_status": "not_applicable",
+        "severity": "info",
+        "code": "polish.hidden_eager_media.not_applicable",
+        "reason": "Hidden eager-media page-load evidence is required only after assembly is completed.",
+        "waivable": false,
+        "subject": null,
+        "state": null,
+        "state_fingerprint": null,
+        "findings": [],
+        "waiver": null,
+        "waiver_assessment": {
+          "active": null,
+          "inert_counts": {
+            "stale": 0,
+            "foreign": 0,
+            "malformed": 0,
+            "expired": 0
+          }
+        },
+        "required_actions": []
+      },
+      "prepare_build_gate": null,
+      "brand_contract": {
+        "state": "inspected",
+        "family": "olympus"
+      },
+      "page_kit_campaign_config": {
+        "status": "file_missing",
+        "public_route_slug": "runtime-packet-demo",
+        "target_path": "_data/campaigns.json"
+      },
+      "scaffold_required": true,
+      "scaffold_reason": "Target campaign output directory is missing; run Page Kit scaffold before build.",
+      "scope": {
+        "mode": "unknown",
+        "built_pages": [],
+        "out_of_scope_pages": [],
+        "previewable_routes": [],
+        "blocked_runtime_pages": []
+      },
+      "input_currency": {
+        "brief": {
+          "bound": null,
+          "current": {
+            "presentation": "absent",
+            "qa_policy": "absent"
+          },
+          "status": "absent"
+        },
+        "spec": {
+          "bound": null,
+          "current": null,
+          "snapshot_material": "unknown",
+          "remote_currency": "unconfirmed"
+        },
+        "stages": {
+          "assembly": "not_applicable",
+          "polish": "not_applicable",
+          "qa": "not_applicable"
+        },
+        "reasons": {
+          "assembly": null,
+          "polish": null,
+          "qa": null
+        }
+      },
+      "theme_gate": {
+        "status": "not_applicable",
+        "code": "theme_gate.no_commerce_pages",
+        "reason": "Campaign ships no commerce pages; the brand-layer gate does not apply.",
+        "commerce_pages": [],
+        "commerce_pages_out_of_scope": [],
+        "waiver": null,
+        "required_actions": []
+      },
+      "evidence_debt": {
+        "polish": {
+          "status": "unknown",
+          "matches_current_build": null,
+          "recorded_build_fingerprint": null,
+          "current_build_fingerprint": null,
+          "reason": "build_output_missing",
+          "change": null,
+          "advisory": false
+        },
+        "qa": {
+          "status": "unknown",
+          "matches_current_build": null,
+          "recorded_build_fingerprint": null,
+          "current_build_fingerprint": null,
+          "reason": "build_output_missing",
+          "change": null,
+          "scope": null,
+          "owed_pages": []
+        },
+        "changes": {
+          "status": "unknown",
+          "reason": "build_output_missing",
+          "recorded_build_fingerprint": null,
+          "current_build_fingerprint": null,
+          "changed_pages": [],
+          "unmapped_files": [],
+          "extra": [],
+          "missing": [],
+          "changed": [],
+          "kind": "unknown",
+          "reasons": []
+        }
+      },
+      "polish_gate": {
+        "status": "not_applicable",
+        "code": "polish.not_applicable",
+        "reason": "Assembly is not completed yet; polish evidence is required after build completion."
+      }
+    },
+    "next": {
+      "stage": "doctor-blocked",
+      "status": "blocked",
+      "stage_blocked": false,
+      "owner": "operator",
+      "default_skill": "next-campaigns-os",
+      "command": "campaigns-os doctor --packet <fixture>/campaign-runtime.build.json",
+      "reason": "Doctor reported 4 blocker(s); resolve them before any stage runs.",
+      "actions": [
+        "Resolve packet blockers before assembly.",
+        "Use the template agentContract to replace demo values from CampaignSpec/API.",
+        "Target campaign output directory is missing; run campaigns-os next setup --packet <fixture>/campaign-runtime.build.json before build."
+      ],
+      "blocked_stages": [
+        "setup",
+        "build",
+        "polish",
+        "deploy",
+        "qa"
+      ]
+    },
+    "cause_summary": {
+      "schema_version": "campaigns-os-finding-cause/v0",
+      "surface": "doctor",
+      "total": 29,
+      "counts": {
+        "caused_by_change": 28,
+        "pre_existing": 1,
+        "test_environment": 0,
+        "upstream_drift": 0,
+        "unknown": 0
+      },
+      "prior_run_id": "run_1757000000000_aaaaaaaa",
+      "comparison": "prior_run"
+    }
+  }
+}

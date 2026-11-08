@@ -1,0 +1,3812 @@
+{
+  "base_sha": "e1c5bc9c6dc2745d6f2bd54f37f89319ce7f915a",
+  "case": "certified-shop-three-step",
+  "entry": "built",
+  "description": "certified family shop-three-step rendered fixture, read in place with --family shop-three-step",
+  "output": {
+    "ok": true,
+    "status": "ready_with_warnings",
+    "mode": "built_site",
+    "errors": [],
+    "warnings": [
+      {
+        "code": "template_contract.placeholder_text_residue",
+        "message": "Assembly is recorded complete, but built output still contains literal template placeholder text (Lorem, lorem ipsum): target:upsell-bundle-stepper/index.html:166 \"Lorem\"; target:upsell-bundle-stepper/index.html:166 \"lorem ipsum\"; target:upsell-bundle-stepper/index.html:170 \"Lorem\"; target:upsell-bundle-stepper/index.html:170 \"lorem ipsum\"; target:upsell-bundle-stepper/index.html:174 \"Lorem\"; target:upsell-bundle-stepper/index.html:174 \"lorem ipsum\"; target:upsell-bundle-stepper/index.html:178 \"Lorem\"; target:upsell-bundle-stepper/index.html:178 \"lorem ipsum\"; plus 16 more. Replace with CampaignSpec/design copy; browser QA blocks on these terms."
+      },
+      {
+        "code": "template_contract.demo_asset_residue",
+        "message": "Assembly is recorded complete, but built output still references template demo assets (1x1_1.svg, 1x1_2.svg): target:landing/index.html:313 \"1x1_1.svg\"; target:landing/index.html:374 \"1x1_1.svg\"; target:landing/index.html:517 \"1x1_1.svg\"; target:landing/index.html:546 \"1x1_1.svg\"; target:landing/index.html:603 \"1x1_1.svg\"; target:landing/index.html:726 \"1x1_1.svg\"; target:landing/index.html:736 \"1x1_1.svg\"; target:landing/index.html:1103 \"1x1_1.svg\"; plus 81 more. Re-skin to the campaign's real assets rather than shipping template placeholders."
+      },
+      {
+        "code": "template_contract.literal_residue",
+        "message": "Built output contains generic starter/template placeholders: target:js/promo-timer.js:305 \"XXCODE\"; target:upsell-bundle-stepper/index.html:153 \"Product Title\"; target:upsell-bundle-tier-cards/index.html:151 \"Product Title\"; target:upsell-bundle-tier-pills/index.html:193 \"Product Title\"; target:upsell-single/index.html:161 \"Product Title\". Replace these from CampaignSpec/API or remove dead template references."
+      }
+    ],
+    "ready": [
+      "Resolved 11 built page(s) from ./_site/shop-three-step (slug \"shop-three-step\")",
+      "Template brand/residue/pricing contract loaded for shop-three-step",
+      "Pricing CSS scan skipped: campaign assets/css directory does not exist (runs after setup/build)",
+      "Every bundle selector on 5 built post-purchase page(s) is scoped away from the live cart (7 selector(s) scanned)",
+      "All 11 built page(s) agree on campaign identity (next-funnel \"Shop Three Step\", API key consistent)",
+      "SDK markup: 3 data-next-* name(s) not in the Campaign Cart 0.4.43 attribute index (advisory; the SDK does not read them): data-next-catalog-component, data-next-content, data-next-skeleton",
+      "SDK markup checks passed on 11 built page(s)",
+      "All 9 campaign-owned script(s) loaded by built pages parse",
+      "Cart placeholder check on 11 built page(s): 11 page(s) pass, 0 warning or review result(s)"
+    ],
+    "derived": {
+      "mode": "built_site",
+      "map_id": "shop-three-step",
+      "public_route_slug": "shop-three-step",
+      "template_family": "shop-three-step",
+      "target_repo": "<toolkit>/fixtures/certified-families",
+      "target_output_dir": "<toolkit>/fixtures/certified-families/_site/shop-three-step",
+      "site_root": "<toolkit>/fixtures/certified-families/_site",
+      "built_pages": [
+        {
+          "page_id": "billing",
+          "type": "page",
+          "route": "billing"
+        },
+        {
+          "page_id": "information",
+          "type": "page",
+          "route": "information"
+        },
+        {
+          "page_id": "landing",
+          "type": "landing",
+          "route": "landing"
+        },
+        {
+          "page_id": "presell",
+          "type": "presell",
+          "route": "presell"
+        },
+        {
+          "page_id": "receipt",
+          "type": "receipt",
+          "route": "receipt"
+        },
+        {
+          "page_id": "shipping",
+          "type": "page",
+          "route": "shipping"
+        },
+        {
+          "page_id": "upsell-bundle-stepper",
+          "type": "upsell",
+          "route": "upsell-bundle-stepper"
+        },
+        {
+          "page_id": "upsell-bundle-tier-cards",
+          "type": "upsell",
+          "route": "upsell-bundle-tier-cards"
+        },
+        {
+          "page_id": "upsell-bundle-tier-pills",
+          "type": "upsell",
+          "route": "upsell-bundle-tier-pills"
+        },
+        {
+          "page_id": "upsell-single",
+          "type": "upsell",
+          "route": "upsell-single"
+        },
+        {
+          "page_id": "upsell-vsl",
+          "type": "upsell",
+          "route": "upsell-vsl"
+        }
+      ],
+      "doctor_checks": [
+        "built_output.upsell_selector_scope",
+        "built_output.campaign_identity",
+        "built_output.sdk_markup",
+        "built_output.script_syntax",
+        "built_output.cart_placeholders",
+        "built_output.smoke_qc"
+      ],
+      "checkpoint_gates": [
+        {
+          "id": "built_output.upsell_selector_scope",
+          "scope": "built_output.upsell_selector_scope",
+          "status": "pass",
+          "code": "built_output.upsell_selector_scope.pass",
+          "reason": "Every bundle selector on 5 built post-purchase page(s) is scoped away from the live cart.",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "shop-three-step",
+            "site_root": "./_site/shop-three-step"
+          },
+          "state": {
+            "findings": []
+          },
+          "state_fingerprint": null,
+          "findings": [],
+          "warned": [],
+          "pages_scanned": 5,
+          "selectors_scanned": 7,
+          "waiver": null,
+          "waiver_assessment": {
+            "active": null,
+            "inert_counts": {
+              "stale": 0,
+              "foreign": 0,
+              "malformed": 0,
+              "expired": 0
+            }
+          },
+          "required_actions": []
+        },
+        {
+          "id": "built_output.campaign_identity",
+          "scope": "built_output.campaign_identity",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "shop-three-step",
+            "site_root": "./_site/shop-three-step"
+          },
+          "waiver": null,
+          "status": "pass",
+          "code": "built_output.campaign_identity.pass",
+          "reason": "All 11 built page(s) agree on campaign identity (API key present, next-funnel \"Shop Three Step\").",
+          "findings": [],
+          "pages_scanned": 11,
+          "pages_skipped": [],
+          "identity": {
+            "api_key": "LLbBgtusfE2zopDcjnOY9NbrlN690zSjuedqQ04J",
+            "api_key_source": "/shop-three-step/config.js nextConfig.apiKey",
+            "funnel": "Shop Three Step"
+          },
+          "required_actions": []
+        },
+        {
+          "id": "built_output.sdk_markup",
+          "scope": "built_output.sdk_markup",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "shop-three-step",
+            "site_root": "./_site/shop-three-step"
+          },
+          "waiver": null,
+          "sdk_attribute_index_version": "0.4.43",
+          "campaign_sdk_version": null,
+          "status": "pass",
+          "code": "built_output.sdk_markup.pass",
+          "reason": "SDK markup checks passed on 11 built page(s).",
+          "findings": [],
+          "warned": [],
+          "unknown_attributes": [
+            {
+              "name": "data-next-catalog-component",
+              "pages": [
+                "./_site/shop-three-step/billing/index.html",
+                "./_site/shop-three-step/information/index.html",
+                "./_site/shop-three-step/receipt/index.html",
+                "./_site/shop-three-step/shipping/index.html",
+                "./_site/shop-three-step/upsell-bundle-stepper/index.html",
+                "./_site/shop-three-step/upsell-bundle-tier-cards/index.html",
+                "./_site/shop-three-step/upsell-bundle-tier-pills/index.html",
+                "./_site/shop-three-step/upsell-single/index.html",
+                "./_site/shop-three-step/upsell-vsl/index.html"
+              ]
+            },
+            {
+              "name": "data-next-content",
+              "pages": [
+                "./_site/shop-three-step/receipt/index.html"
+              ]
+            },
+            {
+              "name": "data-next-skeleton",
+              "pages": [
+                "./_site/shop-three-step/receipt/index.html"
+              ]
+            }
+          ],
+          "pages_scanned": 11,
+          "required_actions": []
+        },
+        {
+          "id": "built_output.script_syntax",
+          "scope": "built_output.script_syntax",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "shop-three-step",
+            "site_root": "./_site/shop-three-step"
+          },
+          "waiver": null,
+          "status": "pass",
+          "code": "built_output.script_syntax.pass",
+          "reason": "All 9 campaign-owned script(s) loaded by 11 built page(s) parse.",
+          "findings": [],
+          "scripts_scanned": 9,
+          "scripts_unresolved": [],
+          "scripts_outside_site": [],
+          "warned": [],
+          "pages_scanned": 11,
+          "required_actions": []
+        }
+      ],
+      "qc_results": [
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/shop-three-step/billing/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/shop-three-step/billing/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:64cb159a10f62ffe1e43f18c7bcdd6159fc072046f8e6a64b22dd332d001ed79",
+          "observation": {
+            "page": "_site/shop-three-step/billing/index.html",
+            "sdk_pin": "0.4.43",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 59272,
+            "candidates": 46
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/shop-three-step/information/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/shop-three-step/information/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:54350596df6d9558bf707a6e21a91048065d1bf23b95be806ccfe895683530bc",
+          "observation": {
+            "page": "_site/shop-three-step/information/index.html",
+            "sdk_pin": "0.4.43",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 29012,
+            "candidates": 46
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/shop-three-step/landing/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/shop-three-step/landing/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:e093745c3010ef5be1ce2f8f87835919b72908c7596ff3b3da9b93d0dc034664",
+          "observation": {
+            "page": "_site/shop-three-step/landing/index.html",
+            "sdk_pin": "0.4.43",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 154777,
+            "candidates": 0
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/shop-three-step/presell/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/shop-three-step/presell/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:d3db4c667db5f562108cc38a792fc7cb0c826b7189529837273f102f5e30e0f2",
+          "observation": {
+            "page": "_site/shop-three-step/presell/index.html",
+            "sdk_pin": "0.4.43",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 21998,
+            "candidates": 0
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/shop-three-step/receipt/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/shop-three-step/receipt/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:68ba81aa23c6dfc4a97a7a882b41f95ec73f51c4a02fb54d963b052a5f2e8a33",
+          "observation": {
+            "page": "_site/shop-three-step/receipt/index.html",
+            "sdk_pin": "0.4.43",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 29319,
+            "candidates": 8
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/shop-three-step/shipping/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/shop-three-step/shipping/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:5c6ebcfa90433a3415f76bfed7838002dcae7c7e0dad008e9cecf0970c7babd9",
+          "observation": {
+            "page": "_site/shop-three-step/shipping/index.html",
+            "sdk_pin": "0.4.43",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 27435,
+            "candidates": 46
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/shop-three-step/upsell-bundle-stepper/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/shop-three-step/upsell-bundle-stepper/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:e13e1ed1931b2771b94c99fb351a6fb5525d78e3e8416931ddb3fe66c47a7e67",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-bundle-stepper/index.html",
+            "sdk_pin": "0.4.43",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 29595,
+            "candidates": 0
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/shop-three-step/upsell-bundle-tier-cards/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/shop-three-step/upsell-bundle-tier-cards/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:a8e738d6056bf3c8d77c854b7cdfa4540ba641f24f0839b84b17896c3b6e8135",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-bundle-tier-cards/index.html",
+            "sdk_pin": "0.4.43",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 31548,
+            "candidates": 0
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/shop-three-step/upsell-bundle-tier-pills/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/shop-three-step/upsell-bundle-tier-pills/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:4ad5bd2136a7cd2ece39f7d44dbf73cc2bb2ff2e5ccf10dae91c78f32a4f7f0b",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-bundle-tier-pills/index.html",
+            "sdk_pin": "0.4.43",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 31037,
+            "candidates": 0
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/shop-three-step/upsell-single/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/shop-three-step/upsell-single/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:08f881f263c56db30d00949a1938f771b027c2d85f39379361cb06d8b22f0e23",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-single/index.html",
+            "sdk_pin": "0.4.43",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 27489,
+            "candidates": 0
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/shop-three-step/upsell-vsl/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/shop-three-step/upsell-vsl/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:384a45e2ca6b3221a84cf0c14dadd35cb20b4a631a294fa1b16eac5aa0c92255",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-vsl/index.html",
+            "sdk_pin": "0.4.43",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 37114,
+            "candidates": 0
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/billing/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/billing/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:8cd6f1fde169bfe47d350341d5d3a0bffedb3a08155e7edb675304b980b436c8",
+          "observation": {
+            "page": "_site/shop-three-step/billing/index.html",
+            "favicon": true
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/billing/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/billing/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:c012688a679b4b6655217ce2db1164e4f2b2f1de184d6d80bd10fe13eed09911",
+          "observation": {
+            "page": "_site/shop-three-step/billing/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/billing/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/billing/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:d93d8885002f3a19ed722007afb8ad049907b4ad1ef0f939e221f79028d22538",
+          "observation": {
+            "page": "_site/shop-three-step/billing/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/billing/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/billing/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:9532cc3855bab5e24df7154f704936c908fbca942c6aa6167ce5019ba403879a",
+          "observation": {
+            "page": "_site/shop-three-step/billing/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/billing/index.html:og:image_target",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "og_image_base_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/billing/index.html",
+            "key": "og:image_target"
+          },
+          "state_fingerprint": "sha256:2c4f0fd5747babfd8c516fd861228ba58d4ee55b44b4f753e6467340f8348b5b",
+          "observation": {
+            "page": "_site/shop-three-step/billing/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "og_image_base_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/billing/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/billing/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:6526e2742212feb90e8894b69c6c92fe8affb759cbecebea05fda482678355bf",
+          "observation": {
+            "page": "_site/shop-three-step/billing/index.html",
+            "tailwind_cdn": 0,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/billing/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/billing/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:74bea652fb75c66cc252c01f7c82c6bf118ed8b75ffe2a3b7abb732aee2d56df",
+          "observation": {
+            "page": "_site/shop-three-step/billing/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/billing/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/billing/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:299ada823aed9dbd856b31890dd95313df6a51c877b7a2f3f20408c708ec3ba8",
+          "observation": {
+            "page": "_site/shop-three-step/billing/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/information/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/information/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:079ca7ce4e3713ba57b6a671ce2dbfff9ca4a2aa5093a81ca83295a8a2ccf4b1",
+          "observation": {
+            "page": "_site/shop-three-step/information/index.html",
+            "favicon": true
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/information/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/information/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:f2b38e9123a75cd9af37de18405d753549bf87aa5796fe5936efe0c0bde74259",
+          "observation": {
+            "page": "_site/shop-three-step/information/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/information/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/information/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:1afacf48231f97d519a1ae983200024c3a610ce19396e298b061727a6e5a6e62",
+          "observation": {
+            "page": "_site/shop-three-step/information/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/information/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/information/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:1689854fc373ca0686f8f58d987219c6259c8ae982f4eb0dddb3d34891ff0799",
+          "observation": {
+            "page": "_site/shop-three-step/information/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/information/index.html:og:image_target",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "og_image_base_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/information/index.html",
+            "key": "og:image_target"
+          },
+          "state_fingerprint": "sha256:5b310fc90f106f8af203f359df6626a3c934e8ff6f4929e6fda4d08140d88b78",
+          "observation": {
+            "page": "_site/shop-three-step/information/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "og_image_base_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/information/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/information/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:e97da7efcd118fcd231a86a1ad5594cfb027da655da4c1ce5e586b9fdd7ac0ea",
+          "observation": {
+            "page": "_site/shop-three-step/information/index.html",
+            "tailwind_cdn": 0,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/information/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/information/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:b913aaf74f65da4e4b58144418cab1e7ef89e941a6f97a97460bdd1eca7f8898",
+          "observation": {
+            "page": "_site/shop-three-step/information/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/information/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/information/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:91ea529d20899aa38650578a99cf37b6fc871d4018d00e7552c59e22629b1782",
+          "observation": {
+            "page": "_site/shop-three-step/information/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/landing/index.html:anchor:benefits",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/landing/index.html",
+            "key": "anchor:benefits"
+          },
+          "state_fingerprint": "sha256:931a8d95fdfb6d8385078dc890f3a75cb546c9711f48fc4d12f0ec1f338eccf3",
+          "observation": {
+            "page": "_site/shop-three-step/landing/index.html",
+            "target": "benefits",
+            "outcome": "resolved",
+            "scripts_read": null,
+            "scripts_loaded": null
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/landing/index.html:anchor:ingredients",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/landing/index.html",
+            "key": "anchor:ingredients"
+          },
+          "state_fingerprint": "sha256:591b1567e6a0b57de33df5f8f0621cc8bc165eaf078d651c25ace4398c8fbf88",
+          "observation": {
+            "page": "_site/shop-three-step/landing/index.html",
+            "target": "ingredients",
+            "outcome": "resolved",
+            "scripts_read": null,
+            "scripts_loaded": null
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/landing/index.html:anchor:reviews",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/landing/index.html",
+            "key": "anchor:reviews"
+          },
+          "state_fingerprint": "sha256:c98d8896056a10bcbcd938ae62f84c52d2edda55cdf7ac5294467f6b8d68dc88",
+          "observation": {
+            "page": "_site/shop-three-step/landing/index.html",
+            "target": "reviews",
+            "outcome": "resolved",
+            "scripts_read": null,
+            "scripts_loaded": null
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/landing/index.html:anchor:",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/landing/index.html",
+            "key": "anchor:"
+          },
+          "state_fingerprint": "sha256:9b56d68ae115c91e1685ad4b485f56381135e8e2180fa2837f42ede03d7e50c2",
+          "observation": {
+            "page": "_site/shop-three-step/landing/index.html",
+            "target": "",
+            "outcome": "resolved",
+            "scripts_read": null,
+            "scripts_loaded": null
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/landing/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/landing/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:c7aa915b6b767897246678f9856b97136cd1cf0321c0268d03519d01268e71b9",
+          "observation": {
+            "page": "_site/shop-three-step/landing/index.html",
+            "favicon": true
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/landing/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/landing/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:1efdcffbd67fec1117c56b8e3fd1fc832b8828fac0f64f302533e87c83edc3db",
+          "observation": {
+            "page": "_site/shop-three-step/landing/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/landing/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/landing/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:1e38fd9ed88ebdd2378549d4b57237515199f6fb8d1996cc7c1f9ace4805dd3c",
+          "observation": {
+            "page": "_site/shop-three-step/landing/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/landing/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/landing/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:2754afbf2ee06bdfdfeb3448db09ca25e0e56a93265335bf7f193e1e04a21d04",
+          "observation": {
+            "page": "_site/shop-three-step/landing/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/landing/index.html:og:image_target",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "og_image_base_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/landing/index.html",
+            "key": "og:image_target"
+          },
+          "state_fingerprint": "sha256:a2a6f4ef3cb6e0ad707ec9c9e1679cc2fe3b0eff3d89cbe180b232f0832c7fdd",
+          "observation": {
+            "page": "_site/shop-three-step/landing/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "og_image_base_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/landing/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/landing/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:82e15839a7265fe8fedd633999e9ab8d3cc9a000f105dbe07bd9fde8c7e442a7",
+          "observation": {
+            "page": "_site/shop-three-step/landing/index.html",
+            "tailwind_cdn": 1,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/landing/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/landing/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:93e2e6eae07f8a2e244824dc1042d478b3edc9894ed77f7f5a5837ff22eced3b",
+          "observation": {
+            "page": "_site/shop-three-step/landing/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/landing/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/landing/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:d17a47382a90b9b5267d4fae375bfcb7823c77803a70ae122b3ff3596210bb4b",
+          "observation": {
+            "page": "_site/shop-three-step/landing/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/presell/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/presell/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:d4ab7f870d2ab6b6ea45504653ed4dc578bc89205c7ecda3774531b08849bebc",
+          "observation": {
+            "page": "_site/shop-three-step/presell/index.html",
+            "favicon": true
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/presell/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/presell/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:1f903185001677dab48e7986d745fc2ae175828f99ed9c3e949946de7b942265",
+          "observation": {
+            "page": "_site/shop-three-step/presell/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/presell/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/presell/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:a0ab61181916cc7ef6cb09c63130b3365744c93ce2ca55be22d4893343227def",
+          "observation": {
+            "page": "_site/shop-three-step/presell/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/presell/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/presell/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:a464c78ae4251bea2e9231e9aba598c9ff35dde85979d0188a5101c058c78e24",
+          "observation": {
+            "page": "_site/shop-three-step/presell/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/presell/index.html:og:image_target",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "og_image_base_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/presell/index.html",
+            "key": "og:image_target"
+          },
+          "state_fingerprint": "sha256:f55b2476bd278dfb97bf7e7ebea8541fde9b4ff70dd236f4c7aeedd8f17de558",
+          "observation": {
+            "page": "_site/shop-three-step/presell/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "og_image_base_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/presell/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/presell/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:6ab783f706fc12d7a4e9062d5b5cc23926e5c89811cd1715f94f585fb188b72a",
+          "observation": {
+            "page": "_site/shop-three-step/presell/index.html",
+            "tailwind_cdn": 1,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/presell/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/presell/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:0e5661c323d028e5f048257fc3bc9600f4c4a6d4664f219f217a8c5c6ffcd5be",
+          "observation": {
+            "page": "_site/shop-three-step/presell/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/presell/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/presell/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:7a39e5348a30c41e43caf3fbbf4aaa29237950a16a9fa5182a7b1ef1bcfd60e6",
+          "observation": {
+            "page": "_site/shop-three-step/presell/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/receipt/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/receipt/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:0909f66e413f7f4d179d63e04e70b61067aada312db9a3e9cadbcb350b63b9d2",
+          "observation": {
+            "page": "_site/shop-three-step/receipt/index.html",
+            "favicon": true
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/receipt/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/receipt/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:0336b2fc169316dcc1254c9bebfc1d110513b8ce6cb293883896f16034f51846",
+          "observation": {
+            "page": "_site/shop-three-step/receipt/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/receipt/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/receipt/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:4e51dc62c80681bb9fcf4947c423fa9b57df1dd9fbb5091e42cf52aac518dd25",
+          "observation": {
+            "page": "_site/shop-three-step/receipt/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/receipt/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/receipt/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:f9665082b110e528011d7244c9d1e67510d0a71820535338da1a97bb6d546733",
+          "observation": {
+            "page": "_site/shop-three-step/receipt/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/receipt/index.html:og:image_target",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "og_image_base_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/receipt/index.html",
+            "key": "og:image_target"
+          },
+          "state_fingerprint": "sha256:0ba45f8efc5fd5fba6e5099f943f11122ad1333c2730420d1c265304900eb261",
+          "observation": {
+            "page": "_site/shop-three-step/receipt/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "og_image_base_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/receipt/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/receipt/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:205423ca2be5476fa9996892aaa895ee55feeadd2f27240b8b0b409c37228d10",
+          "observation": {
+            "page": "_site/shop-three-step/receipt/index.html",
+            "tailwind_cdn": 0,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/receipt/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/receipt/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:975c8ce06626b1bceecf8427234132abaf1763f355404c6507eff244387343fc",
+          "observation": {
+            "page": "_site/shop-three-step/receipt/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/receipt/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/receipt/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:b5415e6b4bf4f54ed88a6390460001379691af3db43969d9960ea5ec885885bc",
+          "observation": {
+            "page": "_site/shop-three-step/receipt/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/shipping/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/shipping/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:1b10f6b650f4927713bff90e12ffd9449a4dd6132036512f32c986f33c417588",
+          "observation": {
+            "page": "_site/shop-three-step/shipping/index.html",
+            "favicon": true
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/shipping/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/shipping/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:37755948698e65b42302e7b92659a8f1fd0e9cf520f3718cb1d6f7530ad92c52",
+          "observation": {
+            "page": "_site/shop-three-step/shipping/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/shipping/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/shipping/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:7b732ae5f73b20a5c1070ffaeb7c1c1ac139257993d62e185f6454fb8f9dda8c",
+          "observation": {
+            "page": "_site/shop-three-step/shipping/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/shipping/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/shipping/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:3bd78994174c5638a21410de30905724f5619ebc4642e6c6a153f00eaf8b4932",
+          "observation": {
+            "page": "_site/shop-three-step/shipping/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/shipping/index.html:og:image_target",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "og_image_base_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/shipping/index.html",
+            "key": "og:image_target"
+          },
+          "state_fingerprint": "sha256:fd7c848d6006d7bc8bcb7f084f7f490dab624557d12d24d1f7dc8e87cae7de3a",
+          "observation": {
+            "page": "_site/shop-three-step/shipping/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "og_image_base_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/shipping/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/shipping/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:c7180a285b35046291765ed343aa78cd3dbc82fb8863c69d4eb012ea9b4a9c81",
+          "observation": {
+            "page": "_site/shop-three-step/shipping/index.html",
+            "tailwind_cdn": 0,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/shipping/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/shipping/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:22a29aead1bed633616c1afd853e433daba5079db89355d050b1d5cc1d92f61b",
+          "observation": {
+            "page": "_site/shop-three-step/shipping/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/shipping/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/shipping/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:4d12c788105fb18a980e1ffef427a3ba800245227e738240d8bd0ab940413f3d",
+          "observation": {
+            "page": "_site/shop-three-step/shipping/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-bundle-stepper/index.html:anchor:",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-bundle-stepper/index.html",
+            "key": "anchor:"
+          },
+          "state_fingerprint": "sha256:fd862738e1ad680769b4321367761d5d28f8611b69c47e3b80bb0d21dfce8cb1",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-bundle-stepper/index.html",
+            "target": "",
+            "outcome": "resolved",
+            "scripts_read": null,
+            "scripts_loaded": null
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-bundle-stepper/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-bundle-stepper/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:466c82b7773d287fe0d446d6588d88d6213fdff7ff4662fc179c551d310223ba",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-bundle-stepper/index.html",
+            "favicon": true
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-bundle-stepper/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-bundle-stepper/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:6e01b5ea188692d53aa91ed19f164691b77aeded75de2d46de49d9f47f2ce7a7",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-bundle-stepper/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-bundle-stepper/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-bundle-stepper/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:0130db0096d8052ca5d17ff29af23505351786db62591477b79828ca46307d97",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-bundle-stepper/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-bundle-stepper/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-bundle-stepper/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:4a37cf4f08b7988d3af0605c2653e240ac204bd9c3657b11ad5ee892f7e89bf7",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-bundle-stepper/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-bundle-stepper/index.html:og:image_target",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "og_image_base_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-bundle-stepper/index.html",
+            "key": "og:image_target"
+          },
+          "state_fingerprint": "sha256:28851d51ab6c3896c6cdf782120b38ed507bd1abbbf7f8540bee1d8acf69f5fa",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-bundle-stepper/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "og_image_base_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-bundle-stepper/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-bundle-stepper/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:2914319627b80e34c6b6ba6031f27f7b3839ffd9a63c4a4bedbc6f22586887c2",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-bundle-stepper/index.html",
+            "tailwind_cdn": 0,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-bundle-stepper/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-bundle-stepper/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:fb31ecdcca9a9bf8362bbce46c3fbb8d8db5646dc610a58acb15a61db8d519e1",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-bundle-stepper/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-bundle-stepper/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-bundle-stepper/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:e187aea2fb1dc914e6a484f9821b04ca3bbab4bf4c4f2d99ce6a92dd6638070b",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-bundle-stepper/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-bundle-tier-cards/index.html:anchor:",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-bundle-tier-cards/index.html",
+            "key": "anchor:"
+          },
+          "state_fingerprint": "sha256:ffe33ec4d4b8f9376fd5878ddc667c8767421659a8a662abff2a99e2308055df",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-bundle-tier-cards/index.html",
+            "target": "",
+            "outcome": "resolved",
+            "scripts_read": null,
+            "scripts_loaded": null
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-bundle-tier-cards/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-bundle-tier-cards/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:157e56e313f99bf05f79413229dc1070ee40586f85db5c26761f4f109e43f6cb",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-bundle-tier-cards/index.html",
+            "favicon": true
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-bundle-tier-cards/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-bundle-tier-cards/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:45fc7d5c8323e2464b4e8d8db73b62f03aa8443e6ddabe91952e62b86d1e8037",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-bundle-tier-cards/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-bundle-tier-cards/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-bundle-tier-cards/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:831ae03b076a8885544b323ca92753b87e5b3d34ee4671d50955337431c3dccb",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-bundle-tier-cards/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-bundle-tier-cards/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-bundle-tier-cards/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:a7af20a85fb1fbc2a48ca25c2941b45240debc02821377de5c858ddbdc6757ff",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-bundle-tier-cards/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-bundle-tier-cards/index.html:og:image_target",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "og_image_base_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-bundle-tier-cards/index.html",
+            "key": "og:image_target"
+          },
+          "state_fingerprint": "sha256:222ad4af1793eab573146efc794d0d65fdb657912311fef71964e87bd6f1cce4",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-bundle-tier-cards/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "og_image_base_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-bundle-tier-cards/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-bundle-tier-cards/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:a28d375db9a8ae18e2bbc1b7969b014e4e67137994a2475da867f5335811eaf9",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-bundle-tier-cards/index.html",
+            "tailwind_cdn": 0,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-bundle-tier-cards/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-bundle-tier-cards/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:433ece561e807a183d287cb46e0ca6e7da72c3af3266b9d12f8ad0f46f9b2768",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-bundle-tier-cards/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-bundle-tier-cards/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-bundle-tier-cards/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:c78cff4edacceaa1b88a49d5c73dc9dc6854e743dd340cdaea7ce0ec67541923",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-bundle-tier-cards/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-bundle-tier-pills/index.html:anchor:",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-bundle-tier-pills/index.html",
+            "key": "anchor:"
+          },
+          "state_fingerprint": "sha256:7607b9984c28d006a71055df8ba6eb27ccdb8ad770ae066c7bf64f803c6517b6",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-bundle-tier-pills/index.html",
+            "target": "",
+            "outcome": "resolved",
+            "scripts_read": null,
+            "scripts_loaded": null
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-bundle-tier-pills/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-bundle-tier-pills/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:e07313f41ebcb1195ef94c490f3be4a9f4007159519dc07f64c48f0f4007a917",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-bundle-tier-pills/index.html",
+            "favicon": true
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-bundle-tier-pills/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-bundle-tier-pills/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:2adf104154aba3725a9f58b5023033e3fbdb7d07a5a9dcab8b4440d56de33fe8",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-bundle-tier-pills/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-bundle-tier-pills/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-bundle-tier-pills/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:465aa1b02e5d3a07411e78e351ad5eab0de35e70fd9be21824e5a09ab7f7c49f",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-bundle-tier-pills/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-bundle-tier-pills/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-bundle-tier-pills/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:5528c0ba93fb566f8baae76b152c3fa2c27f89f47e52a52a31b00bf1f882ea47",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-bundle-tier-pills/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-bundle-tier-pills/index.html:og:image_target",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "og_image_base_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-bundle-tier-pills/index.html",
+            "key": "og:image_target"
+          },
+          "state_fingerprint": "sha256:a704d3299f4aad52f56fb5621396303333291ef19528d0e0e2bff757ac9eb651",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-bundle-tier-pills/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "og_image_base_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-bundle-tier-pills/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-bundle-tier-pills/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:e389edcca4c3693c9527f5d7c1d3feefc62ff80cc7ea3e1908dbb9f0bfa4efe6",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-bundle-tier-pills/index.html",
+            "tailwind_cdn": 0,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-bundle-tier-pills/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-bundle-tier-pills/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:e490758d68fac3ed1c79386bb14a424cdcb17653022af530bed2e86b82c09b83",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-bundle-tier-pills/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-bundle-tier-pills/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-bundle-tier-pills/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:cf3746fd597187b819ed4bae4b40683c8e35e593183ff50803ce7842778de1ef",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-bundle-tier-pills/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-single/index.html:anchor:",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-single/index.html",
+            "key": "anchor:"
+          },
+          "state_fingerprint": "sha256:7a94e5f262215feb045e654722f34e8becf7ba5d8403a8bad2e5c89a986bb176",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-single/index.html",
+            "target": "",
+            "outcome": "resolved",
+            "scripts_read": null,
+            "scripts_loaded": null
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-single/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-single/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:bd08677a3ea693b013087c8a76d916dfb9791aa4c74ccfe5138e95312987532d",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-single/index.html",
+            "favicon": true
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-single/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-single/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:abd0fa1213b8f67ec9224ae0cd793e4b20be7724d9d22fa972aadfce99a57d8a",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-single/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-single/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-single/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:5a98084e7e3b711cfac969e0c1f75089219778d31f50f63d36dd0007e3b7365b",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-single/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-single/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-single/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:1e7eb96d1bf82ae81c3455488cebb7247ba30e3762f5022c1d3676665faadf5d",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-single/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-single/index.html:og:image_target",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "og_image_base_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-single/index.html",
+            "key": "og:image_target"
+          },
+          "state_fingerprint": "sha256:288f11fb4d06b12b717b3b7ce4754f528afd847e54e7f24f8de4a2c1dc9627cc",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-single/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "og_image_base_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-single/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-single/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:715fedace2cca61d1d0444b2156d63ded837993bbaca9f031b8ac0a73903231c",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-single/index.html",
+            "tailwind_cdn": 0,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-single/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-single/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:5e1aa81bfd6795006bb12ac0603aab75f0bac3a867bf87aa5f3a81e486c27241",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-single/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-single/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-single/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:778f513c29b3c3c4d88fedabe038e03f04b9e0cc07c1832eb8881d9fbbd070b1",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-single/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-vsl/index.html:anchor:",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-vsl/index.html",
+            "key": "anchor:"
+          },
+          "state_fingerprint": "sha256:c9f6a04e8da45166b7fdf50d1335d865e66424339a53975c0da538d169ba648a",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-vsl/index.html",
+            "target": "",
+            "outcome": "resolved",
+            "scripts_read": null,
+            "scripts_loaded": null
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-vsl/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-vsl/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:81261ec9082444a138837a80d68fbfcc413a73572a14a11c88950523dfca030f",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-vsl/index.html",
+            "favicon": true
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-vsl/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-vsl/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:fec03df5b253837cc4148adb7403a55b2d94f03a512773389381fed5e630f42d",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-vsl/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-vsl/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-vsl/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:f9f6203ce2bc492abaae1f20d2c706d51ac7e35c9f3b09700742b101af661ac5",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-vsl/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-vsl/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-vsl/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:b48b6dd44dda04956a970fbb14bbb8fa1b8738c0ff539e0ed7301b7f27ea716a",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-vsl/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-vsl/index.html:og:image_target",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "og_image_base_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-vsl/index.html",
+            "key": "og:image_target"
+          },
+          "state_fingerprint": "sha256:dd0141118a9de45587d04e2d15d9bdf1aa749f30dbb2c3af727546ce66ea3d05",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-vsl/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "og_image_base_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-vsl/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-vsl/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:2ba17490761444611e2a90658e898ce426606245bd54f5986b7e2f65987fa804",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-vsl/index.html",
+            "tailwind_cdn": 0,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-vsl/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-vsl/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:24e1683b1d0e9a86885bfca55cf834b3f51df4b134e1cd514bbdcfbc2b0e0f32",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-vsl/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/shop-three-step/upsell-vsl/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/shop-three-step/upsell-vsl/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:8c219a3b7c9b088618e1f26a3a593093d8b90ad4cc641c14eaad0274d989b682",
+          "observation": {
+            "page": "_site/shop-three-step/upsell-vsl/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        }
+      ],
+      "brand_contract": {
+        "state": "inspected",
+        "family": "shop-three-step"
+      },
+      "synthesized_packet": {
+        "schema_version": "campaign-runtime-build-packet/v0",
+        "_synthesized": {
+          "from": "built_site",
+          "note": "Minimal packet auto-emitted from a built _site/. Not a full Build Packet: source_html and assembly provenance are absent.",
+          "site_root": "<toolkit>/fixtures/certified-families/_site",
+          "campaign_dir": "<toolkit>/fixtures/certified-families/_site/shop-three-step",
+          "html_count": 11
+        },
+        "campaign": {
+          "public_route_slug": "shop-three-step",
+          "allowed_domains_confirmed": false
+        },
+        "spec": {
+          "map_id": "shop-three-step"
+        },
+        "assembly": {
+          "target_repo": "<toolkit>/fixtures/certified-families",
+          "output_dir": "_site/shop-three-step",
+          "template_family": "shop-three-step"
+        },
+        "deploy": {
+          "target": "unknown",
+          "preview_url": null
+        },
+        "qa": {},
+        "pages": [
+          {
+            "page_id": "billing",
+            "type": "page",
+            "route": "billing"
+          },
+          {
+            "page_id": "information",
+            "type": "page",
+            "route": "information"
+          },
+          {
+            "page_id": "landing",
+            "type": "landing",
+            "route": "landing"
+          },
+          {
+            "page_id": "presell",
+            "type": "presell",
+            "route": "presell"
+          },
+          {
+            "page_id": "receipt",
+            "type": "receipt",
+            "route": "receipt"
+          },
+          {
+            "page_id": "shipping",
+            "type": "page",
+            "route": "shipping"
+          },
+          {
+            "page_id": "upsell-bundle-stepper",
+            "type": "upsell",
+            "route": "upsell-bundle-stepper"
+          },
+          {
+            "page_id": "upsell-bundle-tier-cards",
+            "type": "upsell",
+            "route": "upsell-bundle-tier-cards"
+          },
+          {
+            "page_id": "upsell-bundle-tier-pills",
+            "type": "upsell",
+            "route": "upsell-bundle-tier-pills"
+          },
+          {
+            "page_id": "upsell-single",
+            "type": "upsell",
+            "route": "upsell-single"
+          },
+          {
+            "page_id": "upsell-vsl",
+            "type": "upsell",
+            "route": "upsell-vsl"
+          }
+        ]
+      }
+    },
+    "scope": {
+      "slug": "shop-three-step",
+      "html_count": 11,
+      "pages": [
+        {
+          "page_id": "billing",
+          "type": "page",
+          "route": "billing"
+        },
+        {
+          "page_id": "information",
+          "type": "page",
+          "route": "information"
+        },
+        {
+          "page_id": "landing",
+          "type": "landing",
+          "route": "landing"
+        },
+        {
+          "page_id": "presell",
+          "type": "presell",
+          "route": "presell"
+        },
+        {
+          "page_id": "receipt",
+          "type": "receipt",
+          "route": "receipt"
+        },
+        {
+          "page_id": "shipping",
+          "type": "page",
+          "route": "shipping"
+        },
+        {
+          "page_id": "upsell-bundle-stepper",
+          "type": "upsell",
+          "route": "upsell-bundle-stepper"
+        },
+        {
+          "page_id": "upsell-bundle-tier-cards",
+          "type": "upsell",
+          "route": "upsell-bundle-tier-cards"
+        },
+        {
+          "page_id": "upsell-bundle-tier-pills",
+          "type": "upsell",
+          "route": "upsell-bundle-tier-pills"
+        },
+        {
+          "page_id": "upsell-single",
+          "type": "upsell",
+          "route": "upsell-single"
+        },
+        {
+          "page_id": "upsell-vsl",
+          "type": "upsell",
+          "route": "upsell-vsl"
+        }
+      ],
+      "campaign_dir": "<toolkit>/fixtures/certified-families/_site/shop-three-step"
+    },
+    "synthesized_packet": {
+      "schema_version": "campaign-runtime-build-packet/v0",
+      "_synthesized": {
+        "from": "built_site",
+        "note": "Minimal packet auto-emitted from a built _site/. Not a full Build Packet: source_html and assembly provenance are absent.",
+        "site_root": "<toolkit>/fixtures/certified-families/_site",
+        "campaign_dir": "<toolkit>/fixtures/certified-families/_site/shop-three-step",
+        "html_count": 11
+      },
+      "campaign": {
+        "public_route_slug": "shop-three-step",
+        "allowed_domains_confirmed": false
+      },
+      "spec": {
+        "map_id": "shop-three-step"
+      },
+      "assembly": {
+        "target_repo": "<toolkit>/fixtures/certified-families",
+        "output_dir": "_site/shop-three-step",
+        "template_family": "shop-three-step"
+      },
+      "deploy": {
+        "target": "unknown",
+        "preview_url": null
+      },
+      "qa": {},
+      "pages": [
+        {
+          "page_id": "billing",
+          "type": "page",
+          "route": "billing"
+        },
+        {
+          "page_id": "information",
+          "type": "page",
+          "route": "information"
+        },
+        {
+          "page_id": "landing",
+          "type": "landing",
+          "route": "landing"
+        },
+        {
+          "page_id": "presell",
+          "type": "presell",
+          "route": "presell"
+        },
+        {
+          "page_id": "receipt",
+          "type": "receipt",
+          "route": "receipt"
+        },
+        {
+          "page_id": "shipping",
+          "type": "page",
+          "route": "shipping"
+        },
+        {
+          "page_id": "upsell-bundle-stepper",
+          "type": "upsell",
+          "route": "upsell-bundle-stepper"
+        },
+        {
+          "page_id": "upsell-bundle-tier-cards",
+          "type": "upsell",
+          "route": "upsell-bundle-tier-cards"
+        },
+        {
+          "page_id": "upsell-bundle-tier-pills",
+          "type": "upsell",
+          "route": "upsell-bundle-tier-pills"
+        },
+        {
+          "page_id": "upsell-single",
+          "type": "upsell",
+          "route": "upsell-single"
+        },
+        {
+          "page_id": "upsell-vsl",
+          "type": "upsell",
+          "route": "upsell-vsl"
+        }
+      ]
+    },
+    "emitted_packet_path": null,
+    "next": {
+      "stage": "setup",
+      "status": "ready_with_warnings",
+      "stage_blocked": false,
+      "owner": "setup",
+      "default_skill": "next-campaigns-os-setup",
+      "command": "campaigns-os next setup --packet <packet>",
+      "reason": "No assembly report on disk yet. Start with setup (assembly report should appear after prepare-build).",
+      "actions": [
+        "Replace literal template placeholder text (Lorem/Placeholder/TODO/Product Name/Benefit one…four) with CampaignSpec/design copy before QA; the browser residue gate blocks on these terms.",
+        "Re-skin template demo placeholder assets (spacer SVGs, repeated benefit icons, starter imagery) to the campaign's real assets before launch."
+      ],
+      "blocked_stages": []
+    }
+  }
+}

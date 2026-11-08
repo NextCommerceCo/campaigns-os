@@ -1,0 +1,705 @@
+{
+  "base_sha": "e1c5bc9c6dc2745d6f2bd54f37f89319ce7f915a",
+  "case": "examples-prebuild",
+  "entry": "packet",
+  "description": "pre-build: a plain copy of examples/ (no _site, no Assembly Report)",
+  "output": {
+    "schema_version": "campaigns-os-doctor-output/v0",
+    "generated_at": "2026-01-01T00:00:00.000Z",
+    "ok": true,
+    "status": "ready_with_warnings",
+    "errors": [],
+    "warnings": [
+      {
+        "code": "spec.store_profile.placeholder_store_url",
+        "message": "CampaignSpec campaign.store_url \"https://store.example.com\" looks like a local/placeholder store, not a live storefront. Localhost is valid as a Development-domain QA origin, but a real shopper cannot transact against it. Set the merchant's production store_url before launch.",
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "spec.store_profile.payment_methods_default_on",
+        "message": "Starter-template checkout pages render paypal, klarna, apple_pay, google_pay by default: the checkout page includes payment-methods.html with no arguments and the include defaults show_<method> to true, but the CampaignSpec does not list them in available_payment_methods/available_express_payment_methods. Pass show_paypal=false show_klarna=false show_apple_pay=false show_google_pay=false on that include call in the olympus checkout page ({% campaign_include 'payment-methods.html' show_paypal=false show_klarna=false show_apple_pay=false show_google_pay=false %}) or add the method to the spec, so unsupported methods do not ship. Doctor re-reads the built checkout once it exists.",
+        "detail": {
+          "methods": [
+            "paypal",
+            "klarna",
+            "apple_pay",
+            "google_pay"
+          ],
+          "template_family": "olympus",
+          "basis": "spec_only",
+          "repair": {
+            "owner": "operator",
+            "action": "Pass show_paypal=false show_klarna=false show_apple_pay=false show_google_pay=false on the checkout page's payment-methods.html include call, or add the method(s) to the CampaignSpec, then rebuild.",
+            "include_call": "{% campaign_include 'payment-methods.html' show_paypal=false show_klarna=false show_apple_pay=false show_google_pay=false %}"
+          }
+        },
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "routing_meta.runtime_root",
+        "message": "CampaignSpec sdk_hints.meta_tags routing values must render as campaign-rooted paths before QA. Expected values like \"/runtime-packet-demo/upsell/\" for next-success-url, next-upsell-accept-url, next-upsell-decline-url; found checkout:next-success-url=upsell/; upsell:next-upsell-accept-url=receipt/; upsell:next-upsell-decline-url=receipt/.",
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "sdk_hints.meta_tags",
+        "message": "CampaignSpec expects SDK meta tags (next-page-type, next-success-url, next-upsell-accept-url, next-upsell-decline-url). Doctor cannot verify rendered output until page-kit build writes _site/runtime-packet-demo/.",
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "frontmatter.demoOnlyValues",
+        "message": "Replace demo-only starter value before launch: packages.main_package=1",
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "frontmatter.demoOnlyValues",
+        "message": "Replace demo-only starter value before launch: packages.prepurchase_1=7",
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "frontmatter.demoOnlyValues",
+        "message": "Replace demo-only starter value before launch: packages.prepurchase_2=9",
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "frontmatter.demoOnlyValues",
+        "message": "Replace demo-only starter value before launch: shipping_methods.standard=1",
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "frontmatter.demoOnlyValues",
+        "message": "Replace demo-only starter value before launch: bundles[].vouchers=FREESHIP",
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "frontmatter.demoOnlyValues",
+        "message": "Replace demo-only starter value before launch: upsell_offer.package_id=3",
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "frontmatter.demoOnlyValues",
+        "message": "Replace demo-only starter value before launch: upsell_offer.vouchers_json=[\"UP50\"]",
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "frontmatter.demoOnlyValues",
+        "message": "Replace demo-only starter value before launch: upsell_bundle_tiers packageId=3",
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "frontmatter.replaceFromSpecOrApi",
+        "message": "Must be replaced from CampaignSpec/API: packages.*",
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "frontmatter.replaceFromSpecOrApi",
+        "message": "Must be replaced from CampaignSpec/API: shipping_methods.*",
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "frontmatter.replaceFromSpecOrApi",
+        "message": "Must be replaced from CampaignSpec/API: bundles[].shipping_method",
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "frontmatter.replaceFromSpecOrApi",
+        "message": "Must be replaced from CampaignSpec/API: bundles[].vouchers",
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "frontmatter.replaceFromSpecOrApi",
+        "message": "Must be replaced from CampaignSpec/API: order_bump.*.package_id",
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "frontmatter.replaceFromSpecOrApi",
+        "message": "Must be replaced from CampaignSpec/API: upsell_offer.*",
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "frontmatter.replaceFromSpecOrApi",
+        "message": "Must be replaced from CampaignSpec/API: upsell_bundle_tiers[].items_json",
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "frontmatter.replaceFromSpecOrApi",
+        "message": "Must be replaced from CampaignSpec/API: upsell_bundle_tiers[].vouchers_json",
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "frontmatter.removeWhenUnsupported",
+        "message": "Remove when unsupported by target campaign: bundles[].vouchers when no tier-specific shipping price exists",
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "frontmatter.removeWhenUnsupported",
+        "message": "Remove when unsupported by target campaign: bump includes when prepurchase packages are absent",
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "frontmatter.removeWhenUnsupported",
+        "message": "Remove when unsupported by target campaign: unsupported payment method rows",
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "frontmatter.removeWhenUnsupported",
+        "message": "Remove when unsupported by target campaign: upsell pages not present in the funnel",
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "build_brief.missing",
+        "message": "No Campaign Build Brief artifact is referenced. Existing builds may continue, but new build intake should provide or generate .campaign-runtime/input/campaign-build-brief.normalized.json so business/design decisions are durable.",
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "deploy.preview_url",
+        "message": "No preview or production URL yet. QA remains blocked after build/polish.",
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      }
+    ],
+    "ready": [
+      "Build Packet schema campaign-runtime-build-packet/v0",
+      "Template family \"olympus\" is certified (commerce catalog + brand contract)",
+      "Template family \"olympus\" certification is current: last verified against SDK 0.4.43 (2026-10-24), the current SDK recorded by the vendored contracts.",
+      "Target campaign output directory exists",
+      "Target page-kit dependency 0.3.0",
+      "Local CampaignSpec parsed",
+      "CampaignSpec spec_identity includes map_id and public_route_slug",
+      "Packet public_route_slug \"runtime-packet-demo\" matches CampaignSpec identity and is not the Map ID",
+      "CampaignSpec public page routes are Page Kit-compatible",
+      "CampaignSpec required Store Profile fields are present for page-kit campaigns.json",
+      "Target campaigns.json SDK version matches CampaignSpec (0.4.18).",
+      "Target campaigns.json Store Profile matches the CampaignSpec across all nine governed fields.",
+      "CampaignSpec shipping countries: all countries",
+      "CampaignSpec routing hints match the routes of the pages they name",
+      "Source mappings cover active CampaignSpec pages",
+      "All mapped CampaignSpec pages are build candidates",
+      "Mapped source pages pass the page-kit preparation check (document wrappers stripped, no leftover frontmatter, no source-file internal links)",
+      "CampaignSpec package purchase availability has no unavailable package refs in active build data",
+      "Upsell selector-scope checkpoint not applicable: no built upsell/downsell page to scan yet.",
+      "Campaign identity checkpoint not applicable: no built page to scan yet.",
+      "SDK markup checkpoint not applicable: no built page to scan yet.",
+      "Script syntax checkpoint not applicable: No built page was available to scan; script syntax is checked once pages are built.",
+      "Cart placeholder check not applicable: no built page to scan yet.",
+      "Smoke checks not applicable: no built page to scan yet.",
+      "Campaigns API key available via the packet-local CampaignSpec campaign.campaigns_api_key",
+      "Commerce catalog sharedFrontmatterVocabulary loaded",
+      "Template agentContract loaded for olympus",
+      "Template brand/residue/pricing contract loaded for olympus",
+      "Template family inventory matrix loaded for olympus",
+      "olympus upsell offers have code-backed discounts or no code-less discount offer binding requirement",
+      "Market-sensitive copy scan found no obvious US-only patterns (available_shipping_countries=all).",
+      "Hardcoded phone scan found no mismatched static phone numbers.",
+      "source_html.adapter_contract adapter decision fields loaded",
+      "qa.proof_policy loaded: browser=true, typed_card_depth=common, order_path_depth=common",
+      "Pricing CSS scan skipped: campaign assets/css directory does not exist (runs after setup/build)",
+      "Hidden eager-media checkpoint not applicable before completed assembly."
+    ],
+    "derived": {
+      "packet_path": "<fixture>/build-packet.basic.json",
+      "assembly_report_path": "<fixture>/target-page-kit/.campaign-runtime/assembly-report.json",
+      "map_id": "runtime-packet-demo-k9x2",
+      "public_route_slug": "runtime-packet-demo",
+      "template_family": "olympus",
+      "source_root": "<fixture>/source-html",
+      "target_repo": "<fixture>/target-page-kit",
+      "target_output_dir": "<fixture>/target-page-kit/src/runtime-packet-demo",
+      "spec_path": "<fixture>/campaignspec.v42.basic.json",
+      "doctor_checks": [
+        "campaign-spec.rule-registry",
+        "spec.identity_export",
+        "campaign.route_slug_identity",
+        "campaign.route_root",
+        "spec.public_routes",
+        "spec.store_profile",
+        "page_kit.sdk_version",
+        "page_kit.store_profile",
+        "page_kit.analytics_vendors",
+        "spec.shipping_countries",
+        "spec.routing_meta_tags",
+        "spec.routing_hint_stale",
+        "spec.routing_host_prefix",
+        "source_html.coverage",
+        "source_html.preparation",
+        "spec.package_availability",
+        "built_output.target_root",
+        "built_output.fingerprint",
+        "qa.baseline_accepted",
+        "built_output.pages",
+        "built_output.live_campaign_refs",
+        "built_output.upsell_selector_scope",
+        "built_output.campaign_identity",
+        "built_output.sdk_markup",
+        "built_output.script_syntax",
+        "built_output.cart_placeholders",
+        "built_output.smoke_qc",
+        "built_output.sdk_meta_tags",
+        "built_output.build_summary",
+        "built_output.route_drift",
+        "built_output.content_residue",
+        "built_output.proof_attestation",
+        "campaign.api_key",
+        "assembly.commerce_catalog",
+        "market_copy",
+        "source_html.adapter_contract",
+        "qa.proof_policy",
+        "build_brief.artifact"
+      ],
+      "checkpoint_gates": [
+        {
+          "id": "page_kit.sdk_version",
+          "scope": "page_kit.sdk_version",
+          "status": "pass",
+          "code": "page_kit.sdk_version.pass",
+          "reason": "Target SDK version exactly matches the CampaignSpec (0.4.18).",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "runtime-packet-demo",
+            "target_path": "_data/campaigns.json"
+          },
+          "state": {
+            "expected": "0.4.18",
+            "observed": "0.4.18"
+          },
+          "state_fingerprint": null,
+          "expected_sdk_version": "0.4.18",
+          "observed_sdk_version": "0.4.18",
+          "expected_source": "global_config.sdk_version",
+          "waiver": null,
+          "waiver_assessment": {
+            "active": null,
+            "inert_counts": {
+              "stale": 0,
+              "foreign": 0,
+              "malformed": 0,
+              "expired": 0
+            }
+          },
+          "required_actions": []
+        },
+        {
+          "id": "page_kit.store_profile",
+          "scope": "page_kit.store_profile",
+          "status": "pass",
+          "code": "page_kit.store_profile.pass",
+          "reason": "Target Store Profile exactly matches the CampaignSpec for all nine governed fields.",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "runtime-packet-demo",
+            "target_path": "_data/campaigns.json"
+          },
+          "state": {
+            "discrepancies": []
+          },
+          "state_fingerprint": "sha256:744eb5d132a003fdc6b56dce6b84304e5c42f899e597e886e354c95a11aae160",
+          "matrix": [
+            {
+              "field": "store_name",
+              "kind": "match",
+              "spec": "Example Store",
+              "target": "Example Store",
+              "severity": "clean"
+            },
+            {
+              "field": "store_url",
+              "kind": "match",
+              "spec": "https://store.example.com",
+              "target": "https://store.example.com",
+              "severity": "clean"
+            },
+            {
+              "field": "store_terms",
+              "kind": "match",
+              "spec": "https://store.example.com/terms",
+              "target": "https://store.example.com/terms",
+              "severity": "clean"
+            },
+            {
+              "field": "store_privacy",
+              "kind": "match",
+              "spec": "https://store.example.com/privacy",
+              "target": "https://store.example.com/privacy",
+              "severity": "clean"
+            },
+            {
+              "field": "store_contact",
+              "kind": "match",
+              "spec": "https://store.example.com/contact",
+              "target": "https://store.example.com/contact",
+              "severity": "clean"
+            },
+            {
+              "field": "store_returns",
+              "kind": "match",
+              "spec": "https://store.example.com/returns",
+              "target": "https://store.example.com/returns",
+              "severity": "clean"
+            },
+            {
+              "field": "store_shipping",
+              "kind": "match",
+              "spec": "https://store.example.com/shipping",
+              "target": "https://store.example.com/shipping",
+              "severity": "clean"
+            },
+            {
+              "field": "store_phone",
+              "kind": "match",
+              "spec": "1-800-555-0100",
+              "target": "1-800-555-0100",
+              "severity": "clean"
+            },
+            {
+              "field": "store_phone_tel",
+              "kind": "match",
+              "spec": "tel:+18005550100",
+              "target": "tel:+18005550100",
+              "severity": "clean"
+            }
+          ],
+          "blocker_fields": [],
+          "warning_fields": [],
+          "waiver": null,
+          "waiver_assessment": {
+            "active": null,
+            "inert_counts": {
+              "stale": 0,
+              "foreign": 0,
+              "malformed": 0,
+              "expired": 0
+            }
+          },
+          "required_actions": []
+        },
+        {
+          "id": "built_output.upsell_selector_scope",
+          "scope": "built_output.upsell_selector_scope",
+          "status": "not_applicable",
+          "code": "built_output.upsell_selector_scope.not_applicable",
+          "reason": "No built upsell or downsell page was available to scan; selector scope becomes mandatory once one is built.",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "runtime-packet-demo",
+            "site_root": "./_site/runtime-packet-demo"
+          },
+          "state": {
+            "findings": [],
+            "warned": []
+          },
+          "state_fingerprint": null,
+          "findings": [],
+          "warned": [],
+          "pages_scanned": 0,
+          "selectors_scanned": 0,
+          "waiver": null,
+          "waiver_assessment": {
+            "active": null,
+            "inert_counts": {
+              "stale": 0,
+              "foreign": 0,
+              "malformed": 0,
+              "expired": 0
+            }
+          },
+          "required_actions": []
+        },
+        {
+          "id": "built_output.campaign_identity",
+          "scope": "built_output.campaign_identity",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "runtime-packet-demo",
+            "site_root": "./_site/runtime-packet-demo"
+          },
+          "waiver": null,
+          "status": "not_applicable",
+          "code": "built_output.campaign_identity.not_applicable",
+          "reason": "No built page was available to scan; campaign identity becomes mandatory once pages are built.",
+          "findings": [],
+          "pages_scanned": 0,
+          "pages_skipped": [],
+          "identity": null,
+          "required_actions": []
+        },
+        {
+          "id": "built_output.sdk_markup",
+          "scope": "built_output.sdk_markup",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "runtime-packet-demo",
+            "site_root": "./_site/runtime-packet-demo"
+          },
+          "waiver": null,
+          "sdk_attribute_index_version": "0.4.43",
+          "campaign_sdk_version": "0.4.18",
+          "status": "not_applicable",
+          "code": "built_output.sdk_markup.not_applicable",
+          "reason": "No built page was available to scan; SDK markup checks become mandatory once pages are built.",
+          "findings": [],
+          "warned": [],
+          "unknown_attributes": [],
+          "pages_scanned": 0,
+          "required_actions": []
+        },
+        {
+          "id": "built_output.script_syntax",
+          "scope": "built_output.script_syntax",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "runtime-packet-demo",
+            "site_root": "./_site/runtime-packet-demo"
+          },
+          "waiver": null,
+          "status": "not_applicable",
+          "code": "built_output.script_syntax.not_applicable",
+          "reason": "No built page was available to scan; script syntax is checked once pages are built.",
+          "findings": [],
+          "scripts_scanned": 0,
+          "scripts_unresolved": [],
+          "scripts_outside_site": [],
+          "warned": [],
+          "pages_scanned": 0,
+          "required_actions": []
+        }
+      ],
+      "qc_results": [],
+      "polish_checkpoint_gate": {
+        "id": "polish.hidden_eager_media",
+        "scope": "polish.hidden_eager_media",
+        "status": "not_applicable",
+        "checkpoint_status": "not_applicable",
+        "severity": "info",
+        "code": "polish.hidden_eager_media.not_applicable",
+        "reason": "Hidden eager-media page-load evidence is required only after assembly is completed.",
+        "waivable": false,
+        "subject": null,
+        "state": null,
+        "state_fingerprint": null,
+        "findings": [],
+        "waiver": null,
+        "waiver_assessment": {
+          "active": null,
+          "inert_counts": {
+            "stale": 0,
+            "foreign": 0,
+            "malformed": 0,
+            "expired": 0
+          }
+        },
+        "required_actions": []
+      },
+      "prepare_build_gate": null,
+      "brand_contract": {
+        "state": "inspected",
+        "family": "olympus"
+      },
+      "page_kit_campaign_config": {
+        "status": "ok",
+        "public_route_slug": "runtime-packet-demo",
+        "target_path": "_data/campaigns.json"
+      },
+      "scaffold_required": false,
+      "scaffold_reason": null,
+      "scope": {
+        "mode": "full",
+        "built_pages": [
+          {
+            "page_id": "landing",
+            "type": "landing",
+            "role": "visual",
+            "route": "landing/",
+            "source_path": "landing.html"
+          },
+          {
+            "page_id": "checkout",
+            "type": "checkout",
+            "role": "runtime",
+            "route": "checkout/",
+            "source_path": "checkout.html"
+          },
+          {
+            "page_id": "upsell",
+            "type": "upsell",
+            "role": "runtime",
+            "route": "upsell/",
+            "source_path": "upsell.html"
+          },
+          {
+            "page_id": "receipt",
+            "type": "thankyou",
+            "role": "runtime",
+            "route": "receipt/",
+            "source_path": "receipt.html"
+          }
+        ],
+        "out_of_scope_pages": [],
+        "out_of_scope_reasons": [],
+        "previewable_routes": [
+          {
+            "page_id": "landing",
+            "type": "landing",
+            "route": "landing/"
+          },
+          {
+            "page_id": "checkout",
+            "type": "checkout",
+            "route": "checkout/"
+          },
+          {
+            "page_id": "upsell",
+            "type": "upsell",
+            "route": "upsell/"
+          },
+          {
+            "page_id": "receipt",
+            "type": "thankyou",
+            "route": "receipt/"
+          }
+        ],
+        "blocked_runtime_pages": []
+      },
+      "source_preparation": {
+        "checked_page_count": 4,
+        "finding_codes": []
+      },
+      "live_campaign_refs": {
+        "status": "not_run",
+        "reason_code": "no_built_pages",
+        "reason": "No built page to compare against the live campaign.",
+        "checked_pages": 0
+      },
+      "input_currency": {
+        "brief": {
+          "bound": null,
+          "current": {
+            "presentation": "absent",
+            "qa_policy": "absent"
+          },
+          "status": "absent"
+        },
+        "spec": {
+          "bound": null,
+          "current": "sha256:ce1d4ed5dd469870ee6ce91b000613e0b760384e3318b347d34822d3948c94bb",
+          "snapshot_material": "unknown",
+          "remote_currency": "unconfirmed"
+        },
+        "stages": {
+          "assembly": "unknown",
+          "polish": "unknown",
+          "qa": "unknown"
+        },
+        "reasons": {
+          "assembly": "status_unrecognized",
+          "polish": "status_unrecognized",
+          "qa": "status_unrecognized"
+        }
+      },
+      "theme_gate": {
+        "status": "not_applicable",
+        "code": "theme_gate.no_theme_context",
+        "reason": "No theme context exists for this campaign; run prepare-build/theme inspect to populate it.",
+        "commerce_pages": [
+          "checkout",
+          "upsell",
+          "receipt"
+        ],
+        "commerce_pages_out_of_scope": [],
+        "waiver": null,
+        "required_actions": []
+      },
+      "evidence_debt": {
+        "polish": {
+          "status": "unknown",
+          "matches_current_build": null,
+          "recorded_build_fingerprint": null,
+          "current_build_fingerprint": null,
+          "reason": "build_output_missing",
+          "change": null,
+          "advisory": false
+        },
+        "qa": {
+          "status": "unknown",
+          "matches_current_build": null,
+          "recorded_build_fingerprint": null,
+          "current_build_fingerprint": null,
+          "reason": "build_output_missing",
+          "change": null,
+          "scope": null,
+          "owed_pages": []
+        },
+        "changes": {
+          "status": "unknown",
+          "reason": "build_output_missing",
+          "recorded_build_fingerprint": null,
+          "current_build_fingerprint": null,
+          "changed_pages": [],
+          "unmapped_files": [],
+          "extra": [],
+          "missing": [],
+          "changed": [],
+          "kind": "unknown",
+          "reasons": []
+        }
+      },
+      "polish_gate": {
+        "status": "not_applicable",
+        "code": "polish.not_applicable",
+        "reason": "No assembly report is available to evaluate polish evidence."
+      }
+    },
+    "next": {
+      "stage": "setup",
+      "status": "ready_with_warnings",
+      "stage_blocked": false,
+      "owner": "setup",
+      "default_skill": "next-campaigns-os-setup",
+      "command": "campaigns-os next setup --packet <fixture>/build-packet.basic.json",
+      "reason": "No assembly report on disk yet. Start with setup (assembly report should appear after prepare-build).",
+      "actions": [
+        "Use the template agentContract to replace demo values from CampaignSpec/API."
+      ],
+      "blocked_stages": [
+        "qa"
+      ]
+    },
+    "cause_summary": {
+      "schema_version": "campaigns-os-finding-cause/v0",
+      "surface": "doctor",
+      "total": 26,
+      "counts": {
+        "caused_by_change": 0,
+        "pre_existing": 0,
+        "test_environment": 0,
+        "upstream_drift": 0,
+        "unknown": 26
+      },
+      "prior_run_id": null,
+      "comparison": "no_prior_run"
+    }
+  }
+}

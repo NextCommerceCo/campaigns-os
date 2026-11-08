@@ -1,0 +1,511 @@
+{
+  "base_sha": "e1c5bc9c6dc2745d6f2bd54f37f89319ce7f915a",
+  "step": "03-css-asset-added",
+  "description": "A CSS file added at assets/site.css, then record build: an unmapped file, so commerce_affecting.",
+  "recorded_at": "2026-11-01T00:03:00.000Z",
+  "record_command": "record build",
+  "assembly_report": {
+    "schema_version": "campaign-runtime-assembly-report/v0",
+    "run_id": "synthetic-run",
+    "generated_at": "2026-10-23T00:00:00Z",
+    "status": "prepared",
+    "identity": {
+      "map_id": "synthetic-map",
+      "public_route_slug": "synthetic-campaign",
+      "campaign_directory": "synthetic-campaign",
+      "live_url_path": "/synthetic-campaign/",
+      "spec_hash": "synthetic-spec"
+    },
+    "inputs": {
+      "packet_path": "campaign-runtime.build.json",
+      "context_path": ".campaign-runtime/build-context.json",
+      "spec_path": "missing-spec.json",
+      "source": {
+        "kind": "html_funnel",
+        "root": "source"
+      },
+      "target_repo": "."
+    },
+    "template_family": {
+      "value": "olympus",
+      "locked": true
+    },
+    "decisions": [],
+    "evidence": [],
+    "blockers": [],
+    "warnings": [],
+    "next": {
+      "stage": "polish",
+      "owner": "next-campaigns-polish",
+      "action": "Run polish with this packet."
+    },
+    "stages": {
+      "prepare_build": {
+        "stage": "prepare_build",
+        "status": "completed"
+      },
+      "doctor": {
+        "stage": "doctor",
+        "status": "completed"
+      },
+      "setup": {
+        "stage": "setup",
+        "status": "completed"
+      },
+      "assembly": {
+        "stage": "assembly",
+        "status": "completed",
+        "build_fingerprint": "sha256:b43849311698890348b8496a79beace4205a5e2949593220138baa1900e66577",
+        "completed_at": "2026-11-01T00:03:00.000Z",
+        "recorded_by": "campaigns-os record build",
+        "blockers": [],
+        "history": [
+          {
+            "archived_at": "2026-11-01T00:01:00.000Z",
+            "archived_by": "record build",
+            "reason_code": "rerecorded",
+            "status": "completed",
+            "build_fingerprint": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f"
+          },
+          {
+            "archived_at": "2026-11-01T00:02:00.000Z",
+            "archived_by": "record build",
+            "reason_code": "rerecorded",
+            "status": "completed",
+            "completed_at": "2026-11-01T00:01:00.000Z",
+            "recorded_by": "campaigns-os record build",
+            "build_fingerprint": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f",
+            "source_brief_material": {
+              "presentation": "absent",
+              "qa_policy": "absent"
+            },
+            "source_spec_material_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+          },
+          {
+            "archived_at": "2026-11-01T00:03:00.000Z",
+            "archived_by": "record build",
+            "reason_code": "rerecorded",
+            "status": "completed",
+            "completed_at": "2026-11-01T00:02:00.000Z",
+            "recorded_by": "campaigns-os record build",
+            "build_fingerprint": "sha256:a09cdade9cc1ed2567654b1baadc0d86aefce519c3453bd2b56ae63022f378b3",
+            "source_brief_material": {
+              "presentation": "absent",
+              "qa_policy": "absent"
+            },
+            "source_spec_material_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+          }
+        ],
+        "build_manifest": [
+          {
+            "path": "assets/site.css",
+            "sha256": "38e98688ab1da6b4895f419820e9d4e6830b425dde95512a90d9561ecb226bc7"
+          },
+          {
+            "path": "checkout/index.html",
+            "sha256": "d9b8bf607e224b20c69dc6f9377590f57fde40b20d2e65e664ddd6e67ab2b621"
+          },
+          {
+            "path": "landing/index.html",
+            "sha256": "ca263c0b1f5d99246b090a671b1968187ff6a65e7d91a8e6c5e188b1e1cffef6"
+          },
+          {
+            "path": "receipt/index.html",
+            "sha256": "046d52bc57ee20599cf35abc87a794f3b2c65845995e91b0893085736e5d20d6"
+          },
+          {
+            "path": "upsell1/index.html",
+            "sha256": "6e69f2ba21d0e001e418f0095e0893dc9370d1e629f3a6ab0a566144743cb7fe"
+          }
+        ],
+        "commerce_signature": {
+          "algorithm": "commerce-signature/v1",
+          "campaign_config": "sha256:b0c4fd62aa84f51e745b2b43e9688fa578a113b6cf18222f63c63af322600d49",
+          "pages": {
+            "checkout/index.html": "sha256:57aaeba6491591513cbd132266db14d2215cf3d27180a458b5124c44a76dbf79",
+            "landing/index.html": "sha256:941fda3743ee82c3c6e2b908ac82a3d444143fe05ea9847b00ac3e1e9f351b50",
+            "receipt/index.html": "sha256:3cb949b0c73538f1d5cefe60d3ec4180b0d413d2cc88ed5658b7c15f8f9476ee",
+            "upsell1/index.html": "sha256:390df23d8943c48da475d31191a362cd14c8b4099ee5a8a8ee0bddd3aa25ff98"
+          }
+        },
+        "build_changes": [
+          {
+            "from_build_fingerprint": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f",
+            "build_fingerprint": "sha256:a09cdade9cc1ed2567654b1baadc0d86aefce519c3453bd2b56ae63022f378b3",
+            "recorded_at": "2026-11-01T00:02:00.000Z",
+            "kind": "page_only",
+            "changed_pages": [
+              {
+                "page_id": "landing",
+                "built_path": "landing/index.html"
+              }
+            ],
+            "unmapped_files": [],
+            "unmapped_file_count": 0,
+            "reasons": []
+          },
+          {
+            "from_build_fingerprint": "sha256:a09cdade9cc1ed2567654b1baadc0d86aefce519c3453bd2b56ae63022f378b3",
+            "build_fingerprint": "sha256:b43849311698890348b8496a79beace4205a5e2949593220138baa1900e66577",
+            "recorded_at": "2026-11-01T00:03:00.000Z",
+            "kind": "commerce_affecting",
+            "changed_pages": [],
+            "unmapped_files": [
+              "assets/site.css"
+            ],
+            "unmapped_file_count": 1,
+            "reasons": [
+              {
+                "code": "unmapped_file",
+                "path": "assets/site.css"
+              }
+            ]
+          }
+        ],
+        "source_brief_material": {
+          "presentation": "absent",
+          "qa_policy": "absent"
+        },
+        "source_spec_material_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+      },
+      "polish": {
+        "stage": "polish",
+        "status": "required",
+        "required_by": "build",
+        "required_for": [
+          "qa"
+        ],
+        "owed_since_build_fingerprint": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f"
+      },
+      "deploy": {
+        "stage": "deploy",
+        "status": "completed"
+      },
+      "qa": {
+        "stage": "qa",
+        "status": "completed",
+        "evidence": {
+          "qc_build_fingerprint": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f",
+          "qc_results": []
+        },
+        "purchase_proof": {
+          "order_paths_executed": 3,
+          "declared_depth": "common"
+        }
+      }
+    }
+  },
+  "evidence_debt_changes": {
+    "status": "known",
+    "reason": null,
+    "recorded_build_fingerprint": "sha256:b43849311698890348b8496a79beace4205a5e2949593220138baa1900e66577",
+    "current_build_fingerprint": "sha256:b43849311698890348b8496a79beace4205a5e2949593220138baa1900e66577",
+    "changed_pages": [],
+    "unmapped_files": [],
+    "extra": [],
+    "missing": [],
+    "changed": [],
+    "kind": "none",
+    "reasons": []
+  },
+  "change_since": {
+    "seeded_build": {
+      "anchor": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f",
+      "result": {
+        "kind": "commerce_affecting",
+        "since_build_fingerprint": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f",
+        "changed_pages": [
+          {
+            "page_id": "landing",
+            "built_path": "landing/index.html"
+          }
+        ],
+        "unmapped_files": [
+          "assets/site.css"
+        ],
+        "reasons": [
+          {
+            "code": "unmapped_file",
+            "path": "assets/site.css"
+          }
+        ],
+        "commerce_rebuild": {
+          "recorded_at": "2026-11-01T00:03:00.000Z",
+          "build_fingerprint": "sha256:b43849311698890348b8496a79beace4205a5e2949593220138baa1900e66577",
+          "kind": "commerce_affecting",
+          "latest_change_kind": "commerce_affecting"
+        }
+      }
+    },
+    "previous_step_build": {
+      "anchor": "sha256:a09cdade9cc1ed2567654b1baadc0d86aefce519c3453bd2b56ae63022f378b3",
+      "result": {
+        "kind": "commerce_affecting",
+        "since_build_fingerprint": "sha256:a09cdade9cc1ed2567654b1baadc0d86aefce519c3453bd2b56ae63022f378b3",
+        "changed_pages": [],
+        "unmapped_files": [
+          "assets/site.css"
+        ],
+        "reasons": [
+          {
+            "code": "unmapped_file",
+            "path": "assets/site.css"
+          }
+        ],
+        "commerce_rebuild": {
+          "recorded_at": "2026-11-01T00:03:00.000Z",
+          "build_fingerprint": "sha256:b43849311698890348b8496a79beace4205a5e2949593220138baa1900e66577",
+          "kind": "commerce_affecting",
+          "latest_change_kind": "commerce_affecting"
+        }
+      }
+    },
+    "polish_owed_since": {
+      "anchor": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f",
+      "result": {
+        "kind": "commerce_affecting",
+        "since_build_fingerprint": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f",
+        "changed_pages": [
+          {
+            "page_id": "landing",
+            "built_path": "landing/index.html"
+          }
+        ],
+        "unmapped_files": [
+          "assets/site.css"
+        ],
+        "reasons": [
+          {
+            "code": "unmapped_file",
+            "path": "assets/site.css"
+          }
+        ],
+        "commerce_rebuild": {
+          "recorded_at": "2026-11-01T00:03:00.000Z",
+          "build_fingerprint": "sha256:b43849311698890348b8496a79beace4205a5e2949593220138baa1900e66577",
+          "kind": "commerce_affecting",
+          "latest_change_kind": "commerce_affecting"
+        }
+      }
+    },
+    "qa_evidence_build": {
+      "anchor": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f",
+      "result": {
+        "kind": "commerce_affecting",
+        "since_build_fingerprint": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f",
+        "changed_pages": [
+          {
+            "page_id": "landing",
+            "built_path": "landing/index.html"
+          }
+        ],
+        "unmapped_files": [
+          "assets/site.css"
+        ],
+        "reasons": [
+          {
+            "code": "unmapped_file",
+            "path": "assets/site.css"
+          }
+        ],
+        "commerce_rebuild": {
+          "recorded_at": "2026-11-01T00:03:00.000Z",
+          "build_fingerprint": "sha256:b43849311698890348b8496a79beace4205a5e2949593220138baa1900e66577",
+          "kind": "commerce_affecting",
+          "latest_change_kind": "commerce_affecting"
+        }
+      }
+    }
+  },
+  "readback_evidence_debt": {
+    "polish": {
+      "status": "owed",
+      "matches_current_build": null,
+      "recorded_build_fingerprint": null,
+      "current_build_fingerprint": "sha256:b43849311698890348b8496a79beace4205a5e2949593220138baa1900e66577",
+      "reason": "stage_required_by_build",
+      "change": {
+        "kind": "commerce_affecting",
+        "since_build_fingerprint": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f",
+        "changed_pages": [
+          {
+            "page_id": "landing",
+            "built_path": "landing/index.html"
+          }
+        ],
+        "unmapped_files": [
+          "assets/site.css"
+        ],
+        "reasons": [
+          {
+            "code": "unmapped_file",
+            "path": "assets/site.css"
+          }
+        ],
+        "commerce_rebuild": {
+          "recorded_at": "2026-11-01T00:03:00.000Z",
+          "build_fingerprint": "sha256:b43849311698890348b8496a79beace4205a5e2949593220138baa1900e66577",
+          "kind": "commerce_affecting",
+          "latest_change_kind": "commerce_affecting"
+        }
+      },
+      "advisory": false
+    },
+    "qa": {
+      "status": "owed",
+      "matches_current_build": false,
+      "recorded_build_fingerprint": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f",
+      "current_build_fingerprint": "sha256:b43849311698890348b8496a79beace4205a5e2949593220138baa1900e66577",
+      "reason": "build_fingerprint_changed",
+      "change": {
+        "kind": "commerce_affecting",
+        "since_build_fingerprint": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f",
+        "changed_pages": [
+          {
+            "page_id": "landing",
+            "built_path": "landing/index.html"
+          }
+        ],
+        "unmapped_files": [
+          "assets/site.css"
+        ],
+        "reasons": [
+          {
+            "code": "unmapped_file",
+            "path": "assets/site.css"
+          }
+        ],
+        "commerce_rebuild": {
+          "recorded_at": "2026-11-01T00:03:00.000Z",
+          "build_fingerprint": "sha256:b43849311698890348b8496a79beace4205a5e2949593220138baa1900e66577",
+          "kind": "commerce_affecting",
+          "latest_change_kind": "commerce_affecting"
+        }
+      },
+      "scope": "full",
+      "owed_pages": []
+    },
+    "changes": {
+      "status": "known",
+      "reason": null,
+      "recorded_build_fingerprint": "sha256:b43849311698890348b8496a79beace4205a5e2949593220138baa1900e66577",
+      "current_build_fingerprint": "sha256:b43849311698890348b8496a79beace4205a5e2949593220138baa1900e66577",
+      "changed_pages": [],
+      "unmapped_files": [],
+      "extra": [],
+      "missing": [],
+      "changed": [],
+      "kind": "none",
+      "reasons": []
+    }
+  },
+  "before_record": {
+    "evidence_debt_changes": {
+      "status": "known",
+      "reason": null,
+      "recorded_build_fingerprint": "sha256:a09cdade9cc1ed2567654b1baadc0d86aefce519c3453bd2b56ae63022f378b3",
+      "current_build_fingerprint": "sha256:b43849311698890348b8496a79beace4205a5e2949593220138baa1900e66577",
+      "changed_pages": [],
+      "unmapped_files": [
+        "assets/site.css"
+      ],
+      "extra": [
+        "assets/site.css"
+      ],
+      "missing": [],
+      "changed": [],
+      "kind": "commerce_affecting",
+      "reasons": [
+        {
+          "code": "unmapped_file",
+          "path": "assets/site.css"
+        }
+      ]
+    },
+    "change_since": {
+      "seeded_build": {
+        "anchor": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f",
+        "result": {
+          "kind": "commerce_affecting",
+          "since_build_fingerprint": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f",
+          "changed_pages": [
+            {
+              "page_id": "landing",
+              "built_path": "landing/index.html"
+            }
+          ],
+          "unmapped_files": [
+            "assets/site.css"
+          ],
+          "reasons": [
+            {
+              "code": "unmapped_file",
+              "path": "assets/site.css"
+            }
+          ]
+        }
+      },
+      "previous_step_build": {
+        "anchor": "sha256:a09cdade9cc1ed2567654b1baadc0d86aefce519c3453bd2b56ae63022f378b3",
+        "result": {
+          "kind": "commerce_affecting",
+          "since_build_fingerprint": "sha256:a09cdade9cc1ed2567654b1baadc0d86aefce519c3453bd2b56ae63022f378b3",
+          "changed_pages": [],
+          "unmapped_files": [
+            "assets/site.css"
+          ],
+          "reasons": [
+            {
+              "code": "unmapped_file",
+              "path": "assets/site.css"
+            }
+          ]
+        }
+      },
+      "polish_owed_since": {
+        "anchor": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f",
+        "result": {
+          "kind": "commerce_affecting",
+          "since_build_fingerprint": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f",
+          "changed_pages": [
+            {
+              "page_id": "landing",
+              "built_path": "landing/index.html"
+            }
+          ],
+          "unmapped_files": [
+            "assets/site.css"
+          ],
+          "reasons": [
+            {
+              "code": "unmapped_file",
+              "path": "assets/site.css"
+            }
+          ]
+        }
+      },
+      "qa_evidence_build": {
+        "anchor": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f",
+        "result": {
+          "kind": "commerce_affecting",
+          "since_build_fingerprint": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f",
+          "changed_pages": [
+            {
+              "page_id": "landing",
+              "built_path": "landing/index.html"
+            }
+          ],
+          "unmapped_files": [
+            "assets/site.css"
+          ],
+          "reasons": [
+            {
+              "code": "unmapped_file",
+              "path": "assets/site.css"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

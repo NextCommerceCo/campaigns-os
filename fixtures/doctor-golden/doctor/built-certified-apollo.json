@@ -1,0 +1,3220 @@
+{
+  "base_sha": "e1c5bc9c6dc2745d6f2bd54f37f89319ce7f915a",
+  "case": "certified-apollo",
+  "entry": "built",
+  "description": "certified family apollo rendered fixture, read in place with --family apollo",
+  "output": {
+    "ok": true,
+    "status": "ready_with_warnings",
+    "mode": "built_site",
+    "errors": [],
+    "warnings": [
+      {
+        "code": "template_contract.placeholder_text_residue",
+        "message": "Assembly is recorded complete, but built output still contains literal template placeholder text (Product Name, Lorem, lorem ipsum): target:checkout/index.html:85 \"Product Name\"; target:checkout/index.html:141 \"Product Name\"; target:checkout/index.html:385 \"Product Name\"; target:upsell-bundle-stepper/index.html:166 \"Lorem\"; target:upsell-bundle-stepper/index.html:166 \"lorem ipsum\"; target:upsell-bundle-stepper/index.html:170 \"Lorem\"; target:upsell-bundle-stepper/index.html:170 \"lorem ipsum\"; target:upsell-bundle-stepper/index.html:174 \"Lorem\"; plus 19 more. Replace with CampaignSpec/design copy; browser QA blocks on these terms."
+      },
+      {
+        "code": "template_contract.demo_asset_residue",
+        "message": "Assembly is recorded complete, but built output still references template demo assets (1x1_1.svg, 1x1_2.svg): target:checkout/index.html:186 \"1x1_1.svg\"; target:checkout/index.html:192 \"1x1_1.svg\"; target:checkout/index.html:198 \"1x1_1.svg\"; target:checkout/index.html:204 \"1x1_1.svg\"; target:checkout/index.html:210 \"1x1_1.svg\"; target:checkout/index.html:216 \"1x1_1.svg\"; target:checkout/index.html:232 \"1x1_2.svg\"; target:checkout/index.html:238 \"1x1_2.svg\"; plus 95 more. Re-skin to the campaign's real assets rather than shipping template placeholders."
+      },
+      {
+        "code": "template_contract.literal_residue",
+        "message": "Built output contains generic starter/template placeholders: target:upsell-bundle-stepper/index.html:153 \"Product Title\"; target:upsell-bundle-tier-cards/index.html:151 \"Product Title\"; target:upsell-bundle-tier-pills/index.html:193 \"Product Title\"; target:upsell-single/index.html:161 \"Product Title\". Replace these from CampaignSpec/API or remove dead template references."
+      }
+    ],
+    "ready": [
+      "Resolved 9 built page(s) from ./_site/apollo (slug \"apollo\")",
+      "Template brand/residue/pricing contract loaded for apollo",
+      "Pricing CSS scan skipped: campaign assets/css directory does not exist (runs after setup/build)",
+      "Every bundle selector on 5 built post-purchase page(s) is scoped away from the live cart (7 selector(s) scanned)",
+      "All 9 built page(s) agree on campaign identity (next-funnel \"Apollo\", API key consistent)",
+      "SDK markup: 4 data-next-* name(s) not in the Campaign Cart 0.4.43 attribute index (advisory; the SDK does not read them): data-next-catalog-component, data-next-content, data-next-element, data-next-skeleton",
+      "SDK markup checks passed on 9 built page(s)",
+      "All 7 campaign-owned script(s) loaded by built pages parse",
+      "Cart placeholder check on 9 built page(s): 9 page(s) pass, 0 warning or review result(s)"
+    ],
+    "derived": {
+      "mode": "built_site",
+      "map_id": "apollo",
+      "public_route_slug": "apollo",
+      "template_family": "apollo",
+      "target_repo": "<toolkit>/fixtures/certified-families",
+      "target_output_dir": "<toolkit>/fixtures/certified-families/_site/apollo",
+      "site_root": "<toolkit>/fixtures/certified-families/_site",
+      "built_pages": [
+        {
+          "page_id": "checkout",
+          "type": "checkout",
+          "route": "checkout"
+        },
+        {
+          "page_id": "landing",
+          "type": "landing",
+          "route": "landing"
+        },
+        {
+          "page_id": "presell",
+          "type": "presell",
+          "route": "presell"
+        },
+        {
+          "page_id": "receipt",
+          "type": "receipt",
+          "route": "receipt"
+        },
+        {
+          "page_id": "upsell-bundle-stepper",
+          "type": "upsell",
+          "route": "upsell-bundle-stepper"
+        },
+        {
+          "page_id": "upsell-bundle-tier-cards",
+          "type": "upsell",
+          "route": "upsell-bundle-tier-cards"
+        },
+        {
+          "page_id": "upsell-bundle-tier-pills",
+          "type": "upsell",
+          "route": "upsell-bundle-tier-pills"
+        },
+        {
+          "page_id": "upsell-single",
+          "type": "upsell",
+          "route": "upsell-single"
+        },
+        {
+          "page_id": "upsell-vsl",
+          "type": "upsell",
+          "route": "upsell-vsl"
+        }
+      ],
+      "doctor_checks": [
+        "built_output.upsell_selector_scope",
+        "built_output.campaign_identity",
+        "built_output.sdk_markup",
+        "built_output.script_syntax",
+        "built_output.cart_placeholders",
+        "built_output.smoke_qc"
+      ],
+      "checkpoint_gates": [
+        {
+          "id": "built_output.upsell_selector_scope",
+          "scope": "built_output.upsell_selector_scope",
+          "status": "pass",
+          "code": "built_output.upsell_selector_scope.pass",
+          "reason": "Every bundle selector on 5 built post-purchase page(s) is scoped away from the live cart.",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "apollo",
+            "site_root": "./_site/apollo"
+          },
+          "state": {
+            "findings": []
+          },
+          "state_fingerprint": null,
+          "findings": [],
+          "warned": [],
+          "pages_scanned": 5,
+          "selectors_scanned": 7,
+          "waiver": null,
+          "waiver_assessment": {
+            "active": null,
+            "inert_counts": {
+              "stale": 0,
+              "foreign": 0,
+              "malformed": 0,
+              "expired": 0
+            }
+          },
+          "required_actions": []
+        },
+        {
+          "id": "built_output.campaign_identity",
+          "scope": "built_output.campaign_identity",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "apollo",
+            "site_root": "./_site/apollo"
+          },
+          "waiver": null,
+          "status": "pass",
+          "code": "built_output.campaign_identity.pass",
+          "reason": "All 9 built page(s) agree on campaign identity (API key present, next-funnel \"Apollo\").",
+          "findings": [],
+          "pages_scanned": 9,
+          "pages_skipped": [],
+          "identity": {
+            "api_key": "LLbBgtusfE2zopDcjnOY9NbrlN690zSjuedqQ04J",
+            "api_key_source": "/apollo/config.js nextConfig.apiKey",
+            "funnel": "Apollo"
+          },
+          "required_actions": []
+        },
+        {
+          "id": "built_output.sdk_markup",
+          "scope": "built_output.sdk_markup",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "apollo",
+            "site_root": "./_site/apollo"
+          },
+          "waiver": null,
+          "sdk_attribute_index_version": "0.4.43",
+          "campaign_sdk_version": null,
+          "status": "pass",
+          "code": "built_output.sdk_markup.pass",
+          "reason": "SDK markup checks passed on 9 built page(s).",
+          "findings": [],
+          "warned": [],
+          "unknown_attributes": [
+            {
+              "name": "data-next-catalog-component",
+              "pages": [
+                "./_site/apollo/checkout/index.html",
+                "./_site/apollo/receipt/index.html",
+                "./_site/apollo/upsell-bundle-stepper/index.html",
+                "./_site/apollo/upsell-bundle-tier-cards/index.html",
+                "./_site/apollo/upsell-bundle-tier-pills/index.html",
+                "./_site/apollo/upsell-single/index.html",
+                "./_site/apollo/upsell-vsl/index.html"
+              ]
+            },
+            {
+              "name": "data-next-content",
+              "pages": [
+                "./_site/apollo/receipt/index.html"
+              ]
+            },
+            {
+              "name": "data-next-element",
+              "pages": [
+                "./_site/apollo/checkout/index.html"
+              ]
+            },
+            {
+              "name": "data-next-skeleton",
+              "pages": [
+                "./_site/apollo/receipt/index.html"
+              ]
+            }
+          ],
+          "pages_scanned": 9,
+          "required_actions": []
+        },
+        {
+          "id": "built_output.script_syntax",
+          "scope": "built_output.script_syntax",
+          "waivable": false,
+          "subject": {
+            "public_route_slug": "apollo",
+            "site_root": "./_site/apollo"
+          },
+          "waiver": null,
+          "status": "pass",
+          "code": "built_output.script_syntax.pass",
+          "reason": "All 7 campaign-owned script(s) loaded by 9 built page(s) parse.",
+          "findings": [],
+          "scripts_scanned": 7,
+          "scripts_unresolved": [],
+          "scripts_outside_site": [],
+          "warned": [],
+          "pages_scanned": 9,
+          "required_actions": []
+        }
+      ],
+      "qc_results": [
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/apollo/checkout/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/apollo/checkout/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:decd2fe7e498409c907145fbd26036d4f010855b8d01218d0f9e1532934ccf40",
+          "observation": {
+            "page": "_site/apollo/checkout/index.html",
+            "sdk_pin": "0.4.43",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 106592,
+            "candidates": 25
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/apollo/landing/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/apollo/landing/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:42e62462455dc3e935dfb29ad8233fab62123f96caa5037ccd6a67baffed44ef",
+          "observation": {
+            "page": "_site/apollo/landing/index.html",
+            "sdk_pin": "0.4.43",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 151929,
+            "candidates": 0
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/apollo/presell/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/apollo/presell/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:80e79d7e941633232ae8d3c23c52e790333422e2dab2f229c375e402459ec136",
+          "observation": {
+            "page": "_site/apollo/presell/index.html",
+            "sdk_pin": "0.4.43",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 21659,
+            "candidates": 0
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/apollo/receipt/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/apollo/receipt/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:efbbffe71b255d63dcccc4ba211532f106a1cfacbe17bd123fa86c9975bd882d",
+          "observation": {
+            "page": "_site/apollo/receipt/index.html",
+            "sdk_pin": "0.4.43",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 29124,
+            "candidates": 8
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/apollo/upsell-bundle-stepper/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/apollo/upsell-bundle-stepper/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:f021f851d5c1f3f7ce4c713e9de1bd683bc258976bacfb205187eefcbc55ec29",
+          "observation": {
+            "page": "_site/apollo/upsell-bundle-stepper/index.html",
+            "sdk_pin": "0.4.43",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 28878,
+            "candidates": 0
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/apollo/upsell-bundle-tier-cards/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/apollo/upsell-bundle-tier-cards/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:6fda7bae9c96f263fc91fd6be48b894a0be733aa594273b91efed3d3ef5564f1",
+          "observation": {
+            "page": "_site/apollo/upsell-bundle-tier-cards/index.html",
+            "sdk_pin": "0.4.43",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 30831,
+            "candidates": 0
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/apollo/upsell-bundle-tier-pills/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/apollo/upsell-bundle-tier-pills/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:4f9abe7fb9b7b9e21bc8ccbdb3990285e738c43cba7d997f97d5b70ef9a30479",
+          "observation": {
+            "page": "_site/apollo/upsell-bundle-tier-pills/index.html",
+            "sdk_pin": "0.4.43",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 30320,
+            "candidates": 0
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/apollo/upsell-single/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/apollo/upsell-single/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:5597493778bac50997d005d4731b1eec4dbeb076470179af97ba8b98403f343d",
+          "observation": {
+            "page": "_site/apollo/upsell-single/index.html",
+            "sdk_pin": "0.4.43",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 27060,
+            "candidates": 0
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "cart_placeholders:_site/apollo/upsell-vsl/index.html:page",
+          "check": "cart_placeholders",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "cart_placeholders",
+            "page": "_site/apollo/upsell-vsl/index.html",
+            "key": "page"
+          },
+          "state_fingerprint": "sha256:0fb29ec45be7232ccfd89335ab52c80e5031f47d9c452500da2e0ebb556e2457",
+          "observation": {
+            "page": "_site/apollo/upsell-vsl/index.html",
+            "sdk_pin": "0.4.43",
+            "sdk_pin_source": "loader",
+            "token": null,
+            "shape_sha256": null,
+            "known": false,
+            "occurrences": [],
+            "bytes": 36784,
+            "candidates": 0
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/checkout/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/checkout/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:ef0a1695e98d435e4c70987fdc79aef6e239eb9a08ed86b8229cfb717b2791e1",
+          "observation": {
+            "page": "_site/apollo/checkout/index.html",
+            "favicon": true
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/checkout/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/checkout/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:10b1f28d13f1af8c58afa964b8965ea1ee45bcedcba725408468c252e61f850f",
+          "observation": {
+            "page": "_site/apollo/checkout/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/checkout/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/checkout/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:18406e48316a9ea467ba576802f9ce8d620be90d689a84dd93b0d60ca74a3afe",
+          "observation": {
+            "page": "_site/apollo/checkout/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/checkout/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/checkout/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:023c8d6ee8ab2906cc0f3e1e3be65c18fbc96293d9b940b7707578149566faef",
+          "observation": {
+            "page": "_site/apollo/checkout/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/checkout/index.html:og:image_target",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "og_image_base_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/checkout/index.html",
+            "key": "og:image_target"
+          },
+          "state_fingerprint": "sha256:28ae7b508673c001291fbaa3bdbdf848b806d991a7e9b515ac726aae621cc739",
+          "observation": {
+            "page": "_site/apollo/checkout/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "og_image_base_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/checkout/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/checkout/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:3dd6e570b70fa6b5e4a0d0342b4d32b6caa924b7c21b5e1115d7111904cc9852",
+          "observation": {
+            "page": "_site/apollo/checkout/index.html",
+            "tailwind_cdn": 0,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/checkout/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/checkout/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:49fe0fc4c9d0052624af2084ba70b014af441b4277e97302b8f76aa035053a9e",
+          "observation": {
+            "page": "_site/apollo/checkout/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/checkout/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/checkout/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:0036105e9a17923a45969c24dac413231b2e8c72a68634e23d95fc10457c870f",
+          "observation": {
+            "page": "_site/apollo/checkout/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/landing/index.html:anchor:benefits",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/landing/index.html",
+            "key": "anchor:benefits"
+          },
+          "state_fingerprint": "sha256:cf74ffb89e6c8b15807cf24910e5d41a15b5ec778bd27e13e41a9e66e29ce270",
+          "observation": {
+            "page": "_site/apollo/landing/index.html",
+            "target": "benefits",
+            "outcome": "resolved",
+            "scripts_read": null,
+            "scripts_loaded": null
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/landing/index.html:anchor:ingredients",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/landing/index.html",
+            "key": "anchor:ingredients"
+          },
+          "state_fingerprint": "sha256:6c4b8cc53d87c0b12cff478c787ddfebf8e7d0b6a274a174d6fd3318844cf750",
+          "observation": {
+            "page": "_site/apollo/landing/index.html",
+            "target": "ingredients",
+            "outcome": "resolved",
+            "scripts_read": null,
+            "scripts_loaded": null
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/landing/index.html:anchor:reviews",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/landing/index.html",
+            "key": "anchor:reviews"
+          },
+          "state_fingerprint": "sha256:00f2ab755e65aa155a1d9eeed90514177e94da1dc75821bc8967f4070724cd38",
+          "observation": {
+            "page": "_site/apollo/landing/index.html",
+            "target": "reviews",
+            "outcome": "resolved",
+            "scripts_read": null,
+            "scripts_loaded": null
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/landing/index.html:anchor:",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/landing/index.html",
+            "key": "anchor:"
+          },
+          "state_fingerprint": "sha256:9daa25b30918e5ea4e2e4026103afcdd93bfa263ba75849aa63216a0e2d06027",
+          "observation": {
+            "page": "_site/apollo/landing/index.html",
+            "target": "",
+            "outcome": "resolved",
+            "scripts_read": null,
+            "scripts_loaded": null
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/landing/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/landing/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:422bc600ed16f7f4c26476e4af01252e203cebc880788367949f841bbc8d2869",
+          "observation": {
+            "page": "_site/apollo/landing/index.html",
+            "favicon": true
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/landing/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/landing/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:171857617eb475d67fcc09cf7fb35cd4a0392324dc935aefa0a7f26cbef8d060",
+          "observation": {
+            "page": "_site/apollo/landing/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/landing/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/landing/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:59131f6e7de9ade3ff55a20c2dd42e7a9b3272a328d5f25ea5e195998cbac82e",
+          "observation": {
+            "page": "_site/apollo/landing/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/landing/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/landing/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:a1e6a46ee007fd2a9d75fa68320869cde284d7fc2ded11c76d2a8de7150b43c1",
+          "observation": {
+            "page": "_site/apollo/landing/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/landing/index.html:og:image_target",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "og_image_base_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/landing/index.html",
+            "key": "og:image_target"
+          },
+          "state_fingerprint": "sha256:700da5b0a97793d0022681a04bdd0f2a41a898de5deb2c573a69b4c94f72882f",
+          "observation": {
+            "page": "_site/apollo/landing/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "og_image_base_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/landing/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/landing/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:a0c3dacb7054de4d1267efe705abb6c99e6b7d04a805ba18c3ba40649253f6fc",
+          "observation": {
+            "page": "_site/apollo/landing/index.html",
+            "tailwind_cdn": 1,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/landing/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/landing/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:02a0df4aafebf58aafff0b6f8abf4d17ba24865243a14ee4900e4bc39b158095",
+          "observation": {
+            "page": "_site/apollo/landing/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/landing/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/landing/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:727a3a364b928a928303e30537512335f9d7b0ea36e9085d2a98407b81e860b5",
+          "observation": {
+            "page": "_site/apollo/landing/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/presell/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/presell/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:3a4b95717606ea3f8e164a67bac8e1d243cdbd2c28722165dc1b85dc0a1b4155",
+          "observation": {
+            "page": "_site/apollo/presell/index.html",
+            "favicon": true
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/presell/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/presell/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:d4b953dcfa9276c38f5bcd3c595ef3a7d62bc05f9eb3029c22b61568d789af6b",
+          "observation": {
+            "page": "_site/apollo/presell/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/presell/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/presell/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:6d063b98eebc2cf9813936984e4aa03b49fda5229f7f43e2d13c9a0fe442aee7",
+          "observation": {
+            "page": "_site/apollo/presell/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/presell/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/presell/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:8f85204f67a1eb25ac20b4478ce6cfabee0460e1e7302f00318d73688ba245d5",
+          "observation": {
+            "page": "_site/apollo/presell/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/presell/index.html:og:image_target",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "og_image_base_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/presell/index.html",
+            "key": "og:image_target"
+          },
+          "state_fingerprint": "sha256:6d229397e9ad98ac4d2c647b88c764a06654ce6d1c8c59f0e32314f17eab055f",
+          "observation": {
+            "page": "_site/apollo/presell/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "og_image_base_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/presell/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/presell/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:7ef4c4b6acebcb9647ad575afefdcc2a0715ae11c06f0ac569b5ab89b84f84d4",
+          "observation": {
+            "page": "_site/apollo/presell/index.html",
+            "tailwind_cdn": 1,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/presell/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/presell/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:987d0087db3c266067180c4e00aa2aa82ee23d7deda03fafac5a4711c8f07453",
+          "observation": {
+            "page": "_site/apollo/presell/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/presell/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/presell/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:2e8e5121c7275cfaebd9133e3cdd38eec5f0579a2c36315137c987cd8d5eca1d",
+          "observation": {
+            "page": "_site/apollo/presell/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/receipt/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/receipt/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:044776ef0171ae682fcbbf198f461e428fe5284ca6b8e6d9adb658e2b8110f24",
+          "observation": {
+            "page": "_site/apollo/receipt/index.html",
+            "favicon": true
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/receipt/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/receipt/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:ad0b00d4117c43a3ebd196b137eddfa3126fbc93730e661ffed21fe80e2eb7a7",
+          "observation": {
+            "page": "_site/apollo/receipt/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/receipt/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/receipt/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:5b55c9fc2f939e67d48ec5cbca13c030551bfa18ef3d2642b9ca937e77c016fa",
+          "observation": {
+            "page": "_site/apollo/receipt/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/receipt/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/receipt/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:9a35a29827968b0619b37697ed312f734088a17684b5f2766a9c3fa4fe89a357",
+          "observation": {
+            "page": "_site/apollo/receipt/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/receipt/index.html:og:image_target",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "og_image_base_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/receipt/index.html",
+            "key": "og:image_target"
+          },
+          "state_fingerprint": "sha256:af449e87e3c0b7ef0b2eab75b075b3fbd0e5c9249f99aae0a961ed3a1577b7c0",
+          "observation": {
+            "page": "_site/apollo/receipt/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "og_image_base_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/receipt/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/receipt/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:b78b1deb8ea2307e8fbf6f288c0becbed6eeb1e1834f1f949d3c98dc77181d3e",
+          "observation": {
+            "page": "_site/apollo/receipt/index.html",
+            "tailwind_cdn": 0,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/receipt/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/receipt/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:843271484463048ffb83713a6338f28c3283b656f8c17a64a2cfb62b73192546",
+          "observation": {
+            "page": "_site/apollo/receipt/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/receipt/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/receipt/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:f2de45fdc4698f67ba084d36cfda8a818c31a9f91e5942f9e8414a10270ad6b1",
+          "observation": {
+            "page": "_site/apollo/receipt/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-bundle-stepper/index.html:anchor:",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-bundle-stepper/index.html",
+            "key": "anchor:"
+          },
+          "state_fingerprint": "sha256:47faf88b315f6ab02061cdf35203ee593492d02f06c781aa08abf364b6f56581",
+          "observation": {
+            "page": "_site/apollo/upsell-bundle-stepper/index.html",
+            "target": "",
+            "outcome": "resolved",
+            "scripts_read": null,
+            "scripts_loaded": null
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-bundle-stepper/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-bundle-stepper/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:c920d664b733fca80a5c8acf0fd3e9c46faaa65436646be202b1246c9eef5e33",
+          "observation": {
+            "page": "_site/apollo/upsell-bundle-stepper/index.html",
+            "favicon": true
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-bundle-stepper/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-bundle-stepper/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:f0eb089b1a1748a875108c10faadc70e738b56c0d5d459c9c9e3c6dcd3fb7348",
+          "observation": {
+            "page": "_site/apollo/upsell-bundle-stepper/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-bundle-stepper/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-bundle-stepper/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:365c85596d9c91c7be1a74ca7ec63ce42615dc3029f7d778c517e68e7de9d1a9",
+          "observation": {
+            "page": "_site/apollo/upsell-bundle-stepper/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-bundle-stepper/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-bundle-stepper/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:d484854ff6f1e028ea2a5fd2fd8736ac993136324933813f9c68463a4e1e3485",
+          "observation": {
+            "page": "_site/apollo/upsell-bundle-stepper/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-bundle-stepper/index.html:og:image_target",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "og_image_base_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-bundle-stepper/index.html",
+            "key": "og:image_target"
+          },
+          "state_fingerprint": "sha256:6cf255c793b3b91ff8ff409690a77056c1a9ab5b94f5b6f42892deba77e3a5c5",
+          "observation": {
+            "page": "_site/apollo/upsell-bundle-stepper/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "og_image_base_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-bundle-stepper/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-bundle-stepper/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:a3cbd40453b7b36cfe2bba2403c6dcdf2c6db6b81bea9d089bd20819dee59f6a",
+          "observation": {
+            "page": "_site/apollo/upsell-bundle-stepper/index.html",
+            "tailwind_cdn": 0,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-bundle-stepper/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-bundle-stepper/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:d081048703655b54f8378a190de61a354181cf2e2fe9e1f063445513680d98ca",
+          "observation": {
+            "page": "_site/apollo/upsell-bundle-stepper/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-bundle-stepper/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-bundle-stepper/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:743852d4ca71d9cb2097c034209136fe255a04a301cef16eff9bfaf7503596a7",
+          "observation": {
+            "page": "_site/apollo/upsell-bundle-stepper/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-bundle-tier-cards/index.html:anchor:",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-bundle-tier-cards/index.html",
+            "key": "anchor:"
+          },
+          "state_fingerprint": "sha256:7e5761ff2ea36940526099e8bcf8180bb1f7e9d0900d6b6253b3453c1e4c9d4a",
+          "observation": {
+            "page": "_site/apollo/upsell-bundle-tier-cards/index.html",
+            "target": "",
+            "outcome": "resolved",
+            "scripts_read": null,
+            "scripts_loaded": null
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-bundle-tier-cards/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-bundle-tier-cards/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:6973c3b5a87857f4899beb69ffc6038b317a5db3ee0ff85d1f6efc7dbe9c1f3b",
+          "observation": {
+            "page": "_site/apollo/upsell-bundle-tier-cards/index.html",
+            "favicon": true
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-bundle-tier-cards/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-bundle-tier-cards/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:995e8a732259115e12d42702b7f15ff9110642a6f7540a83162e12f2ab0438f0",
+          "observation": {
+            "page": "_site/apollo/upsell-bundle-tier-cards/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-bundle-tier-cards/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-bundle-tier-cards/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:5bdac6a8ffffc45fc7957853fc7dc0945d1ef794401bff7e6a83cf619ed5d5b7",
+          "observation": {
+            "page": "_site/apollo/upsell-bundle-tier-cards/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-bundle-tier-cards/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-bundle-tier-cards/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:a72e3f7c7520a4f6735ac41172d7eff6af1be6d3ca464e2f114793eaa959a80c",
+          "observation": {
+            "page": "_site/apollo/upsell-bundle-tier-cards/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-bundle-tier-cards/index.html:og:image_target",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "og_image_base_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-bundle-tier-cards/index.html",
+            "key": "og:image_target"
+          },
+          "state_fingerprint": "sha256:1cf358ce93525620cda0edb89bd5ffa3f4ac30fac49164ba0c7fff40a981befd",
+          "observation": {
+            "page": "_site/apollo/upsell-bundle-tier-cards/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "og_image_base_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-bundle-tier-cards/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-bundle-tier-cards/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:84f749c51193571388a31d2be8d50089d5e6e473df90432113ed781f17b78e08",
+          "observation": {
+            "page": "_site/apollo/upsell-bundle-tier-cards/index.html",
+            "tailwind_cdn": 0,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-bundle-tier-cards/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-bundle-tier-cards/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:b6af64f7dcfc21143c317a13498d4ae78e357a8138c5db56e4a414774b95e494",
+          "observation": {
+            "page": "_site/apollo/upsell-bundle-tier-cards/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-bundle-tier-cards/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-bundle-tier-cards/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:49a3e6181c3155ae846f0cc3e19cab435638d98e19cbf63f216f57adf7640e0f",
+          "observation": {
+            "page": "_site/apollo/upsell-bundle-tier-cards/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-bundle-tier-pills/index.html:anchor:",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-bundle-tier-pills/index.html",
+            "key": "anchor:"
+          },
+          "state_fingerprint": "sha256:bc07eb52c9d03f6d4fc5b678a43b73f794643d98a99b70d1db38fe1b5325542a",
+          "observation": {
+            "page": "_site/apollo/upsell-bundle-tier-pills/index.html",
+            "target": "",
+            "outcome": "resolved",
+            "scripts_read": null,
+            "scripts_loaded": null
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-bundle-tier-pills/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-bundle-tier-pills/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:f2fe184e072db218c7b25f5365500cd9cbf368aa42d55042195ba2cbbab31f17",
+          "observation": {
+            "page": "_site/apollo/upsell-bundle-tier-pills/index.html",
+            "favicon": true
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-bundle-tier-pills/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-bundle-tier-pills/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:75027eaae8a61e781a750bb632f843f9448502922d228a9e4232ed20750e5def",
+          "observation": {
+            "page": "_site/apollo/upsell-bundle-tier-pills/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-bundle-tier-pills/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-bundle-tier-pills/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:5bea00a7075580e78ca5893e67e17bc2e7e5dca38ae6e344096717a9857d12fb",
+          "observation": {
+            "page": "_site/apollo/upsell-bundle-tier-pills/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-bundle-tier-pills/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-bundle-tier-pills/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:99af50deede0ab883d4597b9d1d3adcd7317848c7f356063322b6da1cf8c8d92",
+          "observation": {
+            "page": "_site/apollo/upsell-bundle-tier-pills/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-bundle-tier-pills/index.html:og:image_target",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "og_image_base_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-bundle-tier-pills/index.html",
+            "key": "og:image_target"
+          },
+          "state_fingerprint": "sha256:6c281c5810966b44e020cf042bd5d61a3d24388ca7960e05a03152bb53e1d32c",
+          "observation": {
+            "page": "_site/apollo/upsell-bundle-tier-pills/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "og_image_base_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-bundle-tier-pills/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-bundle-tier-pills/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:380ff2f974a899a12201d594c5a856b22cea2f70b12d59aa9021bf85559b2eb1",
+          "observation": {
+            "page": "_site/apollo/upsell-bundle-tier-pills/index.html",
+            "tailwind_cdn": 0,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-bundle-tier-pills/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-bundle-tier-pills/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:0198a59717ec06c4f84c83ad26c389c73a103aaf8c55e7252eb3315eaf8afbbe",
+          "observation": {
+            "page": "_site/apollo/upsell-bundle-tier-pills/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-bundle-tier-pills/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-bundle-tier-pills/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:1035b623f65c7502163f5f60f3ac78a9f1a63d65b33cce21287f1e26de5d97cb",
+          "observation": {
+            "page": "_site/apollo/upsell-bundle-tier-pills/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-single/index.html:anchor:",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-single/index.html",
+            "key": "anchor:"
+          },
+          "state_fingerprint": "sha256:55659fb9c196ac6c73c259f793465430f62d65a17a241a00d791daf74a41e0cf",
+          "observation": {
+            "page": "_site/apollo/upsell-single/index.html",
+            "target": "",
+            "outcome": "resolved",
+            "scripts_read": null,
+            "scripts_loaded": null
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-single/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-single/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:15090bfb08460fe54f75f141157052ea342a6a010ac9cddc4d7e695eb50bf1b5",
+          "observation": {
+            "page": "_site/apollo/upsell-single/index.html",
+            "favicon": true
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-single/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-single/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:8652663499ce8b6b8c528f37a0b8fc384a5e034bea5ad99f876285dadc5bba8a",
+          "observation": {
+            "page": "_site/apollo/upsell-single/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-single/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-single/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:6ea84f99ddfcaa9e4c7a2d6bc9250f8c7e5379baa8db2fd13ff90f64a9b328b7",
+          "observation": {
+            "page": "_site/apollo/upsell-single/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-single/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-single/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:9d73b477a0748850fd5da10fb30e75e28e562ba9a2011eaac4758f7664a50e52",
+          "observation": {
+            "page": "_site/apollo/upsell-single/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-single/index.html:og:image_target",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "og_image_base_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-single/index.html",
+            "key": "og:image_target"
+          },
+          "state_fingerprint": "sha256:cf9507a7eba4c73f44eb1f241d2666e5a99d2f409072f4d9a8a194f0c5772d6c",
+          "observation": {
+            "page": "_site/apollo/upsell-single/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "og_image_base_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-single/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-single/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:3bb0368dc79e19f5ff596eb18e523576b67aa0932d781fedb91e1111f0aa9d31",
+          "observation": {
+            "page": "_site/apollo/upsell-single/index.html",
+            "tailwind_cdn": 0,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-single/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-single/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:6f7267fcd39931aed436f30f0b3d14d7eec58f7a0c77ea5cb7b52564146fe68a",
+          "observation": {
+            "page": "_site/apollo/upsell-single/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-single/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-single/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:13c8db61ce741d218dab402ad9856b7283bbcba7407cc01f1d9a2926d95185e4",
+          "observation": {
+            "page": "_site/apollo/upsell-single/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-vsl/index.html:anchor:",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-vsl/index.html",
+            "key": "anchor:"
+          },
+          "state_fingerprint": "sha256:555a14d20e0dcfa6e6fce706a942cab6817c99f2a8243ac5ba84377c116d275b",
+          "observation": {
+            "page": "_site/apollo/upsell-vsl/index.html",
+            "target": "",
+            "outcome": "resolved",
+            "scripts_read": null,
+            "scripts_loaded": null
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-vsl/index.html:favicon:link",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-vsl/index.html",
+            "key": "favicon:link"
+          },
+          "state_fingerprint": "sha256:5dded2b596445d6b42959658768d91cb87f0909709a3921a90687e971d82d02d",
+          "observation": {
+            "page": "_site/apollo/upsell-vsl/index.html",
+            "favicon": true
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-vsl/index.html:og:title",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-vsl/index.html",
+            "key": "og:title"
+          },
+          "state_fingerprint": "sha256:25014334d68536db8652f863171e35c61abaa4c18198eb3b362360661a5ba6e0",
+          "observation": {
+            "page": "_site/apollo/upsell-vsl/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-vsl/index.html:og:description",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-vsl/index.html",
+            "key": "og:description"
+          },
+          "state_fingerprint": "sha256:54b992e2ed839e6f3f759ec8fc972c7404ef7fec9cbf31dce64ecb39fea39cd3",
+          "observation": {
+            "page": "_site/apollo/upsell-vsl/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-vsl/index.html:og:image",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-vsl/index.html",
+            "key": "og:image"
+          },
+          "state_fingerprint": "sha256:a7ba97c2cd9e0083065b19413d24da43c904a5fde70617b26bb0dfad6dac7d46",
+          "observation": {
+            "page": "_site/apollo/upsell-vsl/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-vsl/index.html:og:image_target",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "og_image_base_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-vsl/index.html",
+            "key": "og:image_target"
+          },
+          "state_fingerprint": "sha256:3f9b394a63984cf0a768bd5c7437a1755806a29ee539d76e100ff26dddc8cd51",
+          "observation": {
+            "page": "_site/apollo/upsell-vsl/index.html",
+            "og": {
+              "title": true,
+              "description": true,
+              "image": "absolute_same_base_unmapped",
+              "image_target": "https://example.com/og-image.png"
+            }
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "og_image_base_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-vsl/index.html:tailwind_cdn:cdn.tailwindcss.com",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-vsl/index.html",
+            "key": "tailwind_cdn:cdn.tailwindcss.com"
+          },
+          "state_fingerprint": "sha256:883d5e8a716161935921458a1668282ff734bb36859c5829fc7891808de1ebe3",
+          "observation": {
+            "page": "_site/apollo/upsell-vsl/index.html",
+            "tailwind_cdn": 0,
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-vsl/index.html:asset_host:cdn.29next.store",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "pass",
+          "reason_code": null,
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-vsl/index.html",
+            "key": "asset_host:cdn.29next.store"
+          },
+          "state_fingerprint": "sha256:865183924ac521cc0fcd111dbbcf5273851985955502b846ed3d9f8a12176d3f",
+          "observation": {
+            "page": "_site/apollo/upsell-vsl/index.html",
+            "asset_host_refs": []
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 1,
+            "expected": 1,
+            "limits": []
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        },
+        {
+          "schema": "campaigns-os-qc-result/v0",
+          "id": "smoke_qc:_site/apollo/upsell-vsl/index.html:loopback:loopback",
+          "check": "smoke_qc",
+          "leg": "doctor",
+          "result": "unexercised",
+          "reason_code": "build_environment_unknown",
+          "subject": {
+            "check": "smoke_qc",
+            "page": "_site/apollo/upsell-vsl/index.html",
+            "key": "loopback:loopback"
+          },
+          "state_fingerprint": "sha256:da0b28e52ad520140e3ceabf910f40b7b839661ae1170b8305678d729d63d82b",
+          "observation": {
+            "page": "_site/apollo/upsell-vsl/index.html",
+            "loopback_refs": [],
+            "environment": "unknown"
+          },
+          "members": [],
+          "accept_eligible": false,
+          "coverage": {
+            "observed": 0,
+            "expected": 1,
+            "limits": [
+              "build_environment_unknown"
+            ]
+          },
+          "measured_at": "2026-01-01T00:00:00.000Z",
+          "producer": "campaigns-os doctor"
+        }
+      ],
+      "brand_contract": {
+        "state": "inspected",
+        "family": "apollo"
+      },
+      "synthesized_packet": {
+        "schema_version": "campaign-runtime-build-packet/v0",
+        "_synthesized": {
+          "from": "built_site",
+          "note": "Minimal packet auto-emitted from a built _site/. Not a full Build Packet: source_html and assembly provenance are absent.",
+          "site_root": "<toolkit>/fixtures/certified-families/_site",
+          "campaign_dir": "<toolkit>/fixtures/certified-families/_site/apollo",
+          "html_count": 9
+        },
+        "campaign": {
+          "public_route_slug": "apollo",
+          "allowed_domains_confirmed": false
+        },
+        "spec": {
+          "map_id": "apollo"
+        },
+        "assembly": {
+          "target_repo": "<toolkit>/fixtures/certified-families",
+          "output_dir": "_site/apollo",
+          "template_family": "apollo"
+        },
+        "deploy": {
+          "target": "unknown",
+          "preview_url": null
+        },
+        "qa": {},
+        "pages": [
+          {
+            "page_id": "checkout",
+            "type": "checkout",
+            "route": "checkout"
+          },
+          {
+            "page_id": "landing",
+            "type": "landing",
+            "route": "landing"
+          },
+          {
+            "page_id": "presell",
+            "type": "presell",
+            "route": "presell"
+          },
+          {
+            "page_id": "receipt",
+            "type": "receipt",
+            "route": "receipt"
+          },
+          {
+            "page_id": "upsell-bundle-stepper",
+            "type": "upsell",
+            "route": "upsell-bundle-stepper"
+          },
+          {
+            "page_id": "upsell-bundle-tier-cards",
+            "type": "upsell",
+            "route": "upsell-bundle-tier-cards"
+          },
+          {
+            "page_id": "upsell-bundle-tier-pills",
+            "type": "upsell",
+            "route": "upsell-bundle-tier-pills"
+          },
+          {
+            "page_id": "upsell-single",
+            "type": "upsell",
+            "route": "upsell-single"
+          },
+          {
+            "page_id": "upsell-vsl",
+            "type": "upsell",
+            "route": "upsell-vsl"
+          }
+        ]
+      }
+    },
+    "scope": {
+      "slug": "apollo",
+      "html_count": 9,
+      "pages": [
+        {
+          "page_id": "checkout",
+          "type": "checkout",
+          "route": "checkout"
+        },
+        {
+          "page_id": "landing",
+          "type": "landing",
+          "route": "landing"
+        },
+        {
+          "page_id": "presell",
+          "type": "presell",
+          "route": "presell"
+        },
+        {
+          "page_id": "receipt",
+          "type": "receipt",
+          "route": "receipt"
+        },
+        {
+          "page_id": "upsell-bundle-stepper",
+          "type": "upsell",
+          "route": "upsell-bundle-stepper"
+        },
+        {
+          "page_id": "upsell-bundle-tier-cards",
+          "type": "upsell",
+          "route": "upsell-bundle-tier-cards"
+        },
+        {
+          "page_id": "upsell-bundle-tier-pills",
+          "type": "upsell",
+          "route": "upsell-bundle-tier-pills"
+        },
+        {
+          "page_id": "upsell-single",
+          "type": "upsell",
+          "route": "upsell-single"
+        },
+        {
+          "page_id": "upsell-vsl",
+          "type": "upsell",
+          "route": "upsell-vsl"
+        }
+      ],
+      "campaign_dir": "<toolkit>/fixtures/certified-families/_site/apollo"
+    },
+    "synthesized_packet": {
+      "schema_version": "campaign-runtime-build-packet/v0",
+      "_synthesized": {
+        "from": "built_site",
+        "note": "Minimal packet auto-emitted from a built _site/. Not a full Build Packet: source_html and assembly provenance are absent.",
+        "site_root": "<toolkit>/fixtures/certified-families/_site",
+        "campaign_dir": "<toolkit>/fixtures/certified-families/_site/apollo",
+        "html_count": 9
+      },
+      "campaign": {
+        "public_route_slug": "apollo",
+        "allowed_domains_confirmed": false
+      },
+      "spec": {
+        "map_id": "apollo"
+      },
+      "assembly": {
+        "target_repo": "<toolkit>/fixtures/certified-families",
+        "output_dir": "_site/apollo",
+        "template_family": "apollo"
+      },
+      "deploy": {
+        "target": "unknown",
+        "preview_url": null
+      },
+      "qa": {},
+      "pages": [
+        {
+          "page_id": "checkout",
+          "type": "checkout",
+          "route": "checkout"
+        },
+        {
+          "page_id": "landing",
+          "type": "landing",
+          "route": "landing"
+        },
+        {
+          "page_id": "presell",
+          "type": "presell",
+          "route": "presell"
+        },
+        {
+          "page_id": "receipt",
+          "type": "receipt",
+          "route": "receipt"
+        },
+        {
+          "page_id": "upsell-bundle-stepper",
+          "type": "upsell",
+          "route": "upsell-bundle-stepper"
+        },
+        {
+          "page_id": "upsell-bundle-tier-cards",
+          "type": "upsell",
+          "route": "upsell-bundle-tier-cards"
+        },
+        {
+          "page_id": "upsell-bundle-tier-pills",
+          "type": "upsell",
+          "route": "upsell-bundle-tier-pills"
+        },
+        {
+          "page_id": "upsell-single",
+          "type": "upsell",
+          "route": "upsell-single"
+        },
+        {
+          "page_id": "upsell-vsl",
+          "type": "upsell",
+          "route": "upsell-vsl"
+        }
+      ]
+    },
+    "emitted_packet_path": null,
+    "next": {
+      "stage": "setup",
+      "status": "ready_with_warnings",
+      "stage_blocked": false,
+      "owner": "setup",
+      "default_skill": "next-campaigns-os-setup",
+      "command": "campaigns-os next setup --packet <packet>",
+      "reason": "No assembly report on disk yet. Start with setup (assembly report should appear after prepare-build).",
+      "actions": [
+        "Replace literal template placeholder text (Lorem/Placeholder/TODO/Product Name/Benefit one…four) with CampaignSpec/design copy before QA; the browser residue gate blocks on these terms.",
+        "Re-skin template demo placeholder assets (spacer SVGs, repeated benefit icons, starter imagery) to the campaign's real assets before launch."
+      ],
+      "blocked_stages": []
+    }
+  }
+}
