@@ -2087,8 +2087,8 @@ function isPlainObject(value) {
 // that declares the SDK (a data-next-sdk-loading body, or the loader script in
 // the document or any open shadow root) is ready once the body's
 // data-next-sdk-loading is "false" or <html> carries next-display-ready.
-// Whether the page declares the SDK is read on the first poll and kept on the
-// page's window; later polls, every 100 ms, read only the two ready signals. Bounded and tolerant: a page that never
+// The poll runs every 100 ms, not every frame, and reads the page without
+// writing to it. Bounded and tolerant: a page that never
 // reports ready is read after the cap, so the checks still say what they see.
 // `budgetMs`, inside a test-order step, is that step's remaining time. The
 // wait first holds back two settle allowances of it (a step can load a second
@@ -2101,16 +2101,15 @@ async function waitForSdkDisplayReady(page, budgetMs = null) {
   const started = performance.now();
   const timeout = Math.max(250, Math.min(SDK_DISPLAY_READY_TIMEOUT_MS, budgetMs === null ? Infinity : (budgetMs - 2 * DEFAULT_SETTLE_TIMEOUT_MS) / 2));
   const state = await page.waitForFunction(() => {
-    // Declared once per document: the tree walk runs on the first poll only.
-    if (window.__campaignsOsQaSdkDeclared === undefined) {
-      const trees = [document];
-      for (let i = 0; i < trees.length; i += 1) {
-        for (const node of trees[i].querySelectorAll("*")) if (node.shadowRoot) trees.push(node.shadowRoot);
-      }
-      window.__campaignsOsQaSdkDeclared = Boolean(document.body?.hasAttribute("data-next-sdk-loading"))
-        || trees.some((tree) => Array.from(tree.querySelectorAll("script[src]")).some((script) => /campaign-cart(?:@[^"']*)?\/dist\/loader\.js/i.test(script.getAttribute("src"))));
+    // Read on every poll and kept nowhere, so the page is not written to and a
+    // loader tag added after the first poll still counts.
+    const trees = [document];
+    for (let i = 0; i < trees.length; i += 1) {
+      for (const node of trees[i].querySelectorAll("*")) if (node.shadowRoot) trees.push(node.shadowRoot);
     }
-    if (!window.__campaignsOsQaSdkDeclared) return "not_declared";
+    const declared = Boolean(document.body?.hasAttribute("data-next-sdk-loading"))
+      || trees.some((tree) => Array.from(tree.querySelectorAll("script[src]")).some((script) => /campaign-cart(?:@[^"']*)?\/dist\/loader\.js/i.test(script.getAttribute("src"))));
+    if (!declared) return "not_declared";
     return document.body?.getAttribute("data-next-sdk-loading") === "false" || document.documentElement.classList.contains("next-display-ready") ? "ready" : false;
   }, null, { timeout, polling: 100 })
     .then((handle) => handle.jsonValue())

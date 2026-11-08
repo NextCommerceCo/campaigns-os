@@ -21,9 +21,11 @@ shadow root. `sdk_display` records the outcome: `not_declared` (no SDK, no
 wait), `ready`, `timeout`, or `unreadable` (the page could not be read during
 the wait); `sdk_display_ms` is how long the wait took. A page that never
 reports ready is read after the cap, so its checks still report what they see.
-Test-order page loads take the same wait, capped at half of the running
-step's remaining time after two 5 s settle allowances are held back for the
-step's own work (250 ms when nothing is left). The checkout's card check then waits up to 8 s
+Test-order page loads take the same wait: 10 s of the running step's
+remaining time is held back for its own work, and the wait takes at most half
+of the rest and no more than 15 s. Once 10 s or less of the step is left it
+waits 250 ms. At the default 45 s step, the checkout probe gets up to 15 s and
+the entry page after it about 7 s. The checkout's card check then waits up to 8 s
 more, once, for the card iframe to attach and `next-loading-spreedly` to clear
 before it measures the fields.
 
