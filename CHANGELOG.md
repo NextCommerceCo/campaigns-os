@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.66.0+agent.1] - 2026-11-08
+
+### Changed
+
+- Upgrade the optional pixelmatch dependency from 7.2.0 to 8.0.0 (#715). Its color comparison now uses OKLab/HyAB instead of YIQ, so mismatch counts, percentages, heatmaps, and worst-section rankings may change for the same image pair. Review comparisons using the recorded dependency version; do not treat scores from v7 and v8 as directly comparable. Visual differences remain reviewer diagnostics and do not change Polish readiness.
+
 ## [1.66.0] - 2026-11-07
 
 Funnels handed off before 1.62.0 can now reach small checks without a test order. To take it, pin `@nextcommerce/campaigns-os@1.66.0`. Nothing changes for a funnel unless a named person runs the new command.

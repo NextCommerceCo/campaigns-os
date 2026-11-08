@@ -11228,6 +11228,33 @@
         }
       ],
       "entry_sha256": "7ab1be1f56e4738dc0fc7127361611f1e625881d8dce7f5035d3c0243396325d"
+    },
+    {
+      "id": "RL-0319",
+      "sequence": 307,
+      "date": "2026-11-08",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.66.0+agent.1",
+      "changelog_sha256": "48dca4bb7a4b417bfe9db0fbe7aa01dda0c86cea8d03c3e4f09bd4a23cf4f433",
+      "agent_impact": "Pixelmatch 8 changes visual mismatch counts, percentages, heatmaps, and worst-section rankings. Compare diagnostics with their recorded dependency version; v7 and v8 scores are not directly comparable. Polish readiness is unchanged.",
+      "compatibility": "compatible",
+      "migration": "Review visual comparisons with the recorded pixelmatch version; recheck any external thresholds or exact-count expectations when upgrading from v7.",
+      "changes": [
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Upgrade the optional pixelmatch dependency to ^8.0.0."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Resolve pixelmatch 8.0.0 and its integrity for reproducible installation."
+        }
+      ],
+      "entry_sha256": "e161ec22042fe75d0a3287f494125ab376c5d8a98e5a7768534d479bd32d18ac"
     }
   ]
 }
