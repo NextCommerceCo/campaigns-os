@@ -1249,11 +1249,16 @@ observe reads exactly as before. Each warning names the operation and
   global's own name, `const localStorage = window.localStorage`). The key, or its literal
   start (`'next_funnel_name__' + scope`), must resolve statically. The prefix
   alone does not establish that the SDK owns the key, and the message says so.
-- `built_output.script_observations.network_global_replaced`: a plain `=`
-  assignment that replaces the page's `fetch` (`||=`, `&&=` and `??=` leave a
-  defined `fetch` in place and are not reported), including `Object.defineProperty(window,
-  'fetch', ...)` and, in a classic script, a top-level `function fetch` or
-  initialized `var fetch`, or `XMLHttpRequest.prototype.open`/`send`. Every
+- `built_output.script_observations.network_global_replaced`: an assignment
+  that replaces the page's `fetch` or `XMLHttpRequest.prototype.open`/`send`:
+  `=`, or `&&=`, which assigns over the browser's always-defined function
+  (`||=` and `??=` never do and are not reported). It includes
+  `Object.defineProperty(window, 'fetch', ...)` when the descriptor is written
+  out and sets `value`, `get` or `set` (one that only changes attributes such
+  as `enumerable` keeps the function, and one not written out proves nothing)
+  and, in a classic script, a top-level `function fetch`, an initialized
+  `var fetch`, or an assignment to a top-level `var fetch`, which is the
+  global object's own property (a module's or a function's `var` is local). Every
   request through it, the SDK's included, then runs through that code. Whether
   it changes an SDK request is not established statically, so no bypass is
   claimed.
@@ -1269,7 +1274,11 @@ Each script is read as the browser reads it, classic or module, so the same
 file loaded both ways is observed twice: a top-level `function fetch` replaces
 the global in a classic script and is module-local in a module. Remote and
 missing scripts are not read, and a script that cannot be read or does not
-parse has no observations (the script syntax gate reports it). Each finding
+parse has no observations (the script syntax gate reports it). A script that
+parses but whose analysis does not finish (an expression nested too deep to
+resolve) gets one `built_output.script_observations.incomplete` warning naming
+it, outside the limit below, rather than reading as clean; the doctor report
+still returns. Each finding
 (`detail.finding`) records `file`, `line`, `column`, `source_type`, `pages`,
 `operation`, `receiver`, `key` (`text` and `match`: `exact` or `prefix`) for
 storage, `delivery` (`local`), `ownership` (`unknown`: these observations do

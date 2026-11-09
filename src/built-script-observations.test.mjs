@@ -9,9 +9,11 @@ import { chmodSync, cpSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
+import vm from "node:vm";
 
 import {
   SCRIPT_OBSERVATIONS,
+  SCRIPT_OBSERVATIONS_INCOMPLETE,
   SCRIPT_OBSERVATIONS_LIMIT,
   SCRIPT_OBSERVATIONS_TRUNCATED,
   SCRIPT_OBSERVATION_NETWORK_GLOBAL_REPLACED,
@@ -33,6 +35,14 @@ const SLUG = "example-campaign";
 const RUNS_AS_ROOT = process.getuid?.() === 0;
 const observationsOf = (result) => result.warnings.filter((issue) => issue.code.startsWith(`${SCRIPT_OBSERVATIONS}.`));
 const row = ({ detail: { finding } }) => [finding.file.split("/").pop(), finding.line, finding.column, finding.source_type, finding.code.split(".").pop(), finding.operation, finding.receiver, finding.key ? `${finding.key.match}:${finding.key.text}` : null];
+// Whether running `source` as a classic script changes the page's fetch, in an isolated context.
+const runtimeReplacesFetch = (source) => {
+  const original = () => "original";
+  const page = { fetch: original, f: () => "replacement", wrap: (fn) => () => fn };
+  page.window = page.self = page.globalThis = page;
+  vm.runInNewContext(source, page);
+  return page.fetch !== original;
+};
 const shape = (source, options) => observeScriptSource(source, options).map((item) => [item.code.split(".").pop(), item.operation, item.receiver, item.key ? `${item.key.match}:${item.key.text}` : null]);
 
 test("the fixture reports exactly the verified shapes, as advisory warnings with file, line and column", () => {
@@ -104,6 +114,11 @@ test("a fetch reassignment is reported only when it replaces the page's global f
   assert.deepEqual(shape("fetch = wrap(fetch);"), [["network_global_replaced", "replace", "fetch", null]]);
   assert.deepEqual(shape("self['fetch'] = f;"), [["network_global_replaced", "replace", "window.fetch", null]]);
   assert.deepEqual(shape("Object.defineProperty(window, 'fetch', { value: f });"), [["network_global_replaced", "replace", "window.fetch", null]]);
+  assert.deepEqual(shape("Object.defineProperty(self, 'fetch', { configurable: true, get() { return f; } });"), [["network_global_replaced", "replace", "window.fetch", null]]);
+  // A descriptor that only changes attributes keeps the function; one not written out here proves nothing.
+  assert.deepEqual(shape("Object.defineProperty(window, 'fetch', { enumerable: false, writable: false });"), []);
+  assert.deepEqual(shape("Object.defineProperty(window, 'fetch', descriptor);"), []);
+  assert.deepEqual(shape("Object.defineProperty(window, 'fetch', { ...descriptor });"), []);
   assert.deepEqual(shape("window.XMLHttpRequest.prototype.open = f; XMLHttpRequest.prototype.abort = g;"), [["network_global_replaced", "replace", "XMLHttpRequest.prototype.open", null]]);
 });
 
@@ -151,8 +166,22 @@ test("a const or destructure that binds a global's own name to that global still
   assert.deepEqual(shape("let { window } = globalThis; window.fetch = f;"), []);
 });
 
-test("logical assignment does not replace a defined fetch, and delete reads as a removal", () => {
-  assert.deepEqual(shape("window.fetch ||= f; globalThis.fetch ??= f; self.fetch &&= f; fetch ||= f; XMLHttpRequest.prototype.send ??= f;"), []);
+test("logical assignment replaces fetch exactly where the browser assigns, and delete reads as a removal", () => {
+  // The browser's fetch is always defined: `&&=` assigns over it, `||=` and `??=` never do.
+  for (const [source, replaces] of [
+    ["self.fetch &&= f;", true],
+    ["window.fetch &&= f;", true],
+    ["globalThis['fetch'] &&= f;", true],
+    ["fetch &&= f;", true],
+    ["window.fetch ||= f; globalThis.fetch ??= f; fetch ||= f; fetch ??= f;", false],
+    ["Object.defineProperty(window, 'fetch', { enumerable: false });", false],
+    ["Object.defineProperty(window, 'fetch', { value: f });", true],
+  ]) {
+    assert.equal(runtimeReplacesFetch(source), replaces, source);
+    assert.equal(shape(source).some(([code]) => code === "network_global_replaced"), replaces, source);
+  }
+  assert.deepEqual(shape("XMLHttpRequest.prototype.send ??= f; XMLHttpRequest.prototype.open &&= f;"), [["network_global_replaced", "replace", "XMLHttpRequest.prototype.open", null]]);
+  assert.deepEqual(shape("(function (window) { window.fetch &&= f; })(w);"), [], "a shadowed receiver");
   assert.deepEqual(shape("delete window.nextDebug; delete next._x;"), [
     ["sdk_debug_surface", "remove", "window.nextDebug", null],
     ["sdk_private_member", "remove", "next._x", null],
@@ -177,6 +206,19 @@ test("classic and module reads of the same bytes differ where the browser's do",
   assert.deepEqual(shape("var fetch = wrap(window.fetch);"), [["network_global_replaced", "replace", "fetch", null]]);
   assert.deepEqual(shape("var fetch;"), [], "a var without an initializer keeps the global's value");
   assert.deepEqual(shape("function wrap() { var fetch = f; function fetch2() {} }"), [], "inside a function");
+  // A classic script's top-level var or function is the global object's property, so assigning it replaces fetch.
+  for (const [source, replaces] of [
+    ["var fetch; fetch = f;", true],
+    ["{ var fetch; } fetch = f;", true],
+    ["var fetch; fetch &&= f;", true],
+    ["let fetch; fetch = f;", false],
+    ["function local() { var fetch; fetch = f; }", false],
+    ["var fetch; function local(fetch) { fetch = f; }", false],
+  ]) {
+    assert.equal(runtimeReplacesFetch(source), replaces, source);
+    assert.equal(shape(source).some(([code]) => code === "network_global_replaced"), replaces, source);
+  }
+  assert.deepEqual(shape("var fetch; fetch = f;", { module: true }), [], "a module's var is the module's own");
   // An HTML-like comment parses only as a classic script; a module that does not parse has no observations.
   const commented = "<!-- legacy\nsessionStorage.setItem('next-order', '{}');";
   assert.deepEqual(shape(commented), [["sdk_prefixed_storage", "write", "sessionStorage", "exact:next-order"]]);
@@ -233,6 +275,41 @@ test("one script loaded on several pages is observed once per source type, namin
   assert.deepEqual(globalFetch.map((script) => [script.module, script.pages, script.observations.length]), [[false, ["checkout"], 1], [true, ["upsell"], 0]]);
   assert.equal(collected.scripts_observed, 6);
   assert.equal(observationsOf(result).length, 12);
+});
+
+test("a valid script nested past the call stack still returns doctor's report, observed in full", (t) => {
+  // 3,000 chained operators nest the parse tree 3,000 deep: valid, and once enough to overflow a recursive walk.
+  const dir = mkdtempSync(join(tmpdir(), "campaigns-os-script-observations-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const siteRoot = join(dir, "_site", SLUG);
+  cpSync(join(FIXTURE_ROOT, "_site", SLUG), siteRoot, { recursive: true });
+  writeFileSync(join(siteRoot, "checkout", "index.html"), `<!DOCTYPE html><html><head>
+    <script src="/${SLUG}/js/deep.js"></script>
+    <script type="module" src="/${SLUG}/js/deep.js"></script>
+    <script src="/${SLUG}/js/supported.js"></script>
+  </head><body></body></html>`);
+  writeFileSync(join(siteRoot, "js", "deep.js"), `var sum = ${Array(3000).fill("1").join("+")};\nlocalStorage.getItem('next-x');\n`);
+  const result = doctorBuiltOutput({ built: dir, slug: SLUG });
+  assert.equal(result.derived.checkpoint_gates.find((gate) => gate.id === SCRIPT_SYNTAX)?.status, "pass");
+  assert.deepEqual(observationsOf(result).filter((issue) => issue.detail.finding.file.endsWith("deep.js")).map(row), [
+    ["deep.js", 2, 1, "script", "sdk_prefixed_storage", "read", "localStorage", "exact:next-x"],
+    ["deep.js", 2, 1, "module", "sdk_prefixed_storage", "read", "localStorage", "exact:next-x"],
+  ]);
+  assert.equal(observationsOf(result).filter((issue) => issue.detail.finding.file.endsWith("supported.js")).length, 6, "the scripts around it are observed as before");
+});
+
+test("a script whose analysis does not finish is named in one incomplete warning, outside the limit", () => {
+  const observations = Array.from({ length: SCRIPT_OBSERVATIONS_LIMIT + 3 }, (_, index) => ({
+    code: SCRIPT_OBSERVATION_SDK_DEBUG_SURFACE, line: index + 1, column: 1, operation: "read", receiver: "nextDebug",
+  }));
+  const warnings = evaluateBuiltScriptObservations({ scripts: [
+    { file: "js/deep.js", module: true, pages: ["checkout"], observations: [], incomplete: { reason: "RangeError" } },
+    { file: "js/a.js", module: false, pages: ["checkout"], observations },
+  ] });
+  assert.equal(warnings.length, SCRIPT_OBSERVATIONS_LIMIT + 2);
+  assert.deepEqual(warnings[0].finding, { code: SCRIPT_OBSERVATIONS_INCOMPLETE, file: "js/deep.js", source_type: "module", pages: ["checkout"], reason: "RangeError", delivery: "local" });
+  assert.match(warnings[0].message, /^js\/deep\.js \(local module, loaded by checkout\): doctor could not finish .*\(RangeError\), so any observations in it are not listed/);
+  assert.deepEqual(warnings.at(-1).finding, { code: SCRIPT_OBSERVATIONS_TRUNCATED, listed: SCRIPT_OBSERVATIONS_LIMIT, omitted: 3 });
 });
 
 test("past the limit, observations are counted in one truncation warning", () => {

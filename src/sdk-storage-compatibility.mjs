@@ -123,7 +123,11 @@ const STORAGE_AREAS = ['localStorage', 'sessionStorage'];
 export function javaScriptScopeAnalysis(ast, { sameNameAliases = false } = {}) {
   const root = { bindings: new Map(), parent: null };
   const scopes = new WeakMap();
-  function collect(node, scope) {
+  // Iterative, in source order: a script of thousands of chained operators
+  // nests that deep, past what recursion on the call stack allows.
+  const pending = [[ast, root]];
+  while (pending.length) {
+    let [node, scope] = pending.pop();
     if (['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression', 'BlockStatement', 'CatchClause', 'ForStatement', 'ForInStatement', 'ForOfStatement', 'SwitchStatement', 'StaticBlock', 'ClassExpression', 'ClassDeclaration'].includes(node.type)) {
       if (['FunctionDeclaration', 'ClassDeclaration'].includes(node.type) && node.id)
         scope.bindings.set(node.id.name, { unknown: true });
@@ -148,7 +152,7 @@ export function javaScriptScopeAnalysis(ast, { sameNameAliases = false } = {}) {
           target.bindings.set(name, {
             init: node.kind === 'const' && d.id.type === 'Identifier' ? d.init : null,
             destructure: property ? { object: d.init, property, mutable: node.kind !== 'const' } : null,
-            scope, start: d.start,
+            kind: node.kind, scope, start: d.start,
           });
         }
     if (node.type.startsWith('Function') || node.type === 'ArrowFunctionExpression' || node.type === 'StaticBlock')
@@ -156,10 +160,10 @@ export function javaScriptScopeAnalysis(ast, { sameNameAliases = false } = {}) {
     if (node.type === 'ImportDeclaration')
       for (const s of node.specifiers)
         scope.bindings.set(s.local.name, { unknown: true });
-    for (const child of children(node))
-      collect(child, scope);
+    const next = children(node);
+    for (let i = next.length - 1; i >= 0; i--)
+      pending.push([next[i], scope]);
   }
-  collect(ast, root);
   function binding(name, scope) { while (scope) {
     if (scope.bindings.has(name))
       return scope.bindings.get(name);
@@ -277,7 +281,14 @@ export function javaScriptScopeAnalysis(ast, { sameNameAliases = false } = {}) {
       (['Property', 'MethodDefinition', 'PropertyDefinition'].includes(parent?.type) && parent.key === node && !parent.computed && !parent.shorthand) ||
       (['LabeledStatement', 'BreakStatement', 'ContinueStatement'].includes(parent?.type) && parent.label === node)
     );
-    function visit(node, parent) {
+    // Iterative like collect; `stack` holds the node's ancestors and itself.
+    const pending = [[ast, null]];
+    while (pending.length) {
+      const [node, parent] = pending.pop();
+      if (!node) {
+        stack.pop();
+        continue;
+      }
       stack.push(node);
       const scope = scopes.get(node);
       if (node.type === 'CallExpression' && node.callee.type === 'MemberExpression') {
@@ -303,11 +314,11 @@ export function javaScriptScopeAnalysis(ast, { sameNameAliases = false } = {}) {
         // Passing/destructuring/mutably aliasing the Storage object loses bounded data flow.
         onAccess({ node, storage, key: null, keyNode: null, operation: 'unknown', reason: 'storage-object-escape' }, stack);
       }
-      for (const child of children(node))
-        visit(child, node);
-      stack.pop();
+      pending.push([null, null]);
+      const next = children(node);
+      for (let i = next.length - 1; i >= 0; i--)
+        pending.push([next[i], node]);
     }
-    visit(ast, null);
   }
   return { scopes, binding, literal, browserGlobal, globalReference, area, keyPrefix, visitStorageAccesses };
 }
@@ -380,7 +391,8 @@ export function analyzeStorageJavaScript(source, { path = '<source>', lineOffset
       sources.set(source, id.name);
     };
     const loopVariable = left => left?.type === 'VariableDeclaration' ? left.declarations[0]?.id : left;
-    (function walk(n) {
+    for (const pending = [loop]; pending.length;) {
+      const n = pending.pop();
       if (n.type === 'VariableDeclarator' && callName(n.init) === 'key')
         bind(n.id, n.init.callee.object, n.init);
       if (n.type === 'AssignmentExpression' && n.operator === '=' && callName(n.right) === 'key')
@@ -397,8 +409,10 @@ export function analyzeStorageJavaScript(source, { path = '<source>', lineOffset
         for (const [call, zero] of [[n.left, n.right], [n.right, n.left]])
           if (zero.type === 'Literal' && zero.value === 0 && callName(call) === 'indexOf' && call.arguments.length === 1)
             tests.push({ receiver: call.callee.object, prefix: literal(call.arguments[0], scopes.get(call)) });
-      for (const child of children(n)) walk(child);
-    })(loop);
+      const next = children(n);
+      for (let i = next.length - 1; i >= 0; i--)
+        pending.push(next[i]);
+    }
     const prefixes = tests.filter(t => t.prefix && t.receiver.type === 'Identifier' && keys.has(t.receiver.name)).map(t => ({ name: t.receiver.name, prefix: t.prefix, area: keys.get(t.receiver.name) }));
     const result = { prefixes, sources };
     prefixCache.set(loop, result);
