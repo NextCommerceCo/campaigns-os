@@ -184,15 +184,28 @@ export function javaScriptScopeAnalysis(ast, { sameNameAliases = false } = {}) {
     }
     return null;
   }
+  const WINDOW_NAMES = ['window', 'globalThis', 'self'];
   function browserGlobal(node, scope, seen = new Set()) {
     if (node?.type !== 'Identifier') return null;
     const b = binding(node.name, scope);
-    if (['window', 'globalThis', 'self'].includes(node.name)) {
+    if (WINDOW_NAMES.includes(node.name)) {
       if (!b) return { shadowed: false };
-      return (sameNameAliases && b.init && !seen.has(b) && browserGlobal(b.init, b.scope, new Set([...seen, b]))) || { shadowed: true };
+      return (sameNameAliases && windowAlias(b, seen)) || { shadowed: true };
     }
     if (b?.init && !seen.has(b)) return browserGlobal(b.init, b.scope, new Set([...seen, b]));
+    if (sameNameAliases && b?.destructure) return windowAlias(b, seen);
     return null;
+  }
+  // With sameNameAliases: the global object a const (`const window =
+  // globalThis`) or destructure (`const { window } = globalThis`) binds.
+  function windowAlias(b, seen) {
+    if (seen.has(b)) return null;
+    if (b.init) return browserGlobal(b.init, b.scope, new Set([...seen, b]));
+    if (!b.destructure) return null;
+    const global = browserGlobal(b.destructure.object, b.scope, new Set([...seen, b]));
+    const property = b.destructure.property;
+    const name = property.computed ? literal(property.key, b.scope) : property.key.name;
+    return global && WINDOW_NAMES.includes(name) ? { shadowed: global.shadowed || b.destructure.mutable } : null;
   }
   // A reference to one of `globals` (a browser global's own name, a property
   // of window/globalThis/self, or a const or destructured alias of either).
