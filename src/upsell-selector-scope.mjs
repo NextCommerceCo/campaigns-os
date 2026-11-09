@@ -169,10 +169,13 @@ function liveMetaElements(node, found = []) {
  *              match of the looser pattern this replaced. Values trimmed and
  *              deduplicated, first occurrence first. Wider than that pattern,
  *              never narrower.
+ *
+ * `document`, when a function, returns the parse5 tree of `content` (the
+ * doctor's shared inputs parse once for every consumer).
  */
-export function readBuiltPageTypeMetas(content) {
+export function readBuiltPageTypeMetas(content, document = null) {
   const source = String(content || "");
-  const live = liveMetaElements(parse(source))
+  const live = liveMetaElements(typeof document === "function" ? document() : parse(source))
     .map((element) => new Map(element.attrs.map((attr) => [attr.name, attr.value])))
     .filter((attrs) => attrs.get("name") === PAGE_TYPE_META)
     .map((attrs) => (attrs.get("content") ?? "").trim());
@@ -197,8 +200,8 @@ export function readBuiltPageTypeMetas(content) {
 // `querySelector` reads, so a blank first meta declares nothing; and every
 // live meta must agree (case aside), because a page carrying both `checkout`
 // and `receipt` has not said which it is.
-export function builtPageTypeMeta(content) {
-  const [first = "", ...rest] = readBuiltPageTypeMetas(content).live;
+export function builtPageTypeMeta(content, document = null) {
+  const [first = "", ...rest] = readBuiltPageTypeMetas(content, document).live;
   if (!first) return null;
   return rest.every((value) => value.toLowerCase() === first.toLowerCase()) ? first : null;
 }
@@ -228,8 +231,8 @@ function routeGuessIsAmbiguous(route) {
 // conflicting markup, and when no route is given. A type declared by a spec
 // is not a guess and is passed through as before. Either way the type
 // comes back trimmed and lower-cased (" Checkout " is "checkout"), or null.
-export function builtPageTypeOverRouteGuess({ route = null, route_type = null, content = "" } = {}) {
-  const declared = routeGuessIsAmbiguous(route) ? builtPageTypeMeta(content) : null;
+export function builtPageTypeOverRouteGuess({ route = null, route_type = null, content = "", document = null } = {}) {
+  const declared = routeGuessIsAmbiguous(route) ? builtPageTypeMeta(content, document) : null;
   const type = normalizedPageType(declared) === "checkout" ? declared : route_type;
   return normalizedPageType(type);
 }
@@ -246,9 +249,9 @@ function normalizedPageType(type) {
 // Any next-page-type the page carries counts here, live or mentioned: saying
 // "post-purchase" can only add a check, so inert markup that says it errs
 // toward a visible, waivable blocker rather than a silent charge.
-export function builtPageIsPostPurchase({ page_type = null, content = "" } = {}) {
+export function builtPageIsPostPurchase({ page_type = null, content = "", document = null } = {}) {
   if (isPostPurchasePageType(page_type)) return true;
-  const { live, mentioned } = readBuiltPageTypeMetas(content);
+  const { live, mentioned } = readBuiltPageTypeMetas(content, document);
   return [...live, ...mentioned].some(isPostPurchasePageType);
 }
 
@@ -265,7 +268,7 @@ function emptyWaiverAssessment() {
  *
  * @param {{
  *   subject: object,
- *   pages: Array<{ page_id: string, page_type?: string|null, file?: string|null, content: string }>,
+ *   pages: Array<{ page_id: string, page_type?: string|null, file?: string|null, content: string, document?: () => object }>,
  *   waivers?: unknown,
  *   now?: string,
  * }} input

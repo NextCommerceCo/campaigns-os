@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.66.0+agent.5] - 2026-11-09
+
+### Changed
+
+- **Doctor shares one bounded set of inputs per run (#730, milestone 2).** Nothing doctor reports changes. Within one run, the upsell selector-scope and SDK markup gates resolve the built-site scope once and read each built page once, and they share one HTML parse per page when the run's pages fit the parse budget. Every spec-page route lookup walks the campaign's source pages once per run instead of once per page per check. `doctor --built` now runs in the same read-only snapshot as packet doctor. What a run keeps is capped, and nested runs count against the same caps: 16 MiB of file bytes and their decoded text across 4,096 files (a file counts three times its size), 64 MiB of parsed pages (estimated at 30 times their source size, so pages share one parse while their HTML totals about 2.1 MiB), 256 shared collections, and four levels of nesting below the outermost run. Past a cap, an input is read or parsed each time it is used, as before. A page set too large for the parse budget is never partly kept, because keeping a few parsed pages slows every later parse. Everything a run keeps is dropped when it returns, so `record`'s inspection after its write reads fresh files.
+
 ## [1.66.0+agent.4] - 2026-11-08
 
 ### Changed

@@ -1,6 +1,6 @@
 // Doctor checks: the check registries, validatePacket and the validators they run.
 import { campaignSpecIdentity, resolveCampaignIdentity, campaignIdentitiesMatch } from "../spec-source-identity.mjs";
-import { withHtmlScanSnapshot, readHtmlScanText } from "../html-scan.mjs";
+import { withHtmlScanSnapshot, readHtmlScanText, htmlScanDocuments, htmlScanMemo } from "../html-scan.mjs";
 import { createHash } from "node:crypto";
 import { accessSync, constants as fsConstants, existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
@@ -2143,8 +2143,8 @@ function validateUpsellSelectorScope(spec, packet, errors, warnings, ready, deri
       const builtPath = builtHtmlPathForPage(targetRepo, publicRouteSlug, page, derived);
       if (builtPath) declaredByPath.set(resolve(builtPath), page);
     }
-    const scope = resolveBuiltSiteScope(targetRepo, { slug: publicRouteSlug });
-    for (const builtPage of (scope.ok ? scope.pages : [])) {
+    const scope = sharedBuiltSiteScope(targetRepo, publicRouteSlug);
+    for (const builtPage of (scope.ok ? sharedBuiltPages(scope, targetRepo) : [])) {
       const declared = declaredByPath.get(resolve(builtPage.built_path)) || null;
       // Declared type wins only when it is the post-purchase answer; otherwise
       // the route-inferred type stands, unless the route is ambiguous (an
@@ -2154,14 +2154,12 @@ function validateUpsellSelectorScope(spec, packet, errors, warnings, ready, deri
       // page's own next-page-type meta: any declaration saying "post-purchase"
       // is enough.
       const declaredType = declared?.type || null;
-      const content = readFileSync(builtPage.built_path, "utf8");
       pages.push({
         page_id: declared?.id || builtPage.page_id,
-        page_type: isPostPurchasePageType(declaredType)
-          ? declaredType
-          : builtPageTypeOverRouteGuess({ route: builtPage.route, route_type: builtPage.page_type, content }),
-        file: relFromDir(targetRepo, builtPage.built_path),
-        content,
+        page_type: isPostPurchasePageType(declaredType) ? declaredType : builtPageTypeOverRouteGuess(builtPage),
+        file: builtPage.file,
+        content: builtPage.content,
+        document: builtPage.document,
       });
     }
   }
@@ -2261,6 +2259,31 @@ export function validateCampaignIdentity(packet, errors, ready, derived, spec = 
     ready,
     derived,
   });
+}
+
+// The built-site scope of a packet-path gate, resolved once per inspection
+// through the shared input context (html-scan.mjs, #730).
+function sharedBuiltSiteScope(targetRepo, slug) {
+  return htmlScanMemo(JSON.stringify(["built-site-scope", resolve(targetRepo), slug ?? null]), () => resolveBuiltSiteScope(targetRepo, { slug }));
+}
+
+// A scope's built pages as the upsell-selector and SDK markup gates read them.
+// Each gate calls this for its own page list; the shared input context behind
+// it reads each page's bytes once and keeps one parse5 tree per page for both
+// gates, parsed only when a gate asks for it (`document`) and shared only while
+// the page set fits the parse budget.
+function sharedBuiltPages(scope, targetRepo) {
+  const contents = scope.pages.map((page) => readHtmlScanText(page.built_path));
+  const documentOf = htmlScanDocuments(scope.pages.map((page) => page.built_path));
+  return scope.pages.map((page, index) => ({
+    page_id: page.page_id,
+    route: page.route,
+    route_type: page.page_type,
+    built_path: page.built_path,
+    file: relFromDir(targetRepo, page.built_path),
+    content: contents[index],
+    document: () => documentOf(page.built_path, contents[index]),
+  }));
 }
 
 // The identity evaluator is pure, so the filesystem work happens here: each
@@ -2429,7 +2452,7 @@ function validateSdkMarkup(packet, errors, warnings, ready, derived, spec = null
   const targetRepo = derived.target_repo;
   const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
   const siteRoot = targetRepo && publicRouteSlug ? join(targetRepo, "_site", publicRouteSlug) : null;
-  const scope = siteRoot && existsSync(siteRoot) ? resolveBuiltSiteScope(targetRepo, { slug: publicRouteSlug }) : null;
+  const scope = siteRoot && existsSync(siteRoot) ? sharedBuiltSiteScope(targetRepo, publicRouteSlug) : null;
   const declaredTypes = new Map(activeSpecPages(spec).filter((page) => ["receipt", "thankyou"].includes(page.type)).map((page) => [
     builtHtmlPathForPage(targetRepo, publicRouteSlug, page, derived), "receipt",
   ]));
@@ -2438,7 +2461,7 @@ function validateSdkMarkup(packet, errors, warnings, ready, derived, spec = null
       public_route_slug: publicRouteSlug || null,
       site_root: siteRoot && targetRepo ? relFromDir(targetRepo, siteRoot) : null,
     },
-    pages: scope?.ok ? collectBuiltPageIdentityInputs(scope, targetRepo).map((page) => ({
+    pages: scope?.ok ? sharedBuiltPages(scope, targetRepo).map((page) => ({
       ...page,
       page_type: declaredTypes.get(resolve(targetRepo, page.file)) || null,
     })) : [],
@@ -3181,19 +3204,23 @@ function sourcePermalinkForPage(targetOutputDir, publicRouteSlug, page, { assets
   if (!targetOutputDir || !existsSync(targetOutputDir) || !statSync(targetOutputDir).isDirectory()) return null;
 
   const expectedTerminal = terminalRouteSegment(publicRouteForPage(page));
-  const candidates = [];
-  for (const file of collectHtmlFiles(targetOutputDir)) {
-    if (file.path.includes("_includes/") || file.path.includes("_layouts/")) continue;
-    if (assetsHtmlIgnored && file.path.split(sep)[0] === "assets") continue;
-    const fullPath = join(targetOutputDir, file.path);
-    const content = readFileSync(fullPath, "utf8");
-    const permalink = extractFrontmatterValue(content, "permalink");
-    if (!isNonEmptyString(permalink)) continue;
-    const relative = stripPublicRoutePrefix(normalizePageKitRoute(permalink), publicRouteSlug);
-    if (terminalRouteSegment(relative) === expectedTerminal) candidates.push(relative);
-  }
-
+  const candidates = sourcePermalinks(targetOutputDir, assetsHtmlIgnored)
+    .map((permalink) => stripPublicRoutePrefix(normalizePageKitRoute(permalink), publicRouteSlug))
+    .filter((relative) => terminalRouteSegment(relative) === expectedTerminal);
   return candidates.length === 1 ? candidates[0] : null;
+}
+
+// Every permalink the source pages state, in file order. One walk of the
+// source tree per inspection (#730), however many spec pages and validators ask.
+// Each value is copied code unit for code unit: a substring would keep its
+// whole source page alive for the run, outside the byte budget.
+function sourcePermalinks(targetOutputDir, assetsHtmlIgnored) {
+  return htmlScanMemo(JSON.stringify(["source-permalinks", resolve(targetOutputDir), assetsHtmlIgnored]), () => collectHtmlFiles(targetOutputDir)
+    .filter((file) => !file.path.includes("_includes/") && !file.path.includes("_layouts/"))
+    .filter((file) => !(assetsHtmlIgnored && file.path.split(sep)[0] === "assets"))
+    .map((file) => extractFrontmatterValue(readHtmlScanText(join(targetOutputDir, file.path)), "permalink"))
+    .filter(isNonEmptyString)
+    .map((permalink) => Buffer.from(permalink, "utf16le").toString("utf16le")));
 }
 
 function extractMetaContent(content, name) {
@@ -5319,6 +5346,7 @@ export {
   orderPathDepthDrift,
   recordUpsellSelectorScopeGate,
   collectBuiltPageIdentityInputs,
+  sharedBuiltPages,
   recordCampaignIdentityGate,
   recordScriptSyntaxGate,
   recordSdkMarkupGate,
