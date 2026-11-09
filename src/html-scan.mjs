@@ -23,7 +23,8 @@ const MAX_RETAINED_BYTES = 16 * 1024 * 1024;
 const MAX_RETAINED_FILES = 4096;
 // A parse5 tree costs 20-23x its UTF-8 source in heap on the certified-family
 // pages and up to 30x on element-dense markup, so parsed documents get their
-// own budget, estimated at the dense end.
+// own budget, estimated at the dense end: a page set shares trees while its
+// HTML totals about 2.1 MiB.
 const MAX_RETAINED_PARSE_COST = 64 * 1024 * 1024;
 const PARSE_COST_PER_BYTE = 30;
 const MAX_MEMOS = 256;
@@ -121,7 +122,8 @@ export function htmlScanDigest(path) {
 // the snapshot that asks with the same profile. Returns
 // `(path, text) => document`, parsing on first use. The tree always matches
 // the `text` given: the shared tree is handed back only when `text` is the
-// held text, and any other text is parsed per use. Template
+// held text, and any other text is parsed per use. A mismatch keeps the file's
+// reservation, so a later call with the held text still gets the shared tree. Template
 // content and other nested contexts stay inside the tree as parse5 builds
 // them; a consumer that reparses a fragment (noscript, srcdoc) does so itself.
 // Consumers read a shared tree and never change it.
@@ -158,9 +160,10 @@ export function htmlScanDocuments(paths, profile = 'noloc') {
 }
 
 // A collection computed once per snapshot under `key` (built-site scope, a
-// source tree's permalinks); past the memo budget it is computed per use.
-// Frozen one level down: the value, its object and array children, and those
-// arrays' items. Deeper values are not frozen, so a memo holds flat records.
+// source tree's permalinks); past the memo budget, or with no snapshot, it is
+// computed per use. The value is frozen either way, one level down: the value,
+// its object and array children, and those arrays' items. Deeper values are
+// not frozen, so a memo holds flat records.
 export function htmlScanMemo(key, compute) {
   const snapshot = snapshots.getStore();
   if (!snapshot?.active) return freezeShallow(compute());
