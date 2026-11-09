@@ -4,6 +4,7 @@
 // `});` in js/checkout.js, the shape that shipped.
 
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -726,4 +727,50 @@ test("the adapter's shared parse gives each script exactly parseScriptSyntax's r
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// Counts every acorn parse src/ makes during one doctor run, in a child
+// process: src/ binds acorn's parse at link time, so a resolve hook swaps in
+// a wrapper that records (sourceType, text) before forwarding.
+const COUNT_ACORN_PARSES = `
+import { registerHooks } from "node:module";
+import { pathToFileURL } from "node:url";
+const [root, built, slug, mode] = process.argv.slice(1);
+const src = pathToFileURL(root + "/src/").href;
+const wrapper = (real) => "data:text/javascript," + encodeURIComponent(
+  "import * as real from " + JSON.stringify(real) + "; export * from " + JSON.stringify(real) + ";"
+  + "export function parse(input, options) { (globalThis.acornParses ??= []).push((options && options.sourceType) + String.fromCharCode(0) + input); return real.parse(input, options); }");
+registerHooks({ resolve(specifier, context, next) {
+  const resolved = next(specifier, context);
+  return specifier === "acorn" && context.parentURL?.startsWith(src) ? { ...resolved, url: wrapper(resolved.url), shortCircuit: true } : resolved;
+} });
+const { doctorBuiltOutput } = await import(src + "doctor/inspect.mjs");
+const { collectBuiltScriptSyntaxInputs } = await import(src + "built-script-syntax.mjs");
+const { resolveBuiltSiteScope } = await import(src + "built-site-scope.mjs");
+const { withHtmlScanSnapshot } = await import(src + "html-scan.mjs");
+globalThis.acornParses = [];
+let observations = null;
+if (mode === "references") {
+  // Only what the fixture refresh reads: the references, never syntax.
+  withHtmlScanSnapshot(() => collectBuiltScriptSyntaxInputs(resolveBuiltSiteScope(built, { slug }), built).scripts.map((script) => script.file));
+} else {
+  observations = doctorBuiltOutput({ built, slug }).warnings.filter((w) => w.code.startsWith("built_output.script_observations.")).length;
+}
+const parses = globalThis.acornParses;
+console.log(JSON.stringify({ calls: parses.length, distinct: new Set(parses).size, observations }));
+`;
+const countAcornParses = (mode = "doctor") => {
+  const root = resolve(new URL("..", import.meta.url).pathname);
+  const run = spawnSync(process.execPath, ["--input-type=module", "-e", COUNT_ACORN_PARSES, root, join(root, "fixtures", "script-observations"), SLUG, mode], { encoding: "utf8" });
+  assert.equal(run.status, 0, run.stderr);
+  return JSON.parse(run.stdout.trim().split("\n").at(-1));
+};
+
+test("one doctor run parses each local script once per mode: the syntax gate and the observations share the program", () => {
+  // supported, ambiguous, shadowed and global-fetch as classic scripts; aliases and global-fetch as modules.
+  assert.deepEqual(countAcornParses(), { calls: 6, distinct: 6, observations: 12 });
+});
+
+test("collecting the syntax inputs parses nothing until a script's syntax is read", () => {
+  assert.deepEqual(countAcornParses("references"), { calls: 0, distinct: 0, observations: null });
 });

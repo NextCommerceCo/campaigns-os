@@ -447,8 +447,9 @@ function resolveScriptReferences(scope, pages) {
  * spelling met. A symlink leaving the site root is not read and is listed in
  * `outside_site` by the link's own path. Readable scripts are keyed by path
  * and mode: the same bytes can pass as a module and fail as a classic script.
- * Each carries `syntax`: null when it parses, else its parseScriptSyntax
- * diagnostic, from the run's shared parse (htmlScanScriptPrograms).
+ * Each carries `syntax`, computed on first read: null when it parses, else
+ * its parseScriptSyntax diagnostic, from the run's shared parse
+ * (htmlScanScriptPrograms).
  *
  * @param {{ site_root: string, campaign_dir: string, pages: Array<{ page_id: string, built_path: string }> }} scope
  * @param {string} targetRepo
@@ -483,18 +484,27 @@ export function collectBuiltScriptSyntaxInputs(scope, targetRepo) {
       onPage(scripts.get(key), ref.page_id);
     }
   }
-  // Each script parsed once per run and mode, through the run's shared
+  // Each script is parsed once per run and mode, through the run's shared
   // programs (the API/storage observations read the same set), with the same
-  // options as parseScriptSyntax, so the diagnostic is the same.
+  // options as parseScriptSyntax, so the diagnostic is the same. The parse is
+  // lazy: `syntax` is computed on first read, so a caller that wants only the
+  // references (the fixture refresh) parses nothing.
   const programs = htmlScanScriptPrograms([...scripts.values()]);
   const parsed = [...scripts.values()].map(({ path, ...script }) => {
-    let syntax = null;
-    try {
-      programs(path, script.module, script.content);
-    } catch (error) {
-      syntax = parseFailureDiagnostic(error);
-    }
-    return { ...script, syntax };
+    let syntax;
+    return Object.defineProperty(script, "syntax", {
+      enumerable: true,
+      get() {
+        if (syntax !== undefined) return syntax;
+        try {
+          programs(path, script.module, script.content);
+          syntax = null;
+        } catch (error) {
+          syntax = parseFailureDiagnostic(error);
+        }
+        return syntax;
+      },
+    });
   });
   return {
     pages_scanned: pagesScanned,
@@ -516,8 +526,12 @@ function gateBase(subject) {
 }
 
 /**
- * Evaluate the syntax of the campaign-owned scripts built pages load. Pure:
- * the caller hands in script contents.
+ * Evaluate the syntax of the campaign-owned scripts built pages load. The
+ * caller hands in each script's content and, optionally, its parse result as
+ * `syntax` (null when it parses). A `syntax` that is not undefined wins over
+ * `content`: the evaluator trusts it and does not parse again, so a caller
+ * that changes `content` after collection must drop `syntax` too. Without
+ * one, the evaluator parses `content` itself and reads nothing else.
  *
  * @param {{ subject?: object, pages_scanned?: number,
  *   scripts?: Array<{ file: string, module?: boolean, content: string, pages?: string[], syntax?: null | { line: number, column: number, message: string } }>,
@@ -589,9 +603,9 @@ export function evaluateBuiltScriptSyntax({ subject, pages_scanned: pagesScanned
 
   const findings = [];
   for (const script of list) {
-    // `syntax` is the adapter's result from the run's shared parse; a caller
-    // that hands in only content gets the same parse here.
-    const failure = "syntax" in script ? script.syntax : parseScriptSyntax(script.content, { module: Boolean(script.module) });
+    // `syntax` (null: parses) is the adapter's result from the run's shared
+    // parse; without one (undefined), the content is parsed here.
+    const failure = script.syntax === undefined ? parseScriptSyntax(script.content, { module: Boolean(script.module) }) : script.syntax;
     if (!failure) continue;
     const pages = Array.isArray(script.pages) ? script.pages : [];
     findings.push({
