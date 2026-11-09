@@ -33,6 +33,7 @@ import {
   listCampaignCartScanFiles,
   listCampaignCartSourceFiles,
   loadSdkSupportPolicy,
+  maskHtmlComments,
 } from "./campaign-ecosystem.mjs";
 import { refused } from "./lifecycle.mjs";
 import { compareVersions, relPath, unique } from "./repo-scan.mjs";
@@ -144,7 +145,7 @@ function planWithSpans({ targetRepo, targetSdk = null, sdkSupportPolicy = null }
       blockers: crossMinor,
       references: references.map(publicReference),
       rewrites: [],
-      left_alone: { not_semver: [], at_target: [], newer_than_target: [] },
+      left_alone: leftAlone(references),
       files: [],
     } };
   }
@@ -159,11 +160,7 @@ function planWithSpans({ targetRepo, targetSdk = null, sdkSupportPolicy = null }
     message: statusMessage(status, toVersion),
     references: references.map(publicReference),
     rewrites: rewrites.map(publicReference),
-    left_alone: {
-      not_semver: references.filter((entry) => entry.action === "not_semver").map(publicReference),
-      at_target: references.filter((entry) => entry.action === "at_target").map(publicReference),
-      newer_than_target: references.filter((entry) => entry.action === "newer_than_target").map(publicReference),
-    },
+    left_alone: leftAlone(references),
     files: unique(rewrites.map((entry) => entry.path)),
   } };
 }
@@ -287,6 +284,14 @@ function statusMessage(status, toVersion) {
   return `Semver-pinned references below ${toVersion} can be rewritten.`;
 }
 
+function leftAlone(references) {
+  return {
+    not_semver: references.filter((entry) => entry.action === "not_semver").map(publicReference),
+    at_target: references.filter((entry) => entry.action === "at_target").map(publicReference),
+    newer_than_target: references.filter((entry) => entry.action === "newer_than_target").map(publicReference),
+  };
+}
+
 function publicReference({ path, line, artifact, url, ref, version, action, new_ref, new_url }) {
   return { path, line, artifact, url, ref, version, action, new_ref, new_url };
 }
@@ -295,7 +300,8 @@ function publicReference({ path, line, artifact, url, ref, version, action, new_
 // loader <script> among the rewrites, and any Campaign Cart dist/index.js or
 // dist/chunks/ reference, pinned or not. Empty when no rewrite starts below
 // 0.5.0 (a 0.5.x → 0.5.y move needs no reshaping).
-const LOADER_SCRIPT_TAG = /<script\b[^>]*\bsrc\s*=\s*["']([^"']*campaign-cart[^"']*\/dist\/loader\.js[^"']*)["'][^>]*>/gi;
+const LOADER_SCRIPT_TAG = /<script\b[^>]*\bsrc\s*=\s*["']([^"']*campaign-cart[^"']*\/dist\/loader(?:\.min)?\.js[^"']*)["'][^>]*>/gi;
+const MODULE_TYPE = /\stype\s*=\s*(["']?)module\1(?=[\s/>])/i;
 const LEGACY_DIST_REFERENCE = /campaign-cart[^"'\s)]*\/dist\/(?:index\.js|chunks\/)[^"'\s)]*/gi;
 function sdk05LayoutBlockers(target, rewrites) {
   if (!rewrites.some((entry) => !isSdk05(entry.version))) return [];
@@ -303,12 +309,12 @@ function sdk05LayoutBlockers(target, rewrites) {
   for (const file of listCampaignCartSourceFiles(target)) {
     const raw = readText(file);
     if (raw === null) continue;
-    const text = raw.replace(/<!--[\s\S]*?-->/g, (comment) => comment.replace(/[^\n]/g, " "));
+    const text = maskHtmlComments(raw);
     const path = relPath(target, file);
     const lineAt = (index) => text.slice(0, index).split("\n").length;
     if (isCampaignCartHtmlFile(file)) {
       for (const match of text.matchAll(LOADER_SCRIPT_TAG)) {
-        if (/\btype\s*=\s*["']?module["']?/i.test(match[0])) continue;
+        if (MODULE_TYPE.test(match[0])) continue;
         blockers.push({ path, line: lineAt(match.index), reason: `loader <script> is not type="module": ${match[1]}` });
       }
     }

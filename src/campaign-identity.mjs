@@ -80,7 +80,7 @@ function metaContent(html, name) {
 // An attribute of the page's Campaign Cart loader <script> (data-campaign,
 // data-funnel: SDK 0.5), or null. Only a script whose src is the loader is
 // read; a 0.4.x loader carries neither attribute.
-const LOADER_SCRIPT_TAG = /<script\b(?=[^>]*\bsrc\s*=\s*["'][^"']*campaign-cart[^"']*\/dist\/loader\.js[^"']*["'])([^>]*)>/i;
+const LOADER_SCRIPT_TAG = /<script\b(?=[^>]*\bsrc\s*=\s*["'][^"']*campaign-cart[^"']*\/dist\/loader(?:\.min)?\.js[^"']*["'])([^>]*)>/i;
 function loaderAttribute(html, name) {
   const tag = LOADER_SCRIPT_TAG.exec(html);
   if (!tag) return null;

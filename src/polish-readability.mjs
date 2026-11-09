@@ -607,6 +607,10 @@ export function readabilityProbe(toolkit, limits, closedRoots, generatedText) {
   const STATE_GROUPS = ROLES.filter(([role]) => role === "bundle_card" || role === "order_bump");
   // SDK 0.5 names checkout inputs with data-next-field inside the form.
   const CHECKOUT_FIELD = "[data-next-checkout-field], form[data-next-checkout] [data-next-field]";
+  // CHECKOUT_FIELD is a list, so a tag or attribute qualifier goes on each part.
+  const CHECKOUT_HINT_FIELDS = ["input", "textarea"]
+    .flatMap((tag) => [`${tag}[data-next-checkout-field][placeholder]`, `form[data-next-checkout] ${tag}[data-next-field][placeholder]`])
+    .join(", ");
   // Elements that hold no text of their own: never a text_not_rendered role element.
   const TEXTLESS = new Set(["select", "textarea", "img", "svg", "video", "canvas", "iframe", "object", "embed", "picture", "hr", "br"]);
 
@@ -770,7 +774,7 @@ export function readabilityProbe(toolkit, limits, closedRoots, generatedText) {
   // Placeholder hints of checkout fields: the ::placeholder text, against the
   // field's background.
   for (const scope of scopes) {
-    for (const field of scope.root.querySelectorAll(`input${CHECKOUT_FIELD}[placeholder], textarea${CHECKOUT_FIELD}[placeholder]`)) {
+    for (const field of scope.root.querySelectorAll(CHECKOUT_HINT_FIELDS)) {
       if (capped) break;
       if (!/\S/.test(field.getAttribute("placeholder")) || field.value !== "" || !isVisible(field)) continue;
       if (!admit()) break;

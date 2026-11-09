@@ -11410,7 +11410,7 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.66.0+agent.12",
-      "changelog_sha256": "a5b630ac63354f9bf37a86f81c20f757d8af808f9867af0dc9032be9f554a0be",
+      "changelog_sha256": "4799a595af5fd75a0c2e7c7205a16dee75eb57906cb5526f993614b9884ce8a7",
       "agent_impact": "A campaign pinned to Campaign Cart SDK 0.5.0 or later no longer draws false blockers: doctor accepts 0.5's checkout field names and data-campaign, QA finds 0.5 markup, and sdk repin refuses a 0.4 to 0.5 move until the loader is a module. New on 0.5 pins only: doctor warning built_output.sdk_markup.removed_in_sdk_05 for removed 0.4 features, QA blocker browser-sdk-error:<page> on html[data-next-error], and two AnalyticsContractShape warnings. 0.4.x pins are judged as before. Agents bumping to 0.5 should follow the sdk-bump skill's Crossing to 0.5 section.",
       "compatibility": "compatible",
       "migration": "none",
@@ -11443,7 +11443,7 @@
           "class": "named_surface",
           "path": "docs/campaigns-os-build-flow.md",
           "surface_entry": "docs/campaigns-os-build-flow.md",
-          "summary": "The SDK markup rule lists the API field names a 0.5 pin also accepts."
+          "summary": "The SDK markup rule lists the API field names a 0.5 pin also accepts and the REMOVED_IN_SDK_05 warning."
         },
         {
           "class": "named_surface",
@@ -11524,7 +11524,7 @@
           "summary": "Revision 1.66.0+skills.2; version one patch higher; text otherwise unchanged."
         }
       ],
-      "entry_sha256": "d969e359033ca8f64b7a7b5600e08070c6a00b589a6b840d84f57335a92528c1"
+      "entry_sha256": "4bdca6a40b5703e45e639c37098d85ceea7f56e8ba9bdd61f533f5175cc8c57c"
     }
   ]
 }

@@ -104,11 +104,11 @@ browserTest("SDK 0.5: the checkout behaviour probe finds the bare form[data-next
   }
 });
 
-browserTest("SDK 0.5: the test-order form fill types into data-next-field inputs and card.expiry", async () => {
+browserTest("SDK 0.5: the test-order form fill types into data-next-field inputs (phone_number among them) and card.expiry", async () => {
   const { context, page } = await open("/checkout/", withSdk(fixture("checkout"), READY));
   try {
     await hooks.waitForSdkDisplayReady(page);
-    await hooks.fillCheckoutFields(page, {}, "qa@example.test", { actionTimeoutMs: 5000 });
+    await hooks.fillCheckoutFields(page, { "test-phone": "4155550100" }, "qa@example.test", { actionTimeoutMs: 5000 });
     await hooks.fillCardExpiry(page, "12", "2030");
     const values = await page.evaluate(() => Object.fromEntries(Array.from(document.querySelectorAll("[data-next-field]"))
       .filter((field) => "value" in field && field.type !== "radio" && field.type !== "checkbox")
@@ -123,7 +123,7 @@ browserTest("SDK 0.5: the test-order form fill types into data-next-field inputs
       state: "CA",
       postcode: "94043",
       country: "US",
-      phone_number: "",
+      phone_number: "4155550100",
       "card.expiry": "12 / 30",
     });
   } finally {

@@ -709,7 +709,7 @@ function proximityHasSyncSignals(text) {
 
 // Blank out HTML comment bodies while preserving offsets/line numbers so
 // commented-out markup never produces bindings, radios, or sync evidence.
-function maskHtmlComments(content) {
+export function maskHtmlComments(content) {
   const masked = String(content || "").replace(/<!--[\s\S]*?-->/g, (match) => match.replace(/[^\r\n]/g, " "));
   // After closed comments are masked, any surviving `<!--` opens a comment
   // that never closes (truncated/corrupt file). Everything from that opener to

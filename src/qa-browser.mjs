@@ -7845,13 +7845,14 @@ async function selectByField(page, field, value, options = {}) {
   return true;
 }
 
-// SDK 0.5's card.expiry is one "MM / YY" input; a page with no month select
-// and that input gets it typed. Every other page selects month and year as
-// before.
-const CARD_EXPIRY_INPUT = '[data-next-field="card.expiry"], [data-next-checkout-field="cc-expiry"]';
+// SDK 0.5's card.expiry is one text input, typed as "MM / YY" (the SDK's own
+// prompt; its parser also takes "MM/YY" and "MM/YYYY"). A page showing that
+// input and no month select gets it typed. Every other page selects month and
+// year as before.
 async function fillCardExpiry(page, month, year) {
-  const expiry = page.locator(CARD_EXPIRY_INPUT).first();
-  if (!await page.locator(checkoutFieldSelector("exp-month")).count().catch(() => 0) && await expiry.count().catch(() => 0)) {
+  const expiry = page.locator(checkoutFieldSelector("cc-expiry")).first();
+  const monthSelect = page.locator(checkoutFieldSelector("exp-month")).first();
+  if (!await fieldUsable(monthSelect, { onlyVisible: true }) && await fieldUsable(expiry)) {
     await expiry.fill(`${String(month).padStart(2, "0")} / ${String(year).slice(-2)}`);
     return;
   }

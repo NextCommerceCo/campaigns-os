@@ -112,6 +112,11 @@ test("REMOVED_IN_SDK_05: every removed 0.4 feature warns once on a 0.5 pin, and 
   assert.deepEqual(on04.findings.filter((item) => item.code_name === "REMOVED_IN_SDK_05"), []);
 });
 
+test("REMOVED_IN_SDK_05: a script inside <template> never runs, so its removed calls do not warn", () => {
+  const inert = scanPageMarkup(page(LOADER_05, "<template><script>next.fomo(); window.nextConfig = { googleMaps: {} };</script></template>"));
+  assert.deepEqual(inert.findings.filter((item) => item.code_name === "REMOVED_IN_SDK_05"), []);
+});
+
 test("REMOVED_IN_SDK_05: a removed call in a local script the page loads is found, and the scripts are read only on a 0.5 pin", () => {
   let reads = 0;
   const scripts = () => {
@@ -168,6 +173,17 @@ test("QA binding evidence takes the 0.5 loader's data-campaign as the page's key
   assert.equal((await observe("pk_other")).outcome, "mismatch");
 });
 
+test("QA binding evidence reads an empty data-campaign as no source, not a mismatch", async () => {
+  const html = `<!doctype html><html><head>${LOADER_05.replace('data-campaign="pk_example_sdk05"', 'data-campaign=" "')}</head><body></body></html>`;
+  const observed = await observeBinding({
+    source: { ok: true, html },
+    page: { url: "https://shop.example.test/example-campaign/checkout/" },
+    expected: { value: "pk_example_sdk05" },
+    scriptLoader: async () => ({ ok: false }),
+  });
+  assert.equal(observed.outcome, "unknown");
+});
+
 // --- QA selectors ----------------------------------------------------------------
 
 test("QA's checkout field selectors take the 0.4 name, the API name and the 0.5 data-next-field key", () => {
@@ -177,7 +193,8 @@ test("QA's checkout field selectors take the 0.4 name, the API name and the 0.5 
     '[data-next-field="line1"]',
   ]);
   assert.deepEqual(checkoutFieldSelectors("cc-number"), ['[data-next-checkout-field="cc-number"]', '[data-next-field="card.number"]']);
-  assert.deepEqual(checkoutFieldSelectors("phone"), ['[data-next-checkout-field="phone"]', '[data-next-checkout-field="phone_number"]', '[data-next-field="phone"]']);
+  assert.deepEqual(checkoutFieldSelectors("phone"), ['[data-next-checkout-field="phone"]', '[data-next-checkout-field="phone_number"]', '[data-next-field="phone"]', '[data-next-field="phone_number"]']);
+  assert.deepEqual(checkoutFieldSelectors("cc-expiry"), ['[data-next-checkout-field="cc-expiry"]', '[data-next-field="card.expiry"]']);
   assert.equal(checkoutFieldSelector("billing-postal"), '[data-next-checkout-field="billing-postal"], [data-next-checkout-field="billing-postcode"], [data-next-address="billing"] [data-next-field="postcode"]');
   assert.equal(checkoutFieldSelector("email"), '[data-next-checkout-field="email"], [data-next-field="email"]');
 });
@@ -208,6 +225,22 @@ test("sdk repin refuses a 0.4 → 0.5 move while a loader is classic or a 0.4 di
   const allowed = planSdkRepin({ targetRepo: dir, targetSdk: "0.5.0" });
   assert.equal(allowed.status, "changes");
   assert.equal(allowed.rewrites.length, 1);
+}));
+
+test("sdk repin treats a classic loader.min.js and a data-type=\"module\" loader as classic, ignores an unterminated comment's tail, and keeps left_alone on a refusal", () => withTempDir((dir) => {
+  const min = LOADER_04.replace("loader.js", "loader.min.js");
+  staticRepo(dir, { loader: min, extra: '<script src="https://cdn.jsdelivr.net/gh/NextCommerceCo/campaign-cart@main/dist/loader.js" type="module"></script>' });
+  const refusedMin = planSdkRepin({ targetRepo: dir, targetSdk: "0.5.0" });
+  assert.equal(refusedMin.status, "refused_cross_minor");
+  assert.equal(refusedMin.blockers.length, 1);
+  assert.match(refusedMin.blockers[0].reason, /loader\.min\.js$/);
+  assert.deepEqual(refusedMin.left_alone.not_semver.map((entry) => entry.ref), ["main"]);
+
+  staticRepo(dir, { loader: min.replace("<script ", '<script data-type="module" ') });
+  assert.equal(planSdkRepin({ targetRepo: dir, targetSdk: "0.5.0" }).status, "refused_cross_minor");
+
+  staticRepo(dir, { loader: min.replace("<script ", '<script type="module" '), extra: `<!-- ${LOADER_04}` });
+  assert.equal(planSdkRepin({ targetRepo: dir, targetSdk: "0.5.0" }).status, "changes");
 }));
 
 // --- CampaignSpec analytics -------------------------------------------------------

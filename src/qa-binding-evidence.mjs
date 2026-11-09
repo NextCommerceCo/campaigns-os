@@ -162,7 +162,8 @@ export async function observeBinding({ source, page, expected, scriptLoader, par
     // it is a markup declaration, so it reports under the `meta` source kind
     // (the verdict schema's source kinds are a closed set).
     if (attrs.src && SDK.test(scriptRef(attrs.src, script.base) ?? attrs.src)) {
-      if (typeof attrs['data-campaign'] === 'string') { values.push(attrs['data-campaign']); kinds.add('meta'); }
+      const campaign = typeof attrs['data-campaign'] === 'string' ? attrs['data-campaign'].trim() : '';
+      if (campaign) { values.push(campaign); kinds.add('meta'); }
       continue;
     }
     if (classicNomodule) { dynamic = true; continue; }

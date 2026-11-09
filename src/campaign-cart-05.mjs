@@ -46,10 +46,12 @@ export const SDK_05_API_FIELD_NAMES = Object.freeze({
 
 // The data-next-field key for a 0.4.x name, where it differs from the API
 // name: the card slots and the payment radios (names.ts V2_NAMES), and phone,
-// whose data-next-field key is `phone` (toV2).
+// whose documented data-next-field key is `phone` (toV2). 0.5 reads
+// data-next-field="phone_number" as the phone too (fromV2 passes it through).
 const SDK_05_FIELD_KEYS = Object.freeze({
   "cc-number": "card.number",
   cvv: "card.cvv",
+  "cc-expiry": "card.expiry",
   "payment-method": "payment_method",
   phone: "phone",
 });
@@ -57,20 +59,28 @@ const SDK_05_FIELD_KEYS = Object.freeze({
 // Every selector a 0.4.x checkout field name can appear under on a 0.4.x or
 // 0.5 page: data-next-checkout-field with the 0.4.x name, and on 0.5 pages
 // data-next-checkout-field with the API name and data-next-field with its
-// key. A billing- name is matched by data-next-field only inside
-// data-next-address="billing", where 0.5 reads an address key as billing.
-// A data-next-field="…" selector matches nothing on a 0.4.x page, so the
-// added selectors leave 0.4.x results unchanged.
+// key (and with the API name, where the key differs). A billing- name is
+// matched by data-next-field only inside data-next-address="billing", where
+// 0.5 reads an address key as billing.
+// A data-next-field="…" selector matches nothing on a 0.4.x page. The API
+// name on data-next-checkout-field can: a 0.4.x page that writes it before
+// the SDK reads it fails doctor's WRONG_FIELD_NAME, which runs before QA.
 export function checkoutFieldSelectors(name) {
   const value = String(name);
   const billing = value.startsWith("billing-");
   const base = billing ? value.slice("billing-".length) : value;
   const api = SDK_05_API_FIELD_NAMES[base] || null;
-  const key = SDK_05_FIELD_KEYS[base] || api || base;
+  const keys = unique([SDK_05_FIELD_KEYS[base] || api || base, ...(api ? [api] : [])]);
   const selectors = [`[data-next-checkout-field="${value}"]`];
   if (api) selectors.push(`[data-next-checkout-field="${billing ? `billing-${api}` : api}"]`);
-  selectors.push(billing ? `[data-next-address="billing"] [data-next-field="${key}"]` : `[data-next-field="${key}"]`);
+  for (const key of keys) {
+    selectors.push(billing ? `[data-next-address="billing"] [data-next-field="${key}"]` : `[data-next-field="${key}"]`);
+  }
   return selectors;
+}
+
+function unique(values) {
+  return [...new Set(values)];
 }
 
 export function checkoutFieldSelector(name) {
@@ -113,7 +123,7 @@ export const SDK_05_DATA_NEXT_ATTRIBUTES = Object.freeze([
   "data-next-package-sync", "data-next-payment", "data-next-payment-form", "data-next-payment-method",
   "data-next-payment-state", "data-next-phone-country", "data-next-phone-e164", "data-next-product-sync",
   "data-next-promotion", "data-next-promotion-creative", "data-next-promotion-name", "data-next-property",
-  "data-next-quantity", "data-next-quantity-", "data-next-quantity-decrease", "data-next-quantity-display",
+  "data-next-quantity", "data-next-quantity-decrease", "data-next-quantity-display",
   "data-next-quantity-increase", "data-next-query", "data-next-ready", "data-next-remove-item", "data-next-replace",
   "data-next-required", "data-next-scroll-target", "data-next-scroll-threshold", "data-next-selected",
   "data-next-selection-mode", "data-next-selector", "data-next-selector-id", "data-next-shipping-id",

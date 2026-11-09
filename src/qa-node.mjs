@@ -4354,16 +4354,19 @@ function findDeadUpsellProxy(html, kind, page) {
     if (!new RegExp(`\\bdata-upsell-proxy\\s*=\\s*["']${action}["']`, "i").test(html)) continue;
     const target = upsellActionPattern(action);
     if (upsellOfferElements(html).some((offer) => target.test(offer))) continue;
-    return `data-upsell-proxy="${action}" with no data-next-upsell-action="${action}" inside the offer to forward to`;
+    return `data-upsell-proxy="${action}" with no ${upsellActionAttribute(action)}="${action}" inside the offer to forward to`;
   }
   return null;
 }
 
 // SDK 0.5's acceptUpsell / skipUpsell sit on data-next-action; the older
 // spellings on data-next-upsell-action.
+function upsellActionAttribute(action) {
+  return /Upsell$/.test(action) ? "data-next-action" : "data-next-upsell-action";
+}
+
 function upsellActionPattern(action) {
-  const attribute = /Upsell$/.test(action) ? "data-next-action" : "data-next-upsell-action";
-  return new RegExp(`\\b${attribute}\\s*=\\s*["']${action}["']`, "i");
+  return new RegExp(`\\b${upsellActionAttribute(action)}\\s*=\\s*["']${action}["']`, "i");
 }
 
 // The markup of each [data-next-upsell="offer"] element, read to its closing
@@ -4394,7 +4397,7 @@ function upsellOfferElements(html) {
 function findSdkRouteAction(html, kind, page) {
   if (page.page_type !== "upsell" || kind === "next") return null;
   const action = UPSELL_ACTION_SPELLINGS[kind].find((spelling) => upsellActionPattern(spelling).test(html));
-  return action ? `SDK upsell ${kind} control: ${/Upsell$/.test(action) ? "data-next-action" : "data-next-upsell-action"}="${action}"` : null;
+  return action ? `SDK upsell ${kind} control: ${upsellActionAttribute(action)}="${action}"` : null;
 }
 
 function decodeHtml(value) {

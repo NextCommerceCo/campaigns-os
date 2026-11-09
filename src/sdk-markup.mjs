@@ -326,7 +326,10 @@ export function scanPageMarkup({ page_id, file = null, content = "", sdk_version
         if (feature.value && (a.get(feature.attribute) ?? "").trim() !== feature.value) continue;
         removed.set(feature.id, describe(entry));
       }
-      if (tag === "script" && !a.has("src")) inlineScripts.push(serializeTemplateText(entry.node));
+      // A script inside <template> or <noscript> never runs.
+      if (tag === "script" && !a.has("src") && !ancestors.some((anc) => anc.tag === "template" || anc.tag === "noscript")) {
+        inlineScripts.push(serializeTemplateText(entry.node));
+      }
     }
 
     if (a.has("data-next-checkout-field")) {
