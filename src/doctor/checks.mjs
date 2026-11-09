@@ -2505,8 +2505,7 @@ function validateBuiltScriptSyntax(packet, errors, warnings, ready, derived) {
 // something to compare: a decided template family and built pages that load
 // at least one local script.
 function familyScriptDivergenceScope(packet, derived) {
-  const family = packet?.assembly?.template_family;
-  if (!isNonEmptyString(family) || family === "undecided") return null;
+  if (!isAutomatableTemplateFamily(packet?.assembly?.template_family)) return null;
   const targetRepo = derived?.target_repo;
   const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
   const siteRoot = targetRepo && publicRouteSlug ? join(targetRepo, "_site", publicRouteSlug) : null;

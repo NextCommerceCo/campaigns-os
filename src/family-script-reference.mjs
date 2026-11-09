@@ -87,7 +87,9 @@ export function splitLines(text) {
 
 // Cells of the LCS table, after the common prefix and suffix are trimmed. The
 // family scripts are a few hundred lines; a pair past this bound reports its
-// line counts without hunks rather than spend seconds on an advisory.
+// line counts without hunks rather than spend seconds on an advisory. A caller
+// diffing several pairs passes one shared `budget` so the whole set is bounded
+// too (each pair still allocates at most this many cells, 16 MB).
 export const LINE_DIFF_CELL_BUDGET = 4_000_000;
 const HUNKS_LISTED = 3;
 
@@ -97,9 +99,10 @@ const HUNKS_LISTED = 3;
  * alignment. A trailing carriage return is ignored when lines are compared, so
  * a copy that differs only in line endings reports no hunks; the caller has
  * the hashes to say the bytes still differ. `hunks` is null when the trimmed
- * pair exceeds LINE_DIFF_CELL_BUDGET.
+ * pair exceeds LINE_DIFF_CELL_BUDGET or what is left of `budget.remaining`,
+ * which a diffed pair draws down by its cells.
  */
-export function lineDiffSummary(local, reference) {
+export function lineDiffSummary(local, reference, budget = { remaining: LINE_DIFF_CELL_BUDGET }) {
   const a = splitLines(local).map(stripCr);
   const b = splitLines(reference).map(stripCr);
   const summary = { local_lines: a.length, reference_lines: b.length, delta: a.length - b.length, hunks: null };
@@ -113,7 +116,9 @@ export function lineDiffSummary(local, reference) {
   }
   const n = endA - start;
   const m = endB - start;
-  if ((n + 1) * (m + 1) > LINE_DIFF_CELL_BUDGET) return summary;
+  const cells = (n + 1) * (m + 1);
+  if (cells > LINE_DIFF_CELL_BUDGET || cells > budget.remaining) return summary;
+  budget.remaining -= cells;
   // lcs[i][j]: LCS length of a[start+i..endA) and b[start+j..endB).
   const width = m + 1;
   const lcs = new Uint32Array((n + 1) * width);

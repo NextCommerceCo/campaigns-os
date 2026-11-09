@@ -4,9 +4,11 @@
 // family file is visible before the next family or SDK update lands on it.
 //
 // What it claims, and no more:
-// - A built script is nominated as a family-file candidate by the same built
-//   path (`js/upsells.js`), else by a unique file name, else by identical
-//   bytes under another name. A nomination is never ancestry: nothing a build
+// - Bytes decide first: a built script identical to any family file is
+//   `identical` whatever its name. Any other copy is nominated as a candidate
+//   for the family file at the same built path (`js/upsells.js`), else the one
+//   family file with its name, and diffed against it; a name several family
+//   files share is `ambiguous`. A nomination is never ancestry: nothing a build
 //   records today says which family file a campaign copy came from, so every
 //   comparison is labelled `ancestry: "candidate"`. An edited copy under a new
 //   name is not recognized.
@@ -19,14 +21,15 @@
 //   reference does not cover, reads as unavailable.
 //
 // Advisory: each diverged copy is one warning; nothing blocks.
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { basename, join, relative, sep } from "node:path";
+import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { builtScriptReferences } from "./built-script-syntax.mjs";
 import { htmlScanDigest, readHtmlScanText } from "./html-scan.mjs";
 import {
   FAMILY_SCRIPT_REFERENCE_FILE,
+  LINE_DIFF_CELL_BUDGET,
   familyScriptReferenceText,
   lineDiffSummary,
   loadFamilyScriptReference,
@@ -38,6 +41,9 @@ export const FAMILY_SCRIPT_DIVERGENCE = "built_output.family_script_divergence";
 export const FAMILY_SCRIPT_DIVERGED = `${FAMILY_SCRIPT_DIVERGENCE}.diverged`;
 
 const GENERATED_CONFIGURATION = ["config.js"];
+// LCS cells one record may spend on line diffs: four pairs at the per-pair
+// bound, far more than a family's few-hundred-line scripts need.
+export const FAMILY_SCRIPT_DIFF_CELL_BUDGET = 4 * LINE_DIFF_CELL_BUDGET;
 
 /**
  * The reference for `family`: `{ kind, repo, sha, sdk_version, label,
@@ -97,7 +103,13 @@ function privateFamilyReference(family, entry) {
   if (typeof sourceRoot !== "string" || !sourceRoot) {
     return { unavailable: `"${family}" is a private family and its contract fragment names no script_reference.source_root to compare against` };
   }
-  const root = join(fragment.repoDir, sourceRoot);
+  // The fragment lives in the private checkout, not in the reviewed allowlist,
+  // so its source_root is untrusted: it must stay inside that checkout, by its
+  // lexical and its real path.
+  const root = resolve(fragment.repoDir, sourceRoot);
+  if (isAbsolute(sourceRoot) || !inside(resolve(fragment.repoDir), root) || (existsSync(root) && !inside(realPath(fragment.repoDir), realPath(root)))) {
+    return { unavailable: `"${family}" is a private family and its script_reference.source_root leaves the ${entry.repo} checkout` };
+  }
   if (!existsSync(join(root, "js"))) {
     return { unavailable: `"${family}" is a private family and its local source ${sourceRoot}/js is not in the ${entry.repo} checkout` };
   }
@@ -170,7 +182,9 @@ export function collectFamilyScriptDivergence({ scope, targetRepo, family, famil
   };
   if (reference.unavailable) return record;
   const byBuiltPath = new Map(reference.scripts.map((script) => [script.built_path, script]));
-  const byHash = new Map(reference.scripts.map((script) => [script.sha256, script]));
+  const byHash = new Map();
+  for (const script of reference.scripts) byHash.set(script.sha256, [...(byHash.get(script.sha256) || []), script]);
+  const budget = { remaining: FAMILY_SCRIPT_DIFF_CELL_BUDGET };
   for (const local of familyScriptCandidates(scope)) {
     const file = posix(relative(targetRepo, local.path));
     if (local.built_path && reference.generated.includes(local.built_path)) {
@@ -184,33 +198,43 @@ export function collectFamilyScriptDivergence({ scope, targetRepo, family, famil
       record.unreadable.push(file);
       continue;
     }
-    const name = basename(local.path);
-    const named = reference.scripts.filter((script) => basename(script.built_path) === name);
-    let match = null;
-    let script = null;
-    if (local.built_path && byBuiltPath.has(local.built_path)) [match, script] = ["path", byBuiltPath.get(local.built_path)];
-    else if (named.length === 1) [match, script] = ["filename", named[0]];
-    else if (named.length > 1) {
-      record.scripts.push({ file, pages: local.pages, match: "ambiguous", ancestry: "candidate", result: "ambiguous", candidates: named.map((entry) => entry.built_path) });
-      continue;
-    } else if (byHash.has(digest)) [match, script] = ["content", byHash.get(digest)];
-    else {
-      record.not_compared += 1;
+    // Bytes decide before names: an exact match to any family file is
+    // identical whatever the name says; only a copy that matches none is
+    // diffed, against the family file at its built path, else the one file
+    // with its name.
+    const sameBytes = byHash.get(digest) || [];
+    const atPath = local.built_path ? byBuiltPath.get(local.built_path) : null;
+    if (atPath?.sha256 === digest) {
+      record.scripts.push(comparison(file, local, "path", atPath, { result: "identical" }));
       continue;
     }
-    const entry = { file, pages: local.pages, match, ancestry: "candidate", reference_path: script.built_path, source_path: script.source_path };
-    if (digest === script.sha256) {
-      record.scripts.push({ ...entry, result: "identical" });
+    if (sameBytes.length) {
+      const extra = sameBytes.length > 1 ? { candidates: sameBytes.map((script) => script.built_path) } : {};
+      record.scripts.push(comparison(file, local, "content", sameBytes[0], { result: "identical", ...extra }));
+      continue;
+    }
+    const named = reference.scripts.filter((script) => basename(script.built_path) === basename(local.path));
+    const [match, script] = atPath ? ["path", atPath] : named.length === 1 ? ["filename", named[0]] : [null, null];
+    if (!script) {
+      if (named.length > 1) record.scripts.push({ file, pages: local.pages, match: "ambiguous", ancestry: "candidate", result: "ambiguous", candidates: named.map((entry) => entry.built_path) });
+      else record.not_compared += 1;
       continue;
     }
     let referenceText;
     try {
       referenceText = script.text();
     } catch (error) {
-      record.scripts.push({ ...entry, result: "unavailable", reason: error.message });
+      record.scripts.push(comparison(file, local, match, script, { result: "unavailable", reason: error.message }));
       continue;
     }
-    record.scripts.push({ ...entry, result: "diverged", diff: lineDiffSummary(readHtmlScanText(local.path), referenceText) });
+    let localText;
+    try {
+      localText = readHtmlScanText(local.path);
+    } catch {
+      record.unreadable.push(file);
+      continue;
+    }
+    record.scripts.push(comparison(file, local, match, script, { result: "diverged", diff: lineDiffSummary(localText, referenceText, budget) }));
   }
   return record;
 }
@@ -246,11 +270,28 @@ function divergedMessage(family, label, entry) {
   const nomination = { path: "same built path", filename: "same file name", content: "same bytes" }[entry.match];
   const { local_lines: localLines, reference_lines: referenceLines, delta, hunks } = entry.diff;
   const shape = hunks === null
-    ? "too large to list hunks"
+    ? "hunks not listed (over the diff budget)"
     : hunks.count === 0
       ? "the lines match apart from line endings or a final newline"
       : `${hunks.count} hunk(s) adding ${hunks.added} and removing ${hunks.removed} line(s), the first at line ${hunks.first[0].local_start}`;
   return `${entry.file} differs from the ${family} family file ${entry.reference_path} (candidate by ${nomination}; ancestry is not recorded) at ${label}, ${entry.source_path}: ${localLines} line(s) against ${referenceLines} (${delta >= 0 ? "+" : ""}${delta}), ${shape}. Advisory: confirm the campaign edit is intended before the next family or SDK update, or move it upstream.`;
+}
+
+function comparison(file, local, match, script, outcome) {
+  return { file, pages: local.pages, match, ancestry: "candidate", reference_path: script.built_path, source_path: script.source_path, ...outcome };
+}
+
+function inside(root, path) {
+  const rel = relative(root, path);
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+function realPath(path) {
+  try {
+    return realpathSync(path);
+  } catch {
+    return resolve(path);
+  }
 }
 
 function addWarning(collection, code, message, detail) {

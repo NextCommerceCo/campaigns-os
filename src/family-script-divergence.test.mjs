@@ -21,6 +21,7 @@ import {
   sha256Hex,
 } from "./family-script-reference.mjs";
 import {
+  FAMILY_SCRIPT_DIFF_CELL_BUDGET,
   FAMILY_SCRIPT_DIVERGED,
   FAMILY_SCRIPT_DIVERGENCE,
   collectFamilyScriptDivergence,
@@ -181,6 +182,60 @@ test("a name shared by two reference files is reported as ambiguous and not diff
   });
 });
 
+// A one-page campaign loading the given scripts, compared against a synthetic
+// reference of the given { built_path: text } files.
+function syntheticRun(dir, scripts, referenceFiles) {
+  const campaign = join(dir, "_site", "camp");
+  for (const [path, text] of Object.entries(scripts)) {
+    mkdirSync(join(campaign, path, ".."), { recursive: true });
+    writeFileSync(join(campaign, path), text);
+  }
+  writeFileSync(join(campaign, "index.html"), `<!doctype html>${Object.keys(scripts).map((path) => `<script src="/camp/${path}"></script>`).join("")}`);
+  const reference = {
+    kind: "bundled",
+    repo: "example/templates",
+    sha: "0".repeat(40),
+    sdk_version: null,
+    label: "example/templates@0000000",
+    generated: ["config.js"],
+    scripts: Object.entries(referenceFiles).map(([builtPath, text]) => ({ built_path: builtPath, source_path: `src/x/assets/${builtPath}`, sha256: sha256Hex(text), text: () => text })),
+  };
+  const scope = { site_root: join(dir, "_site"), campaign_dir: campaign, pages: [{ page_id: "index", built_path: join(campaign, "index.html") }] };
+  return withHtmlScanSnapshot(() => collectFamilyScriptDivergence({ scope, targetRepo: dir, family: "x", familySource: "flag", reference }));
+}
+
+test("bytes decide before names: an exact copy is identical even when its name belongs to another family file", () => {
+  withTemp((dir) => {
+    const record = syntheticRun(dir, { "js/checkout.js": "upsell();\n" }, { "js/checkout.js": "checkout();\n", "js/upsells.js": "upsell();\n" });
+    assert.deepEqual(record.scripts.map(({ match, result, reference_path: path }) => ({ match, result, path })), [{ match: "content", result: "identical", path: "js/upsells.js" }]);
+  });
+});
+
+test("two family files with the same bytes are both named; an edited copy of a shared name is ambiguous", () => {
+  withTemp((dir) => {
+    const record = syntheticRun(dir, { "js/copy.js": "same();\n", "js/a/landing.js": "edited();\n" }, { "js/one.js": "same();\n", "js/two.js": "same();\n", "js/landing/landing.js": "l1();\n", "js/presell/landing.js": "l2();\n" });
+    const [copy, landing] = record.scripts;
+    assert.deepEqual({ match: copy.match, result: copy.result, candidates: copy.candidates }, { match: "content", result: "identical", candidates: ["js/one.js", "js/two.js"] });
+    assert.deepEqual({ match: landing.match, result: landing.result }, { match: "ambiguous", result: "ambiguous" });
+  });
+});
+
+test("the record's diff budget is shared: once spent, later diverged copies report line counts without hunks", () => {
+  withTemp((dir) => {
+    const side = Math.floor(Math.sqrt(FAMILY_SCRIPT_DIFF_CELL_BUDGET / 4)) - 1;
+    const lines = (prefix) => `${Array.from({ length: side }, (_, index) => `${prefix}${index}`).join("\n")}\n`;
+    const scripts = {};
+    const referenceFiles = {};
+    for (let index = 0; index < 5; index += 1) {
+      scripts[`js/f${index}.js`] = lines(`a${index}_`);
+      referenceFiles[`js/f${index}.js`] = lines(`b${index}_`);
+    }
+    const record = syntheticRun(dir, scripts, referenceFiles);
+    assert.deepEqual(record.scripts.map((entry) => entry.diff.hunks === null), [false, false, false, false, true]);
+    assert.ok(record.scripts.every((entry) => entry.diff.local_lines === side));
+  });
+});
+
 test("a damaged install reads the script as unavailable, never as a diff", () => {
   withTemp((dir) => {
     mkdirSync(join(dir, "contracts"), { recursive: true });
@@ -233,6 +288,26 @@ function withPrivateFamily(dir, fragmentExtra, fn) {
     }
   }
 }
+
+test("a private family whose script_reference.source_root leaves its checkout is unavailable and nothing outside is read", () => {
+  withTemp((dir) => {
+    const campaign = join(dir, "site", "_site", "acme");
+    mkdirSync(join(campaign, "js"), { recursive: true });
+    writeFileSync(join(campaign, "index.html"), '<!doctype html><script src="/acme/js/checkout.js"></script>');
+    writeFileSync(join(campaign, "js", "checkout.js"), "start();\n");
+    mkdirSync(join(dir, "outside", "js"), { recursive: true });
+    writeFileSync(join(dir, "outside", "js", "checkout.js"), "secret();\n");
+    for (const sourceRoot of ["../../outside", join(dir, "outside")]) {
+      withPrivateFamily(dir, { script_reference: { source_root: sourceRoot } }, () => {
+        const result = doctorBuiltOutput({ built: join(dir, "site"), slug: "acme", family: "acme" });
+        const record = result.derived.family_script_divergence;
+        assert.equal(record.status, "unavailable", sourceRoot);
+        assert.match(record.reason, /script_reference\.source_root leaves the example-org\/acme-templates checkout/);
+        assert.deepEqual(record.scripts, []);
+      });
+    }
+  });
+});
 
 test("a private family without a local script source is unavailable; with one, it is compared against that checkout", () => {
   withTemp((dir) => {

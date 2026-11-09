@@ -1198,24 +1198,27 @@ rendered from campaign values. It is never bundled or compared, and is listed
 apart as `generated_configuration[]`. Families in
 `contracts/private-template-sources.json` are never bundled. A private family
 is compared against a local source only when its contract fragment names
-`script_reference.source_root` and its sibling checkout resolves. The reference
+`script_reference.source_root`, a relative path that stays inside its sibling
+checkout, and that checkout resolves. The reference
 version is then that checkout's HEAD, read as its working tree stands.
 Otherwise the comparison reads as unavailable, and so does a family the
 bundled reference does not cover.
 
-**What it claims.** A built script is nominated as a candidate for a family
-file by the same built path (`js/upsells.js`), else by a file name that only
-one family file has, else by identical bytes under another name. A name that
-several family files share is reported as `ambiguous` and is not diffed. A
-nomination is not ancestry. Nothing a build records says which family file a
+**What it claims.** Bytes decide first: a built script identical to any family
+file is `identical`, whatever its name (`match: "content"` when the name
+differs, with every family file of those bytes in `candidates[]` when there is
+more than one). Any other copy is nominated as a candidate for the family file
+at the same built path (`js/upsells.js`), else for the one family file with its
+name, and diffed against it. A name that several family files share is
+reported as `ambiguous` and is not diffed. A nomination is not ancestry. Nothing a build records says which family file a
 campaign copy came from, so every comparison carries `ancestry: "candidate"`,
 and an edited copy under a new name is not recognized. Equal SHA-256 is
 `identical`. Unequal bytes are `diverged`, with a line diff against the
 reference bytes: line counts, the delta, and hunks (runs of changed lines,
 added and removed counts, the first three ranges). Lines are compared without
 a trailing carriage return, so a copy that differs only in line endings
-reports no hunks. A pair too large for the diff budget reports line counts
-only.
+reports no hunks. A pair too large for the diff budget, or past the record's
+total budget of four such pairs, reports line counts only.
 
 Each diverged copy is one warning, `built_output.family_script_divergence.diverged`.
 It names the file, the family file, how it was nominated, the reference
