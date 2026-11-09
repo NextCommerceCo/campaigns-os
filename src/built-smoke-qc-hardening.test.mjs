@@ -7,9 +7,8 @@
 //   C2 URL and fragment readings: only the decoded fragment is matched, a
 //      scheme-relative og:image is not absolute, and a local asset whose real
 //      path lies outside _site/ is never read or counted;
-//   C3 the anchor script hint reads scripts through
-//      collectBuiltPageIdentityInputs (its bounded form), listed from the
-//      page's parse5 tree;
+//   C3 the anchor script hint reads scripts through boundedPageScripts,
+//      listed from the page's parse5 tree;
 //   C4 the certified reachability harness accepts only pass rows and, per
 //      rule key, the unexercised reasons canonical output reads under
 //      `doctor --built` (no deploy base, no recorded environment);
@@ -68,9 +67,9 @@ afterEach(() => assertNoNetworkAttempts());
 after(() => assertNoNetworkAttempts());
 
 const { doctorBuiltOutput } = await import("./doctor/inspect.mjs");
-const { collectBuiltPageIdentityInputs, collectCartPlaceholderPages, recordSmokeQc } = await import("./doctor/checks.mjs");
+const { boundedPageScripts, collectBuiltPageIdentityInputs, collectCartPlaceholderPages, recordSmokeQc } = await import("./doctor/checks.mjs");
 const { computeBuildFingerprint, resolveBuiltSiteScope } = await import("./built-site-scope.mjs");
-const { SMOKE_QC, SMOKE_QC_CHECK, SMOKE_QC_LIMITS, URL_ATTRIBUTES, cssUrlValues, evaluateSmokeQc } = await import("./built-smoke-qc.mjs");
+const { SMOKE_QC, SMOKE_QC_CHECK, SMOKE_QC_LIMITS, URL_ATTRIBUTES, cssUrlValues, evaluateSmokeQc, isBuiltPageReadFailure, pageScriptSources, parseBuiltPage } = await import("./built-smoke-qc.mjs");
 
 const CHECK = "smoke_qc";
 const GATE = "built_output.smoke_qc";
@@ -364,7 +363,27 @@ test("C2 a local script whose real path is outside _site (a symlink) is never re
 // ---------------------------------------------------------------------------
 // C3: one script collector
 
-test("C3 collectBuiltPageIdentityInputs' bounded form lists every local script a page loads, read or unread; its identity form is unchanged", (t) => {
+// The pages smoke reads under doctor, each with the scripts its anchor hint
+// reads: the srcs the page's parse5 tree lists, read by boundedPageScripts. A
+// page with no content, or one that cannot be parsed, is returned as given.
+function boundedPages(dir) {
+  const scope = resolveBuiltSiteScope(dir, { slug: CAMPAIGN });
+  const readScripts = boundedPageScripts(scope.site_root, dir, SMOKE_QC_LIMITS);
+  const sourcesOf = (content) => {
+    try {
+      return pageScriptSources(parseBuiltPage(content));
+    } catch (error) {
+      if (!isBuiltPageReadFailure(error)) throw error;
+      return null;
+    }
+  };
+  return collectCartPlaceholderPages(dir, CAMPAIGN).map((page) => {
+    const sources = typeof page.content === "string" ? sourcesOf(page.content) : null;
+    return sources ? { ...page, scripts: readScripts(sources, join(dir, page.file)) } : page;
+  });
+}
+
+test("C3 boundedPageScripts lists every local script a page loads, read or unread; the identity collector's reading is unchanged", (t) => {
   const line = "// Synthetic filler line for the script size cap.\n";
   const many = Array.from({ length: 17 }, (_, index) => `js/m${String(index + 1).padStart(2, "0")}.js`);
   const files = {
@@ -380,8 +399,7 @@ test("C3 collectBuiltPageIdentityInputs' bounded form lists every local script a
 
   const scope = resolveBuiltSiteScope(dir, { slug: CAMPAIGN });
   assert.ok(scope.ok, "setup: the built scope resolves");
-  const pages = collectCartPlaceholderPages(dir, CAMPAIGN);
-  const bounded = collectBuiltPageIdentityInputs(scope, dir, { pages, bounds: SMOKE_QC_LIMITS });
+  const bounded = boundedPages(dir);
   // `file` as the identity form names it (relFromDir: the real path, "./"-prefixed).
   const fileOf = (src) => `./_site/${CAMPAIGN}/${src}`;
   const scriptsOf = (list, file) => list.find((item) => item.file.replace(/^\.\//, "") === file.replace(/^\.\//, "")).scripts;
@@ -509,7 +527,7 @@ test("C3 the bounded form lists scripts from the parse5 tree whatever the attrib
   const dir = tempTree(t, files);
   const scope = resolveBuiltSiteScope(dir, { slug: CAMPAIGN });
   assert.ok(scope.ok, "setup: the built scope resolves");
-  const bounded = collectBuiltPageIdentityInputs(scope, dir, { pages: collectCartPlaceholderPages(dir, CAMPAIGN), bounds: SMOKE_QC_LIMITS });
+  const bounded = boundedPages(dir);
   const fileOf = (src) => `./_site/${CAMPAIGN}/${src}`;
   assert.deepEqual(bounded.find((item) => item.file === PAGE).scripts, ["js/a.js", "js/b.js", "js/c.js"].map((src) => ({ src, file: fileOf(src), content: files[src] })));
 
@@ -684,13 +702,10 @@ const pageFile = (dir) => join(dir, PAGE);
 function evaluateTree(dir, { deployBase = null, environment = null } = {}) {
   const scope = resolveBuiltSiteScope(dir, { slug: CAMPAIGN });
   assert.ok(scope.ok, "setup: the built scope resolves");
-  const pages = collectBuiltPageIdentityInputs(scope, dir, { pages: collectCartPlaceholderPages(dir, CAMPAIGN), bounds: SMOKE_QC_LIMITS });
+  const pages = boundedPages(dir);
   return evaluateSmokeQc({ pages, environment, siteRoot: join(dir, "_site"), deployBase });
 }
-const boundedScriptsOf = (dir) => {
-  const scope = resolveBuiltSiteScope(dir, { slug: CAMPAIGN });
-  return collectBuiltPageIdentityInputs(scope, dir, { pages: collectCartPlaceholderPages(dir, CAMPAIGN), bounds: SMOKE_QC_LIMITS }).find((item) => item.file === PAGE).scripts;
-};
+const boundedScriptsOf = (dir) => boundedPages(dir).find((item) => item.file === PAGE).scripts;
 const deployRows = (set = {}) => pageRows(PAGE, { env: "production", set });
 
 for (const [label, escape] of [["#", "%23"], ["?", "%3F"]]) {

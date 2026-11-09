@@ -1,5 +1,5 @@
 {
-  "base_sha": "e1c5bc9c6dc2745d6f2bd54f37f89319ce7f915a",
+  "base_sha": "22174f84fb41dcba53d76d108778a7bf210377f1",
   "case": "capped-cart-candidates",
   "entry": "built",
   "description": "capped: a page with exactly 2,000 cart candidates (no cap) and one with 2,001 (candidate_cap_reached, the earlier live token retained)",

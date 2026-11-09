@@ -1,5 +1,5 @@
 {
-  "base_sha": "e1c5bc9c6dc2745d6f2bd54f37f89319ce7f915a",
+  "base_sha": "22174f84fb41dcba53d76d108778a7bf210377f1",
   "case": "certified-shop-three-step",
   "entry": "built",
   "description": "certified family shop-three-step rendered fixture, read in place with --family shop-three-step",
@@ -20,6 +20,84 @@
       {
         "code": "template_contract.literal_residue",
         "message": "Built output contains generic starter/template placeholders: target:js/promo-timer.js:305 \"XXCODE\"; target:upsell-bundle-stepper/index.html:153 \"Product Title\"; target:upsell-bundle-tier-cards/index.html:151 \"Product Title\"; target:upsell-bundle-tier-pills/index.html:193 \"Product Title\"; target:upsell-single/index.html:161 \"Product Title\". Replace these from CampaignSpec/API or remove dead template references."
+      },
+      {
+        "code": "built_output.script_observations.sdk_prefixed_storage",
+        "message": "_site/shop-three-step/js/checkout-shop-three-billing.js:28:21 reads the sessionStorage key \"next-checkout-store\" (local classic script, loaded by billing, shipping; owner not established). The key starts with the SDK's next prefix, but the name alone does not establish that the SDK owns it. If it is SDK state, use the SDK's public API, attributes or events instead: its storage keys can change in any release, as the scoping in 0.4.34 did. If the campaign owns it, give it a name off the next prefix.",
+        "detail": {
+          "finding": {
+            "code": "built_output.script_observations.sdk_prefixed_storage",
+            "file": "_site/shop-three-step/js/checkout-shop-three-billing.js",
+            "line": 28,
+            "column": 21,
+            "source_type": "script",
+            "pages": [
+              "billing",
+              "shipping"
+            ],
+            "operation": "read",
+            "receiver": "sessionStorage",
+            "key": {
+              "text": "next-checkout-store",
+              "match": "exact"
+            },
+            "delivery": "local",
+            "ownership": "unknown",
+            "provenance": null
+          }
+        }
+      },
+      {
+        "code": "built_output.script_observations.sdk_prefixed_storage",
+        "message": "_site/shop-three-step/js/checkout-shop-three-billing.js:41:27 reads a sessionStorage key starting \"next_funnel_name__\" (the rest is computed) (local classic script, loaded by billing, shipping; owner not established). The key starts with the SDK's next prefix, but the name alone does not establish that the SDK owns it. If it is SDK state, use the SDK's public API, attributes or events instead: its storage keys can change in any release, as the scoping in 0.4.34 did. If the campaign owns it, give it a name off the next prefix.",
+        "detail": {
+          "finding": {
+            "code": "built_output.script_observations.sdk_prefixed_storage",
+            "file": "_site/shop-three-step/js/checkout-shop-three-billing.js",
+            "line": 41,
+            "column": 27,
+            "source_type": "script",
+            "pages": [
+              "billing",
+              "shipping"
+            ],
+            "operation": "read",
+            "receiver": "sessionStorage",
+            "key": {
+              "text": "next_funnel_name__",
+              "match": "prefix"
+            },
+            "delivery": "local",
+            "ownership": "unknown",
+            "provenance": null
+          }
+        }
+      },
+      {
+        "code": "built_output.script_observations.sdk_prefixed_storage",
+        "message": "_site/shop-three-step/js/checkout-shop-three-billing.js:42:14 reads a localStorage key starting \"next_funnel_name__\" (the rest is computed) (local classic script, loaded by billing, shipping; owner not established). The key starts with the SDK's next prefix, but the name alone does not establish that the SDK owns it. If it is SDK state, use the SDK's public API, attributes or events instead: its storage keys can change in any release, as the scoping in 0.4.34 did. If the campaign owns it, give it a name off the next prefix.",
+        "detail": {
+          "finding": {
+            "code": "built_output.script_observations.sdk_prefixed_storage",
+            "file": "_site/shop-three-step/js/checkout-shop-three-billing.js",
+            "line": 42,
+            "column": 14,
+            "source_type": "script",
+            "pages": [
+              "billing",
+              "shipping"
+            ],
+            "operation": "read",
+            "receiver": "localStorage",
+            "key": {
+              "text": "next_funnel_name__",
+              "match": "prefix"
+            },
+            "delivery": "local",
+            "ownership": "unknown",
+            "provenance": null
+          }
+        }
       }
     ],
     "ready": [
@@ -31,6 +109,7 @@
       "SDK markup: 3 data-next-* name(s) not in the Campaign Cart 0.4.43 attribute index (advisory; the SDK does not read them): data-next-catalog-component, data-next-content, data-next-skeleton",
       "SDK markup checks passed on 11 built page(s)",
       "All 9 campaign-owned script(s) loaded by built pages parse",
+      "Family scripts compared with shop-three-step at NextCommerceCo/campaign-cart-starter-templates@5711e22 (SDK 0.4.43) (advisory): 8 candidate family script(s), 8 identical, 0 diverged; generated configuration not compared: _site/shop-three-step/config.js.",
       "Cart placeholder check on 11 built page(s): 11 page(s) pass, 0 warning or review result(s)"
     ],
     "derived": {
@@ -103,6 +182,7 @@
         "built_output.campaign_identity",
         "built_output.sdk_markup",
         "built_output.script_syntax",
+        "built_output.family_script_divergence",
         "built_output.cart_placeholders",
         "built_output.smoke_qc"
       ],
@@ -3561,6 +3641,141 @@
       "brand_contract": {
         "state": "inspected",
         "family": "shop-three-step"
+      },
+      "family_script_divergence": {
+        "family": "shop-three-step",
+        "family_source": "flag",
+        "reference": {
+          "kind": "bundled",
+          "repo": "NextCommerceCo/campaign-cart-starter-templates",
+          "sha": "5711e22345756c655f41c0ae71444478e4a8999e",
+          "sdk_version": "0.4.43",
+          "label": "NextCommerceCo/campaign-cart-starter-templates@5711e22 (SDK 0.4.43)"
+        },
+        "status": "compared",
+        "reason": null,
+        "scripts": [
+          {
+            "file": "_site/shop-three-step/js/checkout.js",
+            "pages": [
+              "billing",
+              "information",
+              "shipping"
+            ],
+            "match": "path",
+            "ancestry": "candidate",
+            "reference_path": "js/checkout.js",
+            "source_path": "src/shop-three-step/assets/js/checkout.js",
+            "result": "identical"
+          },
+          {
+            "file": "_site/shop-three-step/js/checkout-shop-three-billing.js",
+            "pages": [
+              "billing",
+              "shipping"
+            ],
+            "match": "path",
+            "ancestry": "candidate",
+            "reference_path": "js/checkout-shop-three-billing.js",
+            "source_path": "src/shop-three-step/assets/js/checkout-shop-three-billing.js",
+            "result": "identical"
+          },
+          {
+            "file": "_site/shop-three-step/js/promo-timer.js",
+            "pages": [
+              "information"
+            ],
+            "match": "path",
+            "ancestry": "candidate",
+            "reference_path": "js/promo-timer.js",
+            "source_path": "src/shop-three-step/assets/js/promo-timer.js",
+            "result": "identical"
+          },
+          {
+            "file": "_site/shop-three-step/js/landing/landing.js",
+            "pages": [
+              "landing"
+            ],
+            "match": "path",
+            "ancestry": "candidate",
+            "reference_path": "js/landing/landing.js",
+            "source_path": "src/shop-three-step/assets/js/landing/landing.js",
+            "result": "identical"
+          },
+          {
+            "file": "_site/shop-three-step/js/presell/countdown.js",
+            "pages": [
+              "presell"
+            ],
+            "match": "path",
+            "ancestry": "candidate",
+            "reference_path": "js/presell/countdown.js",
+            "source_path": "src/shop-three-step/assets/js/presell/countdown.js",
+            "result": "identical"
+          },
+          {
+            "file": "_site/shop-three-step/js/checkout-shop-three-shipping.js",
+            "pages": [
+              "shipping"
+            ],
+            "match": "path",
+            "ancestry": "candidate",
+            "reference_path": "js/checkout-shop-three-shipping.js",
+            "source_path": "src/shop-three-step/assets/js/checkout-shop-three-shipping.js",
+            "result": "identical"
+          },
+          {
+            "file": "_site/shop-three-step/js/upsells.js",
+            "pages": [
+              "upsell-bundle-stepper",
+              "upsell-bundle-tier-cards",
+              "upsell-bundle-tier-pills",
+              "upsell-single",
+              "upsell-vsl"
+            ],
+            "match": "path",
+            "ancestry": "candidate",
+            "reference_path": "js/upsells.js",
+            "source_path": "src/shop-three-step/assets/js/upsells.js",
+            "result": "identical"
+          },
+          {
+            "file": "_site/shop-three-step/js/payment-logos.js",
+            "pages": [
+              "upsell-bundle-stepper",
+              "upsell-bundle-tier-cards",
+              "upsell-bundle-tier-pills",
+              "upsell-single",
+              "upsell-vsl"
+            ],
+            "match": "path",
+            "ancestry": "candidate",
+            "reference_path": "js/payment-logos.js",
+            "source_path": "src/shop-three-step/assets/js/payment-logos.js",
+            "result": "identical"
+          }
+        ],
+        "generated_configuration": [
+          {
+            "file": "_site/shop-three-step/config.js",
+            "built_path": "config.js",
+            "pages": [
+              "billing",
+              "information",
+              "landing",
+              "presell",
+              "receipt",
+              "shipping",
+              "upsell-bundle-stepper",
+              "upsell-bundle-tier-cards",
+              "upsell-bundle-tier-pills",
+              "upsell-single",
+              "upsell-vsl"
+            ]
+          }
+        ],
+        "not_compared": 0,
+        "unreadable": []
       },
       "synthesized_packet": {
         "schema_version": "campaign-runtime-build-packet/v0",
