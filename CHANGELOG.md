@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.66.0+agent.12] - 2026-11-09
+
+### Changed
+
+- **Issue project automation updates its pinned action (#739).** `actions/add-to-project` moves from v2.0.0 to v2.0.1. An eligible issue already present in the project now skips successfully instead of failing when reopened. The collaborator gate, project destination and token permissions are unchanged. No campaign migration is required.
+
 ## [1.66.0+agent.11] - 2026-11-09
 
 ### Changed
