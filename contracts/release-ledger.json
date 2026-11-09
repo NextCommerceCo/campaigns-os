@@ -11330,6 +11330,27 @@
         }
       ],
       "entry_sha256": "11c609751cf6440a2ca60c3fd6063c48105889724088affb81fd5e848f866ccc"
+    },
+    {
+      "id": "RL-0325",
+      "sequence": 311,
+      "date": "2026-11-09",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.66.0+agent.9",
+      "changelog_sha256": "d2dd8cc756b32c356de1c6a792199a1e0f68a56c5e37dc4f24506c30eb710d0a",
+      "agent_impact": "None. Doctor output is unchanged: the same codes, messages, ordering, ready lines, checkpoint gates, QC results and causes. The campaign identity gate reads page and script bytes, and the smoke checks read script bytes, through the run shared input snapshot.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": null,
+          "summary": "The campaign identity gate reads the built-site scope, page bytes and script bytes through the run shared input snapshot, and the smoke checks read the bytes of scripts within their bounds through it."
+        }
+      ],
+      "entry_sha256": "549e23406b3914251f141b75ceacf2940ce685c6c3d1138e974a02dd6623d5e7"
     }
   ]
 }
