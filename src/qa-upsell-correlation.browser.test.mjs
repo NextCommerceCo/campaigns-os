@@ -171,7 +171,7 @@ browserTest("an earlier upsell step's body landing during the next step's wait i
   assert.equal(server.upsellPosts.length, 2, "each step posted the order upsell mutation once");
   const [stepA, stepB] = order.upsell_steps;
   assert.equal(stepA.api_response_body_read?.timed_out, true, "step A's body read hit the bound");
-  assert.equal(stepB.api_response_body_read?.timed_out, true, "step B's body read hit the bound");
+  assert.ok(stepB.api_response_body_read, "step B records the body read even when navigation aborts it");
   // Step A's body (base line and A's line, no B line) landed while step B
   // waited. Judged as B's, it reads "no new upsell line" and fails B.
   assert.equal(stepB.late_evidence?.source, "order_read_back", `step B was judged from ${stepB.late_evidence?.source}`);

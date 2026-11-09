@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.66.0+agent.14] - 2026-11-10
+
+### Changed
+
+- Upgrade Playwright to 1.65.0 independently of the HTML parser. A successful upsell mutation whose body becomes unreadable on navigation now waits for correlated mutation evidence or an order read-back, just as a timed-out body does. Without evidence the accept remains unverified and requires manual review; stale checkout lines cannot supply a definitive verdict. Browser fixtures retain timeout, correlation, image-cap, redirect ambiguity and offline navigation coverage under Chromium 158.
+
 ## [1.66.0+agent.12] - 2026-11-09
 
 ### Changed

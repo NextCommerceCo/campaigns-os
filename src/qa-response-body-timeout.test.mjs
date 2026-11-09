@@ -355,8 +355,8 @@ test("an unverified upsell result is neither re-run nor recovered, and goes to m
   assert.equal(orders[0].verification.verified, false);
 });
 
-test("a body read that ended without timing out keeps the definitive verdict and does not wait", () => {
-  const upsell = { api_response_status: 201, api_response_body_read: { timed_out: false, waited_ms: 0, bound_ms: 3000 } };
+test("a successfully read body keeps the definitive verdict and does not wait", () => {
+  const upsell = { api_response_status: 201, api_response_order_body: { lines: [] }, api_response_body_read: { timed_out: false, waited_ms: 0, bound_ms: 3000 } };
   const proof = { ok: false, reason: "no new upsell line appeared after accept", expected_items: [], matched_lines: [] };
   assert.equal(hooks.acceptedUpsellStepProof(upsell, null, proof), proof);
   const rejected = { api_response_status: 409, api_response_body_read: { timed_out: true, waited_ms: 3000, bound_ms: 3000 } };
@@ -370,4 +370,15 @@ test("the bounded read reports whether it timed out and how long the read itself
   const failed = await hooks.readJsonResponseBodyBounded({ text: async () => { throw new Error("gone"); } }, 200);
   assert.equal(failed.timed_out, false, "a failed read is not a timeout");
   assert.equal(failed.body, null);
+});
+
+test("an unreadable 2xx mutation cannot use stale checkout evidence as a definitive verdict", () => {
+  const upsell = { api_response_status: 201, api_response_order_body: null, api_response_body_read: { timed_out: false, waited_ms: 12, bound_ms: 3000 } };
+  for (const ok of [false, true]) {
+    const proof = hooks.acceptedUpsellStepProof(upsell, { source: "none", waited_ms: 100 }, { ok });
+    assert.equal(proof.ok, false);
+    assert.equal(proof.unverified, true);
+  }
+  const proof = { ok: false };
+  assert.equal(hooks.acceptedUpsellStepProof(upsell, { source: "order_read_back_missing_line" }, proof), proof);
 });

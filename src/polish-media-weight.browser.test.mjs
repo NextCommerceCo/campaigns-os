@@ -1018,11 +1018,13 @@ browserTest("F1.3-I15 page with 513 <img> elements: oversize results in the cell
     origin.serve(path, pngFile(...OVERSIZED.natural));
   });
   const url = same.url(path);
-  assertRequestLog({ same, other }, { same: requests([route("i15"), path]) }, "setup: one image request per cell");
+  // Chromium 158 no longer coalesces these loads with Network.setCacheDisabled.
+  // Account for every element request; extra probe requests still fail.
+  assertRequestLog({ same, other }, { same: requests([route("i15"), ...Array(513).fill(path)]) }, "setup: cache-disabled Chromium requests each of the 513 images");
   eachCapture(output, "i15", (part, viewport) => {
     assert.equal(part.measurement_status, "complete", `setup (${viewport}): the capture is complete`);
     assertLedgerUrls(part, [same.url(route("i15")), url], viewport);
-    assertEntry(ledgerEntry(part, url), { request_count: 1, cache_request_count: 0 }, viewport);
+    assertEntry(ledgerEntry(part, url), { request_count: 513, cache_request_count: 0 }, viewport);
   });
   const { record, results } = await readCells(output);
   assertProbeStatus(record, route("i15"), "image_cap_reached");
@@ -1033,7 +1035,9 @@ browserTest("F1.3-I15 page with 513 <img> elements: oversize results in the cell
   // unexercised / image_cap_reached and none is accept-eligible.
   const kept = Array.from({ length: 512 }, (_, index) => [oversizeKey(rid(url), imgPath(index + 1)), "unexercised", "image_cap_reached"]);
   assertResultSet(results, bothCells(route("i15"), {
-    weight: [[doc(same, "i15"), "unexercised", "image_cap_reached"], [rid(url), "unexercised", "image_cap_reached"]],
+    // All 513 transfers count toward weight: their sum now exceeds the
+    // threshold, whose warning outranks incomplete image coverage.
+    weight: [[doc(same, "i15"), "unexercised", "image_cap_reached"], [rid(url), "warning", "image_over_threshold"]],
     oversize: kept,
     capCode: "image_cap_reached",
   }), route("i15"));
@@ -1190,11 +1194,17 @@ async function twoChainRow(t, name, order) {
     origin.serve(finalPath, respond("200 OK", "image/png", png(40, 30), NO_STORE));
   });
   const url = same.url(path);
-  assertRequestLog({ same, other }, { same: requests([route(name), path, path, finalPath]) }, `setup (${order})`);
+  // Chromium 158 makes three wire requests for the source URL, while CDP
+  // reports two or three requests across the two chains. Bound both separately.
+  assertRequestLog({ same, other }, { same: requests([route(name), path, path, path, finalPath]) }, `setup (${order})`);
   eachCapture(output, name, (part, viewport) => {
     assert.equal(part.measurement_status, "complete", `setup (${order} ${viewport}): the capture is complete`);
     assertLedgerUrls(part, [same.url(route(name)), url, same.url(finalPath)], `${order} ${viewport}`);
-    assertEntry(ledgerEntry(part, url), { request_count: 2, statuses: [200, 302], resource_type: "image" }, `${order} ${viewport}: one URL, a direct and a redirected request`);
+    const entry = ledgerEntry(part, url);
+    // The third wire fetch can surface as a separate CDP request or stay
+    // within an existing chain; neither permits treating the URL as unique.
+    assert.ok([2, 3].includes(entry.request_count), `${order} ${viewport}: two chains, at most the three observed wire requests`);
+    assertEntry(entry, { statuses: [200, 302], resource_type: "image" }, `${order} ${viewport}: one URL, a direct and a redirected request`);
   });
   const { record, results } = await readCells(output);
   for (const viewport of VIEWPORTS) {
@@ -1208,7 +1218,7 @@ async function twoChainRow(t, name, order) {
   return { same, results };
 }
 
-browserTest("P1-1 one image URL requested twice, once direct and once redirected: no 1.3 result passes and both request orders read the same", async (t) => {
+browserTest("P1-1 one image URL requested directly and through a redirect: no 1.3 result passes and both request orders read the same", async (t) => {
   // Each order's full result set, with the route's own names masked so the
   // two orders compare.
   const expected = (same, name) => bothCells(route(name), {
