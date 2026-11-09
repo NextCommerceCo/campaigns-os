@@ -1196,13 +1196,10 @@ there. It ships in the npm package; the rendered fixtures under
 `fixtures/certified-families/` do not. `config.js` is generated configuration,
 rendered from campaign values. It is never bundled or compared, and is listed
 apart as `generated_configuration[]`. Families in
-`contracts/private-template-sources.json` are never bundled. A private family
-is compared against a local source only when its contract fragment names
-`script_reference.source_root`, a relative path that stays inside its sibling
-checkout, and that checkout resolves. The reference
-version is then that checkout's HEAD, read as its working tree stands.
-Otherwise the comparison reads as unavailable, and so does a family the
-bundled reference does not cover.
+`contracts/private-template-sources.json` are never bundled, and their
+comparison reads as unavailable; comparing against a local private checkout is
+not supported yet. A family the bundled reference does not cover reads as
+unavailable too.
 
 **What it claims.** Bytes decide first: a built script identical to any family
 file is `identical`, whatever its name (`match: "content"` when the name
@@ -1224,7 +1221,7 @@ reports line counts only, and the warning says which budget it was.
 
 Each diverged copy is one warning, `built_output.family_script_divergence.diverged`.
 It names the file, the family file, how it was nominated, the reference
-(repository, commit and SDK, or the local private checkout and its commit),
+(repository, commit and SDK),
 the upstream source path, the line counts and the hunks. One ready line
 summarizes the run. When the comparison is unavailable, the ready line gives
 the reason. The full record is `derived.family_script_divergence`: `family`,

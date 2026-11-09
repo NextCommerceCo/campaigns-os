@@ -23,7 +23,7 @@
       "karna",
       "limos"
     ],
-    "rule": "Never bundled. Doctor compares against a local source when the family's private contract fragment names one and its checkout resolves; otherwise it reports the comparison as unavailable."
+    "rule": "Never bundled. Doctor reports the comparison for a private family as unavailable."
   },
   "families": {
     "apollo": {

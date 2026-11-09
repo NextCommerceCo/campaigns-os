@@ -11338,7 +11338,7 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.66.0+agent.8",
-      "changelog_sha256": "1d75c4cbd44ee60ea422e0ae2b81558b0ee07f63672805ec3dce50a4ea4b104d",
+      "changelog_sha256": "4b9e98cc9d41271f17b121af9cc4ff1b0d2cc5a68e5a896650e41191dda37e5e",
       "agent_impact": "Doctor adds one advisory, family script divergence. Runs that know the template family and whose built pages load local scripts gain a ready line and derived.family_script_divergence, and a warning built_output.family_script_divergence.diverged for each campaign copy of a family script whose bytes differ from the bundled reference. It never blocks, and no existing code, message or gate changes. Agents reading the warning should treat the match as a candidate: ancestry is not recorded.",
       "compatibility": "compatible",
       "migration": "none",
@@ -11380,7 +11380,7 @@
           "summary": "Records that the bundled family script reference ships for doctor at run time and is not a consumer contract."
         }
       ],
-      "entry_sha256": "6986cbb9520d3de68ef6681083e4aea567f9146642760ffa4f87aa66b40189bd"
+      "entry_sha256": "02e36c72a623c1d180801303ac8697d40230c9155c1a4cf353ba81f2b0eba396"
     }
   ]
 }

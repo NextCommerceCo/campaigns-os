@@ -3,8 +3,7 @@
 // copy is a warning, never an error or a checkpoint gate.
 
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
@@ -291,83 +290,23 @@ function withPrivateFamily(dir, fragmentExtra, fn) {
   }
 }
 
-test("a private family whose script_reference.source_root leaves its checkout is unavailable and nothing outside is read", () => {
+test("a private family is never bundled and reads as unavailable, even with a checkout beside this one", () => {
   withTemp((dir) => {
     const campaign = join(dir, "site", "_site", "acme");
     mkdirSync(join(campaign, "js"), { recursive: true });
     writeFileSync(join(campaign, "index.html"), '<!doctype html><script src="/acme/js/checkout.js"></script>');
     writeFileSync(join(campaign, "js", "checkout.js"), "start();\n");
-    mkdirSync(join(dir, "outside", "js"), { recursive: true });
-    writeFileSync(join(dir, "outside", "js", "checkout.js"), "secret();\n");
-    for (const sourceRoot of ["../../outside", join(dir, "outside")]) {
-      withPrivateFamily(dir, { script_reference: { source_root: sourceRoot } }, () => {
-        const result = doctorBuiltOutput({ built: join(dir, "site"), slug: "acme", family: "acme" });
-        const record = result.derived.family_script_divergence;
-        assert.equal(record.status, "unavailable", sourceRoot);
-        assert.match(record.reason, /script_reference\.source_root leaves the example-org\/acme-templates checkout/);
-        assert.deepEqual(record.scripts, []);
-      });
-    }
-  });
-});
-
-test("a private family whose js directory links outside its checkout, or cannot be read, is unavailable", () => {
-  withTemp((dir) => {
-    const campaign = join(dir, "site", "_site", "acme");
-    mkdirSync(join(campaign, "js"), { recursive: true });
-    writeFileSync(join(campaign, "index.html"), '<!doctype html><script src="/acme/js/checkout.js"></script>');
-    writeFileSync(join(campaign, "js", "checkout.js"), "start();\n");
-    mkdirSync(join(dir, "outside"), { recursive: true });
-    writeFileSync(join(dir, "outside", "checkout.js"), "secret();\n");
-    withPrivateFamily(dir, { script_reference: { source_root: "src/acme/assets" } }, (checkout) => {
-      mkdirSync(join(checkout, "src", "acme", "assets"), { recursive: true });
-      symlinkSync(join(dir, "outside"), join(checkout, "src", "acme", "assets", "js"));
-      const linked = doctorBuiltOutput({ built: join(dir, "site"), slug: "acme", family: "acme" }).derived.family_script_divergence;
-      assert.equal(linked.status, "unavailable");
-      assert.match(linked.reason, /local source src\/acme\/assets\/js leaves the example-org\/acme-templates checkout/);
-      rmSync(join(checkout, "src", "acme", "assets", "js"));
-      mkdirSync(join(checkout, "src", "acme", "assets", "js", "locked"), { recursive: true });
-      chmodSync(join(checkout, "src", "acme", "assets", "js", "locked"), 0o000);
-      try {
-        if (process.getuid?.() === 0) return;
-        const unreadable = doctorBuiltOutput({ built: join(dir, "site"), slug: "acme", family: "acme" }).derived.family_script_divergence;
-        assert.equal(unreadable.status, "unavailable");
-        assert.match(unreadable.reason, /its local source could not be read \(EACCES\)/);
-      } finally {
-        chmodSync(join(checkout, "src", "acme", "assets", "js", "locked"), 0o755);
-      }
-    });
-  });
-});
-
-test("a private family without a local script source is unavailable; with one, it is compared against that checkout", () => {
-  withTemp((dir) => {
-    const campaign = join(dir, "site", "_site", "acme");
-    mkdirSync(join(campaign, "js"), { recursive: true });
-    writeFileSync(join(campaign, "index.html"), '<!doctype html><script src="/acme/js/checkout.js"></script><script src="/acme/config.js"></script>');
-    writeFileSync(join(campaign, "js", "checkout.js"), "start();\nedited();\n");
-    writeFileSync(join(campaign, "config.js"), "window.config = {};\n");
-    withPrivateFamily(dir, {}, () => {
-      const result = doctorBuiltOutput({ built: join(dir, "site"), slug: "acme", family: "acme" });
-      assert.equal(result.derived.family_script_divergence.status, "unavailable");
-      assert.match(result.derived.family_script_divergence.reason, /"acme" is a private family and its contract fragment names no script_reference\.source_root/);
-      assert.deepEqual(advisoryWarnings(result), []);
-      assert.ok(result.ready.some((line) => line.startsWith("Family script divergence not compared for acme: ")));
-    });
     withPrivateFamily(dir, { script_reference: { source_root: "src/acme/assets" } }, (checkout) => {
       mkdirSync(join(checkout, "src", "acme", "assets", "js"), { recursive: true });
       writeFileSync(join(checkout, "src", "acme", "assets", "js", "checkout.js"), "start();\n");
-      execFileSync("git", ["init", "-q", checkout]);
-      execFileSync("git", ["-C", checkout, "-c", "user.name=t", "-c", "user.email=t@example.com", "add", "-A"]);
-      execFileSync("git", ["-C", checkout, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", "fixture"]);
-      const head = execFileSync("git", ["-C", checkout, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
       const result = doctorBuiltOutput({ built: join(dir, "site"), slug: "acme", family: "acme" });
       const record = result.derived.family_script_divergence;
-      assert.equal(record.status, "compared");
-      assert.deepEqual(record.reference, { kind: "local_private_source", repo: "example-org/acme-templates", sha: head, sdk_version: null, label: `the local example-org/acme-templates checkout at ${head.slice(0, 7)} (working tree)` });
-      const [warning] = advisoryWarnings(result);
-      assert.match(warning.message, /js\/checkout\.js differs from the acme family file js\/checkout\.js .* src\/acme\/assets\/js\/checkout\.js: 2 line\(s\) against 1 \(\+1\)/);
-      assert.equal(existsSync(join(ROOT, FAMILY_SCRIPT_REFERENCE_BLOB_DIR, `${sha256Hex("start();\n")}.js.txt`)), false, "a private source is never written to the bundle");
+      assert.equal(record.status, "unavailable");
+      assert.equal(record.reference, null);
+      assert.match(record.reason, /"acme" is a private family; its scripts are never bundled/);
+      assert.deepEqual(record.scripts, []);
+      assert.deepEqual(advisoryWarnings(result), []);
+      assert.ok(result.ready.some((line) => line.startsWith("Family script divergence not compared for acme: ")));
     });
   });
 });

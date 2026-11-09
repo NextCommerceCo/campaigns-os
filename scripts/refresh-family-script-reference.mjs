@@ -48,15 +48,7 @@ const git = (args, options = {}) => execFileSync("git", ["-C", templates, ...arg
 try {
   git(["cat-file", "-e", `${sha}^{commit}`]);
 } catch {
-  const missing = `${templates} does not have the catalog pin ${sha}; fetch it there (or set STARTER_TEMPLATES_PATH to a checkout that has it).`;
-  // A local --check without the pin cannot judge the reference, as
-  // check:template-doctrine cannot without its checkout: it warns and leaves
-  // the verdict to CI, which always checks the templates out at the pin.
-  if (check && !process.env.CI) {
-    console.warn(`family script reference check skipped: ${missing}`);
-    process.exit(0);
-  }
-  throw new Error(missing);
+  throw new Error(`${templates} does not have the catalog pin ${sha}; fetch it there (or set STARTER_TEMPLATES_PATH to a checkout that has it).`);
 }
 
 const families = Object.keys(catalog.families || {})
@@ -108,7 +100,7 @@ const contract = {
   ],
   private_families: {
     families: privateFamilies,
-    rule: "Never bundled. Doctor compares against a local source when the family's private contract fragment names one and its checkout resolves; otherwise it reports the comparison as unavailable.",
+    rule: "Never bundled. Doctor reports the comparison for a private family as unavailable.",
   },
   families: familyEntries,
 };

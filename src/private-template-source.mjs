@@ -147,16 +147,7 @@ export function resolvePrivateTemplateSourceFragment(family) {
       `Private template source fragment ${fragmentPath} declares family "${fragment.family}"; expected "${family}".`,
     );
   }
-  // `script_reference.source_root` (optional): the directory in the private
-  // repo holding the family's built assets (`js/...`, `config.js`), the local
-  // source doctor's family script divergence advisory compares against.
-  return {
-    catalogFamily: fragment.catalog_family || null,
-    brandContract: fragment.brand_contract || null,
-    scriptReference: isPlainObject(fragment.script_reference) ? fragment.script_reference : null,
-    fragmentPath,
-    repoDir,
-  };
+  return { catalogFamily: fragment.catalog_family || null, brandContract: fragment.brand_contract || null, fragmentPath };
 }
 
 // Enriches the raw commerce catalog with private family entries. The returned

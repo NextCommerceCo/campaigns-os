@@ -16,14 +16,11 @@
 //   reference bytes: line counts and hunks.
 // - Generated configuration (`config.js`) is listed apart and never compared.
 // - Every result names the reference used: the bundled public reference at its
-//   upstream commit and SDK, or a private family's local source. A private
-//   family without a resolvable local source, or a family the bundled
-//   reference does not cover, reads as unavailable.
+//   upstream commit and SDK. A private family (never bundled) and a family the
+//   bundled reference does not cover read as unavailable.
 //
 // Advisory: each diverged copy is one warning; nothing blocks.
-import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
-import { execFileSync } from "node:child_process";
-import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, relative, sep } from "node:path";
 
 import { builtScriptReferences } from "./built-script-syntax.mjs";
 import { htmlScanDigest, readHtmlScanText } from "./html-scan.mjs";
@@ -33,9 +30,8 @@ import {
   familyScriptReferenceText,
   lineDiffSummary,
   loadFamilyScriptReference,
-  sha256Hex,
 } from "./family-script-reference.mjs";
-import { loadPrivateTemplateSources, resolvePrivateTemplateSourceFragment } from "./private-template-source.mjs";
+import { loadPrivateTemplateSources } from "./private-template-source.mjs";
 
 export const FAMILY_SCRIPT_DIVERGENCE = "built_output.family_script_divergence";
 export const FAMILY_SCRIPT_DIVERGED = `${FAMILY_SCRIPT_DIVERGENCE}.diverged`;
@@ -62,7 +58,12 @@ export function resolveFamilyScriptReference(family, { loadReference = loadFamil
   } catch (error) {
     return { unavailable: `the private template source allowlist could not be read (${error.message})` };
   }
-  if (Object.hasOwn(privateSources, family)) return privateFamilyReference(family, privateSources[family]);
+  // Private families are never bundled. A comparison against a local private
+  // checkout waits for a private template repo that declares where its
+  // scripts live.
+  if (Object.hasOwn(privateSources, family)) {
+    return { unavailable: `"${family}" is a private family; its scripts are never bundled, and comparing against a local private checkout is not supported yet` };
+  }
   let reference;
   try {
     reference = loadReference();
@@ -87,70 +88,6 @@ export function resolveFamilyScriptReference(family, { loadReference = loadFamil
       sha256: script.sha256,
       text: () => familyScriptReferenceText(reference, script),
     })),
-  };
-}
-
-// A private family is never bundled. Its local source is the directory its
-// contract fragment names (`script_reference.source_root`) in its sibling
-// checkout, read as the working tree stands; the reference version is that
-// checkout's HEAD commit.
-function privateFamilyReference(family, entry) {
-  let fragment;
-  try {
-    fragment = resolvePrivateTemplateSourceFragment(family);
-  } catch (error) {
-    return { unavailable: `"${family}" is a private family and its source did not resolve (${error.message})` };
-  }
-  const sourceRoot = fragment?.scriptReference?.source_root;
-  if (typeof sourceRoot !== "string" || !sourceRoot) {
-    return { unavailable: `"${family}" is a private family and its contract fragment names no script_reference.source_root to compare against` };
-  }
-  // The fragment lives in the private checkout, not in the reviewed allowlist,
-  // so its source_root is untrusted: it must stay inside that checkout, by its
-  // lexical and its real path.
-  const root = resolve(fragment.repoDir, sourceRoot);
-  if (isAbsolute(sourceRoot) || !inside(resolve(fragment.repoDir), root) || (existsSync(root) && !inside(realPath(fragment.repoDir), realPath(root)))) {
-    return { unavailable: `"${family}" is a private family and its script_reference.source_root leaves the ${entry.repo} checkout` };
-  }
-  const jsDir = join(root, "js");
-  if (!existsSync(jsDir)) {
-    return { unavailable: `"${family}" is a private family and its local source ${sourceRoot}/js is not in the ${entry.repo} checkout` };
-  }
-  // The walked directory itself may be a link: readdirSync follows it.
-  if (!inside(realPath(fragment.repoDir), realPath(jsDir))) {
-    return { unavailable: `"${family}" is a private family and its local source ${sourceRoot}/js leaves the ${entry.repo} checkout` };
-  }
-  let sha = null;
-  try {
-    sha = execFileSync("git", ["-C", fragment.repoDir, "rev-parse", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() || null;
-  } catch {
-    sha = null;
-  }
-  const scripts = [];
-  const walk = (dir) => {
-    for (const item of readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))) {
-      const full = join(dir, item.name);
-      if (item.isDirectory()) walk(full);
-      else if (item.isFile() && item.name.endsWith(".js")) {
-        const bytes = readFileSync(full);
-        const builtPath = posix(relative(root, full));
-        scripts.push({ built_path: builtPath, source_path: `${sourceRoot}/${builtPath}`, sha256: sha256Hex(bytes), text: () => bytes.toString("utf8") });
-      }
-    }
-  };
-  try {
-    walk(jsDir);
-  } catch (error) {
-    return { unavailable: `"${family}" is a private family and its local source could not be read (${error.code || error.message})` };
-  }
-  return {
-    kind: "local_private_source",
-    repo: entry.repo,
-    sha,
-    sdk_version: null,
-    label: `the local ${entry.repo} checkout at ${sha ? sha.slice(0, 7) : "an unknown commit"} (working tree)`,
-    generated: GENERATED_CONFIGURATION,
-    scripts,
   };
 }
 
@@ -282,7 +219,7 @@ function divergedMessage(family, label, entry) {
   const { local_lines: localLines, reference_lines: referenceLines, delta, hunks } = entry.diff;
   const shape = hunks === null
     ? entry.diff.omitted === "record_budget"
-      ? "hunks not listed: earlier copies in this run spent the diff budget"
+      ? "hunks not listed: this record's shared diff budget was spent by the earlier diverged copies"
       : "hunks not listed: the pair is over the per-pair diff budget"
     : hunks.count === 0
       ? "the lines match apart from line endings or a final newline"
@@ -292,19 +229,6 @@ function divergedMessage(family, label, entry) {
 
 function comparison(file, local, match, script, outcome) {
   return { file, pages: local.pages, match, ancestry: "candidate", reference_path: script.built_path, source_path: script.source_path, ...outcome };
-}
-
-function inside(root, path) {
-  const rel = relative(root, path);
-  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
-}
-
-function realPath(path) {
-  try {
-    return realpathSync(path);
-  } catch {
-    return resolve(path);
-  }
 }
 
 function addWarning(collection, code, message, detail) {
