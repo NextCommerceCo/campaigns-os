@@ -116,7 +116,8 @@ const STORAGE_AREAS = ['localStorage', 'sessionStorage'];
 // global carries its property, shadowed when mutable.
 //
 // sameNameAliases: a const or destructure that binds a global's own name to
-// that global (`const next = window.next`) still refers to it. Off for the
+// that global (`const next = window.next`, `const window = globalThis`) still
+// refers to it. Off for the
 // tracked-source scan, which has always read any binding of a storage name as
 // shadowed.
 export function javaScriptScopeAnalysis(ast, { sameNameAliases = false } = {}) {
@@ -186,7 +187,10 @@ export function javaScriptScopeAnalysis(ast, { sameNameAliases = false } = {}) {
   function browserGlobal(node, scope, seen = new Set()) {
     if (node?.type !== 'Identifier') return null;
     const b = binding(node.name, scope);
-    if (['window', 'globalThis', 'self'].includes(node.name)) return { shadowed: !!b };
+    if (['window', 'globalThis', 'self'].includes(node.name)) {
+      if (!b) return { shadowed: false };
+      return (sameNameAliases && b.init && !seen.has(b) && browserGlobal(b.init, b.scope, new Set([...seen, b]))) || { shadowed: true };
+    }
     if (b?.init && !seen.has(b)) return browserGlobal(b.init, b.scope, new Set([...seen, b]));
     return null;
   }

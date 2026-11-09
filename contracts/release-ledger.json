@@ -11338,7 +11338,7 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.66.0+agent.7",
-      "changelog_sha256": "86419010bc1c3c24a4656bbb5a32be28f48f3c6f458a891059a81231c1a2f26a",
+      "changelog_sha256": "181f3815ed66ef3d7f75fb9e498daf1368b5308e8a481084043e0d69476b14ed",
       "agent_impact": "Doctor can now emit advisory warnings under built_output.script_observations.* (sdk_prefixed_storage, network_global_replaced, sdk_debug_surface, sdk_private_member, truncated). They never block and add no gate, ready line or doctor_checks entry. An agent reading doctor output should treat them as review prompts, not defects: each names the operation, file, line and column, and does not claim SDK ownership or an SDK bypass.",
       "compatibility": "additive",
       "migration": "none",
@@ -11362,7 +11362,7 @@
           "summary": "Documents the built_output.script_observations warning codes, what each verifies and what it does not claim."
         }
       ],
-      "entry_sha256": "b922c368a0c2d6df1eafa0b021a3c2d63f900f69dd1922fede77d191ceb7ee5d"
+      "entry_sha256": "951cf1aabc0edf6168807494d8ac6cd5d9f7ded6f9b719b1635ca42681f62fbf"
     }
   ]
 }
