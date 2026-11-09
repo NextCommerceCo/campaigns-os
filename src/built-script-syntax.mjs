@@ -488,7 +488,8 @@ export function collectBuiltScriptSyntaxInputs(scope, targetRepo) {
   // programs (the API/storage observations read the same set), with the same
   // options as parseScriptSyntax, so the diagnostic is the same. The parse is
   // lazy: `syntax` is computed on first read, so a caller that wants only the
-  // references (the fixture refresh) parses nothing. The parse-budget
+  // references (the fixture refresh) parses nothing. It is enumerable, so a
+  // spread, JSON.stringify or deepEqual of a record reads it and parses. The parse-budget
   // reservation is not: inside a snapshot, htmlScanScriptPrograms charges the
   // whole set when called here, whether or not `syntax` is read. Outside one
   // it reserves nothing.

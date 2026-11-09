@@ -5,7 +5,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import nodeModule from "node:module";
+import * as nodeModule from "node:module";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -726,6 +726,7 @@ test("the adapter's shared parse gives each script exactly parseScriptSyntax's r
       // The adapter's syntax can be deleted, so the evaluator parses content again.
       const dropped = inputs.scripts.map((script) => { const copy = Object.defineProperties({}, Object.getOwnPropertyDescriptors(script)); delete copy.syntax; return copy; });
       assert.ok(dropped.every((script) => !("syntax" in script)));
+      assert.deepEqual(evaluateBuiltScriptSyntax({ ...inputs, scripts: dropped }).findings, evaluateBuiltScriptSyntax(inputs).findings);
       assert.deepEqual(evaluateBuiltScriptSyntax({ ...inputs, scripts: contentOnly }).findings, evaluateBuiltScriptSyntax(inputs).findings);
     });
   } finally {
