@@ -50,6 +50,36 @@ template family ships, possibly with light brand tweaks.
   `olympus-mv-single-step`, fill spec, ship. Design overlay comes in
   a separate later pass.
 
+### Using a starter template as-is
+
+When the person asks for a starter template as-is, the template is the
+design. Build each page as the template has it. When you write the
+CampaignSpec yourself, keep the template's pages, its landing page
+included. Template-stock pages still need the operator's opt-in per page
+before they are built.
+
+- **Keep** its sections, layout and copy: reviews, guarantee, as-seen-in
+  logos, benefit icons, promo banner and countdown.
+- **Swap** what CampaignSpec owns: product names and images, prices and
+  discount figures, promo codes (empty a code the campaign does not
+  have), the store name and support details.
+- **Fill** literal placeholder text such as `Benefit one` or
+  `Product Name` from the product. Browser QA blocks it, and filling it
+  keeps the section.
+- **Flag, don't remove,** content that looks like demo content: stock
+  reviews, as-seen-in logos, a demo countdown date, copy written for
+  another product. Leave it in place and list each item in the handoff
+  so the operator can decide. Remove it only when the operator asks.
+- **The countdown** stays like the rest, with one exception. It renders
+  whenever its label is non-empty. In a build with a brief payload
+  (`.campaign-runtime/input/brief-payload.json`) and no
+  `offer.urgency.verified`, doctor blocks a rendered countdown
+  (`content_residue.unverified_urgency`), so blank the countdown label
+  there and say so in the handoff.
+
+What a merchant keeps on their pages is up to them; Campaigns OS does not
+review it.
+
 ## Figma-driven
 
 Design lives in Figma. `figma-sections-export` produces source HTML

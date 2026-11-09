@@ -71,9 +71,9 @@ const REQUIRED_HIGH_IMPACT_FIELDS = Object.freeze([
     priority: 5,
     field: "promo_urgency",
     answer_fields: ["promo_urgency.header_claim_source", "promo_urgency.timer_label"],
-    answer_hint: 'promo_urgency.header_claim_source "campaign_offers" and promo_urgency.timer_label the template timer\'s label to fill them, or both "none" to remove them',
-    question: "Should the starter template's own promo placeholders (demo countdown timers, promo banners, placeholder voucher codes, exit-pop offers) be filled from this campaign's promo codes and offers, or removed?",
-    reason: "Template promo placeholders must not go live with demo values. The source design's own promo, proof and urgency copy is the merchant's content: it is built as designed and is not part of this question.",
+    answer_hint: 'promo_urgency.header_claim_source "campaign_offers" and promo_urgency.timer_label the template timer\'s label to fill them, both "template" to keep them as the template has them, or both "none" to remove them',
+    question: "Should the starter template's own promo placeholders (demo countdown timers, promo banners, placeholder voucher codes, exit-pop offers) be filled from this campaign's promo codes and offers, kept as the template has them, or removed?",
+    reason: "A promo code the campaign does not have must not go live. The source design's own promo, proof and urgency copy is the merchant's content: it is built as designed and is not part of this question.",
   },
   {
     id: "payment_methods_trust",
@@ -547,8 +547,10 @@ function draftCampaignBuildBrief({ spec, activePages, pageMappings, designFiles,
   const paymentMethods = collectSpecPaymentMethods(spec);
   const hasExitPop = activePages?.some((page) => isCheckoutFlowPage(page) && page?.exit_intent?.enabled === true) === true;
   const hasOrderBump = hasOrderBumpSignals(spec);
-  // With no CampaignSpec surface to fill them, the template's promo
-  // placeholders are removed: "none" for both.
+  // With no CampaignSpec surface to fill them, the template's banner and
+  // timer stay as the starter has them ("template" for both): a starter used
+  // as-is keeps its content, with CampaignSpec's figures and any demo-looking
+  // content flagged for the operator (F-197).
   const fillsTemplatePromo = templatePromoSurfaces({ spec, activePages }).length > 0;
 
   return {
@@ -586,8 +588,8 @@ function draftCampaignBuildBrief({ spec, activePages, pageMappings, designFiles,
       },
     },
     promo_urgency: {
-      header_claim_source: fillsTemplatePromo ? "campaign_offers" : "none",
-      timer_label: fillsTemplatePromo ? null : "none",
+      header_claim_source: fillsTemplatePromo ? "campaign_offers" : "template",
+      timer_label: fillsTemplatePromo ? null : "template",
       show_promo_code_in_timer: false,
       exit_pop: {
         enabled: hasExitPop,
@@ -664,8 +666,8 @@ function evaluateCampaignBuildBrief(brief, { spec, activePages, pageMappings, so
   const promoSurfaces = templatePromoSurfaces({ spec, activePages });
   if (promoSurfaces.length && (!isNonEmptyString(brief.promo_urgency?.header_claim_source) || !isNonEmptyString(brief.promo_urgency?.timer_label))) {
     addQuestion(questions, "promo_urgency_copy", {
-      detail: `CampaignSpec maps ${promoSurfaces.join(" and ")}, which would fill the template's promo placeholders. Missing promo_urgency.header_claim_source ("campaign_offers" or "none") or promo_urgency.timer_label (the template timer's label, or "none").`,
-      options: ["fill from the campaign's promo codes and offers", "remove the template's promo placeholders"],
+      detail: `CampaignSpec maps ${promoSurfaces.join(" and ")}, which would fill the template's promo placeholders. Missing promo_urgency.header_claim_source ("campaign_offers", "template" or "none") or promo_urgency.timer_label (the template timer's label, "template" or "none").`,
+      options: ["fill from the campaign's promo codes and offers", "keep the template's promo placeholders as they are", "remove the template's promo placeholders"],
     });
   }
   if (!normalizePaymentList(brief.commerce_surfaces?.payment_methods_allowed).length) {

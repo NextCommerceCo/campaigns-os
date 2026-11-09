@@ -11255,6 +11255,33 @@
         }
       ],
       "entry_sha256": "e161ec22042fe75d0a3287f494125ab376c5d8a98e5a7768534d479bd32d18ac"
+    },
+    {
+      "id": "RL-0320",
+      "sequence": 308,
+      "date": "2026-11-08",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.66.0+agent.4",
+      "changelog_sha256": "baaa7f6992303f8ef8f518369368081b624de8e34ee6b96f6cacad8deff8ac27",
+      "agent_impact": "When the person asks for a starter template as-is, keep its pages, sections and copy; swap only what CampaignSpec owns (product names and images, prices and discount figures, promo codes, store name and support details); fill literal placeholder text from the product; and leave demo-looking content in place, listed in the handoff, unless the operator asks to remove it. promo_urgency.header_claim_source and timer_label accept the value template (keep the starter banner and timer), now the guided default when no CampaignSpec surface fills them. In a build with a brief payload, a countdown still needs offer.urgency.verified, so blank its label there. The brief summary line 7 reads \"template placeholders blocked\".",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/campaign-build-brief.md",
+          "surface_entry": "docs/campaign-build-brief.md",
+          "summary": "Question 5 and its fields name the new template value, the guided default when nothing fills the starter banner and timer."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "The build prompt says how to build a page whose authority is the starter template: keep, swap, fill, and flag rather than remove."
+        }
+      ],
+      "entry_sha256": "75e85b9d45254e33d9276340deeccf366dce5d7661ead7bfe75d24455c65866c"
     }
   ]
 }
