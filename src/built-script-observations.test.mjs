@@ -205,6 +205,7 @@ test("classic and module reads of the same bytes differ where the browser's do",
   assert.deepEqual(shape(declared, { module: true }), []);
   assert.deepEqual(shape("var fetch = wrap(window.fetch);"), [["network_global_replaced", "replace", "fetch", null]]);
   assert.deepEqual(shape("var fetch;"), [], "a var without an initializer keeps the global's value");
+  assert.equal(runtimeReplacesFetch("var fetch;"), false, "so the table below measures the assignment, not the declaration");
   assert.deepEqual(shape("function wrap() { var fetch = f; function fetch2() {} }"), [], "inside a function");
   // A classic script's top-level var or function is the global object's property, so assigning it replaces fetch.
   for (const [source, replaces] of [
@@ -212,6 +213,8 @@ test("classic and module reads of the same bytes differ where the browser's do",
     ["{ var fetch; } fetch = f;", true],
     ["var fetch; fetch &&= f;", true],
     ["let fetch; fetch = f;", false],
+    ["class fetch {} fetch = f;", false],
+    ["function fetch() {} fetch = f;", true],
     ["function local() { var fetch; fetch = f; }", false],
     ["var fetch; function local(fetch) { fetch = f; }", false],
   ]) {
@@ -307,7 +310,7 @@ test("a script whose analysis does not finish is named in one incomplete warning
     { file: "js/a.js", module: false, pages: ["checkout"], observations },
   ] });
   assert.equal(warnings.length, SCRIPT_OBSERVATIONS_LIMIT + 2);
-  assert.deepEqual(warnings[0].finding, { code: SCRIPT_OBSERVATIONS_INCOMPLETE, file: "js/deep.js", source_type: "module", pages: ["checkout"], reason: "RangeError", delivery: "local" });
+  assert.deepEqual(warnings[0].finding, { code: SCRIPT_OBSERVATIONS_INCOMPLETE, file: "js/deep.js", source_type: "module", pages: ["checkout"], reason: "RangeError", delivery: "local", ownership: "unknown", provenance: null });
   assert.match(warnings[0].message, /^js\/deep\.js \(local module, loaded by checkout\): doctor could not finish .*\(RangeError\), so any observations in it are not listed/);
   assert.deepEqual(warnings.at(-1).finding, { code: SCRIPT_OBSERVATIONS_TRUNCATED, listed: SCRIPT_OBSERVATIONS_LIMIT, omitted: 3 });
 });

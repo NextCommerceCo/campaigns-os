@@ -127,10 +127,11 @@ export function observeScriptProgram(program, { module = false } = {}) {
     if (target.type === "Identifier") {
       // A bare `fetch = ...` assigns the global when nothing binds it, or when
       // the binding is a classic script's top-level `var` or function, which
-      // is the global object's own property.
+      // is the global object's own property. A top-level `let`, `const` or
+      // `class` is a lexical binding beside it, never `window.fetch`.
       if (target.name !== "fetch") return null;
       const bound = binding("fetch", scopes.get(target));
-      const global = !bound || (!module && topLevel.bindings.get("fetch") === bound && (bound.kind === "var" || bound.unknown));
+      const global = !bound || (!module && topLevel.bindings.get("fetch") === bound && (bound.kind === "var" || bound.kind === "function"));
       return global ? "fetch" : null;
     }
     if (target.type !== "MemberExpression") return null;
@@ -343,7 +344,7 @@ export function evaluateBuiltScriptObservations({ scripts = [] } = {}) {
       warnings.push({
         code: SCRIPT_OBSERVATIONS_INCOMPLETE,
         message: describeIncomplete({ file: script.file, module, pages, incomplete: script.incomplete }),
-        finding: { code: SCRIPT_OBSERVATIONS_INCOMPLETE, file: script.file, source_type: module ? "module" : "script", pages, reason: script.incomplete.reason, delivery: "local" },
+        finding: { code: SCRIPT_OBSERVATIONS_INCOMPLETE, file: script.file, source_type: module ? "module" : "script", pages, reason: script.incomplete.reason, delivery: "local", ownership: "unknown", provenance: null },
       });
     }
     for (const observation of Array.isArray(script.observations) ? script.observations : []) {
