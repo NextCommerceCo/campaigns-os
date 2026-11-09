@@ -101,8 +101,9 @@
   "dependencies": {
     "acorn": "^8.18.0",
     "ajv": "^8.20.0",
-    "parse5": "^8.0.1",
-    "yaml": "^2.9.1"
+    "parse5": "8.0.1",
+    "yaml": "^2.9.1",
+    "entities": "8.1.0"
   },
   "optionalDependencies": {
     "pixelmatch": "^8.0.0",
@@ -162,5 +163,9 @@
     "docs/entry-points.md",
     "docs/source-adapters.md",
     "docs/campaignspec-authoring-examples.md"
+  ],
+  "bundledDependencies": [
+    "parse5",
+    "entities"
   ]
 }

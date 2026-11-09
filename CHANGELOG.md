@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.66.0+agent.13] - 2026-11-10
+
+### Changed
+
+- Pin and bundle parse5 8.0.1 and entities 8.1.0 to preserve saved commerce-signature/v1 records in registry installs as well as checkouts. parse5 8.1.0 changes foreign-element reconstruction and can classify a copy-only edit as commerce_markup_changed. The parser upgrade is deferred; no saved records or existing literal baselines are rewritten.
+
 ## [1.66.0+agent.12] - 2026-11-09
 
 ### Changed

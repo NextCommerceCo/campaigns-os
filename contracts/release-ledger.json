@@ -11456,6 +11456,33 @@
         }
       ],
       "entry_sha256": "87707dccd1c300aabdb9911326ef8267c89ad7775bd57ed23c58552165da5a56"
+    },
+    {
+      "id": "RL-0328",
+      "sequence": 315,
+      "date": "2026-11-10",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.66.0+agent.13",
+      "changelog_sha256": "0b34aea8552d8199cec2bc18485df801394cca993bcd41e1615c44b49beb18cf",
+      "agent_impact": "Pin and bundle parse5 8.0.1 and entities 8.1.0 to preserve saved commerce-signature/v1 records in registry installs as well as checkouts. parse5 8.1.0 changes foreign-element reconstruction and can classify a copy-only edit as commerce_markup_changed. The parser upgrade is deferred; no saved records or existing literal baselines are rewritten.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Pin and bundle the v1 parser and decoder for consumer installs."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Record exact bundled parser dependencies."
+        }
+      ],
+      "entry_sha256": "caed85c208bbcbbbf14edd43935c1207e7f02107f4239c75b4bbc2ebe7f5b817"
     }
   ]
 }

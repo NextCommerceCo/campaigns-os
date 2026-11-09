@@ -6,12 +6,13 @@
 // and that no source .ts / tests / fixtures leak into the tarball. We extract
 // rather than `npm install` the tarball so this stays offline and fast (a full
 // install would fetch every dependency from the registry, playwright included).
+import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { checkPackedDocLinks } from "./check-packed-doc-links.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -125,6 +126,29 @@ try {
   if (pkg.private) fail("package.json is still private: true — npm publish would refuse it");
   if (pkg.dependencies?.playwright) fail("playwright is back in dependencies; it must stay an optionalDependency");
   if (!pkg.optionalDependencies?.playwright) fail("playwright is missing from optionalDependencies");
+
+  // Saved commerce-signature/v1 records must survive installing the tarball
+  // without this repository's lockfile. Check the bundled bytes and run the
+  // drift vector from the extracted package, not this checkout's resolver.
+  for (const [name, version] of [["parse5", "8.0.1"], ["entities", "8.1.0"]]) {
+    if (pkg.dependencies[name] !== version) fail(`${name} must be exactly pinned for v1 signatures`);
+    if (!pkg.bundledDependencies?.includes(name)) fail(`${name} must be bundled for consumer installs`);
+    const bundled = JSON.parse(readFileSync(join(pkgRoot, "node_modules", name, "package.json"), "utf8"));
+    if (bundled.version !== version) fail(`packed ${name} version drifted`);
+  }
+  const packedRequire = createRequire(join(pkgRoot, "src/change-scope.mjs"));
+  const { parse } = await import(pathToFileURL(packedRequire.resolve("parse5")).href);
+  const tree = parse('<svg><desc><b data-next-package-id="1">New copy</desc><p>More copy');
+  const facts = [];
+  const walkParserTree = (node) => {
+    for (const attr of node.attrs || []) if (attr.name === "data-next-package-id") facts.push(`${node.nodeName}[${attr.name}]=${attr.value}`);
+    for (const child of node.childNodes || []) walkParserTree(child);
+  };
+  walkParserTree(tree);
+  const frozen = "sha256:b7ef29d46fe19ce25b41a5f3082a244a30e342a62f4233823ce3753b6b9233e5";
+  if (`sha256:${createHash("sha256").update(facts.join("\n")).digest("hex")}` !== frozen) {
+    fail("packed parser changed a saved commerce-signature/v1");
+  }
 
   // 4. The packed bundle imports and runs (ESM consumer path).
   const mod = await import(distEntry);
