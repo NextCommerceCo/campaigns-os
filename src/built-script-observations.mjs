@@ -64,7 +64,7 @@ const FUNCTION_TYPES = new Set(["FunctionDeclaration", "FunctionExpression", "Ar
  * @returns {Array<{ code: string, line: number, column: number, operation: string, receiver: string, key?: { text: string, match: "exact" | "prefix" } }>}
  */
 export function observeScriptProgram(program, { module = false } = {}) {
-  const analysis = javaScriptScopeAnalysis(program);
+  const analysis = javaScriptScopeAnalysis(program, { sameNameAliases: true });
   const { scopes, binding, literal, browserGlobal, globalReference, keyPrefix } = analysis;
   const observations = [];
   const seen = new Set();
@@ -106,7 +106,8 @@ export function observeScriptProgram(program, { module = false } = {}) {
   );
   const accessOf = (node, parent) => {
     if (parent?.type === "AssignmentExpression" && parent.left === node) return "write";
-    if (parent?.type === "UpdateExpression" || (parent?.type === "UnaryExpression" && parent.operator === "delete")) return "write";
+    if (parent?.type === "UnaryExpression" && parent.operator === "delete") return "remove";
+    if (parent?.type === "UpdateExpression") return "write";
     if (parent?.type === "CallExpression" && parent.callee === node) return "call";
     return "read";
   };
@@ -143,7 +144,8 @@ export function observeScriptProgram(program, { module = false } = {}) {
   };
 
   const walk = (node, parent, inFunction) => {
-    if (node.type === "AssignmentExpression") {
+    // Only a plain `=` replaces it: `||=`, `&&=` and `??=` leave a defined fetch in place.
+    if (node.type === "AssignmentExpression" && node.operator === "=") {
       const replaced = replacesNetworkGlobal(node.left);
       if (replaced) add(SCRIPT_OBSERVATION_NETWORK_GLOBAL_REPLACED, node.left, { operation: "replace", receiver: replaced });
     }

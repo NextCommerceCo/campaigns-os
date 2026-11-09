@@ -1188,13 +1188,15 @@ observe reads exactly as before. Each warning names the operation and
   `sessionStorage` read, write or removal whose key starts `next-` or `next_`.
   The receiver must be the browser's own storage, not a parameter or local
   variable of that name, reached directly, through `window`, `globalThis` or
-  `self`, or through a `const` or destructured alias. The key, or its literal
+  `self`, or through a `const` or destructured alias (also one that keeps the
+  global's own name, `const localStorage = window.localStorage`). The key, or its literal
   start (`'next_funnel_name__' + scope`), must resolve statically. The prefix
   alone does not establish that the SDK owns the key, and the message says so.
-- `built_output.script_observations.network_global_replaced`: an assignment
-  that replaces the page's `fetch` (including `Object.defineProperty(window,
+- `built_output.script_observations.network_global_replaced`: a plain `=`
+  assignment that replaces the page's `fetch` (`||=`, `&&=` and `??=` leave a
+  defined `fetch` in place and are not reported), including `Object.defineProperty(window,
   'fetch', ...)` and, in a classic script, a top-level `function fetch` or
-  initialized `var fetch`) or `XMLHttpRequest.prototype.open`/`send`. Every
+  initialized `var fetch`, or `XMLHttpRequest.prototype.open`/`send`. Every
   request through it, the SDK's included, then runs through that code. Whether
   it changes an SDK request is not established statically, so no bypass is
   claimed.

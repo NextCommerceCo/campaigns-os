@@ -114,7 +114,12 @@ const STORAGE_AREAS = ['localStorage', 'sessionStorage'];
 // global only while nothing binds it on the way out; a `const` (never `let` or
 // `var`) carries its initializer as an alias, and a destructure from a browser
 // global carries its property, shadowed when mutable.
-export function javaScriptScopeAnalysis(ast) {
+//
+// sameNameAliases: a const or destructure that binds a global's own name to
+// that global (`const next = window.next`) still refers to it. Off for the
+// tracked-source scan, which has always read any binding of a storage name as
+// shadowed.
+export function javaScriptScopeAnalysis(ast, { sameNameAliases = false } = {}) {
   const root = { bindings: new Map(), parent: null };
   const scopes = new WeakMap();
   function collect(node, scope) {
@@ -190,19 +195,27 @@ export function javaScriptScopeAnalysis(ast) {
   function globalReference(node, scope, globals, seen = new Set()) {
     if (node?.type === 'Identifier') {
       const b = binding(node.name, scope);
-      if (globals.includes(node.name)) return { name: node.name, shadowed: !!b };
-      if (b?.init && !seen.has(b)) return globalReference(b.init, b.scope, globals, new Set([...seen, b]));
-      if (b?.destructure) {
-        const global = browserGlobal(b.destructure.object, b.scope);
-        const property = b.destructure.property;
-        const name = property.computed ? literal(property.key, b.scope) : property.key.name;
-        if (global && globals.includes(name)) return { name, shadowed: global.shadowed || b.destructure.mutable };
+      if (globals.includes(node.name)) {
+        if (!b) return { name: node.name, shadowed: false };
+        return (sameNameAliases && aliasOf(b, globals, seen)) || { name: node.name, shadowed: true };
       }
+      if (b) return aliasOf(b, globals, seen);
     }
     if (node?.type === 'MemberExpression') {
       const global = browserGlobal(node.object, scope);
       const name = node.computed ? literal(node.property, scope) : node.property.name;
       if (global && globals.includes(name)) return { name, shadowed: global.shadowed };
+    }
+    return null;
+  }
+  // The global a const or destructured binding aliases, or null.
+  function aliasOf(b, globals, seen) {
+    if (b.init) return seen.has(b) ? null : globalReference(b.init, b.scope, globals, new Set([...seen, b]));
+    if (b.destructure) {
+      const global = browserGlobal(b.destructure.object, b.scope);
+      const property = b.destructure.property;
+      const name = property.computed ? literal(property.key, b.scope) : property.key.name;
+      if (global && globals.includes(name)) return { name, shadowed: global.shadowed || b.destructure.mutable };
     }
     return null;
   }
