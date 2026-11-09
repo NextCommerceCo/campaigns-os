@@ -1170,7 +1170,7 @@ function inTurn(handlers) {
 const NO_STORE = ["Cache-Control: no-store"];
 
 // Challenge P1-1, browser leg. Two <img> name one URL; the second
-// (crossorigin, so the document cannot reuse the first one's response) is
+// (with capture caching disabled, it makes its own request) is
 // inserted when the first loads, so the stub sees two image requests for
 // /img/p1.png in a known order. One request is answered 200 directly, the
 // other 302 to /img/p1-final.png. Both <img> keep currentSrc /img/p1.png.
@@ -1184,7 +1184,7 @@ async function twoChainRow(t, name, order) {
   const direct = respond("200 OK", "image/png", png(40, 30), NO_STORE);
   const redirected = respond("302 Found", null, Buffer.alloc(0), [`Location: ${finalPath}`, ...NO_STORE]);
   const image = inTurn(order === "direct-first" ? [direct, redirected] : [redirected, direct]);
-  const document = page(img(`src="${path}" width="40" height="30" onload="if(!window.second){window.second=1;document.body.insertAdjacentHTML('beforeend','<img alt=&quot;&quot; src=&quot;${path}&quot; crossorigin=&quot;anonymous&quot; width=&quot;40&quot; height=&quot;30&quot;>')}"`));
+  const document = page(img(`src="${path}" width="40" height="30" onload="if(!window.second){window.second=1;document.body.insertAdjacentHTML('beforeend','<img alt=&quot;&quot; src=&quot;${path}&quot; width=&quot;40&quot; height=&quot;30&quot;>')}"`));
   const { same, other, output } = await captureOne(t, name, ({ same: origin }) => {
     origin.serve(route(name), (socket) => {
       image.reset();
@@ -1194,17 +1194,11 @@ async function twoChainRow(t, name, order) {
     origin.serve(finalPath, respond("200 OK", "image/png", png(40, 30), NO_STORE));
   });
   const url = same.url(path);
-  // Chromium 158 makes three wire requests for the source URL, while CDP
-  // reports two or three requests across the two chains. Bound both separately.
-  assertRequestLog({ same, other }, { same: requests([route(name), path, path, path, finalPath]) }, `setup (${order})`);
+  assertRequestLog({ same, other }, { same: requests([route(name), path, path, finalPath]) }, `setup (${order})`);
   eachCapture(output, name, (part, viewport) => {
     assert.equal(part.measurement_status, "complete", `setup (${order} ${viewport}): the capture is complete`);
     assertLedgerUrls(part, [same.url(route(name)), url, same.url(finalPath)], `${order} ${viewport}`);
-    const entry = ledgerEntry(part, url);
-    // The third wire fetch can surface as a separate CDP request or stay
-    // within an existing chain; neither permits treating the URL as unique.
-    assert.ok([2, 3].includes(entry.request_count), `${order} ${viewport}: two chains, at most the three observed wire requests`);
-    assertEntry(entry, { statuses: [200, 302], resource_type: "image" }, `${order} ${viewport}: one URL, a direct and a redirected request`);
+    assertEntry(ledgerEntry(part, url), { request_count: 2, statuses: [200, 302], resource_type: "image" }, `${order} ${viewport}: one URL, a direct and a redirected request`);
   });
   const { record, results } = await readCells(output);
   for (const viewport of VIEWPORTS) {
