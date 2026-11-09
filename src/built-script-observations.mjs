@@ -11,7 +11,10 @@
 //   the way out) and the key or its literal start resolves statically. The
 //   prefix alone does not establish that the SDK owns the key.
 // - network_global_replaced: an assignment that replaces the page's `fetch`
-//   or `XMLHttpRequest.prototype.open`/`send`. Every caller on the page,
+//   or `XMLHttpRequest.prototype.open`/`send` (`=`, or `&&=`, which assigns
+//   over the defined browser function; `||=` and `??=` do not), or a
+//   defineProperty whose literal descriptor sets its value or accessors.
+//   Every caller on the page,
 //   the SDK included, then goes through it; whether it changes an SDK request
 //   is not established statically, so no bypass is claimed.
 // - sdk_debug_surface: a reference to the SDK's `nextDebug` global, its
@@ -19,6 +22,9 @@
 // - sdk_private_member: an underscore member reached from the SDK's own
 //   globals (`next`, `NextCommerce`). An underscore member on any other
 //   receiver is not reported: the name alone does not make it the SDK's.
+// - incomplete: the analysis of a script that parsed did not finish (an
+//   expression nested too deep to resolve), so its observations are not
+//   listed rather than read as none.
 //
 // Inputs: the local records of builtScriptReferences (remote and missing
 // scripts are not read; the syntax gate already warns about missing ones),
@@ -47,6 +53,7 @@ export const SCRIPT_OBSERVATION_NETWORK_GLOBAL_REPLACED = `${SCRIPT_OBSERVATIONS
 export const SCRIPT_OBSERVATION_SDK_DEBUG_SURFACE = `${SCRIPT_OBSERVATIONS}.sdk_debug_surface`;
 export const SCRIPT_OBSERVATION_SDK_PRIVATE_MEMBER = `${SCRIPT_OBSERVATIONS}.sdk_private_member`;
 export const SCRIPT_OBSERVATIONS_TRUNCATED = `${SCRIPT_OBSERVATIONS}.truncated`;
+export const SCRIPT_OBSERVATIONS_INCOMPLETE = `${SCRIPT_OBSERVATIONS}.incomplete`;
 
 // Warnings past this many are counted in one truncation warning instead.
 export const SCRIPT_OBSERVATIONS_LIMIT = 50;
@@ -55,6 +62,10 @@ const SDK_STORAGE_PREFIX = /^next[-_]/;
 const SDK_GLOBALS = ["next", "NextCommerce"];
 const XHR_METHODS = new Set(["open", "send"]);
 const FUNCTION_TYPES = new Set(["FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"]);
+// `&&=` assigns whenever the target is truthy, as the browser's fetch is;
+// `||=` and `??=` leave it in place.
+const REPLACING_OPERATORS = new Set(["=", "&&="]);
+const DESCRIPTOR_BEHAVIOUR = new Set(["value", "get", "set"]);
 
 /**
  * The observations in one parsed program, in source order.
@@ -66,6 +77,7 @@ const FUNCTION_TYPES = new Set(["FunctionDeclaration", "FunctionExpression", "Ar
 export function observeScriptProgram(program, { module = false } = {}) {
   const analysis = javaScriptScopeAnalysis(program, { sameNameAliases: true });
   const { scopes, binding, literal, browserGlobal, globalReference, keyPrefix } = analysis;
+  const topLevel = scopes.get(program);
   const observations = [];
   const seen = new Set();
   const add = (code, node, data) => {
@@ -113,8 +125,13 @@ export function observeScriptProgram(program, { module = false } = {}) {
   };
   const replacesNetworkGlobal = (target) => {
     if (target.type === "Identifier") {
-      // A bare `fetch = ...` with nothing binding it assigns the global.
-      return target.name === "fetch" && !binding("fetch", scopes.get(target)) ? "fetch" : null;
+      // A bare `fetch = ...` assigns the global when nothing binds it, or when
+      // the binding is a classic script's top-level `var` or function, which
+      // is the global object's own property.
+      if (target.name !== "fetch") return null;
+      const bound = binding("fetch", scopes.get(target));
+      const global = !bound || (!module && topLevel.bindings.get("fetch") === bound && (bound.kind === "var" || bound.unknown));
+      return global ? "fetch" : null;
     }
     if (target.type !== "MemberExpression") return null;
     const name = memberName(target);
@@ -143,15 +160,24 @@ export function observeScriptProgram(program, { module = false } = {}) {
     return null;
   };
 
-  const walk = (node, parent, inFunction) => {
-    // Only a plain `=` replaces it: `||=`, `&&=` and `??=` leave a defined fetch in place.
-    if (node.type === "AssignmentExpression" && node.operator === "=") {
+  // A defineProperty descriptor that sets the value or an accessor. One that
+  // only changes attributes (`enumerable`, `writable`) keeps the function,
+  // and a descriptor not written out here establishes nothing.
+  const setsBehaviour = (descriptor) => descriptor?.type === "ObjectExpression" && descriptor.properties.some((property) => property.type === "Property"
+    && DESCRIPTOR_BEHAVIOUR.has(property.computed ? literal(property.key, scopes.get(descriptor)) : property.key.name ?? property.key.value));
+
+  // Iterative, in source order, like the scope analysis it reads.
+  const pending = [[program, null, false]];
+  while (pending.length) {
+    const [node, parent, inFunction] = pending.pop();
+    if (node.type === "AssignmentExpression" && REPLACING_OPERATORS.has(node.operator)) {
       const replaced = replacesNetworkGlobal(node.left);
       if (replaced) add(SCRIPT_OBSERVATION_NETWORK_GLOBAL_REPLACED, node.left, { operation: "replace", receiver: replaced });
     }
     // Object.defineProperty(window, "fetch", ...)
     if (node.type === "CallExpression" && node.callee.type === "MemberExpression" && node.callee.object.type === "Identifier" && node.callee.object.name === "Object"
-      && !binding("Object", scopes.get(node)) && memberName(node.callee) === "defineProperty" && literal(node.arguments[1], scopes.get(node)) === "fetch") {
+      && !binding("Object", scopes.get(node)) && memberName(node.callee) === "defineProperty" && literal(node.arguments[1], scopes.get(node)) === "fetch"
+      && setsBehaviour(node.arguments[2])) {
       const global = browserGlobal(node.arguments[0], scopes.get(node));
       if (global && !global.shadowed) add(SCRIPT_OBSERVATION_NETWORK_GLOBAL_REPLACED, node, { operation: "replace", receiver: "window.fetch" });
     }
@@ -181,7 +207,7 @@ export function observeScriptProgram(program, { module = false } = {}) {
     if (name === "nextDebug" && isReference(node, parent) && sdkGlobal(node, ["nextDebug"])
       && (node.type === "MemberExpression" || !binding("nextDebug", scopes.get(node)))) {
       add(SCRIPT_OBSERVATION_SDK_DEBUG_SURFACE, node, { operation: accessOf(node, parent), receiver: globalSpelling(node, "nextDebug") });
-      return;
+      continue;
     }
     if (node.type === "MemberExpression") {
       if (typeof name === "string" && name.startsWith("_")) {
@@ -190,9 +216,9 @@ export function observeScriptProgram(program, { module = false } = {}) {
       }
     }
     const nested = inFunction || FUNCTION_TYPES.has(node.type) || node.type === "StaticBlock";
-    for (const child of childNodes(node)) walk(child, node, nested);
-  };
-  walk(program, null, false);
+    const next = childNodes(node);
+    for (let i = next.length - 1; i >= 0; i--) pending.push([next[i], node, nested]);
+  }
   return observations.sort((a, b) => a.line - b.line || a.column - b.column);
 }
 
@@ -252,14 +278,23 @@ export function collectBuiltScriptObservations(scope, targetRepo) {
     } catch {
       continue;
     }
-    observed.push({
-      file: relFrom(targetRepo, script.path),
-      module: script.module,
-      pages: script.pages,
-      observations: observeScriptProgram(program, { module: script.module }),
-    });
+    const entry = { file: relFrom(targetRepo, script.path), module: script.module, pages: script.pages, observations: [] };
+    try {
+      entry.observations = observeScriptProgram(program, { module: script.module });
+    } catch (error) {
+      // An advisory never stops doctor's report. What remains recursive
+      // (resolving a deeply nested key or alias) can still exhaust the stack.
+      entry.incomplete = { reason: error?.name || "Error" };
+    }
+    observed.push(entry);
   }
   return { scripts_observed: observed.length, scripts: observed };
+}
+
+function describeIncomplete(script) {
+  const kind = script.module ? "module" : "classic script";
+  const pages = script.pages.length ? `, loaded by ${script.pages.join(", ")}` : "";
+  return `${script.file} (local ${kind}${pages}): doctor could not finish its script API/storage analysis (${script.incomplete.reason}), so any observations in it are not listed. The script parses; the syntax gate is unaffected.`;
 }
 
 const OPERATION_VERBS = { read: "reads", write: "writes", remove: "removes", call: "calls", replace: "replaces" };
@@ -290,20 +325,31 @@ function describe(observation, script) {
 
 /**
  * The advisory warnings for collected observations, in script then source
- * order, at most SCRIPT_OBSERVATIONS_LIMIT plus one truncation warning. Pure.
+ * order, at most SCRIPT_OBSERVATIONS_LIMIT plus one truncation warning, and
+ * one incomplete warning (outside the limit) per script whose analysis did
+ * not finish. Pure.
  *
- * @param {{ scripts?: Array<{ file: string, module?: boolean, pages?: string[], observations?: object[] }> }} input
+ * @param {{ scripts?: Array<{ file: string, module?: boolean, pages?: string[], observations?: object[], incomplete?: { reason: string } }> }} input
  * @returns {Array<{ code: string, message: string, finding: object }>}
  */
 export function evaluateBuiltScriptObservations({ scripts = [] } = {}) {
   const warnings = [];
   let total = 0;
+  let listed = 0;
   for (const script of Array.isArray(scripts) ? scripts : []) {
     const pages = Array.isArray(script.pages) ? script.pages : [];
     const module = Boolean(script.module);
+    if (script.incomplete) {
+      warnings.push({
+        code: SCRIPT_OBSERVATIONS_INCOMPLETE,
+        message: describeIncomplete({ file: script.file, module, pages, incomplete: script.incomplete }),
+        finding: { code: SCRIPT_OBSERVATIONS_INCOMPLETE, file: script.file, source_type: module ? "module" : "script", pages, reason: script.incomplete.reason, delivery: "local" },
+      });
+    }
     for (const observation of Array.isArray(script.observations) ? script.observations : []) {
       total += 1;
-      if (warnings.length >= SCRIPT_OBSERVATIONS_LIMIT) continue;
+      if (listed >= SCRIPT_OBSERVATIONS_LIMIT) continue;
+      listed += 1;
       const finding = {
         code: observation.code,
         file: script.file,
@@ -321,12 +367,12 @@ export function evaluateBuiltScriptObservations({ scripts = [] } = {}) {
       warnings.push({ code: observation.code, message: describe(observation, { file: script.file, module, pages }), finding });
     }
   }
-  if (total > warnings.length) {
-    const omitted = total - warnings.length;
+  if (total > listed) {
+    const omitted = total - listed;
     warnings.push({
       code: SCRIPT_OBSERVATIONS_TRUNCATED,
       message: `${omitted} further script API/storage observation(s) are not listed; doctor lists the first ${SCRIPT_OBSERVATIONS_LIMIT}.`,
-      finding: { code: SCRIPT_OBSERVATIONS_TRUNCATED, listed: warnings.length, omitted },
+      finding: { code: SCRIPT_OBSERVATIONS_TRUNCATED, listed, omitted },
     });
   }
   return warnings;
