@@ -413,6 +413,7 @@ test("total capture supports the maintained Demeter grand-total surface", () => 
   const { checkoutTotalSelectors } = __qaBrowserTestHooks;
   assert.deepEqual(checkoutTotalSelectors(), [
     '[data-next-display="cart.total"]',
+    '[data-next-query="cart.total"]',
     '[data-next-cart-summary] .order-totals__value--total',
   ]);
 });

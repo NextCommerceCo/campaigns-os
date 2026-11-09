@@ -45,6 +45,11 @@
  *      id-format, placeholder and event-name checks for vendors live with the
  *      ops registry the Map Builder export gate composes on top of this rule,
  *      so they are not repeated here.
+ *  10. On an SDK pin of 0.5.0 or later, `providers.*.blockedEvents` and an
+ *      enabled `providers.custom` do nothing: 0.5 reads only each provider's
+ *      `enabled` (src/compat/legacy/globals.ts) and lists `custom` as
+ *      unsupported. Filter in `analytics.destinations`, and send to a custom
+ *      endpoint from `next.analytics.on('*', …)` (0.5 migrating-from-0.4.md).
  */
 
 import type { CampaignSpec, Rule, Violation } from '../types.ts'
@@ -55,6 +60,9 @@ import {
 import { ANALYTICS_VENDOR_KEYS, analyticsVendorByKey } from '../analytics-vendors.ts'
 
 const VALID_MODES = new Set(['auto', 'manual', 'disabled'])
+// The first SDK whose analytics config is `destinations`, reading only
+// `enabled` from the 0.4.x `providers` block.
+const SDK_05_ANALYTICS_VERSION = '0.5.0'
 const PURCHASE_EVENT = /^(?:dl_)?purchase$/i
 
 function isNonEmptyString(value: unknown): value is string {
@@ -202,6 +210,7 @@ export const AnalyticsContractShape: Rule = {
     }
 
     // 2. providers
+    const sdk05 = versionRef !== null && (compareVersions(versionRef.version, SDK_05_ANALYTICS_VERSION) ?? -1) >= 0
     const providers = analytics.providers
     if (providers && typeof providers === 'object' && !Array.isArray(providers)) {
       for (const [kind, provider] of Object.entries(providers)) {
@@ -234,6 +243,13 @@ export const AnalyticsContractShape: Rule = {
         }
         if (enabled && kind === 'facebook' && !isNonEmptyString(provider.pixelId)) {
           warn(`analytics.providers.facebook is enabled but has no pixelId; doctor/QA bind to it.`, `${base}/pixelId`, 'facebook-pixel-missing', { kind })
+        }
+        // 10. SDK 0.5 ignores both.
+        if (sdk05 && isStringArray(provider.blockedEvents) && (provider.blockedEvents as string[]).length) {
+          warn(`analytics.providers.${kind}.blockedEvents does nothing on Campaign Cart SDK ${versionRef!.version}: from ${SDK_05_ANALYTICS_VERSION} the SDK reads only each provider's enabled flag. Filter events per destination under nextConfig.analytics.destinations instead.`, `${base}/blockedEvents`, 'blocked-events-ignored-sdk-05', { kind, sdkVersion: versionRef!.version })
+        }
+        if (sdk05 && enabled && kind === 'custom') {
+          warn(`analytics.providers.custom does nothing on Campaign Cart SDK ${versionRef!.version}: ${SDK_05_ANALYTICS_VERSION} dropped the custom provider. Send events to the endpoint from a listener, next.analytics.on('*', (event) => fetch(url, { method: 'POST', keepalive: true, body: JSON.stringify(event) })).`, base, 'custom-provider-ignored-sdk-05', { kind, sdkVersion: versionRef!.version })
         }
         if (enabled && kind === 'custom' && !isNonEmptyString(provider.endpoint)) {
           warn(`analytics.providers.custom is enabled but has no endpoint URL.`, `${base}/endpoint`, 'custom-endpoint-missing', { kind })

@@ -242,13 +242,20 @@ export const SDK_CHECKOUT_FIELD_PREFIXES = Object.freeze(["billing-"]);
 // version. A page whose SDK version is unknown is judged as an earlier SDK:
 // the older name works on every version, so asking for it is always safe,
 // and accepting the newer name there could pass a field that never reaches
-// the order. Kept in step with version_gated_aliases in
+// the order. line1, line2, state and postcode are the rest of the API names,
+// which 0.5.0 maps (src/checkout/form/names.ts PAGE_FIELDS) and its
+// migration guide makes the names to write. Kept in step with
+// version_gated_aliases in
 // contracts/campaign-cart-checkout-field-contract.v0.json (a test holds the
 // two equal).
 export const SDK_CHECKOUT_FIELD_NAMES_SINCE = Object.freeze({
   first_name: Object.freeze({ since: "0.4.39", sdk_name: "fname" }),
   last_name: Object.freeze({ since: "0.4.39", sdk_name: "lname" }),
   phone_number: Object.freeze({ since: "0.4.41", sdk_name: "phone" }),
+  line1: Object.freeze({ since: "0.5.0", sdk_name: "address1" }),
+  line2: Object.freeze({ since: "0.5.0", sdk_name: "address2" }),
+  state: Object.freeze({ since: "0.5.0", sdk_name: "province" }),
+  postcode: Object.freeze({ since: "0.5.0", sdk_name: "postal" }),
 });
 
 // Whether `version` is an exact released SDK version at or after `since`.

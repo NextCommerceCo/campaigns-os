@@ -11402,6 +11402,129 @@
         }
       ],
       "entry_sha256": "112a8ed3b22fc2e44f8d514367bd3c14bc1776b05ab494d18ecffe3ec0e1f2ee"
+    },
+    {
+      "id": "RL-0327",
+      "sequence": 313,
+      "date": "2026-11-09",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.66.0+agent.12",
+      "changelog_sha256": "a5b630ac63354f9bf37a86f81c20f757d8af808f9867af0dc9032be9f554a0be",
+      "agent_impact": "A campaign pinned to Campaign Cart SDK 0.5.0 or later no longer draws false blockers: doctor accepts 0.5's checkout field names and data-campaign, QA finds 0.5 markup, and sdk repin refuses a 0.4 to 0.5 move until the loader is a module. New on 0.5 pins only: doctor warning built_output.sdk_markup.removed_in_sdk_05 for removed 0.4 features, QA blocker browser-sdk-error:<page> on html[data-next-error], and two AnalyticsContractShape warnings. 0.4.x pins are judged as before. Agents bumping to 0.5 should follow the sdk-bump skill's Crossing to 0.5 section.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": null,
+          "summary": "Packet doctor's SDK markup gate reads each page's local scripts lazily, only on a page pinned to SDK 0.5 or later, to find removed 0.4 features; it adds the removed_in_sdk_05 warning, accepts 0.5 field names and attributes on 0.5 pins, and campaign identity reads the loader's data-campaign and data-funnel."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/inspect.mjs",
+          "surface_entry": null,
+          "summary": "doctor --built hands the SDK markup gate the same lazy local-script reader."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/rules/analytics-contract-shape.ts",
+          "surface_entry": null,
+          "summary": "AnalyticsContractShape warns blocked-events-ignored-sdk-05 and custom-provider-ignored-sdk-05 on an SDK pin of 0.5.0 or later."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Documents the 0.5 field names under WRONG_FIELD_NAME, the REMOVED_IN_SDK_05 advisory, 0.5 attributes in the unknown-attribute note, and the 0.5 providers warning."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/campaigns-os-build-flow.md",
+          "surface_entry": "docs/campaigns-os-build-flow.md",
+          "summary": "The SDK markup rule lists the API field names a 0.5 pin also accepts."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/sdk-storage-compatibility.md",
+          "surface_entry": "docs/sdk-storage-compatibility.md",
+          "summary": "Documents sdk repin's refused_cross_minor status for a 0.4 to 0.5 move."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Examples name 1.66.0+skills.2."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "bundle_revision 1.66.0+skills.2; each skill one patch higher; the sdk-bump description covers 0.4 to 0.5."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-sdk-bump/SKILL.md",
+          "surface_entry": null,
+          "summary": "Adds Crossing to 0.5 (module loader, removed features, analytics, page state, lost open carts, migrate.mjs only on built HTML) and a ready guard that works on 0.5; revision 1.66.0+skills.2, version 1.0.13."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Accepts 0.5's checkout form, field names, card mounts and acceptUpsell / skipUpsell controls; revision 1.66.0+skills.2, version 1.3.57."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.66.0+skills.2; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.66.0+skills.2; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.66.0+skills.2; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.66.0+skills.2; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.66.0+skills.2; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.66.0+skills.2; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.66.0+skills.2; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.66.0+skills.2; version one patch higher; text otherwise unchanged."
+        }
+      ],
+      "entry_sha256": "d969e359033ca8f64b7a7b5600e08070c6a00b589a6b840d84f57335a92528c1"
     }
   ]
 }

@@ -7,7 +7,10 @@
 //   API key      <meta name="next-api-key"> beats window.nextConfig.apiKey
 //                (inline, or in the config.js the page loads). Selects the
 //                campaign whose packages, prices and orders the page acts on.
-//   next-funnel  <meta name="next-funnel">. Attributed onto the order.
+//                SDK 0.5 also reads data-campaign on its loader <script>, and
+//                that beats both (0.5 loader-script.md).
+//   next-funnel  <meta name="next-funnel">. Attributed onto the order. On
+//                0.5, data-funnel on the loader <script> names it first.
 //   setAttribution({ funnel })  A script call that overrides the funnel tag.
 //
 // The failure this module gates is a page borrowed from another funnel: a
@@ -72,6 +75,17 @@ function metaContent(html, name) {
   if (!tag) return null;
   const content = /\bcontent=["']([^"']*)["']/i.exec(tag[1]);
   return content ? content[1].trim() : "";
+}
+
+// An attribute of the page's Campaign Cart loader <script> (data-campaign,
+// data-funnel: SDK 0.5), or null. Only a script whose src is the loader is
+// read; a 0.4.x loader carries neither attribute.
+const LOADER_SCRIPT_TAG = /<script\b(?=[^>]*\bsrc\s*=\s*["'][^"']*campaign-cart[^"']*\/dist\/loader\.js[^"']*["'])([^>]*)>/i;
+function loaderAttribute(html, name) {
+  const tag = LOADER_SCRIPT_TAG.exec(html);
+  if (!tag) return null;
+  const value = new RegExp(`(?:^|\\s)${name}\\s*=\\s*(["'])([^"']*)\\1`, "i").exec(tag[1]);
+  return value ? value[2].trim() : null;
 }
 
 function hasSrcAttribute(attrs) {
@@ -218,7 +232,9 @@ export function collectPageIdentity(page) {
   const stripped = html.replace(HTML_COMMENT, "");
   // Normalized once: an empty content="" is "no meta", here and on the record.
   const apiKeyMeta = metaContent(stripped, "next-api-key") || null;
+  const loaderCampaign = loaderAttribute(stripped, "data-campaign") || null;
   const apiKeys = [];
+  if (loaderCampaign) apiKeys.push({ source: "loader data-campaign", where: page.file || page.page_id, value: loaderCampaign });
   if (apiKeyMeta) apiKeys.push({ source: 'meta name="next-api-key"', where: page.file || page.page_id, value: apiKeyMeta });
   const attributions = [];
 
@@ -237,7 +253,7 @@ export function collectPageIdentity(page) {
     file: page.file || null,
     api_key_meta: apiKeyMeta,
     api_keys: apiKeys,
-    funnel: metaContent(stripped, "next-funnel"),
+    funnel: loaderAttribute(stripped, "data-funnel") || metaContent(stripped, "next-funnel"),
     page_type: metaContent(stripped, "next-page-type"),
     attributions,
   };

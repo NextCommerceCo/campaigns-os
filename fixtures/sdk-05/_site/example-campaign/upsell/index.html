@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>sdk 0.5 upsell</title>
+    <meta name="next-page-type" content="upsell">
+    <script type="module" src="https://cdn.jsdelivr.net/gh/NextCommerceCo/campaign-cart@v0.5.0/dist/loader.js" data-campaign="pk_example_sdk05" data-funnel="example"></script>
+    <style>html:not([data-next-ready]) [data-next-query] { visibility: hidden; }</style>
+  </head>
+  <body>
+    <div data-next-option="bottle" data-next-items="7">
+      <h2>Add a second bottle for <span data-next-query="total"></span></h2>
+      <button data-next-action="acceptUpsell" data-next-go="../receipt/">Yes, add it</button>
+      <button data-next-action="skipUpsell" data-next-go="../receipt/">No thanks</button>
+    </div>
+  </body>
+</html>

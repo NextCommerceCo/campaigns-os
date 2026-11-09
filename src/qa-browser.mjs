@@ -67,6 +67,7 @@ import { ORDER_BUMP_PROBE_INPUT, orderBumpEvidenceScript } from "./qa-order-bump
 import { assessPurchaseDataLayer, expectedOrderReferences, purchaseDataLayerAssertion, purchaseDataLayerProbe } from "./qa-purchase-data-layer.mjs";
 import { declaredOrderBumps, declaredSelectorTiers } from "./commercial-journey.mjs";
 import { bindingAssertion, isSdkApiRequest, sentBinding } from "./qa-binding-evidence.mjs";
+import { CHECKOUT_FORM_SELECTOR, SDK_05_ERROR_ATTRIBUTE, SDK_05_ERROR_VALUES, SDK_05_READY_ATTRIBUTE, SDK_05_UPSELL_ACTIONS, checkoutFieldSelector, checkoutFieldSelectors } from "./campaign-cart-05.mjs";
 import {
   RESIDUE_PAGE_TYPES,
   demoAssetConfig,
@@ -109,6 +110,10 @@ const DEFAULT_TEST_EXP_YEAR = "2030";
 // by name unless exactly one number frame and one CVV frame match, so a page
 // mounting both generations, or two forms, fails at the card step instead of
 // on whichever frame happens to come first.
+// The card and CVV host elements: the 0.4.x field, the 0.5 data-next-field
+// slot, or the Spreedly id either SDK gives the mount.
+const CARD_NUMBER_HOST = `${checkoutFieldSelector("cc-number")}, #spreedly-number`;
+const CVV_HOST = `${checkoutFieldSelector("cvv")}, #spreedly-cvv`;
 const CARD_NUMBER_FRAME = 'iframe[id^="spreedly-number-frame"], iframe[id^="spreedly-hosted-number"]';
 const CARD_CVV_FRAME = 'iframe[id^="spreedly-cvv-frame"], iframe[id^="spreedly-hosted-cvv"]';
 // Typing the card is read back and retried this many times in all before the
@@ -1100,6 +1105,7 @@ async function runPageBrowserChecks(context, page, args, options = {}, policyLin
     observation.settle_ms = elapsedMilliseconds(settleStarted);
     const sdkWait = await waitForSdkDisplayReady(browserPage);
     observation.sdk_display = sdkWait.state;
+    if (sdkWait.error) observation.sdk_error = sdkWait.error;
     observation.sdk_display_ms = sdkWait.ms;
     const status = response?.status() ?? null;
     // One read of the rendered anchors, from an isolated world. A page that
@@ -1121,6 +1127,21 @@ async function runPageBrowserChecks(context, page, args, options = {}, policyLin
       actual: status ? `HTTP ${status}` : "loaded",
       evidence: { title, body_present: bodyPresent, observation },
     }));
+    if (sdkWait.state === "error") {
+      // SDK 0.5 says it could not start (loader-script.md): no campaign key
+      // (config), the SDK code failed to load (load), or the campaign could
+      // not be loaded (campaign). Nothing on the page is bound.
+      assertions.push(assertion({
+        id: `browser-sdk-error:${page.page_id}`,
+        family: "browser-runtime",
+        page,
+        status: STATUS.FAIL,
+        severity: SEVERITY.BLOCKER,
+        expected: "the Campaign Cart SDK starts",
+        actual: `html[data-next-error="${sdkWait.error}"]`,
+        evidence: { sdk_error: sdkWait.error, remedy: { config: "Add data-campaign=\"<campaign api key>\" to the loader <script>.", load: "The SDK code did not load: check the loader src and that it is type=\"module\".", campaign: "The campaign did not load: check the key is the campaign's and the Campaigns API is reachable." }[sdkWait.error] || null },
+      }));
+    }
 
     const inspectionStarted = performance.now();
     assertions.push(...await primaryCtaVisualAssertions(browserPage, page));
@@ -1412,14 +1433,14 @@ function primaryCtaDeclaredRoutes(page) {
   if (["checkout", "checkout_step"].includes(String(page.page_type).toLowerCase())) {
     const notWallet = ":not([data-next-express-checkout]):not([data-next-express-checkout] *)";
     const submit = ['button[type="submit"]', "button:not([type])", 'input[type="submit"]']
-      .map((control) => `${CHECKOUT_FORM_SELECTOR} ${control}${notWallet}`)
+      .flatMap((control) => CHECKOUT_FORM_SELECTOR.split(", ").map((form) => `${form} ${control}${notWallet}`))
       .join(", ");
     return page.expected_next_url ? [{ selector: submit, url: page.expected_next_url }] : [];
   }
   return UPSELL_CONTROL_ROUTES
     .filter(({ field }) => page[field])
     .map(({ kind, field }) => ({
-      selector: UPSELL_ACTION_SPELLINGS[kind].map((action) => `[data-next-upsell] ${upsellActionSelector(action)}`).join(", "),
+      selector: UPSELL_ACTION_SPELLINGS[kind].map(boundUpsellActionSelector).join(", "),
       url: page[field],
     }));
 }
@@ -1689,12 +1710,15 @@ function primaryCtaAssertionFromEvidence(page, evidence) {
 
 // The SDK's spellings of each upsell action: its upsell handler accepts the
 // offer on add or accept and declines it on skip or decline, and does nothing
-// on any other value. Every place QA locates an upsell control reads this one
+// on any other value. SDK 0.5 adds data-next-action="acceptUpsell" /
+// "skipUpsell", the last spelling of each (upsellActionSelector writes it on
+// data-next-action). Every place QA locates an upsell control reads this one
 // table. The first spelling is the one reported when a page has none.
 export const UPSELL_ACTION_SPELLINGS = Object.freeze({
-  accept: Object.freeze(["add", "accept"]),
-  decline: Object.freeze(["skip", "decline"]),
+  accept: Object.freeze(["add", "accept", SDK_05_UPSELL_ACTIONS.accept]),
+  decline: Object.freeze(["skip", "decline", SDK_05_UPSELL_ACTIONS.decline]),
 });
+const SDK_05_UPSELL_ACTION_NAMES = new Set(Object.values(SDK_05_UPSELL_ACTIONS));
 
 // The SDK upsell actions and the page field that declares where each goes.
 // The rendered upsell-control check and the primary-CTA route rule read this
@@ -1705,7 +1729,16 @@ const UPSELL_CONTROL_ROUTES = Object.freeze([
 ]);
 
 function upsellActionSelector(...actions) {
-  return actions.map((action) => `[data-next-upsell-action="${action}"]`).join(", ");
+  return actions.map((action) => (SDK_05_UPSELL_ACTION_NAMES.has(action)
+    ? `[data-next-action="${action}"]`
+    : `[data-next-upsell-action="${action}"]`)).join(", ");
+}
+
+// An upsell action where the SDK binds it: a data-next-upsell-action only
+// inside a [data-next-upsell] container; a 0.5 data-next-action anywhere (it
+// reads its offer from data-next-selector-id or the option around it).
+function boundUpsellActionSelector(action) {
+  return SDK_05_UPSELL_ACTION_NAMES.has(action) ? upsellActionSelector(action) : `[data-next-upsell] ${upsellActionSelector(action)}`;
 }
 
 // The spelling of an upsell action this page renders: the first spelling
@@ -1745,8 +1778,8 @@ async function renderedUpsellControlAssertions(browserPage, page) {
 
 async function checkoutPaymentSurfaceAssertions(browserPage, page) {
   await settleCheckoutCommerce(browserPage);
-  const cardNumberMounts = await browserPage.locator('[data-next-checkout-field="cc-number"], #spreedly-number').count().catch(() => 0);
-  const cvvMounts = await browserPage.locator('[data-next-checkout-field="cvv"], #spreedly-cvv').count().catch(() => 0);
+  const cardNumberMounts = await browserPage.locator(CARD_NUMBER_HOST).count().catch(() => 0);
+  const cvvMounts = await browserPage.locator(CVV_HOST).count().catch(() => 0);
   const spreedlyFrames = browserPage.frames().filter((frame) => /spreedly/i.test(frame.url()));
   const geometry = await paymentSurfaceGeometry(browserPage);
   const geometryOk = paymentGeometryAcceptable(geometry);
@@ -1765,8 +1798,8 @@ async function checkoutPaymentSurfaceAssertions(browserPage, page) {
     expected: "rendered credit-card payment field mounts",
     actual: `card_mounts=${cardNumberMounts}; cvv_mounts=${cvvMounts}; spreedly_frames=${spreedlyFrames.length}`,
     evidence: {
-      card_number_selector: '[data-next-checkout-field="cc-number"], #spreedly-number',
-      cvv_selector: '[data-next-checkout-field="cvv"], #spreedly-cvv',
+      card_number_selector: CARD_NUMBER_HOST,
+      cvv_selector: CVV_HOST,
       spreedly_frame_urls: spreedlyFrames.map((frame) => frame.url()).slice(0, 5),
       next_step: "Unless the operator has already said test orders are fine for this campaign, ask once, up front, before placing test orders, which leave real store order records. Then run --test-order common for typed-card checkout proof (test cards bypass the gateway and create no transactions; no permission flag).",
     },
@@ -1890,13 +1923,14 @@ function isFamilyShellCheck(check) {
 // What a checkout has to do, whoever composed it. The required fields are the
 // contact and shipping fields the test-order form fill types without the
 // optional flag (fillCheckoutFields): each must be a form control carrying
-// data-next-checkout-field inside a <form data-next-checkout="form">, and not a
+// data-next-checkout-field (or, on SDK 0.5, its data-next-field or API name:
+// checkoutFieldSelectors) inside a <form data-next-checkout="form"> (bare
+// data-next-checkout on 0.5), and not a
 // type="hidden" input or a disabled control (its own attribute or a disabled
 // fieldset), since a customer cannot fill either. Visibility is not required:
 // progressive-reveal checkouts hide the address fields until a country is
 // chosen. The total is the cart-summary total the order-total parity check
 // reads.
-const CHECKOUT_FORM_SELECTOR = 'form[data-next-checkout="form"]';
 const CHECKOUT_BEHAVIOUR_REQUIRED_FIELDS = Object.freeze([
   "email",
   "fname",
@@ -1912,6 +1946,7 @@ function checkoutBehaviourProbeInput() {
   return {
     formSelector: CHECKOUT_FORM_SELECTOR,
     requiredFields: [...CHECKOUT_BEHAVIOUR_REQUIRED_FIELDS],
+    requiredFieldSelectors: Object.fromEntries(CHECKOUT_BEHAVIOUR_REQUIRED_FIELDS.map((name) => [name, checkoutFieldSelector(name)])),
     totalSelectors: checkoutTotalSelectors(),
   };
 }
@@ -1936,8 +1971,8 @@ async function inspectCheckoutBehaviour(browserPage) {
       && !(field.tagName !== "SELECT" && field.hasAttribute("readonly"))
       && field.getAttribute("aria-disabled") !== "true";
     const missing = input.requiredFields.filter((name) => !forms.some((form) => Array
-      .from(form.querySelectorAll("[data-next-checkout-field]"))
-      .some((field) => field.getAttribute("data-next-checkout-field") === name && fillable(field))));
+      .from(form.querySelectorAll(input.requiredFieldSelectors[name]))
+      .some(fillable)));
     const totals = input.totalSelectors.flatMap((selector) => {
       try {
         return Array.from(document.querySelectorAll(selector));
@@ -2086,7 +2121,10 @@ function isPlainObject(value) {
 // The readiness rule of the contrast check's documentMeasurability: a page
 // that declares the SDK (a data-next-sdk-loading body, or the loader script in
 // the document or any open shadow root) is ready once the body's
-// data-next-sdk-loading is "false" or <html> carries next-display-ready.
+// data-next-sdk-loading is "false" or <html> carries next-display-ready or
+// (SDK 0.5, which never sets data-next-sdk-loading) data-next-ready. 0.5 sets
+// data-next-error="config|load|campaign" on <html> when it cannot start; the
+// wait stops there, as `error`, since the page will never report ready.
 // The poll runs every 100 ms, not every frame, and reads the page without
 // writing to it. Bounded and tolerant: a page that never
 // reports ready is read after the cap, so the checks still say what they see.
@@ -2094,13 +2132,14 @@ function isPlainObject(value) {
 // wait first holds back two settle allowances of it (a step can load a second
 // page after this one) and takes at most half of what is left, so the step's
 // own work keeps its time; with nothing to spare it waits 250 ms.
-// Resolves to { state, ms }: state is not_declared (no SDK on the page),
-// ready, timeout, or unreadable (the page could not be read, as when it
-// navigated away during the wait). It never throws.
+// Resolves to { state, ms, error? }: state is not_declared (no SDK on the
+// page), ready, error (with the data-next-error value), timeout, or
+// unreadable (the page could not be read, as when it navigated away during
+// the wait). It never throws.
 async function waitForSdkDisplayReady(page, budgetMs = null) {
   const started = performance.now();
   const timeout = Math.max(250, Math.min(SDK_DISPLAY_READY_TIMEOUT_MS, budgetMs === null ? Infinity : (budgetMs - 2 * DEFAULT_SETTLE_TIMEOUT_MS) / 2));
-  const state = await page.waitForFunction(() => {
+  const state = await page.waitForFunction((attributes) => {
     // Read without writing to the page. A page that does not declare the SDK on
     // the first poll returns at once, as the contrast check reads it: the loader
     // is static markup in the page head, so a loader injected later by script is
@@ -2112,17 +2151,22 @@ async function waitForSdkDisplayReady(page, budgetMs = null) {
     const declared = Boolean(document.body?.hasAttribute("data-next-sdk-loading"))
       || trees.some((tree) => Array.from(tree.querySelectorAll("script[src]")).some((script) => /campaign-cart(?:@[^"']*)?\/dist\/loader\.js/i.test(script.getAttribute("src"))));
     if (!declared) return "not_declared";
-    return document.body?.getAttribute("data-next-sdk-loading") === "false" || document.documentElement.classList.contains("next-display-ready") ? "ready" : false;
-  }, null, { timeout, polling: 100 })
+    const error = document.documentElement.getAttribute(attributes.error);
+    if (error !== null && attributes.errors.includes(error)) return `error:${error}`;
+    return document.body?.getAttribute("data-next-sdk-loading") === "false"
+      || document.documentElement.classList.contains("next-display-ready")
+      || document.documentElement.hasAttribute(attributes.ready) ? "ready" : false;
+  }, { ready: SDK_05_READY_ATTRIBUTE, error: SDK_05_ERROR_ATTRIBUTE, errors: [...SDK_05_ERROR_VALUES] }, { timeout, polling: 100 })
     .then((handle) => handle.jsonValue())
     .catch((error) => (error?.name === "TimeoutError" ? "timeout" : "unreadable"));
+  if (typeof state === "string" && state.startsWith("error:")) return { state: "error", error: state.slice("error:".length), ms: elapsedMilliseconds(started) };
   return { state, ms: elapsedMilliseconds(started) };
 }
 
 async function settleCheckoutCommerce(browserPage) {
   await browserPage.waitForSelector([
     '[data-next-express-checkout="buttons"] .payment-btn',
-    '[data-next-checkout-field="cc-number"]',
+    ...checkoutFieldSelectors("cc-number"),
     '#spreedly-number',
     '[data-next-bundle-card]',
     '[data-next-toggle-card]',
@@ -2131,15 +2175,14 @@ async function settleCheckoutCommerce(browserPage) {
   // it measures 0 px while the form still carries next-loading-spreedly. One
   // bounded wait for both, after the SDK display-ready wait; a card that never
   // mounts is then measured, and fails, as before.
-  if (await browserPage.locator('[data-next-checkout-field="cc-number"], #spreedly-number').count().catch(() => 0)) {
+  if (await browserPage.locator(CARD_NUMBER_HOST).count().catch(() => 0)) {
     await browserPage.waitForFunction((frame) => Boolean(document.querySelector(frame)) && !document.querySelector(".next-loading-spreedly"), CARD_NUMBER_FRAME, { timeout: 8000 }).catch(() => {});
   }
   await browserPage.waitForTimeout(1000).catch(() => {});
 }
 
 async function paymentSurfaceGeometry(browserPage) {
-  return browserPage.evaluate(() => {
-    const selectors = ['[data-next-checkout-field="cc-number"], #spreedly-number', '[data-next-checkout-field="cvv"], #spreedly-cvv'];
+  return browserPage.evaluate((selectors) => {
     return {
       fields: selectors.flatMap((selector) => Array.from(document.querySelectorAll(selector)).map((field) => {
         const hostRect = field.getBoundingClientRect();
@@ -2148,7 +2191,7 @@ async function paymentSurfaceGeometry(browserPage) {
         const hostCenter = hostRect.y + hostRect.height / 2;
         const iframeCenter = iframeRect ? iframeRect.y + iframeRect.height / 2 : 0;
         return {
-          id: field.id || field.getAttribute("data-next-checkout-field") || selector,
+          id: field.id || field.getAttribute("data-next-checkout-field") || field.getAttribute("data-next-field") || selector,
           host: {
             width: Math.round(hostRect.width),
             height: Math.round(hostRect.height),
@@ -2161,7 +2204,7 @@ async function paymentSurfaceGeometry(browserPage) {
         };
       })),
     };
-  }).catch(() => ({ fields: [] }));
+  }, [CARD_NUMBER_HOST, CVV_HOST]).catch(() => ({ fields: [] }));
 }
 
 function paymentGeometryAcceptable(geometry) {
@@ -5377,6 +5420,8 @@ async function packageCardSelectionState(page, selector, { attempts = 4, interva
 // spelling is a coupon control the SDK wires.
 const COUPON_INPUT_SELECTORS = Object.freeze([
   '[data-next-checkout-field="coupon"]',
+  // SDK 0.5: the coupon input of a form[data-next-action="applyCoupon"].
+  'form[data-next-action="applyCoupon"] [data-next-field="code"]',
   '[os-checkout-field="coupon"]',
   'input[data-next-coupon="input"]',
   'input[name*="coupon" i]',
@@ -5674,7 +5719,7 @@ async function advanceToCheckoutForm(page) {
 }
 
 async function hasVisibleCheckoutFields(page) {
-  return page.locator('[data-next-checkout-field="email"]:visible, [data-next-checkout-field="cc-number"]:visible, #spreedly-number:visible')
+  return page.locator([...checkoutFieldSelectors("email"), ...checkoutFieldSelectors("cc-number"), "#spreedly-number"].map((selector) => `${selector}:visible`).join(", "))
     .count()
     .then((count) => count > 0)
     .catch(() => false);
@@ -5719,7 +5764,7 @@ async function fillCheckoutFields(page, args, email, options = {}) {
   await fill("postal", address.postal);
   await closeAddressAutocomplete(page);
 
-  const sameAsShipping = page.locator("#use_shipping_address").first();
+  const sameAsShipping = page.locator('#use_shipping_address, [data-next-field="billing_same_as_shipping"]').first();
   if (await sameAsShipping.count().catch(() => 0)) {
     // Best-effort with a short timeout: funnels that collapse the billing
     // section leave this checkbox hidden (already checked), and a default
@@ -5776,8 +5821,7 @@ async function revealCheckoutForm(page, options = {}) {
 
 async function fillPaymentFields(page, args, { readyTimeoutMs = CARD_READY_TIMEOUT_MS } = {}) {
   await clickCreditPaymentMethod(page);
-  await selectByField(page, "exp-month", stringArg(args["test-exp-month"]) || DEFAULT_TEST_EXP_MONTH);
-  await selectYear(page, stringArg(args["test-exp-year"]) || DEFAULT_TEST_EXP_YEAR);
+  await fillCardExpiry(page, stringArg(args["test-exp-month"]) || DEFAULT_TEST_EXP_MONTH, stringArg(args["test-exp-year"]) || DEFAULT_TEST_EXP_YEAR);
 
   const card = normalizeCard(stringArg(args["test-card"]) || DEFAULT_TEST_CARD);
   const cvv = stringArg(args["test-cvv"]) || DEFAULT_TEST_CVV;
@@ -5854,6 +5898,8 @@ async function clickCreditPaymentMethod(page) {
     '[data-next-payment-method="card"]',
     'input[name="payment_method"][value="credit"]',
     'input[name="payment_method"][value="card"]',
+    // SDK 0.5: the card radio of data-next-payment.
+    '[data-next-field="payment_method"][value="card_token"]',
   ];
   for (const selector of candidates) {
     const target = page.locator(selector).first();
@@ -6243,8 +6289,10 @@ function receiptRenderingAssertion(page, path, order) {
 // The rendered order summary is the display authority: `[data-summary-lines]`
 // rows are what the shopper is told they are buying, and the SDK stamps each
 // row's package ref id into `data-package-id` from `{item.packageId}`.
+// SDK 0.5 writes the total into data-next-query="cart.total".
 const CHECKOUT_TOTAL_SELECTORS = Object.freeze([
   '[data-next-display="cart.total"]',
+  '[data-next-query="cart.total"]',
   "[data-next-cart-summary] .order-totals__value--total",
 ]);
 
@@ -7756,7 +7804,7 @@ async function visibleErrorText(page) {
 }
 
 async function fillByField(page, field, value, options = {}) {
-  const locator = page.locator(`[data-next-checkout-field="${field}"]`).first();
+  const locator = page.locator(checkoutFieldSelector(field)).first();
   if (!await fieldUsable(locator, options)) {
     if (options.optional) return false;
     throw new Error(`Missing checkout field: ${field}`);
@@ -7785,7 +7833,7 @@ function requiredActionTimeout(options = {}) {
 }
 
 async function selectByField(page, field, value, options = {}) {
-  const locator = page.locator(`[data-next-checkout-field="${field}"]`).first();
+  const locator = page.locator(checkoutFieldSelector(field)).first();
   if (!await fieldUsable(locator, options)) {
     if (options.optional) return false;
     throw new Error(`Missing checkout select: ${field}`);
@@ -7797,8 +7845,22 @@ async function selectByField(page, field, value, options = {}) {
   return true;
 }
 
+// SDK 0.5's card.expiry is one "MM / YY" input; a page with no month select
+// and that input gets it typed. Every other page selects month and year as
+// before.
+const CARD_EXPIRY_INPUT = '[data-next-field="card.expiry"], [data-next-checkout-field="cc-expiry"]';
+async function fillCardExpiry(page, month, year) {
+  const expiry = page.locator(CARD_EXPIRY_INPUT).first();
+  if (!await page.locator(checkoutFieldSelector("exp-month")).count().catch(() => 0) && await expiry.count().catch(() => 0)) {
+    await expiry.fill(`${String(month).padStart(2, "0")} / ${String(year).slice(-2)}`);
+    return;
+  }
+  await selectByField(page, "exp-month", month);
+  await selectYear(page, year);
+}
+
 async function selectYear(page, value) {
-  const locator = page.locator('[data-next-checkout-field="exp-year"]').first();
+  const locator = page.locator(checkoutFieldSelector("exp-year")).first();
   await locator.waitFor({ state: "visible" });
   const options = await locator.locator("option").evaluateAll((elements) => elements.map((option) => ({ value: option.value, text: option.textContent?.trim() })));
   const match = options.find((option) => option.value === value || option.text === value)
@@ -7816,7 +7878,7 @@ async function fieldUsable(locator, options = {}) {
 }
 
 async function billingFieldsCollapsed(page) {
-  const locator = page.locator('[data-next-checkout-field="billing-fname"]').first();
+  const locator = page.locator(checkoutFieldSelector("billing-fname")).first();
   if (!await locator.count().catch(() => 0)) return false;
   if (!await locator.isVisible().catch(() => false)) return true;
   return locator.evaluate((element) => {
@@ -7846,10 +7908,10 @@ async function settleAddressAutocomplete(page) {
 // stays hidden after a plain fill, re-enter address1 with typed keystrokes and
 // wait for the disclosure — generic behavior, no funnel-specific hooks.
 async function revealProgressiveLocationFields(page, address1) {
-  const city = page.locator('[data-next-checkout-field="city"]').first();
+  const city = page.locator(checkoutFieldSelector("city")).first();
   if (!await city.count().catch(() => 0)) return;
   if (await city.isVisible().catch(() => false)) return;
-  const input = page.locator('[data-next-checkout-field="address1"]').first();
+  const input = page.locator(checkoutFieldSelector("address1")).first();
   await input.click().catch(() => {});
   await input.fill("").catch(() => {});
   await input.pressSequentially(address1, { delay: 25 }).catch(() => {});
@@ -8549,7 +8611,7 @@ async function waitForUpsellPageReady(page, args) {
     .waitFor({ state: "visible", timeout: timeoutMs })
     .catch(() => {});
   await page.waitForLoadState("networkidle", { timeout: DEFAULT_SETTLE_TIMEOUT_MS }).catch(() => {});
-  await page.waitForFunction(() => document.documentElement.classList.contains("next-display-ready"), null, { timeout: 10000 }).catch(() => {});
+  await page.waitForFunction(() => document.documentElement.classList.contains("next-display-ready") || document.documentElement.hasAttribute("data-next-ready"), null, { timeout: 10000 }).catch(() => {});
   await page.waitForTimeout(1500);
 }
 
@@ -9034,6 +9096,11 @@ function qaBrowserMissing(kind, error) {
 }
 
 export const __qaBrowserTestHooks = Object.freeze({
+  inspectCheckoutBehaviour,
+  waitForSdkDisplayReady,
+  fillCardExpiry,
+  hasVisibleCheckoutFields,
+  renderedUpsellControlAssertions,
   orderCurrencyAssertion,
   qaBrowserMissing,
   PRIMARY_CTA_SELECTOR,
