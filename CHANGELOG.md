@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.66.0+agent.12] - 2026-11-09
+## [1.66.0+agent.13] - 2026-11-09
 
 ### Added
 
@@ -20,6 +20,12 @@ Notable supported-surface changes are recorded here.
 - **`sdk repin` refuses a 0.4.x → 0.5 move** (`refused_cross_minor`, exit 2, nothing written) while a loader `<script>` is not `type="module"` or a file references the 0.4 dist layout (`dist/index.js`, `dist/chunks/`), and lists each blocking line.
 - **Skills.** `next-campaigns-sdk-bump` gains "Crossing to 0.5" (module loader, removed features, analytics, page state, lost open carts, and `scripts/migrate.mjs` only on built `_site` HTML) and a ready guard that works on 0.5. `next-campaigns-qa` accepts the 0.5 names. Bundle revision `1.66.0+skills.2`; each skill one patch higher.
 - A comment in the analytics parity capture no longer says the SDK pushes to `ElevarDataLayer` on 0.5.
+
+## [1.66.0+agent.12] - 2026-11-09
+
+### Changed
+
+- **Issue project automation updates its pinned action (#739).** `actions/add-to-project` moves from v2.0.0 to v2.0.1. An eligible issue already present in the project now skips successfully instead of failing when reopened. The collaborator gate, project destination and token permissions are unchanged. No campaign migration is required.
 
 ## [1.66.0+agent.11] - 2026-11-09
 

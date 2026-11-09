@@ -11443,7 +11443,28 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.66.0+agent.12",
-      "changelog_sha256": "4799a595af5fd75a0c2e7c7205a16dee75eb57906cb5526f993614b9884ce8a7",
+      "changelog_sha256": "252e3fd1b7f67dc77bc0431c6c98307de33ff305401e30cd3ecffeb3246ca848",
+      "agent_impact": "No campaign migration. Issue project automation treats an eligible issue already present in the project as a successful skip when reopened. The collaborator gate, project destination and token permissions are unchanged.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "workflow",
+          "path": ".github/workflows/add-to-project.yml",
+          "surface_entry": null,
+          "summary": "Update the pinned actions/add-to-project action from v2.0.0 to v2.0.1, which skips issues already added to the project."
+        }
+      ],
+      "entry_sha256": "87707dccd1c300aabdb9911326ef8267c89ad7775bd57ed23c58552165da5a56"
+    },
+    {
+      "id": "RL-0328",
+      "sequence": 315,
+      "date": "2026-11-09",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.66.0+agent.13",
+      "changelog_sha256": "eda1442d2cf2e21442f4ea9d3d8e64a6083608e38667523bcec79d4488dc57d0",
       "agent_impact": "A campaign pinned to Campaign Cart SDK 0.5.0 or later no longer draws false blockers: doctor accepts 0.5's checkout field names and data-campaign, QA finds 0.5 markup, and sdk repin refuses a 0.4 to 0.5 move until the loader is a module. New on 0.5 pins only: doctor warning built_output.sdk_markup.removed_in_sdk_05 for removed 0.4 features, QA blocker browser-sdk-error:<page> on html[data-next-error], and two AnalyticsContractShape warnings. 0.4.x pins are judged as before. Agents bumping to 0.5 should follow the sdk-bump skill's Crossing to 0.5 section.",
       "compatibility": "compatible",
       "migration": "none",
@@ -11557,7 +11578,7 @@
           "summary": "Revision 1.66.0+skills.2; version one patch higher; text otherwise unchanged."
         }
       ],
-      "entry_sha256": "b7b5106d1ef8cccd00f507fbb891665f60153ec53ac922ccdbe1224feaa1a3e2"
+      "entry_sha256": "211d1e0274b47d4e2127f3b0a93d60c17a3b6da78705715c275c3bde9459e303"
     }
   ]
 }
