@@ -1,5 +1,5 @@
 {
-  "base_sha": "b3b5d9d2a3fcf1460b93f7f3ae849983f24cbae1",
+  "base_sha": "22174f84fb41dcba53d76d108778a7bf210377f1",
   "case": "certified-olympus-mv-single-step",
   "entry": "built",
   "description": "certified family olympus-mv-single-step rendered fixture, read in place with --family olympus-mv-single-step",

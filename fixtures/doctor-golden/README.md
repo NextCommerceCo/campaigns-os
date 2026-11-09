@@ -6,10 +6,16 @@ inputs for the built-output checks). They were taken at base
 of the refactor landed. `src/doctor-golden.test.mjs` regenerates each case
 and compares it with its file here.
 
-Regenerated once since, for the #729 family script divergence advisory, a
-reviewed behavior change: ten cases gained its record, ready line and
-warning (the eight certified families and the two failing-script-syntax
-packet cases), and every other case changed only its `base_sha`.
+Regenerations since, each a separately reviewed behavior change:
+
+- #729 family script divergence advisory: ten cases gained its record, ready
+  line and warning (the eight certified families and the two
+  failing-script-syntax packet cases); every other case changed only its
+  `base_sha`.
+- #729 advisory script API/storage observations: three
+  `built_output.script_observations.sdk_prefixed_storage` warnings in
+  `built-certified-shop-three-step.json`; every other case changed only its
+  `base_sha`.
 
 ## Rules for refactor changes
 

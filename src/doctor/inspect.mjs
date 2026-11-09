@@ -23,6 +23,7 @@ import { UPSELL_SELECTOR_SCOPE, builtPageTypeOverRouteGuess } from "../upsell-se
 import { CAMPAIGN_IDENTITY } from "../campaign-identity.mjs";
 import { SDK_MARKUP } from "../sdk-markup.mjs";
 import { SCRIPT_SYNTAX, collectBuiltScriptSyntaxInputs } from "../built-script-syntax.mjs";
+import { collectBuiltScriptObservations } from "../built-script-observations.mjs";
 import { FAMILY_SCRIPT_DIVERGENCE, collectFamilyScriptDivergence, familyScriptCandidates, recordFamilyScriptDivergence } from "../family-script-divergence.mjs";
 import { CART_PLACEHOLDERS } from "../cart-placeholders.mjs";
 import { SMOKE_QC } from "../built-smoke-qc.mjs";
@@ -51,6 +52,7 @@ import {
   sharedBuiltPages,
   recordCampaignIdentityGate,
   recordScriptSyntaxGate,
+  recordScriptObservations,
   recordSdkMarkupGate,
   recordCartPlaceholders,
   collectCartPlaceholderPages,
@@ -390,6 +392,9 @@ function inspectBuiltOutput(args) {
     derived,
   });
   derived.doctor_checks.push(SCRIPT_SYNTAX);
+  // API/storage observations in the same scripts (#729): advisory warnings
+  // only, traced under the script syntax check whose references they read.
+  recordScriptObservations({ inputs: collectBuiltScriptObservations(scope, targetRepo), warnings });
 
   // Family script divergence (#729). Advisory, and only with --family (the
   // family names the reference) and pages that load a local script.

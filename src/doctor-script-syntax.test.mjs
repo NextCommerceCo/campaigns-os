@@ -4,6 +4,8 @@
 // `});` in js/checkout.js, the shape that shipped.
 
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import * as nodeModule from "node:module";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -693,4 +695,89 @@ test("script references are one flat record per reference, resolved once per ins
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("the adapter's shared parse gives each script exactly parseScriptSyntax's result, in and outside a snapshot", () => {
+  const dir = mkdtempSync(join(tmpdir(), "script-syntax-shared-parse-"));
+  try {
+    const site = join(dir, "_site");
+    const campaign = join(site, SLUG);
+    mkdirSync(join(campaign, "js"), { recursive: true });
+    const sources = {
+      "good.js": GOOD,
+      "extra-brace.js": `${GOOD}\n});\n`,
+      // Passes as a module, fails as a classic script, and the reverse.
+      "export.js": "export const a = 1;",
+      "html-comment.js": "<!-- legacy\nvar a = 1;",
+    };
+    for (const [name, source] of Object.entries(sources)) writeFileSync(join(campaign, "js", name), source);
+    const page = join(campaign, "index.html");
+    writeFileSync(page, Object.keys(sources).flatMap((name) => [`<script src="/${SLUG}/js/${name}"></script>`, `<script type="module" src="/${SLUG}/js/${name}"></script>`]).join(""));
+    const scope = { site_root: site, campaign_dir: campaign, pages: [{ page_id: "home", built_path: page }] };
+    const expected = Object.entries(sources).flatMap(([name, source]) => [false, true].map((module) => [name, module, parseScriptSyntax(source, { module })]));
+    const actual = (inputs) => inputs.scripts.map((script) => [script.file.split("/").pop(), script.module, script.syntax]);
+    assert.deepEqual(actual(collectBuiltScriptSyntaxInputs(scope, dir)), expected);
+    withHtmlScanSnapshot(() => {
+      const inputs = collectBuiltScriptSyntaxInputs(scope, dir);
+      assert.deepEqual(actual(inputs), expected);
+      assert.equal(evaluateBuiltScriptSyntax(inputs).findings.length, expected.filter(([, , failure]) => failure).length);
+      // The evaluator stays pure: content alone is parsed there, with the same result.
+      const contentOnly = inputs.scripts.map(({ syntax, ...script }) => script);
+      // The adapter's syntax can be deleted, so the evaluator parses content again.
+      const dropped = inputs.scripts.map((script) => { const copy = Object.defineProperties({}, Object.getOwnPropertyDescriptors(script)); delete copy.syntax; return copy; });
+      assert.ok(dropped.every((script) => !("syntax" in script)));
+      assert.deepEqual(evaluateBuiltScriptSyntax({ ...inputs, scripts: dropped }).findings, evaluateBuiltScriptSyntax(inputs).findings);
+      assert.deepEqual(evaluateBuiltScriptSyntax({ ...inputs, scripts: contentOnly }).findings, evaluateBuiltScriptSyntax(inputs).findings);
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// Counts every acorn parse src/ makes during one doctor run, in a child
+// process: src/ binds acorn's parse at link time, so a resolve hook swaps in
+// a wrapper that records (sourceType, text) before forwarding.
+const COUNT_ACORN_PARSES = `
+import { registerHooks } from "node:module";
+import { pathToFileURL } from "node:url";
+const [root, built, slug, mode] = process.argv.slice(1);
+const src = pathToFileURL(root + "/src/").href;
+const wrapper = (real) => "data:text/javascript," + encodeURIComponent(
+  "import * as real from " + JSON.stringify(real) + "; export * from " + JSON.stringify(real) + ";"
+  + "export function parse(input, options) { (globalThis.acornParses ??= []).push((options && options.sourceType) + String.fromCharCode(0) + input); return real.parse(input, options); }");
+registerHooks({ resolve(specifier, context, next) {
+  const resolved = next(specifier, context);
+  return specifier === "acorn" && context.parentURL?.startsWith(src) ? { ...resolved, url: wrapper(resolved.url), shortCircuit: true } : resolved;
+} });
+const { doctorBuiltOutput } = await import(src + "doctor/inspect.mjs");
+const { collectBuiltScriptSyntaxInputs } = await import(src + "built-script-syntax.mjs");
+const { resolveBuiltSiteScope } = await import(src + "built-site-scope.mjs");
+const { withHtmlScanSnapshot } = await import(src + "html-scan.mjs");
+globalThis.acornParses = [];
+let observations = null;
+if (mode === "references") {
+  // Only what the fixture refresh reads: the references, never syntax.
+  withHtmlScanSnapshot(() => collectBuiltScriptSyntaxInputs(resolveBuiltSiteScope(built, { slug }), built).scripts.map((script) => script.file));
+} else {
+  observations = doctorBuiltOutput({ built, slug }).warnings.filter((w) => w.code.startsWith("built_output.script_observations.")).length;
+}
+const parses = globalThis.acornParses;
+console.log(JSON.stringify({ calls: parses.length, distinct: new Set(parses).size, observations }));
+`;
+// module.registerHooks arrived in Node 22.15; the supported range starts at 20.19.
+const NEEDS_REGISTER_HOOKS = typeof nodeModule.registerHooks === "function" ? false : "counting parses needs Node >= 22.15 (module.registerHooks)";
+const countAcornParses = (mode = "doctor") => {
+  const root = resolve(new URL("..", import.meta.url).pathname);
+  const run = spawnSync(process.execPath, ["--input-type=module", "-e", COUNT_ACORN_PARSES, root, join(root, "fixtures", "script-observations"), SLUG, mode], { encoding: "utf8", timeout: 60_000 });
+  assert.equal(run.status, 0, run.stderr);
+  return JSON.parse(run.stdout.trim().split("\n").at(-1));
+};
+
+test("one doctor run parses each local script once per mode: the syntax gate and the observations share the program", { skip: NEEDS_REGISTER_HOOKS }, () => {
+  // supported, ambiguous, shadowed and global-fetch as classic scripts; aliases and global-fetch as modules.
+  assert.deepEqual(countAcornParses(), { calls: 6, distinct: 6, observations: 12 });
+});
+
+test("collecting the syntax inputs parses nothing until a script's syntax is read", { skip: NEEDS_REGISTER_HOOKS }, () => {
+  assert.deepEqual(countAcornParses("references"), { calls: 0, distinct: 0, observations: null });
 });

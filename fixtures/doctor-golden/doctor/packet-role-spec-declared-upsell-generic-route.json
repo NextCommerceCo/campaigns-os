@@ -1,5 +1,5 @@
 {
-  "base_sha": "b3b5d9d2a3fcf1460b93f7f3ae849983f24cbae1",
+  "base_sha": "22174f84fb41dcba53d76d108778a7bf210377f1",
   "case": "role-spec-declared-upsell-generic-route",
   "entry": "packet",
   "description": "conflicting role: the spec declares the upsell page at special-offer/, a route that infers nothing, with no meta and an unscoped selector (blocked by the declaration)",
