@@ -141,6 +141,14 @@ test("a const or destructure that binds a global's own name to that global still
   assert.deepEqual(shape("(function (window) { window.fetch = f; })(w);"), [], "a parameter still shadows");
   // One global read, one finding: the alias named nextDebug is not reported again where it is used.
   assert.deepEqual(shape("const nextDebug = window.nextDebug; nextDebug.stores.cart; nextDebug.x;"), [["sdk_debug_surface", "read", "window.nextDebug", null]]);
+  // A destructure reads the global where it destructures, once.
+  assert.deepEqual(shape("const { nextDebug } = window; nextDebug.stores.cart;"), [["sdk_debug_surface", "read", "window.nextDebug", null]]);
+  assert.deepEqual(shape("const { nextDebug: d } = self; d.stores;"), [["sdk_debug_surface", "read", "self.nextDebug", null]]);
+  assert.deepEqual(shape("function f(window) { const { nextDebug } = window; }"), [], "a shadowed window");
+  // A destructured window is the global object too; a mutable one is not.
+  assert.deepEqual(shape("const { window } = globalThis; window.fetch = f;"), [["network_global_replaced", "replace", "window.fetch", null]]);
+  assert.deepEqual(shape("const { self: w } = window; w.fetch = f;"), [["network_global_replaced", "replace", "window.fetch", null]]);
+  assert.deepEqual(shape("let { window } = globalThis; window.fetch = f;"), []);
 });
 
 test("logical assignment does not replace a defined fetch, and delete reads as a removal", () => {

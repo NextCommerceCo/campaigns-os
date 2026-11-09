@@ -165,6 +165,15 @@ export function observeScriptProgram(program, { module = false } = {}) {
         add(SCRIPT_OBSERVATION_NETWORK_GLOBAL_REPLACED, node.id, { operation: "replace", receiver: "fetch" });
       }
     }
+    // A destructure from the global object reads nextDebug there:
+    // `const { nextDebug } = window` (its later uses are an alias, not reported).
+    if (node.type === "VariableDeclarator" && node.id.type === "ObjectPattern" && node.init) {
+      const global = browserGlobal(node.init, scopes.get(node));
+      for (const property of global && !global.shadowed ? node.id.properties : []) {
+        const key = property.type === "Property" ? (property.computed ? literal(property.key, scopes.get(node)) : property.key.name) : null;
+        if (key === "nextDebug") add(SCRIPT_OBSERVATION_SDK_DEBUG_SURFACE, property, { operation: "read", receiver: `${node.init.name}.nextDebug` });
+      }
+    }
     const name = node.type === "Identifier" ? node.name : node.type === "MemberExpression" ? memberName(node) : null;
     // Only the global itself: an alias (`const d = window.nextDebug`, or one
     // named nextDebug) is reported where it reads the global, not again where
