@@ -127,7 +127,7 @@ test('a snapshot shares one tree per held file and profile across consumers, and
     first = htmlScanDocuments([path])(path, text);
     writeFileSync(path, '<p>changed</p>');
     assert.equal(htmlScanDocuments([path])(path, text), first);
-    assert.equal(htmlScanDocuments([path], 'noloc')(path, 'ignored once shared'), first);
+    assert.equal(htmlScanDocuments([path], 'noloc')(path, text), first);
     assert.throws(() => htmlScanDocuments([path], 'loc'), /Unknown HTML parse profile: loc/);
   });
   withHtmlScanSnapshot(() => assert.notEqual(htmlScanDocuments([path])(path, readHtmlScanText(path)), first));
@@ -157,6 +157,9 @@ test('a page set past the parse budget, or with a file the snapshot does not hol
     assert.equal(unheld(small, '<p>given</p>').childNodes[0].childNodes[1].childNodes[0].childNodes[0].value, 'given');
     const alone = htmlScanDocuments([small]);
     assert.equal(alone(small, '<p>small</p>'), alone(small, '<p>small</p>'));
+    // A shared tree is handed back only for the held text; other text is parsed as given.
+    assert.notEqual(alone(small, '<p>edited</p>'), alone(small, '<p>small</p>'));
+    assert.equal(alone(small, '<p>edited</p>').childNodes[0].childNodes[1].childNodes[0].childNodes[0].value, 'edited');
   });
 });
 
@@ -193,6 +196,7 @@ test('nested snapshots share one retention budget, and nesting past the depth li
     writeFileSync(small, 'deeper');
     return readHtmlScanText(small);
   })()));
+  // The outermost snapshot plus four nested levels are cached; a fifth nested level is not.
   assert.equal(nest(4), 'depth');
   writeFileSync(small, 'depth');
   assert.equal(nest(5), 'deeper');

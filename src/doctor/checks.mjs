@@ -2267,10 +2267,11 @@ function sharedBuiltSiteScope(targetRepo, slug) {
   return htmlScanMemo(JSON.stringify(["built-site-scope", resolve(targetRepo), slug ?? null]), () => resolveBuiltSiteScope(targetRepo, { slug }));
 }
 
-// A scope's built pages as the upsell-selector and SDK markup gates read them,
-// through the shared input context: each page's bytes once, and one parse5
-// tree for both gates, parsed only when a gate asks for it (`document`) and
-// shared only while the page set fits the parse budget.
+// A scope's built pages as the upsell-selector and SDK markup gates read them.
+// Each gate calls this for its own page list; the shared input context behind
+// it reads each page's bytes once and keeps one parse5 tree per page for both
+// gates, parsed only when a gate asks for it (`document`) and shared only while
+// the page set fits the parse budget.
 function sharedBuiltPages(scope, targetRepo) {
   const contents = scope.pages.map((page) => readHtmlScanText(page.built_path));
   const documentOf = htmlScanDocuments(scope.pages.map((page) => page.built_path));

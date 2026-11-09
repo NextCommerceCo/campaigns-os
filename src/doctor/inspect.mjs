@@ -357,7 +357,10 @@ function inspectBuiltOutput(args) {
   });
   derived.doctor_checks.push(CAMPAIGN_IDENTITY);
 
-  // Static SDK markup checks (#303). Same placement, same reasons.
+  // Static SDK markup checks (#303). Same placement, same reasons. No
+  // page_type here: this path has no spec to declare a receipt, and the
+  // route-inferred type (route_type) is deliberately not one, so the gate
+  // reads only each page's own next-page-type meta, as it always has.
   recordSdkMarkupGate({
     subject: {
       public_route_slug: scope.slug || null,

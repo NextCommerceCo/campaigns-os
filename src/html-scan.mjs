@@ -12,8 +12,9 @@ import { parse } from 'parse5';
 // snapshot, so it never sees bytes from before the write.
 //
 // Budgets are aggregate: a nested fresh snapshot (an inspection inside an
-// inspection) counts against its parent's ledger, and past MAX_DEPTH nesting
-// runs uncached. Beyond any budget the input is read, parsed or collected per
+// inspection) counts against its parent's ledger. The outermost snapshot is
+// depth 0; up to MAX_DEPTH nested levels below it are cached, and deeper ones
+// run uncached. Beyond any budget the input is read, parsed or collected per
 // use, as it was before the snapshot existed. Read failures are never
 // retained, so an unavailable input stays unavailable to each consumer on its
 // own terms.
@@ -118,8 +119,9 @@ export function htmlScanDigest(path) {
 // Shared parse5 trees for a set of files whose bytes the snapshot already
 // holds, one whole-document tree per file and profile, for every consumer in
 // the snapshot that asks with the same profile. Returns
-// `(path, text) => document`, parsing on first use; `text` is the caller's
-// copy of the file's text, parsed as-is when the tree is not shared. Template
+// `(path, text) => document`, parsing on first use. The tree always matches
+// the `text` given: the shared tree is handed back only when `text` is the
+// held text, and any other text is parsed per use. Template
 // content and other nested contexts stay inside the tree as parse5 builds
 // them; a consumer that reparses a fragment (noscript, srcdoc) does so itself.
 // Consumers read a shared tree and never change it.
@@ -148,16 +150,17 @@ export function htmlScanDocuments(paths, profile = 'noloc') {
   snapshot.ledger.parseCost += cost;
   return (path, text) => {
     const entry = snapshot.active ? snapshot.files.get(realKey(snapshot, path)) : null;
-    if (!entry?.documents.has(profile)) return parseText(text);
+    if (!entry?.documents.has(profile) || text !== (entry.text ??= entry.bytes.toString('utf8'))) return parseText(text);
     let document = entry.documents.get(profile);
-    if (!document) entry.documents.set(profile, document = parseText(entry.text ??= entry.bytes.toString('utf8')));
+    if (!document) entry.documents.set(profile, document = parseText(entry.text));
     return document;
   };
 }
 
 // A collection computed once per snapshot under `key` (built-site scope, a
-// source tree's permalinks). Frozen one level down, arrays and their items
-// included, so no consumer can change what the next one reads.
+// source tree's permalinks); past the memo budget it is computed per use.
+// Frozen one level down: the value, its object and array children, and those
+// arrays' items. Deeper values are not frozen, so a memo holds flat records.
 export function htmlScanMemo(key, compute) {
   const snapshot = snapshots.getStore();
   if (!snapshot?.active) return freezeShallow(compute());
