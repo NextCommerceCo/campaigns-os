@@ -694,3 +694,36 @@ test("script references are one flat record per reference, resolved once per ins
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("the adapter's shared parse gives each script exactly parseScriptSyntax's result, in and outside a snapshot", () => {
+  const dir = mkdtempSync(join(tmpdir(), "script-syntax-shared-parse-"));
+  try {
+    const site = join(dir, "_site");
+    const campaign = join(site, SLUG);
+    mkdirSync(join(campaign, "js"), { recursive: true });
+    const sources = {
+      "good.js": GOOD,
+      "extra-brace.js": `${GOOD}\n});\n`,
+      // Passes as a module, fails as a classic script, and the reverse.
+      "export.js": "export const a = 1;",
+      "html-comment.js": "<!-- legacy\nvar a = 1;",
+    };
+    for (const [name, source] of Object.entries(sources)) writeFileSync(join(campaign, "js", name), source);
+    const page = join(campaign, "index.html");
+    writeFileSync(page, Object.keys(sources).flatMap((name) => [`<script src="/${SLUG}/js/${name}"></script>`, `<script type="module" src="/${SLUG}/js/${name}"></script>`]).join(""));
+    const scope = { site_root: site, campaign_dir: campaign, pages: [{ page_id: "home", built_path: page }] };
+    const expected = Object.entries(sources).flatMap(([name, source]) => [false, true].map((module) => [name, module, parseScriptSyntax(source, { module })]));
+    const actual = (inputs) => inputs.scripts.map((script) => [script.file.split("/").pop(), script.module, script.syntax]);
+    assert.deepEqual(actual(collectBuiltScriptSyntaxInputs(scope, dir)), expected);
+    withHtmlScanSnapshot(() => {
+      const inputs = collectBuiltScriptSyntaxInputs(scope, dir);
+      assert.deepEqual(actual(inputs), expected);
+      assert.equal(evaluateBuiltScriptSyntax(inputs).findings.length, expected.filter(([, , failure]) => failure).length);
+      // The evaluator stays pure: content alone is parsed there, with the same result.
+      const contentOnly = inputs.scripts.map(({ syntax, ...script }) => script);
+      assert.deepEqual(evaluateBuiltScriptSyntax({ ...inputs, scripts: contentOnly }).findings, evaluateBuiltScriptSyntax(inputs).findings);
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
