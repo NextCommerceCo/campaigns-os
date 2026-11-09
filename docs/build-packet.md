@@ -1175,6 +1175,50 @@ canonical rendered output of every certified starter family
 it reads for credential declarations (`script-parse:<page_id>`; see
 [QA and test orders](qa-and-test-orders.md)).
 
+### Built-output script API and storage observations (`built_output.script_observations`)
+
+The same local scripts are also read for code that reaches past the SDK's
+public surface: the page keeps working, and the cost lands on the next SDK
+release. These are advisory warnings, never blockers, with no gate, ready line
+or `derived.doctor_checks` entry of their own; a campaign with nothing to
+observe reads exactly as before. Each warning names the operation and
+`<file>:<line>:<column>`, and claims only what the code shows:
+
+- `built_output.script_observations.sdk_prefixed_storage`: a `localStorage` or
+  `sessionStorage` read, write or removal whose key starts `next-` or `next_`.
+  The receiver must be the browser's own storage, not a parameter or local
+  variable of that name, reached directly, through `window`, `globalThis` or
+  `self`, or through a `const` or destructured alias. The key, or its literal
+  start (`'next_funnel_name__' + scope`), must resolve statically. The prefix
+  alone does not establish that the SDK owns the key, and the message says so.
+- `built_output.script_observations.network_global_replaced`: an assignment
+  that replaces the page's `fetch` (including `Object.defineProperty(window,
+  'fetch', ...)` and, in a classic script, a top-level `function fetch` or
+  initialized `var fetch`) or `XMLHttpRequest.prototype.open`/`send`. Every
+  request through it, the SDK's included, then runs through that code. Whether
+  it changes an SDK request is not established statically, so no bypass is
+  claimed.
+- `built_output.script_observations.sdk_debug_surface`: a reference to the
+  `nextDebug` global, the SDK's debugging surface, reported where the global
+  is read rather than again through an alias.
+- `built_output.script_observations.sdk_private_member`: an underscore member
+  reached from the SDK's `next` or `NextCommerce` global through plain
+  property reads. An underscore member on any other receiver is not reported:
+  the name alone does not make the receiver the SDK's.
+
+Each script is read as the browser reads it, classic or module, so the same
+file loaded both ways is observed twice: a top-level `function fetch` replaces
+the global in a classic script and is module-local in a module. Remote and
+missing scripts are not read, and a script that cannot be read or does not
+parse has no observations (the script syntax gate reports it). Each finding
+(`detail.finding`) records `file`, `line`, `column`, `source_type`, `pages`,
+`operation`, `receiver`, `key` (`text` and `match`: `exact` or `prefix`) for
+storage, `delivery` (`local`), `ownership` (`unknown`: doctor has no family
+reference yet to tell campaign code from a family copy) and `provenance`
+(null). Doctor lists the first 50 and counts the rest under
+`built_output.script_observations.truncated`. Fixtures:
+`fixtures/script-observations`.
+
 ### Built-output cart placeholder check (`built_output.cart_placeholders`)
 
 **Raw cart placeholders (`built_output.cart_placeholders`).** Doctor warns when a known SDK placeholder, such as `{item.name}`, `{subtotal}` or `{package.name}`, appears in live built HTML text or in a text attribute (`alt`, `title`, `placeholder`, `aria-label`, button `value`), where it prints as raw text. Placeholders inside `<template>`, inside `data-next-cart-items`/`data-next-order-items` rows and their declared row templates, and SDK-substituted quantity text are expected. Brace strings that are not known SDK placeholders, including `{tax}`, are review results. The placeholder list is vendored from the SDK version pinned in `src/sdk-attribute-index.mjs`. Pages whose SDK loader does not name an exact version, or names a version the list was not verified against, are reported as unexercised rather than passing. These are warnings, never blockers.

@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
 import { readFileSync, realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { parse as parseJs } from 'acorn';
 import { parse } from 'parse5';
 
 // The shared input context of one read-only doctor inspection (#730): source
@@ -156,6 +157,56 @@ export function htmlScanDocuments(paths, profile = 'noloc') {
     let document = entry.documents.get(profile);
     if (!document) entry.documents.set(profile, document = parseText(entry.text));
     return document;
+  };
+}
+
+// Shared acorn programs for a set of local scripts whose bytes the snapshot
+// already holds, one per file and source type (`script` or `module`: the
+// same bytes can parse differently, or fail, as either). Returns
+// `(path, module, text) => program`, parsing on first use with locations, and
+// throwing the parser's error for a script that does not parse (a failure is
+// shared like a tree). The program always matches the `text` given, as with
+// htmlScanDocuments, and consumers never change it.
+//
+// The same whole-set-or-none rule as htmlScanDocuments, for the same V8
+// pretenuring reason, against the same parse budget. An acorn program with
+// locations measured 21x its UTF-8 source in heap on the certified-family
+// scripts; the estimate leaves room for denser code.
+const SCRIPT_PARSE_COST_PER_BYTE = 32;
+export function htmlScanScriptPrograms(scripts) {
+  const parseText = (text, module) => parseJs(text, { ecmaVersion: 'latest', sourceType: module ? 'module' : 'script', locations: true, allowHashBang: true });
+  const perUse = (path, module, text) => parseText(text, module);
+  const snapshot = snapshots.getStore();
+  if (!snapshot?.active) return perUse;
+  const wanted = new Map();
+  for (const { path, module } of scripts) {
+    const entry = snapshot.files.get(realKey(snapshot, path));
+    if (!entry) return perUse;
+    wanted.set(`${realKey(snapshot, path)}\u0000${module ? 'module' : 'script'}`, { entry, type: module ? 'module' : 'script' });
+  }
+  const pending = [...wanted.values()].filter(({ entry, type }) => !entry.programs?.has(type));
+  const cost = pending.reduce((sum, { entry }) => sum + entry.bytes.length * SCRIPT_PARSE_COST_PER_BYTE, 0);
+  if (snapshot.ledger.parseCost + cost > MAX_RETAINED_PARSE_COST) return perUse;
+  for (const { entry, type } of pending) {
+    (entry.programs ??= new Map()).set(type, null);
+    entry.parseCost += entry.bytes.length * SCRIPT_PARSE_COST_PER_BYTE;
+  }
+  snapshot.ledger.parseCost += cost;
+  return (path, module, text) => {
+    const type = module ? 'module' : 'script';
+    const entry = snapshot.active ? snapshot.files.get(realKey(snapshot, path)) : null;
+    if (!entry?.programs?.has(type) || text !== (entry.text ??= entry.bytes.toString('utf8'))) return parseText(text, module);
+    let parsed = entry.programs.get(type);
+    if (!parsed) {
+      try {
+        parsed = { program: parseText(entry.text, module) };
+      } catch (error) {
+        parsed = { error };
+      }
+      entry.programs.set(type, parsed);
+    }
+    if (parsed.error) throw parsed.error;
+    return parsed.program;
   };
 }
 

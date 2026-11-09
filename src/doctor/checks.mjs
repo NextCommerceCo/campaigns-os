@@ -88,6 +88,7 @@ import {
 import { CAMPAIGN_IDENTITY, evaluateCampaignIdentity, externalScriptSources } from "../campaign-identity.mjs";
 import { SDK_MARKUP, evaluateSdkMarkup } from "../sdk-markup.mjs";
 import { SCRIPT_SYNTAX, collectBuiltScriptSyntaxInputs, evaluateBuiltScriptSyntax } from "../built-script-syntax.mjs";
+import { collectBuiltScriptObservations, evaluateBuiltScriptObservations } from "../built-script-observations.mjs";
 import { CART_PLACEHOLDERS, CART_PLACEHOLDERS_LIMITS, evaluateCartPlaceholders, isFileReadFailure } from "../cart-placeholders.mjs";
 import { SMOKE_QC, SMOKE_QC_LIMITS, builtFileOf, evaluateSmokeQc, insideRoot, isBuiltPageReadFailure, pageScriptSources, parseBuiltPage, realPathOf } from "../built-smoke-qc.mjs";
 import { recordQcResults } from "../qc-results.mjs";
@@ -2492,6 +2493,7 @@ function validateBuiltScriptSyntax(packet, errors, warnings, ready, derived) {
     ready,
     derived,
   });
+  if (scope?.ok) recordScriptObservations({ inputs: collectBuiltScriptObservations(scope, targetRepo), warnings });
 }
 
 function recordScriptSyntaxGate({ subject, inputs, errors, warnings, ready, derived }) {
@@ -2516,6 +2518,15 @@ function recordScriptSyntaxGate({ subject, inputs, errors, warnings, ready, deri
   }
   ready.push(`All ${gate.scripts_scanned} campaign-owned script(s) loaded by built pages parse`);
   return gate;
+}
+
+// API/storage observations in the same scripts (#729). Advisory: warnings
+// only, whatever any gate decided, with no ready line, gate or registry entry
+// of their own, so a campaign with nothing to observe reads exactly as before.
+// They run with the script syntax check because they read the same script
+// references.
+function recordScriptObservations({ inputs, warnings }) {
+  for (const item of evaluateBuiltScriptObservations(inputs)) addIssue(warnings, item.code, item.message, { finding: item.finding });
 }
 
 // Raw cart placeholders. Every doctor invocation, both entry
@@ -5349,6 +5360,7 @@ export {
   sharedBuiltPages,
   recordCampaignIdentityGate,
   recordScriptSyntaxGate,
+  recordScriptObservations,
   recordSdkMarkupGate,
   recordCartPlaceholders,
   collectCartPlaceholderPages,

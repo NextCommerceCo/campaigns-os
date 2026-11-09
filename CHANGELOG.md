@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.66.0+agent.7] - 2026-11-09
+
+### Added
+
+- **Doctor warns about campaign scripts that reach past the SDK's public surface (#729, #730 milestone 3).** Advisory only: new warnings under `built_output.script_observations.*`, never a blocker, and no new gate, ready line or doctor check entry, so a campaign with nothing to observe reads exactly as before. Doctor reads each local script a built page loads, as a classic script or a module the way the browser does, and names the operation, file, line and column of a storage read, write or removal whose key starts with the SDK's `next-`/`next_` prefix (`sdk_prefixed_storage`), a replaced `fetch` or `XMLHttpRequest.prototype.open`/`send` (`network_global_replaced`), a reference to the SDK's `nextDebug` debugging global (`sdk_debug_surface`), and an underscore member reached from the SDK's `next` or `NextCommerce` global (`sdk_private_member`). A finding needs a verified receiver: a parameter or local variable named `sessionStorage`, `window` or `next` shadows the global, and an underscore member on any other receiver is not reported. Messages claim no SDK bypass or SDK ownership: a prefix or a fetch reassignment alone does not establish either. The certified shop-three-step family's billing script now shows three `sdk_prefixed_storage` warnings, for its reads of `next-checkout-store` and `next_funnel_name__<scope>`. Script programs are parsed once per run and shared through the run's input snapshot, whole set or none, within its parse budget.
+
 ## [1.66.0+agent.6] - 2026-11-09
 
 ### Changed
