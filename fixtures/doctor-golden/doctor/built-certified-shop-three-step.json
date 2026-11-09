@@ -1,5 +1,5 @@
 {
-  "base_sha": "e1c5bc9c6dc2745d6f2bd54f37f89319ce7f915a",
+  "base_sha": "fc766101cbe102bfbbfc99867b24ef1f5c16dcd0",
   "case": "certified-shop-three-step",
   "entry": "built",
   "description": "certified family shop-three-step rendered fixture, read in place with --family shop-three-step",
@@ -20,6 +20,84 @@
       {
         "code": "template_contract.literal_residue",
         "message": "Built output contains generic starter/template placeholders: target:js/promo-timer.js:305 \"XXCODE\"; target:upsell-bundle-stepper/index.html:153 \"Product Title\"; target:upsell-bundle-tier-cards/index.html:151 \"Product Title\"; target:upsell-bundle-tier-pills/index.html:193 \"Product Title\"; target:upsell-single/index.html:161 \"Product Title\". Replace these from CampaignSpec/API or remove dead template references."
+      },
+      {
+        "code": "built_output.script_observations.sdk_prefixed_storage",
+        "message": "_site/shop-three-step/js/checkout-shop-three-billing.js:28:21 reads the sessionStorage key \"next-checkout-store\" (local classic script, loaded by billing, shipping; owner not established). The key starts with the SDK's next prefix, but the name alone does not establish that the SDK owns it. If it is SDK state, use the SDK's public API, attributes or events instead: its storage keys can change in any release, as the scoping in 0.4.34 did. If the campaign owns it, give it a name off the next prefix.",
+        "detail": {
+          "finding": {
+            "code": "built_output.script_observations.sdk_prefixed_storage",
+            "file": "_site/shop-three-step/js/checkout-shop-three-billing.js",
+            "line": 28,
+            "column": 21,
+            "source_type": "script",
+            "pages": [
+              "billing",
+              "shipping"
+            ],
+            "operation": "read",
+            "receiver": "sessionStorage",
+            "key": {
+              "text": "next-checkout-store",
+              "match": "exact"
+            },
+            "delivery": "local",
+            "ownership": "unknown",
+            "provenance": null
+          }
+        }
+      },
+      {
+        "code": "built_output.script_observations.sdk_prefixed_storage",
+        "message": "_site/shop-three-step/js/checkout-shop-three-billing.js:41:27 reads a sessionStorage key starting \"next_funnel_name__\" (the rest is computed) (local classic script, loaded by billing, shipping; owner not established). The key starts with the SDK's next prefix, but the name alone does not establish that the SDK owns it. If it is SDK state, use the SDK's public API, attributes or events instead: its storage keys can change in any release, as the scoping in 0.4.34 did. If the campaign owns it, give it a name off the next prefix.",
+        "detail": {
+          "finding": {
+            "code": "built_output.script_observations.sdk_prefixed_storage",
+            "file": "_site/shop-three-step/js/checkout-shop-three-billing.js",
+            "line": 41,
+            "column": 27,
+            "source_type": "script",
+            "pages": [
+              "billing",
+              "shipping"
+            ],
+            "operation": "read",
+            "receiver": "sessionStorage",
+            "key": {
+              "text": "next_funnel_name__",
+              "match": "prefix"
+            },
+            "delivery": "local",
+            "ownership": "unknown",
+            "provenance": null
+          }
+        }
+      },
+      {
+        "code": "built_output.script_observations.sdk_prefixed_storage",
+        "message": "_site/shop-three-step/js/checkout-shop-three-billing.js:42:14 reads a localStorage key starting \"next_funnel_name__\" (the rest is computed) (local classic script, loaded by billing, shipping; owner not established). The key starts with the SDK's next prefix, but the name alone does not establish that the SDK owns it. If it is SDK state, use the SDK's public API, attributes or events instead: its storage keys can change in any release, as the scoping in 0.4.34 did. If the campaign owns it, give it a name off the next prefix.",
+        "detail": {
+          "finding": {
+            "code": "built_output.script_observations.sdk_prefixed_storage",
+            "file": "_site/shop-three-step/js/checkout-shop-three-billing.js",
+            "line": 42,
+            "column": 14,
+            "source_type": "script",
+            "pages": [
+              "billing",
+              "shipping"
+            ],
+            "operation": "read",
+            "receiver": "localStorage",
+            "key": {
+              "text": "next_funnel_name__",
+              "match": "prefix"
+            },
+            "delivery": "local",
+            "ownership": "unknown",
+            "provenance": null
+          }
+        }
       }
     ],
     "ready": [

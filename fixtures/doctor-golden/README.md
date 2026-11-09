@@ -6,6 +6,13 @@ inputs for the built-output checks). They were taken at base
 of the refactor landed. `src/doctor-golden.test.mjs` regenerates each case
 and compares it with its file here.
 
+Regenerations since, each a separately reviewed behavior change:
+
+- #729 advisory script API/storage observations: three
+  `built_output.script_observations.sdk_prefixed_storage` warnings in
+  `built-certified-shop-three-step.json`. Every other file changed only its
+  `base_sha`.
+
 ## Rules for refactor changes
 
 - A #730 refactor change must reproduce every file exactly. Any diff is a

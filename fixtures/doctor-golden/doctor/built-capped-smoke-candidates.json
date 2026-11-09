@@ -1,5 +1,5 @@
 {
-  "base_sha": "e1c5bc9c6dc2745d6f2bd54f37f89319ce7f915a",
+  "base_sha": "fc766101cbe102bfbbfc99867b24ef1f5c16dcd0",
   "case": "capped-smoke-candidates",
   "entry": "built",
   "description": "capped: a page with exactly 2,000 smoke candidates (no cap) and one with 2,001 (candidate_cap_reached, earlier findings retained)",

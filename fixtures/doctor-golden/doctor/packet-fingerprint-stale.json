@@ -1,5 +1,5 @@
 {
-  "base_sha": "e1c5bc9c6dc2745d6f2bd54f37f89319ce7f915a",
+  "base_sha": "fc766101cbe102bfbbfc99867b24ef1f5c16dcd0",
   "case": "fingerprint-stale",
   "entry": "packet",
   "description": "build fingerprint: assembly completed, one page edited and 21 files added after the recorded build (stale, drift path lists capped at 20)",

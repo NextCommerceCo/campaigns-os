@@ -1,5 +1,5 @@
 {
-  "base_sha": "e1c5bc9c6dc2745d6f2bd54f37f89319ce7f915a",
+  "base_sha": "fc766101cbe102bfbbfc99867b24ef1f5c16dcd0",
   "case": "smoke-development",
   "entry": "packet",
   "description": "smoke QC: a recorded development build with Tailwind CDN, loopback, primary asset host and og:image relative/absolute, present/missing",
