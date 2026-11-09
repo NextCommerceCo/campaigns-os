@@ -4347,14 +4347,15 @@ function htmlIncludesRouteReference(html, expectedUrl) {
 // A data-upsell-proxy button forwards its click to the SDK action of its own
 // spelling inside the offer. With no such action, the route's URL can still sit
 // in the page's meta tags, so the reference match would pass a control that
-// does nothing.
+// does nothing. upsells.js forwards only to data-next-upsell-action, so a
+// proxy spelled acceptUpsell / skipUpsell has nothing it can forward to.
 function findDeadUpsellProxy(html, kind, page) {
   if (page.page_type !== "upsell" || kind === "next") return null;
   for (const action of UPSELL_ACTION_SPELLINGS[kind]) {
     if (!new RegExp(`\\bdata-upsell-proxy\\s*=\\s*["']${action}["']`, "i").test(html)) continue;
-    const target = upsellActionPattern(action);
+    const target = new RegExp(`\\bdata-next-upsell-action\\s*=\\s*["']${action}["']`, "i");
     if (upsellOfferElements(html).some((offer) => target.test(offer))) continue;
-    return `data-upsell-proxy="${action}" with no ${upsellActionAttribute(action)}="${action}" inside the offer to forward to`;
+    return `data-upsell-proxy="${action}" with no data-next-upsell-action="${action}" inside the offer to forward to`;
   }
   return null;
 }

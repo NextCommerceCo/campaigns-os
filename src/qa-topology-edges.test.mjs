@@ -305,6 +305,12 @@ test("an upsell decline that only proxies to a missing in-offer skip fails route
   // upsells.js forwards only to an action inside the offer element.
   const outsideOffer = await declineFor(page(`${offer}</div><div><a data-next-upsell-action="skip" href="#">No</a></div><a data-upsell-proxy="skip" href="#">No thanks</a>`));
   assert.equal(outsideOffer.status, "fail");
+
+  // ...and only to data-next-upsell-action: a skipUpsell proxy cannot reach a
+  // data-next-action="skipUpsell", even inside the offer.
+  const v2Proxy = await declineFor(page(`${offer}<a data-next-action="skipUpsell" href="#">No</a></div><a data-upsell-proxy="skipUpsell" href="#">No thanks</a>`));
+  assert.equal(v2Proxy.status, "fail");
+  assert.match(v2Proxy.actual, /no data-next-upsell-action="skipUpsell"/);
 });
 
 test("the static route-link SDK fallback reads every SDK spelling of the upsell actions, and no other value", async () => {

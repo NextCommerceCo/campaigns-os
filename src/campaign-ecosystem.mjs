@@ -472,8 +472,10 @@ export function inspectCheckoutFields(root, htmlFiles, contract, findings, { sdk
   // An attribute only a later SDK reads (data-next-field from 0.5.0) is
   // scanned only on a file whose SDK is an exact release at or after it; a
   // 0.4.x page is read as before.
-  const [v2Attribute, v2Since] = Object.entries(contract?.version_gated_binding_attributes || {})[0] || [];
-  const v2Pattern = v2Attribute ? new RegExp(`(?<![\\w-])(${escapeRegExp(v2Attribute)})\\s*=\\s*(["'])([^"']*)\\2`, "g") : null;
+  const v2Patterns = Object.entries(contract?.version_gated_binding_attributes || {}).map(([attribute, since]) => ({
+    pattern: new RegExp(`(?<![\\w-])(${escapeRegExp(attribute)})\\s*=\\s*(["'])([^"']*)\\2`, "g"),
+    since,
+  }));
   for (const file of htmlFiles) {
     const raw = safeReadText(file);
     if (raw === null) continue;
@@ -481,7 +483,7 @@ export function inspectCheckoutFields(root, htmlFiles, contract, findings, { sdk
     const path = relPath(root, file);
     const sdk = (typeof sdkVersionForFile === "function" ? sdkVersionForFile(path) : null) || { version: null, source: null };
     const patterns = [{ pattern: attributePattern, v2: false }];
-    if (v2Pattern && sdkVersionAtLeast(sdk.version, v2Since)) patterns.push({ pattern: v2Pattern, v2: true });
+    for (const { pattern, since } of v2Patterns) if (sdkVersionAtLeast(sdk.version, since)) patterns.push({ pattern, v2: true });
     for (const { pattern, v2 } of patterns) for (const match of content.matchAll(pattern)) {
       const value = match[3].trim();
       const verdict = v2 ? classifyV2FieldBinding(value, contract, sdk.version) : classifyFieldBinding(value, contract, sdk.version);
