@@ -983,7 +983,7 @@ const capMembersFor = (reasons) => reasons.flatMap((reason) => aggregateQcResult
  * Evaluate the built-output smoke checks.
  *
  * @param {{
- *   pages: Array<{ file: string, content?: string, bytes?: number, unreadable?: boolean, scripts?: Array<{ src: string, file?: string, content?: string, unread?: string }> }>,
+ *   pages: Array<{ file: string, content?: string, bytes?: number, unreadable?: boolean, document?: () => object, scripts?: Array<{ src: string, file?: string, content?: string, unread?: string }> }>,
  *   environment?: string|null,
  *   siteRoot: string|null,
  *   targetDir?: string|null,
@@ -992,6 +992,9 @@ const capMembersFor = (reasons) => reasons.flatMap((reason) => aggregateQcResult
  *   measuredAt?: string,
  * }} input  `pages` in a stable order, `file` relative to the doctor target
  *   ("_site/<slug>/index.html"); pages past the page cap may omit `content`.
+ *   A page's `document`, when a function, returns the parseBuiltPage tree of
+ *   its `content` (shared with the cart placeholder check) and throws what
+ *   parseBuiltPage throws.
  *   `scripts` lists every local script the page loads, read or not (see the
  *   header); without it `readScripts`, when given, lists them from the srcs
  *   the page's parse found, and otherwise the page's local scripts read
@@ -1095,7 +1098,7 @@ function readPage(page) {
   if (bytes != null && bytes > SMOKE_QC_LIMITS.page_bytes) return { outcome: R.PAGE_TOO_LARGE, bytes };
   if (typeof page.content !== "string") return { outcome: R.PAGE_UNREADABLE };
   try {
-    return { document: parseBuiltPage(page.content), bytes };
+    return { document: typeof page.document === "function" ? page.document() : parseBuiltPage(page.content), bytes };
   } catch (error) {
     if (!isBuiltPageReadFailure(error)) throw error;
     return { outcome: R.PAGE_UNREADABLE, bytes };

@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync, realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { parse as parseJs } from 'acorn';
-import { parse } from 'parse5';
+import { defaultTreeAdapter, parse } from 'parse5';
 
 // The shared input context of one read-only doctor inspection (#730): source
 // bytes, parsed documents and memoized collections (built-site scope, source
@@ -22,18 +22,63 @@ import { parse } from 'parse5';
 const snapshots = new AsyncLocalStorage();
 const MAX_RETAINED_BYTES = 16 * 1024 * 1024;
 const MAX_RETAINED_FILES = 4096;
-// A parse5 tree costs 20-23x its UTF-8 source in heap on the certified-family
-// pages and up to 30x on element-dense markup, so parsed documents get their
-// own budget, estimated at the dense end: a page set shares trees while its
-// HTML totals about 2.1 MiB.
+// Parsed documents get their own budget, estimated per profile at the dense
+// end of what a tree costs in heap per UTF-8 source byte (PARSE_PROFILES).
 const MAX_RETAINED_PARSE_COST = 64 * 1024 * 1024;
-const PARSE_COST_PER_BYTE = 30;
 const MAX_MEMOS = 256;
 const MAX_PATHS = 4 * MAX_RETAINED_FILES;
 const MAX_DEPTH = 4;
 // Parse profiles, keyed into the cache with the source's identity. A tree
 // parsed with other options (locations, bounds) is a different input.
-const PARSE_OPTIONS = Object.freeze({ noloc: undefined });
+//   noloc    parse5's defaults. 20-23x its source in heap on the
+//            certified-family pages, up to 30x on element-dense markup: a page
+//            set shares trees while its HTML totals about 2.1 MiB.
+//   bounded  parseBounded: source locations, nesting bounded. 27x on the
+//            certified-family pages, 54x on element-dense markup: about
+//            1.1 MiB of HTML.
+const PARSE_PROFILES = Object.freeze({
+  noloc: { parse: (text) => parse(text), costPerByte: 30 },
+  bounded: { parse: (text) => parseBounded(text), costPerByte: 56 },
+});
+
+// Nesting deeper than a browser's HTML parser builds (Blink stops nesting at
+// 512) is not the DOM a shopper gets, so the bounded profile does not build it.
+export const MAX_ELEMENT_DEPTH = 512;
+
+export class TooDeep extends Error {}
+
+// parse5 with source locations and a tree adapter that stops the parse once an
+// element would sit deeper than MAX_ELEMENT_DEPTH (template content counts
+// from its <template>). parse5's own cost grows with the square of the
+// nesting, so the bound has to hold during the parse, not after it. Throws
+// TooDeep past the bound.
+export function parseBounded(html) {
+  const templateOf = new WeakMap();
+  const check = (parent, node) => {
+    if (!node.tagName) return;
+    let depth = 1;
+    for (let at = parent; at; at = at.parentNode || templateOf.get(at)) {
+      if (at.tagName) depth += 1;
+      if (depth > MAX_ELEMENT_DEPTH) throw new TooDeep();
+    }
+  };
+  const treeAdapter = {
+    ...defaultTreeAdapter,
+    appendChild(parent, node) {
+      check(parent, node);
+      defaultTreeAdapter.appendChild(parent, node);
+    },
+    insertBefore(parent, node, reference) {
+      check(parent, node);
+      defaultTreeAdapter.insertBefore(parent, node, reference);
+    },
+    setTemplateContent(template, content) {
+      templateOf.set(content, template);
+      defaultTreeAdapter.setTemplateContent(template, content);
+    },
+  };
+  return parse(html, { sourceCodeLocationInfo: true, treeAdapter });
+}
 
 export function withHtmlScanSnapshot(operation, { reuse = false } = {}) {
   const live = snapshots.getStore();
@@ -92,7 +137,7 @@ function file(path) {
   if (!snapshot?.active) return { bytes: readFileSync(path) };
   const key = realKey(snapshot, path);
   if (snapshot.files.has(key)) return snapshot.files.get(key);
-  // documents: profile -> shared tree (null until first parsed).
+  // documents: profile -> { document } or { error } (null until first parsed).
   const entry = { bytes: readFileSync(path), documents: new Map(), parseCost: 0 };
   // Budget buffer + worst-case decoded UTF-16 text together. Oversize files
   // retain the original read-per-use behavior; tiny files are count-bounded.
@@ -134,6 +179,8 @@ export function htmlScanDigest(path) {
 // reservation, so a later call with the held text still gets the shared tree. Template
 // content and other nested contexts stay inside the tree as parse5 builds
 // them; a consumer that reparses a fragment (noscript, srcdoc) does so itself.
+// A parse that throws (the bounded profile past its depth bound) throws the
+// same error to every consumer, as a failure is shared like a tree.
 // Consumers read a shared tree and never change it.
 //
 // The set is shared whole or not at all: when its trees do not fit the parse
@@ -143,27 +190,35 @@ export function htmlScanDigest(path) {
 // allocated in old space (on 304 built pages, 4 MiB of retained trees cost
 // 0.2-0.4 s and 280 MiB of RSS).
 export function htmlScanDocuments(paths, profile = 'noloc') {
-  if (!Object.hasOwn(PARSE_OPTIONS, profile)) throw new Error(`Unknown HTML parse profile: ${profile}`);
-  const parseText = (text) => parse(text, PARSE_OPTIONS[profile]);
+  if (!Object.hasOwn(PARSE_PROFILES, profile)) throw new Error(`Unknown HTML parse profile: ${profile}`);
+  const { parse: parseText, costPerByte } = PARSE_PROFILES[profile];
   const perUse = (path, text) => parseText(text);
   const snapshot = snapshots.getStore();
   if (!snapshot?.active) return perUse;
   const entries = new Set(paths.map((path) => snapshot.files.get(realKey(snapshot, path))));
   if (entries.has(undefined)) return perUse;
   const pending = [...entries].filter((entry) => !entry.documents.has(profile));
-  const cost = pending.reduce((sum, entry) => sum + entry.bytes.length * PARSE_COST_PER_BYTE, 0);
+  const cost = pending.reduce((sum, entry) => sum + entry.bytes.length * costPerByte, 0);
   if (snapshot.ledger.parseCost + cost > MAX_RETAINED_PARSE_COST) return perUse;
   for (const entry of pending) {
     entry.documents.set(profile, null);
-    entry.parseCost += entry.bytes.length * PARSE_COST_PER_BYTE;
+    entry.parseCost += entry.bytes.length * costPerByte;
   }
   snapshot.ledger.parseCost += cost;
   return (path, text) => {
     const entry = snapshot.active ? snapshot.files.get(realKey(snapshot, path)) : null;
     if (!entry?.documents.has(profile) || text !== (entry.text ??= entry.bytes.toString('utf8'))) return parseText(text);
-    let document = entry.documents.get(profile);
-    if (!document) entry.documents.set(profile, document = parseText(entry.text));
-    return document;
+    let parsed = entry.documents.get(profile);
+    if (!parsed) {
+      try {
+        parsed = { document: parseText(entry.text) };
+      } catch (error) {
+        parsed = { error };
+      }
+      entry.documents.set(profile, parsed);
+    }
+    if (parsed.error) throw parsed.error;
+    return parsed.document;
   };
 }
 

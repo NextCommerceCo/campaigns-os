@@ -2558,17 +2558,26 @@ function validateCartPlaceholders(packet, warnings, ready, derived) {
 // or a link whose target cannot be inspected; each one entry, read as
 // unreadable, never followed). Pages within the page cap carry their HTML,
 // read one page at a time, unless they are over the size cap or cannot be
-// read; pages past it carry only their path.
+// read; pages past it carry only their path. Collected once per inspection
+// for the cart placeholder and smoke checks through the shared input context
+// (#730), which also keeps one parseBounded tree per page read for both
+// checks (`document`), shared only while the pages read fit the parse budget.
 function collectCartPlaceholderPages(targetRepo, slug) {
-  const scope = resolveBuiltSiteScope(targetRepo, { slug, includeLinkedPages: true });
-  const linked = new Set((scope.linked_pages || []).map((page) => page.built_path));
-  const all = [...(scope.ok ? scope.pages : []), ...(scope.linked_pages || [])]
-    .sort((a, b) => (a.built_path < b.built_path ? -1 : a.built_path > b.built_path ? 1 : 0));
-  const fileOf = (page) => builtPageFile(targetRepo, page.built_path);
-  return [
-    ...all.slice(0, CART_PLACEHOLDERS_LIMITS.pages).map((page) => readCartPlaceholderPage(page.built_path, fileOf(page), linked.has(page.built_path))),
-    ...all.slice(CART_PLACEHOLDERS_LIMITS.pages).map((page) => ({ file: fileOf(page) })),
-  ];
+  return htmlScanMemo(JSON.stringify(["cart-placeholder-pages", resolve(targetRepo), slug ?? null]), () => {
+    const scope = resolveBuiltSiteScope(targetRepo, { slug, includeLinkedPages: true });
+    const linked = new Set((scope.linked_pages || []).map((page) => page.built_path));
+    const all = [...(scope.ok ? scope.pages : []), ...(scope.linked_pages || [])]
+      .sort((a, b) => (a.built_path < b.built_path ? -1 : a.built_path > b.built_path ? 1 : 0));
+    const fileOf = (page) => builtPageFile(targetRepo, page.built_path);
+    const capped = all.slice(0, CART_PLACEHOLDERS_LIMITS.pages);
+    const read = capped.map((page) => readCartPlaceholderPage(page.built_path, fileOf(page), linked.has(page.built_path)));
+    const paths = capped.map((page) => page.built_path).filter((path, index) => typeof read[index].content === "string");
+    const documentOf = htmlScanDocuments(paths, "bounded");
+    return [
+      ...read.map((page, index) => (typeof page.content === "string" ? { ...page, document: () => documentOf(capped[index].built_path, page.content) } : page)),
+      ...all.slice(CART_PLACEHOLDERS_LIMITS.pages).map((page) => ({ file: fileOf(page) })),
+    ];
+  });
 }
 
 // One page within the page cap: its HTML, its size when over the size cap, or
@@ -2581,7 +2590,7 @@ function readCartPlaceholderPage(path, file, linked) {
     const bytes = statSync(path).size;
     if (!isReadableFile(path)) return { file, unreadable: true };
     if (bytes > CART_PLACEHOLDERS_LIMITS.page_bytes) return { file, bytes };
-    return { file, content: readFileSync(path, "utf8") };
+    return { file, content: readHtmlScanText(path) };
   } catch (error) {
     if (!isFileReadFailure(error)) throw error;
     return { file, unreadable: true };
@@ -2652,7 +2661,7 @@ function recordSmokeQc({ subject, targetRepo, pages, environment, deployBase, wa
   // reads each page's local scripts through boundedPageScripts, from the srcs
   // the gate's own parse lists. With no scope to resolve them in, a page's
   // local scripts read unread.
-  const scope = targetRepo && pages.length ? resolveBuiltSiteScope(targetRepo, { slug: subject?.public_route_slug || null }) : null;
+  const scope = targetRepo && pages.length ? sharedBuiltSiteScope(targetRepo, subject?.public_route_slug || null) : null;
   const siteRoot = scope?.site_root || null;
   const results = evaluateSmokeQc({
     pages,
