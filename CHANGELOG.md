@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.66.0+agent.11] - 2026-11-09
+
+### Changed
+
+- **Doctor's script syntax gate parses through the run's shared script programs (#730, milestone 3).** Nothing doctor reports changes. Each local script is now parsed once per run and mode, and the gate and the API/storage observations (#729) read the same program, where before each parsed it separately. The diagnostic is the same: same parser options, same source-free message, same line and column. A run whose scripts exceed the parse budget still parses per use.
+
 ## [1.66.0+agent.10] - 2026-11-09
 
 ### Added
