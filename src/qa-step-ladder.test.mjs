@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { checkoutFieldSelector } from "./campaign-cart-05.mjs";
 import { __qaBrowserTestHooks } from "./qa-browser.mjs";
 import { resolveTestOrderTopology } from "./qa-test-order-topology.mjs";
 
@@ -234,7 +235,8 @@ test("failed path maps to a blocker assertion that carries the step ladder up to
 // tolerance are load-bearing, and a wrapper is exactly the kind of change that
 // regresses them silently.
 
-const FIELD_SELECTOR = (field) => `[data-next-checkout-field="${field}"]`;
+// The selector QA locates a field by: its 0.4.x name plus the SDK 0.5 spellings.
+const FIELD_SELECTOR = (field) => checkoutFieldSelector(field);
 
 // A Playwright-shaped stub covering only what fillCheckoutFields touches.
 // `fields` is keyed by checkout field name; anything unlisted is present and
@@ -678,7 +680,7 @@ test("the customer/address fill sequence is unchanged by the trace wrapper", asy
 
   const order = calls
     .filter((call) => call.startsWith("fill:") || call.startsWith("select:"))
-    .map((call) => call.split(":")[1].replace(/\[data-next-checkout-field="(.*)"\]/, "$1"));
+    .map((call) => call.split(":")[1].replace(/^\[data-next-checkout-field="([^"]*)"\].*$/, "$1"));
   assert.deepEqual(order.slice(0, 9), [
     "fname",
     "lname",

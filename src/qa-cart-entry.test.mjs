@@ -18,6 +18,7 @@ import {
   summarizeSelectionSurface,
   UNDECLARED_ROUTE_ATTRIBUTES,
 } from "./qa-cart-entry.mjs";
+import { CHECKOUT_FORM_SELECTOR } from "./campaign-cart-05.mjs";
 import { __qaBrowserTestHooks } from "./qa-browser.mjs";
 
 const { cartStateBeforeSubmit, classifyTestOrderCreation, createOrderCreationBudget, dispatchTestOrderPlans, TEST_ORDER_STEP_LADDER, PRIMARY_CTA_SELECTOR, COUPON_INPUT_SELECTORS, COUPON_APPLY_CONTROL_SELECTOR, primaryCtaInspectionScript, primaryCtaAssertionFromEvidence, clickCouponApplyControl } = __qaBrowserTestHooks;
@@ -50,7 +51,7 @@ test("the primary-CTA candidate selector names only attributes the SDK declares"
 test("the coupon locators are the SDK's declared coupon activations, nothing spelled otherwise", () => {
   assert.equal(COUPON_APPLY_CONTROL_SELECTOR, '[data-next-coupon="apply"]');
   const dataNextEntries = COUPON_INPUT_SELECTORS.filter((entry) => entry.includes("data-next-"));
-  assert.deepEqual(dataNextEntries, ['[data-next-checkout-field="coupon"]', 'input[data-next-coupon="input"]']);
+  assert.deepEqual(dataNextEntries, ['[data-next-checkout-field="coupon"]', 'form[data-next-action="applyCoupon"] [data-next-field="code"]', 'input[data-next-coupon="input"]']);
   for (const entry of [COUPON_APPLY_CONTROL_SELECTOR, ...COUPON_INPUT_SELECTORS]) {
     assert.ok(!/data-next-checkout-action|data-next-coupon-apply|data-next-coupon-input|apply-coupon/.test(entry), entry);
   }
@@ -67,6 +68,9 @@ const ROUTE_RULE = { cartEntrySelector: CART_ENTRY_CONTROL_SELECTOR, cartEntryRo
 // reflects "submit"); `selectors` are further selectors the element matches;
 // `checkoutForm` puts the wrapping form under the SDK checkout-form selector.
 const CHECKOUT_FORM = 'form[data-next-checkout="form"]';
+// QA's checkout form selector: the 0.4.x spelling above, or SDK 0.5's bare
+// data-next-checkout.
+const CHECKOUT_FORMS = CHECKOUT_FORM_SELECTOR;
 
 function element({ tag = "button", attrs = {}, href, form = null, type, selectors = [], checkoutForm = false } = {}) {
   const sdkControl = attrs["data-next-action"] === "add-to-cart";
@@ -157,10 +161,11 @@ test("cartEntryHrefFor: a control matching a page-declared route goes to that ro
 test("primaryCtaDeclaredRoutes: checkout submit -> expected_next_url; upsell / downsell add or accept -> expected_accept_url, skip or decline -> expected_decline_url; nothing elsewhere", () => {
   const { primaryCtaDeclaredRoutes } = __qaBrowserTestHooks;
   const urls = { expected_next_url: `${BASE}/next/`, expected_accept_url: `${BASE}/accept/`, expected_decline_url: `${BASE}/decline/` };
-  const ACCEPT = '[data-next-upsell] [data-next-upsell-action="add"], [data-next-upsell] [data-next-upsell-action="accept"]';
-  const DECLINE = '[data-next-upsell] [data-next-upsell-action="skip"], [data-next-upsell] [data-next-upsell-action="decline"]';
+  const ACCEPT = '[data-next-upsell] [data-next-upsell-action="add"], [data-next-upsell] [data-next-upsell-action="accept"], [data-next-action="acceptUpsell"]';
+  const DECLINE = '[data-next-upsell] [data-next-upsell-action="skip"], [data-next-upsell] [data-next-upsell-action="decline"], [data-next-action="skipUpsell"]';
   const NOT_WALLET = ":not([data-next-express-checkout]):not([data-next-express-checkout] *)";
-  const SUBMIT = [`${CHECKOUT_FORM} button[type="submit"]${NOT_WALLET}`, `${CHECKOUT_FORM} button:not([type])${NOT_WALLET}`, `${CHECKOUT_FORM} input[type="submit"]${NOT_WALLET}`].join(", ");
+  const SUBMIT = ['button[type="submit"]', "button:not([type])", 'input[type="submit"]']
+    .flatMap((control) => CHECKOUT_FORMS.split(", ").map((form) => `${form} ${control}${NOT_WALLET}`)).join(", ");
   assert.deepEqual(primaryCtaDeclaredRoutes({ page_type: "checkout", ...urls }), [{ selector: SUBMIT, url: `${BASE}/next/` }]);
   for (const pageType of ["upsell", "downsell", "Upsell"]) {
     assert.deepEqual(primaryCtaDeclaredRoutes({ page_type: pageType, ...urls }), [
@@ -181,8 +186,8 @@ test("primaryCtaDeclaredRoutes: checkout submit -> expected_next_url; upsell / d
 test("primaryCtaRoutelessForms: every form on a checkout, upsell or downsell; only the SDK checkout form elsewhere", () => {
   const { primaryCtaRoutelessForms } = __qaBrowserTestHooks;
   for (const pageType of ["checkout", "upsell", "downsell", "Checkout"]) assert.equal(primaryCtaRoutelessForms({ page_type: pageType }), "form", pageType);
-  for (const pageType of ["landing", "presell", "select", "product", "receipt", "thankyou", ""]) assert.equal(primaryCtaRoutelessForms({ page_type: pageType }), CHECKOUT_FORM, pageType);
-  assert.equal(primaryCtaRoutelessForms(null), CHECKOUT_FORM);
+  for (const pageType of ["landing", "presell", "select", "product", "receipt", "thankyou", ""]) assert.equal(primaryCtaRoutelessForms({ page_type: pageType }), CHECKOUT_FORMS, pageType);
+  assert.equal(primaryCtaRoutelessForms(null), CHECKOUT_FORMS);
 });
 
 test("cartEntryHrefFor: with every form routeless, an unrelated form's submit button takes no route from its action; a declared route and the control's own href still count", () => {
@@ -217,7 +222,7 @@ function pageContext({ base, elements }) {
   // The document the shared contrast helper reads: no SDK, no stylesheets,
   // fonts loaded, a light canvas.
   const document = {
-    documentElement: { classList: { contains: () => false } },
+    documentElement: { classList: { contains: () => false }, hasAttribute: () => false },
     body: null,
     fonts: { status: "loaded" },
   };
