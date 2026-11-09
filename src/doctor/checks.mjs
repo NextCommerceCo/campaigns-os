@@ -2574,7 +2574,7 @@ function collectCartPlaceholderPages(targetRepo, slug) {
     return { capped: all.slice(0, CART_PLACEHOLDERS_LIMITS.pages), past: all.slice(CART_PLACEHOLDERS_LIMITS.pages).map(({ file }) => ({ file })) };
   });
   const read = capped.map(({ path, file, linked }) => readCartPlaceholderPage(path, file, linked));
-  const documentOf = htmlScanDocuments(capped.filter((page, index) => typeof read[index].content === "string").map(({ path }) => path), "bounded");
+  const documentOf = htmlScanDocuments(capped.flatMap(({ path }, index) => (typeof read[index].content === "string" ? [path] : [])), "bounded");
   return [
     ...read.map((page, index) => (typeof page.content === "string" ? { ...page, document: () => documentOf(capped[index].path, page.content) } : page)),
     ...past,
