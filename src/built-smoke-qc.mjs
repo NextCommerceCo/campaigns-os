@@ -101,7 +101,8 @@
 import { realpathSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
 
-import { CART_PLACEHOLDERS_LIMITS, MAX_ELEMENT_DEPTH, isFileReadFailure, isPageReadFailure, parseBounded, scriptKind } from "./cart-placeholders.mjs";
+import { CART_PLACEHOLDERS_LIMITS, isFileReadFailure, isPageReadFailure, scriptKind } from "./cart-placeholders.mjs";
+import { MAX_ELEMENT_DEPTH, TooDeep, parseBounded } from "./html-scan.mjs";
 import { aggregateQcResults, buildQcResult } from "./qc-results.mjs";
 import { isLoopbackHostname } from "./remit.mjs";
 
@@ -559,13 +560,11 @@ export function builtFileOf(reference, builtPath, siteRoot, { bases = [] } = {})
   return { path: join(siteRoot, ...segments), site_path: url.pathname };
 }
 
-// Nesting past MAX_ELEMENT_DEPTH found after the parse: nodes the parser
-// moved, or a nested document's depth added to its host element's.
-class TooDeep extends Error {}
-
 // Whether an error means the page cannot be read or parsed (see
-// isPageReadFailure), nesting past the bound found after the parse included.
-export const isBuiltPageReadFailure = (error) => error instanceof TooDeep || isPageReadFailure(error);
+// isPageReadFailure), nesting past the bound found after the parse included:
+// walkElements throws the parser's TooDeep for nodes the parser moved, or a
+// nested document's depth added to its host element's.
+export const isBuiltPageReadFailure = isPageReadFailure;
 
 // Every element in document order with its path (`html[1]/body[1]/a[2]`),
 // its depth (the root element is 1) and whether it sits in <template>

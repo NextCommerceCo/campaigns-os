@@ -289,6 +289,24 @@ test('the bounded profile is its own located tree, and a page past its depth bou
   assert.throws(() => outside(deep, '<div>'.repeat(MAX_ELEMENT_DEPTH + 1)), TooDeep);
 });
 
+test('the bounded profile spends its own, larger, share of the parse budget', t => {
+  const small = fixture(t);
+  writeFileSync(small, '<p>small</p>');
+  const big = join(dirname(small), 'big.html');
+  // 1.5 MiB: bounded trees (84 MiB estimated) exceed the parse budget; noloc trees (45 MiB) fit.
+  writeFileSync(big, Buffer.alloc(1.5 * 1024 * 1024, 97));
+  withHtmlScanSnapshot(() => {
+    for (const path of [small, big]) readHtmlScanText(path);
+    const bounded = htmlScanDocuments([small, big], 'bounded');
+    assert.notEqual(bounded(small, '<p>small</p>'), bounded(small, '<p>small</p>'));
+  });
+  withHtmlScanSnapshot(() => {
+    for (const path of [small, big]) readHtmlScanText(path);
+    const noloc = htmlScanDocuments([small, big]);
+    assert.equal(noloc(small, '<p>small</p>'), noloc(small, '<p>small</p>'));
+  });
+});
+
 test('the cart placeholder and smoke checks read one shared bounded tree per built page', async t => {
   const { collectCartPlaceholderPages } = await import('./doctor/checks.mjs');
   const { evaluateCartPlaceholders } = await import('./cart-placeholders.mjs');

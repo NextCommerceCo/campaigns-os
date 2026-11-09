@@ -158,10 +158,6 @@ const LOADER_SCOPES = new Set(["@nextcommerce"]);
 const LOADER_PROTOCOLS = new Set(["http:", "https:"]);
 const EXACT_VERSION = /^v?((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))$/;
 
-// Nesting deeper than a browser's HTML parser builds is not the DOM a shopper
-// gets, so such a page is not read (html-scan's bounded parse profile).
-export { MAX_ELEMENT_DEPTH, parseBounded };
-
 export function isKnownCartPlaceholder(name) {
   const value = String(name ?? "");
   if (KNOWN_BARE.has(value) || QTY.test(value)) return true;
