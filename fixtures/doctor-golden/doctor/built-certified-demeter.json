@@ -1,5 +1,5 @@
 {
-  "base_sha": "e1c5bc9c6dc2745d6f2bd54f37f89319ce7f915a",
+  "base_sha": "b3b5d9d2a3fcf1460b93f7f3ae849983f24cbae1",
   "case": "certified-demeter",
   "entry": "built",
   "description": "certified family demeter rendered fixture, read in place with --family demeter",
@@ -31,6 +31,7 @@
       "SDK markup: 3 data-next-* name(s) not in the Campaign Cart 0.4.43 attribute index (advisory; the SDK does not read them): data-next-catalog-component, data-next-content, data-next-skeleton",
       "SDK markup checks passed on 9 built page(s)",
       "All 8 campaign-owned script(s) loaded by built pages parse",
+      "Family scripts compared with demeter at NextCommerceCo/campaign-cart-starter-templates@5711e22 (SDK 0.4.43) (advisory): 7 candidate family script(s), 7 identical, 0 diverged; generated configuration not compared: _site/demeter/config.js.",
       "Cart placeholder check on 9 built page(s): 9 page(s) pass, 0 warning or review result(s)"
     ],
     "derived": {
@@ -93,6 +94,7 @@
         "built_output.campaign_identity",
         "built_output.sdk_markup",
         "built_output.script_syntax",
+        "built_output.family_script_divergence",
         "built_output.cart_placeholders",
         "built_output.smoke_qc"
       ],
@@ -2993,6 +2995,126 @@
       "brand_contract": {
         "state": "inspected",
         "family": "demeter"
+      },
+      "family_script_divergence": {
+        "family": "demeter",
+        "family_source": "flag",
+        "reference": {
+          "kind": "bundled",
+          "repo": "NextCommerceCo/campaign-cart-starter-templates",
+          "sha": "5711e22345756c655f41c0ae71444478e4a8999e",
+          "sdk_version": "0.4.43",
+          "label": "NextCommerceCo/campaign-cart-starter-templates@5711e22 (SDK 0.4.43)"
+        },
+        "status": "compared",
+        "reason": null,
+        "scripts": [
+          {
+            "file": "_site/demeter/js/promo-timer.js",
+            "pages": [
+              "checkout"
+            ],
+            "match": "path",
+            "ancestry": "candidate",
+            "reference_path": "js/promo-timer.js",
+            "source_path": "src/demeter/assets/js/promo-timer.js",
+            "result": "identical"
+          },
+          {
+            "file": "_site/demeter/js/checkout.js",
+            "pages": [
+              "checkout"
+            ],
+            "match": "path",
+            "ancestry": "candidate",
+            "reference_path": "js/checkout.js",
+            "source_path": "src/demeter/assets/js/checkout.js",
+            "result": "identical"
+          },
+          {
+            "file": "_site/demeter/js/payment-logos.js",
+            "pages": [
+              "checkout",
+              "upsell-bundle-stepper",
+              "upsell-bundle-tier-cards",
+              "upsell-bundle-tier-pills",
+              "upsell-single",
+              "upsell-vsl"
+            ],
+            "match": "path",
+            "ancestry": "candidate",
+            "reference_path": "js/payment-logos.js",
+            "source_path": "src/demeter/assets/js/payment-logos.js",
+            "result": "identical"
+          },
+          {
+            "file": "_site/demeter/js/checkout-demeter.js",
+            "pages": [
+              "checkout"
+            ],
+            "match": "path",
+            "ancestry": "candidate",
+            "reference_path": "js/checkout-demeter.js",
+            "source_path": "src/demeter/assets/js/checkout-demeter.js",
+            "result": "identical"
+          },
+          {
+            "file": "_site/demeter/js/landing/landing.js",
+            "pages": [
+              "landing"
+            ],
+            "match": "path",
+            "ancestry": "candidate",
+            "reference_path": "js/landing/landing.js",
+            "source_path": "src/demeter/assets/js/landing/landing.js",
+            "result": "identical"
+          },
+          {
+            "file": "_site/demeter/js/presell/countdown.js",
+            "pages": [
+              "presell"
+            ],
+            "match": "path",
+            "ancestry": "candidate",
+            "reference_path": "js/presell/countdown.js",
+            "source_path": "src/demeter/assets/js/presell/countdown.js",
+            "result": "identical"
+          },
+          {
+            "file": "_site/demeter/js/upsells.js",
+            "pages": [
+              "upsell-bundle-stepper",
+              "upsell-bundle-tier-cards",
+              "upsell-bundle-tier-pills",
+              "upsell-single",
+              "upsell-vsl"
+            ],
+            "match": "path",
+            "ancestry": "candidate",
+            "reference_path": "js/upsells.js",
+            "source_path": "src/demeter/assets/js/upsells.js",
+            "result": "identical"
+          }
+        ],
+        "generated_configuration": [
+          {
+            "file": "_site/demeter/config.js",
+            "built_path": "config.js",
+            "pages": [
+              "checkout",
+              "landing",
+              "presell",
+              "receipt",
+              "upsell-bundle-stepper",
+              "upsell-bundle-tier-cards",
+              "upsell-bundle-tier-pills",
+              "upsell-single",
+              "upsell-vsl"
+            ]
+          }
+        ],
+        "not_compared": 0,
+        "unreadable": []
       },
       "synthesized_packet": {
         "schema_version": "campaign-runtime-build-packet/v0",

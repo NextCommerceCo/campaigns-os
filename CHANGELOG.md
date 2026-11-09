@@ -2,6 +2,13 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.66.0+agent.8] - 2026-11-09
+
+### Added
+
+- **Doctor compares a campaign's copies of family scripts with the family's own (#729, #730 milestone 3).** An advisory: it never blocks. When the template family is known (the packet's decided family, or `--family` for `doctor --built`), each local script the built pages load is compared with the family's files. A copy identical to any family file reads as identical. Any other copy is a candidate for the family file at the same built path, or else the one family file with its name, and is diffed against it. An edited copy warns under `built_output.family_script_divergence.diverged` with its line counts and hunks, the family file's upstream path, and the reference used: the starter-templates commit and the SDK version the family pins there. A nomination never claims ancestry, because no build records it. `config.js` is generated configuration and is listed apart, never compared. The record is `derived.family_script_divergence`.
+- **A bundled family script reference.** `contracts/family-script-reference.v0.json` holds the bytes, SHA-256, upstream path and SDK applicability of every certified public family's `js/` scripts at the commerce-surface catalog's pin, with one blob per distinct script. It ships in the npm package, and `check:pack` loads it from the packed tarball and verifies every blob. Private families are never bundled, and their comparison reads as unavailable. `npm run check:family-script-reference` fails when the reference is stale, and the catalog refresh workflow regenerates it.
+
 ## [1.66.0+agent.6] - 2026-11-09
 
 ### Changed
