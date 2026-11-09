@@ -2,11 +2,17 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.66.0+agent.12] - 2026-11-09
+## [1.66.0+agent.13] - 2026-11-09
 
 ### Changed
 
 - **Doctor's cart placeholder and smoke checks share one bounded parse per built page (#730, milestone 4).** Nothing doctor reports changes. Both checks read the same built pages with the same nesting bound (512), and each parsed every page itself. The page inventory is now resolved once per run through the run's input snapshot. Each check still checks and reads its pages itself, taking the bytes from the snapshot while it holds them, so a failed read is never reused by the other check. Both checks get one bounded tree per page, so a 16-page estate parses each page once for these checks instead of twice. A page past the nesting bound reads `page_unreadable` in both checks, as before. The trees are shared only when the whole page set fits the parse budget, which the bounded trees share with the unbounded trees doctor's other gates already hold for the same pages (estimated at 56 and 30 times the HTML, about 0.74 MiB of HTML together). A larger set, such as a 304-page estate, still parses per check. The smoke checks also take the built-site scope from the run's snapshot instead of resolving it again.
+
+## [1.66.0+agent.12] - 2026-11-09
+
+### Changed
+
+- **Issue project automation updates its pinned action (#739).** `actions/add-to-project` moves from v2.0.0 to v2.0.1. An eligible issue already present in the project now skips successfully instead of failing when reopened. The collaborator gate, project destination and token permissions are unchanged. No campaign migration is required.
 
 ## [1.66.0+agent.11] - 2026-11-09
 

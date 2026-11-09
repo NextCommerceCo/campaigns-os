@@ -11437,13 +11437,34 @@
       "entry_sha256": "0275203cf4e9b8756cc83508bb36d9c7c227382cc8c7ae38e23be33fc1f3c915"
     },
     {
-      "id": "RL-0326",
+      "id": "RL-0327",
       "sequence": 314,
       "date": "2026-11-09",
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.66.0+agent.12",
-      "changelog_sha256": "a73d6e581a59dc2f749730a2d353d3c53375cc3ae0ca1cccbc114496a959447a",
+      "changelog_sha256": "252e3fd1b7f67dc77bc0431c6c98307de33ff305401e30cd3ecffeb3246ca848",
+      "agent_impact": "No campaign migration. Issue project automation treats an eligible issue already present in the project as a successful skip when reopened. The collaborator gate, project destination and token permissions are unchanged.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "workflow",
+          "path": ".github/workflows/add-to-project.yml",
+          "surface_entry": null,
+          "summary": "Update the pinned actions/add-to-project action from v2.0.0 to v2.0.1, which skips issues already added to the project."
+        }
+      ],
+      "entry_sha256": "87707dccd1c300aabdb9911326ef8267c89ad7775bd57ed23c58552165da5a56"
+    },
+    {
+      "id": "RL-0326",
+      "sequence": 315,
+      "date": "2026-11-09",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.66.0+agent.13",
+      "changelog_sha256": "04aa67c24346e736245352b57874be98b283ad6692394e714890843c65fea920",
       "agent_impact": "None. Doctor output is unchanged: the same codes, messages, ordering, ready lines, checkpoint gates, QC results and causes. The cart placeholder and smoke checks resolve their built-page inventory once per run, read page bytes through the run shared input snapshot, and share one bounded parse per page while the page set fits the parse budget.",
       "compatibility": "compatible",
       "migration": "none",
@@ -11455,7 +11476,7 @@
           "summary": "The cart placeholder and smoke checks resolve their built-page inventory once per run, read page bytes through the run shared input snapshot and share one bounded parse per page; the smoke checks take the built-site scope from the snapshot."
         }
       ],
-      "entry_sha256": "d3e0c43886184e956ec4c8d54dbb15695b22f46b68d29a3b41dd924a27e3a524"
+      "entry_sha256": "5882751b82792db08ad9c11150eb1aa6ef50df4b0b20cbf333fe7aeaa9aa0bd4"
     }
   ]
 }
