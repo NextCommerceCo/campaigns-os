@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.66.0+agent.9] - 2026-11-09
+
+### Changed
+
+- **Doctor's campaign identity gate and the smoke checks' script reader read through the run's shared inputs (#730, milestone 4).** Nothing doctor reports changes. The campaign identity gate shares the run's built-site scope and page bytes with the upsell selector-scope and SDK markup gates, so packet doctor resolves that scope once less, and it reads the local scripts its pages load through the run's snapshot, which the script syntax gate reads too. Which scripts it reads and how it resolves them are unchanged. The smoke checks' anchor script hint keeps its script cap, size cap, site-root containment and unread reasons, and takes the bytes of a script it may read from the same snapshot.
+
 ## [1.66.0+agent.8] - 2026-11-09
 
 ### Added

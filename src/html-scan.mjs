@@ -110,6 +110,13 @@ export function readHtmlScanText(path) {
   return entry.text ??= entry.bytes.toString('utf8');
 }
 
+// The raw bytes, for a consumer that bounds a read by its byte length. The
+// Buffer is the snapshot's own, shared by every consumer of the file in this
+// inspection: read it, never write to it.
+export function readHtmlScanBytes(path) {
+  return file(path).bytes;
+}
+
 // Byte-preserving generic digest; only an active read-only scan scope caches it.
 // Callers that write artifacts must hash outside that scope to observe new bytes.
 export function htmlScanDigest(path) {
