@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.66.0+agent.12] - 2026-11-09
+
+### Changed
+
+- **Doctor's cart placeholder and smoke checks share one bounded parse per built page (#730, milestone 4).** Nothing doctor reports changes. Both checks read the same built pages with the same nesting bound (512), and each parsed every page itself. The page collection now runs once per run through the run's input snapshot, reads page bytes from it, and hands both checks one bounded tree per page, so a 16-page estate parses each page once for these checks instead of twice. A page past the nesting bound reads `page_unreadable` in both checks, as before. The trees are shared only when the whole page set fits the parse budget (estimated at 56 times the HTML, the dense end of a located tree's heap cost); a larger set, such as a 304-page estate, still parses per check. The smoke checks also take the built-site scope from the run's snapshot instead of resolving it again.
+
 ## [1.66.0+agent.11] - 2026-11-09
 
 ### Changed
