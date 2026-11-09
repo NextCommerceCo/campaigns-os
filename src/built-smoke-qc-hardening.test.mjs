@@ -69,7 +69,7 @@ after(() => assertNoNetworkAttempts());
 const { doctorBuiltOutput } = await import("./doctor/inspect.mjs");
 const { boundedPageScripts, collectBuiltPageIdentityInputs, collectCartPlaceholderPages, recordSmokeQc } = await import("./doctor/checks.mjs");
 const { computeBuildFingerprint, resolveBuiltSiteScope } = await import("./built-site-scope.mjs");
-const { SMOKE_QC, SMOKE_QC_CHECK, SMOKE_QC_LIMITS, URL_ATTRIBUTES, cssUrlValues, evaluateSmokeQc, pageScriptSources, parseBuiltPage } = await import("./built-smoke-qc.mjs");
+const { SMOKE_QC, SMOKE_QC_CHECK, SMOKE_QC_LIMITS, URL_ATTRIBUTES, cssUrlValues, evaluateSmokeQc, isBuiltPageReadFailure, pageScriptSources, parseBuiltPage } = await import("./built-smoke-qc.mjs");
 
 const CHECK = "smoke_qc";
 const GATE = "built_output.smoke_qc";
@@ -364,13 +364,23 @@ test("C2 a local script whose real path is outside _site (a symlink) is never re
 // C3: one script collector
 
 // The pages smoke reads under doctor, each with the scripts its anchor hint
-// reads: the srcs the page's parse5 tree lists, read by boundedPageScripts.
+// reads: the srcs the page's parse5 tree lists, read by boundedPageScripts. A
+// page with no content, or one that cannot be parsed, is returned as given.
 function boundedPages(dir) {
   const scope = resolveBuiltSiteScope(dir, { slug: CAMPAIGN });
   const readScripts = boundedPageScripts(scope.site_root, dir, SMOKE_QC_LIMITS);
-  return collectCartPlaceholderPages(dir, CAMPAIGN).map((page) => (typeof page.content === "string"
-    ? { ...page, scripts: readScripts(pageScriptSources(parseBuiltPage(page.content)), join(dir, page.file)) }
-    : page));
+  const sourcesOf = (content) => {
+    try {
+      return pageScriptSources(parseBuiltPage(content));
+    } catch (error) {
+      if (!isBuiltPageReadFailure(error)) throw error;
+      return null;
+    }
+  };
+  return collectCartPlaceholderPages(dir, CAMPAIGN).map((page) => {
+    const sources = typeof page.content === "string" ? sourcesOf(page.content) : null;
+    return sources ? { ...page, scripts: readScripts(sources, join(dir, page.file)) } : page;
+  });
 }
 
 test("C3 boundedPageScripts lists every local script a page loads, read or unread; the identity collector's reading is unchanged", (t) => {

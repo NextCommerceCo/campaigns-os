@@ -2296,7 +2296,10 @@ function sharedBuiltPages(scope, targetRepo) {
 // emits `/config.js`); relative srcs resolve against the page. Remote and
 // missing scripts contribute nothing. Pages and script bytes come from the
 // shared input context (#730); the srcs and their resolution are identity's
-// own, not the script syntax gate's.
+// own, not the script syntax gate's. Script bytes are charged to the
+// snapshot's byte budget unbounded, as the script syntax gate's reads of the
+// same files already are; the upsell gate, which runs first, has read every
+// page and reserved its parse set by then, so no script displaces a page.
 function collectBuiltPageIdentityInputs(scope, targetRepo) {
   const scriptText = new Map();
   const readScript = (path) => {
