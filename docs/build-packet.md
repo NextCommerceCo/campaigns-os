@@ -1278,12 +1278,14 @@ parse has no observations (the script syntax gate reports it). A script that
 parses but whose analysis does not finish (an expression nested too deep to
 resolve) gets one `built_output.script_observations.incomplete` warning naming
 it, outside the limit below, rather than reading as clean; the doctor report
-still returns. Each finding
+still returns. Each observation finding
 (`detail.finding`) records `file`, `line`, `column`, `source_type`, `pages`,
 `operation`, `receiver`, `key` (`text` and `match`: `exact` or `prefix`) for
 storage, `delivery` (`local`), `ownership` (`unknown`: these observations do
 not consult the family script reference to tell campaign code from a family
-copy) and `provenance` (null). Doctor lists the first 50 and counts the rest under
+copy) and `provenance` (null). An `incomplete` finding has no line, column,
+operation or receiver: it records `file`, `source_type`, `pages`, `reason` (the
+error's name), `delivery`, `ownership` and `provenance`. Doctor lists the first 50 and counts the rest under
 `built_output.script_observations.truncated`. Fixtures:
 `fixtures/script-observations`.
 

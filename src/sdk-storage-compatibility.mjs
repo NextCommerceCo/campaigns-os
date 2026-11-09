@@ -130,7 +130,7 @@ export function javaScriptScopeAnalysis(ast, { sameNameAliases = false } = {}) {
     let [node, scope] = pending.pop();
     if (['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression', 'BlockStatement', 'CatchClause', 'ForStatement', 'ForInStatement', 'ForOfStatement', 'SwitchStatement', 'StaticBlock', 'ClassExpression', 'ClassDeclaration'].includes(node.type)) {
       if (['FunctionDeclaration', 'ClassDeclaration'].includes(node.type) && node.id)
-        scope.bindings.set(node.id.name, { unknown: true });
+        scope.bindings.set(node.id.name, { unknown: true, kind: node.type === 'FunctionDeclaration' ? 'function' : 'class' });
       scope = { bindings: new Map(), parent: scope };
       for (const p of node.params ?? [])
         for (const name of names(p))
