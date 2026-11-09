@@ -128,6 +128,26 @@ test("shadowed globals are never the browser's or the SDK's", () => {
   assert.deepEqual(shape("class A { m(globalThis) { globalThis.fetch = f; } }"), []);
 });
 
+test("a const or destructure that binds a global's own name to that global still refers to it", () => {
+  assert.deepEqual(shape("const next = window.next; next._cart = null;"), [["sdk_private_member", "write", "next._cart", null]]);
+  assert.deepEqual(shape("const localStorage = window.localStorage; localStorage.getItem('next-x');"), [["sdk_prefixed_storage", "read", "localStorage", "exact:next-x"]]);
+  assert.deepEqual(shape("const { sessionStorage } = window; sessionStorage.removeItem('next-order');"), [["sdk_prefixed_storage", "remove", "sessionStorage", "exact:next-order"]]);
+  // Bound to anything else, or mutable, the name is shadowed.
+  assert.deepEqual(shape("const next = makeNext(); next._cart = null;"), []);
+  assert.deepEqual(shape("let next = window.next; next._cart = null;"), []);
+  assert.deepEqual(shape("let { sessionStorage } = window; sessionStorage.removeItem('next-order');"), []);
+  assert.deepEqual(shape("const fetch = window.fetch; fetch = f;"), [], "assigning a const throws; it never replaces the global");
+});
+
+test("logical assignment does not replace a defined fetch, and delete reads as a removal", () => {
+  assert.deepEqual(shape("window.fetch ||= f; globalThis.fetch ??= f; self.fetch &&= f; fetch ||= f; XMLHttpRequest.prototype.send ??= f;"), []);
+  assert.deepEqual(shape("delete window.nextDebug; delete next._x;"), [
+    ["sdk_debug_surface", "remove", "window.nextDebug", null],
+    ["sdk_private_member", "remove", "next._x", null],
+  ]);
+  assert.match(evaluateBuiltScriptObservations({ scripts: [{ file: "js/a.js", pages: [], observations: observeScriptSource("delete next._x;") }] })[0].message, /^js\/a\.js:1:8 removes next\._x /);
+});
+
 test("the debug surface is reported where the global is read, not again through an alias", () => {
   assert.deepEqual(shape("const d = window.nextDebug; d.stores.cart.getState(); d.x;"), [["sdk_debug_surface", "read", "window.nextDebug", null]]);
   assert.deepEqual(shape("if (typeof nextDebug !== 'undefined') nextDebug.stores;"), [
