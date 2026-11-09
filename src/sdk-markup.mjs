@@ -231,11 +231,12 @@ function describe(entry) {
  * Scan one built page. Returns findings with { code_name, code, severity,
  * page_id, file, message, detail } and the set of unknown data-next-* names.
  * `sdk_version` is the campaign's SDK pin, used when the page carries no
- * exact loader pin of its own. `document`, when given, returns the parse5
- * tree of `content` (the doctor's shared inputs parse once for every consumer).
+ * exact loader pin of its own. `document`, when a function, returns the
+ * parse5 tree of `content` (the doctor's shared inputs parse once for every
+ * consumer).
  */
 export function scanPageMarkup({ page_id, file = null, content = "", sdk_version = null, page_type = null, document: parsed = null }) {
-  const document = parsed ? parsed() : parse(String(content || ""));
+  const document = typeof parsed === "function" ? parsed() : parse(String(content || ""));
   const where = file || page_id;
   const sdk = resolvePageSdkVersion(document, sdk_version);
   const findings = [];

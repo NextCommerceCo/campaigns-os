@@ -164,17 +164,18 @@ function liveMetaElements(node, found = []) {
  *              <template> content, or in the raw text of <script>, <noscript>
  *              (scripting on, which the SDK needs), <style>, <textarea> or
  *              <title> is not one. Values trimmed; "" when content is absent.
- *              `document`, when given, returns the parse5 tree of `content`
- *              (the doctor's shared inputs parse once for every consumer).
  *   mentioned  every `<meta>`-shaped tag in the source text whose name is
  *              next-page-type in any case or spacing, live or not, plus every
  *              match of the looser pattern this replaced. Values trimmed and
  *              deduplicated, first occurrence first. Wider than that pattern,
  *              never narrower.
+ *
+ * `document`, when a function, returns the parse5 tree of `content` (the
+ * doctor's shared inputs parse once for every consumer).
  */
 export function readBuiltPageTypeMetas(content, document = null) {
   const source = String(content || "");
-  const live = liveMetaElements(document ? document() : parse(source))
+  const live = liveMetaElements(typeof document === "function" ? document() : parse(source))
     .map((element) => new Map(element.attrs.map((attr) => [attr.name, attr.value])))
     .filter((attrs) => attrs.get("name") === PAGE_TYPE_META)
     .map((attrs) => (attrs.get("content") ?? "").trim());

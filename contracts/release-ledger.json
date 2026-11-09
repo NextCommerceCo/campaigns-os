@@ -11263,7 +11263,7 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.66.0+agent.4",
-      "changelog_sha256": "4e4d28b9341cda6636b52e5fc4abdcc21a44a33c77d1449f3ee5a2d65298c6ba",
+      "changelog_sha256": "86e2327dd7be06e5f9fc5377ea4603fafddc53e6076c56b7cb01ccf428bef16e",
       "agent_impact": "None. Doctor output is unchanged: the same codes, messages, ordering, ready lines, checkpoint gates and causes. Doctor reads and parses less within one run, and doctor --built now shares one read-only input snapshot like packet doctor.",
       "compatibility": "compatible",
       "migration": "none",
@@ -11281,7 +11281,7 @@
           "summary": "doctor --built runs inside one read-only input snapshot, and its upsell selector-scope and SDK markup gates read through it."
         }
       ],
-      "entry_sha256": "069cf441ec9ac2baef42d12343538d0862c74523aba6c4206c184818aae55155"
+      "entry_sha256": "9c3878b79bc2a2248a437161d0984d97d2497d4f1bf1b7cd28fb1570f7f9a729"
     }
   ]
 }

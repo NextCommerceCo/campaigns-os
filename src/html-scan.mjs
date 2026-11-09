@@ -14,16 +14,19 @@ import { parse } from 'parse5';
 // Budgets are aggregate: a nested fresh snapshot (an inspection inside an
 // inspection) counts against its parent's ledger, and past MAX_DEPTH nesting
 // runs uncached. Beyond any budget the input is read, parsed or collected per
-// use, as it was before the snapshot existed. Failures are never retained, so
-// an unavailable input stays unavailable to each consumer on its own terms.
+// use, as it was before the snapshot existed. Read failures are never
+// retained, so an unavailable input stays unavailable to each consumer on its
+// own terms.
 const snapshots = new AsyncLocalStorage();
 const MAX_RETAINED_BYTES = 16 * 1024 * 1024;
 const MAX_RETAINED_FILES = 4096;
-// A parse5 tree costs about 20x its UTF-8 source in heap (measured on the
-// certified-family pages), so parsed documents get their own budget.
+// A parse5 tree costs 20-23x its UTF-8 source in heap on the certified-family
+// pages and up to 30x on element-dense markup, so parsed documents get their
+// own budget, estimated at the dense end.
 const MAX_RETAINED_PARSE_COST = 64 * 1024 * 1024;
-const PARSE_COST_PER_BYTE = 20;
+const PARSE_COST_PER_BYTE = 30;
 const MAX_MEMOS = 256;
+const MAX_PATHS = 4 * MAX_RETAINED_FILES;
 const MAX_DEPTH = 4;
 // Parse profiles, keyed into the cache with the source's identity. A tree
 // parsed with other options (locations, bounds) is a different input.
@@ -36,7 +39,7 @@ export function withHtmlScanSnapshot(operation, { reuse = false } = {}) {
   const depth = parent ? parent.depth + 1 : 0;
   const snapshot = {
     files: new Map(), paths: new Map(), memos: new Map(), depth,
-    ledger: parent ? parent.ledger : { bytes: 0, files: 0, parseCost: 0, memos: 0 },
+    ledger: parent ? parent.ledger : { bytes: 0, files: 0, parseCost: 0, memos: 0, paths: 0 },
     active: depth <= MAX_DEPTH,
     expired: false,
   };
@@ -52,6 +55,7 @@ export function withHtmlScanSnapshot(operation, { reuse = false } = {}) {
         snapshot.ledger.parseCost -= entry.parseCost;
       }
       snapshot.ledger.memos -= snapshot.memos.size;
+      snapshot.ledger.paths -= snapshot.paths.size;
       snapshot.active = false;
       snapshot.expired = true;
       snapshot.files.clear();
@@ -61,16 +65,21 @@ export function withHtmlScanSnapshot(operation, { reuse = false } = {}) {
   });
 }
 
+// The file's identity: its real path, so `/var/...` and `/private/var/...`
+// are one entry. Remembered per path while the path budget lasts.
 function realKey(snapshot, path) {
   const key = resolve(path);
   let real = snapshot.paths.get(key);
   if (real === undefined) {
     try {
-      real = realpathSync(key);
+      real = realpathSync.native(key);
     } catch {
       return key;
     }
-    snapshot.paths.set(key, real);
+    if (snapshot.ledger.paths < MAX_PATHS) {
+      snapshot.paths.set(key, real);
+      snapshot.ledger.paths += 1;
+    }
   }
   return real;
 }
@@ -151,7 +160,7 @@ export function htmlScanDocuments(paths, profile = 'noloc') {
 // included, so no consumer can change what the next one reads.
 export function htmlScanMemo(key, compute) {
   const snapshot = snapshots.getStore();
-  if (!snapshot?.active) return compute();
+  if (!snapshot?.active) return freezeShallow(compute());
   if (snapshot.memos.has(key)) return snapshot.memos.get(key);
   const value = freezeShallow(compute());
   if (snapshot.ledger.memos < MAX_MEMOS) {

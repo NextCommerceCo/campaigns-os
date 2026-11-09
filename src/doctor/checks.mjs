@@ -3211,12 +3211,15 @@ function sourcePermalinkForPage(targetOutputDir, publicRouteSlug, page, { assets
 
 // Every permalink the source pages state, in file order. One walk of the
 // source tree per inspection (#730), however many spec pages and validators ask.
+// Each value is copied: a substring would keep its whole source page alive for
+// the run, outside the byte budget.
 function sourcePermalinks(targetOutputDir, assetsHtmlIgnored) {
   return htmlScanMemo(JSON.stringify(["source-permalinks", resolve(targetOutputDir), assetsHtmlIgnored]), () => collectHtmlFiles(targetOutputDir)
     .filter((file) => !file.path.includes("_includes/") && !file.path.includes("_layouts/"))
     .filter((file) => !(assetsHtmlIgnored && file.path.split(sep)[0] === "assets"))
     .map((file) => extractFrontmatterValue(readHtmlScanText(join(targetOutputDir, file.path)), "permalink"))
-    .filter(isNonEmptyString));
+    .filter(isNonEmptyString)
+    .map((permalink) => Buffer.from(permalink).toString()));
 }
 
 function extractMetaContent(content, name) {
