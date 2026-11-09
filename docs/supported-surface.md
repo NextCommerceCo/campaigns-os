@@ -59,7 +59,10 @@ the package a consumer installs."
   `reserved-skill-names.json`, and the orientation contract/fixture entries
   named in the manifest — internal build/QA contract data. In particular,
   `contracts/fixtures/orientation/release-gate/cases.json` is this repo's own
-  release-gate test matrix, not a consumer contract.
+  release-gate test matrix, not a consumer contract. The family script
+  reference (`contracts/family-script-reference.v0.json` and its blobs) ships
+  because doctor reads it at run time; it is regenerated from each catalog pin
+  and is not a consumer contract either.
 - CLI output text, log lines, and human-facing handoff strings. Machine-readable
   artifact fields are governed by their schemas, not by prose.
 

@@ -1,5 +1,5 @@
 {
-  "base_sha": "e1c5bc9c6dc2745d6f2bd54f37f89319ce7f915a",
+  "base_sha": "b3b5d9d2a3fcf1460b93f7f3ae849983f24cbae1",
   "case": "good-sdk-markup-orphaned-upsell-action",
   "entry": "built",
   "description": "clean: fixtures/sdk-markup/orphaned-upsell-action/good, the accepted form of the shape",

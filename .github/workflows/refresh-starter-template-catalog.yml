@@ -94,6 +94,14 @@ jobs:
           git -C "$STARTER_TEMPLATES_PATH" fetch --quiet --depth=1 origin "$sha"
           git -C "$STARTER_TEMPLATES_PATH" checkout --quiet --detach FETCH_HEAD
 
+      # Doctor's family script divergence advisory compares against the family
+      # scripts at the catalog pin; regenerate them with the catalog so the
+      # snapshot and its reference never disagree.
+      - name: Refresh family script reference
+        run: node scripts/refresh-family-script-reference.mjs
+        env:
+          STARTER_TEMPLATES_PATH: ${{ runner.temp }}/campaign-cart-starter-templates
+
       - name: Validate refreshed snapshot
         run: npm run check
         env:
@@ -110,7 +118,9 @@ jobs:
         run: |
           changed="$(git status --porcelain --untracked-files=all -- \
             contracts/commerce-surface-catalog.json \
-            contracts/fixtures/campaign-specs)"
+            contracts/fixtures/campaign-specs \
+            contracts/family-script-reference.v0.json \
+            contracts/family-script-reference)"
           if [ -z "$changed" ]; then
             echo "Starter template catalog snapshot is already current."
             exit 0
@@ -121,7 +131,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -C "$branch"
-          git add contracts/commerce-surface-catalog.json contracts/fixtures/campaign-specs
+          git add -A contracts/commerce-surface-catalog.json contracts/fixtures/campaign-specs contracts/family-script-reference.v0.json contracts/family-script-reference
           git commit -m "Refresh starter template catalog snapshot"
           # This branch is workflow-owned and concurrency serializes its writers.
           git push --force origin "$branch"
