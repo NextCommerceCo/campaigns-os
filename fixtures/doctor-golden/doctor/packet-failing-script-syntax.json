@@ -1,5 +1,5 @@
 {
-  "base_sha": "fc766101cbe102bfbbfc99867b24ef1f5c16dcd0",
+  "base_sha": "22174f84fb41dcba53d76d108778a7bf210377f1",
   "case": "failing-script-syntax",
   "entry": "packet",
   "description": "failing: fixtures/script-syntax/bad copied under the packet's route (blocked)",
@@ -154,6 +154,62 @@
           "current": "sha256:0dea181adfa71494b6397f765020359720c74d1f02e174678a60b595d2ffc8bd",
           "file_count": 4,
           "assembly_complete": false
+        },
+        "cause": "unknown",
+        "cause_reason": "no_prior_run"
+      },
+      {
+        "code": "built_output.family_script_divergence.diverged",
+        "message": "_site/runtime-packet-demo/js/checkout.js differs from the olympus family file js/checkout.js (candidate by same built path; ancestry is not recorded) at NextCommerceCo/campaign-cart-starter-templates@5711e22 (SDK 0.4.43), src/olympus/assets/js/checkout.js: 8 line(s) against 203 (-195), 3 hunk(s) adding 6 and removing 201 line(s), the first at line 1. Advisory: confirm the campaign edit is intended before the next family or SDK update, or move it upstream.",
+        "detail": {
+          "finding": {
+            "file": "_site/runtime-packet-demo/js/checkout.js",
+            "pages": [
+              "checkout"
+            ],
+            "match": "path",
+            "ancestry": "candidate",
+            "reference_path": "js/checkout.js",
+            "source_path": "src/olympus/assets/js/checkout.js",
+            "result": "diverged",
+            "diff": {
+              "local_lines": 8,
+              "reference_lines": 203,
+              "delta": -195,
+              "hunks": {
+                "count": 3,
+                "added": 6,
+                "removed": 201,
+                "first": [
+                  {
+                    "local_start": 1,
+                    "local_lines": 5,
+                    "reference_start": 1,
+                    "reference_lines": 38
+                  },
+                  {
+                    "local_start": 7,
+                    "local_lines": 0,
+                    "reference_start": 40,
+                    "reference_lines": 16
+                  },
+                  {
+                    "local_start": 8,
+                    "local_lines": 1,
+                    "reference_start": 57,
+                    "reference_lines": 147
+                  }
+                ]
+              }
+            }
+          },
+          "reference": {
+            "kind": "bundled",
+            "repo": "NextCommerceCo/campaign-cart-starter-templates",
+            "sha": "5711e22345756c655f41c0ae71444478e4a8999e",
+            "sdk_version": "0.4.43",
+            "label": "NextCommerceCo/campaign-cart-starter-templates@5711e22 (SDK 0.4.43)"
+          }
         },
         "cause": "unknown",
         "cause_reason": "no_prior_run"
@@ -407,6 +463,7 @@
       "Built HTML structure and commerce refs checked in _site/runtime-packet-demo/ for 1 page(s)",
       "Upsell selector-scope checkpoint not applicable: no built upsell/downsell page to scan yet.",
       "SDK markup checks passed on 1 built page(s)",
+      "Family scripts compared with olympus at NextCommerceCo/campaign-cart-starter-templates@5711e22 (SDK 0.4.43) (advisory): 1 candidate family script(s), 0 identical, 1 diverged; generated configuration not compared: _site/runtime-packet-demo/config.js; 1 other campaign script(s) match no family file.",
       "Built SDK meta tags checked in _site/runtime-packet-demo/ for 1 page(s)",
       "Campaigns API key available via the packet-local CampaignSpec campaign.campaigns_api_key",
       "Market-sensitive copy scan found no obvious US-only patterns (available_shipping_countries=all).",
@@ -456,6 +513,7 @@
         "built_output.campaign_identity",
         "built_output.sdk_markup",
         "built_output.script_syntax",
+        "built_output.family_script_divergence",
         "built_output.cart_placeholders",
         "built_output.smoke_qc",
         "built_output.sdk_meta_tags",
@@ -1094,6 +1152,73 @@
         "page_findings": [],
         "drift": null
       },
+      "family_script_divergence": {
+        "family": "olympus",
+        "family_source": "packet",
+        "reference": {
+          "kind": "bundled",
+          "repo": "NextCommerceCo/campaign-cart-starter-templates",
+          "sha": "5711e22345756c655f41c0ae71444478e4a8999e",
+          "sdk_version": "0.4.43",
+          "label": "NextCommerceCo/campaign-cart-starter-templates@5711e22 (SDK 0.4.43)"
+        },
+        "status": "compared",
+        "reason": null,
+        "scripts": [
+          {
+            "file": "_site/runtime-packet-demo/js/checkout.js",
+            "pages": [
+              "checkout"
+            ],
+            "match": "path",
+            "ancestry": "candidate",
+            "reference_path": "js/checkout.js",
+            "source_path": "src/olympus/assets/js/checkout.js",
+            "result": "diverged",
+            "diff": {
+              "local_lines": 8,
+              "reference_lines": 203,
+              "delta": -195,
+              "hunks": {
+                "count": 3,
+                "added": 6,
+                "removed": 201,
+                "first": [
+                  {
+                    "local_start": 1,
+                    "local_lines": 5,
+                    "reference_start": 1,
+                    "reference_lines": 38
+                  },
+                  {
+                    "local_start": 7,
+                    "local_lines": 0,
+                    "reference_start": 40,
+                    "reference_lines": 16
+                  },
+                  {
+                    "local_start": 8,
+                    "local_lines": 1,
+                    "reference_start": 57,
+                    "reference_lines": 147
+                  }
+                ]
+              }
+            }
+          }
+        ],
+        "generated_configuration": [
+          {
+            "file": "_site/runtime-packet-demo/config.js",
+            "built_path": "config.js",
+            "pages": [
+              "checkout"
+            ]
+          }
+        ],
+        "not_compared": 1,
+        "unreadable": []
+      },
       "input_currency": {
         "brief": {
           "bound": null,
@@ -1195,13 +1320,13 @@
     "cause_summary": {
       "schema_version": "campaigns-os-finding-cause/v0",
       "surface": "doctor",
-      "total": 15,
+      "total": 16,
       "counts": {
         "caused_by_change": 0,
         "pre_existing": 0,
         "test_environment": 0,
         "upstream_drift": 0,
-        "unknown": 15
+        "unknown": 16
       },
       "prior_run_id": null,
       "comparison": "no_prior_run"

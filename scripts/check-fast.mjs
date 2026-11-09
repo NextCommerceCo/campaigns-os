@@ -22,7 +22,7 @@ import { resolveStarterTemplatesRoot } from "./starter-templates-path.mjs";
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 
 // These read a campaign-cart-starter-templates checkout beside this one.
-export const TEMPLATE_CHECKS = ["check:template-doctrine", "check:slot-manifest"];
+export const TEMPLATE_CHECKS = ["check:template-doctrine", "check:slot-manifest", "check:family-script-reference"];
 // CI's PR-only release gates, run with --base (docs/small-pr-review-path.md).
 export const RELEASE_GATES = ["check-skill-versions", "check-supported-surface", "check-release-ledger"];
 

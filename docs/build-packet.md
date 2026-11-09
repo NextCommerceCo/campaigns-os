@@ -1175,6 +1175,63 @@ canonical rendered output of every certified starter family
 it reads for credential declarations (`script-parse:<page_id>`; see
 [QA and test orders](qa-and-test-orders.md)).
 
+### Family script divergence advisory (`built_output.family_script_divergence`)
+
+An advisory, never a blocker. A campaign that copies a family script and edits
+it keeps working, so nothing else in doctor sees the edit; it surfaces on the
+next family or SDK update. This check compares the local scripts the built
+pages load (the same references the script syntax gate resolves) with the
+template family's own scripts. It runs when the family is known: the packet's
+decided `assembly.template_family`, or `--family` for `doctor --built`. The
+built pages must also load at least one local script.
+
+**The reference.** For a public family it is the bundled family script
+reference, `contracts/family-script-reference.v0.json`, with one blob per
+distinct script under `contracts/family-script-reference/`. It holds the
+bytes, SHA-256, upstream source path and built path of every
+`src/<family>/assets/js/**/*.js` of each certified public family. These are
+taken from `NextCommerceCo/campaign-cart-starter-templates` at the commit the
+commerce-surface catalog was synced from, with the SDK version each family pins
+there. It ships in the npm package; the rendered fixtures under
+`fixtures/certified-families/` do not. `config.js` is generated configuration,
+rendered from campaign values. It is never bundled or compared, and is listed
+apart as `generated_configuration[]`. Families in
+`contracts/private-template-sources.json` are never bundled, and their
+comparison reads as unavailable; comparing against a local private checkout is
+not supported yet. A family the bundled reference does not cover reads as
+unavailable too.
+
+**What it claims.** Bytes decide first: a built script identical to any family
+file is `identical`, whatever its name (`match: "content"` when the name
+differs, with every family file of those bytes in `candidates[]` when there is
+more than one). Any other copy is nominated as a candidate for the family file
+at the same built path (`js/upsells.js`), else for the one family file with its
+name, and diffed against it. A name that several family files share is
+reported as `ambiguous` and is not diffed. A nomination is not ancestry. Nothing a build records says which family file a
+campaign copy came from, so every comparison carries `ancestry: "candidate"`,
+and an edited copy under a new name is not recognized. Equal SHA-256 is
+`identical`. Unequal bytes are `diverged`, with a line diff against the
+reference bytes: line counts, the delta, and hunks (runs of changed lines,
+added and removed counts, the first three ranges). Lines are compared without
+a trailing carriage return, so a copy that differs only in line endings
+reports no hunks. A pair over the per-pair diff budget (`omitted:
+"pair_budget"`), or larger than what remains of the record's shared cell
+budget (the cells of four maximum-size pairs; `omitted: "record_budget"`),
+reports line counts only, and the warning says which budget it was.
+
+Each diverged copy is one warning, `built_output.family_script_divergence.diverged`.
+It names the file, the family file, how it was nominated, the reference
+(repository, commit and SDK),
+the upstream source path, the line counts and the hunks. One ready line
+summarizes the run. When the comparison is unavailable, the ready line gives
+the reason. The full record is `derived.family_script_divergence`: `family`,
+`family_source` (`packet` | `flag`), `reference`, `status` (`compared` |
+`unavailable`), `reason`, `scripts[]`, `generated_configuration[]`,
+`not_compared` (scripts that match no family file) and `unreadable[]`. Doctor
+regenerates nothing. `scripts/refresh-family-script-reference.mjs` rewrites the
+reference from the catalog pin, and `npm run check:family-script-reference`
+fails when the committed reference is stale.
+
 ### Built-output script API and storage observations (`built_output.script_observations`)
 
 The same local scripts are also read for code that reaches past the SDK's
@@ -1215,9 +1272,9 @@ missing scripts are not read, and a script that cannot be read or does not
 parse has no observations (the script syntax gate reports it). Each finding
 (`detail.finding`) records `file`, `line`, `column`, `source_type`, `pages`,
 `operation`, `receiver`, `key` (`text` and `match`: `exact` or `prefix`) for
-storage, `delivery` (`local`), `ownership` (`unknown`: doctor has no family
-reference yet to tell campaign code from a family copy) and `provenance`
-(null). Doctor lists the first 50 and counts the rest under
+storage, `delivery` (`local`), `ownership` (`unknown`: these observations do
+not consult the family script reference to tell campaign code from a family
+copy) and `provenance` (null). Doctor lists the first 50 and counts the rest under
 `built_output.script_observations.truncated`. Fixtures:
 `fixtures/script-observations`.
 

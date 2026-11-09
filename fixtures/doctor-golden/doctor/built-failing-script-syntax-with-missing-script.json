@@ -1,5 +1,5 @@
 {
-  "base_sha": "fc766101cbe102bfbbfc99867b24ef1f5c16dcd0",
+  "base_sha": "22174f84fb41dcba53d76d108778a7bf210377f1",
   "case": "failing-script-syntax-with-missing-script",
   "entry": "built",
   "description": "failing: fixtures/script-syntax/bad plus a missing local script on the same page (blocked, warned[] not empty)",

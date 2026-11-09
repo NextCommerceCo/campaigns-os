@@ -1,5 +1,5 @@
 {
-  "base_sha": "fc766101cbe102bfbbfc99867b24ef1f5c16dcd0",
+  "base_sha": "22174f84fb41dcba53d76d108778a7bf210377f1",
   "case": "certified-shop-single-step",
   "entry": "built",
   "description": "certified family shop-single-step rendered fixture, read in place with --family shop-single-step",
@@ -31,6 +31,7 @@
       "SDK markup: 3 data-next-* name(s) not in the Campaign Cart 0.4.43 attribute index (advisory; the SDK does not read them): data-next-catalog-component, data-next-content, data-next-skeleton",
       "SDK markup checks passed on 9 built page(s)",
       "All 7 campaign-owned script(s) loaded by built pages parse",
+      "Family scripts compared with shop-single-step at NextCommerceCo/campaign-cart-starter-templates@5711e22 (SDK 0.4.43) (advisory): 6 candidate family script(s), 6 identical, 0 diverged; generated configuration not compared: _site/shop-single-step/config.js.",
       "Cart placeholder check on 9 built page(s): 9 page(s) pass, 0 warning or review result(s)"
     ],
     "derived": {
@@ -93,6 +94,7 @@
         "built_output.campaign_identity",
         "built_output.sdk_markup",
         "built_output.script_syntax",
+        "built_output.family_script_divergence",
         "built_output.cart_placeholders",
         "built_output.smoke_qc"
       ],
@@ -2993,6 +2995,114 @@
       "brand_contract": {
         "state": "inspected",
         "family": "shop-single-step"
+      },
+      "family_script_divergence": {
+        "family": "shop-single-step",
+        "family_source": "flag",
+        "reference": {
+          "kind": "bundled",
+          "repo": "NextCommerceCo/campaign-cart-starter-templates",
+          "sha": "5711e22345756c655f41c0ae71444478e4a8999e",
+          "sdk_version": "0.4.43",
+          "label": "NextCommerceCo/campaign-cart-starter-templates@5711e22 (SDK 0.4.43)"
+        },
+        "status": "compared",
+        "reason": null,
+        "scripts": [
+          {
+            "file": "_site/shop-single-step/js/checkout.js",
+            "pages": [
+              "checkout"
+            ],
+            "match": "path",
+            "ancestry": "candidate",
+            "reference_path": "js/checkout.js",
+            "source_path": "src/shop-single-step/assets/js/checkout.js",
+            "result": "identical"
+          },
+          {
+            "file": "_site/shop-single-step/js/promo-timer.js",
+            "pages": [
+              "checkout"
+            ],
+            "match": "path",
+            "ancestry": "candidate",
+            "reference_path": "js/promo-timer.js",
+            "source_path": "src/shop-single-step/assets/js/promo-timer.js",
+            "result": "identical"
+          },
+          {
+            "file": "_site/shop-single-step/js/landing/landing.js",
+            "pages": [
+              "landing"
+            ],
+            "match": "path",
+            "ancestry": "candidate",
+            "reference_path": "js/landing/landing.js",
+            "source_path": "src/shop-single-step/assets/js/landing/landing.js",
+            "result": "identical"
+          },
+          {
+            "file": "_site/shop-single-step/js/presell/countdown.js",
+            "pages": [
+              "presell"
+            ],
+            "match": "path",
+            "ancestry": "candidate",
+            "reference_path": "js/presell/countdown.js",
+            "source_path": "src/shop-single-step/assets/js/presell/countdown.js",
+            "result": "identical"
+          },
+          {
+            "file": "_site/shop-single-step/js/upsells.js",
+            "pages": [
+              "upsell-bundle-stepper",
+              "upsell-bundle-tier-cards",
+              "upsell-bundle-tier-pills",
+              "upsell-single",
+              "upsell-vsl"
+            ],
+            "match": "path",
+            "ancestry": "candidate",
+            "reference_path": "js/upsells.js",
+            "source_path": "src/shop-single-step/assets/js/upsells.js",
+            "result": "identical"
+          },
+          {
+            "file": "_site/shop-single-step/js/payment-logos.js",
+            "pages": [
+              "upsell-bundle-stepper",
+              "upsell-bundle-tier-cards",
+              "upsell-bundle-tier-pills",
+              "upsell-single",
+              "upsell-vsl"
+            ],
+            "match": "path",
+            "ancestry": "candidate",
+            "reference_path": "js/payment-logos.js",
+            "source_path": "src/shop-single-step/assets/js/payment-logos.js",
+            "result": "identical"
+          }
+        ],
+        "generated_configuration": [
+          {
+            "file": "_site/shop-single-step/config.js",
+            "built_path": "config.js",
+            "pages": [
+              "checkout",
+              "landing",
+              "presell",
+              "receipt",
+              "upsell-bundle-stepper",
+              "upsell-bundle-tier-cards",
+              "upsell-bundle-tier-pills",
+              "upsell-single",
+              "upsell-vsl"
+            ]
+          }
+        ],
+        "not_compared": 0,
+        "unreadable": []
       },
       "synthesized_packet": {
         "schema_version": "campaign-runtime-build-packet/v0",

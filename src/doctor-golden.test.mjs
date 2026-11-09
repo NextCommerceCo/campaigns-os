@@ -12,8 +12,8 @@
 //
 // The goldens under fixtures/doctor-golden/doctor/ were captured at base
 // e1c5bc9c6dc2745d6f2bd54f37f89319ce7f915a, before the refactor, and
-// regenerated once since, for #729's advisory script observations (only
-// built-certified-shop-three-step changed output). A refactor
+// regenerated since only for the reviewed #729 advisories listed in
+// fixtures/doctor-golden/README.md. A refactor
 // change must reproduce them exactly; a diff is a regression to fix, never a
 // reason to regenerate. Regenerating is only for a separately reviewed
 // behavior change, and the diff is read before it is committed:
@@ -56,7 +56,7 @@ import { disabledLiveRead } from "./live-campaign-refs.mjs";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const GOLDEN_DIR = join(ROOT, "fixtures", "doctor-golden", "doctor");
-const BASE_SHA = "fc766101cbe102bfbbfc99867b24ef1f5c16dcd0";
+const BASE_SHA = "22174f84fb41dcba53d76d108778a7bf210377f1";
 const FROZEN_NOW = "2026-01-01T00:00:00.000Z";
 const REGEN = "UPDATE_GOLDEN=1 node --test src/doctor-golden.test.mjs";
 // Only the exact value "1" regenerates, and never under CI: a CI run that

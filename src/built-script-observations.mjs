@@ -29,9 +29,9 @@
 // gate owns that failure.
 //
 // Every finding records the delivery form (always `local` here), ownership
-// (`unknown`: doctor has no family reference to tell campaign code from a
-// family copy yet) and provenance (null until there is an ownership claim to
-// prove).
+// (`unknown`: these observations do not consult the family script reference
+// to tell campaign code from a family copy) and provenance (null until there
+// is an ownership claim to prove).
 
 import { relative, sep } from "node:path";
 

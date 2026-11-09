@@ -1,0 +1,1036 @@
+{
+  "schema_version": "family-script-reference/v0",
+  "purpose": "Bytes, SHA-256 and provenance of the public starter-family scripts doctor's family script divergence advisory compares a campaign's built copies against. Hashes establish equality; the blobs give line and hunk deltas. A filename or path match nominates a candidate; it does not prove the campaign copy descends from the family file.",
+  "source": {
+    "repo": "NextCommerceCo/campaign-cart-starter-templates",
+    "sha": "5711e22345756c655f41c0ae71444478e4a8999e",
+    "pin": "contracts/commerce-surface-catalog.json _synced_from_sha"
+  },
+  "generated_by": "scripts/refresh-family-script-reference.mjs",
+  "blob_path": "contracts/family-script-reference/<sha256>.js.txt",
+  "compared": "Every src/<family>/assets/js/**/*.js of each certified public family at source.sha, under the path page-kit builds it to below the campaign directory.",
+  "sdk_applicability": "Each family's sdk_version is the Campaign Cart SDK its _data/campaigns.json entry pins at source.sha: the SDK these files are written against.",
+  "generated_configuration": [
+    {
+      "built_path": "config.js",
+      "source_path": "src/<family>/assets/config.js",
+      "rule": "Not bundled and not compared: page-kit renders campaign values (API key, store details, analytics) into it, so a campaign copy differs from the family file by design."
+    }
+  ],
+  "private_families": {
+    "families": [
+      "arjuna",
+      "karna",
+      "limos"
+    ],
+    "rule": "Never bundled. Doctor reports the comparison for a private family as unavailable."
+  },
+  "families": {
+    "apollo": {
+      "sdk_version": "0.4.43",
+      "scripts": [
+        {
+          "built_path": "js/axon.adapter.js",
+          "source_path": "src/apollo/assets/js/axon.adapter.js",
+          "sha256": "a47cd7d594c5a9772144bc0953ef4bb284dec16d0aa8f076e5e8c9391ce5df78",
+          "bytes": 5646,
+          "lines": 120
+        },
+        {
+          "built_path": "js/checkout-apollo.js",
+          "source_path": "src/apollo/assets/js/checkout-apollo.js",
+          "sha256": "fc10adf82124fda2cbf1fe6100cffd79f5dcb1532bfb87dd4566dab3f2aa34be",
+          "bytes": 2817,
+          "lines": 63
+        },
+        {
+          "built_path": "js/checkout.js",
+          "source_path": "src/apollo/assets/js/checkout.js",
+          "sha256": "3e7a76fa1be2529e5c4f5ed0cb99ebbd874f74cd30df649c4bc83c3185f6d57c",
+          "bytes": 7989,
+          "lines": 203
+        },
+        {
+          "built_path": "js/ga4.adapter.js",
+          "source_path": "src/apollo/assets/js/ga4.adapter.js",
+          "sha256": "130da2d559c0cbd3aa19a86fe5165809a85c08cb65d367578190796c107ffff4",
+          "bytes": 7352,
+          "lines": 149
+        },
+        {
+          "built_path": "js/landing/landing.js",
+          "source_path": "src/apollo/assets/js/landing/landing.js",
+          "sha256": "6758dedc8e47ed3497214f3de2a13a8b0614c8438a7fd3b09ab3786b310202cd",
+          "bytes": 13272,
+          "lines": 326
+        },
+        {
+          "built_path": "js/next-forwarder-core.js",
+          "source_path": "src/apollo/assets/js/next-forwarder-core.js",
+          "sha256": "4566e8ae67b5a22b540f8196c74f3011d6fa1f7ab7d1d89909dd769706d902f9",
+          "bytes": 23235,
+          "lines": 410
+        },
+        {
+          "built_path": "js/northbeam.adapter.js",
+          "source_path": "src/apollo/assets/js/northbeam.adapter.js",
+          "sha256": "00db24e2897a1073956930b40b5c4e97dbccc411199db05d1e6cd617a296049f",
+          "bytes": 6741,
+          "lines": 129
+        },
+        {
+          "built_path": "js/payment-logos.js",
+          "source_path": "src/apollo/assets/js/payment-logos.js",
+          "sha256": "7aab3cd8e8163e3837d6b11820d5afa1065b893d7da295f6d0b40f83eb8ee7ed",
+          "bytes": 2206,
+          "lines": 36
+        },
+        {
+          "built_path": "js/pinterest.adapter.js",
+          "source_path": "src/apollo/assets/js/pinterest.adapter.js",
+          "sha256": "4568d5012f284bb25c500de097000cb27280735c7c91f0b93f67acac0b21a9b9",
+          "bytes": 6154,
+          "lines": 124
+        },
+        {
+          "built_path": "js/presell/countdown.js",
+          "source_path": "src/apollo/assets/js/presell/countdown.js",
+          "sha256": "bdaeee7003302a8c1fd40e0370efa313e5d5cbd4d907f61c22b388ded60a85f2",
+          "bytes": 1334,
+          "lines": 48
+        },
+        {
+          "built_path": "js/promo-timer.js",
+          "source_path": "src/apollo/assets/js/promo-timer.js",
+          "sha256": "601010fa98bfe40605f51fc0889716c9fac014dbf4093be4cf9300d208725caf",
+          "bytes": 10916,
+          "lines": 334
+        },
+        {
+          "built_path": "js/snapchat.adapter.js",
+          "source_path": "src/apollo/assets/js/snapchat.adapter.js",
+          "sha256": "2f6ff5efb48fbb6a859ae4aa379309724259df9f27e5d42fc890f5fcb9f8b359",
+          "bytes": 5586,
+          "lines": 112
+        },
+        {
+          "built_path": "js/taboola.adapter.js",
+          "source_path": "src/apollo/assets/js/taboola.adapter.js",
+          "sha256": "321df1e2bd9908f417c761a3eb6bf1e3cd75c4335be004b45b1c9624c2c3e0bf",
+          "bytes": 4099,
+          "lines": 89
+        },
+        {
+          "built_path": "js/tiktok.adapter.js",
+          "source_path": "src/apollo/assets/js/tiktok.adapter.js",
+          "sha256": "f1b6a078f7ef2ff7d795501b8fc9f9aec4bffe3c24412413c8d4dde35f47cf29",
+          "bytes": 5725,
+          "lines": 117
+        },
+        {
+          "built_path": "js/triplewhale.adapter.js",
+          "source_path": "src/apollo/assets/js/triplewhale.adapter.js",
+          "sha256": "6f40bf555fb48170fec317cae814276e9f226a1179cac79fcedc2ed2397af649",
+          "bytes": 6306,
+          "lines": 125
+        },
+        {
+          "built_path": "js/upsells.js",
+          "source_path": "src/apollo/assets/js/upsells.js",
+          "sha256": "8a5883415cc9ed47a97517f9e1d76982513e010507035bc6c26d6cc7079cf9f7",
+          "bytes": 5994,
+          "lines": 126
+        }
+      ]
+    },
+    "apollo-mv-single-step": {
+      "sdk_version": "0.4.43",
+      "scripts": [
+        {
+          "built_path": "js/axon.adapter.js",
+          "source_path": "src/apollo-mv-single-step/assets/js/axon.adapter.js",
+          "sha256": "a47cd7d594c5a9772144bc0953ef4bb284dec16d0aa8f076e5e8c9391ce5df78",
+          "bytes": 5646,
+          "lines": 120
+        },
+        {
+          "built_path": "js/checkout-apollo-mv-full.js",
+          "source_path": "src/apollo-mv-single-step/assets/js/checkout-apollo-mv-full.js",
+          "sha256": "279e655ec4110a523bd69a8b16b64fd52376a96e91593afe36655b95da810367",
+          "bytes": 15314,
+          "lines": 365
+        },
+        {
+          "built_path": "js/checkout.js",
+          "source_path": "src/apollo-mv-single-step/assets/js/checkout.js",
+          "sha256": "3e7a76fa1be2529e5c4f5ed0cb99ebbd874f74cd30df649c4bc83c3185f6d57c",
+          "bytes": 7989,
+          "lines": 203
+        },
+        {
+          "built_path": "js/ga4.adapter.js",
+          "source_path": "src/apollo-mv-single-step/assets/js/ga4.adapter.js",
+          "sha256": "130da2d559c0cbd3aa19a86fe5165809a85c08cb65d367578190796c107ffff4",
+          "bytes": 7352,
+          "lines": 149
+        },
+        {
+          "built_path": "js/landing/landing.js",
+          "source_path": "src/apollo-mv-single-step/assets/js/landing/landing.js",
+          "sha256": "6758dedc8e47ed3497214f3de2a13a8b0614c8438a7fd3b09ab3786b310202cd",
+          "bytes": 13272,
+          "lines": 326
+        },
+        {
+          "built_path": "js/next-forwarder-core.js",
+          "source_path": "src/apollo-mv-single-step/assets/js/next-forwarder-core.js",
+          "sha256": "4566e8ae67b5a22b540f8196c74f3011d6fa1f7ab7d1d89909dd769706d902f9",
+          "bytes": 23235,
+          "lines": 410
+        },
+        {
+          "built_path": "js/northbeam.adapter.js",
+          "source_path": "src/apollo-mv-single-step/assets/js/northbeam.adapter.js",
+          "sha256": "00db24e2897a1073956930b40b5c4e97dbccc411199db05d1e6cd617a296049f",
+          "bytes": 6741,
+          "lines": 129
+        },
+        {
+          "built_path": "js/payment-logos.js",
+          "source_path": "src/apollo-mv-single-step/assets/js/payment-logos.js",
+          "sha256": "7aab3cd8e8163e3837d6b11820d5afa1065b893d7da295f6d0b40f83eb8ee7ed",
+          "bytes": 2206,
+          "lines": 36
+        },
+        {
+          "built_path": "js/pinterest.adapter.js",
+          "source_path": "src/apollo-mv-single-step/assets/js/pinterest.adapter.js",
+          "sha256": "4568d5012f284bb25c500de097000cb27280735c7c91f0b93f67acac0b21a9b9",
+          "bytes": 6154,
+          "lines": 124
+        },
+        {
+          "built_path": "js/presell/countdown.js",
+          "source_path": "src/apollo-mv-single-step/assets/js/presell/countdown.js",
+          "sha256": "bdaeee7003302a8c1fd40e0370efa313e5d5cbd4d907f61c22b388ded60a85f2",
+          "bytes": 1334,
+          "lines": 48
+        },
+        {
+          "built_path": "js/promo-timer.js",
+          "source_path": "src/apollo-mv-single-step/assets/js/promo-timer.js",
+          "sha256": "601010fa98bfe40605f51fc0889716c9fac014dbf4093be4cf9300d208725caf",
+          "bytes": 10916,
+          "lines": 334
+        },
+        {
+          "built_path": "js/snapchat.adapter.js",
+          "source_path": "src/apollo-mv-single-step/assets/js/snapchat.adapter.js",
+          "sha256": "2f6ff5efb48fbb6a859ae4aa379309724259df9f27e5d42fc890f5fcb9f8b359",
+          "bytes": 5586,
+          "lines": 112
+        },
+        {
+          "built_path": "js/taboola.adapter.js",
+          "source_path": "src/apollo-mv-single-step/assets/js/taboola.adapter.js",
+          "sha256": "321df1e2bd9908f417c761a3eb6bf1e3cd75c4335be004b45b1c9624c2c3e0bf",
+          "bytes": 4099,
+          "lines": 89
+        },
+        {
+          "built_path": "js/tiktok.adapter.js",
+          "source_path": "src/apollo-mv-single-step/assets/js/tiktok.adapter.js",
+          "sha256": "f1b6a078f7ef2ff7d795501b8fc9f9aec4bffe3c24412413c8d4dde35f47cf29",
+          "bytes": 5725,
+          "lines": 117
+        },
+        {
+          "built_path": "js/triplewhale.adapter.js",
+          "source_path": "src/apollo-mv-single-step/assets/js/triplewhale.adapter.js",
+          "sha256": "6f40bf555fb48170fec317cae814276e9f226a1179cac79fcedc2ed2397af649",
+          "bytes": 6306,
+          "lines": 125
+        },
+        {
+          "built_path": "js/upsells-mv.js",
+          "source_path": "src/apollo-mv-single-step/assets/js/upsells-mv.js",
+          "sha256": "b8a6fcfa8349e3749c3afe914f0e3272dfc7e29cf081a80cda67a45915001733",
+          "bytes": 12108,
+          "lines": 295
+        },
+        {
+          "built_path": "js/upsells.js",
+          "source_path": "src/apollo-mv-single-step/assets/js/upsells.js",
+          "sha256": "8a5883415cc9ed47a97517f9e1d76982513e010507035bc6c26d6cc7079cf9f7",
+          "bytes": 5994,
+          "lines": 126
+        },
+        {
+          "built_path": "js/variant-picker-fixture.js",
+          "source_path": "src/apollo-mv-single-step/assets/js/variant-picker-fixture.js",
+          "sha256": "5374512d40af0ae52dada335ea36e9f6812eb9efcdb971b80b8d5f91056d9023",
+          "bytes": 4867,
+          "lines": 104
+        },
+        {
+          "built_path": "js/variant-picker.js",
+          "source_path": "src/apollo-mv-single-step/assets/js/variant-picker.js",
+          "sha256": "22c01e436a86a4b9d5a48cc7a10f51db38ebb51172753333ef12020481553bfd",
+          "bytes": 17666,
+          "lines": 404
+        }
+      ]
+    },
+    "demeter": {
+      "sdk_version": "0.4.43",
+      "scripts": [
+        {
+          "built_path": "js/axon.adapter.js",
+          "source_path": "src/demeter/assets/js/axon.adapter.js",
+          "sha256": "a47cd7d594c5a9772144bc0953ef4bb284dec16d0aa8f076e5e8c9391ce5df78",
+          "bytes": 5646,
+          "lines": 120
+        },
+        {
+          "built_path": "js/checkout-demeter.js",
+          "source_path": "src/demeter/assets/js/checkout-demeter.js",
+          "sha256": "8d0082e3d3534ac9d30dcbe313e57199746dea429be799b2912790fcc28e910d",
+          "bytes": 238,
+          "lines": 7
+        },
+        {
+          "built_path": "js/checkout.js",
+          "source_path": "src/demeter/assets/js/checkout.js",
+          "sha256": "3e7a76fa1be2529e5c4f5ed0cb99ebbd874f74cd30df649c4bc83c3185f6d57c",
+          "bytes": 7989,
+          "lines": 203
+        },
+        {
+          "built_path": "js/ga4.adapter.js",
+          "source_path": "src/demeter/assets/js/ga4.adapter.js",
+          "sha256": "130da2d559c0cbd3aa19a86fe5165809a85c08cb65d367578190796c107ffff4",
+          "bytes": 7352,
+          "lines": 149
+        },
+        {
+          "built_path": "js/landing/landing.js",
+          "source_path": "src/demeter/assets/js/landing/landing.js",
+          "sha256": "6758dedc8e47ed3497214f3de2a13a8b0614c8438a7fd3b09ab3786b310202cd",
+          "bytes": 13272,
+          "lines": 326
+        },
+        {
+          "built_path": "js/next-forwarder-core.js",
+          "source_path": "src/demeter/assets/js/next-forwarder-core.js",
+          "sha256": "4566e8ae67b5a22b540f8196c74f3011d6fa1f7ab7d1d89909dd769706d902f9",
+          "bytes": 23235,
+          "lines": 410
+        },
+        {
+          "built_path": "js/northbeam.adapter.js",
+          "source_path": "src/demeter/assets/js/northbeam.adapter.js",
+          "sha256": "00db24e2897a1073956930b40b5c4e97dbccc411199db05d1e6cd617a296049f",
+          "bytes": 6741,
+          "lines": 129
+        },
+        {
+          "built_path": "js/payment-logos.js",
+          "source_path": "src/demeter/assets/js/payment-logos.js",
+          "sha256": "7aab3cd8e8163e3837d6b11820d5afa1065b893d7da295f6d0b40f83eb8ee7ed",
+          "bytes": 2206,
+          "lines": 36
+        },
+        {
+          "built_path": "js/pinterest.adapter.js",
+          "source_path": "src/demeter/assets/js/pinterest.adapter.js",
+          "sha256": "4568d5012f284bb25c500de097000cb27280735c7c91f0b93f67acac0b21a9b9",
+          "bytes": 6154,
+          "lines": 124
+        },
+        {
+          "built_path": "js/presell/countdown.js",
+          "source_path": "src/demeter/assets/js/presell/countdown.js",
+          "sha256": "bdaeee7003302a8c1fd40e0370efa313e5d5cbd4d907f61c22b388ded60a85f2",
+          "bytes": 1334,
+          "lines": 48
+        },
+        {
+          "built_path": "js/promo-timer.js",
+          "source_path": "src/demeter/assets/js/promo-timer.js",
+          "sha256": "601010fa98bfe40605f51fc0889716c9fac014dbf4093be4cf9300d208725caf",
+          "bytes": 10916,
+          "lines": 334
+        },
+        {
+          "built_path": "js/snapchat.adapter.js",
+          "source_path": "src/demeter/assets/js/snapchat.adapter.js",
+          "sha256": "2f6ff5efb48fbb6a859ae4aa379309724259df9f27e5d42fc890f5fcb9f8b359",
+          "bytes": 5586,
+          "lines": 112
+        },
+        {
+          "built_path": "js/taboola.adapter.js",
+          "source_path": "src/demeter/assets/js/taboola.adapter.js",
+          "sha256": "321df1e2bd9908f417c761a3eb6bf1e3cd75c4335be004b45b1c9624c2c3e0bf",
+          "bytes": 4099,
+          "lines": 89
+        },
+        {
+          "built_path": "js/tiktok.adapter.js",
+          "source_path": "src/demeter/assets/js/tiktok.adapter.js",
+          "sha256": "f1b6a078f7ef2ff7d795501b8fc9f9aec4bffe3c24412413c8d4dde35f47cf29",
+          "bytes": 5725,
+          "lines": 117
+        },
+        {
+          "built_path": "js/triplewhale.adapter.js",
+          "source_path": "src/demeter/assets/js/triplewhale.adapter.js",
+          "sha256": "6f40bf555fb48170fec317cae814276e9f226a1179cac79fcedc2ed2397af649",
+          "bytes": 6306,
+          "lines": 125
+        },
+        {
+          "built_path": "js/upsells.js",
+          "source_path": "src/demeter/assets/js/upsells.js",
+          "sha256": "8a5883415cc9ed47a97517f9e1d76982513e010507035bc6c26d6cc7079cf9f7",
+          "bytes": 5994,
+          "lines": 126
+        }
+      ]
+    },
+    "olympus": {
+      "sdk_version": "0.4.43",
+      "scripts": [
+        {
+          "built_path": "js/axon.adapter.js",
+          "source_path": "src/olympus/assets/js/axon.adapter.js",
+          "sha256": "a47cd7d594c5a9772144bc0953ef4bb284dec16d0aa8f076e5e8c9391ce5df78",
+          "bytes": 5646,
+          "lines": 120
+        },
+        {
+          "built_path": "js/checkout-olympus.js",
+          "source_path": "src/olympus/assets/js/checkout-olympus.js",
+          "sha256": "644fac10d0d1984c1b6bb085816fd9c73a84af1a1c7fb507bb6805957ffc678a",
+          "bytes": 330,
+          "lines": 8
+        },
+        {
+          "built_path": "js/checkout.js",
+          "source_path": "src/olympus/assets/js/checkout.js",
+          "sha256": "3e7a76fa1be2529e5c4f5ed0cb99ebbd874f74cd30df649c4bc83c3185f6d57c",
+          "bytes": 7989,
+          "lines": 203
+        },
+        {
+          "built_path": "js/ga4.adapter.js",
+          "source_path": "src/olympus/assets/js/ga4.adapter.js",
+          "sha256": "130da2d559c0cbd3aa19a86fe5165809a85c08cb65d367578190796c107ffff4",
+          "bytes": 7352,
+          "lines": 149
+        },
+        {
+          "built_path": "js/landing/landing.js",
+          "source_path": "src/olympus/assets/js/landing/landing.js",
+          "sha256": "6758dedc8e47ed3497214f3de2a13a8b0614c8438a7fd3b09ab3786b310202cd",
+          "bytes": 13272,
+          "lines": 326
+        },
+        {
+          "built_path": "js/next-forwarder-core.js",
+          "source_path": "src/olympus/assets/js/next-forwarder-core.js",
+          "sha256": "4566e8ae67b5a22b540f8196c74f3011d6fa1f7ab7d1d89909dd769706d902f9",
+          "bytes": 23235,
+          "lines": 410
+        },
+        {
+          "built_path": "js/northbeam.adapter.js",
+          "source_path": "src/olympus/assets/js/northbeam.adapter.js",
+          "sha256": "00db24e2897a1073956930b40b5c4e97dbccc411199db05d1e6cd617a296049f",
+          "bytes": 6741,
+          "lines": 129
+        },
+        {
+          "built_path": "js/payment-logos.js",
+          "source_path": "src/olympus/assets/js/payment-logos.js",
+          "sha256": "7aab3cd8e8163e3837d6b11820d5afa1065b893d7da295f6d0b40f83eb8ee7ed",
+          "bytes": 2206,
+          "lines": 36
+        },
+        {
+          "built_path": "js/pinterest.adapter.js",
+          "source_path": "src/olympus/assets/js/pinterest.adapter.js",
+          "sha256": "4568d5012f284bb25c500de097000cb27280735c7c91f0b93f67acac0b21a9b9",
+          "bytes": 6154,
+          "lines": 124
+        },
+        {
+          "built_path": "js/presell/countdown.js",
+          "source_path": "src/olympus/assets/js/presell/countdown.js",
+          "sha256": "bdaeee7003302a8c1fd40e0370efa313e5d5cbd4d907f61c22b388ded60a85f2",
+          "bytes": 1334,
+          "lines": 48
+        },
+        {
+          "built_path": "js/promo-timer.js",
+          "source_path": "src/olympus/assets/js/promo-timer.js",
+          "sha256": "601010fa98bfe40605f51fc0889716c9fac014dbf4093be4cf9300d208725caf",
+          "bytes": 10916,
+          "lines": 334
+        },
+        {
+          "built_path": "js/snapchat.adapter.js",
+          "source_path": "src/olympus/assets/js/snapchat.adapter.js",
+          "sha256": "2f6ff5efb48fbb6a859ae4aa379309724259df9f27e5d42fc890f5fcb9f8b359",
+          "bytes": 5586,
+          "lines": 112
+        },
+        {
+          "built_path": "js/taboola.adapter.js",
+          "source_path": "src/olympus/assets/js/taboola.adapter.js",
+          "sha256": "321df1e2bd9908f417c761a3eb6bf1e3cd75c4335be004b45b1c9624c2c3e0bf",
+          "bytes": 4099,
+          "lines": 89
+        },
+        {
+          "built_path": "js/tiktok.adapter.js",
+          "source_path": "src/olympus/assets/js/tiktok.adapter.js",
+          "sha256": "f1b6a078f7ef2ff7d795501b8fc9f9aec4bffe3c24412413c8d4dde35f47cf29",
+          "bytes": 5725,
+          "lines": 117
+        },
+        {
+          "built_path": "js/triplewhale.adapter.js",
+          "source_path": "src/olympus/assets/js/triplewhale.adapter.js",
+          "sha256": "6f40bf555fb48170fec317cae814276e9f226a1179cac79fcedc2ed2397af649",
+          "bytes": 6306,
+          "lines": 125
+        },
+        {
+          "built_path": "js/upsells.js",
+          "source_path": "src/olympus/assets/js/upsells.js",
+          "sha256": "8a5883415cc9ed47a97517f9e1d76982513e010507035bc6c26d6cc7079cf9f7",
+          "bytes": 5994,
+          "lines": 126
+        }
+      ]
+    },
+    "olympus-mv-single-step": {
+      "sdk_version": "0.4.43",
+      "scripts": [
+        {
+          "built_path": "js/axon.adapter.js",
+          "source_path": "src/olympus-mv-single-step/assets/js/axon.adapter.js",
+          "sha256": "a47cd7d594c5a9772144bc0953ef4bb284dec16d0aa8f076e5e8c9391ce5df78",
+          "bytes": 5646,
+          "lines": 120
+        },
+        {
+          "built_path": "js/checkout-olympus-mv-full.js",
+          "source_path": "src/olympus-mv-single-step/assets/js/checkout-olympus-mv-full.js",
+          "sha256": "3ed6ad887dad2ec4c80338a0bba53ba9274a3994328254a2aa6c390e50a28af2",
+          "bytes": 13565,
+          "lines": 324
+        },
+        {
+          "built_path": "js/checkout.js",
+          "source_path": "src/olympus-mv-single-step/assets/js/checkout.js",
+          "sha256": "3e7a76fa1be2529e5c4f5ed0cb99ebbd874f74cd30df649c4bc83c3185f6d57c",
+          "bytes": 7989,
+          "lines": 203
+        },
+        {
+          "built_path": "js/ga4.adapter.js",
+          "source_path": "src/olympus-mv-single-step/assets/js/ga4.adapter.js",
+          "sha256": "130da2d559c0cbd3aa19a86fe5165809a85c08cb65d367578190796c107ffff4",
+          "bytes": 7352,
+          "lines": 149
+        },
+        {
+          "built_path": "js/landing/landing.js",
+          "source_path": "src/olympus-mv-single-step/assets/js/landing/landing.js",
+          "sha256": "6758dedc8e47ed3497214f3de2a13a8b0614c8438a7fd3b09ab3786b310202cd",
+          "bytes": 13272,
+          "lines": 326
+        },
+        {
+          "built_path": "js/next-forwarder-core.js",
+          "source_path": "src/olympus-mv-single-step/assets/js/next-forwarder-core.js",
+          "sha256": "4566e8ae67b5a22b540f8196c74f3011d6fa1f7ab7d1d89909dd769706d902f9",
+          "bytes": 23235,
+          "lines": 410
+        },
+        {
+          "built_path": "js/northbeam.adapter.js",
+          "source_path": "src/olympus-mv-single-step/assets/js/northbeam.adapter.js",
+          "sha256": "00db24e2897a1073956930b40b5c4e97dbccc411199db05d1e6cd617a296049f",
+          "bytes": 6741,
+          "lines": 129
+        },
+        {
+          "built_path": "js/payment-logos.js",
+          "source_path": "src/olympus-mv-single-step/assets/js/payment-logos.js",
+          "sha256": "7aab3cd8e8163e3837d6b11820d5afa1065b893d7da295f6d0b40f83eb8ee7ed",
+          "bytes": 2206,
+          "lines": 36
+        },
+        {
+          "built_path": "js/pinterest.adapter.js",
+          "source_path": "src/olympus-mv-single-step/assets/js/pinterest.adapter.js",
+          "sha256": "4568d5012f284bb25c500de097000cb27280735c7c91f0b93f67acac0b21a9b9",
+          "bytes": 6154,
+          "lines": 124
+        },
+        {
+          "built_path": "js/presell/countdown.js",
+          "source_path": "src/olympus-mv-single-step/assets/js/presell/countdown.js",
+          "sha256": "bdaeee7003302a8c1fd40e0370efa313e5d5cbd4d907f61c22b388ded60a85f2",
+          "bytes": 1334,
+          "lines": 48
+        },
+        {
+          "built_path": "js/promo-timer.js",
+          "source_path": "src/olympus-mv-single-step/assets/js/promo-timer.js",
+          "sha256": "601010fa98bfe40605f51fc0889716c9fac014dbf4093be4cf9300d208725caf",
+          "bytes": 10916,
+          "lines": 334
+        },
+        {
+          "built_path": "js/snapchat.adapter.js",
+          "source_path": "src/olympus-mv-single-step/assets/js/snapchat.adapter.js",
+          "sha256": "2f6ff5efb48fbb6a859ae4aa379309724259df9f27e5d42fc890f5fcb9f8b359",
+          "bytes": 5586,
+          "lines": 112
+        },
+        {
+          "built_path": "js/taboola.adapter.js",
+          "source_path": "src/olympus-mv-single-step/assets/js/taboola.adapter.js",
+          "sha256": "321df1e2bd9908f417c761a3eb6bf1e3cd75c4335be004b45b1c9624c2c3e0bf",
+          "bytes": 4099,
+          "lines": 89
+        },
+        {
+          "built_path": "js/tiktok.adapter.js",
+          "source_path": "src/olympus-mv-single-step/assets/js/tiktok.adapter.js",
+          "sha256": "f1b6a078f7ef2ff7d795501b8fc9f9aec4bffe3c24412413c8d4dde35f47cf29",
+          "bytes": 5725,
+          "lines": 117
+        },
+        {
+          "built_path": "js/triplewhale.adapter.js",
+          "source_path": "src/olympus-mv-single-step/assets/js/triplewhale.adapter.js",
+          "sha256": "6f40bf555fb48170fec317cae814276e9f226a1179cac79fcedc2ed2397af649",
+          "bytes": 6306,
+          "lines": 125
+        },
+        {
+          "built_path": "js/upsells-mv.js",
+          "source_path": "src/olympus-mv-single-step/assets/js/upsells-mv.js",
+          "sha256": "b8a6fcfa8349e3749c3afe914f0e3272dfc7e29cf081a80cda67a45915001733",
+          "bytes": 12108,
+          "lines": 295
+        },
+        {
+          "built_path": "js/upsells.js",
+          "source_path": "src/olympus-mv-single-step/assets/js/upsells.js",
+          "sha256": "8a5883415cc9ed47a97517f9e1d76982513e010507035bc6c26d6cc7079cf9f7",
+          "bytes": 5994,
+          "lines": 126
+        },
+        {
+          "built_path": "js/variant-picker-fixture.js",
+          "source_path": "src/olympus-mv-single-step/assets/js/variant-picker-fixture.js",
+          "sha256": "5374512d40af0ae52dada335ea36e9f6812eb9efcdb971b80b8d5f91056d9023",
+          "bytes": 4867,
+          "lines": 104
+        },
+        {
+          "built_path": "js/variant-picker.js",
+          "source_path": "src/olympus-mv-single-step/assets/js/variant-picker.js",
+          "sha256": "22c01e436a86a4b9d5a48cc7a10f51db38ebb51172753333ef12020481553bfd",
+          "bytes": 17666,
+          "lines": 404
+        }
+      ]
+    },
+    "olympus-mv-two-step": {
+      "sdk_version": "0.4.43",
+      "scripts": [
+        {
+          "built_path": "js/axon.adapter.js",
+          "source_path": "src/olympus-mv-two-step/assets/js/axon.adapter.js",
+          "sha256": "a47cd7d594c5a9772144bc0953ef4bb284dec16d0aa8f076e5e8c9391ce5df78",
+          "bytes": 5646,
+          "lines": 120
+        },
+        {
+          "built_path": "js/checkout-olympus-mv-full.js",
+          "source_path": "src/olympus-mv-two-step/assets/js/checkout-olympus-mv-full.js",
+          "sha256": "510097de3cffa619ebaffd6b3c7554d6b1a34856b03bade4e0aa8243231da467",
+          "bytes": 13566,
+          "lines": 325
+        },
+        {
+          "built_path": "js/checkout-olympus-mv-selection.js",
+          "source_path": "src/olympus-mv-two-step/assets/js/checkout-olympus-mv-selection.js",
+          "sha256": "3c7f7334af844b6835ad5371dbd285779624706c8caef421a5013fd1d7f6f921",
+          "bytes": 3433,
+          "lines": 85
+        },
+        {
+          "built_path": "js/checkout.js",
+          "source_path": "src/olympus-mv-two-step/assets/js/checkout.js",
+          "sha256": "3e7a76fa1be2529e5c4f5ed0cb99ebbd874f74cd30df649c4bc83c3185f6d57c",
+          "bytes": 7989,
+          "lines": 203
+        },
+        {
+          "built_path": "js/ga4.adapter.js",
+          "source_path": "src/olympus-mv-two-step/assets/js/ga4.adapter.js",
+          "sha256": "130da2d559c0cbd3aa19a86fe5165809a85c08cb65d367578190796c107ffff4",
+          "bytes": 7352,
+          "lines": 149
+        },
+        {
+          "built_path": "js/landing/landing.js",
+          "source_path": "src/olympus-mv-two-step/assets/js/landing/landing.js",
+          "sha256": "6758dedc8e47ed3497214f3de2a13a8b0614c8438a7fd3b09ab3786b310202cd",
+          "bytes": 13272,
+          "lines": 326
+        },
+        {
+          "built_path": "js/next-forwarder-core.js",
+          "source_path": "src/olympus-mv-two-step/assets/js/next-forwarder-core.js",
+          "sha256": "4566e8ae67b5a22b540f8196c74f3011d6fa1f7ab7d1d89909dd769706d902f9",
+          "bytes": 23235,
+          "lines": 410
+        },
+        {
+          "built_path": "js/northbeam.adapter.js",
+          "source_path": "src/olympus-mv-two-step/assets/js/northbeam.adapter.js",
+          "sha256": "00db24e2897a1073956930b40b5c4e97dbccc411199db05d1e6cd617a296049f",
+          "bytes": 6741,
+          "lines": 129
+        },
+        {
+          "built_path": "js/payment-logos.js",
+          "source_path": "src/olympus-mv-two-step/assets/js/payment-logos.js",
+          "sha256": "7aab3cd8e8163e3837d6b11820d5afa1065b893d7da295f6d0b40f83eb8ee7ed",
+          "bytes": 2206,
+          "lines": 36
+        },
+        {
+          "built_path": "js/pinterest.adapter.js",
+          "source_path": "src/olympus-mv-two-step/assets/js/pinterest.adapter.js",
+          "sha256": "4568d5012f284bb25c500de097000cb27280735c7c91f0b93f67acac0b21a9b9",
+          "bytes": 6154,
+          "lines": 124
+        },
+        {
+          "built_path": "js/presell/countdown.js",
+          "source_path": "src/olympus-mv-two-step/assets/js/presell/countdown.js",
+          "sha256": "bdaeee7003302a8c1fd40e0370efa313e5d5cbd4d907f61c22b388ded60a85f2",
+          "bytes": 1334,
+          "lines": 48
+        },
+        {
+          "built_path": "js/promo-timer.js",
+          "source_path": "src/olympus-mv-two-step/assets/js/promo-timer.js",
+          "sha256": "601010fa98bfe40605f51fc0889716c9fac014dbf4093be4cf9300d208725caf",
+          "bytes": 10916,
+          "lines": 334
+        },
+        {
+          "built_path": "js/snapchat.adapter.js",
+          "source_path": "src/olympus-mv-two-step/assets/js/snapchat.adapter.js",
+          "sha256": "2f6ff5efb48fbb6a859ae4aa379309724259df9f27e5d42fc890f5fcb9f8b359",
+          "bytes": 5586,
+          "lines": 112
+        },
+        {
+          "built_path": "js/taboola.adapter.js",
+          "source_path": "src/olympus-mv-two-step/assets/js/taboola.adapter.js",
+          "sha256": "321df1e2bd9908f417c761a3eb6bf1e3cd75c4335be004b45b1c9624c2c3e0bf",
+          "bytes": 4099,
+          "lines": 89
+        },
+        {
+          "built_path": "js/tiktok.adapter.js",
+          "source_path": "src/olympus-mv-two-step/assets/js/tiktok.adapter.js",
+          "sha256": "f1b6a078f7ef2ff7d795501b8fc9f9aec4bffe3c24412413c8d4dde35f47cf29",
+          "bytes": 5725,
+          "lines": 117
+        },
+        {
+          "built_path": "js/triplewhale.adapter.js",
+          "source_path": "src/olympus-mv-two-step/assets/js/triplewhale.adapter.js",
+          "sha256": "6f40bf555fb48170fec317cae814276e9f226a1179cac79fcedc2ed2397af649",
+          "bytes": 6306,
+          "lines": 125
+        },
+        {
+          "built_path": "js/upsells-mv.js",
+          "source_path": "src/olympus-mv-two-step/assets/js/upsells-mv.js",
+          "sha256": "b8a6fcfa8349e3749c3afe914f0e3272dfc7e29cf081a80cda67a45915001733",
+          "bytes": 12108,
+          "lines": 295
+        },
+        {
+          "built_path": "js/upsells.js",
+          "source_path": "src/olympus-mv-two-step/assets/js/upsells.js",
+          "sha256": "8a5883415cc9ed47a97517f9e1d76982513e010507035bc6c26d6cc7079cf9f7",
+          "bytes": 5994,
+          "lines": 126
+        },
+        {
+          "built_path": "js/variant-picker-fixture.js",
+          "source_path": "src/olympus-mv-two-step/assets/js/variant-picker-fixture.js",
+          "sha256": "5374512d40af0ae52dada335ea36e9f6812eb9efcdb971b80b8d5f91056d9023",
+          "bytes": 4867,
+          "lines": 104
+        },
+        {
+          "built_path": "js/variant-picker.js",
+          "source_path": "src/olympus-mv-two-step/assets/js/variant-picker.js",
+          "sha256": "22c01e436a86a4b9d5a48cc7a10f51db38ebb51172753333ef12020481553bfd",
+          "bytes": 17666,
+          "lines": 404
+        }
+      ]
+    },
+    "shop-single-step": {
+      "sdk_version": "0.4.43",
+      "scripts": [
+        {
+          "built_path": "js/axon.adapter.js",
+          "source_path": "src/shop-single-step/assets/js/axon.adapter.js",
+          "sha256": "a47cd7d594c5a9772144bc0953ef4bb284dec16d0aa8f076e5e8c9391ce5df78",
+          "bytes": 5646,
+          "lines": 120
+        },
+        {
+          "built_path": "js/checkout.js",
+          "source_path": "src/shop-single-step/assets/js/checkout.js",
+          "sha256": "3e7a76fa1be2529e5c4f5ed0cb99ebbd874f74cd30df649c4bc83c3185f6d57c",
+          "bytes": 7989,
+          "lines": 203
+        },
+        {
+          "built_path": "js/ga4.adapter.js",
+          "source_path": "src/shop-single-step/assets/js/ga4.adapter.js",
+          "sha256": "130da2d559c0cbd3aa19a86fe5165809a85c08cb65d367578190796c107ffff4",
+          "bytes": 7352,
+          "lines": 149
+        },
+        {
+          "built_path": "js/landing/landing.js",
+          "source_path": "src/shop-single-step/assets/js/landing/landing.js",
+          "sha256": "6758dedc8e47ed3497214f3de2a13a8b0614c8438a7fd3b09ab3786b310202cd",
+          "bytes": 13272,
+          "lines": 326
+        },
+        {
+          "built_path": "js/next-forwarder-core.js",
+          "source_path": "src/shop-single-step/assets/js/next-forwarder-core.js",
+          "sha256": "4566e8ae67b5a22b540f8196c74f3011d6fa1f7ab7d1d89909dd769706d902f9",
+          "bytes": 23235,
+          "lines": 410
+        },
+        {
+          "built_path": "js/northbeam.adapter.js",
+          "source_path": "src/shop-single-step/assets/js/northbeam.adapter.js",
+          "sha256": "00db24e2897a1073956930b40b5c4e97dbccc411199db05d1e6cd617a296049f",
+          "bytes": 6741,
+          "lines": 129
+        },
+        {
+          "built_path": "js/payment-logos.js",
+          "source_path": "src/shop-single-step/assets/js/payment-logos.js",
+          "sha256": "7aab3cd8e8163e3837d6b11820d5afa1065b893d7da295f6d0b40f83eb8ee7ed",
+          "bytes": 2206,
+          "lines": 36
+        },
+        {
+          "built_path": "js/pinterest.adapter.js",
+          "source_path": "src/shop-single-step/assets/js/pinterest.adapter.js",
+          "sha256": "4568d5012f284bb25c500de097000cb27280735c7c91f0b93f67acac0b21a9b9",
+          "bytes": 6154,
+          "lines": 124
+        },
+        {
+          "built_path": "js/presell/countdown.js",
+          "source_path": "src/shop-single-step/assets/js/presell/countdown.js",
+          "sha256": "bdaeee7003302a8c1fd40e0370efa313e5d5cbd4d907f61c22b388ded60a85f2",
+          "bytes": 1334,
+          "lines": 48
+        },
+        {
+          "built_path": "js/promo-timer.js",
+          "source_path": "src/shop-single-step/assets/js/promo-timer.js",
+          "sha256": "601010fa98bfe40605f51fc0889716c9fac014dbf4093be4cf9300d208725caf",
+          "bytes": 10916,
+          "lines": 334
+        },
+        {
+          "built_path": "js/snapchat.adapter.js",
+          "source_path": "src/shop-single-step/assets/js/snapchat.adapter.js",
+          "sha256": "2f6ff5efb48fbb6a859ae4aa379309724259df9f27e5d42fc890f5fcb9f8b359",
+          "bytes": 5586,
+          "lines": 112
+        },
+        {
+          "built_path": "js/taboola.adapter.js",
+          "source_path": "src/shop-single-step/assets/js/taboola.adapter.js",
+          "sha256": "321df1e2bd9908f417c761a3eb6bf1e3cd75c4335be004b45b1c9624c2c3e0bf",
+          "bytes": 4099,
+          "lines": 89
+        },
+        {
+          "built_path": "js/tiktok.adapter.js",
+          "source_path": "src/shop-single-step/assets/js/tiktok.adapter.js",
+          "sha256": "f1b6a078f7ef2ff7d795501b8fc9f9aec4bffe3c24412413c8d4dde35f47cf29",
+          "bytes": 5725,
+          "lines": 117
+        },
+        {
+          "built_path": "js/triplewhale.adapter.js",
+          "source_path": "src/shop-single-step/assets/js/triplewhale.adapter.js",
+          "sha256": "6f40bf555fb48170fec317cae814276e9f226a1179cac79fcedc2ed2397af649",
+          "bytes": 6306,
+          "lines": 125
+        },
+        {
+          "built_path": "js/upsells.js",
+          "source_path": "src/shop-single-step/assets/js/upsells.js",
+          "sha256": "8a5883415cc9ed47a97517f9e1d76982513e010507035bc6c26d6cc7079cf9f7",
+          "bytes": 5994,
+          "lines": 126
+        }
+      ]
+    },
+    "shop-three-step": {
+      "sdk_version": "0.4.43",
+      "scripts": [
+        {
+          "built_path": "js/axon.adapter.js",
+          "source_path": "src/shop-three-step/assets/js/axon.adapter.js",
+          "sha256": "a47cd7d594c5a9772144bc0953ef4bb284dec16d0aa8f076e5e8c9391ce5df78",
+          "bytes": 5646,
+          "lines": 120
+        },
+        {
+          "built_path": "js/checkout-shop-three-billing.js",
+          "source_path": "src/shop-three-step/assets/js/checkout-shop-three-billing.js",
+          "sha256": "d3b00fb78fe49ac322fea0f7d2c610c6dae8311df2b8ff8c0b43f69d49a985b7",
+          "bytes": 6881,
+          "lines": 133
+        },
+        {
+          "built_path": "js/checkout-shop-three-shipping.js",
+          "source_path": "src/shop-three-step/assets/js/checkout-shop-three-shipping.js",
+          "sha256": "f8ddde477735e86349b6b9f42f2834cac26208e4f998d638f4d79d7e79eef713",
+          "bytes": 7303,
+          "lines": 183
+        },
+        {
+          "built_path": "js/checkout.js",
+          "source_path": "src/shop-three-step/assets/js/checkout.js",
+          "sha256": "3e7a76fa1be2529e5c4f5ed0cb99ebbd874f74cd30df649c4bc83c3185f6d57c",
+          "bytes": 7989,
+          "lines": 203
+        },
+        {
+          "built_path": "js/ga4.adapter.js",
+          "source_path": "src/shop-three-step/assets/js/ga4.adapter.js",
+          "sha256": "130da2d559c0cbd3aa19a86fe5165809a85c08cb65d367578190796c107ffff4",
+          "bytes": 7352,
+          "lines": 149
+        },
+        {
+          "built_path": "js/landing/landing.js",
+          "source_path": "src/shop-three-step/assets/js/landing/landing.js",
+          "sha256": "6758dedc8e47ed3497214f3de2a13a8b0614c8438a7fd3b09ab3786b310202cd",
+          "bytes": 13272,
+          "lines": 326
+        },
+        {
+          "built_path": "js/next-forwarder-core.js",
+          "source_path": "src/shop-three-step/assets/js/next-forwarder-core.js",
+          "sha256": "4566e8ae67b5a22b540f8196c74f3011d6fa1f7ab7d1d89909dd769706d902f9",
+          "bytes": 23235,
+          "lines": 410
+        },
+        {
+          "built_path": "js/northbeam.adapter.js",
+          "source_path": "src/shop-three-step/assets/js/northbeam.adapter.js",
+          "sha256": "00db24e2897a1073956930b40b5c4e97dbccc411199db05d1e6cd617a296049f",
+          "bytes": 6741,
+          "lines": 129
+        },
+        {
+          "built_path": "js/payment-logos.js",
+          "source_path": "src/shop-three-step/assets/js/payment-logos.js",
+          "sha256": "7aab3cd8e8163e3837d6b11820d5afa1065b893d7da295f6d0b40f83eb8ee7ed",
+          "bytes": 2206,
+          "lines": 36
+        },
+        {
+          "built_path": "js/pinterest.adapter.js",
+          "source_path": "src/shop-three-step/assets/js/pinterest.adapter.js",
+          "sha256": "4568d5012f284bb25c500de097000cb27280735c7c91f0b93f67acac0b21a9b9",
+          "bytes": 6154,
+          "lines": 124
+        },
+        {
+          "built_path": "js/presell/countdown.js",
+          "source_path": "src/shop-three-step/assets/js/presell/countdown.js",
+          "sha256": "bdaeee7003302a8c1fd40e0370efa313e5d5cbd4d907f61c22b388ded60a85f2",
+          "bytes": 1334,
+          "lines": 48
+        },
+        {
+          "built_path": "js/promo-timer.js",
+          "source_path": "src/shop-three-step/assets/js/promo-timer.js",
+          "sha256": "601010fa98bfe40605f51fc0889716c9fac014dbf4093be4cf9300d208725caf",
+          "bytes": 10916,
+          "lines": 334
+        },
+        {
+          "built_path": "js/snapchat.adapter.js",
+          "source_path": "src/shop-three-step/assets/js/snapchat.adapter.js",
+          "sha256": "2f6ff5efb48fbb6a859ae4aa379309724259df9f27e5d42fc890f5fcb9f8b359",
+          "bytes": 5586,
+          "lines": 112
+        },
+        {
+          "built_path": "js/taboola.adapter.js",
+          "source_path": "src/shop-three-step/assets/js/taboola.adapter.js",
+          "sha256": "321df1e2bd9908f417c761a3eb6bf1e3cd75c4335be004b45b1c9624c2c3e0bf",
+          "bytes": 4099,
+          "lines": 89
+        },
+        {
+          "built_path": "js/tiktok.adapter.js",
+          "source_path": "src/shop-three-step/assets/js/tiktok.adapter.js",
+          "sha256": "f1b6a078f7ef2ff7d795501b8fc9f9aec4bffe3c24412413c8d4dde35f47cf29",
+          "bytes": 5725,
+          "lines": 117
+        },
+        {
+          "built_path": "js/triplewhale.adapter.js",
+          "source_path": "src/shop-three-step/assets/js/triplewhale.adapter.js",
+          "sha256": "6f40bf555fb48170fec317cae814276e9f226a1179cac79fcedc2ed2397af649",
+          "bytes": 6306,
+          "lines": 125
+        },
+        {
+          "built_path": "js/upsells.js",
+          "source_path": "src/shop-three-step/assets/js/upsells.js",
+          "sha256": "8a5883415cc9ed47a97517f9e1d76982513e010507035bc6c26d6cc7079cf9f7",
+          "bytes": 5994,
+          "lines": 126
+        }
+      ]
+    }
+  }
+}

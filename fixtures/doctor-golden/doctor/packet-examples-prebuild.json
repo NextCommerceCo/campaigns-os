@@ -1,5 +1,5 @@
 {
-  "base_sha": "fc766101cbe102bfbbfc99867b24ef1f5c16dcd0",
+  "base_sha": "22174f84fb41dcba53d76d108778a7bf210377f1",
   "case": "examples-prebuild",
   "entry": "packet",
   "description": "pre-build: a plain copy of examples/ (no _site, no Assembly Report)",

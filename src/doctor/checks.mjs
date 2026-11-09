@@ -89,6 +89,7 @@ import { CAMPAIGN_IDENTITY, evaluateCampaignIdentity, externalScriptSources } fr
 import { SDK_MARKUP, evaluateSdkMarkup } from "../sdk-markup.mjs";
 import { SCRIPT_SYNTAX, collectBuiltScriptSyntaxInputs, evaluateBuiltScriptSyntax } from "../built-script-syntax.mjs";
 import { collectBuiltScriptObservations, evaluateBuiltScriptObservations } from "../built-script-observations.mjs";
+import { FAMILY_SCRIPT_DIVERGENCE, collectFamilyScriptDivergence, familyScriptCandidates, recordFamilyScriptDivergence } from "../family-script-divergence.mjs";
 import { CART_PLACEHOLDERS, CART_PLACEHOLDERS_LIMITS, evaluateCartPlaceholders, isFileReadFailure } from "../cart-placeholders.mjs";
 import { SMOKE_QC, SMOKE_QC_LIMITS, builtFileOf, evaluateSmokeQc, insideRoot, isBuiltPageReadFailure, pageScriptSources, parseBuiltPage, realPathOf } from "../built-smoke-qc.mjs";
 import { recordQcResults } from "../qc-results.mjs";
@@ -475,6 +476,12 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
     id: SCRIPT_SYNTAX,
     phase: "built-output",
     run: ({ packet, errors, warnings, ready, derived }) => validateBuiltScriptSyntax(packet, errors, warnings, ready, derived),
+  },
+  {
+    id: FAMILY_SCRIPT_DIVERGENCE,
+    phase: "built-output",
+    when: ({ packet, derived }) => Boolean(familyScriptDivergenceScope(packet, derived)),
+    run: ({ packet, warnings, ready, derived }) => validateFamilyScriptDivergence(packet, warnings, ready, derived),
   },
   {
     id: CART_PLACEHOLDERS,
@@ -2494,6 +2501,33 @@ function validateBuiltScriptSyntax(packet, errors, warnings, ready, derived) {
     derived,
   });
   if (scope?.ok) recordScriptObservations({ inputs: collectBuiltScriptObservations(scope, targetRepo), warnings });
+}
+
+// Family script divergence (#729): advisory, and only where there is
+// something to compare: a decided template family and built pages that load
+// at least one local script.
+function familyScriptDivergenceScope(packet, derived) {
+  if (!isAutomatableTemplateFamily(packet?.assembly?.template_family)) return null;
+  const targetRepo = derived?.target_repo;
+  const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  const siteRoot = targetRepo && publicRouteSlug ? join(targetRepo, "_site", publicRouteSlug) : null;
+  if (!siteRoot || !existsSync(siteRoot)) return null;
+  const scope = sharedBuiltSiteScope(targetRepo, publicRouteSlug);
+  return scope?.ok && familyScriptCandidates(scope).length ? scope : null;
+}
+
+function validateFamilyScriptDivergence(packet, warnings, ready, derived) {
+  recordFamilyScriptDivergence({
+    record: collectFamilyScriptDivergence({
+      scope: familyScriptDivergenceScope(packet, derived),
+      targetRepo: derived.target_repo,
+      family: packet.assembly.template_family,
+      familySource: "packet",
+    }),
+    warnings,
+    ready,
+    derived,
+  });
 }
 
 function recordScriptSyntaxGate({ subject, inputs, errors, warnings, ready, derived }) {

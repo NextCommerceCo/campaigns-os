@@ -166,6 +166,31 @@ try {
     fail(`supported-surface files missing from the packed tarball: ${missingSurface.join(", ")}`);
   }
 
+  // 5b. Doctor's family script divergence advisory (#729) reads the bundled
+  // family script reference at run time. Load it the way an installed doctor
+  // does, through the packed module from the packed tree, and read every blob
+  // it names: each read verifies the recorded SHA-256, so a blob dropped or
+  // altered by packing fails here. No generated configuration and no private
+  // family may ship in it.
+  const referenceModule = await import(join(pkgRoot, "src/family-script-reference.mjs"));
+  const reference = referenceModule.loadFamilyScriptReference();
+  if (reference.root !== pkgRoot) fail(`the packed family script reference resolved outside the tarball: ${reference.root}`);
+  const privateFamilies = Object.keys(JSON.parse(readFileSync(join(pkgRoot, "contracts/private-template-sources.json"), "utf8")).sources ?? {});
+  let referenceScripts = 0;
+  for (const [family, entry] of Object.entries(reference.families ?? {})) {
+    if (privateFamilies.includes(family)) fail(`private family ${family} ships in the family script reference`);
+    for (const script of entry.scripts) {
+      if (script.built_path === "config.js") fail(`generated configuration ${script.source_path} ships in the family script reference`);
+      try {
+        referenceModule.familyScriptReferenceText(reference, script);
+      } catch (err) {
+        fail(`family script reference: ${err.message}`);
+      }
+      referenceScripts += 1;
+    }
+  }
+  if (!referenceScripts) fail("the packed family script reference names no scripts");
+
   // 6. Bundle-size visibility (Codex: a registry does nothing for bundle size).
   const kb = (statSync(distEntry).size / 1024).toFixed(1);
   console.log(`pack check passed: campaign-spec subpath ships dist (${kb} KB entry), imports clean, surface shipped, no dev cruft`);

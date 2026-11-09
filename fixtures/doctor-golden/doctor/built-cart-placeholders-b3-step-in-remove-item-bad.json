@@ -1,5 +1,5 @@
 {
-  "base_sha": "fc766101cbe102bfbbfc99867b24ef1f5c16dcd0",
+  "base_sha": "22174f84fb41dcba53d76d108778a7bf210377f1",
   "case": "cart-placeholders-b3-step-in-remove-item-bad",
   "entry": "built",
   "description": "fixtures/cart-placeholders/b3-step-in-remove-item/bad, read in place",

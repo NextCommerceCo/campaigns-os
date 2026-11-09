@@ -1,5 +1,5 @@
 {
-  "base_sha": "fc766101cbe102bfbbfc99867b24ef1f5c16dcd0",
+  "base_sha": "22174f84fb41dcba53d76d108778a7bf210377f1",
   "case": "failing-cart-placeholders-b4",
   "entry": "packet",
   "description": "failing: the cart-placeholders b4 page as the packet's landing route beside plain pages (sdk_markup blocker plus QC warnings)",

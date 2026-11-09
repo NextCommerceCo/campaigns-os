@@ -1,5 +1,5 @@
 {
-  "base_sha": "fc766101cbe102bfbbfc99867b24ef1f5c16dcd0",
+  "base_sha": "22174f84fb41dcba53d76d108778a7bf210377f1",
   "case": "cause-prior-run",
   "entry": "packet",
   "description": "causes: contracts/fixtures/sidecar-bundle/production-shaped with a prior Run Record, so cause, cause_reason and cause_summary compare against it",

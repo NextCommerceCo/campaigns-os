@@ -1,5 +1,5 @@
 {
-  "base_sha": "fc766101cbe102bfbbfc99867b24ef1f5c16dcd0",
+  "base_sha": "22174f84fb41dcba53d76d108778a7bf210377f1",
   "case": "cause-built-output",
   "entry": "packet",
   "description": "causes on built-output findings: a prior run had the upsell selector-scope finding as a warning (now an error: status changed) and the missing fingerprint as a warning (pre-existing)",
