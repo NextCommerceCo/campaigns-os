@@ -10,12 +10,14 @@ import { join, resolve } from "node:path";
 import { test } from "node:test";
 
 import { doctorBuiltOutput, doctorPacket } from "./doctor/inspect.mjs";
+import { withHtmlScanSnapshot } from "./html-scan.mjs";
 import {
   SCRIPT_SYNTAX,
   SCRIPT_SYNTAX_MISSING_SCRIPT,
   SCRIPT_SYNTAX_PARSE_FAILURE,
   SCRIPT_SYNTAX_SYMLINK_OUTSIDE_SITE,
   SCRIPT_SYNTAX_UNCLOSED_SCRIPT,
+  builtScriptReferences,
   collectBuiltScriptSyntaxInputs,
   evaluateBuiltScriptSyntax,
   frozenBaseUrl,
@@ -644,5 +646,51 @@ test("a script symlink is read where it resolves inside the site root, and warne
     assert.equal(result.warnings.filter((issue) => issue.code === SCRIPT_SYNTAX_SYMLINK_OUTSIDE_SITE).length, 1);
   } finally {
     rmSync(only.dir, { recursive: true, force: true });
+  }
+});
+
+test("script references are one flat record per reference, resolved once per inspection (#730)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "script-syntax-refs-"));
+  try {
+    const site = join(dir, "_site");
+    const campaign = join(site, SLUG);
+    mkdirSync(join(campaign, "js"), { recursive: true });
+    mkdirSync(join(dir, "elsewhere"), { recursive: true });
+    writeFileSync(join(campaign, "js", "app.js"), "export const a = 1;");
+    writeFileSync(join(dir, "elsewhere", "out.js"), GOOD);
+    symlinkSync(join(dir, "elsewhere", "out.js"), join(campaign, "js", "out.js"));
+    const page = join(campaign, "index.html");
+    writeFileSync(page, `<script src="https://cdn.example/x.js"></script><script src="/${SLUG}/js/app.js"></script>`
+      + `<script type="module" src="/${SLUG}/js/app.js"></script><script src="/${SLUG}/js/gone.js"></script>`
+      + `<script src="/${SLUG}/js/out.js"></script><script src="/${SLUG}/js/late.js">`);
+    const scope = { site_root: site, campaign_dir: campaign, pages: [{ page_id: "home", built_path: page }] };
+    const appPath = join(campaign, "js", "app.js");
+    const refs = builtScriptReferences(scope);
+    assert.deepEqual(refs.refs.map(({ status, module, path }) => [status, module, path]), [
+      ["remote", false, null],
+      ["local", false, appPath],
+      ["local", true, appPath],
+      ["missing", false, null],
+      ["outside_site", false, join(campaign, "js", "out.js")],
+    ]);
+    assert.deepEqual(refs.unclosed, [{ page_id: "home", src: `/${SLUG}/js/late.js` }]);
+    assert.ok(Object.isFrozen(refs.refs[0]));
+    // Without a snapshot each call resolves again; inside one, every consumer
+    // gets the same record, and the snapshot's end lets a later inspection see
+    // a rewritten page.
+    assert.notEqual(builtScriptReferences(scope), refs);
+    withHtmlScanSnapshot(() => {
+      const first = builtScriptReferences(scope);
+      assert.equal(builtScriptReferences(scope), first);
+      // The same bytes as classic and as a module are two inputs: this one
+      // fails as a classic script and passes as a module.
+      const inputs = collectBuiltScriptSyntaxInputs(scope, dir);
+      assert.deepEqual(inputs.scripts.map((script) => [script.file, script.module]), [[`_site/${SLUG}/js/app.js`, false], [`_site/${SLUG}/js/app.js`, true]]);
+      assert.equal(evaluateBuiltScriptSyntax(inputs).findings.length, 1);
+    });
+    writeFileSync(page, `<script src="/${SLUG}/js/app.js"></script>`);
+    withHtmlScanSnapshot(() => assert.equal(builtScriptReferences(scope).refs.length, 1));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });
