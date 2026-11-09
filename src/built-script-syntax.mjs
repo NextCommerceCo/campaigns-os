@@ -27,11 +27,13 @@
 // Not waivable: a script that cannot be parsed cannot be intended to ship.
 // Both doctor entry points drive it, like the other static built-output gates.
 
-import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { existsSync, realpathSync, statSync } from "node:fs";
 import { basename, isAbsolute, posix, relative, resolve, sep } from "node:path";
 
 import { parse as parseJs } from "acorn";
 import { parse as parseHtml } from "parse5";
+
+import { htmlScanMemo, readHtmlScanText } from "./html-scan.mjs";
 
 export const SCRIPT_SYNTAX = "built_output.script_syntax";
 export const SCRIPT_SYNTAX_PARSE_FAILURE = `${SCRIPT_SYNTAX}.parse_failure`;
@@ -360,50 +362,58 @@ function relFrom(root, path) {
 }
 
 /**
- * Resolve every built page's local script references against the filesystem.
- * Each src resolves as the browser resolves it: against the base in effect
- * when the script is prepared (the first `<base href>` before it in tree
- * order, else the page URL; a `data:`, `javascript:` or unparsable base falls
- * back to the page URL), with the page URL being its path under the site
- * root. The resulting path is
- * percent-decoded and mapped under the site root first (page-kit emits
- * `/<slug>/js/...`), then the campaign directory (a root-served campaign
- * emits `/js/...`), never outside either. A base or src on another origin is
- * remote and not read.
+ * Every built page's `<script src>` references, resolved against the
+ * filesystem once per inspection: the shared script input of the doctor's
+ * html-scan context (#730). Each src resolves as the browser resolves it:
+ * against the base in effect when the script is prepared (the first `<base
+ * href>` before it in tree order, else the page URL; a `data:`, `javascript:`
+ * or unparsable base falls back to the page URL), with the page URL being its
+ * path under the site root. The resulting path is percent-decoded and mapped
+ * under the site root first (page-kit emits `/<slug>/js/...`), then the
+ * campaign directory (a root-served campaign emits `/js/...`), never outside
+ * either. A base or src on another origin is `remote`.
  *
- * Missing scripts are keyed by the URL the browser resolves, so two spellings
- * of one URL (`check&#9;out.js`, `checkout.js`) are one entry, under the first
- * spelling met. A path whose real path leaves the site root (a symlinked file
- * or directory pointing elsewhere) is not read and is listed in
- * `outside_site` by the link's own path. A page that ends inside a script
- * element is listed in `unclosed`.
+ * One flat record per reference, in page then document order: `local` (a
+ * file, read where a static server would serve it, at `path` as spelled),
+ * `missing` (no file; `url_key` is the URL the browser resolves, or the raw
+ * src when it resolves to none), `outside_site` (its real path leaves the site
+ * root: a symlinked file or directory pointing elsewhere; `path` is the link)
+ * or `remote`. A page that cannot be read contributes nothing; one that ends
+ * inside a script element is listed in `unclosed`. No script is read here:
+ * each consumer reads the bytes it needs and decides what an unreadable one
+ * means.
  *
  * @param {{ site_root: string, campaign_dir: string, pages: Array<{ page_id: string, built_path: string }> }} scope
- * @param {string} targetRepo
  */
-export function collectBuiltScriptSyntaxInputs(scope, targetRepo) {
-  const scripts = new Map();
-  const unresolved = new Map();
-  const outsideSite = new Map();
-  const unclosed = [];
+export function builtScriptReferences(scope) {
   const pages = Array.isArray(scope?.pages) ? scope.pages : [];
+  const key = ["built-script-references", scope?.site_root, scope?.campaign_dir, ...pages.flatMap((page) => [page.page_id, page.built_path])];
+  return htmlScanMemo(JSON.stringify(key), () => resolveScriptReferences(scope, pages));
+}
+
+function resolveScriptReferences(scope, pages) {
+  const refs = [];
+  const unclosed = [];
   const siteRootReal = scope?.site_root ? realPathOf(scope.site_root) : null;
   for (const page of pages) {
     let html;
     try {
-      html = readFileSync(page.built_path, "utf8");
+      html = readHtmlScanText(page.built_path);
     } catch {
       continue;
     }
     const document = pageScriptDocument(html);
     // One entry per page: the file ends inside at most one script, and the
     // warning is about the page's truncated output.
-    if (document.unclosed.length) unclosed.push({ src: document.unclosed[0].src, pages: [page.page_id] });
+    if (document.unclosed.length) unclosed.push({ page_id: page.page_id, src: document.unclosed[0].src });
     const pageUrl = pageUrlFor(scope.site_root, page.built_path);
     for (const ref of document.refs) {
-      if (isRemote(ref.src)) continue;
-      const { remote, pathname } = resolveScriptUrl(ref.src, ref.base, pageUrl);
-      if (remote) continue;
+      const record = { page_id: page.page_id, src: ref.src, module: ref.module, url_key: null, path: null };
+      const { remote, pathname } = isRemote(ref.src) ? { remote: true } : resolveScriptUrl(ref.src, ref.base, pageUrl);
+      if (remote) {
+        refs.push({ ...record, status: "remote" });
+        continue;
+      }
       let path = null;
       if (pathname) {
         const candidates = [fileUnder(scope.site_root, pathname), fileUnder(scope.campaign_dir, pathname)].filter(Boolean);
@@ -416,44 +426,67 @@ export function collectBuiltScriptSyntaxInputs(scope, targetRepo) {
         isFile = false;
       }
       if (!isFile) {
-        const urlKey = pathname ?? `\u0000${ref.src}`;
-        const entry = unresolved.get(urlKey) || { src: ref.src, pages: [] };
-        if (!entry.pages.includes(page.page_id)) entry.pages.push(page.page_id);
-        unresolved.set(urlKey, entry);
+        refs.push({ ...record, url_key: pathname ?? `\u0000${ref.src}`, status: "missing" });
         continue;
       }
-      // Read where a static server would serve it, but only while the real
-      // path stays inside the site root. When either real path is unknown the
-      // check is undecidable, and the script is read as before.
+      // Served only while the real path stays inside the site root. When
+      // either real path is unknown the check is undecidable, and the script
+      // counts as local.
       const real = realPathOf(path);
-      if (siteRootReal && real && real !== siteRootReal && !real.startsWith(`${siteRootReal}${sep}`)) {
-        const file = relFrom(targetRepo, resolve(path));
-        const entry = outsideSite.get(file) || { file, src: ref.src, pages: [] };
-        if (!entry.pages.includes(page.page_id)) entry.pages.push(page.page_id);
-        outsideSite.set(file, entry);
-        continue;
-      }
-      const key = `${resolve(path)}\u0000${ref.module ? "module" : "script"}`;
+      const outside = siteRootReal && real && real !== siteRootReal && !real.startsWith(`${siteRootReal}${sep}`);
+      refs.push({ ...record, path: resolve(path), status: outside ? "outside_site" : "local" });
+    }
+  }
+  return { pages_scanned: pages.length, refs, unclosed };
+}
+
+/**
+ * The script syntax gate's inputs, projected from builtScriptReferences.
+ * Missing scripts are keyed by the URL the browser resolves, so two spellings
+ * of one URL (`check&#9;out.js`, `checkout.js`) are one entry, under the first
+ * spelling met. A symlink leaving the site root is not read and is listed in
+ * `outside_site` by the link's own path. Readable scripts are keyed by path
+ * and mode: the same bytes can pass as a module and fail as a classic script.
+ *
+ * @param {{ site_root: string, campaign_dir: string, pages: Array<{ page_id: string, built_path: string }> }} scope
+ * @param {string} targetRepo
+ */
+export function collectBuiltScriptSyntaxInputs(scope, targetRepo) {
+  const scripts = new Map();
+  const unresolved = new Map();
+  const outsideSite = new Map();
+  const { pages_scanned: pagesScanned, refs, unclosed } = builtScriptReferences(scope);
+  const onPage = (entry, pageId) => {
+    if (!entry.pages.includes(pageId)) entry.pages.push(pageId);
+  };
+  for (const ref of refs) {
+    if (ref.status === "missing") {
+      if (!unresolved.has(ref.url_key)) unresolved.set(ref.url_key, { src: ref.src, pages: [] });
+      onPage(unresolved.get(ref.url_key), ref.page_id);
+    } else if (ref.status === "outside_site") {
+      const file = relFrom(targetRepo, ref.path);
+      if (!outsideSite.has(file)) outsideSite.set(file, { file, src: ref.src, pages: [] });
+      onPage(outsideSite.get(file), ref.page_id);
+    } else if (ref.status === "local") {
+      const key = `${ref.path}\u0000${ref.module ? "module" : "script"}`;
       if (!scripts.has(key)) {
-        let content = null;
+        let content;
         try {
-          content = readFileSync(path, "utf8");
+          content = readHtmlScanText(ref.path);
         } catch {
-          content = null;
+          continue;
         }
-        if (content == null) continue;
-        scripts.set(key, { file: relFrom(targetRepo, resolve(path)), module: ref.module, content, pages: [] });
+        scripts.set(key, { file: relFrom(targetRepo, ref.path), module: ref.module, content, pages: [] });
       }
-      const entry = scripts.get(key);
-      if (!entry.pages.includes(page.page_id)) entry.pages.push(page.page_id);
+      onPage(scripts.get(key), ref.page_id);
     }
   }
   return {
-    pages_scanned: pages.length,
+    pages_scanned: pagesScanned,
     scripts: [...scripts.values()],
     unresolved: [...unresolved.values()],
     outside_site: [...outsideSite.values()],
-    unclosed,
+    unclosed: unclosed.map((entry) => ({ src: entry.src, pages: [entry.page_id] })),
   };
 }
 

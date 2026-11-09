@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.66.0+agent.6] - 2026-11-09
+
+### Changed
+
+- **Doctor's script syntax gate reads its script references through the run's shared inputs (#730, milestone 3).** Nothing doctor reports changes. Each built page's `<script src>` references are resolved once per run: against the base in effect when the browser prepares each script, under the site root and then the campaign directory, as classic or module, with unclosed scripts and symlinks that leave the site root kept apart. The gate reads page and script bytes through the run's snapshot and shares the run's built-site scope with the upsell selector-scope and SDK markup gates, so packet doctor resolves that scope once less. A script it cannot read is still skipped as before, and missing, outside-site and unclosed scripts still warn.
+
 ## [1.66.0+agent.5] - 2026-11-09
 
 ### Changed

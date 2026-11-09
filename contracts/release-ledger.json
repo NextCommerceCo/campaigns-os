@@ -11309,6 +11309,27 @@
         }
       ],
       "entry_sha256": "89280e250a4fb507d78c018f1233918c6c6654a2f17867c39dcff39532c99025"
+    },
+    {
+      "id": "RL-0322",
+      "sequence": 310,
+      "date": "2026-11-09",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.66.0+agent.6",
+      "changelog_sha256": "26bf0745a0f085350e52a72f9c172f3c577950386a351108cb5cb76cd8772bfd",
+      "agent_impact": "None. Doctor output is unchanged: the same codes, messages, ordering, ready lines, checkpoint gates and causes. The script syntax gate resolves script references once per run and reads page and script bytes through the shared input snapshot.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": null,
+          "summary": "The script syntax gate reads the built-site scope through the run shared input snapshot, alongside the upsell selector-scope and SDK markup gates."
+        }
+      ],
+      "entry_sha256": "11c609751cf6440a2ca60c3fd6063c48105889724088affb81fd5e848f866ccc"
     }
   ]
 }

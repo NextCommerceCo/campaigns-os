@@ -2480,7 +2480,7 @@ function validateBuiltScriptSyntax(packet, errors, warnings, ready, derived) {
   const targetRepo = derived.target_repo;
   const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
   const siteRoot = targetRepo && publicRouteSlug ? join(targetRepo, "_site", publicRouteSlug) : null;
-  const scope = siteRoot && existsSync(siteRoot) ? resolveBuiltSiteScope(targetRepo, { slug: publicRouteSlug }) : null;
+  const scope = siteRoot && existsSync(siteRoot) ? sharedBuiltSiteScope(targetRepo, publicRouteSlug) : null;
   recordScriptSyntaxGate({
     subject: {
       public_route_slug: publicRouteSlug || null,
