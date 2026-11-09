@@ -342,8 +342,9 @@ test("guided drafts ask promo_urgency_copy only about the template's own promo p
 
   const ownCopy = createCampaignBuildBriefArtifact({ spec, activePages: pages });
   assert.equal(ownCopy.questions.some((question) => question.id === "promo_urgency_copy"), false);
-  assert.equal(ownCopy.artifact.promo_urgency.header_claim_source, "none");
-  assert.equal(ownCopy.artifact.promo_urgency.timer_label, "none");
+  // With nothing to fill them, the template's banner and timer stay (F-197).
+  assert.equal(ownCopy.artifact.promo_urgency.header_claim_source, "template");
+  assert.equal(ownCopy.artifact.promo_urgency.timer_label, "template");
 
   // exit_intent and promo_code_input are checkout surfaces: on a landing page
   // they fill no template placeholder, as hasExitPop and doctor already say.
@@ -366,7 +367,7 @@ test("guided drafts ask promo_urgency_copy only about the template's own promo p
     assert.ok(question, "a CampaignSpec promo surface asks how the template's placeholders resolve");
     assert.match(question.question, /template's own promo placeholders/);
     assert.match(question.reason, /source design's own promo, proof and urgency copy is the merchant's content/);
-    assert.deepEqual(question.options, ["fill from the campaign's promo codes and offers", "remove the template's promo placeholders"]);
+    assert.deepEqual(question.options, ["fill from the campaign's promo codes and offers", "keep the template's promo placeholders as they are", "remove the template's promo placeholders"]);
   }
 });
 

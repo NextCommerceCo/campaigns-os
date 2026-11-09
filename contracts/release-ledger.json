@@ -11263,7 +11263,34 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.66.0+agent.4",
-      "changelog_sha256": "86e2327dd7be06e5f9fc5377ea4603fafddc53e6076c56b7cb01ccf428bef16e",
+      "changelog_sha256": "baaa7f6992303f8ef8f518369368081b624de8e34ee6b96f6cacad8deff8ac27",
+      "agent_impact": "When the person asks for a starter template as-is, keep its pages, sections and copy; swap only what CampaignSpec owns (product names and images, prices and discount figures, promo codes, store name and support details); fill literal placeholder text from the product; and leave demo-looking content in place, listed in the handoff, unless the operator asks to remove it. promo_urgency.header_claim_source and timer_label accept the value template (keep the starter banner and timer), now the guided default when no CampaignSpec surface fills them. In a build with a brief payload, a countdown still needs offer.urgency.verified, so blank its label there. The brief summary line 7 reads \"template placeholders blocked\".",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/campaign-build-brief.md",
+          "surface_entry": "docs/campaign-build-brief.md",
+          "summary": "Question 5 and its fields name the new template value, the guided default when nothing fills the starter banner and timer."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "The build prompt says how to build a page whose authority is the starter template: keep, swap, fill, and flag rather than remove."
+        }
+      ],
+      "entry_sha256": "75e85b9d45254e33d9276340deeccf366dce5d7661ead7bfe75d24455c65866c"
+    },
+    {
+      "id": "RL-0321",
+      "sequence": 309,
+      "date": "2026-11-09",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.66.0+agent.5",
+      "changelog_sha256": "75ef0dbc0f04cb6e9bc9d8d9f91b38b50a553466a966fe1ed28250fbd6836d7e",
       "agent_impact": "None. Doctor output is unchanged: the same codes, messages, ordering, ready lines, checkpoint gates and causes. Doctor reads and parses less within one run, and doctor --built now shares one read-only input snapshot like packet doctor.",
       "compatibility": "compatible",
       "migration": "none",
@@ -11281,7 +11308,7 @@
           "summary": "doctor --built runs inside one read-only input snapshot, and its upsell selector-scope and SDK markup gates read through it."
         }
       ],
-      "entry_sha256": "9c3878b79bc2a2248a437161d0984d97d2497d4f1bf1b7cd28fb1570f7f9a729"
+      "entry_sha256": "7945d5bbdfe172d2fba3d1b1e03207f1869e999b29eb7a68059f07830752ae03"
     }
   ]
 }
