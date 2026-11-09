@@ -1,5 +1,5 @@
 {
-  "base_sha": "fc766101cbe102bfbbfc99867b24ef1f5c16dcd0",
+  "base_sha": "b3b5d9d2a3fcf1460b93f7f3ae849983f24cbae1",
   "case": "smoke-anchor-outcomes",
   "entry": "built",
   "description": "smoke QC: anchors missing (warning), in a <template> (review), named only by a local script (review) and resolved (pass), beside the page's og/favicon warnings",

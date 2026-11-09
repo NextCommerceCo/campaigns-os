@@ -24,6 +24,7 @@ import { CAMPAIGN_IDENTITY } from "../campaign-identity.mjs";
 import { SDK_MARKUP } from "../sdk-markup.mjs";
 import { SCRIPT_SYNTAX, collectBuiltScriptSyntaxInputs } from "../built-script-syntax.mjs";
 import { collectBuiltScriptObservations } from "../built-script-observations.mjs";
+import { FAMILY_SCRIPT_DIVERGENCE, collectFamilyScriptDivergence, familyScriptCandidates, recordFamilyScriptDivergence } from "../family-script-divergence.mjs";
 import { CART_PLACEHOLDERS } from "../cart-placeholders.mjs";
 import { SMOKE_QC } from "../built-smoke-qc.mjs";
 import { stageIsTerminal } from "../orchestration-stage-contract.mjs";
@@ -393,6 +394,18 @@ function inspectBuiltOutput(args) {
   // API/storage observations in the same scripts (#729): advisory warnings
   // only, traced under the script syntax check whose references they read.
   recordScriptObservations({ inputs: collectBuiltScriptObservations(scope, targetRepo), warnings });
+
+  // Family script divergence (#729). Advisory, and only with --family (the
+  // family names the reference) and pages that load a local script.
+  if (family && familyScriptCandidates(scope).length) {
+    recordFamilyScriptDivergence({
+      record: collectFamilyScriptDivergence({ scope, targetRepo, family, familySource: "flag" }),
+      warnings,
+      ready,
+      derived,
+    });
+    derived.doctor_checks.push(FAMILY_SCRIPT_DIVERGENCE);
+  }
 
   // Raw cart placeholders. Same placement, same reasons; a QC
   // check whose warnings no blocker above withholds.

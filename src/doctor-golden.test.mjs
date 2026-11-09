@@ -56,7 +56,7 @@ import { disabledLiveRead } from "./live-campaign-refs.mjs";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const GOLDEN_DIR = join(ROOT, "fixtures", "doctor-golden", "doctor");
-const BASE_SHA = "fc766101cbe102bfbbfc99867b24ef1f5c16dcd0";
+const BASE_SHA = "b3b5d9d2a3fcf1460b93f7f3ae849983f24cbae1";
 const FROZEN_NOW = "2026-01-01T00:00:00.000Z";
 const REGEN = "UPDATE_GOLDEN=1 node --test src/doctor-golden.test.mjs";
 // Only the exact value "1" regenerates, and never under CI: a CI run that

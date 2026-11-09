@@ -1,5 +1,5 @@
 {
-  "base_sha": "fc766101cbe102bfbbfc99867b24ef1f5c16dcd0",
+  "base_sha": "b3b5d9d2a3fcf1460b93f7f3ae849983f24cbae1",
   "case": "capped-script-bytes",
   "entry": "built",
   "description": "capped: one page's local script is exactly 1 MiB (read: review), another page's is 1 MiB + 1 byte (script_unreadable)",

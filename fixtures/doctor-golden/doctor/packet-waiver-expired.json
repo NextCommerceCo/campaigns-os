@@ -1,5 +1,5 @@
 {
-  "base_sha": "fc766101cbe102bfbbfc99867b24ef1f5c16dcd0",
+  "base_sha": "b3b5d9d2a3fcf1460b93f7f3ae849983f24cbae1",
   "case": "waiver-expired",
   "entry": "packet",
   "description": "waived, inert: the same waiver with expires_at equal to the frozen clock (expired at the boundary; the gate blocks)",

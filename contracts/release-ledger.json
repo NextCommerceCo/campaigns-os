@@ -11332,13 +11332,64 @@
       "entry_sha256": "11c609751cf6440a2ca60c3fd6063c48105889724088affb81fd5e848f866ccc"
     },
     {
-      "id": "RL-0323",
+      "id": "RL-0324",
       "sequence": 311,
       "date": "2026-11-09",
       "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.66.0+agent.7",
-      "changelog_sha256": "181f3815ed66ef3d7f75fb9e498daf1368b5308e8a481084043e0d69476b14ed",
+      "changelog_section": "1.66.0+agent.8",
+      "changelog_sha256": "4b9e98cc9d41271f17b121af9cc4ff1b0d2cc5a68e5a896650e41191dda37e5e",
+      "agent_impact": "Doctor adds one advisory, family script divergence. Runs that know the template family and whose built pages load local scripts gain a ready line and derived.family_script_divergence, and a warning built_output.family_script_divergence.diverged for each campaign copy of a family script whose bytes differ from the bundled reference. It never blocks, and no existing code, message or gate changes. Agents reading the warning should treat the match as a candidate: ancestry is not recorded.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": null,
+          "summary": "Packet doctor runs the family script divergence advisory after the script syntax gate when the packet has a decided template family and the built pages load a local script."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/inspect.mjs",
+          "surface_entry": null,
+          "summary": "doctor --built runs the family script divergence advisory when --family is given and the built pages load a local script."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Adds the check:family-script-reference script to check and check:contracts; no export changes."
+        },
+        {
+          "class": "workflow",
+          "path": ".github/workflows/refresh-starter-template-catalog.yml",
+          "surface_entry": null,
+          "summary": "The catalog refresh regenerates the family script reference at the new pin and includes it in the refresh PR."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Documents the family script divergence advisory: the bundled reference, candidate nomination, the warning code and derived.family_script_divergence."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "Records that the bundled family script reference ships for doctor at run time and is not a consumer contract."
+        }
+      ],
+      "entry_sha256": "02e36c72a623c1d180801303ac8697d40230c9155c1a4cf353ba81f2b0eba396"
+    },
+    {
+      "id": "RL-0323",
+      "sequence": 312,
+      "date": "2026-11-09",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.66.0+agent.10",
+      "changelog_sha256": "0b14a04ed3a976c8176cb7cfca33d702bfcc31218196b1ed65829fd400ee726e",
       "agent_impact": "Doctor can now emit advisory warnings under built_output.script_observations.* (sdk_prefixed_storage, network_global_replaced, sdk_debug_surface, sdk_private_member, truncated). They never block and add no gate, ready line or doctor_checks entry. An agent reading doctor output should treat them as review prompts, not defects: each names the operation, file, line and column, and does not claim SDK ownership or an SDK bypass.",
       "compatibility": "additive",
       "migration": "none",
@@ -11362,7 +11413,7 @@
           "summary": "Documents the built_output.script_observations warning codes, what each verifies and what it does not claim."
         }
       ],
-      "entry_sha256": "951cf1aabc0edf6168807494d8ac6cd5d9f7ded6f9b719b1635ca42681f62fbf"
+      "entry_sha256": "744c8e4e71bca3052ce9eeb650292549186ab8df46dda7430c6a8c59e2ac4c47"
     }
   ]
 }
