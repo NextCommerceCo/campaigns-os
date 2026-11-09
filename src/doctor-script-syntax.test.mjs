@@ -5,6 +5,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import nodeModule from "node:module";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -722,6 +723,9 @@ test("the adapter's shared parse gives each script exactly parseScriptSyntax's r
       assert.equal(evaluateBuiltScriptSyntax(inputs).findings.length, expected.filter(([, , failure]) => failure).length);
       // The evaluator stays pure: content alone is parsed there, with the same result.
       const contentOnly = inputs.scripts.map(({ syntax, ...script }) => script);
+      // The adapter's syntax can be deleted, so the evaluator parses content again.
+      const dropped = inputs.scripts.map((script) => { const copy = Object.defineProperties({}, Object.getOwnPropertyDescriptors(script)); delete copy.syntax; return copy; });
+      assert.ok(dropped.every((script) => !("syntax" in script)));
       assert.deepEqual(evaluateBuiltScriptSyntax({ ...inputs, scripts: contentOnly }).findings, evaluateBuiltScriptSyntax(inputs).findings);
     });
   } finally {
@@ -759,18 +763,20 @@ if (mode === "references") {
 const parses = globalThis.acornParses;
 console.log(JSON.stringify({ calls: parses.length, distinct: new Set(parses).size, observations }));
 `;
+// module.registerHooks arrived in Node 22.15; the supported range starts at 20.19.
+const NEEDS_REGISTER_HOOKS = typeof nodeModule.registerHooks === "function" ? false : "counting parses needs Node >= 22.15 (module.registerHooks)";
 const countAcornParses = (mode = "doctor") => {
   const root = resolve(new URL("..", import.meta.url).pathname);
-  const run = spawnSync(process.execPath, ["--input-type=module", "-e", COUNT_ACORN_PARSES, root, join(root, "fixtures", "script-observations"), SLUG, mode], { encoding: "utf8" });
+  const run = spawnSync(process.execPath, ["--input-type=module", "-e", COUNT_ACORN_PARSES, root, join(root, "fixtures", "script-observations"), SLUG, mode], { encoding: "utf8", timeout: 60_000 });
   assert.equal(run.status, 0, run.stderr);
   return JSON.parse(run.stdout.trim().split("\n").at(-1));
 };
 
-test("one doctor run parses each local script once per mode: the syntax gate and the observations share the program", () => {
+test("one doctor run parses each local script once per mode: the syntax gate and the observations share the program", { skip: NEEDS_REGISTER_HOOKS }, () => {
   // supported, ambiguous, shadowed and global-fetch as classic scripts; aliases and global-fetch as modules.
   assert.deepEqual(countAcornParses(), { calls: 6, distinct: 6, observations: 12 });
 });
 
-test("collecting the syntax inputs parses nothing until a script's syntax is read", () => {
+test("collecting the syntax inputs parses nothing until a script's syntax is read", { skip: NEEDS_REGISTER_HOOKS }, () => {
   assert.deepEqual(countAcornParses("references"), { calls: 0, distinct: 0, observations: null });
 });

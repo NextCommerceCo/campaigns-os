@@ -488,12 +488,17 @@ export function collectBuiltScriptSyntaxInputs(scope, targetRepo) {
   // programs (the API/storage observations read the same set), with the same
   // options as parseScriptSyntax, so the diagnostic is the same. The parse is
   // lazy: `syntax` is computed on first read, so a caller that wants only the
-  // references (the fixture refresh) parses nothing.
+  // references (the fixture refresh) parses nothing. The parse-budget
+  // reservation is not: inside a snapshot, htmlScanScriptPrograms charges the
+  // whole set when called here, whether or not `syntax` is read. Outside one
+  // it reserves nothing.
   const programs = htmlScanScriptPrograms([...scripts.values()]);
   const parsed = [...scripts.values()].map(({ path, ...script }) => {
     let syntax;
     return Object.defineProperty(script, "syntax", {
       enumerable: true,
+      // Configurable, so a caller can `delete` it.
+      configurable: true,
       get() {
         if (syntax !== undefined) return syntax;
         try {
@@ -530,7 +535,9 @@ function gateBase(subject) {
  * caller hands in each script's content and, optionally, its parse result as
  * `syntax` (null when it parses). A `syntax` that is not undefined wins over
  * `content`: the evaluator trusts it and does not parse again, so a caller
- * that changes `content` after collection must drop `syntax` too. Without
+ * that changes `content` after collection must drop `syntax` too (`delete
+ * script.syntax`, or a copy without it; the adapter's `syntax` is a getter,
+ * so it cannot be assigned). Without
  * one, the evaluator parses `content` itself and reads nothing else.
  *
  * @param {{ subject?: object, pages_scanned?: number,
