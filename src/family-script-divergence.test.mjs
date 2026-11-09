@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
@@ -104,6 +104,7 @@ test("lineDiffSummary counts lines and hunks, ignores line endings, and stops at
   const big = (prefix) => Array.from({ length: side }, (_, index) => `${prefix}${index}`).join("\n");
   const over = lineDiffSummary(big("a"), big("b"));
   assert.equal(over.hunks, null);
+  assert.equal(over.omitted, "pair_budget");
   assert.equal(over.local_lines, side);
 });
 
@@ -232,6 +233,7 @@ test("the record's diff budget is shared: once spent, later diverged copies repo
     }
     const record = syntheticRun(dir, scripts, referenceFiles);
     assert.deepEqual(record.scripts.map((entry) => entry.diff.hunks === null), [false, false, false, false, true]);
+    assert.equal(record.scripts[4].diff.omitted, "record_budget");
     assert.ok(record.scripts.every((entry) => entry.diff.local_lines === side));
   });
 });
@@ -306,6 +308,35 @@ test("a private family whose script_reference.source_root leaves its checkout is
         assert.deepEqual(record.scripts, []);
       });
     }
+  });
+});
+
+test("a private family whose js directory links outside its checkout, or cannot be read, is unavailable", () => {
+  withTemp((dir) => {
+    const campaign = join(dir, "site", "_site", "acme");
+    mkdirSync(join(campaign, "js"), { recursive: true });
+    writeFileSync(join(campaign, "index.html"), '<!doctype html><script src="/acme/js/checkout.js"></script>');
+    writeFileSync(join(campaign, "js", "checkout.js"), "start();\n");
+    mkdirSync(join(dir, "outside"), { recursive: true });
+    writeFileSync(join(dir, "outside", "checkout.js"), "secret();\n");
+    withPrivateFamily(dir, { script_reference: { source_root: "src/acme/assets" } }, (checkout) => {
+      mkdirSync(join(checkout, "src", "acme", "assets"), { recursive: true });
+      symlinkSync(join(dir, "outside"), join(checkout, "src", "acme", "assets", "js"));
+      const linked = doctorBuiltOutput({ built: join(dir, "site"), slug: "acme", family: "acme" }).derived.family_script_divergence;
+      assert.equal(linked.status, "unavailable");
+      assert.match(linked.reason, /local source src\/acme\/assets\/js leaves the example-org\/acme-templates checkout/);
+      rmSync(join(checkout, "src", "acme", "assets", "js"));
+      mkdirSync(join(checkout, "src", "acme", "assets", "js", "locked"), { recursive: true });
+      chmodSync(join(checkout, "src", "acme", "assets", "js", "locked"), 0o000);
+      try {
+        if (process.getuid?.() === 0) return;
+        const unreadable = doctorBuiltOutput({ built: join(dir, "site"), slug: "acme", family: "acme" }).derived.family_script_divergence;
+        assert.equal(unreadable.status, "unavailable");
+        assert.match(unreadable.reason, /its local source could not be read \(EACCES\)/);
+      } finally {
+        chmodSync(join(checkout, "src", "acme", "assets", "js", "locked"), 0o755);
+      }
+    });
   });
 });
 

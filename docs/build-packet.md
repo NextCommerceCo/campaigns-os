@@ -1217,8 +1217,10 @@ and an edited copy under a new name is not recognized. Equal SHA-256 is
 reference bytes: line counts, the delta, and hunks (runs of changed lines,
 added and removed counts, the first three ranges). Lines are compared without
 a trailing carriage return, so a copy that differs only in line endings
-reports no hunks. A pair too large for the diff budget, or past the record's
-total budget of four such pairs, reports line counts only.
+reports no hunks. A pair over the per-pair diff budget (`omitted:
+"pair_budget"`), or larger than what remains of the record's shared cell
+budget (the cells of four maximum-size pairs; `omitted: "record_budget"`),
+reports line counts only, and the warning says which budget it was.
 
 Each diverged copy is one warning, `built_output.family_script_divergence.diverged`.
 It names the file, the family file, how it was nominated, the reference

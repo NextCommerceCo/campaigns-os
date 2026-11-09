@@ -41,8 +41,10 @@ export const FAMILY_SCRIPT_DIVERGENCE = "built_output.family_script_divergence";
 export const FAMILY_SCRIPT_DIVERGED = `${FAMILY_SCRIPT_DIVERGENCE}.diverged`;
 
 const GENERATED_CONFIGURATION = ["config.js"];
-// LCS cells one record may spend on line diffs: four pairs at the per-pair
-// bound, far more than a family's few-hundred-line scripts need.
+// LCS cells one record may spend on line diffs, across all its pairs: the
+// cells of four pairs at the per-pair bound, far more than a family's
+// few-hundred-line scripts need. A pair refused for want of what remains does
+// not spend it, so a later smaller pair may still be diffed.
 export const FAMILY_SCRIPT_DIFF_CELL_BUDGET = 4 * LINE_DIFF_CELL_BUDGET;
 
 /**
@@ -110,8 +112,13 @@ function privateFamilyReference(family, entry) {
   if (isAbsolute(sourceRoot) || !inside(resolve(fragment.repoDir), root) || (existsSync(root) && !inside(realPath(fragment.repoDir), realPath(root)))) {
     return { unavailable: `"${family}" is a private family and its script_reference.source_root leaves the ${entry.repo} checkout` };
   }
-  if (!existsSync(join(root, "js"))) {
+  const jsDir = join(root, "js");
+  if (!existsSync(jsDir)) {
     return { unavailable: `"${family}" is a private family and its local source ${sourceRoot}/js is not in the ${entry.repo} checkout` };
+  }
+  // The walked directory itself may be a link: readdirSync follows it.
+  if (!inside(realPath(fragment.repoDir), realPath(jsDir))) {
+    return { unavailable: `"${family}" is a private family and its local source ${sourceRoot}/js leaves the ${entry.repo} checkout` };
   }
   let sha = null;
   try {
@@ -131,7 +138,11 @@ function privateFamilyReference(family, entry) {
       }
     }
   };
-  walk(join(root, "js"));
+  try {
+    walk(jsDir);
+  } catch (error) {
+    return { unavailable: `"${family}" is a private family and its local source could not be read (${error.code || error.message})` };
+  }
   return {
     kind: "local_private_source",
     repo: entry.repo,
@@ -270,7 +281,9 @@ function divergedMessage(family, label, entry) {
   const nomination = { path: "same built path", filename: "same file name", content: "same bytes" }[entry.match];
   const { local_lines: localLines, reference_lines: referenceLines, delta, hunks } = entry.diff;
   const shape = hunks === null
-    ? "hunks not listed (over the diff budget)"
+    ? entry.diff.omitted === "record_budget"
+      ? "hunks not listed: earlier copies in this run spent the diff budget"
+      : "hunks not listed: the pair is over the per-pair diff budget"
     : hunks.count === 0
       ? "the lines match apart from line endings or a final newline"
       : `${hunks.count} hunk(s) adding ${hunks.added} and removing ${hunks.removed} line(s), the first at line ${hunks.first[0].local_start}`;
