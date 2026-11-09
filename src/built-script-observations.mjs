@@ -166,8 +166,11 @@ export function observeScriptProgram(program, { module = false } = {}) {
       }
     }
     const name = node.type === "Identifier" ? node.name : node.type === "MemberExpression" ? memberName(node) : null;
-    // Only the global itself: an alias (const d = nextDebug) is reported where it reads the global.
-    if (name === "nextDebug" && isReference(node, parent) && sdkGlobal(node, ["nextDebug"])) {
+    // Only the global itself: an alias (`const d = window.nextDebug`, or one
+    // named nextDebug) is reported where it reads the global, not again where
+    // the alias is used, so an identifier counts only while nothing binds it.
+    if (name === "nextDebug" && isReference(node, parent) && sdkGlobal(node, ["nextDebug"])
+      && (node.type === "MemberExpression" || !binding("nextDebug", scopes.get(node)))) {
       add(SCRIPT_OBSERVATION_SDK_DEBUG_SURFACE, node, { operation: accessOf(node, parent), receiver: globalSpelling(node, "nextDebug") });
       return;
     }

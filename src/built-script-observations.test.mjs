@@ -137,6 +137,10 @@ test("a const or destructure that binds a global's own name to that global still
   assert.deepEqual(shape("let next = window.next; next._cart = null;"), []);
   assert.deepEqual(shape("let { sessionStorage } = window; sessionStorage.removeItem('next-order');"), []);
   assert.deepEqual(shape("const fetch = window.fetch; fetch = f;"), [], "assigning a const throws; it never replaces the global");
+  assert.deepEqual(shape("const window = globalThis; window.fetch = f;"), [["network_global_replaced", "replace", "window.fetch", null]]);
+  assert.deepEqual(shape("(function (window) { window.fetch = f; })(w);"), [], "a parameter still shadows");
+  // One global read, one finding: the alias named nextDebug is not reported again where it is used.
+  assert.deepEqual(shape("const nextDebug = window.nextDebug; nextDebug.stores.cart; nextDebug.x;"), [["sdk_debug_surface", "read", "window.nextDebug", null]]);
 });
 
 test("logical assignment does not replace a defined fetch, and delete reads as a removal", () => {
