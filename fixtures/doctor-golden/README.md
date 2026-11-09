@@ -6,6 +6,11 @@ inputs for the built-output checks). They were taken at base
 of the refactor landed. `src/doctor-golden.test.mjs` regenerates each case
 and compares it with its file here.
 
+Regenerated once since, for the #729 family script divergence advisory, a
+reviewed behavior change: ten cases gained its record, ready line and
+warning (the eight certified families and the two failing-script-syntax
+packet cases), and every other case changed only its `base_sha`.
+
 ## Rules for refactor changes
 
 - A #730 refactor change must reproduce every file exactly. Any diff is a
