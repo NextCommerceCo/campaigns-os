@@ -86,9 +86,12 @@ test("a target outside the checkout keeps neither its directory name nor its slu
   }
   const result = JSON.parse(run.stdout);
   assert.equal(result.slug, "<slug>");
-  assert.ok(result.counters.reads.top_repeated.length > 0, "repeated reads are listed");
-  for (const [path] of result.counters.reads.top_repeated) {
-    assert.match(path, /^<estate-a>\/_site\/<slug>(\/(h-[0-9a-f]{6}(\.[a-z0-9]+)?|index\.html|js|config\.js))+$/, "target paths keep only structure and salted hashes");
+  // Doctor reads each file once per run (#730), so repeated target paths
+  // reach the redactor through the directory listings.
+  const repeated = [...result.counters.reads.top_repeated, ...result.counters.readdir.top_repeated];
+  assert.ok(repeated.length > 0, "repeated target paths are listed");
+  for (const [path] of repeated) {
+    assert.match(path, /^<estate-a>\/_site\/<slug>(\/(h-[0-9a-f]{6}(\.[a-z0-9]+)?|index\.html|js|config\.js))*$/, "target paths keep only structure and salted hashes");
   }
 });
 

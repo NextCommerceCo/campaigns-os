@@ -2558,26 +2558,27 @@ function validateCartPlaceholders(packet, warnings, ready, derived) {
 // or a link whose target cannot be inspected; each one entry, read as
 // unreadable, never followed). Pages within the page cap carry their HTML,
 // read one page at a time, unless they are over the size cap or cannot be
-// read; pages past it carry only their path. Collected once per inspection
-// for the cart placeholder and smoke checks through the shared input context
-// (#730), which also keeps one parseBounded tree per page read for both
-// checks (`document`), shared only while the pages read fit the parse budget.
+// read; pages past it carry only their path. The page inventory is resolved
+// once per inspection for the cart placeholder and smoke checks through the
+// shared input context (#730); each check still probes and reads its pages
+// itself, the bytes coming from the snapshot while it holds them, so a read
+// failure is never shared. Both checks get one parseBounded tree per page read
+// (`document`), shared only while the pages read fit the parse budget.
 function collectCartPlaceholderPages(targetRepo, slug) {
-  return htmlScanMemo(JSON.stringify(["cart-placeholder-pages", resolve(targetRepo), slug ?? null]), () => {
+  const { capped, past } = htmlScanMemo(JSON.stringify(["cart-placeholder-pages", resolve(targetRepo), slug ?? null]), () => {
     const scope = resolveBuiltSiteScope(targetRepo, { slug, includeLinkedPages: true });
     const linked = new Set((scope.linked_pages || []).map((page) => page.built_path));
     const all = [...(scope.ok ? scope.pages : []), ...(scope.linked_pages || [])]
-      .sort((a, b) => (a.built_path < b.built_path ? -1 : a.built_path > b.built_path ? 1 : 0));
-    const fileOf = (page) => builtPageFile(targetRepo, page.built_path);
-    const capped = all.slice(0, CART_PLACEHOLDERS_LIMITS.pages);
-    const read = capped.map((page) => readCartPlaceholderPage(page.built_path, fileOf(page), linked.has(page.built_path)));
-    const paths = capped.map((page) => page.built_path).filter((path, index) => typeof read[index].content === "string");
-    const documentOf = htmlScanDocuments(paths, "bounded");
-    return [
-      ...read.map((page, index) => (typeof page.content === "string" ? { ...page, document: () => documentOf(capped[index].built_path, page.content) } : page)),
-      ...all.slice(CART_PLACEHOLDERS_LIMITS.pages).map((page) => ({ file: fileOf(page) })),
-    ];
+      .sort((a, b) => (a.built_path < b.built_path ? -1 : a.built_path > b.built_path ? 1 : 0))
+      .map((page) => ({ path: page.built_path, file: builtPageFile(targetRepo, page.built_path), linked: linked.has(page.built_path) }));
+    return { capped: all.slice(0, CART_PLACEHOLDERS_LIMITS.pages), past: all.slice(CART_PLACEHOLDERS_LIMITS.pages).map(({ file }) => ({ file })) };
   });
+  const read = capped.map(({ path, file, linked }) => readCartPlaceholderPage(path, file, linked));
+  const documentOf = htmlScanDocuments(capped.filter((page, index) => typeof read[index].content === "string").map(({ path }) => path), "bounded");
+  return [
+    ...read.map((page, index) => (typeof page.content === "string" ? { ...page, document: () => documentOf(capped[index].path, page.content) } : page)),
+    ...past,
+  ];
 }
 
 // One page within the page cap: its HTML, its size when over the size cap, or

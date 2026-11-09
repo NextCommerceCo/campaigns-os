@@ -7,7 +7,7 @@ import { defaultTreeAdapter, parse } from 'parse5';
 
 // The shared input context of one read-only doctor inspection (#730): source
 // bytes, parsed documents and memoized collections (built-site scope, source
-// permalinks). A synchronous doctor's snapshot ends with the invocation. No
+// permalinks, the cart placeholder page inventory). A synchronous doctor's snapshot ends with the invocation. No
 // file contents survive into another command, even when a host imports the
 // CLI once and reuses it, and an inspection that follows a write opens a fresh
 // snapshot, so it never sees bytes from before the write.
@@ -34,8 +34,12 @@ const MAX_DEPTH = 4;
 //            certified-family pages, up to 30x on element-dense markup: a page
 //            set shares trees while its HTML totals about 2.1 MiB.
 //   bounded  parseBounded: source locations, nesting bounded. 27x on the
-//            certified-family pages, 54x on element-dense markup: about
-//            1.1 MiB of HTML.
+//            certified-family pages, 54x on element-dense markup, 90x on
+//            markup made of bare attributes: about 1.1 MiB of HTML alone.
+// Sets of both profiles over the same pages share one budget, so where the
+// noloc set is reserved first (doctor's packet and built paths), the bounded
+// set over those pages is shared up to about 0.74 MiB of HTML, less any
+// script programs held.
 const PARSE_PROFILES = Object.freeze({
   noloc: { parse: (text) => parse(text), costPerByte: 30 },
   bounded: { parse: (text) => parseBounded(text), costPerByte: 56 },
@@ -137,7 +141,7 @@ function file(path) {
   if (!snapshot?.active) return { bytes: readFileSync(path) };
   const key = realKey(snapshot, path);
   if (snapshot.files.has(key)) return snapshot.files.get(key);
-  // documents: profile -> { document } or { error } (null until first parsed).
+  // documents: profile -> { document } or { error: TooDeep } (null until first parsed).
   const entry = { bytes: readFileSync(path), documents: new Map(), parseCost: 0 };
   // Budget buffer + worst-case decoded UTF-16 text together. Oversize files
   // retain the original read-per-use behavior; tiny files are count-bounded.
@@ -179,8 +183,9 @@ export function htmlScanDigest(path) {
 // reservation, so a later call with the held text still gets the shared tree. Template
 // content and other nested contexts stay inside the tree as parse5 builds
 // them; a consumer that reparses a fragment (noscript, srcdoc) does so itself.
-// A parse that throws (the bounded profile past its depth bound) throws the
-// same error to every consumer, as a failure is shared like a tree.
+// A page past the bounded profile's depth bound (TooDeep) fails every
+// consumer with the same error, as a failure is shared like a tree; any other
+// parse error is not kept, so each consumer parses again.
 // Consumers read a shared tree and never change it.
 //
 // The set is shared whole or not at all: when its trees do not fit the parse
@@ -213,6 +218,7 @@ export function htmlScanDocuments(paths, profile = 'noloc') {
       try {
         parsed = { document: parseText(entry.text) };
       } catch (error) {
+        if (!(error instanceof TooDeep)) throw error;
         parsed = { error };
       }
       entry.documents.set(profile, parsed);

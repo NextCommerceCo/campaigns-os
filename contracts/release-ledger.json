@@ -11443,8 +11443,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.66.0+agent.12",
-      "changelog_sha256": "9d046da99158e61ab1c015608cb3d1b962a36fbce95417dde051758f4000d25e",
-      "agent_impact": "None. Doctor output is unchanged: the same codes, messages, ordering, ready lines, checkpoint gates, QC results and causes. The cart placeholder and smoke checks collect their built pages once per run through the run shared input snapshot and read one bounded parse per page between them while the page set fits the parse budget.",
+      "changelog_sha256": "a73d6e581a59dc2f749730a2d353d3c53375cc3ae0ca1cccbc114496a959447a",
+      "agent_impact": "None. Doctor output is unchanged: the same codes, messages, ordering, ready lines, checkpoint gates, QC results and causes. The cart placeholder and smoke checks resolve their built-page inventory once per run, read page bytes through the run shared input snapshot, and share one bounded parse per page while the page set fits the parse budget.",
       "compatibility": "compatible",
       "migration": "none",
       "changes": [
@@ -11452,10 +11452,10 @@
           "class": "cli_surface",
           "path": "src/doctor/checks.mjs",
           "surface_entry": null,
-          "summary": "The cart placeholder and smoke checks collect their built pages once per run, read page bytes through the run shared input snapshot and share one bounded parse per page; the smoke checks take the built-site scope from the snapshot."
+          "summary": "The cart placeholder and smoke checks resolve their built-page inventory once per run, read page bytes through the run shared input snapshot and share one bounded parse per page; the smoke checks take the built-site scope from the snapshot."
         }
       ],
-      "entry_sha256": "5cf6bd9b6ec37c495ecbe8c527f99193d4a1801c26b96b3a508396d221f1464d"
+      "entry_sha256": "d3e0c43886184e956ec4c8d54dbb15695b22f46b68d29a3b41dd924a27e3a524"
     }
   ]
 }

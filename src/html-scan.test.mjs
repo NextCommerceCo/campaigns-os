@@ -300,7 +300,7 @@ test('the cart placeholder and smoke checks read one shared bounded tree per bui
   withHtmlScanSnapshot(() => {
     const [cart] = collectCartPlaceholderPages(repo, 'demo');
     const [smoke] = collectCartPlaceholderPages(repo, 'demo');
-    assert.equal(cart, smoke);
+    assert.equal(cart.content, smoke.content);
     assert.equal(cart.document(), smoke.document());
     // Both evaluators take the tree they are handed rather than parsing again.
     let calls = 0;
