@@ -39,7 +39,16 @@ function matchesTemplate(key, template) {
   }
   return true;
 }
-function children(node) { return Object.values(node).flatMap(value => Array.isArray(value) ? value.filter(x => x?.type) : value?.type ? [value] : []); }
+// A node's child nodes in property order. Every traversal calls it on every node, so it avoids per-call array copies.
+export function children(node) {
+  const out = [];
+  for (const key in node) {
+    const value = node[key];
+    if (Array.isArray(value)) { for (const item of value) if (item?.type) out.push(item); }
+    else if (value?.type) out.push(value);
+  }
+  return out;
+}
 function names(pattern) {
   if (!pattern) return [];
   if (pattern.type === 'Identifier') return [pattern.name];
@@ -98,23 +107,30 @@ export function readStorageManifest(path) {
   catch { /* A proposed generated manifest may not have been committed yet. */ }
   return { value, evidence: { path: resolve(path), sha256: digest(bytes), sdkVersion: value.sdkVersion, provenance: value.provenance, supportedSdkVersions: value.supportedSdkVersions, source } };
 }
-export function analyzeStorageJavaScript(source, { path = '<source>', lineOffset = 0, columnOffset = 0, manifest, targetSdkVersion } = {}) {
-  const findings = [];
-  const emit = (node, data) => findings.push({ path, line: (node.loc?.start.line ?? 1) + lineOffset, column: (node.loc?.start.column ?? 0) + 1 + ((node.loc?.start.line ?? 1) === 1 ? columnOffset : 0), ...data });
-  let ast;
-  try {
-    ast = parseJs(source, { ecmaVersion: 'latest', sourceType: 'module', locations: true, allowHashBang: true });
-  }
-  catch (error) {
-    emit({ loc: { start: error.loc } }, { operation: 'unknown', area: null, key: null, status: 'unknown', reason: 'parse-failure', detail: error.message, replacement: null });
-    return findings;
-  }
+const STORAGE_AREAS = ['localStorage', 'sessionStorage'];
+// Scope, alias and shadowing analysis of one parsed program (acorn, with
+// locations), shared by the tracked-source storage scan below and doctor's
+// built-script observations (#730 finding 8). A name resolves to a browser
+// global only while nothing binds it on the way out; a `const` (never `let` or
+// `var`) carries its initializer as an alias, and a destructure from a browser
+// global carries its property, shadowed when mutable.
+//
+// sameNameAliases: a const or destructure that binds a global's own name to
+// that global (`const next = window.next`, `const window = globalThis`) still
+// refers to it. Off for the
+// tracked-source scan, which has always read any binding of a storage name as
+// shadowed.
+export function javaScriptScopeAnalysis(ast, { sameNameAliases = false } = {}) {
   const root = { bindings: new Map(), parent: null };
   const scopes = new WeakMap();
-  function collect(node, scope) {
+  // Iterative, in source order: a script of thousands of chained operators
+  // nests that deep, past what recursion on the call stack allows.
+  const pending = [[ast, root]];
+  while (pending.length) {
+    let [node, scope] = pending.pop();
     if (['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression', 'BlockStatement', 'CatchClause', 'ForStatement', 'ForInStatement', 'ForOfStatement', 'SwitchStatement', 'StaticBlock', 'ClassExpression', 'ClassDeclaration'].includes(node.type)) {
       if (['FunctionDeclaration', 'ClassDeclaration'].includes(node.type) && node.id)
-        scope.bindings.set(node.id.name, { unknown: true });
+        scope.bindings.set(node.id.name, { unknown: true, kind: node.type === 'FunctionDeclaration' ? 'function' : 'class' });
       scope = { bindings: new Map(), parent: scope };
       for (const p of node.params ?? [])
         for (const name of names(p))
@@ -136,7 +152,7 @@ export function analyzeStorageJavaScript(source, { path = '<source>', lineOffset
           target.bindings.set(name, {
             init: node.kind === 'const' && d.id.type === 'Identifier' ? d.init : null,
             destructure: property ? { object: d.init, property, mutable: node.kind !== 'const' } : null,
-            scope, start: d.start,
+            kind: node.kind, scope, start: d.start,
           });
         }
     if (node.type.startsWith('Function') || node.type === 'ArrowFunctionExpression' || node.type === 'StaticBlock')
@@ -144,10 +160,10 @@ export function analyzeStorageJavaScript(source, { path = '<source>', lineOffset
     if (node.type === 'ImportDeclaration')
       for (const s of node.specifiers)
         scope.bindings.set(s.local.name, { unknown: true });
-    for (const child of children(node))
-      collect(child, scope);
+    const next = children(node);
+    for (let i = next.length - 1; i >= 0; i--)
+      pending.push([next[i], scope]);
   }
-  collect(ast, root);
   function binding(name, scope) { while (scope) {
     if (scope.bindings.has(name))
       return scope.bindings.get(name);
@@ -172,32 +188,156 @@ export function analyzeStorageJavaScript(source, { path = '<source>', lineOffset
     }
     return null;
   }
+  const WINDOW_NAMES = ['window', 'globalThis', 'self'];
   function browserGlobal(node, scope, seen = new Set()) {
     if (node?.type !== 'Identifier') return null;
     const b = binding(node.name, scope);
-    if (['window', 'globalThis', 'self'].includes(node.name)) return { shadowed: !!b };
+    if (WINDOW_NAMES.includes(node.name)) {
+      if (!b) return { shadowed: false };
+      return (sameNameAliases && windowAlias(b, seen)) || { shadowed: true };
+    }
     if (b?.init && !seen.has(b)) return browserGlobal(b.init, b.scope, new Set([...seen, b]));
+    if (sameNameAliases && b?.destructure) return windowAlias(b, seen);
     return null;
   }
-  function area(node, scope, seen = new Set()) {
+  // With sameNameAliases: the global object a const (`const window =
+  // globalThis`) or destructure (`const { window } = globalThis`) binds.
+  function windowAlias(b, seen) {
+    if (seen.has(b)) return null;
+    if (b.init) return browserGlobal(b.init, b.scope, new Set([...seen, b]));
+    if (!b.destructure) return null;
+    const global = browserGlobal(b.destructure.object, b.scope, new Set([...seen, b]));
+    const property = b.destructure.property;
+    const name = property.computed ? literal(property.key, b.scope) : property.key.name;
+    return global && WINDOW_NAMES.includes(name) ? { shadowed: global.shadowed || b.destructure.mutable } : null;
+  }
+  // A reference to one of `globals` (a browser global's own name, a property
+  // of window/globalThis/self, or a const or destructured alias of either).
+  function globalReference(node, scope, globals, seen = new Set()) {
     if (node?.type === 'Identifier') {
       const b = binding(node.name, scope);
-      if (['localStorage', 'sessionStorage'].includes(node.name)) return { name: node.name, shadowed: !!b };
-      if (b?.init && !seen.has(b)) return area(b.init, b.scope, new Set([...seen, b]));
-      if (b?.destructure) {
-        const global = browserGlobal(b.destructure.object, b.scope);
-        const property = b.destructure.property;
-        const name = property.computed ? literal(property.key, b.scope) : property.key.name;
-        if (global && ['localStorage', 'sessionStorage'].includes(name)) return { name, shadowed: global.shadowed || b.destructure.mutable };
+      if (globals.includes(node.name)) {
+        if (!b) return { name: node.name, shadowed: false };
+        return (sameNameAliases && aliasOf(b, globals, seen)) || { name: node.name, shadowed: true };
       }
+      if (b) return aliasOf(b, globals, seen);
     }
     if (node?.type === 'MemberExpression') {
       const global = browserGlobal(node.object, scope);
       const name = node.computed ? literal(node.property, scope) : node.property.name;
-      if (global && ['localStorage', 'sessionStorage'].includes(name)) return { name, shadowed: global.shadowed };
+      if (global && globals.includes(name)) return { name, shadowed: global.shadowed };
     }
     return null;
   }
+  // The global a const or destructured binding aliases, or null.
+  function aliasOf(b, globals, seen) {
+    if (b.init) return seen.has(b) ? null : globalReference(b.init, b.scope, globals, new Set([...seen, b]));
+    if (b.destructure) {
+      const global = browserGlobal(b.destructure.object, b.scope);
+      const property = b.destructure.property;
+      const name = property.computed ? literal(property.key, b.scope) : property.key.name;
+      if (global && globals.includes(name)) return { name, shadowed: global.shadowed || b.destructure.mutable };
+    }
+    return null;
+  }
+  const area = (node, scope) => globalReference(node, scope, STORAGE_AREAS);
+  // The literal start of a key: the whole key when it resolves (`exact`), else
+  // the resolved left side of a `+` chain or the head of a template literal,
+  // through const aliases. null when nothing at the start resolves.
+  function keyPrefix(node, scope, seen = new Set()) {
+    const whole = literal(node, scope);
+    if (whole !== null) return { text: whole, exact: true };
+    let prefix = null;
+    if (node?.type === 'BinaryExpression' && node.operator === '+') {
+      const left = keyPrefix(node.left, scope, seen);
+      const right = left?.exact ? keyPrefix(node.right, scope, seen) : null;
+      prefix = left && { text: left.text + (right?.text ?? ''), exact: false };
+    }
+    if (node?.type === 'TemplateLiteral') {
+      let text = node.quasis[0].value.cooked ?? '';
+      for (const [index, expression] of node.expressions.entries()) {
+        const part = keyPrefix(expression, scope, seen);
+        text += part?.text ?? '';
+        if (!part?.exact) break;
+        text += node.quasis[index + 1].value.cooked ?? '';
+      }
+      prefix = { text, exact: false };
+    }
+    if (node?.type === 'Identifier') {
+      const b = binding(node.name, scope);
+      if (b?.init && !seen.has(b) && b.start <= node.start) prefix = keyPrefix(b.init, b.scope, new Set([...seen, b]));
+    }
+    return prefix?.text ? prefix : null;
+  }
+  // Every storage access in source order, as onAccess({ node, storage, key,
+  // keyNode, operation, reason, metadata }, stack): a get/set/removeItem call,
+  // a member read or write, or the Storage object escaping bounded data flow.
+  function visitStorageAccesses(onAccess) {
+    const stack = [];
+    const handled = new WeakSet();
+    const aliasInitialization = (node, parent) => parent?.type === 'VariableDeclarator' && parent.init === node && parent.id.type === 'Identifier' && binding(parent.id.name, scopes.get(parent))?.init === node;
+    const propertyName = (node, parent) => (
+      (parent?.type === 'MemberExpression' && parent.property === node && !parent.computed) ||
+      (['Property', 'MethodDefinition', 'PropertyDefinition'].includes(parent?.type) && parent.key === node && !parent.computed && !parent.shorthand) ||
+      (['LabeledStatement', 'BreakStatement', 'ContinueStatement'].includes(parent?.type) && parent.label === node)
+    );
+    // Iterative like collect; `stack` holds the node's ancestors and itself.
+    const pending = [[ast, null]];
+    while (pending.length) {
+      const [node, parent] = pending.pop();
+      if (!node) {
+        stack.pop();
+        continue;
+      }
+      stack.push(node);
+      const scope = scopes.get(node);
+      if (node.type === 'CallExpression' && node.callee.type === 'MemberExpression') {
+        const member = node.callee, storage = area(member.object, scope), method = member.computed ? literal(member.property, scope) : member.property.name;
+        if (storage) {
+          handled.add(member);
+          const operation = { getItem: 'read', setItem: 'write', removeItem: 'remove' }[method];
+          onAccess({ node, storage, key: operation ? literal(node.arguments[0], scope) : null, keyNode: operation ? node.arguments[0] : null, operation: operation ?? 'unknown', reason: operation ? null : 'unsupported-storage-method' }, stack);
+        }
+      }
+      if (node.type === 'MemberExpression' && !handled.has(node)) {
+        const storage = area(node.object, scope);
+        if (storage) {
+          const operation = parent?.type === 'AssignmentExpression' && parent.left === node ? 'write' : parent?.type === 'UnaryExpression' && parent.operator === 'delete' ? 'remove' : parent?.type === 'UpdateExpression' ? 'write' : 'read';
+          const key = node.computed ? literal(node.property, scope) : node.property.name;
+          const reserved = ['getItem', 'setItem', 'removeItem', 'clear', 'key', 'length'].includes(key);
+          const metadata = key === 'length' && operation === 'read' && !storage.shadowed;
+          onAccess({ node, storage, key, keyNode: node.computed ? node.property : null, operation, reason: !metadata && reserved ? 'unsupported-storage-member' : null, metadata }, stack);
+        }
+      }
+      const storage = area(node, scope);
+      if (storage && !propertyName(node, parent) && !(parent?.type === 'MemberExpression' && parent.object === node) && !aliasInitialization(node, parent) && !(parent?.type === 'VariableDeclarator' && parent.id === node) && !(parent?.params ?? []).includes(node)) {
+        // Passing/destructuring/mutably aliasing the Storage object loses bounded data flow.
+        onAccess({ node, storage, key: null, keyNode: null, operation: 'unknown', reason: 'storage-object-escape' }, stack);
+      }
+      pending.push([null, null]);
+      const next = children(node);
+      for (let i = next.length - 1; i >= 0; i--)
+        pending.push([next[i], node]);
+    }
+  }
+  return { scopes, binding, literal, browserGlobal, globalReference, area, keyPrefix, visitStorageAccesses };
+}
+// sourceType is how the browser reads the source: 'module' for type="module"
+// (and the tracked-source scan, which has always read every file as one),
+// 'script' for a classic script.
+export function analyzeStorageJavaScript(source, { path = '<source>', lineOffset = 0, columnOffset = 0, manifest, targetSdkVersion, sourceType = 'module' } = {}) {
+  const findings = [];
+  const emit = (node, data) => findings.push({ path, line: (node.loc?.start.line ?? 1) + lineOffset, column: (node.loc?.start.column ?? 0) + 1 + ((node.loc?.start.line ?? 1) === 1 ? columnOffset : 0), ...data });
+  let ast;
+  try {
+    ast = parseJs(source, { ecmaVersion: 'latest', sourceType, locations: true, allowHashBang: true });
+  }
+  catch (error) {
+    emit({ loc: { start: error.loc } }, { operation: 'unknown', area: null, key: null, status: 'unknown', reason: 'parse-failure', detail: error.message, replacement: null });
+    return findings;
+  }
+  const { scopes, literal, area, visitStorageAccesses } = javaScriptScopeAnalysis(ast);
+  let stack = [];
   function record(node, storage, key, operation, reason = null) {
     let status = 'unaffected', replacement = null;
     if (storage.shadowed || key === null || reason) {
@@ -231,7 +371,6 @@ export function analyzeStorageJavaScript(source, { path = '<source>', lineOffset
   // a for-of/for-in variable over `Object.keys(storage)` or `storage`, or the element parameter of an array callback
   // chained on `Object.keys(storage)`. A line is named only when it is that key's source or reads that key.
   // Names are matched within the loop, not resolved through scopes; it is a hint only.
-  const stack = [];
   const prefixCache = new WeakMap();
   const callName = call => call?.type === 'CallExpression' && call.callee.type === 'MemberExpression' ? (call.callee.computed ? literal(call.callee.property, scopes.get(call)) : call.callee.property.name) : null;
   const keysOf = node => node?.type === 'CallExpression' && node.callee.type === 'MemberExpression' && node.callee.object.type === 'Identifier' && node.callee.object.name === 'Object' && callName(node) === 'keys' ? node.arguments[0] : null;
@@ -252,7 +391,8 @@ export function analyzeStorageJavaScript(source, { path = '<source>', lineOffset
       sources.set(source, id.name);
     };
     const loopVariable = left => left?.type === 'VariableDeclaration' ? left.declarations[0]?.id : left;
-    (function walk(n) {
+    for (const pending = [loop]; pending.length;) {
+      const n = pending.pop();
       if (n.type === 'VariableDeclarator' && callName(n.init) === 'key')
         bind(n.id, n.init.callee.object, n.init);
       if (n.type === 'AssignmentExpression' && n.operator === '=' && callName(n.right) === 'key')
@@ -269,8 +409,10 @@ export function analyzeStorageJavaScript(source, { path = '<source>', lineOffset
         for (const [call, zero] of [[n.left, n.right], [n.right, n.left]])
           if (zero.type === 'Literal' && zero.value === 0 && callName(call) === 'indexOf' && call.arguments.length === 1)
             tests.push({ receiver: call.callee.object, prefix: literal(call.arguments[0], scopes.get(call)) });
-      for (const child of children(n)) walk(child);
-    })(loop);
+      const next = children(n);
+      for (let i = next.length - 1; i >= 0; i--)
+        pending.push(next[i]);
+    }
     const prefixes = tests.filter(t => t.prefix && t.receiver.type === 'Identifier' && keys.has(t.receiver.name)).map(t => ({ name: t.receiver.name, prefix: t.prefix, area: keys.get(t.receiver.name) }));
     const result = { prefixes, sources };
     prefixCache.set(loop, result);
@@ -290,47 +432,12 @@ export function analyzeStorageJavaScript(source, { path = '<source>', lineOffset
     }
     return null;
   }
-  const handled = new WeakSet();
-  const aliasInitialization = (node, parent) => parent?.type === 'VariableDeclarator' && parent.init === node && parent.id.type === 'Identifier' && binding(parent.id.name, scopes.get(parent))?.init === node;
-  const propertyName = (node, parent) => (
-    (parent?.type === 'MemberExpression' && parent.property === node && !parent.computed) ||
-    (['Property', 'MethodDefinition', 'PropertyDefinition'].includes(parent?.type) && parent.key === node && !parent.computed && !parent.shorthand) ||
-    (['LabeledStatement', 'BreakStatement', 'ContinueStatement'].includes(parent?.type) && parent.label === node)
-  );
-  function visit(node, parent) {
-    stack.push(node);
-    const scope = scopes.get(node);
-    if (node.type === 'CallExpression' && node.callee.type === 'MemberExpression') {
-      const member = node.callee, storage = area(member.object, scope), method = member.computed ? literal(member.property, scope) : member.property.name;
-      if (storage) {
-        handled.add(member);
-        const operation = { getItem: 'read', setItem: 'write', removeItem: 'remove' }[method];
-        record(node, storage, operation ? literal(node.arguments[0], scope) : null, operation ?? 'unknown', operation ? null : 'unsupported-storage-method');
-      }
-    }
-    if (node.type === 'MemberExpression' && !handled.has(node)) {
-      const storage = area(node.object, scope);
-      if (storage) {
-        const operation = parent?.type === 'AssignmentExpression' && parent.left === node ? 'write' : parent?.type === 'UnaryExpression' && parent.operator === 'delete' ? 'remove' : parent?.type === 'UpdateExpression' ? 'write' : 'read';
-        const key = node.computed ? literal(node.property, scope) : node.property.name;
-        const reserved = ['getItem', 'setItem', 'removeItem', 'clear', 'key', 'length'].includes(key);
-        if (key === 'length' && operation === 'read' && !storage.shadowed) {
-          emit(node, { operation, area: storage.name, key, status: 'unaffected', reason: 'storage-metadata-read', replacement: null });
-        } else {
-          record(node, storage, key, operation, reserved ? 'unsupported-storage-member' : null);
-        }
-      }
-    }
-    const storage = area(node, scope);
-    if (storage && !propertyName(node, parent) && !(parent?.type === 'MemberExpression' && parent.object === node) && !aliasInitialization(node, parent) && !(parent?.type === 'VariableDeclarator' && parent.id === node) && !(parent?.params ?? []).includes(node)) {
-      // Passing/destructuring/mutably aliasing the Storage object loses bounded data flow.
-      record(node, storage, null, 'unknown', 'storage-object-escape');
-    }
-    for (const child of children(node))
-      visit(child, node);
-    stack.pop();
-  }
-  visit(ast, null);
+  visitStorageAccesses((access, accessStack) => {
+    stack = accessStack;
+    const { node, storage, key, operation, reason, metadata } = access;
+    if (metadata) emit(node, { operation, area: storage.name, key, status: 'unaffected', reason: 'storage-metadata-read', replacement: null });
+    else record(node, storage, key, operation, reason);
+  });
   return findings;
 }
 // Page Kit's campaign_asset filter serves src/<slug>/assets/<path>, <slug> being

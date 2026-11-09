@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
-import { htmlScanDigest, htmlScanDocuments, htmlScanMemo, readHtmlScanText, withHtmlScanSnapshot } from './html-scan.mjs';
+import { htmlScanDigest, htmlScanDocuments, htmlScanMemo, htmlScanScriptPrograms, readHtmlScanText, withHtmlScanSnapshot } from './html-scan.mjs';
 
 function fixture(t) {
   const dir = mkdtempSync(join(tmpdir(), 'html-scan-'));
@@ -160,6 +160,49 @@ test('a page set past the parse budget, or with a file the snapshot does not hol
     // A shared tree is handed back only for the held text; other text is parsed as given.
     assert.notEqual(alone(small, '<p>edited</p>'), alone(small, '<p>small</p>'));
     assert.equal(alone(small, '<p>edited</p>').childNodes[0].childNodes[1].childNodes[0].childNodes[0].value, 'edited');
+  });
+});
+
+test('a snapshot shares one acorn program per held script and source type, failures included', t => {
+  const path = fixture(t);
+  // An HTML-like comment parses only in a classic script.
+  writeFileSync(path, '<!-- legacy\nvar total = 1;');
+  withHtmlScanSnapshot(() => {
+    const text = readHtmlScanText(path);
+    const programs = htmlScanScriptPrograms([{ path, module: false }, { path, module: true }]);
+    const classic = programs(path, false, text);
+    assert.equal(classic.sourceType, 'script');
+    assert.equal(htmlScanScriptPrograms([{ path, module: false }])(path, false, text), classic);
+    let failure;
+    assert.throws(() => programs(path, true, text), (error) => (failure = error) instanceof SyntaxError);
+    assert.throws(() => programs(path, true, text), (error) => error === failure);
+    // A shared program is handed back only for the held text.
+    assert.equal(programs(path, false, 'var edited;').body[0].declarations[0].id.name, 'edited');
+  });
+  const outside = htmlScanScriptPrograms([{ path, module: false }]);
+  assert.notEqual(outside(path, false, 'var a;'), outside(path, false, 'var a;'));
+});
+
+test('a script set past the parse budget, or with a script the snapshot does not hold, is parsed per use', t => {
+  const small = fixture(t);
+  writeFileSync(small, 'var small;');
+  const scripts = [{ path: small, module: false }];
+  // 3 x 1 MiB of scripts: 96 MiB of estimated programs, past the 64 MiB parse budget.
+  for (let i = 0; i < 3; i += 1) {
+    const path = join(dirname(small), `script-${i}.js`);
+    writeFileSync(path, `var x${i};${' '.repeat(1024 * 1024)}`);
+    scripts.push({ path, module: false });
+  }
+  const unheld = join(dirname(small), 'unheld.js');
+  writeFileSync(unheld, 'var unheld;');
+  withHtmlScanSnapshot(() => {
+    for (const { path } of scripts) readHtmlScanText(path);
+    const overBudget = htmlScanScriptPrograms(scripts);
+    assert.notEqual(overBudget(small, false, 'var small;'), overBudget(small, false, 'var small;'));
+    const partial = htmlScanScriptPrograms([{ path: small, module: false }, { path: unheld, module: false }]);
+    assert.notEqual(partial(small, false, 'var small;'), partial(small, false, 'var small;'));
+    const alone = htmlScanScriptPrograms([{ path: small, module: false }]);
+    assert.equal(alone(small, false, 'var small;'), alone(small, false, 'var small;'));
   });
 });
 

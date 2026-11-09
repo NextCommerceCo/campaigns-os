@@ -11402,6 +11402,39 @@
         }
       ],
       "entry_sha256": "112a8ed3b22fc2e44f8d514367bd3c14bc1776b05ab494d18ecffe3ec0e1f2ee"
+    },
+    {
+      "id": "RL-0323",
+      "sequence": 313,
+      "date": "2026-11-09",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.66.0+agent.10",
+      "changelog_sha256": "b72860cc1ede81a935aaa0dc5a30799b6ecc2aa6a5e22e96c92bb193963007c5",
+      "agent_impact": "Doctor can now emit advisory warnings under built_output.script_observations.* (sdk_prefixed_storage, network_global_replaced, sdk_debug_surface, sdk_private_member, truncated, incomplete). They never block and add no gate, ready line or doctor_checks entry. An agent reading doctor output should treat them as review prompts, not defects: each observation names the operation, file, line and column (incomplete names the script whose analysis did not finish), and does not claim SDK ownership or an SDK bypass.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": null,
+          "summary": "Packet doctor adds advisory script API and storage observation warnings beside the script syntax check."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/inspect.mjs",
+          "surface_entry": null,
+          "summary": "doctor --built adds the same advisory script API and storage observation warnings."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Documents the built_output.script_observations warning codes, what each verifies and what it does not claim."
+        }
+      ],
+      "entry_sha256": "0275203cf4e9b8756cc83508bb36d9c7c227382cc8c7ae38e23be33fc1f3c915"
     }
   ]
 }
