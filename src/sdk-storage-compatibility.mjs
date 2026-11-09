@@ -39,7 +39,16 @@ function matchesTemplate(key, template) {
   }
   return true;
 }
-function children(node) { return Object.values(node).flatMap(value => Array.isArray(value) ? value.filter(x => x?.type) : value?.type ? [value] : []); }
+// A node's child nodes in property order. Every traversal calls it on every node, so it avoids per-call array copies.
+export function children(node) {
+  const out = [];
+  for (const key in node) {
+    const value = node[key];
+    if (Array.isArray(value)) { for (const item of value) if (item?.type) out.push(item); }
+    else if (value?.type) out.push(value);
+  }
+  return out;
+}
 function names(pattern) {
   if (!pattern) return [];
   if (pattern.type === 'Identifier') return [pattern.name];

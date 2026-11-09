@@ -39,7 +39,7 @@ import { parse as parseJs } from "acorn";
 
 import { builtScriptReferences } from "./built-script-syntax.mjs";
 import { htmlScanScriptPrograms, readHtmlScanText } from "./html-scan.mjs";
-import { javaScriptScopeAnalysis } from "./sdk-storage-compatibility.mjs";
+import { children as childNodes, javaScriptScopeAnalysis } from "./sdk-storage-compatibility.mjs";
 
 export const SCRIPT_OBSERVATIONS = "built_output.script_observations";
 export const SCRIPT_OBSERVATION_SDK_PREFIXED_STORAGE = `${SCRIPT_OBSERVATIONS}.sdk_prefixed_storage`;
@@ -55,10 +55,6 @@ const SDK_STORAGE_PREFIX = /^next[-_]/;
 const SDK_GLOBALS = ["next", "NextCommerce"];
 const XHR_METHODS = new Set(["open", "send"]);
 const FUNCTION_TYPES = new Set(["FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"]);
-
-function childNodes(node) {
-  return Object.values(node).flatMap((value) => (Array.isArray(value) ? value.filter((item) => item?.type) : value?.type ? [value] : []));
-}
 
 /**
  * The observations in one parsed program, in source order.
@@ -167,16 +163,13 @@ export function observeScriptProgram(program, { module = false } = {}) {
         add(SCRIPT_OBSERVATION_NETWORK_GLOBAL_REPLACED, node.id, { operation: "replace", receiver: "fetch" });
       }
     }
-    if ((node.type === "Identifier" || node.type === "MemberExpression") && isReference(node, parent)) {
-      const debug = (node.type === "Identifier" || !node.computed || typeof memberName(node) === "string") && sdkGlobal(node, ["nextDebug"]);
-      // Only the global itself: an alias (const d = nextDebug) is reported where it reads the global.
-      if (debug && (node.type === "MemberExpression" || node.name === "nextDebug")) {
-        add(SCRIPT_OBSERVATION_SDK_DEBUG_SURFACE, node, { operation: accessOf(node, parent), receiver: globalSpelling(node, "nextDebug") });
-        return;
-      }
+    const name = node.type === "Identifier" ? node.name : node.type === "MemberExpression" ? memberName(node) : null;
+    // Only the global itself: an alias (const d = nextDebug) is reported where it reads the global.
+    if (name === "nextDebug" && isReference(node, parent) && sdkGlobal(node, ["nextDebug"])) {
+      add(SCRIPT_OBSERVATION_SDK_DEBUG_SURFACE, node, { operation: accessOf(node, parent), receiver: globalSpelling(node, "nextDebug") });
+      return;
     }
     if (node.type === "MemberExpression") {
-      const name = memberName(node);
       if (typeof name === "string" && name.startsWith("_")) {
         const receiver = sdkReceiver(node.object);
         if (receiver) add(SCRIPT_OBSERVATION_SDK_PRIVATE_MEMBER, node, { operation: accessOf(node, parent), receiver: `${receiver}.${name}` });
