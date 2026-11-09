@@ -180,9 +180,11 @@ export function htmlScanScriptPrograms(scripts) {
   if (!snapshot?.active) return perUse;
   const wanted = new Map();
   for (const { path, module } of scripts) {
-    const entry = snapshot.files.get(realKey(snapshot, path));
+    const key = realKey(snapshot, path);
+    const entry = snapshot.files.get(key);
     if (!entry) return perUse;
-    wanted.set(`${realKey(snapshot, path)}\u0000${module ? 'module' : 'script'}`, { entry, type: module ? 'module' : 'script' });
+    const type = module ? 'module' : 'script';
+    wanted.set(`${key}\u0000${type}`, { entry, type });
   }
   const pending = [...wanted.values()].filter(({ entry, type }) => !entry.programs?.has(type));
   const cost = pending.reduce((sum, { entry }) => sum + entry.bytes.length * SCRIPT_PARSE_COST_PER_BYTE, 0);

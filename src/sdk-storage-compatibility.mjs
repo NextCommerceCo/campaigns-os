@@ -270,7 +270,7 @@ export function javaScriptScopeAnalysis(ast) {
     }
     visit(ast, null);
   }
-  return { root, scopes, binding, literal, browserGlobal, globalReference, area, keyPrefix, visitStorageAccesses };
+  return { scopes, binding, literal, browserGlobal, globalReference, area, keyPrefix, visitStorageAccesses };
 }
 // sourceType is how the browser reads the source: 'module' for type="module"
 // (and the tracked-source scan, which has always read every file as one),
