@@ -11648,6 +11648,27 @@
         }
       ],
       "entry_sha256": "ec35f5c204343bf69a6eac08ec241c43a7f3d7361484e2284e973011f3d83fc3"
+    },
+    {
+      "id": "RL-0331",
+      "sequence": 319,
+      "date": "2026-11-10",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.66.0+agent.17",
+      "changelog_sha256": "93db44c1fe00c1800af383c582c3d7a048ed93ffd2f4142a8a18cefda5a64f37",
+      "agent_impact": "None. Doctor output is unchanged: the same codes, messages, ordering, ready lines, checkpoint gates and CI verdicts. The built-output validators' signatures in src/doctor/checks.mjs are internal to this repository and not on the supported surface; every in-repo caller is updated.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": null,
+          "summary": "The sixteen built-output and gate validators take the doctor check registry context object directly and are registered without argument-unpacking wrappers; spec, packet and source validators keep their signatures."
+        }
+      ],
+      "entry_sha256": "b6d2022c46818b1d13995b99e77901c187844e9a440893edc266d35aec3cef72"
     }
   ]
 }

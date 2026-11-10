@@ -238,7 +238,7 @@ test("root-served: route-drift served routes are slug-free under route_root '/'"
     buildSite(dir, ["checkout-v2", "receipt"]);
     const packet = { campaign: { public_route_slug: "shield", route_root: "/" } };
     const errors = [], warnings = [], ready = [];
-    validateBuiltRouteDrift(driftSpec, packet, errors, warnings, ready, { target_repo: dir }, {});
+    validateBuiltRouteDrift({ spec: driftSpec, packet, errors, warnings, ready, derived: { target_repo: dir }, buildState: {} });
     const detail = warnings.find((w) => w.code === "built_output.route_drift").detail;
     for (const d of detail.drifted) {
       assert.doesNotMatch(d.expected_route, /\/shield\//, `expected_route ${d.expected_route} must be slug-free`);
@@ -267,13 +267,13 @@ test("root-served: built meta expectation composes against '/' (no phantom /<slu
 
     {
       const errors = [], warnings = [], ready = [];
-      validateBuiltSdkMetaTags(spec, ROOT_SERVED_PACKET, errors, warnings, ready, { target_repo: dir });
+      validateBuiltSdkMetaTags({ spec, packet: ROOT_SERVED_PACKET, errors, warnings, ready, derived: { target_repo: dir } });
       assert.equal(codes(errors).concat(codes(warnings)).includes("sdk_hints.meta_tags.route_mismatch"), false);
     }
     {
       // Same rendered value without route_root: doctor expects /rootfunnel/receipt/ and flags it.
       const errors = [], warnings = [], ready = [];
-      validateBuiltSdkMetaTags(spec, { campaign: { public_route_slug: "rootfunnel" } }, errors, warnings, ready, { target_repo: dir });
+      validateBuiltSdkMetaTags({ spec, packet: { campaign: { public_route_slug: "rootfunnel" } }, errors, warnings, ready, derived: { target_repo: dir } });
       assert.ok(codes(errors).concat(codes(warnings)).includes("sdk_hints.meta_tags.route_mismatch"));
     }
   });
@@ -301,7 +301,7 @@ test("built meta: an SDK-ignored spec tag is advisory, never missing", () => {
     };
     const buildState = { report: { stages: { assembly: { status: "completed" } } } };
     const errors = [], warnings = [], ready = [];
-    validateBuiltSdkMetaTags(spec, PACKET, errors, warnings, ready, { target_repo: dir }, buildState);
+    validateBuiltSdkMetaTags({ spec, packet: PACKET, errors, warnings, ready, derived: { target_repo: dir }, buildState });
 
     assert.deepEqual(errors, [], "an ignored tag is never a missing error");
     assert.equal(codes(warnings).includes("sdk_hints.meta_tags.missing"), false);
@@ -327,7 +327,7 @@ test("built meta: a rendered SDK-ignored tag still gets the advisory, and a tag 
     };
     const buildState = { report: { stages: { assembly: { status: "completed" } } } };
     const errors = [], warnings = [], ready = [];
-    validateBuiltSdkMetaTags(spec, PACKET, errors, warnings, ready, { target_repo: dir }, buildState);
+    validateBuiltSdkMetaTags({ spec, packet: PACKET, errors, warnings, ready, derived: { target_repo: dir }, buildState });
 
     assert.deepEqual(codes(errors), ["sdk_hints.meta_tags.missing"]);
     assert.match(errors[0].message, /"next-page-type"/);
@@ -344,7 +344,7 @@ test("built meta: before _site exists the pre-build warning lists only tags the 
       ],
     };
     const errors = [], warnings = [], ready = [];
-    validateBuiltSdkMetaTags(spec, PACKET, errors, warnings, ready, { target_repo: dir });
+    validateBuiltSdkMetaTags({ spec, packet: PACKET, errors, warnings, ready, derived: { target_repo: dir } });
     const pending = warnings.find((issue) => issue.code === "sdk_hints.meta_tags");
     assert.ok(pending);
     assert.match(pending.message, /\(next-page-type\)/);
@@ -729,7 +729,7 @@ test("#1 route drift: spec page_url with no built page at that route is flagged 
     // Built at presell-running/ (filename-derived) but spec says presell/.
     buildSite(dir, ["presell-running", "checkout"]);
     const errors = [], warnings = [], ready = [];
-    validateBuiltRouteDrift(driftSpec, DRIFT_PACKET, errors, warnings, ready, { target_repo: dir }, {});
+    validateBuiltRouteDrift({ spec: driftSpec, packet: DRIFT_PACKET, errors, warnings, ready, derived: { target_repo: dir }, buildState: {} });
     assert.equal(codes(warnings).includes("built_output.route_drift"), true);
     const detail = warnings.find((w) => w.code === "built_output.route_drift").detail;
     assert.ok(detail.drifted.some((d) => d.page_id === "presell"));
@@ -741,7 +741,7 @@ test("#1 route drift: matching routes pass with a ready line", () => {
   withTempDir((dir) => {
     buildSite(dir, ["presell", "checkout"]);
     const errors = [], warnings = [], ready = [];
-    validateBuiltRouteDrift(driftSpec, DRIFT_PACKET, errors, warnings, ready, { target_repo: dir }, {});
+    validateBuiltRouteDrift({ spec: driftSpec, packet: DRIFT_PACKET, errors, warnings, ready, derived: { target_repo: dir }, buildState: {} });
     assert.equal(codes(warnings).includes("built_output.route_drift"), false);
     assert.ok(ready.some((r) => r.includes("Built routes match")));
   });
@@ -751,7 +751,7 @@ test("#1 route drift: errors (not warns) once assembly is complete", () => {
   withTempDir((dir) => {
     buildSite(dir, ["presell-running", "checkout"]);
     const errors = [], warnings = [], ready = [];
-    validateBuiltRouteDrift(driftSpec, DRIFT_PACKET, errors, warnings, ready, { target_repo: dir }, { report: { stages: { assembly: { status: "completed" } } } });
+    validateBuiltRouteDrift({ spec: driftSpec, packet: DRIFT_PACKET, errors, warnings, ready, derived: { target_repo: dir }, buildState: { report: { stages: { assembly: { status: "completed" } } } } });
     assert.equal(codes(errors).includes("built_output.route_drift"), true);
   });
 });
@@ -863,7 +863,7 @@ test("target root: missing _site/<slug>/ after assembly completes is a loud erro
     const warnings = [];
     const ready = [];
     const buildState = { report: { stages: { assembly: { status: "completed" } } } };
-    validateBuiltOutputTargetRoot(PACKET, errors, warnings, ready, { target_repo: dir }, buildState);
+    validateBuiltOutputTargetRoot({ packet: PACKET, errors, warnings, ready, derived: { target_repo: dir }, buildState });
     assert.deepEqual(codes(errors), ["built_output.target_root"]);
     assert.match(errors[0].message, /Target route not found in _site/);
     assert.deepEqual(errors[0].detail.built_roots, ["actual-route"]);
@@ -876,7 +876,7 @@ test("target root: missing slug root before assembly with built output present i
     const errors = [];
     const warnings = [];
     const ready = [];
-    validateBuiltOutputTargetRoot(PACKET, errors, warnings, ready, { target_repo: dir }, {});
+    validateBuiltOutputTargetRoot({ packet: PACKET, errors, warnings, ready, derived: { target_repo: dir }, buildState: {} });
     assert.deepEqual(errors, []);
     assert.deepEqual(codes(warnings), ["built_output.target_root"]);
   });
@@ -887,7 +887,7 @@ test("target root: pre-build state (no _site, assembly incomplete) stays silent"
     const errors = [];
     const warnings = [];
     const ready = [];
-    validateBuiltOutputTargetRoot(PACKET, errors, warnings, ready, { target_repo: dir }, {});
+    validateBuiltOutputTargetRoot({ packet: PACKET, errors, warnings, ready, derived: { target_repo: dir }, buildState: {} });
     assert.deepEqual(errors, []);
     assert.deepEqual(warnings, []);
   });
@@ -902,7 +902,7 @@ test("target root: no _site at all stays silent even when assembly is recorded c
     const warnings = [];
     const ready = [];
     const buildState = { report: { stages: { assembly: { status: "completed" } } } };
-    validateBuiltOutputTargetRoot(PACKET, errors, warnings, ready, { target_repo: dir }, buildState);
+    validateBuiltOutputTargetRoot({ packet: PACKET, errors, warnings, ready, derived: { target_repo: dir }, buildState });
     assert.deepEqual(errors, []);
     assert.deepEqual(warnings, []);
   });
@@ -914,7 +914,7 @@ test("target root: existing _site/<slug>/ records a ready line", () => {
     const errors = [];
     const warnings = [];
     const ready = [];
-    validateBuiltOutputTargetRoot(PACKET, errors, warnings, ready, { target_repo: dir }, {});
+    validateBuiltOutputTargetRoot({ packet: PACKET, errors, warnings, ready, derived: { target_repo: dir }, buildState: {} });
     assert.deepEqual(errors, []);
     assert.deepEqual(warnings, []);
     assert.ok(ready.some((note) => note.includes(`_site/${SLUG}/`)));
@@ -941,7 +941,7 @@ test("target root: a stray regular file at _site/<slug> is not a found root", ()
     const warnings = [];
     const ready = [];
     const buildState = { report: { stages: { assembly: { status: "completed" } } } };
-    validateBuiltOutputTargetRoot(PACKET, errors, warnings, ready, { target_repo: dir }, buildState);
+    validateBuiltOutputTargetRoot({ packet: PACKET, errors, warnings, ready, derived: { target_repo: dir }, buildState });
     assert.deepEqual(codes(errors), ["built_output.target_root"]);
     assert.equal(ready.some((note) => note.includes("Built output root found")), false);
   });
@@ -963,7 +963,7 @@ test("built_output.fingerprint: pass, missing, and stale after the output change
       const warnings = [];
       const ready = [];
       const derived = { target_repo: dir };
-      validateBuildOutputFingerprint(PACKET, errors, warnings, ready, derived, { report });
+      validateBuildOutputFingerprint({ packet: PACKET, errors, warnings, ready, derived, buildState: { report } });
       return { errors, warnings, ready, derived };
     };
 
@@ -1011,7 +1011,7 @@ test("built_output.fingerprint: skips without a built route root and never guess
     const warnings = [];
     const ready = [];
     const derived = { target_repo: dir };
-    validateBuildOutputFingerprint(PACKET, errors, warnings, ready, derived, { report: { stages: { assembly: { status: "completed", build_fingerprint: `sha256:${"a".repeat(64)}` } } } });
+    validateBuildOutputFingerprint({ packet: PACKET, errors, warnings, ready, derived, buildState: { report: { stages: { assembly: { status: "completed", build_fingerprint: `sha256:${"a".repeat(64)}` } } } } });
     // A completed build with no output to compare is said out loud: a fresh
     // checkout must not read as current because nothing was compared.
     assert.deepEqual([errors, warnings.map((issue) => issue.code), ready], [[], ["built_output.absent"], []]);
@@ -1047,7 +1047,7 @@ test("built_output.fingerprint_stale names extra, missing and changed paths and 
     rmSync(join(root, "assets", "old.webp"));
 
     const errors = [];
-    validateBuildOutputFingerprint(PACKET, errors, [], [], { target_repo: dir }, { report: { stages: { assembly } } });
+    validateBuildOutputFingerprint({ packet: PACKET, errors, warnings: [], ready: [], derived: { target_repo: dir }, buildState: { report: { stages: { assembly } } } });
     assert.deepEqual(codes(errors), ["built_output.fingerprint_stale"]);
     const { message, detail } = errors[0];
     assert.match(message, /1 extra: assets\/30d 2\.webp \[sync conflict copy\]/);
@@ -1074,7 +1074,7 @@ test("a trailing number is not a sync conflict copy unless the unsuffixed origin
     writeFileSync(join(root, "week 10", "index.html"), "real folder");
 
     const errors = [];
-    validateBuildOutputFingerprint(PACKET, errors, [], [], { target_repo: dir }, { report: { stages: { assembly } } });
+    validateBuildOutputFingerprint({ packet: PACKET, errors, warnings: [], ready: [], derived: { target_repo: dir }, buildState: { report: { stages: { assembly } } } });
     assert.deepEqual(codes(errors), ["built_output.fingerprint_stale"]);
     assert.doesNotMatch(errors[0].message, /sync conflict cop/);
     assert.deepEqual(errors[0].detail.drift.conflict_copies, []);
@@ -1091,14 +1091,14 @@ test("built_output.fingerprint_stale caps each path list and says the manifest i
     for (let index = 0; index < 25; index += 1) writeFileSync(join(root, `extra-${String(index).padStart(2, "0")}.txt`), String(index));
 
     const capped = [];
-    validateBuildOutputFingerprint(PACKET, capped, [], [], { target_repo: dir }, { report: { stages: { assembly: { status: "completed", build_fingerprint: recorded, build_manifest: manifest } } } });
+    validateBuildOutputFingerprint({ packet: PACKET, errors: capped, warnings: [], ready: [], derived: { target_repo: dir }, buildState: { report: { stages: { assembly: { status: "completed", build_fingerprint: recorded, build_manifest: manifest } } } } });
     assert.match(capped[0].message, /25 extra: extra-00\.txt, .*extra-19\.txt \(\+5 more\)/);
     assert.doesNotMatch(capped[0].message, /extra-20\.txt/);
 
     // A record made before build kept a manifest: today's refusal, plus why
     // the paths cannot be named and how to get them next time.
     const legacy = [];
-    validateBuildOutputFingerprint(PACKET, legacy, [], [], { target_repo: dir }, { report: { stages: { assembly: { status: "completed", build_fingerprint: recorded } } } });
+    validateBuildOutputFingerprint({ packet: PACKET, errors: legacy, warnings: [], ready: [], derived: { target_repo: dir }, buildState: { report: { stages: { assembly: { status: "completed", build_fingerprint: recorded } } } } });
     assert.deepEqual(codes(legacy), ["built_output.fingerprint_stale"]);
     assert.match(legacy[0].message, /recorded sha256:[a-f0-9]{64}, current sha256:[a-f0-9]{64}/);
     assert.match(legacy[0].message, /no file manifest.*re-run record build/i);
@@ -1106,7 +1106,7 @@ test("built_output.fingerprint_stale caps each path list and says the manifest i
     // A manifest that does not hash to the recorded fingerprint is not
     // evidence about that build, so it reads as unavailable too.
     const forged = [];
-    validateBuildOutputFingerprint(PACKET, forged, [], [], { target_repo: dir }, { report: { stages: { assembly: { status: "completed", build_fingerprint: `sha256:${"a".repeat(64)}`, build_manifest: manifest } } } });
+    validateBuildOutputFingerprint({ packet: PACKET, errors: forged, warnings: [], ready: [], derived: { target_repo: dir }, buildState: { report: { stages: { assembly: { status: "completed", build_fingerprint: `sha256:${"a".repeat(64)}`, build_manifest: manifest } } } } });
     assert.match(forged[0].message, /no file manifest/i);
     assert.doesNotMatch(forged[0].message, /extra:/);
   });
