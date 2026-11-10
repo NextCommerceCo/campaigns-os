@@ -121,8 +121,9 @@ issue or PR number. For example:
 - The issue project automation pins `actions/add-to-project` v2.0.1 (#739).
 ```
 
-What an agent must do differently goes in the entry's `agent_impact`; with no
-entry, the one line and the release section that publishes it are the record.
+What an agent must do differently goes in the entry's `agent_impact`. A section
+with no entry has no `agent_impact`, so it may add a second sentence naming
+anything a consumer will see, such as a new evidence field or reason code.
 Benchmarks, counts and how the code works go in the PR description.
 
 A new release section lists the `+agent.N` sections it publishes: those numbered
