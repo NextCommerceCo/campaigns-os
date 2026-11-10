@@ -112,12 +112,18 @@ the entry a real section to point at.
 
 Write a section for the consumer reading it. A `+agent.N` section opens with one
 bold sentence saying what changes for a campaign or an agent, then at most two
-or three short sentences. Aim for about 600 bytes of body; `1.66.0+agent.12` is
+or three short sentences. Aim for about 400 bytes of body; `1.66.0+agent.12` is
 the shape. An internal change that alters nothing a consumer sees gets that one
 sentence and no more. Benchmarks, parse or file counts, and how the code works
 belong in the PR description, and the ledger entry's `agent_impact` should not
-be repeated word for word. A release section is a one-paragraph summary, then
-one line per published `+agent.N` under Added, Changed or Fixed, as in `1.67.0`.
+be repeated word for word.
+
+A release section publishes the `+agent.N` sections numbered on the release
+before it, which sit below it. It is a one-paragraph summary, then one line per
+section it publishes under Added, Changed or Fixed. Sections from one piece of
+work may share a line with nested sub-bullets, as the #730 work does in
+`1.67.0`. A `+agent.N` numbered on the newest release is not listed there, since
+that release is already published; the next release lists it.
 
 The target is guidance, not a gate: `max_section_bytes` stays the only enforced
 bound. It applies to new sections. A published section is hashed by its
