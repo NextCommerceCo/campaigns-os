@@ -6,7 +6,7 @@ Notable supported-surface changes are recorded here.
 
 ### Changed
 
-- **The release-ledger authoring guide sets a style for new changelog sections.** A `+agent.N` section is one bold sentence on what changes for a consumer plus at most two or three more, about 400 bytes. Benchmarks and implementation detail go in the PR. Published sections are unchanged, and no limit or check changes.
+- The release-ledger authoring guide makes each new `+agent.N` section one line and leaves the summary to release sections (#751).
 
 ## [1.68.0] - 2026-11-10
 

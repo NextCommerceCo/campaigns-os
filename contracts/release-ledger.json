@@ -4026,7 +4026,7 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.68.0+agent.1",
-      "changelog_sha256": "4d07f01cc941ac69600e81ccbd7767efe672d7087d421b297e77e645f28cb14a",
+      "changelog_sha256": "6e04c10c07c9fde28810370519d75e102425f32013e99dd7aaaeba16b425f407",
       "agent_impact": "None. The authoring guide asks for shorter new changelog sections; published sections, limits and checks are unchanged.",
       "compatibility": "compatible",
       "migration": "none",
@@ -4035,10 +4035,10 @@
           "class": "documentation",
           "path": "docs/release-ledger-authoring-guide.md",
           "surface_entry": "docs/release-ledger-authoring-guide.md",
-          "summary": "Add a style for new changelog sections: a short consumer-facing +agent.N section of about 400 bytes, and a release section with one line per section it publishes."
+          "summary": "Make each new +agent.N changelog section one line, and leave the version summary to the release section that publishes it."
         }
       ],
-      "entry_sha256": "1edc2a9df3e9cddc75daa766bc4ef92d02e31a06e0d7a6435277cdaa3d3c217b"
+      "entry_sha256": "1131da2f51e79891553daa07c4eb0c9faf7dfdd5969984878f923d3fb28312f7"
     }
   ]
 }

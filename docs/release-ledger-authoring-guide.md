@@ -110,22 +110,29 @@ the entry a real section to point at.
 
 ### Writing the changelog section
 
-Write a section for the consumer reading it. A `+agent.N` section opens with one
-bold sentence saying what changes for a campaign or an agent, then at most two
-or three short sentences. Aim for about 400 bytes of body; `1.66.0+agent.12` is
-the shape. An internal change that alters nothing a consumer sees gets that one
-sentence and no more. Benchmarks, parse or file counts, and how the code works
-belong in the PR description, and the ledger entry's `agent_impact` should not
-be repeated word for word.
+The changelog is a summary of versions; the per-change detail lives in the
+ledger. A `+agent.N` section exists so its ledger entry has a section to link,
+and it is one line: a single bullet under Added, Changed or Fixed, in one
+sentence saying what changes for a campaign or an agent, with the issue or PR
+number. For example:
 
-A new release section lists the `+agent.N` sections it publishes: those
-numbered on the release before it, which sit below it. Some older releases did
-not list them. Write a one-paragraph summary, then a line for each section under
-Added, Changed or Fixed. Related sections may share a line, as the #730 work
-does in `1.67.0`. A `+agent.N` numbered on the newest release is not listed
-there, since that release is already published; the next release lists it.
+```markdown
+- The issue project automation pins `actions/add-to-project` v2.0.1 (#739).
+```
 
-The target is guidance, not a gate: `max_section_bytes` stays the only enforced
+What an agent must do differently goes in the entry's `agent_impact`.
+Benchmarks, counts and how the code works go in the PR description.
+
+A new release section lists the `+agent.N` sections it publishes: those numbered
+on the release before it, which sit below it. Some older releases did not list
+them. Write a one-paragraph summary, then a line for each section under Added,
+Changed or Fixed. Related sections may share a line, as the #730 work does in
+`1.67.0`. The release section is where a reader learns what the version changes,
+so give it the context the one-line sections leave out. A `+agent.N` numbered on
+the newest release is not listed there, since that release is already published;
+the next release lists it.
+
+This is guidance, not a gate: `max_section_bytes` stays the only enforced
 bound. It applies to new sections. A published section is hashed by its
 `changelog_sha256` and is never rewritten to meet it.
 
