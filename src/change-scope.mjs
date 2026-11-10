@@ -149,7 +149,10 @@ const capped = (items) => items.slice(0, CHANGE_PATH_LIMIT);
  * and `reasons` the commerce reasons found, each `{ code, path? }`.
  * `pagePaths` is every page of the built-site scope: a changed page is read
  * from the run's shared inputs and takes the tree of that whole set when it
- * is shared (htmlScanDocuments), else it is parsed here.
+ * is shared (htmlScanDocuments), else it is parsed here. The set is shared
+ * only when the run already holds every page's bytes, as doctor's built-output
+ * checks do; otherwise (no CampaignSpec, so no built-output checks, or no
+ * snapshot at all) each changed page is parsed per use, as before.
  */
 export function classifyDrift({ changes, baseline, outputRoot, targetRepo, publicRouteSlug, pagePaths = [] }) {
   if (changes?.status !== "known") return { kind: "unknown", reasons: [] };

@@ -171,15 +171,18 @@ export function doctorCommand(args, { runDoctor = doctorPacket, liveCampaign = u
     ...(args.ci === true ? { onEvidenceDebt: (debt) => { inspectedDebt = debt; } } : {}),
   };
   const result = runDoctor(packetPath, doctorOptions);
-  if (args.ci === true) {
-    // Use precisely the context/report selection that inspection used,
-    // including explicit sidecar suppression and the context's report binding.
+  if (args.ci === true && inspectedDebt) {
+    result.ci = assessDoctorCi(null, inspectedDebt);
+  } else if (args.ci === true) {
+    // An inspection that reported no debt (an injected runDoctor): assess it
+    // with the context/report selection inspection uses, including explicit
+    // sidecar suppression and the context's report binding.
     const workspace = resolveCampaignWorkspace(packetPath, {
       contextPath: doctorOptions.contextPath,
       reportPath: doctorOptions.reportPath,
       followContextPointer: true,
     });
-    result.ci = assessDoctorCi({ packet: workspace.packet, packetPath, report: readJsonIfExists(workspace.reportPath) }, inspectedDebt);
+    result.ci = assessDoctorCi({ packet: workspace.packet, packetPath, report: readJsonIfExists(workspace.reportPath) });
   }
   // Inspection and recording are separate operations. A laptop's untracked
   // built output can be stale while the delivered build's evidence is valid.

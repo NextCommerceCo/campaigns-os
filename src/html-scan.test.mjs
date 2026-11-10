@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
-import { MAX_ELEMENT_DEPTH, TooDeep, htmlScanDigest, htmlScanDocuments, htmlScanMemo, htmlScanScriptPrograms, readHtmlScanText, withHtmlScanSnapshot } from './html-scan.mjs';
+import { MAX_ELEMENT_DEPTH, TooDeep, htmlScanDigest, htmlScanDocuments, htmlScanMemo, htmlScanScriptPrograms, parseBounded, readHtmlScanText, withHtmlScanSnapshot } from './html-scan.mjs';
 
 function fixture(t) {
   const dir = mkdtempSync(join(tmpdir(), 'html-scan-'));
@@ -443,8 +443,14 @@ test('drift classification reads the tree the cart and smoke checks share', asyn
     pagePaths: pages.map(({ built_path }) => join(outputRoot, built_path)),
   });
   assert.deepEqual(classify().reasons, [{ code: 'checkout_page', path: 'deep.html' }]);
+  // The baseline is hashed from a plain parse; the shared bounded tree gives the same signature.
+  const rich = `<!doctype html><html><head><meta name="next-page-type" content="upsell"><meta name="next-upsell-accept-url" content="../r/">
+<script src="loader.js"></script><script>window.nextConfig = { a: 1 };</script></head><body><template><a href="../x/" data-next-offer-id="4">t</a></template>
+<form action="/pay" data-next-checkout="form"><button onclick="next.go()">Pay</button></form><svg><a href="#s"></a></svg><table><td data-next-package-id="9">x</table></body></html>`;
+  assert.deepEqual(pageCommerceFacts(rich, () => parseBounded(rich)), pageCommerceFacts(rich));
   withHtmlScanSnapshot(() => {
     const [index] = collectCartPlaceholderPages(repo, 'demo').filter(({ file }) => file.endsWith('index.html'));
+    assert.deepEqual(classify().reasons, [{ code: 'checkout_page', path: 'deep.html' }]);
     // Consumers never change a shared tree; this test does, to see which tree drift classification reads.
     findElement(index.document(), 'b').attrs[0].value = '13';
     assert.deepEqual(classify().reasons, [{ code: 'commerce_markup_changed', path: 'index.html' }, { code: 'checkout_page', path: 'deep.html' }]);
