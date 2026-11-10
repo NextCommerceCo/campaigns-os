@@ -11579,6 +11579,27 @@
         }
       ],
       "entry_sha256": "211d1e0274b47d4e2127f3b0a93d60c17a3b6da78705715c275c3bde9459e303"
+    },
+    {
+      "id": "RL-0326",
+      "sequence": 316,
+      "date": "2026-11-10",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.66.0+agent.14",
+      "changelog_sha256": "36a5aff3ed5a42057a78f9e0874c55a50b74163b89df2e0f01a6293fed7a7a7d",
+      "agent_impact": "None. Doctor output is unchanged: the same codes, messages, ordering, ready lines, checkpoint gates, QC results and causes. The cart placeholder and smoke checks resolve their built-page inventory once per run, read page bytes through the run shared input snapshot, and share one bounded parse per page while the page set fits the parse budget.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": null,
+          "summary": "The cart placeholder and smoke checks resolve their built-page inventory once per run, read page bytes through the run shared input snapshot and share one bounded parse per page; the smoke checks take the built-site scope from the snapshot."
+        }
+      ],
+      "entry_sha256": "36b0fd1a4949375308f5cb29e81817139d3115ec2c2dad2ec59eaec33d49b9c3"
     }
   ]
 }
