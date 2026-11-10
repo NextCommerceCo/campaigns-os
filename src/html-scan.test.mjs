@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
-import { htmlScanDigest, htmlScanDocuments, htmlScanMemo, htmlScanScriptPrograms, readHtmlScanText, withHtmlScanSnapshot } from './html-scan.mjs';
+import { MAX_ELEMENT_DEPTH, TooDeep, htmlScanDigest, htmlScanDocuments, htmlScanMemo, htmlScanScriptPrograms, readHtmlScanText, withHtmlScanSnapshot } from './html-scan.mjs';
 
 function fixture(t) {
   const dir = mkdtempSync(join(tmpdir(), 'html-scan-'));
@@ -265,6 +265,70 @@ test('the upsell selector-scope and SDK markup gates read one shared tree per bu
   });
   const [a] = sharedBuiltPages(scope, dirname(built_path));
   const [b] = sharedBuiltPages(scope, dirname(built_path));
+  assert.notEqual(a.document(), b.document());
+});
+
+test('the bounded profile is its own located tree, and a page past its depth bound fails every consumer alike', t => {
+  const path = fixture(t);
+  writeFileSync(path, '<p>a</p>');
+  const deep = join(dirname(path), 'deep.html');
+  writeFileSync(deep, '<div>'.repeat(MAX_ELEMENT_DEPTH + 1));
+  withHtmlScanSnapshot(() => {
+    const text = readHtmlScanText(path);
+    const deepText = readHtmlScanText(deep);
+    const bounded = htmlScanDocuments([path, deep], 'bounded');
+    const tree = bounded(path, text);
+    assert.equal(htmlScanDocuments([path, deep], 'bounded')(path, text), tree);
+    assert.notEqual(htmlScanDocuments([path])(path, text), tree);
+    assert.ok(tree.childNodes[0].childNodes[1].childNodes[0].sourceCodeLocation);
+    let first;
+    assert.throws(() => bounded(deep, deepText), (error) => (first = error) instanceof TooDeep);
+    assert.throws(() => htmlScanDocuments([path, deep], 'bounded')(deep, deepText), (error) => error === first);
+  });
+  const outside = htmlScanDocuments([deep], 'bounded');
+  assert.throws(() => outside(deep, '<div>'.repeat(MAX_ELEMENT_DEPTH + 1)), TooDeep);
+});
+
+test('the bounded profile spends its own, larger, share of the parse budget', t => {
+  const small = fixture(t);
+  writeFileSync(small, '<p>small</p>');
+  const big = join(dirname(small), 'big.html');
+  // 1.5 MiB: bounded trees (84 MiB estimated) exceed the parse budget; noloc trees (45 MiB) fit.
+  writeFileSync(big, Buffer.alloc(1.5 * 1024 * 1024, 97));
+  withHtmlScanSnapshot(() => {
+    for (const path of [small, big]) readHtmlScanText(path);
+    const bounded = htmlScanDocuments([small, big], 'bounded');
+    assert.notEqual(bounded(small, '<p>small</p>'), bounded(small, '<p>small</p>'));
+  });
+  withHtmlScanSnapshot(() => {
+    for (const path of [small, big]) readHtmlScanText(path);
+    const noloc = htmlScanDocuments([small, big]);
+    assert.equal(noloc(small, '<p>small</p>'), noloc(small, '<p>small</p>'));
+  });
+});
+
+test('the cart placeholder and smoke checks read one shared bounded tree per built page', async t => {
+  const { collectCartPlaceholderPages } = await import('./doctor/checks.mjs');
+  const { evaluateCartPlaceholders } = await import('./cart-placeholders.mjs');
+  const { evaluateSmokeQc } = await import('./built-smoke-qc.mjs');
+  const repo = dirname(fixture(t));
+  const siteRoot = join(repo, '_site', 'demo');
+  mkdirSync(siteRoot, { recursive: true });
+  writeFileSync(join(siteRoot, 'index.html'), '<!doctype html><title>a</title><p>{subtotal}</p>');
+  withHtmlScanSnapshot(() => {
+    const [cart] = collectCartPlaceholderPages(repo, 'demo');
+    const [smoke] = collectCartPlaceholderPages(repo, 'demo');
+    assert.equal(cart.content, smoke.content);
+    assert.equal(cart.document(), smoke.document());
+    // Both evaluators take the tree they are handed rather than parsing again.
+    let calls = 0;
+    const counted = (page) => ({ ...page, document: () => { calls += 1; return page.document(); } });
+    evaluateCartPlaceholders({ pages: [counted(cart)] });
+    evaluateSmokeQc({ pages: [counted(smoke)], siteRoot, targetDir: repo });
+    assert.equal(calls, 2);
+  });
+  const [a] = collectCartPlaceholderPages(repo, 'demo');
+  const [b] = collectCartPlaceholderPages(repo, 'demo');
   assert.notEqual(a.document(), b.document());
 });
 

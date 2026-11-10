@@ -57,6 +57,13 @@
 //                              records the upsell page view only from that meta
 //                              tag, so reports show the purchase with no upsell
 //                              view before it.
+//   REMOVED_IN_SDK_05          on a page that runs SDK 0.5.0 or later, a 0.4.x
+//                              feature 0.5 removed (REMOVED_IN_05 in
+//                              campaign-cart-05.mjs): its markup on the page,
+//                              or its call or listener in the page's inline or
+//                              local scripts. 0.5 ignores it, so the button,
+//                              field or listener does nothing. One finding per
+//                              feature per page.
 //
 //   Not a finding: data-next-is-upsell="true" on a checkout order bump. The
 //   selected bump is a line item on the checkout order, tagged as an upsell so
@@ -65,7 +72,8 @@
 //
 //   Info (advisory, one note per campaign, no code)
 //   unknown_attributes[]       a data-next-* name the pinned SDK's attribute
-//                              index does not list. Catches an invented
+//                              index does not list (on a 0.5.0+ page, nor the
+//                              0.5 names in campaign-cart-05.mjs). Catches an invented
 //                              attribute (data-next-coupon-input) — and, on the
 //                              certified templates, a handful of the templates'
 //                              own data-next-* hooks, which is why it informs
@@ -85,6 +93,7 @@ import { parse } from "parse5";
 // both sides read the other's bindings only inside functions, so the cycle
 // is safe at load.
 import { readLoaderPin } from "./cart-placeholders.mjs";
+import { REMOVED_IN_05, SDK_05, SDK_05_API_FIELD_NAMES, isSdk05, isSdk05Attribute } from "./campaign-cart-05.mjs";
 import {
   SDK_ATTRIBUTE_INDEX_VERSION,
   checkoutFieldNameSince,
@@ -105,6 +114,7 @@ export const SDK_MARKUP_CODES = Object.freeze({
   TEMPLATE_DOUBLE_BRACE: { code: `${SDK_MARKUP}.template_double_brace`, severity: "warning" },
   PAGE_TYPE_ATTRIBUTE: { code: `${SDK_MARKUP}.page_type_attribute`, severity: "warning" },
   UPSELL_PAGE_TYPE_MISSING: { code: `${SDK_MARKUP}.upsell_page_type_missing`, severity: "warning" },
+  REMOVED_IN_SDK_05: { code: `${SDK_MARKUP}.removed_in_sdk_05`, severity: "warning" },
   // Unknown data-next-* names are not a finding and carry no code: they are
   // information on the gate (unknown_attributes[]) and one advisory ready line.
 });
@@ -233,14 +243,19 @@ function describe(entry) {
  * `sdk_version` is the campaign's SDK pin, used when the page carries no
  * exact loader pin of its own. `document`, when a function, returns the
  * parse5 tree of `content` (the doctor's shared inputs parse once for every
- * consumer).
+ * consumer). `scripts`, an array or a function returning one, is the page's
+ * local scripts ({ src, file, content }); it is read only on a page that runs
+ * SDK 0.5.0 or later.
  */
-export function scanPageMarkup({ page_id, file = null, content = "", sdk_version = null, page_type = null, document: parsed = null }) {
+export function scanPageMarkup({ page_id, file = null, content = "", sdk_version = null, page_type = null, document: parsed = null, scripts = null }) {
   const document = typeof parsed === "function" ? parsed() : parse(String(content || ""));
   const where = file || page_id;
   const sdk = resolvePageSdkVersion(document, sdk_version);
+  const sdk05 = isSdk05(sdk.version);
   const findings = [];
   const unknown = new Set();
+  const removed = new Map(); // REMOVED_IN_05 id -> what was seen
+  const inlineScripts = [];
 
   const selectors = []; // { entry, id, mode, upsell, selectedCount }
   const addToCartButtons = []; // { entry, selectorId }
@@ -295,7 +310,7 @@ export function scanPageMarkup({ page_id, file = null, content = "", sdk_version
     const { tag, attrs: a, ancestors } = entry;
 
     for (const [name] of a) {
-      if (name.startsWith("data-next-") && !isIndexedSdkAttribute(name)) unknown.add(name);
+      if (name.startsWith("data-next-") && !isIndexedSdkAttribute(name) && !(sdk05 && isSdk05Attribute(name))) unknown.add(name);
       if (TEMPLATE_ID_ATTRIBUTES.test(name) && a.get(name)) referencedTemplateIds.add(a.get(name).trim());
     }
 
@@ -303,6 +318,18 @@ export function scanPageMarkup({ page_id, file = null, content = "", sdk_version
       findings.push(finding("CHECKOUT_NOT_FORM", page_id, where,
         `${describe(entry)} on ${where} carries data-next-checkout but is not a <form>. The checkout enhancer binds to a form element; this one never submits. Move the attribute onto the <form> that wraps the fields.`,
         { tag }));
+    }
+
+    if (sdk05) {
+      for (const feature of REMOVED_IN_05) {
+        if (feature.kind !== "markup" || removed.has(feature.id) || !a.has(feature.attribute)) continue;
+        if (feature.value && (a.get(feature.attribute) ?? "").trim() !== feature.value) continue;
+        removed.set(feature.id, describe(entry));
+      }
+      // A script inside <template> or <noscript> never runs.
+      if (tag === "script" && !a.has("src") && !ancestors.some((anc) => anc.tag === "template" || anc.tag === "noscript")) {
+        inlineScripts.push(serializeTemplateText(entry.node));
+      }
     }
 
     if (a.has("data-next-checkout-field")) {
@@ -416,6 +443,26 @@ export function scanPageMarkup({ page_id, file = null, content = "", sdk_version
       { template_id: id || null, snippet }));
   }
 
+  if (sdk05) {
+    const pageScripts = typeof scripts === "function" ? scripts() : scripts;
+    const sources = [
+      ...inlineScripts.map((text) => ({ where: `an inline script on ${where}`, text })),
+      ...(Array.isArray(pageScripts) ? pageScripts : []).map((script) => ({ where: script.file || script.src, text: String(script?.content || "") })),
+    ];
+    for (const feature of REMOVED_IN_05) {
+      if (feature.kind !== "script" || removed.has(feature.id)) continue;
+      const source = sources.find((candidate) => feature.pattern.test(candidate.text));
+      if (source) removed.set(feature.id, source.where);
+    }
+    for (const feature of REMOVED_IN_05) {
+      if (!removed.has(feature.id)) continue;
+      const seen = removed.get(feature.id);
+      findings.push(finding("REMOVED_IN_SDK_05", page_id, where,
+        `${feature.label} (${feature.kind === "markup" ? `${seen} on ${where}` : `in ${seen}`}) is a 0.4.x feature SDK ${SDK_05} removed, and ${where} runs SDK ${sdk.version} (${sdk.source === "loader" ? "its loader pin" : "the campaigns.json sdk_version"}). The SDK ignores it, so it does nothing. ${feature.remedy}`,
+        { feature: feature.id, seen, sdk_version: sdk.version, sdk_version_source: sdk.source }));
+    }
+  }
+
   return { page_id, file, findings, unknown_attributes: [...unknown].sort() };
 }
 
@@ -433,9 +480,10 @@ function wrongFieldName(page_id, where, value, sdk) {
   const gated = checkoutFieldNameSince(value);
   const versionDetail = { sdk_version: sdk.version, sdk_version_source: sdk.source };
   if (!gated) {
+    const sdk05 = isSdk05(sdk.version);
     return finding("WRONG_FIELD_NAME", page_id, where,
-      `data-next-checkout-field="${value}" on ${where} is not a field name the SDK ${SDK_ATTRIBUTE_INDEX_VERSION} maps (${suggestFieldName(value)}). The input renders and the value never reaches the order.`,
-      { value, suggestion: suggestFieldName(value, true), ...versionDetail });
+      `data-next-checkout-field="${value}" on ${where} is not a field name the SDK ${sdk05 ? sdk.version : SDK_ATTRIBUTE_INDEX_VERSION} maps (${suggestFieldName(value, false, sdk05)}). The input renders and the value never reaches the order.`,
+      { value, suggestion: suggestFieldName(value, true, sdk05), ...versionDetail });
   }
   const running = sdk.version
     ? `this page loads SDK ${sdk.version} (${sdk.source === "loader" ? "its loader pin" : "the campaigns.json sdk_version"})`
@@ -462,9 +510,12 @@ const FIELD_NAME_HINTS = {
   expmonth: "exp-month", expyear: "exp-year", cvc: "cvv", "cc-cvv": "cvv",
 };
 
-function suggestFieldName(value, bare = false) {
+// On a 0.5.0+ page the hint is the API name 0.5 prefers (postal → postcode),
+// which that SDK maps; elsewhere the 0.4.x name every SDK maps.
+function suggestFieldName(value, bare = false, sdk05 = false) {
   const key = String(value || "").toLowerCase();
-  const hint = FIELD_NAME_HINTS[key] || (isKnownCheckoutFieldName(key) ? key : null);
+  const legacy = FIELD_NAME_HINTS[key] || (isKnownCheckoutFieldName(key) ? key : null);
+  const hint = sdk05 && legacy ? SDK_05_API_FIELD_NAMES[legacy] || legacy : legacy;
   if (bare) return hint;
   return hint ? `the SDK spelling is "${hint}"` : "see the SDK checkout-form field names";
 }

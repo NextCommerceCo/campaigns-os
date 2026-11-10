@@ -2309,6 +2309,17 @@ function sharedBuiltPages(scope, targetRepo) {
 // same files already are; the upsell gate, which runs first, has read every
 // page and reserved its parse set by then, so no script displaces a page.
 function collectBuiltPageIdentityInputs(scope, targetRepo) {
+  const scriptsOf = builtPageLocalScripts(scope, targetRepo);
+  return sharedBuiltPages(scope, targetRepo).map((page) => {
+    const { page_id, route, file, content } = page;
+    return { page_id, route, file, content, scripts: scriptsOf(page) };
+  });
+}
+
+// The local scripts one built page loads, as identity reads them: { src,
+// file, content } for each that resolves to a readable file, each file read
+// at most once per reader.
+function builtPageLocalScripts(scope, targetRepo) {
   const scriptText = new Map();
   const readScript = (path) => {
     if (!scriptText.has(path)) {
@@ -2320,7 +2331,7 @@ function collectBuiltPageIdentityInputs(scope, targetRepo) {
     }
     return scriptText.get(path);
   };
-  return sharedBuiltPages(scope, targetRepo).map(({ page_id, route, built_path, file, content }) => {
+  return ({ built_path, content }) => {
     const scripts = [];
     for (const src of externalScriptSources(content)) {
       const path = builtLocalScriptPath(scope, src, built_path);
@@ -2328,8 +2339,16 @@ function collectBuiltPageIdentityInputs(scope, targetRepo) {
       if (scriptContent == null) continue;
       scripts.push({ src, file: relFromDir(targetRepo, path), content: scriptContent });
     }
-    return { page_id, route, file, content, scripts };
-  });
+    return scripts;
+  };
+}
+
+// The SDK markup gate's pages: the shared built pages, each with a lazy
+// `scripts` reader the gate calls only on a page pinned to SDK 0.5 or later,
+// where it looks for removed 0.4.x features in the page's own scripts.
+function sdkMarkupPages(scope, targetRepo) {
+  const scriptsOf = builtPageLocalScripts(scope, targetRepo);
+  return sharedBuiltPages(scope, targetRepo).map((page) => ({ ...page, scripts: () => scriptsOf(page) }));
 }
 
 // Where a page's local `<script src>` lives, or null for a remote, data: or
@@ -2438,7 +2457,7 @@ function validateSdkMarkup(packet, errors, warnings, ready, derived, spec = null
       public_route_slug: publicRouteSlug || null,
       site_root: siteRoot && targetRepo ? relFromDir(targetRepo, siteRoot) : null,
     },
-    pages: scope?.ok ? sharedBuiltPages(scope, targetRepo).map((page) => ({
+    pages: scope?.ok ? sdkMarkupPages(scope, targetRepo).map((page) => ({
       ...page,
       page_type: declaredTypes.get(resolve(targetRepo, page.file)) || null,
     })) : [],
@@ -2558,16 +2577,26 @@ function validateCartPlaceholders(packet, warnings, ready, derived) {
 // or a link whose target cannot be inspected; each one entry, read as
 // unreadable, never followed). Pages within the page cap carry their HTML,
 // read one page at a time, unless they are over the size cap or cannot be
-// read; pages past it carry only their path.
+// read; pages past it carry only their path. The page inventory is resolved
+// once per inspection for the cart placeholder and smoke checks through the
+// shared input context (#730); each check still probes and reads its pages
+// itself, the bytes coming from the snapshot while it holds them, so a read
+// failure is never shared. Both checks get one parseBounded tree per page read
+// (`document`), shared only while the pages read fit the parse budget.
 function collectCartPlaceholderPages(targetRepo, slug) {
-  const scope = resolveBuiltSiteScope(targetRepo, { slug, includeLinkedPages: true });
-  const linked = new Set((scope.linked_pages || []).map((page) => page.built_path));
-  const all = [...(scope.ok ? scope.pages : []), ...(scope.linked_pages || [])]
-    .sort((a, b) => (a.built_path < b.built_path ? -1 : a.built_path > b.built_path ? 1 : 0));
-  const fileOf = (page) => builtPageFile(targetRepo, page.built_path);
+  const { capped, past } = htmlScanMemo(JSON.stringify(["cart-placeholder-pages", resolve(targetRepo), slug ?? null]), () => {
+    const scope = resolveBuiltSiteScope(targetRepo, { slug, includeLinkedPages: true });
+    const linked = new Set((scope.linked_pages || []).map((page) => page.built_path));
+    const all = [...(scope.ok ? scope.pages : []), ...(scope.linked_pages || [])]
+      .sort((a, b) => (a.built_path < b.built_path ? -1 : a.built_path > b.built_path ? 1 : 0))
+      .map((page) => ({ path: page.built_path, file: builtPageFile(targetRepo, page.built_path), linked: linked.has(page.built_path) }));
+    return { capped: all.slice(0, CART_PLACEHOLDERS_LIMITS.pages), past: all.slice(CART_PLACEHOLDERS_LIMITS.pages).map(({ file }) => ({ file })) };
+  });
+  const read = capped.map(({ path, file, linked }) => readCartPlaceholderPage(path, file, linked));
+  const documentOf = htmlScanDocuments(capped.flatMap(({ path }, index) => (typeof read[index].content === "string" ? [path] : [])), "bounded");
   return [
-    ...all.slice(0, CART_PLACEHOLDERS_LIMITS.pages).map((page) => readCartPlaceholderPage(page.built_path, fileOf(page), linked.has(page.built_path))),
-    ...all.slice(CART_PLACEHOLDERS_LIMITS.pages).map((page) => ({ file: fileOf(page) })),
+    ...read.map((page, index) => (typeof page.content === "string" ? { ...page, document: () => documentOf(capped[index].path, page.content) } : page)),
+    ...past,
   ];
 }
 
@@ -2581,7 +2610,7 @@ function readCartPlaceholderPage(path, file, linked) {
     const bytes = statSync(path).size;
     if (!isReadableFile(path)) return { file, unreadable: true };
     if (bytes > CART_PLACEHOLDERS_LIMITS.page_bytes) return { file, bytes };
-    return { file, content: readFileSync(path, "utf8") };
+    return { file, content: readHtmlScanText(path) };
   } catch (error) {
     if (!isFileReadFailure(error)) throw error;
     return { file, unreadable: true };
@@ -2652,7 +2681,7 @@ function recordSmokeQc({ subject, targetRepo, pages, environment, deployBase, wa
   // reads each page's local scripts through boundedPageScripts, from the srcs
   // the gate's own parse lists. With no scope to resolve them in, a page's
   // local scripts read unread.
-  const scope = targetRepo && pages.length ? resolveBuiltSiteScope(targetRepo, { slug: subject?.public_route_slug || null }) : null;
+  const scope = targetRepo && pages.length ? sharedBuiltSiteScope(targetRepo, subject?.public_route_slug || null) : null;
   const siteRoot = scope?.site_root || null;
   const results = evaluateSmokeQc({
     pages,
@@ -5361,6 +5390,7 @@ export {
   recordUpsellSelectorScopeGate,
   boundedPageScripts,
   collectBuiltPageIdentityInputs,
+  sdkMarkupPages,
   sharedBuiltPages,
   recordCampaignIdentityGate,
   recordScriptSyntaxGate,

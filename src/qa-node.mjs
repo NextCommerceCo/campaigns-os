@@ -4347,20 +4347,27 @@ function htmlIncludesRouteReference(html, expectedUrl) {
 // A data-upsell-proxy button forwards its click to the SDK action of its own
 // spelling inside the offer. With no such action, the route's URL can still sit
 // in the page's meta tags, so the reference match would pass a control that
-// does nothing.
+// does nothing. upsells.js forwards only to data-next-upsell-action, so a
+// proxy spelled acceptUpsell / skipUpsell has nothing it can forward to.
 function findDeadUpsellProxy(html, kind, page) {
   if (page.page_type !== "upsell" || kind === "next") return null;
   for (const action of UPSELL_ACTION_SPELLINGS[kind]) {
     if (!new RegExp(`\\bdata-upsell-proxy\\s*=\\s*["']${action}["']`, "i").test(html)) continue;
-    const target = upsellActionPattern(action);
+    const target = new RegExp(`\\bdata-next-upsell-action\\s*=\\s*["']${action}["']`, "i");
     if (upsellOfferElements(html).some((offer) => target.test(offer))) continue;
     return `data-upsell-proxy="${action}" with no data-next-upsell-action="${action}" inside the offer to forward to`;
   }
   return null;
 }
 
+// SDK 0.5's acceptUpsell / skipUpsell sit on data-next-action; the older
+// spellings on data-next-upsell-action.
+function upsellActionAttribute(action) {
+  return /Upsell$/.test(action) ? "data-next-action" : "data-next-upsell-action";
+}
+
 function upsellActionPattern(action) {
-  return new RegExp(`\\bdata-next-upsell-action\\s*=\\s*["']${action}["']`, "i");
+  return new RegExp(`\\b${upsellActionAttribute(action)}\\s*=\\s*["']${action}["']`, "i");
 }
 
 // The markup of each [data-next-upsell="offer"] element, read to its closing
@@ -4391,7 +4398,7 @@ function upsellOfferElements(html) {
 function findSdkRouteAction(html, kind, page) {
   if (page.page_type !== "upsell" || kind === "next") return null;
   const action = UPSELL_ACTION_SPELLINGS[kind].find((spelling) => upsellActionPattern(spelling).test(html));
-  return action ? `SDK upsell ${kind} control: data-next-upsell-action="${action}"` : null;
+  return action ? `SDK upsell ${kind} control: ${upsellActionAttribute(action)}="${action}"` : null;
 }
 
 function decodeHtml(value) {

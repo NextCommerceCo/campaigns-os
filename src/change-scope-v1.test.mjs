@@ -113,7 +113,7 @@ test("the installed HTML parser is the one the v1 literals were captured with", 
   assert.ok(entities, "setup: parse5's entities dependency resolves");
   const why = "commerce-signature/v1 hashes parse5's tree and entities' decoding; a parser upgrade can move recorded v1 hashes "
     + "(reading as commerce_markup_changed on a copy-only edit), so it must be reviewed against these vectors before this pin moves. "
-    + "The published package pins and bundles both dependencies so consumer resolution preserves saved v1 records";
+    + "The published package pins and bundles both dependencies so consumer resolution preserves saved v1 records; bundling adds package bytes, and parser upgrades require a reviewed compatibility decision";
   assert.equal(parse5.pkg.version, "8.0.1", `parse5 ${parse5.pkg.version} is installed: ${why}`);
   assert.equal(entities.version, "8.1.0", `entities ${entities.version} is installed: ${why}`);
 });

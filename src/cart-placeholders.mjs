@@ -39,8 +39,7 @@
 
 import { createHash } from "node:crypto";
 
-import { defaultTreeAdapter, parse } from "parse5";
-
+import { MAX_ELEMENT_DEPTH, TooDeep, parseBounded } from "./html-scan.mjs";
 import { aggregateQcResults, buildQcResult } from "./qc-results.mjs";
 import { SDK_TEMPLATE_PLACEHOLDERS, SDK_TEMPLATE_PLACEHOLDERS_VERIFIED_PINS } from "./sdk-attribute-index.mjs";
 import { TEMPLATE_CONTAINER_ATTRIBUTES, TEMPLATE_ID_ATTRIBUTES } from "./sdk-markup.mjs";
@@ -159,10 +158,6 @@ const LOADER_SCOPES = new Set(["@nextcommerce"]);
 const LOADER_PROTOCOLS = new Set(["http:", "https:"]);
 const EXACT_VERSION = /^v?((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))$/;
 
-// Nesting deeper than a browser's HTML parser builds (Blink stops nesting at
-// 512) is not the DOM a shopper gets, so such a page is not read.
-export const MAX_ELEMENT_DEPTH = 512;
-
 export function isKnownCartPlaceholder(name) {
   const value = String(name ?? "");
   if (KNOWN_BARE.has(value) || QTY.test(value)) return true;
@@ -243,41 +238,6 @@ function liveElements(root) {
     if (node.tagName !== "template") for (let i = (node.childNodes || []).length - 1; i >= 0; i -= 1) stack.push(node.childNodes[i]);
   }
   return out;
-}
-
-class TooDeep extends Error {}
-
-// parse5 with a tree adapter that stops the parse once an element would sit
-// deeper than MAX_ELEMENT_DEPTH (template content counts from its
-// <template>). parse5's own cost grows with the square of the nesting, so the
-// bound has to hold during the parse, not after it. Its error is one
-// isPageReadFailure reads as a page that cannot be read.
-export function parseBounded(html) {
-  const templateOf = new WeakMap();
-  const check = (parent, node) => {
-    if (!node.tagName) return;
-    let depth = 1;
-    for (let at = parent; at; at = at.parentNode || templateOf.get(at)) {
-      if (at.tagName) depth += 1;
-      if (depth > MAX_ELEMENT_DEPTH) throw new TooDeep();
-    }
-  };
-  const treeAdapter = {
-    ...defaultTreeAdapter,
-    appendChild(parent, node) {
-      check(parent, node);
-      defaultTreeAdapter.appendChild(parent, node);
-    },
-    insertBefore(parent, node, reference) {
-      check(parent, node);
-      defaultTreeAdapter.insertBefore(parent, node, reference);
-    },
-    setTemplateContent(template, content) {
-      templateOf.set(content, template);
-      defaultTreeAdapter.setTemplateContent(template, content);
-    },
-  };
-  return parse(html, { sourceCodeLocationInfo: true, treeAdapter });
 }
 
 // The deepest element nesting, template content included, without recursion.
@@ -585,7 +545,7 @@ function observeReadablePage(page) {
 
   let document;
   try {
-    document = parseBounded(page.content);
+    document = typeof page.document === "function" ? page.document() : parseBounded(page.content);
   } catch (error) {
     if (!isPageReadFailure(error)) throw error;
     return { pin: null, outcome: R.PAGE_UNREADABLE, bytes };
@@ -635,10 +595,13 @@ const capMembersFor = (reasons) => reasons.flatMap((reason) => aggregateQcResult
  *
  * @param {{
  *   subject?: object,
- *   pages: Array<{ file: string, content?: string, bytes?: number, unreadable?: boolean }>,
+ *   pages: Array<{ file: string, content?: string, bytes?: number, unreadable?: boolean, document?: () => object }>,
  *   measuredAt?: string,
  * }} input  `pages` in a stable order; `file` is the page path relative to
- *   the doctor target. Pages past the page cap may omit `content`. `subject`
+ *   the doctor target. Pages past the page cap may omit `content`. A page's
+ *   `document`, when a function, returns the parseBounded tree of its
+ *   `content` (the doctor's shared inputs parse once for this check and the
+ *   smoke checks) and throws what parseBounded throws. `subject`
  *   names the scanned site for the caller; every result carries its own
  *   {check, page, key} subject.
  * @returns {object[]} QC results (src/qc-results.mjs buildQcResult).

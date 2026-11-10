@@ -157,7 +157,15 @@ export async function observeBinding({ source, page, expected, scriptLoader, par
     if (scriptType === null && !classicNomodule) continue;
     // Matched on the URL as the parser reads it (tab and newline removed,
     // host case-folded), against the base in effect for this script.
-    if (attrs.src && SDK.test(scriptRef(attrs.src, script.base) ?? attrs.src)) continue;
+    // The SDK loader itself is not read as a script. On SDK 0.5 its
+    // data-campaign names the key, ahead of nextConfig.apiKey and the meta;
+    // it is a markup declaration, so it reports under the `meta` source kind
+    // (the verdict schema's source kinds are a closed set).
+    if (attrs.src && SDK.test(scriptRef(attrs.src, script.base) ?? attrs.src)) {
+      const campaign = typeof attrs['data-campaign'] === 'string' ? attrs['data-campaign'].trim() : '';
+      if (campaign) { values.push(campaign); kinds.add('meta'); }
+      continue;
+    }
     if (classicNomodule) { dynamic = true; continue; }
     let text = script.text;
     let kind = 'inline';

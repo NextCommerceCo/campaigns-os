@@ -6,12 +6,11 @@
 // and that no source .ts / tests / fixtures leak into the tarball. We extract
 // rather than `npm install` the tarball so this stays offline and fast (a full
 // install would fetch every dependency from the registry, playwright included).
-import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { checkPackedDocLinks } from "./check-packed-doc-links.mjs";
 
@@ -133,21 +132,30 @@ try {
   for (const [name, version] of [["parse5", "8.0.1"], ["entities", "8.1.0"]]) {
     if (pkg.dependencies[name] !== version) fail(`${name} must be exactly pinned for v1 signatures`);
     if (!pkg.bundledDependencies?.includes(name)) fail(`${name} must be bundled for consumer installs`);
-    const bundled = JSON.parse(readFileSync(join(pkgRoot, "node_modules", name, "package.json"), "utf8"));
+    const bundledManifest = join(pkgRoot, "node_modules", name, "package.json");
+    if (!existsSync(bundledManifest)) fail(`${name} is not bundled in the packed tarball`);
+    const bundled = JSON.parse(readFileSync(bundledManifest, "utf8"));
     if (bundled.version !== version) fail(`packed ${name} version drifted`);
   }
   const packedRequire = createRequire(join(pkgRoot, "src/change-scope.mjs"));
-  const { parse } = await import(pathToFileURL(packedRequire.resolve("parse5")).href);
-  const tree = parse('<svg><desc><b data-next-package-id="1">New copy</desc><p>More copy');
-  const facts = [];
-  const walkParserTree = (node) => {
-    for (const attr of node.attrs || []) if (attr.name === "data-next-package-id") facts.push(`${node.nodeName}[${attr.name}]=${attr.value}`);
-    for (const child of node.childNodes || []) walkParserTree(child);
-  };
-  walkParserTree(tree);
+  const parserPath = packedRequire.resolve("parse5");
+  const decoderPath = createRequire(parserPath).resolve("entities/decode");
+  for (const [name, resolved] of [["parse5", parserPath], ["entities", decoderPath]]) {
+    if (!realpathSync(resolved).startsWith(realpathSync(join(pkgRoot, "node_modules", name)) + sep)) {
+      fail(`the packed ${name} resolved outside its bundled directory`);
+    }
+  }
+  // Supply unrelated dependencies offline from the prepared checkout. The
+  // parser and its decoder must resolve inside the tarball (checked above),
+  // never through this parent fallback. Exercise the shipped implementation.
+  symlinkSync(join(ROOT, "node_modules"), join(work, "node_modules"), "dir");
+  const { pageCommerceFacts } = await import(pathToFileURL(join(pkgRoot, "src/change-scope.mjs")).href);
   const frozen = "sha256:b7ef29d46fe19ce25b41a5f3082a244a30e342a62f4233823ce3753b6b9233e5";
-  if (`sha256:${createHash("sha256").update(facts.join("\n")).digest("hex")}` !== frozen) {
-    fail("packed parser changed a saved commerce-signature/v1");
+  for (const html of [
+    '<svg><desc><b data-next-package-id="1">New copy</desc><p>More copy',
+    '<template><svg><desc><b data-next-package-id="1">New copy</desc><p>More copy</template>',
+  ]) {
+    if (pageCommerceFacts(html).signature !== frozen) fail("packed implementation changed a saved commerce-signature/v1");
   }
 
   // 4. The packed bundle imports and runs (ESM consumer path).
