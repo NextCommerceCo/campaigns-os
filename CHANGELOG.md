@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.66.0+agent.15] - 2026-11-10
+
+### Changed
+
+- **Doctor parses each built page once for every check that reads its tree (#730, milestone 4).** Nothing doctor reports changes. Doctor parsed each page up to six times: one tree for the upsell selector and SDK markup gates, a bounded tree for the cart placeholder and smoke checks, the script syntax gate's own tree, one parse in the live-campaign ref check and two in the CampaignSpec commerce-ref check. Within the nesting bound (512), the bounded parser builds the same tree as the others, with source locations the others ignore. So every check now reads the one bounded tree per page, shared only while the whole page set fits the parse budget (about 1.1 MiB of HTML). A page past the bound still reads `page_unreadable` in the cart placeholder and smoke checks. Every other check parses that page as it did before, unbounded, so it still sees every script and ref on it. A page set too large to share as bounded trees falls back to unbounded trees, shared up to about 2.1 MiB as before, and the script syntax gate then parses per use. The live-campaign ref and commerce-ref checks also read page bytes through the run's input snapshot. A certified family's `doctor --built` now parses a third as often (27 to 9 parses on olympus), with 11-15% lower peak RSS and 11-19% less wall time. A 304-page estate is too large to share and parses as before; its packet and CI runs read about 4% more files, because the commerce-ref check now reads the whole page set the live-campaign ref check reads.
+
 ## [1.66.0+agent.14] - 2026-11-10
 
 ### Changed

@@ -33,15 +33,19 @@ const MAX_DEPTH = 4;
 //   noloc    parse5's defaults. 20-23x its source in heap on the
 //            certified-family pages, up to 30x on element-dense markup: a page
 //            set shares trees while its HTML totals about 2.1 MiB.
+//   located  source locations, nesting unbounded. Never held as its own tree.
 //   bounded  parseBounded: source locations, nesting bounded. 27x on the
 //            certified-family pages, 54x on element-dense markup, 90x on
 //            markup made of bare attributes: about 1.1 MiB of HTML alone.
-// Sets of both profiles over the same pages share one budget, so where the
-// noloc set is reserved first (doctor's packet and built paths), the bounded
-// set over those pages is shared up to about 0.74 MiB of HTML, less any
-// script programs held.
+// Within the bound, parseBounded builds the located tree node for node, and
+// noloc consumers ignore locations, so noloc and located requests share the
+// bounded tree whenever their whole set fits as bounded: one tree per page
+// for every consumer. Past that, a noloc set falls back to noloc trees of its
+// own (up to about 2.1 MiB of HTML, less what is already held), and a located
+// set is parsed per use.
 const PARSE_PROFILES = Object.freeze({
   noloc: { parse: (text) => parse(text), costPerByte: 30 },
+  located: { parse: (text) => parse(text, { sourceCodeLocationInfo: true }), costPerByte: null },
   bounded: { parse: (text) => parseBounded(text), costPerByte: 56 },
 });
 
@@ -183,9 +187,12 @@ export function htmlScanDigest(path) {
 // reservation, so a later call with the held text still gets the shared tree. Template
 // content and other nested contexts stay inside the tree as parse5 builds
 // them; a consumer that reparses a fragment (noscript, srcdoc) does so itself.
-// A page past the bounded profile's depth bound (TooDeep) fails every
-// consumer with the same error, as a failure is shared like a tree; any other
-// parse error is not kept, so each consumer parses again.
+// A page past the bounded profile's depth bound (TooDeep) fails every bounded
+// consumer with the same error, as a failure is shared like a tree; a noloc or
+// located consumer sharing the bounded tree gets its own unbounded parse of
+// that page instead, per use, so it sees every page it saw before the trees
+// were shared. Any other parse error is not kept, so each consumer parses
+// again.
 // Consumers read a shared tree and never change it.
 //
 // The set is shared whole or not at all: when its trees do not fit the parse
@@ -196,15 +203,35 @@ export function htmlScanDigest(path) {
 // 0.2-0.4 s and 280 MiB of RSS).
 export function htmlScanDocuments(paths, profile = 'noloc') {
   if (!Object.hasOwn(PARSE_PROFILES, profile)) throw new Error(`Unknown HTML parse profile: ${profile}`);
+  const parseText = PARSE_PROFILES[profile].parse;
+  if (profile !== 'bounded') {
+    const bounded = reserveDocuments(paths, 'bounded');
+    if (bounded) {
+      return (path, text) => {
+        try {
+          return bounded(path, text);
+        } catch (error) {
+          if (!(error instanceof TooDeep)) throw error;
+          return parseText(text);
+        }
+      };
+    }
+  }
+  return (PARSE_PROFILES[profile].costPerByte && reserveDocuments(paths, profile)) || ((path, text) => parseText(text));
+}
+
+// The shared-tree reader of htmlScanDocuments for one profile held as its own
+// tree, or null when the set cannot be shared: no snapshot, a file whose bytes
+// are not held, or trees past the parse budget.
+function reserveDocuments(paths, profile) {
   const { parse: parseText, costPerByte } = PARSE_PROFILES[profile];
-  const perUse = (path, text) => parseText(text);
   const snapshot = snapshots.getStore();
-  if (!snapshot?.active) return perUse;
+  if (!snapshot?.active) return null;
   const entries = new Set(paths.map((path) => snapshot.files.get(realKey(snapshot, path))));
-  if (entries.has(undefined)) return perUse;
+  if (entries.has(undefined)) return null;
   const pending = [...entries].filter((entry) => !entry.documents.has(profile));
   const cost = pending.reduce((sum, entry) => sum + entry.bytes.length * costPerByte, 0);
-  if (snapshot.ledger.parseCost + cost > MAX_RETAINED_PARSE_COST) return perUse;
+  if (snapshot.ledger.parseCost + cost > MAX_RETAINED_PARSE_COST) return null;
   for (const entry of pending) {
     entry.documents.set(profile, null);
     entry.parseCost += entry.bytes.length * costPerByte;
