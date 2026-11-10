@@ -11656,8 +11656,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.66.0+agent.17",
-      "changelog_sha256": "c444c1b19a2f0864701d61399bdf057cdcf097cd9d07bb86aeec0cc1c4e74d96",
-      "agent_impact": "None for doctor output: the same codes, messages, ordering, ready lines, checkpoint gates and CI verdicts. A caller importing one of the exported built-output validators from src/doctor/checks.mjs passes one context object ({ spec, packet, errors, warnings, ready, derived, buildState }) instead of positional arguments.",
+      "changelog_sha256": "93db44c1fe00c1800af383c582c3d7a048ed93ffd2f4142a8a18cefda5a64f37",
+      "agent_impact": "None. Doctor output is unchanged: the same codes, messages, ordering, ready lines, checkpoint gates and CI verdicts. The built-output validators' signatures in src/doctor/checks.mjs are internal to this repository and not on the supported surface; every in-repo caller is updated.",
       "compatibility": "compatible",
       "migration": "none",
       "changes": [
@@ -11668,7 +11668,7 @@
           "summary": "The sixteen built-output and gate validators take the doctor check registry context object directly and are registered without argument-unpacking wrappers; spec, packet and source validators keep their signatures."
         }
       ],
-      "entry_sha256": "deff35d75b48bd45ce1eb0bf5e8d25ce837a9de4767d437432915655b2c47934"
+      "entry_sha256": "b6d2022c46818b1d13995b99e77901c187844e9a440893edc266d35aec3cef72"
     }
   ]
 }
