@@ -413,3 +413,17 @@ test("ordinary doctorCommand preserves successful inspection result verbatim", (
   const ci = doctorCommand({ packet: f.packetPath, ci: true }, { runDoctor: () => ({ ...expected }) });
   assert.equal(ci.ci?.status, "current", "only --ci adds evidence debt to the successful inspection");
 });
+
+test("doctor --ci reads the evidence debt inspection assessed instead of assessing it again", (t) => {
+  const f = fixture(t);
+  const expected = { ok: true, status: "ready", errors: [], warnings: [], derived: {} };
+  const inspected = assessEvidenceDebt({ packet: f.packet, packetPath: f.packetPath, report: f.report });
+  assert.equal(inspected.qa.status, "current");
+  const owed = { ...inspected, qa: { ...inspected.qa, status: "owed" } };
+  const ci = doctorCommand({ packet: f.packetPath, ci: true }, { runDoctor: (packetPath, options) => {
+    options.onEvidenceDebt(owed);
+    return { ...expected };
+  } });
+  assert.equal(ci.ci.status, "owed");
+  assert.equal(ci.ci.qa, owed.qa);
+});

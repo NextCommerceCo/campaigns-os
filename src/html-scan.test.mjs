@@ -420,3 +420,33 @@ test('a nested snapshot gives its retention back to the parent on return', t => 
     assert.equal(readHtmlScanText(small)[0], 'b');
   });
 });
+
+test('drift classification reads the tree the cart and smoke checks share', async t => {
+  const { collectCartPlaceholderPages } = await import('./doctor/checks.mjs');
+  const { campaignConfigFingerprint, classifyDrift, pageCommerceFacts } = await import('./change-scope.mjs');
+  const repo = dirname(fixture(t));
+  const outputRoot = join(repo, '_site', 'demo');
+  mkdirSync(outputRoot, { recursive: true });
+  mkdirSync(join(repo, '_data'), { recursive: true });
+  writeFileSync(join(repo, '_data', 'campaigns.json'), JSON.stringify({ demo: { sdk_version: '0.4.40' } }));
+  const html = '<!doctype html><meta name="next-page-type" content="upsell"><b data-next-package-id="12">a</b>';
+  writeFileSync(join(outputRoot, 'index.html'), html);
+  // Past the depth bound: the checkout markup after the nest still makes it a checkout page.
+  const nest = '<div>'.repeat(MAX_ELEMENT_DEPTH + 8);
+  writeFileSync(join(outputRoot, 'deep.html'), `${nest}${'</div>'.repeat(MAX_ELEMENT_DEPTH + 8)}<form data-next-checkout="form"></form>`);
+  const pages = [{ page_id: 'index', built_path: 'index.html' }, { page_id: 'deep', built_path: 'deep.html' }];
+  const classify = () => classifyDrift({
+    changes: { status: 'known', changed_pages: pages, unmapped_files: [], extra: [], missing: [] },
+    baseline: { commerce_signature: { algorithm: 'commerce-signature/v1', campaign_config: campaignConfigFingerprint(repo, 'demo'),
+      pages: { 'index.html': pageCommerceFacts(html).signature, 'deep.html': 'sha256:old' } } },
+    outputRoot, targetRepo: repo, publicRouteSlug: 'demo',
+    pagePaths: pages.map(({ built_path }) => join(outputRoot, built_path)),
+  });
+  assert.deepEqual(classify().reasons, [{ code: 'checkout_page', path: 'deep.html' }]);
+  withHtmlScanSnapshot(() => {
+    const [index] = collectCartPlaceholderPages(repo, 'demo').filter(({ file }) => file.endsWith('index.html'));
+    // Consumers never change a shared tree; this test does, to see which tree drift classification reads.
+    findElement(index.document(), 'b').attrs[0].value = '13';
+    assert.deepEqual(classify().reasons, [{ code: 'commerce_markup_changed', path: 'index.html' }, { code: 'checkout_page', path: 'deep.html' }]);
+  });
+});

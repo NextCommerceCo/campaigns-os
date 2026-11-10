@@ -119,7 +119,10 @@ export function assessEvidenceDebt({ packet = null, packetPath = null, report = 
       else changes.unmapped_files.push(path);
     }
   }
-  const driftClassification = classifyDrift({ changes, baseline: assembly, outputRoot, targetRepo, publicRouteSlug: slug });
+  const driftClassification = classifyDrift({
+    changes, baseline: assembly, outputRoot, targetRepo, publicRouteSlug: slug,
+    pagePaths: scope?.ok ? scope.pages.map((page) => page.built_path) : [],
+  });
   changes.kind = driftClassification.kind;
   changes.reasons = driftClassification.reasons;
   const changeFor = (anchor) => changeSince(anchor, { assembly, drift: changes, driftClassification });
