@@ -111,16 +111,18 @@ the entry a real section to point at.
 ### Writing the changelog section
 
 The changelog is a summary of versions; the per-change detail lives in the
-ledger. A `+agent.N` section exists so its ledger entry has a section to link,
-and it is one line: a single bullet under Added, Changed or Fixed, in one
-sentence saying what changes for a campaign or an agent, with the issue or PR
-number. For example:
+ledger. A `+agent.N` section usually exists so its ledger entry has a section to
+link; a fix that touches only policy-ignored paths has the section and no entry
+(see below). Either way it is one line: a single bullet under Added, Changed or
+Fixed, in one sentence saying what changes for a campaign or an agent, with the
+issue or PR number. For example:
 
 ```markdown
 - The issue project automation pins `actions/add-to-project` v2.0.1 (#739).
 ```
 
-What an agent must do differently goes in the entry's `agent_impact`.
+What an agent must do differently goes in the entry's `agent_impact`; with no
+entry, the one line and the release section that publishes it are the record.
 Benchmarks, counts and how the code works go in the PR description.
 
 A new release section lists the `+agent.N` sections it publishes: those numbered
