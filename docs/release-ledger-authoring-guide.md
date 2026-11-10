@@ -118,12 +118,12 @@ sentence and no more. Benchmarks, parse or file counts, and how the code works
 belong in the PR description, and the ledger entry's `agent_impact` should not
 be repeated word for word.
 
-A release section publishes the `+agent.N` sections numbered on the release
-before it, which sit below it. It is a one-paragraph summary, then one line per
-section it publishes under Added, Changed or Fixed. Sections from one piece of
-work may share a line with nested sub-bullets, as the #730 work does in
-`1.67.0`. A `+agent.N` numbered on the newest release is not listed there, since
-that release is already published; the next release lists it.
+A new release section lists the `+agent.N` sections it publishes: those
+numbered on the release before it, which sit below it. Some older releases did
+not list them. Write a one-paragraph summary, then a line for each section under
+Added, Changed or Fixed. Related sections may share a line, as the #730 work
+does in `1.67.0`. A `+agent.N` numbered on the newest release is not listed
+there, since that release is already published; the next release lists it.
 
 The target is guidance, not a gate: `max_section_bytes` stays the only enforced
 bound. It applies to new sections. A published section is hashed by its
