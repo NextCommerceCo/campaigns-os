@@ -4018,6 +4018,27 @@
         }
       ],
       "entry_sha256": "fa7af7fd8a768adabc9bf22100704234528ec3290f55b80a34d40b69fab54afb"
+    },
+    {
+      "id": "RL-0334",
+      "sequence": 322,
+      "date": "2026-11-10",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.68.0+agent.1",
+      "changelog_sha256": "cea6864b54f96d0294d857928a6700e7cd59c88c6085b045de5e207b6afc817d",
+      "agent_impact": "None. The authoring guide asks for shorter new changelog sections; published sections, limits and checks are unchanged.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": "docs/release-ledger-authoring-guide.md",
+          "surface_entry": "docs/release-ledger-authoring-guide.md",
+          "summary": "Add a style for new changelog sections: a short consumer-facing +agent.N section of about 600 bytes, and one line per published section in a release."
+        }
+      ],
+      "entry_sha256": "7bb91542ca2cb94768202e1997a491bc1da747b0ef275b1c6b76d0cf1fa575a5"
     }
   ]
 }

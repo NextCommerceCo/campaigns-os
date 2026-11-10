@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.68.0+agent.1] - 2026-11-10
+
+### Changed
+
+- **The release-ledger authoring guide sets a style for new changelog sections.** A `+agent.N` section is one bold sentence on what changes for a consumer plus at most two or three more, about 600 bytes. Benchmarks and implementation detail go in the PR. Published sections are unchanged, and no limit or check changes.
+
 ## [1.68.0] - 2026-11-10
 
 This release rotates the release ledger and this changelog at a reviewed baseline for the second time, so the mandatory orientation reads have room to grow again. No limit changed and nothing else in the package changed. To take it, pin `@nextcommerce/campaigns-os@1.68.0` and refresh the installed skills to `1.68.0+skills.1`.
