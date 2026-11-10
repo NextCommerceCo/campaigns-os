@@ -295,7 +295,11 @@ change owes its own ledger entry like anything else.
 
 When the live ledger and changelog approach a bound, rotate them at a reviewed
 cut instead of raising a limit. The first rotation (2026-09-30, `RL-0190`)
-moved `RL-0001` through `RL-0124`; the ledger's `baseline_floor` records it.
+moved `RL-0001` through `RL-0124`. The second (2026-11-10, `RL-0333`) moved
+sequences 125 through 257, `RL-0125` through `RL-0264`; it could not cut inside
+1.59.0 to 1.61.0, because later amendments tie those entries together. The
+ledger's `baseline_floor` lists every rotation's archive pair and names only the
+latest rotation entry.
 
 1. Pick the cut: the last entry to archive. Everything up to it moves, and so
    does the changelog from the first section those entries link down to the end
