@@ -2,11 +2,30 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.66.0+agent.13] - 2026-11-09
+## [1.66.0+agent.14] - 2026-11-10
 
 ### Changed
 
 - **Doctor's cart placeholder and smoke checks share one bounded parse per built page (#730, milestone 4).** Nothing doctor reports changes. Both checks read the same built pages with the same nesting bound (512), and each parsed every page itself. The page inventory is now resolved once per run through the run's input snapshot. Each check still checks and reads its pages itself, taking the bytes from the snapshot while it holds them, so a failed read is never reused by the other check. Both checks get one bounded tree per page, so a 16-page estate parses each page once for these checks instead of twice. A page past the nesting bound reads `page_unreadable` in both checks, as before. The trees are shared only when the whole page set fits the parse budget, which the bounded trees share with the unbounded trees doctor's other gates already hold for the same pages (estimated at 56 and 30 times the HTML, about 0.74 MiB of HTML together). A larger set, such as a 304-page estate, still parses per check. The smoke checks also take the built-site scope from the run's snapshot instead of resolving it again.
+
+## [1.66.0+agent.13] - 2026-11-09
+
+### Added
+
+- **Campaigns pinned to Campaign Cart SDK 0.5.0 pass doctor and QA without false blockers.** 0.5 keeps 0.4.x pages working through a legacy layer, and adds a `type="module"` loader that names the campaign with `data-campaign`, the API checkout field names, `data-next-field`, `data-next-action="acceptUpsell"` / `"skipUpsell"`, and `html[data-next-ready]` / `html[data-next-error]`. Every change below applies only to a page whose SDK is an exact release at or after 0.5.0 (its own loader pin, else the campaign's `sdk_version`), or matches markup a 0.4.x page never carries, so 0.4.x campaigns are judged as before. The vendored attribute index and the SDK support policy stay at 0.4.43 until the starter templates are verified on 0.5.
+- **Doctor advisory `built_output.sdk_markup.removed_in_sdk_05`.** On a 0.5 page, each 0.4.x feature 0.5 removed warns once, naming what replaces it: `data-next-action="accept-upsell"`, `data-next-upsell-option` / `-select` / `-quantity`, `data-prospect-config`, `data-email-field`, `data-phone-field`, `data-min-phone-digits`, and in the page's inline or local scripts `googleMaps:`, `upsell:accepted`, `cart:package-swapped`, `order:redirect-missing` and `address:messages-loaded` listeners, `dl_package_swapped` and `next.fomo`. It never blocks.
+- **Browser QA blocks on `html[data-next-error]`.** When 0.5 cannot start (`config`, `load`, `campaign`), the readiness wait stops at once, `observation.sdk_error` records the value, and `browser-sdk-error:<page>` fails as a blocker with the remedy.
+- **CampaignSpec rule `AnalyticsContractShape`** warns (`blocked-events-ignored-sdk-05`, `custom-provider-ignored-sdk-05`) that `providers.*.blockedEvents` and `providers.custom` do nothing on a 0.5 pin, and points to `analytics.destinations` and `next.analytics.on('*', …)`.
+
+### Changed
+
+- **`WRONG_FIELD_NAME` accepts 0.5's field names.** `line1`, `line2`, `state` and `postcode` are accepted from 0.5.0, as version-gated names beside `first_name` and `last_name` (from 0.4.39) and `phone_number` (from 0.4.41), here and in `contracts/campaign-cart-checkout-field-contract.v0.json`. On a 0.5 page the hint for an unknown name is the 0.5 name (`zip` → `postcode`). The checkout contract scan reads `data-next-field` on a 0.5 page (`version_gated_binding_attributes`), with the card and payment keys as their own fields.
+- **SDK markup's unknown-attribute note** counts the names 0.5 reads as known on a 0.5 page.
+- **Campaign identity and QA key binding read `data-campaign`** (and identity reads `data-funnel`) from the Campaign Cart loader tag. QA binding reports it under the `meta` source kind.
+- **Browser QA finds 0.5 markup.** The readiness wait, the contrast checks and the content-param reader accept `html[data-next-ready]`. The checkout form is `form[data-next-checkout="form"]` or bare `form[data-next-checkout]`. Checkout fields, the card and CVV mounts, the coupon input, the card radio and the same-as-shipping box also match `data-next-field` (and the API names on `data-next-checkout-field`), and the card expiry is typed into 0.5's single `card.expiry` input when the page has no month select. Upsell controls include `data-next-action="acceptUpsell"` / `"skipUpsell"`, and the checkout total includes `data-next-query="cart.total"`.
+- **`sdk repin` refuses a 0.4.x → 0.5 move** (`refused_cross_minor`, exit 2, nothing written) while a loader `<script>` is not `type="module"` or a file references the 0.4 dist layout (`dist/index.js`, `dist/chunks/`), and lists each blocking line.
+- **Skills.** `next-campaigns-sdk-bump` gains "Crossing to 0.5" (module loader, removed features, analytics, page state, lost open carts, and `scripts/migrate.mjs` only on built `_site` HTML) and a ready guard that works on 0.5. `next-campaigns-qa` accepts the 0.5 names. Bundle revision `1.66.0+skills.2`; each skill one patch higher.
+- A comment in the analytics parity capture no longer says the SDK pushes to `ElevarDataLayer` on 0.5.
 
 ## [1.66.0+agent.12] - 2026-11-09
 

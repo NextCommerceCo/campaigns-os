@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-sdk-bump
-version: 1.0.12
-description: Bump a live campaign's Campaign Cart SDK from one 0.4.x release to a later 0.4.x on a page-kit or static repo. Use for any request to bump, upgrade or move a campaign to SDK 0.4.x, including when the repository has its own BUMP.md. Find every pin, check the release diff and storage against the campaign's own code, prove on a preview with approved test orders, and report what is not proven.
+version: 1.0.13
+description: Bump a live campaign's Campaign Cart SDK from one 0.4.x release to a later 0.4.x, or from 0.4.x to 0.5.x, on a page-kit or static repo. Use for any request to bump, upgrade or move a campaign to SDK 0.4.x or 0.5.x, including when the repository has its own BUMP.md. Find every pin, check the release diff and storage against the campaign's own code, prove on a preview with approved test orders, and report what is not proven.
 ---
 
-Bundle revision: 1.66.0+skills.1
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.66.0+skills.1`
+Bundle revision: 1.66.0+skills.2
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.66.0+skills.2`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -44,7 +44,8 @@ parenthetical is the declared row of `contracts/effects.v1.json`.
 
 ## Scope: a current-SDK bump only
 
-A bump moves a funnel from one Campaign Cart 0.4.x release to a later 0.4.x.
+A bump moves a funnel from one Campaign Cart 0.4.x release to a later 0.4.x,
+or from 0.4.x to 0.5.x; a move to 0.5 also follows "Crossing to 0.5" below.
 Before anything else, confirm every page in scope loads a 0.4.x loader. Stop
 and say so if you find a 0.3.x pin or a legacy page: one whose own code calls
 the Campaigns JS or the Campaigns API directly for cart and checkout. Moving
@@ -59,6 +60,57 @@ drives, that script alone is not a reason to stop.
 A bump does not adopt new SDK components. Hand-written address or phone fields
 stay hand-written; adopting `data-next-address` or another new component is
 separate work.
+
+## Crossing to 0.5
+
+0.5.0 keeps 0.4.x pages working through a legacy layer: old attributes,
+`nextConfig` keys, `window.next` methods and event names are still read. Read
+the target tag's `docs/guides/migrating-from-0.4.md` and
+`docs/architecture/parity-0.4.md` (every 0.4.43 name, mapped). What has to
+change for the page to load, and what no longer works, is this:
+
+- **The loader is a module.** Every loader tag becomes
+  `<script type="module" src=".../campaign-cart@v0.5.x/dist/loader.js" data-campaign="<api key>">`.
+  The loader finds its chunks from `import.meta.url`, which a classic script
+  does not have, and 0.5 no longer ships the 0.4 dist layout: remove every
+  `dist/index.js` and `dist/chunks/…` reference and any hand-written
+  `modulepreload` list. `campaigns-os sdk repin` refuses a 0.4.x → 0.5 move
+  (`refused_cross_minor`) until both hold, and lists each blocking line.
+  `data-campaign` on the loader beats `nextConfig.apiKey`, which beats the
+  `next-api-key` meta; keep one key everywhere.
+- **Removed.** On a page pinned to 0.5, doctor warns on each of these it can
+  see in the built page and its local scripts
+  (`built_output.sdk_markup.removed_in_sdk_05`); the `payment:tokenized`
+  fields are yours to search for.
+  `data-next-action="accept-upsell"`, `data-next-upsell-option`,
+  `-select` and `-quantity` (use a bundle selector with
+  `data-next-upsell-context` inside the offer); `data-prospect-config`,
+  `data-email-field`, `data-phone-field`, `data-min-phone-digits` (set
+  `data-next-lead` on the form); `nextConfig.googleMaps` (the starter
+  `config.js` carries an empty one: remove it); listeners on
+  `upsell:accepted` (use `upsell:added`), `cart:package-swapped`,
+  `order:redirect-missing`, `address:messages-loaded`; `dl_package_swapped`;
+  `next.fomo()`; `token` and `pmData` on `payment:tokenized`. As above, do not
+  just delete a removed call: name what replaces it, or stop and ask.
+- **Analytics.** `providers.*.blockedEvents` and `providers.custom` do nothing
+  on 0.5 (it reads only each provider's `enabled`). Filter per destination in
+  `nextConfig.analytics.destinations`, and post to a custom endpoint from
+  `next.analytics.on('*', …)`. The CampaignSpec rule `AnalyticsContractShape`
+  warns on both.
+- **Page state.** 0.5 never sets `data-next-sdk-loading`. It sets
+  `html[data-next-ready]` once values are written (and still adds
+  `html.next-display-ready`), and `html[data-next-error="config|load|campaign"]`
+  when it cannot start. Rewrite CSS or scripts that wait on
+  `data-next-sdk-loading`.
+- **Open carts are lost.** The 0.5.0 tag ships no
+  `docs/compatibility/storage-migrations.v1.json`, so step 4 cannot run and
+  0.5 does not read a 0.4 cart from storage. Tell the developer that shoppers
+  mid-funnel at deploy lose their cart, and deploy in a quiet hour.
+- **The new attribute set is optional.** 0.5's `scripts/migrate.mjs` rewrites
+  0.4 attributes to the 0.5 set. Run it only on built `_site` HTML to see what
+  it would change, never on sources: it does not know Liquid or Nunjucks and
+  corrupts template tags. A bump does not adopt the new attributes; that is
+  separate work.
 
 ## Approval gates
 
@@ -161,8 +213,12 @@ particular:
 - Classify every `next:initialized` listener. From 0.4.42 the SDK fires that
   event once and does not replay it, so a deferred script that only listens for
   it can miss it on a cached reload. Guard each one in the bump: run now if
-  `window.next` exists and `document.body.dataset.nextSdkLoading === "false"`,
-  otherwise wait for the event, and run once either way. Step 6 proves it.
+  `window.next` exists and the page reports ready
+  (`document.documentElement.classList.contains("next-display-ready")`, which
+  0.4.x and 0.5 both set; `document.body.dataset.nextSdkLoading === "false"`
+  works on 0.4.x only), otherwise wait for the event, and run once either way.
+  On 0.5, `(window.nextReady ||= []).push((next) => …)` does this for you: it
+  runs once the page is ready, or at once if it already is. Step 6 proves it.
 
 Known changes a bump can cross. Check each row the range covers, as well as the
 release notes:

@@ -29,10 +29,13 @@ import { SEVERITY, STATUS } from "./qa-verdict.mjs";
 import { redactUrlQuery } from "./qa-url-privacy.mjs";
 import { readVendorBeacon, VENDOR_KEYS, vendorBeaconFor } from "./qa-vendor-endpoints.mjs";
 
-// Data layers the SDK and legacy funnels push through. The SDK's GTMAdapter
-// mirrors every `dl_*` event to window.dataLayer AND window.ElevarDataLayer;
-// the SDK's own dedicated layer is window.NextDataLayer. Legacy funnels push
-// to window.dataLayer. We hook all of them and dedup downstream.
+// Data layers the SDK and legacy funnels push through. The 0.4.x SDK's
+// GTMAdapter mirrors every `dl_*` event to window.dataLayer AND
+// window.ElevarDataLayer; the SDK's own dedicated layer is
+// window.NextDataLayer. SDK 0.5 pushes `dl_*` only to window.NextDataLayer and
+// window.dataLayer (src/compat/analytics), never ElevarDataLayer, so on a 0.5
+// page that layer stays empty unless a page script fills it. Legacy funnels
+// push to window.dataLayer. We hook all of them and dedup downstream.
 export const HOOKED_DATA_LAYERS = Object.freeze([
   "dataLayer",
   "NextDataLayer",

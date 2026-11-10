@@ -1006,7 +1006,7 @@ const DRAWING = (inner) => `<svg width="240" height="60" style="display:block">$
 const PAINTED_PAGES = {
   "svg-white-fill": htmlPage(DRAWING("<text x=\"8\" y=\"40\" font-size=\"16\" fill=\"#ffffff\">Drawn text</text>")),
   "svg-gradient-fill": htmlPage(`<button data-next-action="add-to-cart" type="button" style="${BTN};color:#111111;background:#ffffff">${DRAWING("<defs><linearGradient id=\"g\"><stop offset=\"0\" stop-color=\"#ffffff\"/><stop offset=\"1\" stop-color=\"#eeeeee\"/></linearGradient></defs><text x=\"8\" y=\"40\" font-size=\"16\" fill=\"url(#g)\">Drawn label</text>")}</button>`),
-  "placeholder-size": htmlPage("<input data-next-checkout-field=\"email\" placeholder=\"Email address\" style=\"font-size:24px;font-weight:400;color:#ffffff;background:#e0662b;border:0;width:320px;height:48px\">", { head: "<style>input::placeholder{font-size:16px;font-weight:400;color:#ffffff}</style>" }),
+  "placeholder-size": htmlPage("<input data-next-checkout-field=\"email\" placeholder=\"Email address\" style=\"font-size:24px;font-weight:400;color:#ffffff;background:#e0662b;border:0;width:320px;height:48px\"><input data-next-checkout-field=\"fname\" style=\"font-size:24px;color:#ffffff;background:#e0662b;border:0;width:320px;height:48px\">", { head: "<style>input::placeholder{font-size:16px;font-weight:400;color:#ffffff}</style>" }),
   "first-line": htmlPage(`<p class="first-line" data-next-action="add-to-cart" style="${P};color:#111111;background:#ffffff">First line text</p>`, { head: "<style>.first-line::first-line{color:#fafafa}</style>" }),
 };
 
@@ -1040,7 +1040,7 @@ browserTest("SVG text with a gradient fill in an add-to-cart control reads revie
   assert.deepEqual(pageRows(rows, "svg-gradient-fill", measuredRow), both({ key: "review:add_to_cart:unparseable_color", result: "review", reason_code: "unparseable_color" }));
 });
 
-browserTest("16px placeholder text in a 24px checkout field is normal text: #fff on #e0662b (3.44) reads warning", async () => {
+browserTest("16px placeholder text in a 24px checkout field is normal text: #fff on #e0662b (3.44) reads warning; a field with no placeholder is not a hint", async () => {
   const { record, rows } = await paintedCapture();
   const cells = cellsOf(record, "placeholder-size");
   for (const viewport of VIEWPORTS) {
