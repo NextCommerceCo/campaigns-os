@@ -114,8 +114,9 @@ The changelog is a summary of versions; the per-change detail lives in the
 ledger. A `+agent.N` section usually exists so its ledger entry has a section to
 link; a fix that touches only policy-ignored paths has the section and no entry
 (see below). Either way it is one line: a single bullet under Added, Changed or
-Fixed, in one sentence saying what changes for a campaign or an agent, with the
-issue or PR number. For example:
+Fixed, with one sentence saying what changes for a campaign or an agent and the
+issue or PR number (a section with no entry may add a second sentence, below).
+For example:
 
 ```markdown
 - The issue project automation pins `actions/add-to-project` v2.0.1 (#739).
