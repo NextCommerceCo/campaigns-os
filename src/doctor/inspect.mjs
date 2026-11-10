@@ -156,6 +156,9 @@ export function doctorCommand(args, { runDoctor = doctorPacket, liveCampaign = u
   }
   const packetPath = resolve(requireArg(args, "packet"));
   const explicitSidecarArgs = Boolean(args.context || args.report);
+  // --ci reads the evidence debt inspection assessed, from the same packet,
+  // report and built output, rather than assessing it a second time.
+  let inspectedDebt;
   const doctorOptions = {
     contextPath: args.context ? resolve(args.context) : explicitSidecarArgs ? null : undefined,
     reportPath: args.report ? resolve(args.report) : explicitSidecarArgs ? null : undefined,
@@ -165,18 +168,10 @@ export function doctorCommand(args, { runDoctor = doctorPacket, liveCampaign = u
     ...(liveCampaign !== undefined ? { liveCampaign } : {}),
     // In-process QC stand-in checks (tests only; see qc-results.mjs).
     ...(qcStandIns !== undefined ? { qcStandIns } : {}),
+    ...(args.ci === true ? { onEvidenceDebt: (debt) => { inspectedDebt = debt; } } : {}),
   };
   const result = runDoctor(packetPath, doctorOptions);
-  if (args.ci === true) {
-    // Use precisely the context/report selection that inspection used,
-    // including explicit sidecar suppression and the context's report binding.
-    const workspace = resolveCampaignWorkspace(packetPath, {
-      contextPath: doctorOptions.contextPath,
-      reportPath: doctorOptions.reportPath,
-      followContextPointer: true,
-    });
-    result.ci = assessDoctorCi({ packet: workspace.packet, packetPath, report: readJsonIfExists(workspace.reportPath) });
-  }
+  if (args.ci === true) result.ci = assessDoctorCi(inspectedDebt);
   // Inspection and recording are separate operations. A laptop's untracked
   // built output can be stale while the delivered build's evidence is valid.
   // Only an explicit producer action may replace the retained proof artifacts;
@@ -525,7 +520,7 @@ export function doctorPacket(packetPath, options = {}) {
   return result;
 }
 
-function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath = undefined, outputBaseDir = null, liveCampaign = undefined, qcStandIns = null } = {}) {
+function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath = undefined, outputBaseDir = null, liveCampaign = undefined, qcStandIns = null, onEvidenceDebt = null } = {}) {
   // The Build Context records where prepare-build wrote the report
   // (--report-out). `next` follows that pointer when no --report is given;
   // doctor reads the same report so its gates and its next block cannot
@@ -624,6 +619,8 @@ function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath =
   // evidence debt is the one readback and doctor --ci assess.
   const evidenceDebt = assessEvidenceDebt({ packet, packetPath, report });
   derived.evidence_debt = evidenceDebt;
+  // The assessment itself, before --strip-paths rewrites the output's paths.
+  if (typeof onEvidenceDebt === "function") onEvidenceDebt(evidenceDebt);
   const polishCheckpointGate = applyPageOnlyChangeToCheckpoint(applyLocalPreviewToCheckpoint(
     evaluateRecordedHiddenEagerMediaCheckpoint({ packet, report }),
     { packet, report },

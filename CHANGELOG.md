@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.66.0+agent.16] - 2026-11-10
+
+### Changed
+
+- **Doctor's evidence-debt pass reads the run's shared pages, and `doctor --ci` assesses evidence debt once (#730, milestone 4).** Nothing doctor reports changes. Drift classification (which pages a rebuild changed, and whether the change touches commerce) read and parsed each changed page itself. It now reads page bytes through the run's input snapshot and takes the shared tree of the whole built page set when the checks already share one. Past the parse budget, or outside doctor (`record build`, readback, QA), it parses per use as before. A page past the nesting bound gets its own unbounded parse, so its classification is unchanged. `doctor --ci` assessed evidence debt during inspection and then again, from scratch, for the CI verdict. The CI verdict now reads the assessment inspection made from the same packet, report and built output. On a 16-page estate where every page changed since the recorded build, `doctor --ci` goes from 48 to 16 parses and runs 14% faster. On real-estate-a it reads 247 fewer files and runs 12% faster. On a 304-page estate where every page changed it goes from 2285 to 1981 parses and runs 7% faster. `record build`'s commerce signature still parses each page itself: it has to read the bytes as they are at record time.
+
 ## [1.66.0+agent.15] - 2026-11-10
 
 ### Changed
