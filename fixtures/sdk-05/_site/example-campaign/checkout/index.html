@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>sdk 0.5 checkout</title>
+    <meta name="next-page-type" content="checkout">
+    <script type="module" src="https://cdn.jsdelivr.net/gh/NextCommerceCo/campaign-cart@v0.5.0/dist/loader.js" data-campaign="pk_example_sdk05" data-funnel="example"></script>
+    <style>html:not([data-next-ready]) [data-next-query] { visibility: hidden; }</style>
+  </head>
+  <body>
+    <div data-next-each="cart.lines">
+      <template>
+        <div class="line"><span data-next-query="product_title"></span> × <span data-next-query="quantity"></span></div>
+      </template>
+    </div>
+    <p>Total <span data-next-query="cart.total"></span></p>
+    <form data-next-checkout data-next-go="../upsell/">
+      <input data-next-field="email" type="email" autocomplete="email" required>
+      <input data-next-field="first_name" autocomplete="given-name" required>
+      <input data-next-field="last_name" autocomplete="family-name" required>
+      <input data-next-field="line1" autocomplete="address-line1" required>
+      <input data-next-field="line2" autocomplete="address-line2">
+      <input data-next-field="city" autocomplete="address-level2" required>
+      <select data-next-field="state" autocomplete="address-level1"><option value="">State</option><option value="CA">California</option></select>
+      <input data-next-field="postcode" autocomplete="postal-code" required>
+      <select data-next-field="country" autocomplete="country"><option value="">Country</option><option value="US">United States</option></select>
+      <input data-next-field="phone_number" type="tel" autocomplete="tel">
+      <label><input data-next-field="billing_same_as_shipping" type="checkbox" checked> Billing same as shipping</label>
+      <div data-next-address="billing"></div>
+      <div data-next-payment>
+        <label><input type="radio" data-next-field="payment_method" value="card_token" checked> Card</label>
+        <div data-next-field="card.number"></div>
+        <input data-next-field="card.expiry" placeholder="MM / YY">
+        <div data-next-field="card.cvv"></div>
+      </div>
+      <button type="submit">Complete order</button>
+    </form>
+  </body>
+</html>

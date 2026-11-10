@@ -13,13 +13,17 @@ after its event listeners are attached. Inspection excludes the title/body probe
 these phase values are not a complete additive partition of elapsed time.
 
 After the settle wait, a page that loads the Campaign Cart SDK gets up to 15 s
-more to report itself rendered (`data-next-sdk-loading="false"` on the body, or
-`next-display-ready` on `<html>`, the readiness rule of the contrast checks)
-before QA reads it. The SDK counts as loaded when the body carries
-`data-next-sdk-loading` or the loader script sits in the document or an open
-shadow root. `sdk_display` records the outcome: `not_declared` (no SDK, no
-wait), `ready`, `timeout`, or `unreadable` (the page could not be read during
-the wait); `sdk_display_ms` is how long the wait took. A page that never
+more to report itself rendered (`data-next-sdk-loading="false"` on the body,
+`next-display-ready` on `<html>`, or, on SDK 0.5, `data-next-ready` on
+`<html>`: the readiness rule of the contrast checks) before QA reads it. The
+SDK counts as loaded when the body carries `data-next-sdk-loading` or the
+loader script sits in the document or an open shadow root. `sdk_display`
+records the outcome: `not_declared` (no SDK, no wait), `ready`, `error`,
+`timeout`, or `unreadable` (the page could not be read during the wait);
+`sdk_display_ms` is how long the wait took. `error` means SDK 0.5 set
+`data-next-error` on `<html>` (`config`: no campaign key, `load`: the SDK code
+did not load, `campaign`: the campaign did not load); the wait stops at once,
+`sdk_error` records the value, and `browser-sdk-error:<page>` blocks. A page that never
 reports ready is read after the cap, so its checks still report what they see.
 Test-order page loads take the same wait: 10 s of the running step's
 remaining time is held back for its own work, and the wait takes at most half

@@ -598,7 +598,9 @@ export function contrastToolkit() {
     const everywhere = (selector) => trees.flatMap((tree) => Array.from(tree.querySelectorAll(selector)));
     const declared = Boolean(body && body.hasAttribute("data-next-sdk-loading"))
       || everywhere("script[src]").some((script) => SDK_LOADER_SRC.test(script.getAttribute("src")));
-    const ready = Boolean(body && body.getAttribute("data-next-sdk-loading") === "false") || doc.documentElement.classList.contains("next-display-ready");
+    // SDK 0.5 never sets data-next-sdk-loading; it marks <html> with
+    // data-next-ready (and still adds next-display-ready).
+    const ready = Boolean(body && body.getAttribute("data-next-sdk-loading") === "false") || doc.documentElement.classList.contains("next-display-ready") || doc.documentElement.hasAttribute("data-next-ready");
     if (declared && !ready) return { measurable: false, reason: "sdk_not_ready" };
     const timing = doc.defaultView ? doc.defaultView.performance : null;
     const failed = (url) => Boolean(timing) && Boolean(url) && timing.getEntriesByName(url).some((entry) => entry.responseStatus >= 400);

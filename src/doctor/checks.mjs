@@ -2309,6 +2309,17 @@ function sharedBuiltPages(scope, targetRepo) {
 // same files already are; the upsell gate, which runs first, has read every
 // page and reserved its parse set by then, so no script displaces a page.
 function collectBuiltPageIdentityInputs(scope, targetRepo) {
+  const scriptsOf = builtPageLocalScripts(scope, targetRepo);
+  return sharedBuiltPages(scope, targetRepo).map((page) => {
+    const { page_id, route, file, content } = page;
+    return { page_id, route, file, content, scripts: scriptsOf(page) };
+  });
+}
+
+// The local scripts one built page loads, as identity reads them: { src,
+// file, content } for each that resolves to a readable file, each file read
+// at most once per reader.
+function builtPageLocalScripts(scope, targetRepo) {
   const scriptText = new Map();
   const readScript = (path) => {
     if (!scriptText.has(path)) {
@@ -2320,7 +2331,7 @@ function collectBuiltPageIdentityInputs(scope, targetRepo) {
     }
     return scriptText.get(path);
   };
-  return sharedBuiltPages(scope, targetRepo).map(({ page_id, route, built_path, file, content }) => {
+  return ({ built_path, content }) => {
     const scripts = [];
     for (const src of externalScriptSources(content)) {
       const path = builtLocalScriptPath(scope, src, built_path);
@@ -2328,8 +2339,16 @@ function collectBuiltPageIdentityInputs(scope, targetRepo) {
       if (scriptContent == null) continue;
       scripts.push({ src, file: relFromDir(targetRepo, path), content: scriptContent });
     }
-    return { page_id, route, file, content, scripts };
-  });
+    return scripts;
+  };
+}
+
+// The SDK markup gate's pages: the shared built pages, each with a lazy
+// `scripts` reader the gate calls only on a page pinned to SDK 0.5 or later,
+// where it looks for removed 0.4.x features in the page's own scripts.
+function sdkMarkupPages(scope, targetRepo) {
+  const scriptsOf = builtPageLocalScripts(scope, targetRepo);
+  return sharedBuiltPages(scope, targetRepo).map((page) => ({ ...page, scripts: () => scriptsOf(page) }));
 }
 
 // Where a page's local `<script src>` lives, or null for a remote, data: or
@@ -2438,7 +2457,7 @@ function validateSdkMarkup(packet, errors, warnings, ready, derived, spec = null
       public_route_slug: publicRouteSlug || null,
       site_root: siteRoot && targetRepo ? relFromDir(targetRepo, siteRoot) : null,
     },
-    pages: scope?.ok ? sharedBuiltPages(scope, targetRepo).map((page) => ({
+    pages: scope?.ok ? sdkMarkupPages(scope, targetRepo).map((page) => ({
       ...page,
       page_type: declaredTypes.get(resolve(targetRepo, page.file)) || null,
     })) : [],
@@ -5361,6 +5380,7 @@ export {
   recordUpsellSelectorScopeGate,
   boundedPageScripts,
   collectBuiltPageIdentityInputs,
+  sdkMarkupPages,
   sharedBuiltPages,
   recordCampaignIdentityGate,
   recordScriptSyntaxGate,

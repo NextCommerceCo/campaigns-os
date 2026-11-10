@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>sdk 0.5 landing</title>
+    <meta name="next-page-type" content="product">
+    <script type="module" src="https://cdn.jsdelivr.net/gh/NextCommerceCo/campaign-cart@v0.5.0/dist/loader.js" data-campaign="pk_example_sdk05" data-funnel="example"></script>
+    <style>html:not([data-next-ready]) [data-next-query] { visibility: hidden; }</style>
+  </head>
+  <body>
+    <div data-next-selector="main">
+      <button data-next-option="one" data-next-items="1">1 pair <span data-next-query="total"></span></button>
+      <button data-next-option="two" data-next-items="1x2" data-next-selected>2 pairs <span data-next-query="price"></span> each</button>
+    </div>
+    <button data-next-option="protect" data-next-items="9">Add protection for <span data-next-query="total"></span></button>
+    <p>Total <span data-next-query="cart.total" data-next-empty="…"></span></p>
+    <a href="../checkout/">Continue to checkout</a>
+  </body>
+</html>
