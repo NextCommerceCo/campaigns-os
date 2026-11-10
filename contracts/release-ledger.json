@@ -11621,6 +11621,33 @@
         }
       ],
       "entry_sha256": "948ffc2fc51b8132e9b367c0fb8d6fa995a8c864b34ba09da9c9c8aed27223f9"
+    },
+    {
+      "id": "RL-0330",
+      "sequence": 318,
+      "date": "2026-11-10",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.66.0+agent.16",
+      "changelog_sha256": "83120cc4a94ba4647fd890079c846ce8710ea336c7516c0356e6d9740a883e29",
+      "agent_impact": "None. Doctor output is unchanged: the same codes, messages, ordering, ready lines, checkpoint gates, evidence debt and CI verdicts. Drift classification reads the run shared page bytes and trees, and doctor --ci reads the evidence debt inspection assessed instead of assessing it again.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/ci.mjs",
+          "surface_entry": null,
+          "summary": "assessDoctorCi takes the evidence debt already assessed for its inputs instead of assessing it again; it still assesses it when none is given."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/inspect.mjs",
+          "surface_entry": null,
+          "summary": "doctor --ci hands the evidence debt inspection assessed to the CI verdict. Drift classification in that assessment reads changed pages through the run shared input snapshot and takes the shared parse5 tree of the whole built page set when one is shared."
+        }
+      ],
+      "entry_sha256": "7525d7c98ad0ab37a911ea56a8cb678c76cc002b1b3f375e5fc09f3285fcc4bd"
     }
   ]
 }
