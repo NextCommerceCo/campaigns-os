@@ -165,7 +165,7 @@
     "docs/campaignspec-authoring-examples.md"
   ],
   "bundledDependencies": [
-    "parse5",
-    "entities"
+    "entities",
+    "parse5"
   ]
 }

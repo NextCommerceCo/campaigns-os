@@ -127,8 +127,8 @@ try {
   if (!pkg.optionalDependencies?.playwright) fail("playwright is missing from optionalDependencies");
 
   // Saved commerce-signature/v1 records must survive installing the tarball
-  // without this repository's lockfile. Check the bundled bytes and run the
-  // drift vector from the extracted package, not this checkout's resolver.
+  // without this repository's lockfile. Run the extracted implementation with
+  // its bundled parser and decoder; unrelated dependencies come from the checkout.
   for (const [name, version] of [["parse5", "8.0.1"], ["entities", "8.1.0"]]) {
     if (pkg.dependencies[name] !== version) fail(`${name} must be exactly pinned for v1 signatures`);
     if (!pkg.bundledDependencies?.includes(name)) fail(`${name} must be bundled for consumer installs`);
@@ -148,7 +148,7 @@ try {
   // Supply unrelated dependencies offline from the prepared checkout. The
   // parser and its decoder must resolve inside the tarball (checked above),
   // never through this parent fallback. Exercise the shipped implementation.
-  symlinkSync(join(ROOT, "node_modules"), join(work, "node_modules"), "dir");
+  symlinkSync(join(ROOT, "node_modules"), join(work, "node_modules"), process.platform === "win32" ? "junction" : "dir");
   const { pageCommerceFacts } = await import(pathToFileURL(join(pkgRoot, "src/change-scope.mjs")).href);
   const frozen = "sha256:b7ef29d46fe19ce25b41a5f3082a244a30e342a62f4233823ce3753b6b9233e5";
   for (const html of [
