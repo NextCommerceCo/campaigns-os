@@ -11602,7 +11602,7 @@
       "entry_sha256": "36b0fd1a4949375308f5cb29e81817139d3115ec2c2dad2ec59eaec33d49b9c3"
     },
     {
-      "id": "RL-0328",
+      "id": "RL-0330",
       "sequence": 317,
       "date": "2026-11-10",
       "kind": "release",
@@ -11626,7 +11626,7 @@
           "summary": "Record exact bundled parser dependencies."
         }
       ],
-      "entry_sha256": "4c9e1172917bc445f66a8e23f87253531e8540cdc688db80b166e12cd73c2618"
+      "entry_sha256": "236ae67a0cb9d8ae218673a00a5d71555526124f626382f6878c31e86a729cce"
     }
   ]
 }
