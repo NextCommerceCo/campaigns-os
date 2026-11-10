@@ -2,6 +2,37 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.67.0] - 2026-11-10
+
+This release packages the sixteen `1.66.0+agent` sections below; the numbering skips `+agent.7`. For a campaign, what changes is Campaign Cart SDK 0.5 support in doctor and QA, three new doctor advisories that never block (one of them for 0.5 pages), QA waiting for the SDK to render, and a starter used as-is keeping its content. The #730 doctor work changes only how often doctor reads and parses: nothing doctor reports changes. Visual comparison scores from the optional pixelmatch move to v8 and are not comparable with v7 scores. To take it, pin `@nextcommerce/campaigns-os@1.67.0` and refresh the installed skills to `1.67.0+skills.1`.
+
+### Added
+
+- Publishes `1.66.0+agent.13`: campaigns pinned to Campaign Cart SDK 0.5.0 pass doctor and QA without false blockers. On a 0.5 page doctor warns `built_output.sdk_markup.removed_in_sdk_05` for each removed 0.4.x feature, browser QA blocks on `html[data-next-error]`, the `AnalyticsContractShape` rule warns about settings 0.5 ignores, `WRONG_FIELD_NAME` and browser QA accept the 0.5 names and markup, and `sdk repin` refuses a 0.4.x → 0.5 move the pages are not ready for. The `next-campaigns-sdk-bump` skill gains "Crossing to 0.5". The SDK support policy and the vendored attribute index stay at 0.4.43 (#742).
+- Publishes `1.66.0+agent.8`: doctor advisory `built_output.family_script_divergence.diverged` compares a campaign's copies of family scripts with the family's own, from the bundled `contracts/family-script-reference.v0.json` (#729, #736).
+- Publishes `1.66.0+agent.10`: doctor advisories under `built_output.script_observations.*` for campaign scripts that reach past the SDK's public surface: SDK-prefixed storage keys, a replaced `fetch` or `XMLHttpRequest`, `nextDebug`, and underscore members of the SDK globals (#729, #738).
+- Publishes `1.66.0+agent.3`: goldens of doctor's output, commerce-signature vectors and `scripts/performance/doctor-cost.mjs`, the baselines the #730 work is held to (#732).
+
+### Changed
+
+- Publishes `1.66.0+agent.4`: a starter template used as-is keeps its pages, sections and copy, and the guided brief keeps the template's banner and timer by default (`template`) (F-197, #734).
+- Publishes `1.66.0+agent.1`: the optional pixelmatch dependency moves from 7.2.0 to 8.0.0, so mismatch scores change for the same image pair (#715).
+- Publishes the #730 doctor shared-input work. Nothing doctor reports changes in any of them:
+  - `1.66.0+agent.5`: one bounded set of inputs per run (#733).
+  - `1.66.0+agent.6`: the script syntax gate reads its script references through the run's shared inputs (#735).
+  - `1.66.0+agent.9`: the campaign identity gate and the smoke checks' script reader read through the run's shared inputs (#737).
+  - `1.66.0+agent.11`: the script syntax gate parses through the run's shared script programs (#741).
+  - `1.66.0+agent.14`: the cart placeholder and smoke checks share one bounded parse per page (#743).
+  - `1.66.0+agent.15`: each built page is parsed once for every check that reads its tree (#746).
+  - `1.66.0+agent.16`: the evidence-debt pass reads the run's shared pages, and `doctor --ci` assesses evidence debt once (#747).
+  - `1.66.0+agent.17`: the built-output validators take the check registry's context directly (#748).
+- Publishes `1.66.0+agent.12`: the issue project automation pins `actions/add-to-project` v2.0.1 (#739).
+- Bundled skills advance to `1.67.0+skills.1`, each one patch higher. Only the bundle revision lines and each skill's `version:` line change.
+
+### Fixed
+
+- Publishes `1.66.0+agent.2`: QA waits up to 15 s more for the SDK to finish rendering before it reads a page, so a slow SDK boot no longer reads as unmounted card fields, a missing CTA or a missing checkout select. Browser-load evidence gains `observation.sdk_display` and `sdk_display_ms` (#731).
+
 ## [1.66.0+agent.17] - 2026-11-10
 
 ### Changed

@@ -11669,6 +11669,135 @@
         }
       ],
       "entry_sha256": "b6d2022c46818b1d13995b99e77901c187844e9a440893edc266d35aec3cef72"
+    },
+    {
+      "id": "RL-0332",
+      "sequence": 320,
+      "date": "2026-11-10",
+      "kind": "release",
+      "surface_version": "1.67.0",
+      "changelog_section": "1.67.0",
+      "changelog_sha256": "1dbb930562ec3086d7eb129a82ca7bf7ce9c5284d83b2cb1a8d05975de4a236d",
+      "agent_impact": "The 1.67.0 package publishes the sixteen same-surface changes since 1.66.0 (1.66.0+agent.1 to agent.17; there is no agent.7). Consumers gain Campaign Cart SDK 0.5.0 support in doctor and QA (a 0.5 page reads with 0.5 markup and field names, and browser QA blocks on html[data-next-error]), the advisory doctor warnings built_output.sdk_markup.removed_in_sdk_05, built_output.family_script_divergence.diverged and built_output.script_observations.*, which never block, and QA waiting for the SDK to report ready before it reads a page. Doctor output is otherwise unchanged by the #730 shared-input work. Visual comparison scores come from pixelmatch v8 and are not comparable with v7 scores. Refresh skills to 1.67.0+skills.1 (a revision restamp; the skill text is otherwise unchanged).",
+      "compatibility": "additive",
+      "migration": "From the published 1.66.0, update the pinned package to 1.67.0 and run install-skills to get 1.67.0+skills.1. Compare visual comparison scores only with scores from the same pixelmatch major version.",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "compatibility.json",
+          "surface_entry": "compatibility.json",
+          "summary": "Version advances to 1.67.0."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "surface_version advances to 1.67.0 for the package release."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Install pins @nextcommerce/campaigns-os@1.67.0."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerated at surface 1.67.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerated at surface 1.67.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Examples name 1.67.0+skills.1."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Both package version stamps advance to 1.67.0."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Package version advances to 1.67.0."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Bundle advances to 1.67.0+skills.1 and each bundled skill one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.67.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.67.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.67.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.67.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.67.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.67.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.67.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.67.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.67.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-sdk-bump/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.67.0+skills.1."
+        }
+      ],
+      "entry_sha256": "ee6a2cfafaa65cb3f3974dcc703c4a637baa3317438acc7878d71c3628ca22d2"
     }
   ]
 }
