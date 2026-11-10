@@ -11600,6 +11600,27 @@
         }
       ],
       "entry_sha256": "36b0fd1a4949375308f5cb29e81817139d3115ec2c2dad2ec59eaec33d49b9c3"
+    },
+    {
+      "id": "RL-0329",
+      "sequence": 317,
+      "date": "2026-11-10",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.66.0+agent.15",
+      "changelog_sha256": "13c65314eccaea3c9560b39929bf5105d924346431b50116a8a5a12412314714",
+      "agent_impact": "None. Doctor output is unchanged: the same codes, messages, ordering, ready lines, checkpoint gates, QC results and causes. Every check that reads a built page's parse5 tree shares one bounded tree per page while the page set fits the parse budget; a page past the nesting bound is still parsed unbounded for every check other than cart placeholders and smoke.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": null,
+          "summary": "The live-campaign ref and CampaignSpec commerce-ref checks read page bytes through the run shared input snapshot and share the run's parse5 tree per page; the commerce-ref check parses each page once instead of twice."
+        }
+      ],
+      "entry_sha256": "948ffc2fc51b8132e9b367c0fb8d6fa995a8c864b34ba09da9c9c8aed27223f9"
     }
   ]
 }
