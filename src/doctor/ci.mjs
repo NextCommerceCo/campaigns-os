@@ -1,12 +1,11 @@
 import { worseChangeKind } from "../change-scope.mjs";
-import { assessEvidenceDebt } from "../evidence-debt.mjs";
 import { REFUSED_INVOCATION } from "../lifecycle.mjs";
 
 export const DOCTOR_CI_EXIT_CODES = Object.freeze({ current: 0, owed: 3, unknown: 4, usage: 2 });
 
-// `debt`, when given, is assessEvidenceDebt(inputs) already computed by the
-// inspection this CI verdict follows.
-export function assessDoctorCi(inputs, debt = assessEvidenceDebt(inputs)) {
+// The CI verdict from the evidence debt the inspection it follows assessed
+// (assessEvidenceDebt, reported through doctorPacket's onEvidenceDebt).
+export function assessDoctorCi(debt) {
   // Advisory Polish (a page-only change) is reported, never required.
   const stages = [debt.polish, debt.qa].filter((stage) => !stage.advisory);
   // Any known debt is owed; otherwise incomplete evidence remains unknown.

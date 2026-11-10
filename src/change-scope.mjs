@@ -151,8 +151,9 @@ const capped = (items) => items.slice(0, CHANGE_PATH_LIMIT);
  * from the run's shared inputs and takes the tree of that whole set when it
  * is shared (htmlScanDocuments), else it is parsed here. The set is shared
  * only when the run already holds every page's bytes, as doctor's built-output
- * checks do; otherwise (no CampaignSpec, so no built-output checks, or no
- * snapshot at all) each changed page is parsed per use, as before.
+ * checks do, and its trees fit the parse budget; otherwise (no CampaignSpec,
+ * so no built-output checks; no snapshot at all; or a page set past the parse
+ * budget) each changed page is parsed per use, as before.
  */
 export function classifyDrift({ changes, baseline, outputRoot, targetRepo, publicRouteSlug, pagePaths = [] }) {
   if (changes?.status !== "known") return { kind: "unknown", reasons: [] };

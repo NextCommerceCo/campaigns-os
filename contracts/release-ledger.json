@@ -11638,7 +11638,7 @@
           "class": "cli_surface",
           "path": "src/doctor/ci.mjs",
           "surface_entry": null,
-          "summary": "assessDoctorCi takes the evidence debt already assessed for its inputs instead of assessing it again; it still assesses it when none is given."
+          "summary": "assessDoctorCi takes the evidence debt the inspection assessed instead of assessing it again."
         },
         {
           "class": "cli_surface",
@@ -11647,7 +11647,7 @@
           "summary": "doctor --ci hands the evidence debt inspection assessed to the CI verdict. Drift classification in that assessment reads changed pages through the run shared input snapshot and takes the shared parse5 tree of the whole built page set when one is shared."
         }
       ],
-      "entry_sha256": "7525d7c98ad0ab37a911ea56a8cb678c76cc002b1b3f375e5fc09f3285fcc4bd"
+      "entry_sha256": "ec35f5c204343bf69a6eac08ec241c43a7f3d7361484e2284e973011f3d83fc3"
     }
   ]
 }
