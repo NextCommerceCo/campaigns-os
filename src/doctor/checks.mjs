@@ -429,12 +429,12 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
   {
     id: "built_output.target_root",
     phase: "built-output",
-    run: ({ packet, errors, warnings, ready, derived, buildState }) => validateBuiltOutputTargetRoot(packet, errors, warnings, ready, derived, buildState),
+    run: validateBuiltOutputTargetRoot,
   },
   {
     id: "built_output.fingerprint",
     phase: "built-output",
-    run: ({ packet, errors, warnings, ready, derived, buildState }) => validateBuildOutputFingerprint(packet, errors, warnings, ready, derived, buildState),
+    run: validateBuildOutputFingerprint,
   },
   {
     id: "qa.baseline_accepted",
@@ -448,73 +448,73 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
   {
     id: "built_output.pages",
     phase: "built-output",
-    run: ({ spec, packet, errors, warnings, ready, derived, buildState }) => validateBuiltOutputPages(spec, packet, errors, warnings, ready, derived, buildState),
+    run: validateBuiltOutputPages,
   },
   {
     id: "built_output.live_campaign_refs",
     phase: "built-output",
-    run: ({ spec, packet, errors, warnings, ready, derived, buildState }) => validateBuiltLiveCampaignRefs(spec, packet, errors, warnings, ready, derived, buildState),
+    run: validateBuiltLiveCampaignRefs,
   },
   {
     id: UPSELL_SELECTOR_SCOPE,
     phase: "built-output",
-    run: ({ spec, packet, errors, warnings, ready, derived, buildState }) => validateUpsellSelectorScope(spec, packet, errors, warnings, ready, derived, buildState),
+    run: validateUpsellSelectorScope,
   },
   {
     id: CAMPAIGN_IDENTITY,
     phase: "built-output",
-    run: ({ spec, packet, errors, ready, derived }) => validateCampaignIdentity(packet, errors, ready, derived, spec),
+    run: validateCampaignIdentity,
   },
   {
     id: SDK_MARKUP,
     phase: "built-output",
-    run: ({ spec, packet, errors, warnings, ready, derived }) => validateSdkMarkup(packet, errors, warnings, ready, derived, spec),
+    run: validateSdkMarkup,
   },
   {
     id: SCRIPT_SYNTAX,
     phase: "built-output",
-    run: ({ packet, errors, warnings, ready, derived }) => validateBuiltScriptSyntax(packet, errors, warnings, ready, derived),
+    run: validateBuiltScriptSyntax,
   },
   {
     id: FAMILY_SCRIPT_DIVERGENCE,
     phase: "built-output",
     when: ({ packet, derived }) => Boolean(familyScriptDivergenceScope(packet, derived)),
-    run: ({ packet, warnings, ready, derived }) => validateFamilyScriptDivergence(packet, warnings, ready, derived),
+    run: validateFamilyScriptDivergence,
   },
   {
     id: CART_PLACEHOLDERS,
     phase: "built-output",
-    run: ({ packet, warnings, ready, derived }) => validateCartPlaceholders(packet, warnings, ready, derived),
+    run: validateCartPlaceholders,
   },
   {
     id: SMOKE_QC,
     phase: "built-output",
-    run: ({ packet, warnings, ready, derived, buildState }) => validateSmokeQc(packet, warnings, ready, derived, buildState),
+    run: validateSmokeQc,
   },
   {
     id: "built_output.sdk_meta_tags",
     phase: "built-output",
-    run: ({ spec, packet, errors, warnings, ready, derived, buildState }) => validateBuiltSdkMetaTags(spec, packet, errors, warnings, ready, derived, buildState),
+    run: validateBuiltSdkMetaTags,
   },
   {
     id: "built_output.build_summary",
     phase: "built-output",
-    run: ({ spec, packet, errors, warnings, ready, derived, buildState }) => validateBuildSummary(spec, packet, errors, warnings, ready, derived, buildState),
+    run: validateBuildSummary,
   },
   {
     id: "built_output.route_drift",
     phase: "built-output",
-    run: ({ spec, packet, errors, warnings, ready, derived, buildState }) => validateBuiltRouteDrift(spec, packet, errors, warnings, ready, derived, buildState),
+    run: validateBuiltRouteDrift,
   },
   {
     id: "built_output.content_residue",
     phase: "built-output",
-    run: ({ packet, errors, warnings, ready, derived, buildState }) => validateBuiltContentResidue(packet, errors, warnings, ready, derived, buildState),
+    run: validateBuiltContentResidue,
   },
   {
     id: "built_output.proof_attestation",
     phase: "built-output",
-    run: ({ packet, errors, warnings, ready, derived, buildState }) => validateProofAttestation(packet, errors, warnings, ready, derived, buildState),
+    run: validateProofAttestation,
   },
 ], { registryId: "packet.spec" });
 
@@ -1642,7 +1642,7 @@ export function validateRouteSlugIdentity(spec, packet, errors, ready) {
 // sdk_hints.meta_tags already reports that deferral, and "assembly recorded
 // complete without any built output" is a pre-existing contract other
 // lifecycle checks exercise.
-export function validateBuiltOutputTargetRoot(packet, errors, warnings, ready, derived = {}, buildState = {}) {
+export function validateBuiltOutputTargetRoot({ packet, errors, warnings, ready, derived = {}, buildState = {} }) {
   const targetRepo = derived.target_repo;
   const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
   if (!targetRepo || !publicRouteSlug) return;
@@ -1812,7 +1812,7 @@ function declaredOutOfScopePageIds(buildState) {
   return new Set(declared.map((skip) => skip?.page_id).filter(isNonEmptyString));
 }
 
-export function validateBuiltSdkMetaTags(spec, packet, errors, warnings, ready, derived, buildState = {}) {
+export function validateBuiltSdkMetaTags({ spec, packet, errors, warnings, ready, derived, buildState = {} }) {
   const expectedPages = activeSpecPages(spec)
     .map((page) => ({
       page,
@@ -1923,7 +1923,7 @@ export function validateBuiltSdkMetaTags(spec, packet, errors, warnings, ready, 
 // not recorded it yet. Stale is blocking once assembly is complete because
 // every polish/QA artifact bound to the old value is then evidence about a
 // build that no longer exists.
-export function validateBuildOutputFingerprint(packet, errors, warnings, ready, derived = {}, buildState = {}) {
+export function validateBuildOutputFingerprint({ packet, errors, warnings, ready, derived = {}, buildState = {} }) {
   const targetRepo = derived.target_repo;
   const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
   if (!targetRepo || !publicRouteSlug) return;
@@ -2003,7 +2003,7 @@ export function validateBuildOutputFingerprint(packet, errors, warnings, ready, 
   );
 }
 
-function validateBuiltOutputPages(spec, packet, errors, warnings, ready, derived, buildState = {}) {
+function validateBuiltOutputPages({ spec, packet, errors, warnings, ready, derived, buildState = {} }) {
   const pages = activeSpecPages(spec);
   if (pages.length === 0) return;
 
@@ -2065,7 +2065,7 @@ function isLiveRefBuildNoise(routePath) {
 // never serves a funnel step: the route's 404.html and anything under a path
 // directory starting with "_" or "." (node_modules is never walked). A page the
 // Map does not list still ships, so it is compared too and named by its path.
-function validateBuiltLiveCampaignRefs(spec, packet, errors, warnings, ready, derived, buildState = {}) {
+function validateBuiltLiveCampaignRefs({ spec, packet, errors, warnings, ready, derived, buildState = {} }) {
   const pages = liveRefBuiltPages(spec, packet, derived).map(({ page_id, file, in_spec, content, document }) => ({
     page_id,
     file,
@@ -2138,7 +2138,7 @@ function liveRefBuiltPages(spec, packet, derived) {
 // stays blocking regardless of stage status, unlike the per-page structure
 // checks that soften to warnings before assembly completes: built markup that
 // charges a shopper is not a work-in-progress state that becomes true later.
-function validateUpsellSelectorScope(spec, packet, errors, warnings, ready, derived, buildState = {}) {
+function validateUpsellSelectorScope({ spec, packet, errors, warnings, ready, derived, buildState = {} }) {
   const targetRepo = derived.target_repo;
   const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
   const siteRoot = targetRepo && publicRouteSlug ? join(targetRepo, "_site", publicRouteSlug) : null;
@@ -2244,7 +2244,7 @@ function recordUpsellSelectorScopeGate({ subject, pages, waivers, errors, warnin
 // With a CampaignSpec, each built page is marked by whether some active spec
 // page builds to it (the same path route drift claims), so a finding on a
 // file no spec page produces names it as leftover output.
-export function validateCampaignIdentity(packet, errors, ready, derived, spec = null) {
+export function validateCampaignIdentity({ packet, errors, ready, derived, spec = null }) {
   const targetRepo = derived.target_repo;
   const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
   const siteRoot = targetRepo && publicRouteSlug ? join(targetRepo, "_site", publicRouteSlug) : null;
@@ -2449,7 +2449,7 @@ function recordCampaignIdentityGate({ subject, pages, expectedApiKey = null, err
 // Static SDK markup checks (#303). Every doctor invocation, both entry points,
 // filesystem enumeration, blocking regardless of stage status — the same
 // contract as the two gates above, for the same reasons.
-function validateSdkMarkup(packet, errors, warnings, ready, derived, spec = null) {
+function validateSdkMarkup({ packet, errors, warnings, ready, derived, spec = null }) {
   const targetRepo = derived.target_repo;
   const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
   const siteRoot = targetRepo && publicRouteSlug ? join(targetRepo, "_site", publicRouteSlug) : null;
@@ -2477,7 +2477,7 @@ function validateSdkMarkup(packet, errors, warnings, ready, derived, spec = null
 // points, filesystem enumeration, blocking regardless of stage status — the
 // same contract as the gates above: a script that throws a SyntaxError on
 // load is not a work-in-progress state that becomes true later.
-function validateBuiltScriptSyntax(packet, errors, warnings, ready, derived) {
+function validateBuiltScriptSyntax({ packet, errors, warnings, ready, derived }) {
   const targetRepo = derived.target_repo;
   const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
   const siteRoot = targetRepo && publicRouteSlug ? join(targetRepo, "_site", publicRouteSlug) : null;
@@ -2509,7 +2509,7 @@ function familyScriptDivergenceScope(packet, derived) {
   return scope?.ok && familyScriptCandidates(scope).length ? scope : null;
 }
 
-function validateFamilyScriptDivergence(packet, warnings, ready, derived) {
+function validateFamilyScriptDivergence({ packet, warnings, ready, derived }) {
   recordFamilyScriptDivergence({
     record: collectFamilyScriptDivergence({
       scope: familyScriptDivergenceScope(packet, derived),
@@ -2561,7 +2561,7 @@ function recordScriptObservations({ inputs, warnings }) {
 // checkpoint gate: its results land in derived.qc_results (warning and review
 // also in warnings[]), never in errors[] or derived.checkpoint_gates, so no
 // blocker elsewhere can withhold them and checkpoint waive never sees them.
-function validateCartPlaceholders(packet, warnings, ready, derived) {
+function validateCartPlaceholders({ packet, warnings, ready, derived }) {
   const targetRepo = derived.target_repo;
   const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
   const siteRoot = targetRepo && publicRouteSlug ? join(targetRepo, "_site", publicRouteSlug) : null;
@@ -2661,7 +2661,7 @@ function recordCartPlaceholders({ subject, pages, warnings, ready, derived }) {
 // cart placeholder check above, over the same built pages. The build
 // environment is the one the Assembly Report records (nothing measures it),
 // and the deploy URLs give the base an absolute og:image maps from.
-function validateSmokeQc(packet, warnings, ready, derived, buildState = {}) {
+function validateSmokeQc({ packet, warnings, ready, derived, buildState = {} }) {
   const targetRepo = derived.target_repo;
   const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
   const siteRoot = targetRepo && publicRouteSlug ? join(targetRepo, "_site", publicRouteSlug) : null;
@@ -2758,7 +2758,7 @@ function campaignSdkPin(targetRepo, publicRouteSlug) {
 // exactly what happened on the Shield QA (presell/landing). validateBuiltOutputPages
 // silently skips missing pages, so this surfaces the drift and the actual
 // built routes for reconciliation. See the Shield build QA (#1).
-export function validateBuiltRouteDrift(spec, packet, errors, warnings, ready, derived, buildState = {}) {
+export function validateBuiltRouteDrift({ spec, packet, errors, warnings, ready, derived, buildState = {} }) {
   const pages = activeSpecPages(spec);
   if (pages.length === 0) return;
   const targetRepo = derived.target_repo;
@@ -2848,7 +2848,7 @@ export function validateBuiltRouteDrift(spec, packet, errors, warnings, ready, d
   );
 }
 
-function validateBuildSummary(spec, packet, errors, warnings, ready, derived, buildState = {}) {
+function validateBuildSummary({ spec, packet, errors, warnings, ready, derived, buildState = {} }) {
   const targetRepo = derived.target_repo;
   const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
   const result = evaluatePageKitBuildSummary({
@@ -4790,7 +4790,7 @@ function collectPlaceholderTextResidueMatches(root, terms) {
 // template demo/placeholder residue (warnings). The merchant's own proof and
 // urgency copy is not scanned. Scans _site output, not frontmatter —
 // layout/script-rendered chrome only exists after the build.
-export function validateBuiltContentResidue(packet, errors, warnings, ready, derived, buildState = {}) {
+export function validateBuiltContentResidue({ packet, errors, warnings, ready, derived, buildState = {} }) {
   if (!isStageComplete(buildState.report, "assembly")) return;
   // Scan the RENDERED _site output, not the campaign source dir: the Liquid
   // guards ({% if countdown_label %}) only resolve at build time, and layout/
@@ -4866,7 +4866,7 @@ export function validateBuiltContentResidue(packet, errors, warnings, ready, der
 // output: shipped pending/non-attestable content blocks (collect-inputs);
 // non-shipped, non-usable assets stay warnings (the attestation queue), so a
 // producer that correctly excluded them is not blocked.
-export function validateProofAttestation(packet, errors, warnings, ready, derived, buildState = {}) {
+export function validateProofAttestation({ packet, errors, warnings, ready, derived, buildState = {} }) {
   const brief = loadBriefPayload(derived.target_repo, packetRuntimeRelPath(packet));
   if (!brief) return; // not an AI-assembled run — no brief payload, no gate
   if (brief.error) {

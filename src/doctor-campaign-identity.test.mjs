@@ -84,13 +84,13 @@ test("doctor compares a built config key with the campaign key when the packet c
     const packet = { campaign: { public_route_slug: SLUG, campaigns_api_key: "examplecampaignkey" } };
     const errors = [], ready = [];
     const derived = { target_repo: repo, checkpoint_gates: [] };
-    validateCampaignIdentity(packet, errors, ready, derived);
+    validateCampaignIdentity({ packet, errors, ready, derived });
     assert.deepEqual(codes(errors), [CAMPAIGN_IDENTITY_KINDS.api_key_mismatch]);
     assert.match(errors[0].message, /config\.js.*Campaigns API key/);
 
     writeConfig(repo, "examplecampaignkey");
     const matching = [];
-    validateCampaignIdentity(packet, matching, [], { target_repo: repo, checkpoint_gates: [] });
+    validateCampaignIdentity({ packet, errors: matching, ready: [], derived: { target_repo: repo, checkpoint_gates: [] } });
     assert.deepEqual(matching, []);
   });
 });
@@ -152,11 +152,11 @@ test("doctor compares a built key with the CampaignSpec key source", () => {
     writeConfig(repo, "examplebuiltkey");
     writePage(repo, "checkout", page(head()));
     const errors = [];
-    validateCampaignIdentity(
-      { campaign: { public_route_slug: SLUG } }, errors, [],
-      { target_repo: repo, checkpoint_gates: [] },
-      { campaign: { campaigns_api_key: "examplecampaignkey" } },
-    );
+    validateCampaignIdentity({
+      packet: { campaign: { public_route_slug: SLUG } }, errors, ready: [],
+      derived: { target_repo: repo, checkpoint_gates: [] },
+      spec: { campaign: { campaigns_api_key: "examplecampaignkey" } },
+    });
     assert.deepEqual(codes(errors), [CAMPAIGN_IDENTITY_KINDS.api_key_mismatch]);
     assert.match(errors[0].message, /CampaignSpec.*campaign\.campaigns_api_key/);
   });
@@ -171,11 +171,11 @@ test("doctor compares a built key with a declared env key only when that variabl
     try {
       process.env.CAMPAIGNS_API_KEY = "examplecampaignkey";
       const errors = [];
-      validateCampaignIdentity(packet, errors, [], { target_repo: repo, checkpoint_gates: [] });
+      validateCampaignIdentity({ packet, errors, ready: [], derived: { target_repo: repo, checkpoint_gates: [] } });
       assert.deepEqual(codes(errors), [CAMPAIGN_IDENTITY_KINDS.api_key_mismatch]);
       delete process.env.CAMPAIGNS_API_KEY;
       const unsetErrors = [];
-      validateCampaignIdentity(packet, unsetErrors, [], { target_repo: repo, checkpoint_gates: [] });
+      validateCampaignIdentity({ packet, errors: unsetErrors, ready: [], derived: { target_repo: repo, checkpoint_gates: [] } });
       assert.deepEqual(unsetErrors, []);
     } finally {
       if (previous === undefined) delete process.env.CAMPAIGNS_API_KEY;
@@ -239,7 +239,7 @@ test("a drifting built page that no CampaignSpec page builds to is named as left
     };
     const errors = [], ready = [];
     const derived = { target_repo: repo, checkpoint_gates: [] };
-    validateCampaignIdentity({ campaign: { public_route_slug: SLUG } }, errors, ready, derived, spec);
+    validateCampaignIdentity({ packet: { campaign: { public_route_slug: SLUG } }, errors, ready, derived, spec });
 
     assert.deepEqual(codes(errors), [CAMPAIGN_IDENTITY_KINDS.funnel_drift]);
     assert.match(errors[0].message, /assets\/design\/index\.html is not the built page of any CampaignSpec page/);
@@ -254,7 +254,7 @@ test("a drifting built page that no CampaignSpec page builds to is named as left
     writePage(repo, "", page(head({ funnel: null, pageType: "product" })));
     writePage(repo, "checkout", page(head({ funnel: null })));
     const missing = [];
-    validateCampaignIdentity({ campaign: { public_route_slug: SLUG } }, missing, [], { target_repo: repo, checkpoint_gates: [] }, spec);
+    validateCampaignIdentity({ packet: { campaign: { public_route_slug: SLUG } }, errors: missing, ready: [], derived: { target_repo: repo, checkpoint_gates: [] }, spec });
     assert.deepEqual(codes(missing), [CAMPAIGN_IDENTITY_KINDS.funnel_missing]);
     assert.match(missing[0].message, /^\.?\/?_site\/example-campaign\/assets\/design\/index\.html is not the built page/);
     assert.doesNotMatch(missing[0].message, /add the same next-funnel meta/, "the real page is not told to retag");
@@ -265,7 +265,7 @@ test("a drifting built page that no CampaignSpec page builds to is named as left
     // the real page being told to change its call to the stray's funnel.
     writePage(repo, "checkout", page(head({ funnel: null, pageType: null }), `<script>next.setAttribution({ funnel: "Example V2" })</script>`));
     const attribution = [];
-    validateCampaignIdentity({ campaign: { public_route_slug: SLUG } }, attribution, [], { target_repo: repo, checkpoint_gates: [] }, spec);
+    validateCampaignIdentity({ packet: { campaign: { public_route_slug: SLUG } }, errors: attribution, ready: [], derived: { target_repo: repo, checkpoint_gates: [] }, spec });
     const drift = attribution.find((issue) => issue.code === CAMPAIGN_IDENTITY_KINDS.attribution_drift);
     assert.ok(drift, "the call disagrees with the campaign's only tag");
     assert.match(drift.message, /^\.?\/?_site\/example-campaign\/assets\/design\/index\.html is not the built page/);
@@ -274,7 +274,7 @@ test("a drifting built page that no CampaignSpec page builds to is named as left
     // Without a CampaignSpec the finding is unchanged: nothing says which
     // files are the campaign's pages.
     const bare = [];
-    validateCampaignIdentity({ campaign: { public_route_slug: SLUG } }, bare, [], { target_repo: repo, checkpoint_gates: [] });
+    validateCampaignIdentity({ packet: { campaign: { public_route_slug: SLUG } }, errors: bare, ready: [], derived: { target_repo: repo, checkpoint_gates: [] } });
     assert.doesNotMatch(bare[0].message, /not the built page of any CampaignSpec page/);
     assert.equal(bare[0].detail.finding.stray_files, undefined);
   });
