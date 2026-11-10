@@ -33,7 +33,7 @@ import { basename, isAbsolute, posix, relative, resolve, sep } from "node:path";
 import { parse as parseJs } from "acorn";
 import { parse as parseHtml } from "parse5";
 
-import { htmlScanMemo, htmlScanScriptPrograms, readHtmlScanText } from "./html-scan.mjs";
+import { htmlScanDocuments, htmlScanMemo, htmlScanScriptPrograms, readHtmlScanText } from "./html-scan.mjs";
 
 export const SCRIPT_SYNTAX = "built_output.script_syntax";
 export const SCRIPT_SYNTAX_PARSE_FAILURE = `${SCRIPT_SYNTAX}.parse_failure`;
@@ -242,14 +242,17 @@ export function endsUnclosed(node) {
  * `unclosed` instead: its src, or null for an inline script.
  *
  * @param {string} html
+ * @param {(() => object) | null} parsed returns the located parse5 tree of
+ *   `html` (the doctor's shared inputs parse once for every consumer); by
+ *   default the page is parsed here
  * @returns {{ base: string | null, refs: Array<{ src: string, module: boolean, base: string | null }>, unclosed: Array<{ src: string | null }> }}
  */
-export function pageScriptDocument(html) {
+export function pageScriptDocument(html, parsed = null) {
   const refs = [];
   const unclosed = [];
   let document;
   try {
-    document = parseHtml(String(html ?? ""), { sourceCodeLocationInfo: true });
+    document = typeof parsed === "function" ? parsed() : parseHtml(String(html ?? ""), { sourceCodeLocationInfo: true });
   } catch {
     return { base: null, refs, unclosed };
   }
@@ -395,14 +398,16 @@ function resolveScriptReferences(scope, pages) {
   const refs = [];
   const unclosed = [];
   const siteRootReal = scope?.site_root ? realPathOf(scope.site_root) : null;
-  for (const page of pages) {
-    let html;
+  const read = pages.flatMap((page) => {
     try {
-      html = readHtmlScanText(page.built_path);
+      return [{ page, html: readHtmlScanText(page.built_path) }];
     } catch {
-      continue;
+      return [];
     }
-    const document = pageScriptDocument(html);
+  });
+  const documentOf = htmlScanDocuments(read.map(({ page }) => page.built_path), "located");
+  for (const { page, html } of read) {
+    const document = pageScriptDocument(html, () => documentOf(page.built_path, html));
     // One entry per page: the file ends inside at most one script, and the
     // warning is about the page's truncated output.
     if (document.unclosed.length) unclosed.push({ page_id: page.page_id, src: document.unclosed[0].src });

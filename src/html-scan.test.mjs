@@ -268,25 +268,47 @@ test('the upsell selector-scope and SDK markup gates read one shared tree per bu
   assert.notEqual(a.document(), b.document());
 });
 
-test('the bounded profile is its own located tree, and a page past its depth bound fails every consumer alike', t => {
+// The first element named `tag` in tree order, walked without recursion so a
+// page nested past the depth bound does not exhaust the stack.
+function findElement(root, tag) {
+  const stack = [root];
+  while (stack.length) {
+    const node = stack.pop();
+    if (node.tagName === tag) return node;
+    stack.push(...[...(node.childNodes || [])].reverse());
+  }
+  return null;
+}
+
+test('noloc and located requests share the bounded tree, and a page past its depth bound gets their own unbounded parse', t => {
   const path = fixture(t);
   writeFileSync(path, '<p>a</p>');
   const deep = join(dirname(path), 'deep.html');
-  writeFileSync(deep, '<div>'.repeat(MAX_ELEMENT_DEPTH + 1));
+  writeFileSync(deep, `${'<div>'.repeat(MAX_ELEMENT_DEPTH + 1)}<script src="deep.js"></script>`);
   withHtmlScanSnapshot(() => {
     const text = readHtmlScanText(path);
     const deepText = readHtmlScanText(deep);
     const bounded = htmlScanDocuments([path, deep], 'bounded');
     const tree = bounded(path, text);
     assert.equal(htmlScanDocuments([path, deep], 'bounded')(path, text), tree);
-    assert.notEqual(htmlScanDocuments([path])(path, text), tree);
-    assert.ok(tree.childNodes[0].childNodes[1].childNodes[0].sourceCodeLocation);
+    assert.equal(htmlScanDocuments([path, deep])(path, text), tree);
+    assert.equal(htmlScanDocuments([path, deep], 'located')(path, text), tree);
+    assert.ok(findElement(tree, 'p').sourceCodeLocation);
+    // A bounded consumer gets the shared failure; the others parse the page their own way, per use.
     let first;
     assert.throws(() => bounded(deep, deepText), (error) => (first = error) instanceof TooDeep);
     assert.throws(() => htmlScanDocuments([path, deep], 'bounded')(deep, deepText), (error) => error === first);
+    const noloc = htmlScanDocuments([path, deep]);
+    const own = noloc(deep, deepText);
+    assert.notEqual(noloc(deep, deepText), own);
+    assert.equal(findElement(own, 'script').sourceCodeLocation, undefined);
+    assert.ok(findElement(htmlScanDocuments([path, deep], 'located')(deep, deepText), 'script').sourceCodeLocation);
   });
   const outside = htmlScanDocuments([deep], 'bounded');
   assert.throws(() => outside(deep, '<div>'.repeat(MAX_ELEMENT_DEPTH + 1)), TooDeep);
+  const located = htmlScanDocuments([path], 'located');
+  assert.notEqual(located(path, '<p>a</p>'), located(path, '<p>a</p>'));
+  assert.ok(findElement(located(path, '<p>a</p>'), 'p').sourceCodeLocation);
 });
 
 test('the bounded profile spends its own, larger, share of the parse budget', t => {
@@ -302,8 +324,12 @@ test('the bounded profile spends its own, larger, share of the parse budget', t 
   });
   withHtmlScanSnapshot(() => {
     for (const path of [small, big]) readHtmlScanText(path);
+    // Too big to share as bounded: a noloc set falls back to noloc trees of its own, a located set to per-use parses.
     const noloc = htmlScanDocuments([small, big]);
     assert.equal(noloc(small, '<p>small</p>'), noloc(small, '<p>small</p>'));
+    assert.equal(findElement(noloc(small, '<p>small</p>'), 'p').sourceCodeLocation, undefined);
+    const located = htmlScanDocuments([small, big], 'located');
+    assert.notEqual(located(small, '<p>small</p>'), located(small, '<p>small</p>'));
   });
 });
 
@@ -330,6 +356,30 @@ test('the cart placeholder and smoke checks read one shared bounded tree per bui
   const [a] = collectCartPlaceholderPages(repo, 'demo');
   const [b] = collectCartPlaceholderPages(repo, 'demo');
   assert.notEqual(a.document(), b.document());
+});
+
+test('the live-ref, commerce-ref and script syntax checks read the tree the cart and smoke checks share', async t => {
+  const { collectCartPlaceholderPages, liveRefBuiltPages } = await import('./doctor/checks.mjs');
+  const { builtScriptReferences } = await import('./built-script-syntax.mjs');
+  const { extractRenderedRefs } = await import('./live-campaign-refs.mjs');
+  const repo = dirname(fixture(t));
+  const siteRoot = join(repo, '_site', 'demo');
+  mkdirSync(siteRoot, { recursive: true });
+  const index = join(siteRoot, 'index.html');
+  writeFileSync(index, '<!doctype html><script src="a.js"></script><p data-next-package-id="7">a</p>');
+  // Past the depth bound: the syntax gate and the live-ref check still see what sits inside and after the nest.
+  const deep = join(siteRoot, 'deep.html');
+  const nest = '<div>'.repeat(MAX_ELEMENT_DEPTH + 8);
+  writeFileSync(deep, `${nest}<script src="inner.js"></script><i data-next-package-id="8"></i>${'</div>'.repeat(MAX_ELEMENT_DEPTH + 8)}<script src="after.js"></script>`);
+  const scope = { site_root: join(repo, '_site'), campaign_dir: siteRoot, pages: [{ page_id: 'index', built_path: index }, { page_id: 'deep', built_path: deep }] };
+  withHtmlScanSnapshot(() => {
+    const live = liveRefBuiltPages({}, { campaign: { public_route_slug: 'demo' } }, { target_repo: repo });
+    assert.deepEqual(live.map(({ page_id }) => page_id), ['deep.html', 'index.html']);
+    const [cart] = collectCartPlaceholderPages(repo, 'demo').filter(({ file }) => file.endsWith('index.html'));
+    assert.equal(live[1].document(), cart.document());
+    assert.deepEqual(live.map(({ content, document }) => [...extractRenderedRefs(content, document).package_refs]), [['8'], ['7']]);
+    assert.deepEqual(builtScriptReferences(scope).refs.map(({ page_id, src }) => `${page_id}:${src}`), ['index:a.js', 'deep:inner.js', 'deep:after.js']);
+  });
 });
 
 test('a symlink and its target are one held entry', t => {

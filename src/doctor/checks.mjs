@@ -135,9 +135,7 @@ import {
   LIVE_REF_CODES,
   campaignDriftMessage,
   evaluateLiveCampaignRefs,
-  extractRenderedPackageRefs,
   extractRenderedRefs,
-  extractRenderedShippingRefs,
   liveRefFindingMessage,
   liveRefsNotRunMessage,
 } from "../live-campaign-refs.mjs";
@@ -2016,13 +2014,11 @@ function validateBuiltOutputPages(spec, packet, errors, warnings, ready, derived
 
   const assemblyComplete = isStageComplete(buildState.report, "assembly");
   let checked = 0;
-  for (const page of pages) {
-    const builtPath = builtHtmlPathForPage(targetRepo, publicRouteSlug, page, derived);
-    if (!builtPath || !existsSync(builtPath)) continue;
-
+  for (const { page, builtPath, content, document } of liveRefBuiltPages(spec, packet, derived)) {
+    if (!page) continue;
     checked += 1;
     validateBuiltHtmlStructure(
-      readFileSync(builtPath, "utf8"),
+      content,
       builtPath,
       targetRepo,
       page,
@@ -2030,7 +2026,8 @@ function validateBuiltOutputPages(spec, packet, errors, warnings, ready, derived
       publicRouteSlug,
       errors,
       warnings,
-      assemblyComplete
+      assemblyComplete,
+      document
     );
   }
 
@@ -2069,34 +2066,12 @@ function isLiveRefBuildNoise(routePath) {
 // directory starting with "_" or "." (node_modules is never walked). A page the
 // Map does not list still ships, so it is compared too and named by its path.
 function validateBuiltLiveCampaignRefs(spec, packet, errors, warnings, ready, derived, buildState = {}) {
-  const targetRepo = derived.target_repo;
-  const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
-  const siteRoot = targetRepo && publicRouteSlug ? join(targetRepo, "_site", publicRouteSlug) : null;
-  const pages = [];
-  if (siteRoot && existsSync(siteRoot)) {
-    const covered = new Set();
-    for (const page of activeSpecPages(spec)) {
-      const builtPath = builtHtmlPathForPage(targetRepo, publicRouteSlug, page, derived);
-      if (!builtPath || !existsSync(builtPath)) continue;
-      covered.add(resolve(builtPath));
-      pages.push({
-        page_id: page.id,
-        file: posixPath(relFromDir(targetRepo, builtPath)),
-        ...extractRenderedRefs(readFileSync(builtPath, "utf8")),
-      });
-    }
-    for (const html of collectHtmlFiles(siteRoot)) {
-      const builtPath = resolve(siteRoot, html.path);
-      const routePath = posixPath(html.path);
-      if (covered.has(builtPath) || isLiveRefBuildNoise(routePath)) continue;
-      pages.push({
-        page_id: routePath,
-        file: posixPath(relFromDir(targetRepo, builtPath)),
-        in_spec: false,
-        ...extractRenderedRefs(readFileSync(builtPath, "utf8")),
-      });
-    }
-  }
+  const pages = liveRefBuiltPages(spec, packet, derived).map(({ page_id, file, in_spec, content, document }) => ({
+    page_id,
+    file,
+    ...(in_spec === false ? { in_spec } : {}),
+    ...extractRenderedRefs(content, document),
+  }));
   if (pages.length === 0) {
     derived.live_campaign_refs = { status: "not_run", reason_code: "no_built_pages", reason: "No built page to compare against the live campaign.", checked_pages: 0 };
     return;
@@ -2123,6 +2098,36 @@ function validateBuiltLiveCampaignRefs(spec, packet, errors, warnings, ready, de
   }
   if (result.drift) addIssue(warnings, LIVE_REF_CODES.drift, campaignDriftMessage(result.drift), { drift: result.drift });
   if (result.status === "pass") ready.push(`Built page shipping and package refs are served by the live campaign (${result.checked_pages} page(s))`);
+}
+
+// The built pages the live-reference comparison reads, in its order: mapped
+// spec pages (`page` is the spec page), then the other built HTML under the
+// route, build noise excluded. Each carries its HTML, read through the shared
+// input context, and `document`, its parse5 tree. The commerce-ref check
+// (built_output.pages) runs first and reads the spec pages of this same set, so
+// both checks ask for the whole set's trees and share them whole or not at all.
+function liveRefBuiltPages(spec, packet, derived) {
+  const targetRepo = derived.target_repo;
+  const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  const siteRoot = targetRepo && publicRouteSlug ? join(targetRepo, "_site", publicRouteSlug) : null;
+  const found = [];
+  if (siteRoot && existsSync(siteRoot)) {
+    const covered = new Set();
+    for (const page of activeSpecPages(spec)) {
+      const builtPath = builtHtmlPathForPage(targetRepo, publicRouteSlug, page, derived);
+      if (!builtPath || !existsSync(builtPath)) continue;
+      covered.add(resolve(builtPath));
+      found.push({ page, builtPath, page_id: page.id, file: posixPath(relFromDir(targetRepo, builtPath)), content: readHtmlScanText(builtPath) });
+    }
+    for (const html of collectHtmlFiles(siteRoot)) {
+      const builtPath = resolve(siteRoot, html.path);
+      const routePath = posixPath(html.path);
+      if (covered.has(builtPath) || isLiveRefBuildNoise(routePath)) continue;
+      found.push({ builtPath, page_id: routePath, file: posixPath(relFromDir(targetRepo, builtPath)), in_spec: false, content: readHtmlScanText(builtPath) });
+    }
+  }
+  const documentOf = htmlScanDocuments(found.map(({ builtPath }) => builtPath));
+  return found.map((entry) => ({ ...entry, document: () => documentOf(entry.builtPath, entry.content) }));
 }
 
 // Upsell selector scope (#270). Every doctor invocation, deliberately — not
@@ -2858,7 +2863,7 @@ function validateBuildSummary(spec, packet, errors, warnings, ready, derived, bu
   ready.push(...result.ready);
 }
 
-function validateBuiltHtmlStructure(content, builtPath, targetRepo, page, spec, publicRouteSlug, errors, warnings, assemblyComplete) {
+function validateBuiltHtmlStructure(content, builtPath, targetRepo, page, spec, publicRouteSlug, errors, warnings, assemblyComplete, document = null) {
   const issueTarget = assemblyComplete ? errors : warnings;
   const relPath = relFromDir(targetRepo, builtPath);
   if (!/<body(?:\s|>)/i.test(content) || !/<\/body>/i.test(content)) {
@@ -2872,7 +2877,7 @@ function validateBuiltHtmlStructure(content, builtPath, targetRepo, page, spec, 
   validateBuiltStarterLogoResidue(content, builtPath, targetRepo, page, issueTarget);
   validateBuiltPageKitAssetPaths(content, builtPath, targetRepo, page, publicRouteSlug, issueTarget);
   validateBuiltScriptAssets(content, builtPath, targetRepo, page, publicRouteSlug, issueTarget);
-  validateBuiltCommerceRefs(content, builtPath, targetRepo, page, spec, issueTarget);
+  validateBuiltCommerceRefs(content, builtPath, targetRepo, page, spec, issueTarget, document);
   validateBuiltAnalyticsContract(content, builtPath, targetRepo, page, spec, issueTarget);
 }
 
@@ -3145,12 +3150,13 @@ export function resolveBuiltAssetPath(src, builtPath, targetRepo) {
   return resolve(dirname(builtPath), clean);
 }
 
-function validateBuiltCommerceRefs(content, builtPath, targetRepo, page, spec, issueTarget) {
+function validateBuiltCommerceRefs(content, builtPath, targetRepo, page, spec, issueTarget, document = null) {
   const packageRefs = specPackageRefs(spec);
   const shippingRefs = specShippingRefs(spec);
   const relPath = relFromDir(targetRepo, builtPath);
-  const badPackages = [...extractRenderedPackageRefs(content)].filter((ref) => packageRefs.size > 0 && !packageRefs.has(ref));
-  const badShipping = [...extractRenderedShippingRefs(content)].filter((ref) => shippingRefs.size > 0 && !shippingRefs.has(ref));
+  const rendered = extractRenderedRefs(content, document);
+  const badPackages = [...rendered.package_refs].filter((ref) => packageRefs.size > 0 && !packageRefs.has(ref));
+  const badShipping = [...rendered.shipping_refs].filter((ref) => shippingRefs.size > 0 && !shippingRefs.has(ref));
 
   if (badPackages.length > 0) {
     addIssue(
@@ -5398,6 +5404,7 @@ export {
   recordSdkMarkupGate,
   recordCartPlaceholders,
   collectCartPlaceholderPages,
+  liveRefBuiltPages,
   recordSmokeQc,
   summarizeCopyMatches,
   resolveBrandContract,
