@@ -4,7 +4,7 @@ Notable supported-surface changes are recorded here.
 
 ## [1.67.0] - 2026-11-10
 
-This release packages the sixteen `1.66.0+agent` sections below; the numbering skips `+agent.7`. For a campaign, what changes is Campaign Cart SDK 0.5 support in doctor and QA, two new doctor advisories that never block, QA waiting for the SDK to render, and a starter used as-is keeping its content. The #730 doctor work changes only how often doctor reads and parses: nothing doctor reports changes. Visual comparison scores from the optional pixelmatch move to v8 and are not comparable with v7 scores. To take it, pin `@nextcommerce/campaigns-os@1.67.0` and refresh the installed skills to `1.67.0+skills.1`.
+This release packages the sixteen `1.66.0+agent` sections below; the numbering skips `+agent.7`. For a campaign, what changes is Campaign Cart SDK 0.5 support in doctor and QA, three new doctor advisories that never block (one of them for 0.5 pages), QA waiting for the SDK to render, and a starter used as-is keeping its content. The #730 doctor work changes only how often doctor reads and parses: nothing doctor reports changes. Visual comparison scores from the optional pixelmatch move to v8 and are not comparable with v7 scores. To take it, pin `@nextcommerce/campaigns-os@1.67.0` and refresh the installed skills to `1.67.0+skills.1`.
 
 ### Added
 
@@ -27,7 +27,7 @@ This release packages the sixteen `1.66.0+agent` sections below; the numbering s
   - `1.66.0+agent.16`: the evidence-debt pass reads the run's shared pages, and `doctor --ci` assesses evidence debt once (#747).
   - `1.66.0+agent.17`: the built-output validators take the check registry's context directly (#748).
 - Publishes `1.66.0+agent.12`: the issue project automation pins `actions/add-to-project` v2.0.1 (#739).
-- Bundled skills advance to `1.67.0+skills.1`, each one patch higher. Only the revision lines change.
+- Bundled skills advance to `1.67.0+skills.1`, each one patch higher. Only the bundle revision lines and each skill's `version:` line change.
 
 ### Fixed
 

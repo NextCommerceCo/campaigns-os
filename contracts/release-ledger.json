@@ -11677,7 +11677,7 @@
       "kind": "release",
       "surface_version": "1.67.0",
       "changelog_section": "1.67.0",
-      "changelog_sha256": "2450e92f08fae3cf7b5d4c73c29a943a037beda9ef28caf770f5991dde0d1ff2",
+      "changelog_sha256": "1dbb930562ec3086d7eb129a82ca7bf7ce9c5284d83b2cb1a8d05975de4a236d",
       "agent_impact": "The 1.67.0 package publishes the sixteen same-surface changes since 1.66.0 (1.66.0+agent.1 to agent.17; there is no agent.7). Consumers gain Campaign Cart SDK 0.5.0 support in doctor and QA (a 0.5 page reads with 0.5 markup and field names, and browser QA blocks on html[data-next-error]), the advisory doctor warnings built_output.sdk_markup.removed_in_sdk_05, built_output.family_script_divergence.diverged and built_output.script_observations.*, which never block, and QA waiting for the SDK to report ready before it reads a page. Doctor output is otherwise unchanged by the #730 shared-input work. Visual comparison scores come from pixelmatch v8 and are not comparable with v7 scores. Refresh skills to 1.67.0+skills.1 (a revision restamp; the skill text is otherwise unchanged).",
       "compatibility": "additive",
       "migration": "From the published 1.66.0, update the pinned package to 1.67.0 and run install-skills to get 1.67.0+skills.1. Compare visual comparison scores only with scores from the same pixelmatch major version.",
@@ -11797,7 +11797,7 @@
           "summary": "One patch higher, stamped with bundle 1.67.0+skills.1."
         }
       ],
-      "entry_sha256": "400d4e0a246e2d6ff986c959780267df947502f3cbc6116df2762350a6ae084b"
+      "entry_sha256": "ee6a2cfafaa65cb3f3974dcc703c4a637baa3317438acc7878d71c3628ca22d2"
     }
   ]
 }
