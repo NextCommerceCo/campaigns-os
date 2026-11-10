@@ -20,6 +20,7 @@ const { evaluateCartPlaceholders } = await import("./cart-placeholders.mjs");
 const { SDK_TEMPLATE_PLACEHOLDERS } = await import("./sdk-attribute-index.mjs");
 const { doctorBuiltOutput } = await import("./doctor/inspect.mjs");
 const { collectCartPlaceholderPages, recordCartPlaceholders } = await import("./doctor/checks.mjs");
+const { withHtmlScanSnapshot } = await import("./html-scan.mjs");
 
 const CAMPAIGN = "example-campaign";
 const PAGE = `_site/${CAMPAIGN}/index.html`;
@@ -517,7 +518,9 @@ test("read failures: an error reading a built page after the readability prechec
   mkdirSync(join(dir, "_site", CAMPAIGN), { recursive: true });
   for (const name of ["a.html", "eio.html", "eacces.html", "z.html"]) writeFileSync(join(dir, "_site", CAMPAIGN, name), html({ body: TEMPLATE_ONLY }));
   // The files exist and pass the precheck; the 1.5 page collection's reads
-  // of them fail (other doctor checks read them as usual).
+  // of them fail. Inside a doctor inspection the collection shares the other
+  // checks' read of each page (#730), so the collection's own read is
+  // exercised alone and as the first reader in a snapshot.
   const failing = new Map([["eio.html", "EIO"], ["eacces.html", "EACCES"]]);
   const realRead = fs.readFileSync;
   t.mock.method(fs, "readFileSync", function readFileSync(path, ...rest) {
@@ -542,8 +545,8 @@ test("read failures: an error reading a built page after the readability prechec
   let pages;
   assert.doesNotThrow(() => { pages = collectCartPlaceholderPages(dir, CAMPAIGN); });
   assert.deepEqual(byFile(evaluateCartPlaceholders({ pages, measuredAt: "2026-01-01T00:00:00.000Z" })), expected);
-  const built = (await withNoNetwork(() => doctorBuiltOutput({ built: dir, slug: CAMPAIGN }))).derived.qc_results.filter((row) => row.check === "cart_placeholders");
-  assert.deepEqual(byFile(built), expected);
+  pages = withHtmlScanSnapshot(() => collectCartPlaceholderPages(dir, CAMPAIGN));
+  assert.deepEqual(byFile(evaluateCartPlaceholders({ pages, measuredAt: "2026-01-01T00:00:00.000Z" })), expected);
 
   // A page whose HTML cannot be read at all inside the evaluator is
   // unreadable too.

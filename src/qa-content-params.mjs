@@ -34,7 +34,8 @@
 // difference between the two is element-type detection outside
 // parseCondition. Readiness follows the same commit:
 // body[data-next-sdk-loading="false"] (src/core/sdk-initializer/sdk-initializer.ts)
-// or html.next-display-ready, then one macrotask and one animation frame.
+// or html.next-display-ready, or on SDK 0.5 html[data-next-ready], then one
+// macrotask and one animation frame.
 //
 // Every DOM read runs in an isolated world (see "Browser driver"), never in
 // the page's own world.
@@ -558,7 +559,8 @@ function installReader(key) {
   };
   const signalled = () => document.readyState !== "loading"
     && (document.body?.getAttribute("data-next-sdk-loading") === "false"
-      || Boolean(document.documentElement?.classList.contains("next-display-ready")));
+      || Boolean(document.documentElement?.classList.contains("next-display-ready"))
+      || Boolean(document.documentElement?.hasAttribute("data-next-ready")));
   const readNode = ({ element, hide, show, path }) => {
     const connected = element.isConnected;
     const stable = connected
@@ -591,7 +593,7 @@ function installReader(key) {
     }));
     setTimeout(() => requestAnimationFrame(() => settle(nodes.map(readNode))), 0);
   };
-  observer.observe(document, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "data-next-sdk-loading"] });
+  observer.observe(document, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "data-next-sdk-loading", "data-next-ready"] });
   document.addEventListener("DOMContentLoaded", check);
   check();
   Object.defineProperty(globalThis, key, {

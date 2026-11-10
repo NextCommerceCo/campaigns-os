@@ -34,12 +34,31 @@
   "version_gated_aliases": {
     "first_name": { "canonical": "fname", "since": "0.4.39" },
     "last_name": { "canonical": "lname", "since": "0.4.39" },
-    "phone_number": { "canonical": "phone", "since": "0.4.41" }
+    "phone_number": { "canonical": "phone", "since": "0.4.41" },
+    "line1": { "canonical": "address1", "since": "0.5.0" },
+    "line2": { "canonical": "address2", "since": "0.5.0" },
+    "state": { "canonical": "province", "since": "0.5.0" },
+    "postcode": { "canonical": "postal", "since": "0.5.0" }
   },
   "version_gated_provenance": {
-    "source": "NextCommerceCo/campaign-cart src/utils/checkout-field-names.ts at v0.4.39 (first_name, last_name; v0.4.40 is the same SDK) and v0.4.41 (phone_number), and v0.4.41 docs/guides/reference/data-attributes.md (Field names)",
+    "source": "NextCommerceCo/campaign-cart src/utils/checkout-field-names.ts at v0.4.39 (first_name, last_name; v0.4.40 is the same SDK) and v0.4.41 (phone_number), and v0.4.41 docs/guides/reference/data-attributes.md (Field names); line1, line2, state, postcode from v0.5.0 src/checkout/form/names.ts (PAGE_FIELDS) and docs/guides/migrating-from-0.4.md (Deprecated)",
     "rule": "A version-gated alias is supported when the binding's SDK version is an exact release at or after since. Below since, or when the version is unknown, the alias is judged as on an earlier SDK: a name also listed in stale_aliases is a stale alias, any other is unknown. The canonical name is supported on every version.",
-    "captured_at": "2026-10-06"
+    "captured_at": "2026-11-09"
+  },
+  "version_gated_binding_attributes": {
+    "data-next-field": "0.5.0"
+  },
+  "version_gated_binding_keys": {
+    "card.number": "cc-number",
+    "card.cvv": "cvv",
+    "card.expiry": "cc-expiry",
+    "payment_method": "payment-method",
+    "billing_same_as_shipping": "use-shipping-address"
+  },
+  "version_gated_binding_provenance": {
+    "source": "NextCommerceCo/campaign-cart v0.5.0 docs/guides/attribute-reference/inputs/data-next-field.md and src/checkout/form/names.ts (V2_NAMES, fromV2)",
+    "rule": "data-next-field is read only from 0.5.0, so it is scanned only on a binding whose SDK is an exact release at or after that. A key in version_gated_binding_keys is supported; any other key is classified as a data-next-checkout-field value; a key the contract does not know is a variant picker, line property or action argument and is not a field binding.",
+    "captured_at": "2026-11-09"
   },
   "stale_aliases": {
     "state": "province",

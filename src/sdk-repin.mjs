@@ -13,6 +13,13 @@
 // change record at .campaign-runtime/sdk-repin.json (schema
 // campaigns-os-sdk-repin/v0) that a Run Record can cite by path and sha256.
 // A repo with `_data/campaigns.json` is refused: page-kit owns that pin.
+//
+// A move from a 0.4.x pin to 0.5.0 or later is refused unless the repo is
+// already shaped for 0.5: every loader <script> is type="module" (the 0.5
+// loader finds its chunks from import.meta.url, which a classic script does
+// not have), and nothing references the 0.4 dist layout (dist/index.js, or a
+// file under dist/chunks/), which 0.5 no longer ships. Rewriting only the
+// version there would leave a page with no SDK.
 
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
@@ -26,9 +33,11 @@ import {
   listCampaignCartScanFiles,
   listCampaignCartSourceFiles,
   loadSdkSupportPolicy,
+  maskHtmlComments,
 } from "./campaign-ecosystem.mjs";
 import { refused } from "./lifecycle.mjs";
 import { compareVersions, relPath, unique } from "./repo-scan.mjs";
+import { SDK_05, isSdk05 } from "./campaign-cart-05.mjs";
 
 export const SDK_REPIN_SCHEMA = "campaigns-os-sdk-repin/v0";
 export const SDK_REPIN_RECORD_REL_PATH = ".campaign-runtime/sdk-repin.json";
@@ -126,6 +135,20 @@ function planWithSpans({ targetRepo, targetSdk = null, sdkSupportPolicy = null }
   }
 
   const rewrites = references.filter((entry) => entry.action === "rewrite");
+  const crossMinor = isSdk05(toVersion) ? sdk05LayoutBlockers(target, rewrites) : [];
+  if (crossMinor.length) {
+    return { spans: [], plan: {
+      ...base,
+      ok: false,
+      status: "refused_cross_minor",
+      message: `Moving ${unique(rewrites.filter((entry) => !isSdk05(entry.version)).map((entry) => entry.version)).sort(compareVersions).join(", ")} to ${toVersion} crosses into SDK ${SDK_05}, which loads only as <script type="module"> and no longer ships the 0.4 dist layout. ${crossMinor.length} reference(s) would break: make each loader tag type="module" and remove every dist/index.js and dist/chunks/ reference, then re-run. Nothing was changed.`,
+      blockers: crossMinor,
+      references: references.map(publicReference),
+      rewrites: [],
+      left_alone: leftAlone(references),
+      files: [],
+    } };
+  }
   const status = !references.length
     ? "no_references"
     : rewrites.length ? "changes" : "nothing_to_change";
@@ -137,11 +160,7 @@ function planWithSpans({ targetRepo, targetSdk = null, sdkSupportPolicy = null }
     message: statusMessage(status, toVersion),
     references: references.map(publicReference),
     rewrites: rewrites.map(publicReference),
-    left_alone: {
-      not_semver: references.filter((entry) => entry.action === "not_semver").map(publicReference),
-      at_target: references.filter((entry) => entry.action === "at_target").map(publicReference),
-      newer_than_target: references.filter((entry) => entry.action === "newer_than_target").map(publicReference),
-    },
+    left_alone: leftAlone(references),
     files: unique(rewrites.map((entry) => entry.path)),
   } };
 }
@@ -230,6 +249,11 @@ export function formatSdkRepinReport(result) {
     lines.push(`Refused: ${result.message}`);
     return lines.join("\n");
   }
+  if (result.status === "refused_cross_minor") {
+    lines.push(`Refused: ${result.message}`);
+    for (const blocker of result.blockers) lines.push(`  ${blocker.path}:${blocker.line}  ${blocker.reason}`);
+    return lines.join("\n");
+  }
   if (result.rewrites.length) {
     lines.push(`${result.applied ? "Rewrote" : "Would rewrite"} ${result.rewrites.length} reference(s) in ${result.files.length} file(s):`);
     for (const entry of result.rewrites) {
@@ -260,8 +284,45 @@ function statusMessage(status, toVersion) {
   return `Semver-pinned references below ${toVersion} can be rewritten.`;
 }
 
+function leftAlone(references) {
+  return {
+    not_semver: references.filter((entry) => entry.action === "not_semver").map(publicReference),
+    at_target: references.filter((entry) => entry.action === "at_target").map(publicReference),
+    newer_than_target: references.filter((entry) => entry.action === "newer_than_target").map(publicReference),
+  };
+}
+
 function publicReference({ path, line, artifact, url, ref, version, action, new_ref, new_url }) {
   return { path, line, artifact, url, ref, version, action, new_ref, new_url };
+}
+
+// What stops a 0.4.x → 0.5 repin, in the files the scan walks: a classic
+// loader <script> among the rewrites, and any Campaign Cart dist/index.js or
+// dist/chunks/ reference, pinned or not. Empty when no rewrite starts below
+// 0.5.0 (a 0.5.x → 0.5.y move needs no reshaping).
+const LOADER_SCRIPT_TAG = /<script\b[^>]*\bsrc\s*=\s*["']([^"']*campaign-cart[^"']*\/dist\/loader(?:\.min)?\.js[^"']*)["'][^>]*>/gi;
+const MODULE_TYPE = /\stype\s*=\s*(["']?)module\1(?=[\s/>])/i;
+const LEGACY_DIST_REFERENCE = /campaign-cart[^"'\s)]*\/dist\/(?:index\.js|chunks\/)[^"'\s)]*/gi;
+function sdk05LayoutBlockers(target, rewrites) {
+  if (!rewrites.some((entry) => !isSdk05(entry.version))) return [];
+  const blockers = [];
+  for (const file of listCampaignCartSourceFiles(target)) {
+    const raw = readText(file);
+    if (raw === null) continue;
+    const text = maskHtmlComments(raw);
+    const path = relPath(target, file);
+    const lineAt = (index) => text.slice(0, index).split("\n").length;
+    if (isCampaignCartHtmlFile(file)) {
+      for (const match of text.matchAll(LOADER_SCRIPT_TAG)) {
+        if (MODULE_TYPE.test(match[0])) continue;
+        blockers.push({ path, line: lineAt(match.index), reason: `loader <script> is not type="module": ${match[1]}` });
+      }
+    }
+    for (const match of text.matchAll(LEGACY_DIST_REFERENCE)) {
+      blockers.push({ path, line: lineAt(match.index), reason: `0.4 dist layout reference: ${match[0]}` });
+    }
+  }
+  return blockers;
 }
 
 // `_data/campaigns.json` at the target or under any directory the scan walks

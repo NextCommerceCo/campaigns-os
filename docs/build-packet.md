@@ -362,7 +362,10 @@ campaign's `_data/campaigns.json` entry (`ga4_id`, `axon_event_key`,
 means off. The adapter forwards the SDK's `dl_*` events to the vendor. These
 vendors are separate from the SDK providers in `analytics.providers` (GTM,
 Meta, RudderStack, a custom endpoint), which reach the page through
-`config.js`.
+`config.js`. On SDK 0.5.0 or later a provider's `blockedEvents` and the
+`custom` provider do nothing (0.5 reads only each provider's `enabled`), and
+the CampaignSpec rule warns on both; 0.5 filters per destination under
+`nextConfig.analytics.destinations`.
 
 The CampaignSpec declares them under `analytics.vendors`, keyed by vendor,
 in the shape the Map Builder saves:
@@ -1031,13 +1034,17 @@ Blockers (not waivable — the markup provably does not do what it says):
   `payment-method`, `accepts_marketing`, `cc-number`, `cc-month`, `cc-year`,
   `exp-month`, `exp-year`, `cvv`, the legacy `card-*` spellings, and any
   `billing-` prefixed name). The message names the SDK spelling for the usual
-  offenders (`firstName` → `fname`, `zip` → `postal`). Three names depend on
-  the page's SDK version: `first_name` and `last_name` are mapped from v0.4.39
-  and `phone_number` from v0.4.41. The version is the page's own exact loader
-  pin, else the campaign's `sdk_version` in `_data/campaigns.json`. Below the
-  name's version, or when neither gives an exact released version, the name
-  blocks, and the message names `fname`, `lname` or `phone`, which every
-  version maps. Each finding carries `sdk_version` and `sdk_version_source`
+  offenders (`firstName` → `fname`, `zip` → `postal`; on a page that runs
+  0.5.0 or later, the 0.5 name: `zip` → `postcode`). Seven names depend on
+  the page's SDK version: `first_name` and `last_name` are mapped from v0.4.39,
+  `phone_number` from v0.4.41, and `line1`, `line2`, `state` and `postcode`
+  from v0.5.0, whose migration guide makes these API names the ones to write.
+  The version is the page's own exact loader pin, else the campaign's
+  `sdk_version` in `_data/campaigns.json`. Below the name's version, or when
+  neither gives an exact released version, the name blocks, and the message
+  names the 0.4.x name (`fname`, `address1`, `postal`, …), which every version
+  maps. 0.5's own `data-next-field` attribute is not checked here: it also
+  names variant pickers, line properties and action arguments. Each finding carries `sdk_version` and `sdk_version_source`
   (`loader` or `campaigns_json`) in its detail.
 - `MISSING_SELECTOR_ID_MATCH` — an `add-to-cart` button whose
   `data-next-selector-id` names no selector on the page (an element that is a
@@ -1078,10 +1085,21 @@ Warnings (advisory):
   `<meta name="next-page-type" content="upsell">`, so reports show the
   purchase with no upsell view before it. Not raised on a receipt, or when
   `PAGE_TYPE_ATTRIBUTE` already names the page.
+- `REMOVED_IN_SDK_05` — on a page that runs SDK 0.5.0 or later (same version
+  rule as above), a 0.4.x feature 0.5 removed, which it ignores:
+  `data-next-action="accept-upsell"`, `data-next-upsell-option`, `-select`,
+  `-quantity`, `data-prospect-config`, `data-email-field`, `data-phone-field`,
+  `data-min-phone-digits` in the markup, or `googleMaps:` (nextConfig),
+  `next.on('upsell:accepted' | 'cart:package-swapped' | 'order:redirect-missing'
+  | 'address:messages-loaded')`, `dl_package_swapped` or `next.fomo` in the
+  page's inline or local scripts. One finding per feature per page, naming
+  what replaces it. Never raised on a 0.4.x page.
 
 Information: `data-next-*` names the vendored attribute index does not list are
 collected on the gate (`unknown_attributes[]`) and printed as one advisory ready
-line, never as a warning. That is where an invented attribute such as
+line, never as a warning. On a page that runs 0.5.0 or later, the names 0.5
+reads (`data-next-field`, `data-next-query`, `data-next-option`, …; the list
+is in `src/campaign-cart-05.mjs`) count as listed too. That is where an invented attribute such as
 `data-next-coupon-input` shows up; it is information rather than a warning
 because the certified templates carry a handful of their own `data-next-*`
 hooks the SDK never reads.

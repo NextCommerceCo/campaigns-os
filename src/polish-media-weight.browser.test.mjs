@@ -1171,7 +1171,9 @@ const NO_STORE = ["Cache-Control: no-store"];
 
 // Challenge P1-1, browser leg. Two <img> name one URL; the second
 // (with capture caching disabled, it makes its own request) is
-// inserted when the first loads, so the stub sees two image requests for
+// inserted only after the first loads, so there is no in-flight request
+// to coalesce. Keep the exact count: it detects extra mode-switch requests.
+// The stub sees two image requests for
 // /img/p1.png in a known order. One request is answered 200 directly, the
 // other 302 to /img/p1-final.png. Both <img> keep currentSrc /img/p1.png.
 // `order` names which answer comes first. The ledger's /img/p1.png entry

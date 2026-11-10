@@ -469,15 +469,27 @@ export function inspectCheckoutFields(root, htmlFiles, contract, findings, { sdk
   const bindings = [];
   const attributes = contract?.binding_attributes || ["data-next-checkout-field", "os-checkout-field"];
   const attributePattern = new RegExp(`\\b(${attributes.map(escapeRegExp).join("|")})\\s*=\\s*(["'])([^"']*)\\2`, "g");
+  // An attribute only a later SDK reads (data-next-field from 0.5.0) is
+  // scanned only on a file whose SDK is an exact release at or after it; a
+  // 0.4.x page is read as before.
+  const v2Patterns = Object.entries(contract?.version_gated_binding_attributes || {}).map(([attribute, since]) => ({
+    pattern: new RegExp(`(?<![\\w-])(${escapeRegExp(attribute)})\\s*=\\s*(["'])([^"']*)\\2`, "g"),
+    since,
+  }));
   for (const file of htmlFiles) {
     const raw = safeReadText(file);
     if (raw === null) continue;
     const content = maskHtmlComments(raw);
     const path = relPath(root, file);
     const sdk = (typeof sdkVersionForFile === "function" ? sdkVersionForFile(path) : null) || { version: null, source: null };
-    for (const match of content.matchAll(attributePattern)) {
+    const patterns = [{ pattern: attributePattern, v2: false }];
+    for (const { pattern, since } of v2Patterns) if (sdkVersionAtLeast(sdk.version, since)) patterns.push({ pattern, v2: true });
+    for (const { pattern, v2 } of patterns) for (const match of content.matchAll(pattern)) {
       const value = match[3].trim();
-      const verdict = classifyFieldBinding(value, contract, sdk.version);
+      const verdict = v2 ? classifyV2FieldBinding(value, contract, sdk.version) : classifyFieldBinding(value, contract, sdk.version);
+      // A data-next-field name outside the checkout contract is a variant
+      // picker, a line property or an action argument, not a field binding.
+      if (!verdict) continue;
       bindings.push({
         attribute: match[1],
         value,
@@ -541,6 +553,17 @@ export function inspectCheckoutFields(root, htmlFiles, contract, findings, { sdk
     unsupported,
     unknown,
   };
+}
+
+// A data-next-field key (0.5.0+) as the checkout contract reads it: the card
+// and payment keys are the contract's own fields under another name, and any
+// other key is read as a data-next-checkout-field value would be. null for a
+// key the contract does not know as a supported field or a stale alias.
+function classifyV2FieldBinding(value, contract, sdkVersion) {
+  const keys = contract?.version_gated_binding_keys || {};
+  if (Object.hasOwn(keys, value)) return { classification: "supported", canonical: null, since: null };
+  const verdict = classifyFieldBinding(value, contract, sdkVersion);
+  return verdict.classification === "unknown" ? null : verdict;
 }
 
 function classifyFieldBinding(value, contract, sdkVersion = null) {
@@ -688,7 +711,7 @@ function proximityHasSyncSignals(text) {
 
 // Blank out HTML comment bodies while preserving offsets/line numbers so
 // commented-out markup never produces bindings, radios, or sync evidence.
-function maskHtmlComments(content) {
+export function maskHtmlComments(content) {
   const masked = String(content || "").replace(/<!--[\s\S]*?-->/g, (match) => match.replace(/[^\r\n]/g, " "));
   // After closed comments are masked, any surviving `<!--` opens a comment
   // that never closes (truncated/corrupt file). Everything from that opener to

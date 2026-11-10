@@ -116,6 +116,7 @@ for (const keepDocument of [false, true]) browserTest(`an accept with ${keepDocu
     const bound = hooks.RESPONSE_BODY_READ_TIMEOUT_MS;
     const read = step.api_response_body_read;
     assert.ok(read, "the step records how the bounded body read ended");
+    assert.ok(["timed_out", "read_failed"].includes(read.outcome), "the held body cannot have been read successfully");
     if (keepDocument) assert.equal(read.timed_out, true, "the live document must exercise the pending read bound");
     assert.equal(read.bound_ms, bound);
     if (read.timed_out) assert.ok(read.waited_ms >= bound - 50, `the body read waited ${read.waited_ms}ms; expected the ${bound}ms bound`);

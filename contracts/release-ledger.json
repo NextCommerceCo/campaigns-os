@@ -11458,14 +11458,158 @@
       "entry_sha256": "87707dccd1c300aabdb9911326ef8267c89ad7775bd57ed23c58552165da5a56"
     },
     {
-      "id": "RL-0329",
+      "id": "RL-0328",
       "sequence": 315,
+      "date": "2026-11-09",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.66.0+agent.13",
+      "changelog_sha256": "eda1442d2cf2e21442f4ea9d3d8e64a6083608e38667523bcec79d4488dc57d0",
+      "agent_impact": "A campaign pinned to Campaign Cart SDK 0.5.0 or later no longer draws false blockers: doctor accepts 0.5's checkout field names and data-campaign, QA finds 0.5 markup, and sdk repin refuses a 0.4 to 0.5 move until the loader is a module. New on 0.5 pins only: doctor warning built_output.sdk_markup.removed_in_sdk_05 for removed 0.4 features, QA blocker browser-sdk-error:<page> on html[data-next-error], and two AnalyticsContractShape warnings. 0.4.x pins are judged as before. Agents bumping to 0.5 should follow the sdk-bump skill's Crossing to 0.5 section.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": null,
+          "summary": "Packet doctor's SDK markup gate reads each page's local scripts lazily, only on a page pinned to SDK 0.5 or later, to find removed 0.4 features; it adds the removed_in_sdk_05 warning, accepts 0.5 field names and attributes on 0.5 pins, and campaign identity reads the loader's data-campaign and data-funnel."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/inspect.mjs",
+          "surface_entry": null,
+          "summary": "doctor --built hands the SDK markup gate the same lazy local-script reader."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/rules/analytics-contract-shape.ts",
+          "surface_entry": null,
+          "summary": "AnalyticsContractShape warns blocked-events-ignored-sdk-05 and custom-provider-ignored-sdk-05 on an SDK pin of 0.5.0 or later."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Documents the 0.5 field names under WRONG_FIELD_NAME, the REMOVED_IN_SDK_05 advisory, 0.5 attributes in the unknown-attribute note, and the 0.5 providers warning."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/campaigns-os-build-flow.md",
+          "surface_entry": "docs/campaigns-os-build-flow.md",
+          "summary": "The SDK markup rule lists the API field names a 0.5 pin also accepts and the REMOVED_IN_SDK_05 warning."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/sdk-storage-compatibility.md",
+          "surface_entry": "docs/sdk-storage-compatibility.md",
+          "summary": "Documents sdk repin's refused_cross_minor status for a 0.4 to 0.5 move."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Examples name 1.66.0+skills.2."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "bundle_revision 1.66.0+skills.2; each skill one patch higher; the sdk-bump description covers 0.4 to 0.5."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-sdk-bump/SKILL.md",
+          "surface_entry": null,
+          "summary": "Adds Crossing to 0.5 (module loader, removed features, analytics, page state, lost open carts, migrate.mjs only on built HTML) and a ready guard that works on 0.5; revision 1.66.0+skills.2, version 1.0.13."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Accepts 0.5's checkout form, field names, card mounts and acceptUpsell / skipUpsell controls; revision 1.66.0+skills.2, version 1.3.57."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.66.0+skills.2; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.66.0+skills.2; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.66.0+skills.2; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.66.0+skills.2; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.66.0+skills.2; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.66.0+skills.2; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.66.0+skills.2; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.66.0+skills.2; version one patch higher; text otherwise unchanged."
+        }
+      ],
+      "entry_sha256": "211d1e0274b47d4e2127f3b0a93d60c17a3b6da78705715c275c3bde9459e303"
+    },
+    {
+      "id": "RL-0326",
+      "sequence": 316,
       "date": "2026-11-10",
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.66.0+agent.14",
-      "changelog_sha256": "520a9134a8a5a658bc7957cf1327dad8654fae5add61238925ca992ea71217ef",
-      "agent_impact": "Upgrade Playwright to 1.65.0 independently of the HTML parser. A successful upsell mutation whose body becomes unreadable on navigation now waits for correlated mutation evidence or an order read-back, just as a timed-out body does. Without evidence the accept remains unverified and requires manual review; stale checkout lines cannot supply a definitive verdict. Browser fixtures retain timeout, correlation, image-cap, redirect ambiguity and offline navigation coverage under Chromium 158.",
+      "changelog_sha256": "36a5aff3ed5a42057a78f9e0874c55a50b74163b89df2e0f01a6293fed7a7a7d",
+      "agent_impact": "None. Doctor output is unchanged: the same codes, messages, ordering, ready lines, checkpoint gates, QC results and causes. The cart placeholder and smoke checks resolve their built-page inventory once per run, read page bytes through the run shared input snapshot, and share one bounded parse per page while the page set fits the parse budget.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": null,
+          "summary": "The cart placeholder and smoke checks resolve their built-page inventory once per run, read page bytes through the run shared input snapshot and share one bounded parse per page; the smoke checks take the built-site scope from the snapshot."
+        }
+      ],
+      "entry_sha256": "36b0fd1a4949375308f5cb29e81817139d3115ec2c2dad2ec59eaec33d49b9c3"
+    },
+    {
+      "id": "RL-0329",
+      "sequence": 317,
+      "date": "2026-11-10",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.66.0+agent.16",
+      "changelog_sha256": "d90a0938a3b1c67ffb756165621f1584ba94c5c93ba92ef7352c0f9e139d4487",
+      "agent_impact": "Upgrade Playwright to 1.65.0 independently of the HTML parser. A successful upsell mutation whose body becomes unreadable on navigation now waits for correlated mutation evidence or an order read-back, just as a timed-out body does. Without evidence the accept remains unverified and requires manual review; stale checkout lines cannot supply a definitive verdict. A non-sensitive body-read outcome survives raw-body removal, so readable successful responses keep their definitive verdict and skip recovery waits. Existing saved evidence without the additive outcome field remains readable. Browser fixtures retain timeout, correlation, image-cap, redirect ambiguity and offline navigation coverage under Chromium 158.",
       "compatibility": "compatible",
       "migration": "none",
       "changes": [
@@ -11482,7 +11626,7 @@
           "summary": "Resolve Playwright and playwright-core 1.65.0; retain parse5 and entities."
         }
       ],
-      "entry_sha256": "9881260bcfd6d7a494d33831c861303d8253464bbf4d66bd9b146f9271f6631f"
+      "entry_sha256": "23d2546e9dd6e03e9da3f7b8c8a9be59bc431d9f2cded2c81ec0ee1a5eeaa9ca"
     }
   ]
 }
