@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.66.0+agent.17] - 2026-11-10
+
+### Changed
+
+- **Doctor's built-output validators take the check registry's context directly (#730, milestone 4).** Nothing doctor reports changes. Sixteen built-output and gate checks (target root, fingerprint, pages, live-campaign refs, upsell selector scope, campaign identity, SDK markup, script syntax, family-script divergence, cart placeholders, smoke QC, SDK meta tags, build summary, route drift, content residue, proof attestation) were registered through a wrapper that unpacked the context into positional arguments. Each validator now takes the context object itself and is registered as is, so a check's inputs are named the same way at the registry and in the function. The exported ones (`validateBuiltOutputTargetRoot`, `validateBuildOutputFingerprint`, `validateCampaignIdentity`, `validateBuiltSdkMetaTags`, `validateBuiltRouteDrift`, `validateBuiltContentResidue`, `validateProofAttestation`) now take one `{ spec, packet, errors, warnings, ready, derived, buildState }` object instead of positional arguments. Spec, packet and source validators keep their signatures.
+
 ## [1.66.0+agent.16] - 2026-11-10
 
 ### Changed
