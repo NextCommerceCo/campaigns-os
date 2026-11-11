@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.68.0+agent.6] - 2026-11-11
+
+### Fixed
+
+- `polish capture` plans the pages `spec derive` adds after handoff, lists the pages it leaves out, and takes evidence-only captures of template-stock pages (#756).
+
 ## [1.68.0+agent.1] - 2026-11-10
 
 ### Changed
