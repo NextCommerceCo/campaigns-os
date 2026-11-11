@@ -553,6 +553,7 @@ async function resolveQaInputs(args, {
   const requestedPages = qaPageArgs(args);
   const pageScope = applyQaPageScope(buildScope.topologies, {
     pages: requestedPages,
+    browser: args.browser === true,
     baseUrl,
     debt: checkpointPreflight?.evidenceDebt || null,
     report: checkpointPreflight?.runtimeReport,
@@ -1054,7 +1055,7 @@ function refuseBadPageScope(args) {
 // inputs cannot be confirmed, owes a full run. Re-running a page-scoped
 // record for the same build is allowed too. Each requested id is a topology
 // page id or the page id of its route (the id the change lists use).
-export function applyQaPageScope(topologies, { pages, baseUrl, debt, report, qaInputCurrency = undefined } = {}) {
+export function applyQaPageScope(topologies, { pages, browser = false, baseUrl, debt, report, qaInputCurrency = undefined } = {}) {
   if (!pages) return { topologies, scope: null };
   const all = topologies.flatMap((topology) => topology.pages || []);
   const idsOf = (page) => [String(page.page_id), page.url && baseUrl ? routePageIdForUrl(page.url, baseUrl) : null].filter(Boolean);
@@ -1093,6 +1094,12 @@ export function applyQaPageScope(topologies, { pages, baseUrl, debt, report, qaI
     const uncovered = qa.owed_pages.filter((page) => !selectedRouteIds.has(page.page_id));
     if (uncovered.length) {
       throw new Error(`qa run --page: QA is owed on ${qa.owed_pages.map((page) => page.page_id).join(", ")}; add ${uncovered.map((page) => `--page ${page.page_id}`).join(" ")}.`);
+    }
+    // A checkout or upsell page reached through a changed stylesheet or
+    // image owes a browser run (#753): styling can hide a buy button.
+    const browserPages = Array.isArray(qa.browser_pages) ? qa.browser_pages : [];
+    if (browserPages.length && !browser) {
+      throw new Error(`qa run --page: ${browserPages.join(", ")} ${browserPages.length > 1 ? "are checkout or upsell pages" : "is a checkout or upsell page"} whose linked stylesheet or image changed, so it owes a browser run; add --browser. No test orders are placed.`);
     }
   }
   if (qaInputCurrency === "owed" || qaInputCurrency === "unknown") {

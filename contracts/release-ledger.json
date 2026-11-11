@@ -4066,6 +4066,33 @@
         }
       ],
       "entry_sha256": "63617f16257551ed7d6643035a39e3698c634345b015cb16e0f259bc5c204200"
+    },
+    {
+      "id": "RL-0336",
+      "sequence": 324,
+      "date": "2026-11-11",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.68.0+agent.3",
+      "changelog_sha256": "7017aa48834155c4a40b38c09f88ae41df196778f4319bd72a33445e49499748",
+      "agent_impact": "A change whose only non-page file is a stylesheet or image built pages link directly now reads page_only, with QA owed on those pages, instead of commerce_affecting. Its reasons carry two new non-commerce codes: linked_asset_changed (path, and pages: the page ids that link it) and linked_asset_buy_page (a checkout or upsell page reached only through one). When there is a buy page, evidence_debt.qa.browser_pages lists it, and qa run --page then needs --browser. Readers that treat every reason as commerce should switch on the change kind, or skip these two codes.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/ci.mjs",
+          "surface_entry": null,
+          "summary": "doctor --ci names each linked stylesheet or image that changed and the pages it maps to, says which page owes a browser run, and adds --browser to the page-scoped remedy when one does."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/next-step.mjs",
+          "surface_entry": null,
+          "summary": "next adds --browser to the page-scoped QA command when a checkout or upsell page owes a browser run."
+        }
+      ],
+      "entry_sha256": "09aaf39c4c1f470dfd23b385744916c19f6130c4779ab987e5df511cc290277d"
     }
   ]
 }

@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.68.0+agent.3] - 2026-11-11
+
+### Changed
+
+- Editing a stylesheet or image that built pages link directly now owes QA on those pages only, and a browser run with no test orders on a checkout or upsell page among them, instead of the full Polish and QA (#753).
+
 ## [1.68.0+agent.2] - 2026-11-11
 
 ### Changed

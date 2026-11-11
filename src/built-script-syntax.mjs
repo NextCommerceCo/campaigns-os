@@ -33,6 +33,7 @@ import { basename, isAbsolute, posix, relative, resolve, sep } from "node:path";
 import { parse as parseJs } from "acorn";
 import { parse as parseHtml } from "parse5";
 
+import { srcsetUrls } from "./built-smoke-qc.mjs";
 import { htmlScanDocuments, htmlScanMemo, htmlScanScriptPrograms, readHtmlScanText } from "./html-scan.mjs";
 
 export const SCRIPT_SYNTAX = "built_output.script_syntax";
@@ -394,13 +395,7 @@ function resolveScriptReferences(scope, pages) {
   const refs = [];
   const unclosed = [];
   const siteRootReal = scope?.site_root ? realPathOf(scope.site_root) : null;
-  const read = pages.flatMap((page) => {
-    try {
-      return [{ page, html: readHtmlScanText(page.built_path) }];
-    } catch {
-      return [];
-    }
-  });
+  const read = readPages(pages);
   const documentOf = htmlScanDocuments(read.map(({ page }) => page.built_path), "located");
   for (const { page, html } of read) {
     const document = pageScriptDocument(html, () => documentOf(page.built_path, html));
@@ -409,36 +404,108 @@ function resolveScriptReferences(scope, pages) {
     if (document.unclosed.length) unclosed.push({ page_id: page.page_id, src: document.unclosed[0].src });
     const pageUrl = pageUrlFor(scope.site_root, page.built_path);
     for (const ref of document.refs) {
-      const record = { page_id: page.page_id, src: ref.src, module: ref.module, url_key: null, path: null };
-      const { remote, pathname } = isRemote(ref.src) ? { remote: true } : resolveScriptUrl(ref.src, ref.base, pageUrl);
-      if (remote) {
-        refs.push({ ...record, status: "remote" });
-        continue;
-      }
-      let path = null;
-      if (pathname) {
-        const candidates = [fileUnder(scope.site_root, pathname), fileUnder(scope.campaign_dir, pathname)].filter(Boolean);
-        path = candidates.find((candidate) => existsSync(candidate)) || null;
-      }
-      let isFile = false;
-      try {
-        isFile = Boolean(path) && existsSync(path) && statSync(path).isFile();
-      } catch {
-        isFile = false;
-      }
-      if (!isFile) {
-        refs.push({ ...record, url_key: pathname ?? `\u0000${ref.src}`, status: "missing" });
-        continue;
-      }
-      // Served only while the real path stays inside the site root. When
-      // either real path is unknown the check is undecidable, and the script
-      // counts as local.
-      const real = realPathOf(path);
-      const outside = siteRootReal && real && real !== siteRootReal && !real.startsWith(`${siteRootReal}${sep}`);
-      refs.push({ ...record, path: resolve(path), status: outside ? "outside_site" : "local" });
+      const { status, path, url_key: urlKey } = resolveBuiltReference(scope, siteRootReal, pageUrl, ref.src, ref.base);
+      refs.push({ page_id: page.page_id, src: ref.src, module: ref.module, url_key: urlKey, path, status });
     }
   }
   return { pages_scanned: pages.length, refs, unclosed };
+}
+
+function readPages(pages) {
+  return pages.flatMap((page) => {
+    try {
+      return [{ page, html: readHtmlScanText(page.built_path) }];
+    } catch {
+      return [];
+    }
+  });
+}
+
+// One reference as the browser and a static server resolve it (see
+// builtScriptReferences): `remote`, `missing` (`url_key` the URL path, or the
+// raw src when it resolves to none; `candidates` the files a server would
+// look for), `outside_site` or `local` (`path` the file).
+function resolveBuiltReference(scope, siteRootReal, pageUrl, src, base) {
+  const record = { url_key: null, path: null };
+  const { remote, pathname } = isRemote(src) ? { remote: true } : resolveScriptUrl(src, base, pageUrl);
+  if (remote) return { ...record, status: "remote" };
+  const candidates = pathname ? [fileUnder(scope.site_root, pathname), fileUnder(scope.campaign_dir, pathname)].filter(Boolean) : [];
+  const path = candidates.find((candidate) => existsSync(candidate)) || null;
+  let isFile = false;
+  try {
+    isFile = Boolean(path) && existsSync(path) && statSync(path).isFile();
+  } catch {
+    isFile = false;
+  }
+  if (!isFile) return { ...record, url_key: pathname ?? `\u0000${src}`, status: "missing", candidates };
+  // Served only while the real path stays inside the site root. When
+  // either real path is unknown the check is undecidable, and the file
+  // counts as local.
+  const real = realPathOf(path);
+  const outside = siteRootReal && real && real !== siteRootReal && !real.startsWith(`${siteRootReal}${sep}`);
+  return { ...record, path: resolve(path), status: outside ? "outside_site" : "local" };
+}
+
+// The HTML "split a string on ASCII whitespace" of a rel value, lower-cased.
+const relTokens = (value) => String(value).toLowerCase().split(/[\t\n\f\r ]+/).filter(Boolean);
+
+/**
+ * Every built page's directly linked stylesheets and images: each
+ * HTML-namespace `<link rel="stylesheet" href>` (an alternate stylesheet
+ * included) and `<img src>` / `srcset` URL, resolved exactly as
+ * builtScriptReferences resolves a script src, against the `<base href>` in
+ * effect when the parser inserts the element. Template content and noscript
+ * are not walked, and nothing a stylesheet loads (`@import`, `url()`) is
+ * followed. Reads the run's shared page trees; computed once per inspection.
+ *
+ * One record per reference, in page then document order: `{ page_id,
+ * built_path, kind: "stylesheet" | "image", src, status, path, candidates? }`,
+ * `status` as builtScriptReferences (a `missing` record also carries the
+ * `candidates` a static server would look for). A page that cannot be read
+ * or parsed contributes nothing.
+ *
+ * @param {{ site_root: string, campaign_dir: string, pages: Array<{ page_id: string, built_path: string }> }} scope
+ */
+export function builtAssetReferences(scope) {
+  const pages = Array.isArray(scope?.pages) ? scope.pages : [];
+  const key = ["built-asset-references", scope?.site_root, scope?.campaign_dir, ...pages.flatMap((page) => [page.page_id, page.built_path])];
+  return htmlScanMemo(JSON.stringify(key), () => resolveAssetReferences(scope, pages));
+}
+
+function resolveAssetReferences(scope, pages) {
+  const refs = [];
+  const siteRootReal = scope?.site_root ? realPathOf(scope.site_root) : null;
+  const read = readPages(pages);
+  const documentOf = htmlScanDocuments(read.map(({ page }) => page.built_path), "located");
+  for (const { page, html } of read) {
+    let document;
+    try {
+      document = documentOf(page.built_path, html);
+    } catch {
+      continue;
+    }
+    const bases = documentBases(document);
+    const pageUrl = pageUrlFor(scope.site_root, page.built_path);
+    const add = (kind, src, node) => {
+      if (!src) return;
+      const resolved = resolveBuiltReference(scope, siteRootReal, pageUrl, src, baseInEffect(bases, node));
+      refs.push({ page_id: page.page_id, built_path: page.built_path, kind, src, ...resolved });
+    };
+    const walk = (node) => {
+      if (node.namespaceURI === HTML_NAMESPACE) {
+        const attrs = new Map((node.attrs || []).map((attr) => [attr.name, attr.value]));
+        if (node.tagName === "link" && relTokens(attrs.get("rel") ?? "").includes("stylesheet")) add("stylesheet", stripUrlSpace(attrs.get("href") ?? ""), node);
+        if (node.tagName === "img") {
+          add("image", stripUrlSpace(attrs.get("src") ?? ""), node);
+          if (attrs.has("srcset")) for (const url of srcsetUrls(attrs.get("srcset"))) add("image", url, node);
+        }
+        if (node.tagName === "noscript") return;
+      }
+      for (const child of node.childNodes || []) walk(child);
+    };
+    walk(document);
+  }
+  return { pages_scanned: pages.length, refs };
 }
 
 function onPage(entry, pageId) {

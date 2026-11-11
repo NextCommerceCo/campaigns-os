@@ -1294,7 +1294,9 @@ function buildChangeReadyLines(assembly) {
   const latest = Array.isArray(assembly.build_changes) ? assembly.build_changes.at(-1) : null;
   if (!latest || latest.build_fingerprint !== assembly.build_fingerprint) return [];
   const pages = latest.changed_pages.map((page) => page.page_id).join(", ") || "none";
-  return [`stages.assembly.build_changes: this rebuild is ${latest.kind.replace("_", "-")} (changed pages: ${pages}${latest.unmapped_file_count ? `; ${latest.unmapped_file_count} file(s) outside any page` : ""})`];
+  const linked = (Array.isArray(latest.reasons) ? latest.reasons : []).filter((reason) => reason?.code === "linked_asset_changed")
+    .map((reason) => `${reason.path} (linked by ${(reason.pages || []).join(", ")})`);
+  return [`stages.assembly.build_changes: this rebuild is ${latest.kind.replace("_", "-")} (changed pages: ${pages}${linked.length ? `; linked assets: ${linked.join(", ")}` : ""}${latest.unmapped_file_count ? `; ${latest.unmapped_file_count} file(s) outside any page` : ""})`];
 }
 
 // Everything a record reads from the target, in order, all under the target

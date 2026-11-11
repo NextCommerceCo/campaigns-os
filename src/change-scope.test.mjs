@@ -9,6 +9,7 @@ import {
   campaignConfigFingerprint,
   changeSince,
   classifyDrift,
+  mapLinkedAssets,
   nextBuildChanges,
   pageCommerceFacts,
   routePageIdForUrl,
@@ -213,4 +214,70 @@ test("a page-only change carries stale Polish evidence as advisory; other blocks
   assert.equal(blockedGate.code, "polish.blocked");
   assert.equal(applyPageOnlyChangeToPolishGate(blockedGate, { debt: advisory, checkpointGate: checkpoint }).status, "blocked",
     "a Polish recorded as blocked is a finding, not stale evidence");
+});
+
+// #753: a stylesheet or image built pages link directly maps to those pages.
+test("mapLinkedAssets maps a linked stylesheet and image to the pages that link them, and nothing else", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "linked-assets-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const siteRoot = join(root, "_site");
+  const output = join(siteRoot, "synthetic-campaign");
+  const files = {
+    "landing/index.html": '<!doctype html><html><head><link rel="stylesheet" href="../css/landing.css"><link rel="Alternate StyleSheet" href="/synthetic-campaign/css/alt.css"></head><body><img src="../img/hero.png" alt=""><img srcset="../img/a.webp 1x, ../img/b,c.webp 2x" alt=""><template><img src="../img/template.png"></template><noscript><img src="../img/noscript.png"></noscript></body></html>',
+    "checkout/index.html": '<!doctype html><html><head><meta name="next-page-type" content="checkout"><base href="/synthetic-campaign/"><link rel="stylesheet" href="css/shared.css"></head><body><form data-next-checkout="form"></form></body></html>',
+    "upsell1/index.html": '<!doctype html><html><head><meta name="next-page-type" content="upsell"><link rel="stylesheet" href="/css/shared.css"><link rel="preload" href="../css/preloaded.css"><script src="../js/app.js"></script><img src="../js/app.js"></head><body></body></html>',
+    "css/landing.css": "@import url(imported.css);\nh1 { color: red }\n",
+    "css/imported.css": "h1 { margin: 0 }\n",
+    "css/alt.css": "", "css/shared.css": "", "css/preloaded.css": "", "css/unlinked.css": "",
+    "img/hero.png": "", "img/a.webp": "", "img/b,c.webp": "", "img/template.png": "", "img/noscript.png": "", "js/app.js": "",
+  };
+  for (const [path, body] of Object.entries(files)) {
+    mkdirSync(join(output, path, ".."), { recursive: true });
+    writeFileSync(join(output, path), body);
+  }
+  const pages = ["checkout", "landing", "upsell1"].map((id) => ({ page_id: id, built_path: join(output, id, "index.html") }));
+  const changed = ["css/alt.css", "css/imported.css", "css/landing.css", "css/preloaded.css", "css/shared.css", "css/unlinked.css",
+    "img/a.webp", "img/b,c.webp", "img/gone.png", "img/hero.png", "img/noscript.png", "img/template.png", "js/app.js"];
+  // A deleted image the landing page still names maps too.
+  writeFileSync(join(output, "landing", "index.html"), files["landing/index.html"].replace("</body>", '<img src="../img/gone.png"></body>'));
+  const page = (id) => ({ page_id: id, built_path: `${id}/index.html` });
+  const mapped = mapLinkedAssets({ files: changed, pages, outputRoot: output, siteRoot });
+  assert.deepEqual(mapped.linked, [
+    { path: "css/alt.css", pages: [page("landing")] },
+    { path: "css/landing.css", pages: [page("landing")] },
+    // Resolved against <base href> on checkout; root-served /css/ falls back to the campaign directory.
+    { path: "css/shared.css", pages: [page("checkout"), page("upsell1")] },
+    { path: "img/a.webp", pages: [page("landing")] },
+    { path: "img/b,c.webp", pages: [page("landing")] },
+    { path: "img/gone.png", pages: [page("landing")] },
+    { path: "img/hero.png", pages: [page("landing")] },
+  ]);
+  assert.deepEqual(mapped.unmapped, ["css/imported.css", "css/preloaded.css", "css/unlinked.css", "img/noscript.png", "img/template.png", "js/app.js"],
+    "@import is not followed; preload, template and noscript are not links; a script an <img> names stays a script");
+
+  // classifyDrift: the pages a linked asset reaches are page-only, a checkout
+  // or upsell page among them owes a browser run, and the asset is named.
+  const known = { status: "known", changed_pages: [], unmapped_files: [], extra: [], missing: [] };
+  const linked = mapped.linked.filter((asset) => asset.path === "css/landing.css");
+  assert.deepEqual(classifyDrift({ changes: known, baseline: { commerce_signature: { algorithm: "commerce-signature/v1", campaign_config: "unavailable:x", pages: {} } }, outputRoot: output, linkedAssets: linked }).kind,
+    "commerce_affecting", "the config reasons still apply");
+  mkdirSync(join(root, "_data"));
+  writeFileSync(join(root, "_data", "campaigns.json"), JSON.stringify({ "synthetic-campaign": { sdk_version: "0.4.40" } }));
+  const signature = { algorithm: "commerce-signature/v1", campaign_config: campaignConfigFingerprint(root, "synthetic-campaign"), pages: {} };
+  const classify = (assets, changes = known) => classifyDrift({ changes, baseline: { commerce_signature: signature }, outputRoot: output, targetRepo: root, publicRouteSlug: "synthetic-campaign", linkedAssets: assets });
+  assert.deepEqual(classify(linked), { kind: "page_only", reasons: [{ code: "linked_asset_changed", path: "css/landing.css", pages: ["landing"] }] });
+  const shared = mapped.linked.filter((asset) => asset.path === "css/shared.css");
+  assert.deepEqual(classify(shared), { kind: "page_only", reasons: [
+    { code: "linked_asset_buy_page", path: "checkout/index.html" },
+    { code: "linked_asset_buy_page", path: "upsell1/index.html" },
+    { code: "linked_asset_changed", path: "css/shared.css", pages: ["checkout", "upsell1"] },
+  ] });
+  // The checkout's own markup changed too: that still owes the full stages.
+  assert.deepEqual(classify(shared, { ...known, changed_pages: [page("checkout")] }), { kind: "commerce_affecting", reasons: [
+    { code: "checkout_page", path: "checkout/index.html" },
+    { code: "linked_asset_buy_page", path: "upsell1/index.html" },
+    { code: "linked_asset_changed", path: "css/shared.css", pages: ["checkout", "upsell1"] },
+  ] });
+  assert.deepEqual(classify([], { ...known, unmapped_files: ["css/unlinked.css"] }),
+    { kind: "commerce_affecting", reasons: [{ code: "unmapped_file", path: "css/unlinked.css" }] }, "an unlinked asset stays commerce");
 });

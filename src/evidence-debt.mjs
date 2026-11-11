@@ -9,7 +9,7 @@ import {
   resolveBuiltSiteScope,
   routeForFile,
 } from "./built-site-scope.mjs";
-import { changeSince, classifyDrift } from "./change-scope.mjs";
+import { changeSince, classifyDrift, mapLinkedAssets } from "./change-scope.mjs";
 import { htmlScanMemo } from "./html-scan.mjs";
 import { normalizePublicRouteSlug } from "./route-identity.mjs";
 import { isFileReadFailure } from "./cart-placeholders.mjs";
@@ -24,6 +24,13 @@ const portable = (value) => value.split(sep).join("/");
 // (html-scan.mjs), where the fingerprint check and evidence debt hash one tree.
 export function sharedBuildFingerprint(outputDir) {
   return htmlScanMemo(JSON.stringify(["build-fingerprint", String(outputDir || "")]), () => computeBuildFingerprint(outputDir));
+}
+
+// The owed pages a page-scoped QA run must render in a browser: those a
+// `linked_asset_buy_page` reason names (change-scope.mjs).
+function browserOwedPages(change) {
+  const paths = new Set(change.reasons.filter((reason) => reason.code === "linked_asset_buy_page").map((reason) => reason.path));
+  return change.changed_pages.filter((page) => paths.has(page.built_path)).map((page) => page.page_id);
 }
 
 /**
@@ -108,6 +115,7 @@ export function assessEvidenceDebt({ packet = null, packetPath = null, report = 
     missing: manifestKnown ? drift.missing : [],
     changed: manifestKnown ? drift.changed : [],
   };
+  let linkedAssets = [];
   if (manifestKnown && scope?.ok) {
     const pages = new Map((scope?.pages || []).map((page) => [
       portable(relative(outputRoot, page.built_path)),
@@ -125,11 +133,26 @@ export function assessEvidenceDebt({ packet = null, packetPath = null, report = 
       if (page) changes.changed_pages.push(page);
       else changes.unmapped_files.push(path);
     }
+    // A stylesheet or image built pages link directly is a change to those
+    // pages (#753); anything else outside a page stays unmapped.
+    if (changes.unmapped_files.length) {
+      const mapped = mapLinkedAssets({ files: changes.unmapped_files, pages: scope.pages, outputRoot, siteRoot: join(targetRepo, "_site") });
+      linkedAssets = mapped.linked;
+      changes.unmapped_files = mapped.unmapped;
+    }
   }
   const driftClassification = classifyDrift({
     changes, baseline: assembly, outputRoot, targetRepo, publicRouteSlug: slug,
     pagePaths: scope?.ok ? scope.pages.map((page) => page.built_path) : [],
+    linkedAssets,
   });
+  // The pages reached through a linked asset are changed pages too: QA is
+  // owed on them, and the reasons say which asset reached each.
+  if (linkedAssets.length) {
+    const pages = new Map(changes.changed_pages.map((page) => [page.built_path, page]));
+    for (const asset of linkedAssets) for (const page of asset.pages) if (!pages.has(page.built_path)) pages.set(page.built_path, page);
+    changes.changed_pages = [...pages.values()].sort((a, b) => a.built_path.localeCompare(b.built_path));
+  }
   changes.kind = driftClassification.kind;
   changes.reasons = driftClassification.reasons;
   const changeFor = (anchor) => changeSince(anchor, { assembly, drift: changes, driftClassification });
@@ -163,6 +186,10 @@ export function assessEvidenceDebt({ packet = null, packetPath = null, report = 
     if (extended && extended === qaBuild && fingerprint(qaRecord?.checked_at)) qa.reviewed_at = qaRecord.checked_at.trim();
     qa.scope = extended && qaRecord?.status !== "required" && qa.change.kind === "page_only" ? "pages" : "full";
     qa.owed_pages = qa.scope === "pages" ? qa.change.changed_pages : [];
+    // A checkout or upsell page reached only through a linked asset owes a
+    // browser run (#753); listed only when there is one, as page ids.
+    const browserPages = qa.scope === "pages" ? browserOwedPages(qa.change) : [];
+    if (browserPages.length) qa.browser_pages = browserPages;
   } else {
     qa.change = null;
     qa.scope = null;

@@ -136,8 +136,10 @@ export function formatDoctorCi(result) {
   const owed = ["polish", "qa"].filter((stage) => ci[stage].status === "owed" && !ci[stage].advisory);
   const change = ciChangeScope(ci);
   const pageScoped = change.scope === "pages";
+  const browserPages = ci.qa.scope === "pages" && Array.isArray(ci.qa.browser_pages) ? ci.qa.browser_pages : [];
+  const inBrowser = browserPages.length ? `, in a browser on ${browserPages.map(code).join(", ")} (a checkout or upsell page whose linked stylesheet or image changed; no test orders)` : "";
   if (pageScoped) {
-    lines.push(`Change found: page-only. ${owed.length ? `It owes QA on ${ci.qa.owed_pages.map((page) => code(page.page_id)).join(", ")}` : "QA is current"}; Polish is advisory.`);
+    lines.push(`Change found: page-only. ${owed.length ? `It owes QA on ${ci.qa.owed_pages.map((page) => code(page.page_id)).join(", ")}${inBrowser}` : "QA is current"}; Polish is advisory.`);
   } else if (change.scope === "full") {
     const reasons = [...new Set((ci.polish.change?.reasons || []).concat(ci.qa.change?.reasons || [])
       .map((reason) => commerceReasonText.get(reason.code)).filter(Boolean))];
@@ -176,6 +178,16 @@ export function formatDoctorCi(result) {
   for (const page of changedPages) {
     lines.push(`- Changed page: ${code(page.page_id)} (${code(page.built_path)})`);
   }
+  // A stylesheet or image the pages link (#753), and the pages it maps to.
+  const linkedAssets = new Map();
+  for (const stage of [...owed, ...advisory]) {
+    for (const reason of ci[stage].change?.reasons || []) {
+      if (reason.code === "linked_asset_changed" && !linkedAssets.has(reason.path)) linkedAssets.set(reason.path, reason.pages || []);
+    }
+  }
+  for (const [path, pages] of linkedAssets) {
+    lines.push(`- Linked asset changed: ${code(path)}${pages.length ? `, linked by ${pages.map(code).join(", ")}` : ""}`);
+  }
   if (!changedPages.length && (owed.length || ci.changes.status === "unknown")) {
     lines.push(ci.changes.status === "unknown"
       ? `Changed pages unavailable: ${unavailablePageChanges.get(ci.changes.reason) ?? "the page-change reason is unrecognized."}`
@@ -186,7 +198,7 @@ export function formatDoctorCi(result) {
   }
   if (ci.changes.status === "unknown") lines.push(`- Unknown page changes: ${code(ci.changes.reason)}`);
   if (ci.status === "owed" && pageScoped && owed.length) {
-    const pages = ci.qa.owed_pages.map((page) => ` --page ${pageArg(page.page_id)}`).join("");
+    const pages = ci.qa.owed_pages.map((page) => ` --page ${pageArg(page.page_id)}`).join("") + (browserPages.length ? " --browser" : "");
     const recorded = ci.changes.recorded_build_fingerprint && ci.changes.recorded_build_fingerprint === ci.changes.current_build_fingerprint;
     lines.push("", `Remedy: ${recorded ? "" : "run `campaigns-os record build --packet <packet>` for the rebuilt output, then "}run \`campaigns-os qa run --packet <packet>${pages}\` against that build. Polish capture is optional for a page-only change.`);
   } else if (ci.status === "owed" || ci.status === "unknown") {

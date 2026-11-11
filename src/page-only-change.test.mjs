@@ -29,7 +29,7 @@ const PAGES = Object.freeze({
   receipt: `<!doctype html><html><head><meta name="next-page-type" content="receipt"></head><body><h1>Thank you</h1></body></html>\n`,
 });
 
-function fixture(t, { spec = {} } = {}) {
+function fixture(t, { spec = {}, pages = PAGES, files = {} } = {}) {
   const root = mkdtempSync(join(tmpdir(), "page-only-change-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const output = join(root, "_site", SLUG);
@@ -37,7 +37,12 @@ function fixture(t, { spec = {} } = {}) {
     mkdirSync(join(output, page), { recursive: true });
     writeFileSync(join(output, page, "index.html"), html);
   };
-  for (const [page, html] of Object.entries(PAGES)) writePage(page, html);
+  for (const [page, html] of Object.entries(pages)) writePage(page, html);
+  const writeFile = (path, body) => {
+    mkdirSync(join(output, path, ".."), { recursive: true });
+    writeFileSync(join(output, path), body);
+  };
+  for (const [path, body] of Object.entries(files)) writeFile(path, body);
   mkdirSync(join(root, "_data"), { recursive: true });
   const config = { [SLUG]: { sdk_version: "0.4.40", store_name: "Synthetic Store" } };
   const writeConfig = () => writeFileSync(join(root, "_data", "campaigns.json"), JSON.stringify(config));
@@ -79,7 +84,7 @@ function fixture(t, { spec = {} } = {}) {
   recordBuild();
   assert.ok(readReport().stages.assembly.commerce_signature, "setup: record build keeps a commerce signature");
   return {
-    root, output, packet, packetPath, reportPath, readReport, recordBuild, writePage, config, writeConfig, original,
+    root, output, packet, packetPath, reportPath, readReport, recordBuild, writePage, writeFile, config, writeConfig, original,
     debt: () => assessEvidenceDebt({ packet, packetPath, report: readReport() }),
   };
 }
@@ -665,3 +670,97 @@ test("a spec change after a baseline owes the stage again", (t) => {
   writeFileSync(specPath, JSON.stringify({ ...JSON.parse(readFileSync(specPath, "utf8")), edited: true }));
   assert.equal(doctorPacket(f.packetPath).derived.input_currency.stages.qa, "owed");
 });
+
+// #753: a stylesheet or image built pages link directly is a change to those
+// pages. The fixture's landing links one stylesheet, and its checkout links
+// another and a script.
+const LINKED = Object.freeze({
+  pages: {
+    ...PAGES,
+    landing: PAGES.landing.replace("</head>", '<link rel="stylesheet" href="../css/landing.css"></head>'),
+    checkout: PAGES.checkout.replace("</head>", '<link rel="stylesheet" href="../css/checkout.css"><script src="../js/checkout.js"></script></head>'),
+  },
+  files: { "css/landing.css": "h1 { margin: 0 }\n", "css/checkout.css": "button { color: green }\n", "js/checkout.js": "window.checkout = 1;\n" },
+});
+const linkedFixture = (t) => fixture(t, LINKED);
+const scopeLinked = (f, pages, extra = {}) => {
+  const base = `http://127.0.0.1:9/${SLUG}/`;
+  const topologies = [{ pages: Object.keys(PAGES).map((page) => ({ page_id: page, url: `${base}${page}/` })) }];
+  return applyQaPageScope(topologies, { pages, baseUrl: base, debt: f.debt(), report: f.readReport(), ...extra });
+};
+const passPageRun = (f, scoped, runId) => recordQaStageOutcome({ _: ["qa", "run"], packet: f.packetPath }, {
+  verdict: { run_id: runId, campaign_slug: "synthetic-map", disposition: "ready", completed_at: "2026-11-11T00:00:00Z", assertions: [], spec_hash: null, qc_results: [] },
+  page_scope: scoped.scope,
+});
+
+test("a rule appended to a stylesheet only landing links is page-only on landing, on a baseline, and so is undoing it", (t) => {
+  const f = linkedFixture(t);
+  const report = f.readReport();
+  delete report.stages.assembly.commerce_signature;
+  writeFileSync(f.reportPath, JSON.stringify(report));
+  copyEdit(f);
+  f.recordBuild();
+  recordBaseline(f);
+  for (const [step, css] of [["the edit", `${LINKED.files["css/landing.css"]}h1 { letter-spacing: 0.01em }\n`], ["undoing it", LINKED.files["css/landing.css"]]]) {
+    f.writeFile("css/landing.css", css);
+    const built = f.recordBuild();
+    assert.equal(built.record.build_changes.at(-1).kind, "page_only", step);
+    assert.ok(built.ready.some((line) => line.includes("this rebuild is page-only (changed pages: landing; linked assets: css/landing.css (linked by landing))")), `${step}: ${built.ready.join("\n")}`);
+    const debt = f.debt();
+    assert.equal(debt.qa.scope, "pages", step);
+    assert.deepEqual(debt.qa.owed_pages.map((page) => page.page_id), ["landing"], step);
+    assert.equal(debt.qa.browser_pages, undefined, `${step}: landing owes no browser run`);
+    assert.deepEqual(debt.changes.unmapped_files, []);
+    const markdown = ci(f);
+    assert.equal(markdown.status, 3, step);
+    // Undoing returns the output to the build Polish reviewed, so Polish's
+    // change is none; a Polish record build made required still reads owed
+    // then, as it does after undoing an HTML copy edit (not #753's to change).
+    if (step === "the edit") {
+      assert.equal(debt.polish.advisory, true, step);
+      assert.match(markdown.stdout, /Change found: page-only\. It owes QA on `landing`; Polish is advisory\./);
+      assert.match(markdown.stdout, /qa run --packet <packet> --page landing` against that build/);
+    } else {
+      assert.equal(debt.qa.change.kind, "page_only", step);
+      assert.match(markdown.stdout, /QA on `landing`/);
+    }
+    assert.match(markdown.stdout, /- Linked asset changed: `css\/landing\.css`, linked by `landing`/);
+    assert.equal(passPageRun(f, scopeLinked(f, ["landing"], { browser: true }), `landing-${step}`), true);
+    const qa = f.readReport().stages.qa;
+    assert.equal(qa.status, "baseline_accepted", `${step}: QA still rests on the baseline`);
+    assert.equal(f.debt().qa.status, "current", `${step}: the page run makes QA current`);
+    if (step === "the edit") assert.equal(ci(f).status, 0, step);
+  }
+});
+
+test("a stylesheet checkout links owes a browser QA run on checkout with no test orders; its script owes the full stages", (t) => {
+  const f = linkedFixture(t);
+  f.writeFile("css/checkout.css", `${LINKED.files["css/checkout.css"]}.pay { display: block }\n`);
+  f.recordBuild();
+  const debt = f.debt();
+  assert.equal(debt.qa.change.kind, "page_only");
+  assert.deepEqual(debt.qa.owed_pages.map((page) => page.page_id), ["checkout"]);
+  assert.deepEqual(debt.qa.browser_pages, ["checkout"]);
+  assert.deepEqual(debt.qa.change.reasons, [
+    { code: "linked_asset_buy_page", path: "checkout/index.html" },
+    { code: "linked_asset_changed", path: "css/checkout.css", pages: ["checkout"] },
+  ]);
+  assert.throws(() => scopeLinked(f, ["checkout"]), /checkout is a checkout or upsell page whose linked stylesheet or image changed, so it owes a browser run; add --browser\./);
+  assert.deepEqual(scopeLinked(f, ["checkout"], { browser: true }).scope.owed_pages, ["checkout"]);
+  const markdown = ci(f);
+  assert.equal(markdown.status, 3);
+  assert.match(markdown.stdout, /It owes QA on `checkout`, in a browser on `checkout` \(a checkout or upsell page whose linked stylesheet or image changed; no test orders\); Polish is advisory\./);
+  assert.match(markdown.stdout, /qa run --packet <packet> --page checkout --browser` against that build/);
+  const readback = runReadbackCommand({ _: ["readback", f.root], packet: f.packetPath });
+  assert.match(readback.text, /browser run owed on: checkout \(qa run --page --browser\)/);
+  assert.match(readback.text, /linked asset: css\/checkout\.css \(linked by checkout\)/);
+
+  const script = linkedFixture(t);
+  script.writeFile("js/checkout.js", "window.checkout = 2;\n");
+  script.recordBuild();
+  const scriptDebt = script.debt();
+  assert.equal(scriptDebt.qa.scope, "full");
+  assert.deepEqual(scriptDebt.qa.change.reasons, [{ code: "unmapped_file", path: "js/checkout.js" }]);
+  assert.match(ci(script).stdout, /Change found: commerce-affecting \(a file outside any page changed\)\. It owes the full Polish and QA\./);
+});
+
