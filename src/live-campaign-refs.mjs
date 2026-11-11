@@ -60,9 +60,7 @@ export const LIVE_REF_CODES = Object.freeze({
 //     so a ref there is a ref the shopper can reach;
 //   - comments and `<noscript>` content are not: neither becomes an element
 //     while the SDK runs.
-//
-// `document`, when a function, returns the parse5 tree of `content` (the
-// doctor's shared inputs parse once for every consumer).
+// `document`, when a function, returns the parse5 tree of `content`.
 const PACKAGE_REF_ATTRIBUTES = new Set(["data-next-package-id", "data-package-id"]);
 const SHIPPING_REF_ATTRIBUTES = new Set(["data-next-shipping-id"]);
 const PACKAGE_CONFIG_KEY = /["']?packageId["']?\s*:\s*(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_-]+))/gi;
@@ -97,10 +95,6 @@ export function extractRenderedRefs(content, document = null) {
 
 export function extractRenderedPackageRefs(content) {
   return extractRenderedRefs(content).package_refs;
-}
-
-export function extractRenderedShippingRefs(content) {
-  return extractRenderedRefs(content).shipping_refs;
 }
 
 function addRenderedRef(refs, value) {

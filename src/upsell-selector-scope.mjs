@@ -170,8 +170,7 @@ function liveMetaElements(node, found = []) {
  *              deduplicated, first occurrence first. Wider than that pattern,
  *              never narrower.
  *
- * `document`, when a function, returns the parse5 tree of `content` (the
- * doctor's shared inputs parse once for every consumer).
+ * `document`, when a function, returns the parse5 tree of `content`.
  */
 export function readBuiltPageTypeMetas(content, document = null) {
   const source = String(content || "");

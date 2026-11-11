@@ -536,20 +536,27 @@ function observePage(page) {
   }
 }
 
-function observeReadablePage(page) {
-  if (page.unreadable) return { pin: null, outcome: R.PAGE_UNREADABLE };
-  // A page over the size cap may come without its HTML.
+// One built page's parse5 tree and size, or a page-level outcome and the size
+// when known. A page over the calling check's size cap (`limits.page_bytes`)
+// may come without its HTML. A read or parse failure reads the page
+// unreadable; any other error is a defect and throws.
+export function readBuiltPage(page, limits) {
+  if (page.unreadable) return { outcome: R.PAGE_UNREADABLE };
   const bytes = Number.isFinite(page.bytes) ? page.bytes : typeof page.content === "string" ? Buffer.byteLength(page.content, "utf8") : null;
-  if (bytes != null && bytes > CART_PLACEHOLDERS_LIMITS.page_bytes) return { pin: null, outcome: R.PAGE_TOO_LARGE, bytes };
-  if (typeof page.content !== "string") return { pin: null, outcome: R.PAGE_UNREADABLE };
-
-  let document;
+  if (bytes != null && bytes > limits.page_bytes) return { outcome: R.PAGE_TOO_LARGE, bytes };
+  if (typeof page.content !== "string") return { outcome: R.PAGE_UNREADABLE };
   try {
-    document = typeof page.document === "function" ? page.document() : parseBounded(page.content);
+    return { document: typeof page.document === "function" ? page.document() : parseBounded(page.content), bytes };
   } catch (error) {
     if (!isPageReadFailure(error)) throw error;
-    return { pin: null, outcome: R.PAGE_UNREADABLE, bytes };
+    return { outcome: R.PAGE_UNREADABLE, bytes };
   }
+}
+
+function observeReadablePage(page) {
+  const read = readBuiltPage(page, CART_PLACEHOLDERS_LIMITS);
+  if (read.outcome) return { pin: null, ...read };
+  const { document, bytes } = read;
   // A backstop for nesting the parser reached by moving nodes.
   if (elementDepth(document) > MAX_ELEMENT_DEPTH) return { pin: null, outcome: R.PAGE_UNREADABLE, bytes };
   const pin = readLoaderPin(document);
@@ -599,11 +606,9 @@ const capMembersFor = (reasons) => reasons.flatMap((reason) => aggregateQcResult
  *   measuredAt?: string,
  * }} input  `pages` in a stable order; `file` is the page path relative to
  *   the doctor target. Pages past the page cap may omit `content`. A page's
- *   `document`, when a function, returns the parseBounded tree of its
- *   `content` (the doctor's shared inputs parse once for this check and the
- *   smoke checks) and throws what parseBounded throws. `subject`
- *   names the scanned site for the caller; every result carries its own
- *   {check, page, key} subject.
+ *   `document` (the doctor's one shared parse) is read by readBuiltPage.
+ *   `subject` names the scanned site for the caller; every result carries
+ *   its own {check, page, key} subject.
  * @returns {object[]} QC results (src/qc-results.mjs buildQcResult).
  */
 export function evaluateCartPlaceholders({ subject = null, pages = [], measuredAt = new Date().toISOString() } = {}) {
