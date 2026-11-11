@@ -6,6 +6,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { packedTarballName } from "./npm-pack-json.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 // CI builds before this check. Standalone runs must not silently pack absent output.
@@ -24,7 +25,7 @@ try {
   const packed = JSON.parse(execFileSync(npm, ["pack", "--ignore-scripts", "--json", "--pack-destination", scratch], {
     cwd: root, encoding: "utf8", timeout: 60_000,
   }));
-  const tarball = join(scratch, packed[0].filename);
+  const tarball = join(scratch, packedTarballName(packed));
   for (const [label, version] of [["shared", locked], ["separate", "1.62.1"], ["latest", "latest"]]) {
     const consumer = join(scratch, label);
     mkdirSync(consumer);
