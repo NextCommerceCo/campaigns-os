@@ -108,6 +108,38 @@ Set `surface_version` to `null` and link a changelog section identified as
 same version, so nobody reads it as a release that did not happen, and it gives
 the entry a real section to point at.
 
+### Writing the changelog section
+
+The changelog is a summary of versions; the per-change detail lives in the
+ledger. A `+agent.N` section usually exists so its ledger entry has a section to
+link; a fix that touches only policy-ignored paths has the section and no entry
+(see below). Either way it is one line: a single bullet under Added, Changed or
+Fixed, with one sentence saying what changes for a campaign or an agent and the
+issue or PR number (a section with no entry may add a second sentence, below).
+For example:
+
+```markdown
+- The issue project automation pins `actions/add-to-project` v2.0.1 (#739).
+```
+
+What an agent must do differently goes in the entry's `agent_impact`. A section
+with no entry has no `agent_impact`, so it may add a second sentence naming
+anything a consumer will see, such as a new evidence field or reason code.
+Benchmarks, counts and how the code works go in the PR description.
+
+A new release section lists the `+agent.N` sections it publishes: those numbered
+on the release before it, which sit below it. Some older releases did not list
+them. Write a one-paragraph summary, then a line for each section under Added,
+Changed or Fixed. Related sections may share a line, as the #730 work does in
+`1.67.0`. The release section is where a reader learns what the version changes,
+so give it the context the one-line sections leave out. A `+agent.N` numbered on
+the newest release is not listed there, since that release is already published;
+the next release lists it.
+
+This is guidance, not a gate: `max_section_bytes` stays the only enforced
+bound. It applies to new sections. A published section is hashed by its
+`changelog_sha256` and is never rewritten to meet it.
+
 ### Path-less change items
 
 A CLI flag has no file of its own. Record it with `"path": null` and name the
