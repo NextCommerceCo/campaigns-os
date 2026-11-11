@@ -8,6 +8,12 @@ Notable supported-surface changes are recorded here.
 
 - `polish capture` plans the pages `spec derive` adds after handoff, lists the pages it leaves out, and takes evidence-only captures of template-stock pages (#756).
 
+## [1.68.0+agent.3] - 2026-11-11
+
+### Fixed
+
+- The pack check and the runtime-recipe test pass under npm 12, which prints `npm pack --json` as an object and runs a dependency's install scripts only once they are approved (#757).
+
 ## [1.68.0+agent.2] - 2026-11-11
 
 ### Changed
