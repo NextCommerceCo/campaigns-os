@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.68.0+agent.2] - 2026-11-11
+
+### Changed
+
+- Doctor's shared-input code is smaller and simpler, with the same output and one fewer pass over the built files on packet and `--ci` runs (#730).
+
 ## [1.68.0+agent.1] - 2026-11-10
 
 ### Changed

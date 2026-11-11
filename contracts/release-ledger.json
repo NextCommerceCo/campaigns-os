@@ -4039,6 +4039,39 @@
         }
       ],
       "entry_sha256": "1131da2f51e79891553daa07c4eb0c9faf7dfdd5969984878f923d3fb28312f7"
+    },
+    {
+      "id": "RL-0335",
+      "sequence": 323,
+      "date": "2026-11-11",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.68.0+agent.2",
+      "changelog_sha256": "48daaf95793a2d9c80345c0e8747a15268729eba6af1bfd95f73b92dbb2a66ba",
+      "agent_impact": "None. Doctor output is unchanged: the same codes, messages, ordering, ready lines, checkpoint gates and CI verdicts. The internal helpers in src/doctor/checks.mjs, src/doctor/inspect.mjs and src/doctor/ci.mjs that this change merges or removes are not on the supported surface; every in-repo caller is updated.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": null,
+          "summary": "The packet-path page, cart and smoke readers share one route helper and one page reader, the output fingerprint is computed once per inspection, and the helpers no caller used are removed."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/inspect.mjs",
+          "surface_entry": null,
+          "summary": "The built-only path builds its gate subject once and reads SDK markup pages through the same shared page list as the other gates."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/ci.mjs",
+          "surface_entry": null,
+          "summary": "The two Markdown escaping helpers become one; the CI summary text is unchanged."
+        }
+      ],
+      "entry_sha256": "e2985f23083d78de790edb4d8b2b23988a29bd7e20e56eb425b4c4501cd06b56"
     }
   ]
 }
