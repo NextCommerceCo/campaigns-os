@@ -11,6 +11,7 @@ test("consumer proof refuses an unbuilt checkout before packing or installing de
   mkdirSync(join(root, "scripts"));
   const script = join(root, "scripts/check-playwright-consumer.mjs");
   copyFileSync(new URL("./check-playwright-consumer.mjs", import.meta.url), script);
+  copyFileSync(new URL("./npm-pack-json.mjs", import.meta.url), join(root, "scripts/npm-pack-json.mjs"));
   const result = spawnSync(process.execPath, [script], { encoding: "utf8", timeout: 10_000 });
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /index\.js is missing; run npm run build:spec/);
