@@ -4068,13 +4068,40 @@
       "entry_sha256": "63617f16257551ed7d6643035a39e3698c634345b015cb16e0f259bc5c204200"
     },
     {
-      "id": "RL-0340",
+      "id": "RL-0336",
       "sequence": 324,
       "date": "2026-11-11",
       "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.68.0+agent.7",
-      "changelog_sha256": "26f83216da84ff54dc74bdc082141359d18801c6c606a2a6ffa4f70429b11cb4",
+      "changelog_section": "1.68.0+agent.4",
+      "changelog_sha256": "58a9295968e438203c7438421b2ad88417a804a6d152a32fd4f02c0f57782a90",
+      "agent_impact": "Pin and bundle parse5 8.0.1 and entities 8.1.0 to preserve saved commerce-signature/v1 records in registry installs as well as checkouts. parse5 8.1.0 changes foreign-element reconstruction and can classify a copy-only edit as commerce_markup_changed. The parser upgrade is deferred; no saved records or existing literal baselines are rewritten. entities is a direct dependency solely to pin and bundle the decoder, not a new package export.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Pin and bundle the v1 parser and decoder for consumer installs."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Record exact bundled parser dependencies."
+        }
+      ],
+      "entry_sha256": "f43cd05d36051a9df300c4c522e829d0fe5cf12e10118904f22b1fe3101faaf2"
+    },
+    {
+      "id": "RL-0340",
+      "sequence": 325,
+      "date": "2026-11-11",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.68.0+agent.9",
+      "changelog_sha256": "948b592ac2b522c4a57cc31a4999c02491b1f264b91eab52e67697ca32a1d7cf",
       "agent_impact": "standardize --slug <route> now limits the source audit to src/<route>/ and the files its pages include, and reads only that route's .campaign-runtime records, so findings and artifacts from other routes no longer appear. The report gains source_scope and entry_point, a finding in a shared file carries shared_files with the routes that use it, and a slug with no source pages reports source.scope_unresolved. Without --slug the report is unchanged.",
       "compatibility": "additive",
       "migration": "none",
@@ -4086,7 +4113,7 @@
           "summary": "Describe the route-scoped source audit, shared-file attribution, the entry-point line and source.scope_unresolved."
         }
       ],
-      "entry_sha256": "fda0a1938534479c26ed3f4938846636774bae0f3ae3922a01d08cb1ce94c6b6"
+      "entry_sha256": "2a39db452087e952f74ece965e217b217eba2703dea39c3bb033392f2fdfc000"
     }
   ]
 }
