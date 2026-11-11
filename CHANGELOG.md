@@ -8,6 +8,12 @@ Notable supported-surface changes are recorded here.
 
 - Editing a stylesheet or image that built pages link directly now owes QA on those pages only, and a browser run with no test orders on a checkout or upsell page among them, instead of the full Polish and QA (#753).
 
+## [1.68.0+agent.3] - 2026-11-11
+
+### Fixed
+
+- The pack check and the runtime-recipe test pass under npm 12, which prints `npm pack --json` as an object and runs a dependency's install scripts only once they are approved (#757).
+
 ## [1.68.0+agent.2] - 2026-11-11
 
 ### Changed
