@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkPackedDocLinks } from "./check-packed-doc-links.mjs";
+import { packedTarballName } from "./npm-pack-json.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const fail = (msg) => {
@@ -56,10 +57,7 @@ try {
   const packed = JSON.parse(
     execFileSync("npm", ["pack", "--json", "--pack-destination", work, ...(skipPrepare ? ["--ignore-scripts"] : [])], { cwd: ROOT, encoding: "utf8" })
   );
-  // npm 11 prints an array of packed packages; npm 12 an object keyed by name.
-  const [entry] = Array.isArray(packed) ? packed : Object.values(packed);
-  if (!entry?.filename) fail(`npm pack --json named no tarball: ${JSON.stringify(packed).slice(0, 200)}`);
-  tarball = join(work, entry.filename);
+  tarball = join(work, packedTarballName(packed));
   execFileSync("tar", ["-xzf", tarball, "-C", work]);
   const pkgRoot = join(work, "package");
   if (skipPrepare) {
