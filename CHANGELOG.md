@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.68.0+agent.4] - 2026-11-11
+
+### Fixed
+
+- Pin and bundle parse5 and entities to preserve saved commerce-signature/v1 records across consumer installs (#744).
+
 ## [1.68.0+agent.3] - 2026-11-11
 
 ### Fixed
