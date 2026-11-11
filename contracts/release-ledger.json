@@ -4095,7 +4095,7 @@
       "entry_sha256": "f43cd05d36051a9df300c4c522e829d0fe5cf12e10118904f22b1fe3101faaf2"
     },
     {
-      "id": "RL-0341",
+      "id": "RL-0345",
       "sequence": 325,
       "date": "2026-11-11",
       "kind": "release",
@@ -4137,7 +4137,7 @@
           "summary": "build_changes reasons can carry the linked_asset_changed and linked_asset_buy_page notes, which do not make a change commerce."
         }
       ],
-      "entry_sha256": "ed671fa1d04f6a76deb19075ec47080a7178bf12b0cdfb9c4ce26b6abab2ab50"
+      "entry_sha256": "f9f7420afc30884ca437cc15f1eb4e1a60f149de86591b99c773cce0bb098df3"
     }
   ]
 }
