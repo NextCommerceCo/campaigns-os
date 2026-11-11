@@ -38,7 +38,7 @@ export const FUNNEL_PACKET_PATTERN = /^campaign-runtime-.+\.build\.json$/;
 
 // A route slug that can name a directory and a file: the characters the packet
 // schema allows in route_root, not starting with a dot (so never `.` or `..`).
-const ROUTE_COMPONENT = /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/;
+export const ROUTE_COMPONENT = /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/;
 
 function routeComponent(routeSlug) {
   const slug = normalizePublicRouteSlug(routeSlug);

@@ -85,6 +85,7 @@ import { fingerprint12, readCurrentQcResults } from "./qc-results.mjs";
 import {
   DEFAULT_PACKET_FILENAME,
   RUNTIME_DIR_REL_PATH,
+  ROUTE_COMPONENT,
   campaignSidecarPaths,
   explicitReportPath,
   packetRuntimeRelPath,
@@ -1560,6 +1561,11 @@ function campaignIdentity(spec, args) {
   const specSlug = specPublicRouteSlug(spec);
   const publicRouteSlug = optionalString(args.route) || optionalString(args["public-route-slug"]) || specSlug;
   const mapPublicRouteSlug = specSlug && publicRouteSlug !== specSlug ? specSlug : null;
+  if (mapPublicRouteSlug && !ROUTE_COMPONENT.test(mapPublicRouteSlug)) {
+    const field = optionalString(spec.spec_identity?.public_route_slug) ? "spec_identity.public_route_slug"
+      : optionalString(spec.campaign?.slug) ? "campaign.slug" : "campaign.id";
+    throw refused(`CampaignSpec ${field} ${JSON.stringify(specSlug)} cannot be recorded as campaign.map_public_route_slug; fix ${field} to a single-segment slug of letters, digits, dots, underscores and hyphens, not starting with a dot.`);
+  }
   return { mapId, publicRouteSlug, mapPublicRouteSlug, localSpecId: spec.spec_identity?.local_spec_id ?? null };
 }
 
@@ -1778,11 +1784,6 @@ async function prepareBuild(args, options = {}) {
   const publishSpec = typeof options.publishSpec === "function" ? options.publishSpec : null;
   if (!publishSpec && !existsSync(specPath)) throw new Error(`CampaignSpec does not exist: ${specPath}`);
   if (!existsSync(sourceRoot) || !statSync(sourceRoot).isDirectory()) throw new Error(`Source root is not a directory: ${sourceRoot}`);
-  // The cache write used to precede this check and create a missing target
-  // on its way to .campaign-runtime/fetched-specs/; keep that for --map-id.
-  if (publishSpec && !existsSync(targetRepo)) mkdirSync(targetRepo, { recursive: true });
-  if (!existsSync(targetRepo) || !statSync(targetRepo).isDirectory()) throw new Error(`Target repo is not a directory: ${targetRepo}`);
-
   // Which funnel this is decides where its packet and records go (#719): a
   // project's first funnel uses the default packet and the project-level
   // .campaign-runtime/, every later one its own (planFunnelWorkspace). The
@@ -1790,12 +1791,16 @@ async function prepareBuild(args, options = {}) {
   const plannedSpec = options.fetchedSpec || readSpecForRoute(specPath);
   const plannedRoute = intakeRouteSlug(plannedSpec, args);
   const routeBound = Boolean(plannedSpec && campaignIdentity(plannedSpec, args).mapPublicRouteSlug);
+  // Validate a binding before even creating a missing --map-id target.
+  // The cache write used to create it on its way to fetched-specs/.
+  if (publishSpec && !existsSync(targetRepo)) mkdirSync(targetRepo, { recursive: true });
+  if (!existsSync(targetRepo) || !statSync(targetRepo).isDirectory()) throw new Error(`Target repo is not a directory: ${targetRepo}`);
   const sourceRoute = intakePageKitRoute(targetRepo, sourceRoot);
   const planFunnel = () => plannedRoute
     ? refusing(() => planFunnelWorkspace(targetRepo, plannedRoute, {
       packetPath: args.out || null, force: args.force === true, routeBound,
       sourceRoute: args.route || args["public-route-slug"] ? null : sourceRoute,
-      routeHasPages: Boolean(sourceRoute && listPageKitPageFiles(join(targetRepo, "src", plannedRoute), plannedRoute,
+      routeHasPages: Boolean(sourceRoute && ROUTE_COMPONENT.test(plannedRoute) && listPageKitPageFiles(join(targetRepo, "src", plannedRoute), plannedRoute,
         { assetsHtmlIgnored: pageKitIgnoresAssetsHtml(targetRepo) })?.length),
     }))
     : { packetPath: resolve(args.out || join(targetRepo, DEFAULT_PACKET_FILENAME)), runtimeRelPath: RUNTIME_DIR_REL_PATH, scoped: false, addedBeside: null };
@@ -4703,7 +4708,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
   // gate) and `next_actions` (exact commands — not prose) are always present,
   // and the recommendation is recorded on the active run session for
   // deviation telemetry.
-  const intakeAdopt = readRecordedDesignSourcePackage(packet, packetPath, { report }).builtFirst
+  const intakeAdopt = readRecordedDesignSourcePackage(packet, packetPath, { report, reportPath }).builtFirst
     ? readJsonIfExists(contextPath)?.intake?.adopt || `src/${packet.campaign.public_route_slug}` : null;
   const prepareBuildRecoveryPrompt = divergences.length
     ? `The assembly report's ledger and the repository's artifacts disagree: ${quoteDivergences(divergences)} Inspect both sides and decide which is right before acting. Do not rerun \`${cmd("prepare-build")}\` or \`${cmd("start")}\` on the strength of the ledger alone.`

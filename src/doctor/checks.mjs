@@ -451,7 +451,7 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
   {
     id: "design_source.built_first",
     phase: "built-output",
-    when: ({ packet, packetPath, buildState }) => readRecordedDesignSourcePackage(packet, packetPath, { report: buildState?.report }).builtFirst,
+    when: ({ packet, packetPath, buildState, derived }) => readRecordedDesignSourcePackage(packet, packetPath, { report: buildState?.report, reportPath: derived.assembly_report_path }).builtFirst,
     run: ({ warnings }) => addIssue(warnings, "design_source.built_first", BUILT_FIRST_LABEL),
   },
   {
@@ -1624,7 +1624,7 @@ export function validateRouteSlugIdentity(spec, packet, errors, ready) {
     addIssue(
       errors,
       "campaign.route_slug_identity",
-      `Packet campaign.public_route_slug "${packetSlug}" does not match the CampaignSpec declared public route slug "${specSlug}" through a valid binding${reason === "binding_mismatch" ? ` (recorded campaign.map_public_route_slug "${effectiveMapPublicRouteSlug(packet)}" disagrees with the spec)` : ""}. Built-output checks root at _site/<public_route_slug>/, so a wrong slug silently disarms them. Correct the packet slug or re-run prepare-build with --route <served route> from the spec.`
+      `Packet campaign.public_route_slug "${packetSlug}" does not match the CampaignSpec declared public route slug "${specSlug}" through a valid binding${reason === "binding_mismatch" ? ` (recorded campaign.map_public_route_slug ${JSON.stringify(packet.campaign.map_public_route_slug)} disagrees with the spec)` : ""}. Built-output checks root at _site/<public_route_slug>/, so a wrong slug silently disarms them. Correct the packet slug or re-run prepare-build with --route <served route> from the spec.`
     );
     return;
   }

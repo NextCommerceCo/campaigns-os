@@ -32,7 +32,7 @@ export function designSourceReferenceMismatches(expected, expectedArtifactPath, 
 // A declaration in an editable package is not recorded adoption. Reuse the
 // intake's exact-byte reference and material projection, and the lifecycle
 // reference binding check, before granting any built-first treatment.
-export function readRecordedDesignSourcePackage(packet, packetPath, { report = null } = {}) {
+export function readRecordedDesignSourcePackage(packet, packetPath, { report = null, reportPath = null } = {}) {
   try {
     const path = resolveFromFile(packetPath, packet?.design_source_package?.path);
     if (!path) return { status: "unavailable", builtFirst: false };
@@ -57,7 +57,7 @@ export function readRecordedDesignSourcePackage(packet, packetPath, { report = n
         builtFirst = isNonEmptyString(context?.intake?.adopt)
           && filesystemPathsMatch(resolve(workspace.targetRepo, context.packet_path), packetPath)
           && matches(context.design_source_package, workspace.contextPath)
-          && matches(recordedReport.design_source_package, workspace.reportPath);
+          && matches(recordedReport.design_source_package, reportPath || workspace.reportPath);
       } catch { /* Missing adoption or lifecycle bindings never grant treatment. */ }
     }
     return { status: "ok", value, reference, current, declaredBuiltFirst, builtFirst };
@@ -720,11 +720,11 @@ function prepareDesignSourcePackage({
     const existingSha256 = hashSerializedDesignSourcePackage(existingBytes);
     const synthesizedHere = Array.isArray(priorProvenance?.synthesized)
       && priorProvenance.synthesized.includes(existingSha256);
-    let problem = preparedDesignSourcePackageProblem(existingValue, currentPageScope, currentHtmlFunnelScope);
-    if (problem == null && existingValue.source_kind !== (adopted ? "built_first" : "html_funnel")) {
-      problem = !adopted && existingValue.source_kind !== "built_first"
-        ? `declares source_kind ${JSON.stringify(existingValue.source_kind)}; html_funnel prepare-build requires "html_funnel".`
-        : `declares source_kind ${JSON.stringify(existingValue.source_kind)}; this intake requires ${JSON.stringify(adopted ? "built_first" : "html_funnel")}.`;
+    let problem = adopted && existingValue.source_kind !== "built_first"
+      ? `declares source_kind ${JSON.stringify(existingValue.source_kind)}; this existing package is not built first, and --adopt cannot change its source kind.`
+      : preparedDesignSourcePackageProblem(existingValue, currentPageScope, currentHtmlFunnelScope);
+    if (problem == null && !adopted && existingValue.source_kind !== "html_funnel") {
+      problem = `declares source_kind ${JSON.stringify(existingValue.source_kind)}; html_funnel prepare-build requires "html_funnel".`;
     }
     if (problem != null) {
       // A package an earlier prepare-build synthesized, unchanged since, is

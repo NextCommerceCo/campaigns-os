@@ -151,6 +151,8 @@ test("route with source keeps screenshot blockers; --adopt cannot convert an exi
   for (const extra of [[], ["--force"]]) {
     const result = await runCli([...f.args, "--adopt", "src/short", ...extra]);
     assert.match(result.error?.message || result.stdout, /cannot change its source kind/);
+    assert.match(result.error?.message || result.stdout, /existing package is not built first/);
+    assert.doesNotMatch(result.error?.message || result.stdout, /Built first is declared only by --adopt at intake/);
     assert.equal(readFileSync(join(dirname(f.packetPath), f.packet.design_source_package.path), "utf8"), JSON.stringify(dsp, null, 2) + "\n");
   }
 });

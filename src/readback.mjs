@@ -1226,7 +1226,7 @@ function renderIdentity(views, lines) {
   if (verdict && verdict.run_id) entries.push(["qa run_id", verdict.run_id, "QA verdict"]);
   if (!entries.length) return;
   lines.push("RUN IDENTITY");
-  if (readRecordedDesignSourcePackage(packet, views.packet?.path, { report: artifactData(views, "report") }).builtFirst) lines.push(`  ${BUILT_FIRST_LABEL}`);
+  if (readRecordedDesignSourcePackage(packet, views.packet?.path, { report: artifactData(views, "report"), reportPath: views.report?.path }).builtFirst) lines.push(`  ${BUILT_FIRST_LABEL}`);
   for (const [field, value, source] of entries) lines.push(`  ${field} = ${value}  [${source}]`);
   lines.push("");
 }

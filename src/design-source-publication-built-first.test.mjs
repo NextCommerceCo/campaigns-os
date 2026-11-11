@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { afterEach, test } from "node:test";
 import { assertNoNetworkAttempts, readJson, ROOT, runCli, writeJson } from "./qc-test-factories.mjs";
 import { BUILT_FIRST_LABEL, computeDesignSourcePackageMaterialFingerprint, createDesignSourcePackageArtifactReference } from "./design-source-package.mjs";
@@ -153,4 +153,28 @@ test("genuine recorded adoption keeps labels and recovery with custom context an
   assert.ok(next.json.prompt.includes(BUILT_FIRST_LABEL));
   assert.ok(runReadbackCommand(parseArgs(["readback", f.target, "--packet", f.packetPath, ...f.sidecarArgs])).text.includes(BUILT_FIRST_LABEL));
   assert.match(prepareBuildRerunCommand({ packet: f.packet, packetPath: f.packetPath, context: f.context, targetRepo: f.target }).command, /--adopt src\/short/);
+});
+
+test("a supplied report resolves its package reference from its own directory for every label reader", async (t) => {
+  const f = await fixture(t, true);
+  rmSync(join(f.target, "_site"), { recursive: true });
+  const reportPath = join(f.target, "copied/report.json");
+  const report = structuredClone(f.report);
+  report.stages.prepare_build.status = "blocked";
+  report.stages.prepare_build.blockers = [{ code: "EXAMPLE_SOURCE_BLOCKER", message: "Example source gap needs resolution." }];
+  for (const samePackage of [true, false]) {
+    report.design_source_package.path = samePackage
+      ? relative(dirname(reportPath), f.dspPath)
+      : f.report.design_source_package.path;
+    writeJson(reportPath, report);
+    const doctor = await runCli(["doctor", "--packet", f.packetPath, "--report", reportPath, "--no-live-refs", "--json"]);
+    assert.equal(doctor.error, null, doctor.error?.stack);
+    assert.equal(doctor.json.warnings.some((issue) => issue.code === "design_source.built_first"), samePackage, "doctor label");
+    const next = await runCli(["next", "--packet", f.packetPath, "--report", reportPath, "--no-write", "--no-remit", "--json"]);
+    assert.equal(next.error, null, next.error?.stack);
+    assert.equal(next.json.prompt.includes(BUILT_FIRST_LABEL), samePackage, "next label");
+    assert.equal(next.json.prompt.includes("--adopt src/short"), samePackage, `next recovery: ${next.json.prompt}`);
+    const readback = runReadbackCommand(parseArgs(["readback", f.target, "--packet", f.packetPath, "--report", reportPath]));
+    assert.equal(readback.text.includes(BUILT_FIRST_LABEL), samePackage, "readback label");
+  }
 });

@@ -631,7 +631,9 @@ function specRouteRefusal(spec, packet) {
   const identity = routeSlugIdentity(spec, packet);
   const specRoot = declaredRoot ? intakeRouteRoot(declaredRoot, slug, effectiveMapPublicRouteSlug(packet)) : null;
   if (!identity.ok || (declaredRoot && specRoot !== packetRoot)) {
-    return ["route_root_changed", `the CampaignSpec ${specSlug && specSlug !== slug ? `names route slug "${specSlug}"` : `declares route_root ${JSON.stringify(declaredRoot)}`}, but the packet serves the campaign at ${packetRoot || "(no route root)"}; the recorded preview and deploy are rooted there, so moving the route root or slug needs intake (${cmd("prepare-build")}).`];
+    return ["route_root_changed", identity.reason === "binding_mismatch"
+      ? `the recorded campaign.map_public_route_slug ${JSON.stringify(packet.campaign.map_public_route_slug)} disagrees with the CampaignSpec; fix the recorded binding through intake (${cmd("prepare-build")}) before refreshing the spec.`
+      : `the CampaignSpec ${specSlug && specSlug !== slug ? `names route slug "${specSlug}"` : `declares route_root ${JSON.stringify(declaredRoot)}`}, but the packet serves the campaign at ${packetRoot || "(no route root)"}; the recorded preview and deploy are rooted there, so moving the route root or slug needs intake (${cmd("prepare-build")}).`];
   }
   return null;
 }

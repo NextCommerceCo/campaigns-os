@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -48,6 +50,74 @@ function sourceTree(p, paths) {
   writeJson(join(p.target, "package.json"), { private: true, devDependencies: { "next-campaign-page-kit": "0.3.0" } });
   writeJson(join(p.target, "node_modules/next-campaign-page-kit/package.json"), { version: "0.3.0" });
 }
+
+test("binding intake refuses an invalid spec slug before writing for every binding flag", async (t) => {
+  const p = fixture(t);
+  const before = readdirSync(p.target, { recursive: true }).sort();
+  for (const slug of ["long campaign", "a/b", "../../outside", ".hidden"]) {
+    p.spec.spec_identity.public_route_slug = p.spec.campaign.slug = slug;
+    writeJson(p.specPath, p.spec);
+    for (const flags of [["--route", "short", "--source", p.source], ["--adopt", "src/short"], ["--public-route-slug", "short", "--source", p.source]]) {
+      const result = await intake(p, flags);
+      assert.match(result.error?.message || result.stdout, /spec_identity\.public_route_slug.*single.*slug/, `${slug}: ${flags[0]}`);
+      assert.deepEqual(readdirSync(p.target, { recursive: true }).sort(), before, "refusal creates no packet, runtime or lock");
+    }
+  }
+});
+
+test("binding offer discovery never reads HTML through an invalid planned route", async (t) => {
+  const p = fixture(t);
+  p.spec.spec_identity.public_route_slug = p.spec.campaign.slug = "../../outside";
+  writeJson(p.specPath, p.spec);
+  const outside = join(p.dir, "outside/landing.html");
+  mkdirSync(dirname(outside), { recursive: true });
+  writeFileSync(outside, "<html><body>Example outside page</body></html>");
+  const read = fs.readFileSync;
+  let outsideReads = 0;
+  const spy = t.mock.method(fs, "readFileSync", function (path, ...args) {
+    if (path === outside) outsideReads += 1;
+    return read.call(this, path, ...args);
+  });
+  syncBuiltinESMExports();
+  try {
+    await intake(p, ["--source", p.source]);
+    assert.equal(outsideReads, 0, "page discovery must not read outside the target");
+  } finally {
+    spy.mock.restore();
+    syncBuiltinESMExports();
+  }
+});
+
+test("binding doctor diagnostic JSON-quotes the value actually recorded", () => {
+  for (const binding of ["a/b", "../x", " padded ", ".hidden", 'bad"slug']) {
+    const errors = [];
+    validateRouteSlugIdentity({ spec_identity: { public_route_slug: "short" } },
+      { campaign: { public_route_slug: "short", map_public_route_slug: binding } }, errors, []);
+    assert.equal(errors.length, 1);
+    assert.ok(errors[0].message.includes(`recorded campaign.map_public_route_slug ${JSON.stringify(binding)}`), errors[0].message);
+    assert.doesNotMatch(errors[0].message, /undefined/);
+  }
+});
+
+test("record spec names malformed and stale bindings instead of an undeclared route root", async (t) => {
+  const p = fixture(t);
+  p.spec.spec_identity.public_route_slug = p.spec.campaign.slug = "short";
+  delete p.spec.spec_identity.route_root;
+  delete p.spec.campaign.route_root;
+  writeJson(p.specPath, p.spec);
+  const prepared = await intake(p, ["--adopt", "src/short"]);
+  assert.equal(prepared.error, null, prepared.error?.stack);
+  const { packet, packetPath } = prepared.json;
+  for (const binding of ["a/b", " padded ", "stale-route"]) {
+    packet.campaign.map_public_route_slug = binding;
+    writeJson(packetPath, packet);
+    const result = await runCli(["record", "spec", "--packet", packetPath, "--dry-run", "--json"]);
+    const text = result.error?.message || result.stdout;
+    assert.match(text, /route_root_changed/);
+    assert.ok(text.includes(`campaign.map_public_route_slug ${JSON.stringify(binding)}`), text);
+    assert.doesNotMatch(text, /route_root undefined/);
+  }
+});
 
 test("equal slugs stay unbound at intake and in rerun, readback and doctor lines", async (t) => {
   const p = fixture(t);

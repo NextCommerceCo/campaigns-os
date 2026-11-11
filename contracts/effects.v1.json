@@ -1007,46 +1007,6 @@
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
-        "openWorldHint": false,
-        "idempotentHint": true
-      },
-      "tier": "B",
-      "writes": [
-        {
-          "path": "{target}/.campaign-runtime/minimal-build-packet.json",
-          "when": "always — the minimal Build Packet derived from the built site is emitted (--emit-packet <path> writes it where the path names instead)",
-          "observed_in": [
-            "no_session",
-            "ambient_session",
-            "stale_session",
-            "lifecycle_log",
-            "persisted_consent"
-          ]
-        },
-        {
-          "path": "{lifecycle-journal}",
-          "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
-          "observed_in": [
-            "lifecycle_log"
-          ]
-        }
-      ],
-      "sends": [],
-      "effect_test": "effects: doctor --built --emit-packet",
-      "test_scope": "full",
-      "notes": "--emit-packet turns the inspection into a writer: the minimal Build Packet derived from the built _site/ is written under the target's runtime directory (or to the path the flag names), so QA can run against the same campaign without a packet of its own."
-    },
-    {
-      "command": "doctor",
-      "subcommand": null,
-      "flags": [
-        "--built",
-        "--emit-packet",
-        "--map-id"
-      ],
-      "annotations": {
-        "readOnlyHint": false,
-        "destructiveHint": false,
         "openWorldHint": true,
         "idempotentHint": true
       },
@@ -1065,22 +1025,15 @@
         },
         {
           "path": "{target}/.campaign-runtime/fetched-specs/*.json",
-          "when": "the saved Map fetch succeeds and --cached-spec is not set; replaces an earlier copy of that Map",
+          "when": "--map-id is given without --cached-spec and the saved Map fetch succeeds; replaces an earlier copy of that Map",
           "observed_in": [
-            "no_session",
-            "ambient_session",
-            "stale_session",
-            "lifecycle_log",
             "persisted_consent"
           ]
         },
         {
           "path": "{target}/.gitignore",
-          "when": "spec resolution succeeds and the managed block is missing, lacks a required entry, or still lists fetched-specs/",
+          "when": "--map-id is given, spec resolution succeeds and the managed block is missing, lacks a required entry, or still lists fetched-specs/",
           "observed_in": [
-            "no_session",
-            "stale_session",
-            "lifecycle_log",
             "persisted_consent"
           ]
         },
@@ -1096,20 +1049,16 @@
         {
           "destination": "{proxy-base}/api/spec/{map-id}",
           "what": "the CampaignSpec fetch",
-          "when": "--cached-spec is not set",
+          "when": "--map-id is given without --cached-spec",
           "requires_consent": false,
           "observed_in": [
-            "no_session",
-            "ambient_session",
-            "stale_session",
-            "lifecycle_log",
             "persisted_consent"
           ]
         }
       ],
-      "effect_test": "effects: doctor --built --emit-packet --map-id",
+      "effect_test": "effects: doctor --built --emit-packet",
       "test_scope": "full",
-      "notes": "Fetches the saved Map before synchronous built-output inspection and emits a synthesized packet naming the cached spec and any differing Map route binding. Uses the intake cache and managed ignore handling. A failed fetch writes no packet or cache; --map-id without --emit-packet remains label-only and sends nothing."
+      "notes": "Emits the minimal Build Packet derived from the built _site/ under the target's runtime directory (or to the path --emit-packet names). When --map-id is given, fetches the saved Map before synchronous inspection and names the cached spec and any differing Map route binding, using the intake cache and managed ignore handling. A failed fetch writes no packet or cache. Without --map-id, emits a stub, sends nothing and writes no fetched-spec cache; --map-id without --emit-packet remains label-only and sends nothing."
     },
     {
       "command": "telemetry",

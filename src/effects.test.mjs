@@ -683,15 +683,20 @@ const INVOCATIONS = {
   "doctor|--no-live-refs": { prepare: seedBuiltSite, argv: (s, receiver) => ["doctor", "--packet", s.packetPath, "--proxy-base", receiver, "--no-live-refs", "--json"] },
   "doctor|--write --no-live-refs": { prepare: seedBuiltSite, argv: (s, receiver) => ["doctor", "--packet", s.packetPath, "--write", "--proxy-base", receiver, "--no-live-refs", "--json"] },
   "doctor|--built": { prepare: seedBuiltSite, argv: (s) => ["doctor", "--built", s.targetRepo, "--family", "olympus", "--json"] },
-  "doctor|--built --emit-packet": { prepare: seedBuiltSite, argv: (s) => ["doctor", "--built", s.targetRepo, "--family", "olympus", "--emit-packet", "--json"] },
-  "doctor|--built --emit-packet --map-id": {
-    prepare: seedBuiltSite, serveSpec: true,
-    argv: (s, receiver) => ["doctor", "--built", s.targetRepo, "--family", "olympus", "--emit-packet", "--map-id", readJson(s.packetPath).spec.map_id, "--proxy-base", receiver, "--json"],
+  "doctor|--built --emit-packet": {
+    prepare: seedBuiltSite, fetchSpec: true, proxyBase: true,
+    argv: (s, receiver) => ["doctor", "--built", s.targetRepo, "--family", "olympus", "--emit-packet",
+      ...(s.fetchMapId ? ["--map-id", s.fetchMapId] : []), "--proxy-base", receiver, "--json"],
     expect: (result, s) => {
       assert.equal(result.code, 0, result.stderr);
       const packet = readJson(join(s.targetRepo, ".campaign-runtime/minimal-build-packet.json"));
-      assert.equal(packet.spec.map_id, readJson(s.packetPath).spec.map_id);
-      assert.deepEqual(readJson(packet.spec.local_path), readJson(s.specPath));
+      if (s.fetchMapId) {
+        assert.equal(packet.spec.map_id, s.fetchMapId);
+        assert.deepEqual(readJson(packet.spec.local_path), readJson(s.specPath));
+      } else {
+        assert.equal(existsSync(join(s.targetRepo, ".campaign-runtime/fetched-specs")), false, "without --map-id no cache is written");
+        assert.equal(Object.hasOwn(packet.spec, "local_path"), false);
+      }
     },
   },
   "sdk storage-check": {
@@ -1001,6 +1006,9 @@ async function runCondition(row, invocation, condition) {
     // (3) Exactly the declared sends. An undeclared request fails; a declared
     // one this condition names must be seen.
     const urls = receiver.hits.map((hit) => hit.url);
+    if (row.effect_test === "effects: doctor --built --emit-packet" && !seed.fetchMapId) {
+      assert.deepEqual(urls, [], "doctor --built --emit-packet without --map-id sends nothing");
+    }
     for (const url of urls) {
       assert.ok(
         row.sends.some((send) => {

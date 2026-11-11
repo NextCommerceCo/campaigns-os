@@ -4116,7 +4116,7 @@
           "class": "compatibility_policy",
           "path": "contracts/effects.v1.json",
           "surface_entry": "contracts/effects.v1.json",
-          "summary": "Declares the tier A doctor --built --emit-packet --map-id fetch, cache, managed ignore and packet writes."
+          "summary": "The doctor --built --emit-packet row becomes tier A and declares, as conditional effects when --map-id is given, the saved-Map fetch, the fetched-spec cache write and the managed ignore; without --map-id it sends nothing, as before."
         },
         {
           "class": "compatibility_policy",
@@ -4293,7 +4293,7 @@
           "summary": "Blocks built-first progress when the package no longer matches the recorded intake references."
         }
       ],
-      "entry_sha256": "dd347069c53eeb589fe73441bff5b821c23e03cd060a98bbaa598e2e43d82049"
+      "entry_sha256": "347adf0b266ff58029abd032cd72895af3c0256435268a33fb919d61055ad42d"
     }
   ]
 }
