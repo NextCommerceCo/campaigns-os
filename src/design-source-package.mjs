@@ -4,6 +4,9 @@ import { resolveDesignFileReferences } from "./design-file-reference.mjs";
 export const DESIGN_SOURCE_PACKAGE_SCHEMA = "campaign-design-source-package/v0";
 export const DESIGN_SOURCE_PACKAGE_REL_PATH = ".campaign-runtime/input/design-source-package.json";
 export const DESIGN_SOURCE_PACKAGE_FINGERPRINT_PATTERN = /^sha256:[0-9a-f]{64}$/;
+export const BUILT_FIRST_REASON = "built_first";
+export const BUILT_FIRST_LABEL = 'Design source is the built pages ("built first"); nothing was compared to a design.';
+export const isBuiltFirst = (value) => value?.source_kind === BUILT_FIRST_REASON;
 
 export const COVERAGE_ROLES = Object.freeze([
   "primary_design",
@@ -36,6 +39,7 @@ export const SOURCE_READINESS_STATUSES = Object.freeze([
 ]);
 
 const CONTRIBUTION_KINDS = new Set([
+  "built_first",
   "html_funnel",
   "figma_frames",
   "figma_sections",
@@ -263,6 +267,8 @@ const EXCEPTION_FIELDS = new Set([
   "evidence_refs",
 ]);
 const READINESS_FIELDS = new Set([
+  "source_basis",
+  "label",
   "status",
   "blocking_reasons",
   "gap_count",
@@ -289,6 +295,7 @@ const READBACK_FIELDS = new Set([
  * record explicitly declares a shared viewport key.
  */
 export function synthesizeHtmlFunnelDesignSourcePackage({
+  adopted = false,
   activePages = [],
   mappings = [],
   pageMappings = null,
@@ -504,11 +511,11 @@ export function synthesizeHtmlFunnelDesignSourcePackage({
   }
   const htmlContribution = {
     id: "html-funnel",
-    kind: "html_funnel",
+    kind: adopted ? BUILT_FIRST_REASON : "html_funnel",
     trust: manifestInput.value ? "structured" : "rendered",
     renderable: true,
     provenance: compactDefined({
-      source_type: "html_funnel",
+      source_type: adopted ? BUILT_FIRST_REASON : "html_funnel",
       adapter: "source-html-intake",
       producer: optionalString(manifestInput.value?.producer_provenance?.source_type),
       generator: optionalString(manifestInput.value?.generator),
@@ -522,7 +529,7 @@ export function synthesizeHtmlFunnelDesignSourcePackage({
     }, { preserveNull: true }),
     presentation_intent: normalizePresentationIntent(
       presentationIntent,
-      "Preserve the provided source HTML composition and presentation intent while CampaignSpec and Page Kit retain commerce/runtime authority.",
+      adopted ? BUILT_FIRST_LABEL : "Preserve the provided source HTML composition and presentation intent while CampaignSpec and Page Kit retain commerce/runtime authority.",
     ),
     source_refs: sourceRefRegistry.values(),
     screenshot_refs: globalVisualRegistry.values(),
@@ -678,6 +685,7 @@ export function synthesizeHtmlFunnelDesignSourcePackage({
       .filter(({ mapping }) => ["high", "medium"].includes(mapping.confidence)));
     const coverageExcepted = readinessExceptions.hasCoverage(surface.id, "primary_coverage");
     if (qualifyingPrimaryClaims.length) {
+      if (adopted) continue;
       if (qualifyingPrimaryClaims.some(primaryClaimHasRequiredProof)) continue;
       if (readinessExceptions.hasCoverage(surface.id, "source_screenshot")) continue;
       const primary = bestPrimaryClaimForTodo(qualifyingPrimaryClaims);
@@ -756,7 +764,7 @@ export function synthesizeHtmlFunnelDesignSourcePackage({
   const artifact = {
     schema_version: DESIGN_SOURCE_PACKAGE_SCHEMA,
     package_id: String(packageId || "design-source-package"),
-    source_kind: "html_funnel",
+    source_kind: adopted ? BUILT_FIRST_REASON : "html_funnel",
     generated_at: String(generatedAt),
     material_fingerprint: `${MATERIAL_FINGERPRINT_PREFIX}${"0".repeat(64)}`,
     surface_identity: surfaces,
@@ -815,13 +823,14 @@ export function evaluateDesignSourcePackageReadiness(value, {
         : `Page surface "${surface.id}" lacks non-low primary_design, proven template_baseline, an accepted Source Gap, or an approved waiver.`);
     }
 
-    if (primaryClaims.length && !validPrimary
+    if (!isBuiltFirst(value) && primaryClaims.length && !validPrimary
       && !readinessExceptions.hasCoverage(surface.id, "source_screenshot")) {
       blockingReasons.push(`Renderable primary_design surface "${surface.id}" has no qualifying claim with linked desktop and mobile source_screenshot proof.`);
     }
   }
 
   for (const todo of todos) {
+    if (isBuiltFirst(value) && todo?.kind === "missing_source_screenshot") continue;
     if (todo?.status === "completed") continue;
     if (readinessExceptions.hasWaiverForRecord(todo)) continue;
     blockingReasons.push(`Source TODO "${todo?.id || "unknown"}" is ${todo?.status}.`);
@@ -857,6 +866,7 @@ export function evaluateDesignSourcePackageReadiness(value, {
 
   return {
     status,
+    ...(isBuiltFirst(value) ? { source_basis: BUILT_FIRST_REASON, label: BUILT_FIRST_LABEL } : {}),
     blocking_reasons: uniqueBlockingReasons,
     gap_count: gaps.length,
     todo_count: todos.length,
@@ -881,7 +891,7 @@ export function generateDesignSourcePackageReadback(value) {
     ? arrayOrEmpty(readiness.blocking_reasons).map((reason) => `Resolve: ${reason}`)
     : ["Proceed to Build with this Design Source Package material fingerprint."];
   return {
-    summary: `Design Source Package is ${readiness.status}; ${contributions.length} contribution(s), ${handled.length} coverage mapping(s), ${gaps.length} gap(s), ${todos.length} TODO(s), and ${waivers.length} waiver(s).`,
+    summary: `Design Source Package is ${readiness.status}; ${contributions.length} contribution(s), ${handled.length} coverage mapping(s), ${gaps.length} gap(s), ${todos.length} TODO(s), and ${waivers.length} waiver(s).${isBuiltFirst(value) ? ` ${BUILT_FIRST_LABEL}` : ""}`,
     included_sources: sortStrings(contributions.map((contribution) => `${contribution.id} (${contribution.kind})`)),
     handled: sortStrings(handled),
     blockers: sortStrings(arrayOrEmpty(readiness.blocking_reasons)),
@@ -1136,7 +1146,7 @@ export function validateDesignSourcePackage(value, {
       generatedAt: value.readiness.generated_at,
       now,
     });
-    for (const field of ["status", "gap_count", "todo_count", "waiver_count"]) {
+    for (const field of ["status", "gap_count", "todo_count", "waiver_count", "source_basis", "label"]) {
       if (value.readiness[field] !== authoritativeReadiness[field]) {
         add("design_source_package.readiness_contradiction", `$.readiness.${field}`, `Generated readiness ${field} must be ${JSON.stringify(authoritativeReadiness[field])}, not ${JSON.stringify(value.readiness[field])}.`);
       }
@@ -1311,6 +1321,9 @@ function validateCurrentHtmlFunnelScope(value, scope, add) {
   }
 
   let expected;
+  if (isBuiltFirst(value) !== (scope.adopted === true)) {
+    add("design_source_package.current_html_funnel_material_stale", "$.source_kind", "Built first is declared only by --adopt at intake; an existing package cannot change its source kind.");
+  }
   try {
     expected = synthesizeHtmlFunnelDesignSourcePackage({
       ...scope,
@@ -1325,9 +1338,9 @@ function validateCurrentHtmlFunnelScope(value, scope, add) {
     return;
   }
 
-  const expectedHtml = expected.contributions.find((contribution) => contribution.kind === "html_funnel");
+  const expectedHtml = expected.contributions.find((contribution) => ["html_funnel", BUILT_FIRST_REASON].includes(contribution.kind));
   const actualHtmlCandidates = arrayOrEmpty(value?.contributions)
-    .filter((contribution) => contribution?.kind === "html_funnel");
+    .filter((contribution) => ["html_funnel", BUILT_FIRST_REASON].includes(contribution?.kind));
   if (actualHtmlCandidates.length !== 1) {
     add(
       "design_source_package.current_html_funnel_material_stale",

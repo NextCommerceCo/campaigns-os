@@ -65,7 +65,7 @@ test(`route binding: existing pages keep their route and own records with ${flag
   }
   assert.equal(readJson(p.specPath).spec_identity.public_route_slug, "long-campaign-name", "the Map is unchanged");
   const rerun = prepareBuildRerunCommand({ packet, packetPath, context, targetRepo: p.target });
-  assert.match(rerun.command, /--route short/);
+  assert.match(rerun.command, flags[0] === "--adopt" ? /--adopt src\/short/ : /--route short/);
   const inspected = await runCli(["doctor", "--packet", packetPath, "--no-live-refs", "--json"]);
   assert.equal(inspected.error, null);
   const codes = [...inspected.json.errors, ...inspected.json.warnings].map((issue) => issue.code);
@@ -510,6 +510,18 @@ test("route binding: Funnel offers this unclaimed source route instead of the fi
   assert.equal(json.error, null, json.error?.stack);
   assert.equal(json.json.funnelBindingOffer.route, "short");
   assert.match(json.json.funnelBindingOffer.command, /--adopt src\/short/);
+  const offer = json.json.funnelBindingOffer;
+  assert.doesNotMatch(offer.command, /--route|--source/);
+  for (const path of offer.deletePaths) rmSync(path, { recursive: true, force: true });
+  const words = [...offer.command.matchAll(/'([^']*)'|"([^"]*)"|(\S+)/g)].map((match) => match[1] ?? match[2] ?? match[3]);
+  const argv = words.slice(words.indexOf("prepare-build"));
+  for (let replay = 0; replay < 2; replay += 1) {
+    const adopted = await runCli(argv);
+    assert.equal(adopted.error, null, adopted.error?.stack);
+    assert.equal(adopted.json.context.intake.adopt, "src/short");
+    const dsp = readJson(join(dirname(adopted.json.packetPath), adopted.json.packet.design_source_package.path));
+    assert.equal(dsp.source_kind, "built_first");
+  }
 });
 
 test("route binding: a source route already claimed by a packet is not offered", async (t) => {

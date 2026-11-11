@@ -65,6 +65,35 @@ async function scenario(t, sourceName = "identical-source.html", buildName = "id
 const diffRows = (record) => VISUAL_QC_RULES.evaluate(record).filter((row) => row.check === "visual.diff");
 const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
 const writeJson = (path, value) => { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`); };
+browserTest("built first uses only the build browser and records both viewports as source evidence without design comparison", async (t) => {
+  const f = await scenario(t);
+  const dspPath = resolve(f.targetRepo, "dsp.json");
+  const dsp = readJson(dspPath);
+  dsp.source_kind = "built_first";
+  dsp.contributions[0].kind = "built_first";
+  writeJson(dspPath, dsp);
+  f.input.report.design_source_package.material_fingerprint = computeDesignSourcePackageMaterialFingerprint(dsp);
+  // A Liquid page tree must never be used as rendered design input.
+  writeFileSync(resolve(f.sourceRoot, "page.html"), '{% include "example-private-family/page.liquid" %}');
+  const original = f.input.createBrowserAdapter;
+  let browsers = 0;
+  const record = await runVisualPass({ ...f.input, createBrowserAdapter: (options) => {
+    assert.equal(options.seal, undefined, "no source browser may start");
+    browsers++;
+    return original(options);
+  } });
+  assert.equal(browsers, 1);
+  assert.equal(record.source.status, "built_first");
+  assert.deepEqual(record.cells.filter((cell) => cell.side === "source_html").map((cell) => cell.status), ["built_first", "built_first"]);
+  assert.equal(record.source.built_first_source_evidence.length, 2);
+  for (const evidence of record.source.built_first_source_evidence) {
+    assert.equal(evidence.status, "captured");
+    assert.equal(evidence.surface_id, "page");
+    assert.deepEqual(evidence.png, record.cells.find((cell) => cell.side === "build" && cell.viewport === evidence.viewport).actual.png);
+  }
+  assert.ok(VISUAL_QC_RULES.evaluate(record).every((row) => row.result === "excluded" && row.reason_code === "built_first" && !row.accept_eligible));
+  assert.ok(record.comparisons.every((comparison) => comparison.reason === "built_first" && comparison.artifacts.length === 0));
+});
 const withoutCaptures = (report) => { const copy = structuredClone(report); delete copy.stages.polish.evidence.visual_review.captures; return copy; };
 // The gate result with captures equals the one without, field for field; only
 // screenshot_evidence (C3) may differ.

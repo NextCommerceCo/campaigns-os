@@ -99,6 +99,8 @@ import { validateCampaignBuildBriefArtifact } from "../build-brief.mjs";
 import { briefFileUnusable, deriveInputCurrency, wellFormedBriefMaterial } from "../input-currency.mjs";
 import { ASSEMBLY_REPORT_STAGE_KEYS, stageIsTerminal } from "../orchestration-stage-contract.mjs";
 import { assemblyReportStagesWithEvidence } from "../design-source-publication.mjs";
+import { BUILT_FIRST_LABEL, isBuiltFirst } from "../design-source-package.mjs";
+import { readDesignSourcePackage } from "../parity/element-parity-record.mjs";
 import {
   assemblySourcePackageFingerprintMissing,
   assessAssemblySourcePackageFreshnessWaivers,
@@ -444,6 +446,12 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
       if (!baseline) return;
       addIssue(warnings, "qa.baseline_accepted", `QA rests on a baseline ${baseline.accepted_by} accepted at ${baseline.accepted_at}, not a test. No purchase has been tested since; a completed full \`campaigns-os qa run\` ends it.`, { accepted_by: baseline.accepted_by, accepted_at: baseline.accepted_at });
     },
+  },
+  {
+    id: "design_source.built_first",
+    phase: "built-output",
+    when: ({ packet, packetPath }) => isBuiltFirst(readDesignSourcePackage(packet, packetPath).value),
+    run: ({ warnings }) => addIssue(warnings, "design_source.built_first", BUILT_FIRST_LABEL),
   },
   {
     id: "built_output.pages",

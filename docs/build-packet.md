@@ -1367,6 +1367,9 @@ the route from the folder name and uses that folder as the source. Relative
 `--adopt` paths resolve against the target. The folder must be a Page Kit route
 folder directly under the target's `src/`, holding HTML page files. A conflicting
 `--route` or `--source` is refused. `start` and `build` accept the same flags.
+`--adopt` also declares the design source as [built first](design-source-package.md#built-first):
+the built pages stand in for source evidence, with no design comparison.
+See the [built-first entry point](entry-points.md#built-first).
 `--public-route-slug` is an alias of `--route`, with the same recorded binding.
 The explicit route must be one normalized slug segment, using letters, digits,
 dots, underscores or hyphens and not starting with a dot.

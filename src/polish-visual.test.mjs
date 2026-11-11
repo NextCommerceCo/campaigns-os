@@ -7,7 +7,11 @@ import { VISUAL_QC_RULES, planVisualCapture, buildCapturesRecord, capturesIntegr
 import { createRgbaPng, createRgba, syntheticCapturesRecord, syntheticVisualFixture } from "./polish-visual-fixtures.mjs";
 import { loadVisualDependencies } from "./visual-diff.mjs";
 import { runVisualPass, runVisualCells } from "./polish-visual.mjs";
-import { planPolishCapture } from "./polish-node.mjs";
+import { planPolishCapture, mergePolishCaptureEvidence } from "./polish-node.mjs";
+import { readCaptures, qcResultRef } from "./qc-results.mjs";
+import { parseQcResultRef, planQcAccepts } from "./qc-accept.mjs";
+import { buildElementParityRecord, readElementParityRows, ELEMENT_PARITY_QC_RULES } from "./parity/element-parity-record.mjs";
+import { POLISH_PAGE_LOAD_SCHEMA_VERSION, POLISH_PAGE_LOAD_PRODUCER } from "./polish-page-load.mjs";
 import { computeDesignSourcePackageMaterialFingerprint } from "./design-source-package.mjs";
 import { evaluatePolishGate, POLISH_PRODUCER } from "./polish-gate.mjs";
 import { execFile, execFileSync } from "node:child_process";
@@ -45,6 +49,73 @@ function fakeVisualAdapter({ consume = () => {} } = {}) {
       actual: shot, stabilized: { ...shot, treatment: { animations: "disabled", caret: "hide", mask_color: "#ff00ff", mask_selectors: "visual-masks/v1", masks: [], mask_cap_reached: false } } };
   } };
 }
+test("built first captures only builds and records the same PNGs as source evidence; all comparison readers exclude", async (t) => {
+  const f = syntheticVisualFixture(); t.after(f.cleanup);
+  const input = visualInputs(f);
+  input.packet.campaign = { public_route_slug: "sample" };
+  const dspPath = resolve(f.targetRepo, "dsp.json");
+  const dsp = JSON.parse(readFileSync(dspPath, "utf8"));
+  dsp.source_kind = "built_first";
+  dsp.contributions[0].kind = "built_first";
+  input.packet.source_html.pages.push({ page_id: "other", path: "other.liquid", page_kit: { public_route: "/sample/other/", spec_route: "other/" } });
+  dsp.surface_identity.push({ id: "other", mappings: { campaign_spec_page_id: "other" } });
+  input.frozen.plan = planPolishCapture({ packet: input.packet, baseUrl: "http://127.0.0.1:1234" });
+  input.frozen.page_load.subject.routes = input.frozen.plan.routes.map((route) => route.requested_route);
+  writeFileSync(dspPath, JSON.stringify(dsp));
+  const sourceFp = computeDesignSourcePackageMaterialFingerprint(dsp);
+  input.report.design_source_package.material_fingerprint = sourceFp;
+  writeFileSync(input.packetPath, JSON.stringify(input.packet));
+  let browsers = 0, renders = 0;
+  const record = await runVisualPass({ ...input, createBrowserAdapter: (options) => {
+    assert.equal(options.seal, undefined, "no source server or source browser");
+    browsers++;
+    return fakeVisualAdapter({ consume: () => renders++ });
+  } });
+  assert.equal(browsers, 1);
+  assert.equal(renders, 4);
+  assert.equal(record.source.status, "built_first");
+  assert.deepEqual(record.cells.filter((cell) => cell.side === "source_html").map((cell) => cell.status), Array(4).fill("built_first"));
+  assert.equal(record.source.built_first_source_evidence.length, 4);
+  for (const evidence of record.source.built_first_source_evidence) {
+    assert.equal(evidence.surface_id, evidence.page_id);
+    assert.deepEqual(evidence.png, record.cells.find((cell) => cell.side === "build" && cell.page_id === evidence.page_id && cell.viewport === evidence.viewport).actual.png);
+  }
+  const context = { record, packet: input.packet, packetPath: input.packetPath,
+    currentBuild: input.report.stages.assembly.build_fingerprint, currentSource: sourceFp,
+    campaignSlug: "sample", targetRepo: f.targetRepo,
+    qcStandIns: { polish: { "visual.diff": { ...VISUAL_QC_RULES, plan: planPolishCapture } } } };
+  const raw = VISUAL_QC_RULES.evaluate(record);
+  const read = readCaptures(context);
+  assert.equal(read.length, 6);
+  for (const row of [...raw, ...read]) {
+    assert.equal(row.result, "excluded", JSON.stringify(row));
+    assert.equal(row.reason_code, "built_first");
+    assert.equal(row.accept_eligible, false);
+    assert.throws(() => planQcAccepts({ refs: [parseQcResultRef(qcResultRef(row))], results: [row] }), /only a warning can be accepted/);
+  }
+  const parity = buildElementParityRecord({ plan: input.frozen.plan, captures: record, packet: input.packet, packetPath: input.packetPath,
+    buildFingerprint: context.currentBuild, sourceFingerprint: sourceFp, measuredAt: input.now,
+    writeFile: () => { throw new Error("no source parity file should be written"); } });
+  const parityRows = readElementParityRows({ ...context, record: parity, captures: record }, {
+    ...ELEMENT_PARITY_QC_RULES, plan: planPolishCapture,
+    readFile: () => { throw new Error("no design comparison should read probes"); },
+  });
+  assert.equal(parityRows.length, 4);
+  assert.ok(parityRows.every((row) => row.result === "excluded" && row.reason_code === "built_first" && !row.accept_eligible), JSON.stringify(parityRows));
+  const report = { ...input.report, stages: { ...input.report.stages, assembly: { ...input.report.stages.assembly, status: "completed" }, polish: { evidence: { visual_review: {} } } } };
+  const pageLoad = { ...input.frozen.page_load, schema_version: POLISH_PAGE_LOAD_SCHEMA_VERSION, performed_by: POLISH_PAGE_LOAD_PRODUCER };
+  const merged = mergePolishCaptureEvidence(report, { pageLoad, captures: record, elementParity: parity });
+  assert.deepEqual(merged.stages.polish.evidence.visual_review.captures.source.built_first_source_evidence, record.source.built_first_source_evidence);
+  t.diagnostic(`not applicable: built first: ${JSON.stringify(read[0])}`);
+  input.report.design_source_package.material_fingerprint = `sha256:${"b".repeat(64)}`;
+  const stale = await runVisualPass({ ...input, createBrowserAdapter: (options) => {
+    assert.equal(options.seal, undefined, "a stale built-first package still cannot render templates as design");
+    return fakeVisualAdapter();
+  } });
+  assert.ok(VISUAL_QC_RULES.evaluate(stale).every((row) => row.result === "excluded" && !row.accept_eligible));
+  assert.ok(readCaptures({ ...context, record: stale, currentSource: input.report.design_source_package.material_fingerprint })
+    .every((row) => row.result === "unexercised" && !row.accept_eligible));
+});
 test("RC-1 and RC-2: select skips only its side/cell and onResult delivers the timed probe result in order", async (t) => {
   const f = syntheticVisualFixture(); t.after(f.cleanup); const input = visualInputs(f);
   const selected = [], observed = [];

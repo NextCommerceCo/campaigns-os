@@ -32,7 +32,8 @@
     },
     "source_kind": {
       "type": "string",
-      "minLength": 1
+      "minLength": 1,
+      "description": "built_first is declared only by intake with --adopt; built pages stand in for design source and prove no design match. Other source kinds retain their existing semantics."
     },
     "generated_at": {
       "type": "string",
@@ -92,6 +93,20 @@
       "$ref": "#/$defs/readback"
     }
   },
+  "allOf": [
+    {
+      "if": { "properties": { "source_kind": { "const": "built_first" } }, "required": ["source_kind"] },
+      "then": {
+        "properties": {
+          "readiness": {
+            "type": "object",
+            "properties": { "source_basis": true, "label": true },
+            "required": ["source_basis", "label"]
+          }
+        }
+      }
+    }
+  ],
   "$defs": {
     "checkpointStatus": {
       "type": "string",
@@ -503,6 +518,7 @@
         "kind": {
           "enum": [
             "html_funnel",
+            "built_first",
             "figma_frames",
             "figma_sections",
             "page_kit",
@@ -675,6 +691,8 @@
       "additionalProperties": false,
       "required": ["status", "blocking_reasons", "gap_count", "todo_count", "waiver_count", "generated_at"],
       "properties": {
+        "source_basis": { "const": "built_first" },
+        "label": { "const": "Design source is the built pages (\"built first\"); nothing was compared to a design." },
         "status": { "$ref": "#/$defs/sourceReadinessStatus" },
         "blocking_reasons": {
           "type": "array",

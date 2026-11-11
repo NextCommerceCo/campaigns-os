@@ -196,7 +196,9 @@ import { briefIntakeBindings, currentPacketInputs, currentSpecMaterial, inputRef
 import { prepareBuildStageStatus, priorBriefInputsForIntake } from "./input-refresh.mjs";
 import {
   DESIGN_SOURCE_PACKAGE_REL_PATH,
+  isBuiltFirst,
 } from "./design-source-package.mjs";
+import { readDesignSourcePackage } from "./parity/element-parity-record.mjs";
 import {
   appendDeviation,
   buildRecommendation,
@@ -333,7 +335,7 @@ Usage:
                              [--allow-uncertified-template "<reason>"] [--order-path-depth <off|common|full>]
                              [--deploy-target <target>] [--preview-url <url>] [--production-url <url>] [--no-run-session] [--force]
   campaigns-os build (--spec <json> | --map-id <id>) (--source <html-dir> [--route <slug>] | --adopt <src/route>) --target <page-kit-dir> --template-family <family>
-                     # --route binds the Map to a served route; --public-route-slug is the same flag. --adopt reads route and source from <target>/src/<route>/ holding page files (all three intake commands).
+                     # --route binds the Map to a served route; --public-route-slug is the same flag. --adopt reads route and source from <target>/src/<route>/ holding page files and declares built first: built pages are the design source; nothing is compared to a design (all three intake commands).
                      [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
                      [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>] [--design-manifest <path>]
                      [--allow-uncertified-template "<reason>"] [--order-path-depth <off|common|full>]
@@ -1646,7 +1648,9 @@ function createProofPolicy({ orderPathDepth = null } = {}) {
 // the blocking reason itself.
 // `packagePath` is where this run emitted the package, relative to the target
 // repo: under the funnel's runtime directory.
-const designSourcePackageRemedy = (packagePath = DESIGN_SOURCE_PACKAGE_REL_PATH) => [
+const designSourcePackageRemedy = (packagePath = DESIGN_SOURCE_PACKAGE_REL_PATH, adopt = null) => adopt
+  ? `Resolve the source blockers, then rerun prepare-build/start with --adopt ${shellToken(adopt)} and the original spec and target inputs. Built pages remain the design source (built first); nothing is compared to a design.`
+  : [
   `Supply the missing source proof through pages[].screenshots[] in ${SOURCE_HTML_MANIFEST_REL_PATH}`,
   "under the source root, or in a manifest anywhere else named by --design-manifest <path>",
   "(one available desktop record and one available mobile record per renderable page);",
@@ -1661,13 +1665,13 @@ const designSourcePackageRemedy = (packagePath = DESIGN_SOURCE_PACKAGE_REL_PATH)
 // exception reasons keep their own wording.
 const DESIGN_SOURCE_PACKAGE_REMEDY_REASON = /source_screenshot proof\.$|^Source TODO "capture-(?![^"]*-template-)[^"]*" is /;
 
-function designSourcePackageBlockers(prepared, targetRepo) {
+function designSourcePackageBlockers(prepared, targetRepo, adopt = null) {
   if (!["blocked", "pending"].includes(prepared.value?.readiness?.status)) return [];
-  const remedy = designSourcePackageRemedy(prepared.path && targetRepo ? relFromDir(targetRepo, prepared.path) : undefined);
+  const remedy = designSourcePackageRemedy(prepared.path && targetRepo ? relFromDir(targetRepo, prepared.path) : undefined, adopt);
   return (prepared.value.readiness.blocking_reasons || []).map((message, index) => ({
     code: "DESIGN_SOURCE_PACKAGE_NOT_READY",
     stage: "prepare_build",
-    message: DESIGN_SOURCE_PACKAGE_REMEDY_REASON.test(message) ? `${message} ${remedy}` : message,
+    message: adopt || DESIGN_SOURCE_PACKAGE_REMEDY_REASON.test(message) ? `${message} ${remedy}` : message,
     detail: {
       blocker_index: index,
       readiness_status: prepared.value.readiness.status,
@@ -2082,6 +2086,7 @@ function prepareBuildUnderLock({
       }))
     : [];
   const designSourcePackage = publication.package({
+    adopted: Boolean(args.adopt),
     plannedPacket: {
       campaign: { allowed_domains_confirmed: args["allowed-domains-confirmed"] === true },
       deploy: { ...deploySettings, production_url: optionalString(args["production-url"]) },
@@ -2098,7 +2103,7 @@ function prepareBuildUnderLock({
     mapId,
     publicRouteSlug,
   });
-  const designSourceBlockers = designSourcePackageBlockers(designSourcePackage, targetRepo);
+  const designSourceBlockers = designSourcePackageBlockers(designSourcePackage, targetRepo, args.adopt ? `src/${publicRouteSlug}` : null);
   const blockers = [...sourceBlockers, ...briefBlockers, ...briefQuestionBlockers, ...designSourceBlockers];
   const adapterDecisions = createAdapterDecisions({ commerceZoneFindings, wrapperPolicy: wrapperPolicy.value });
   const proofPolicy = createProofPolicy({ orderPathDepth: orderPathDepthFlag });
@@ -2199,6 +2204,7 @@ function prepareBuildUnderLock({
       ? (strippedSpecBytes == null ? specInput.savedMapRevision : { ...specInput.savedMapRevision, local_spec_material_hash: specMaterialHash(spec) })
       : null,
     source_root: portable(sourceRoot),
+    ...(args.adopt ? { adopt: `src/${publicRouteSlug}` } : {}),
     target_repo: portable(targetRepo),
     template_family: explicitTemplateFamily || null,
     brief_path: optionalString(args.brief) ? portable(resolve(args.brief)) : null,
@@ -4690,12 +4696,14 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
   // gate) and `next_actions` (exact commands — not prose) are always present,
   // and the recommendation is recorded on the active run session for
   // deviation telemetry.
+  const intakeAdopt = readJsonIfExists(contextPath)?.intake?.adopt
+    || (doctor.warnings.some((issue) => issue.code === "design_source.built_first") ? `src/${packet.campaign.public_route_slug}` : null);
   const prepareBuildRecoveryPrompt = divergences.length
     ? `The assembly report's ledger and the repository's artifacts disagree: ${quoteDivergences(divergences)} Inspect both sides and decide which is right before acting. Do not rerun \`${cmd("prepare-build")}\` or \`${cmd("start")}\` on the strength of the ledger alone.`
     : prepareBuildGate?.binding_failure
       ? prepareBuildGate.reason
       : prepareBuildGate?.stage
-        ? `Resolve the prepare-build blockers recorded in the assembly report, then rerun \`${cmd("prepare-build")}\` or \`${cmd("start")}\` with the same \`--spec\`/\`--map-id\`, \`--source\`, \`--target\` and \`--template-family\` as the original run before continuing.`
+        ? `Resolve the prepare-build blockers recorded in the assembly report, then rerun \`${cmd("prepare-build")}\` or \`${cmd("start")}\` with the same \`--spec\`/\`--map-id\`, ${intakeAdopt ? `\`--adopt ${intakeAdopt}\`` : "`--source`"}, \`--target\` and \`--template-family\` as the original run before continuing.`
         : prepareBuildGate?.reason || "Restore the lifecycle assembly report before continuing.";
   // Closeout recognition and purchase-proof coverage are both derived from
   // artifacts already on disk. Both are best-effort reads: orchestration must
@@ -4717,6 +4725,8 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
     runRecordCloseout = null;
   }
   const finalize = (result) => {
+    const builtFirst = doctor.warnings.find((issue) => issue.code === "design_source.built_first");
+    if (builtFirst && result.prompt) result.prompt += `\n${builtFirst.message}`;
     Object.defineProperty(result, PROGRESS_OBSERVATION, { value: {
       workspace: { packet, packetPath, targetRepo, contextPath, reportPath },
       context: readJsonIfExists(contextPath), report, doctor,
@@ -8653,6 +8663,8 @@ const NEXT_ACTION_GATE_PREFIXES = [["theme_gate.", "theme_gate"], ["polish_gate.
 export function prepareBuildRerunCommand({ packet, packetPath = null, context = null, targetRepo = null } = {}) {
   const packetDir = packetPath ? dirname(resolve(packetPath)) : null;
   const intake = context?.intake && typeof context.intake === "object" ? context.intake : null;
+  const adopt = optionalString(intake?.adopt)
+    || (isBuiltFirst(readDesignSourcePackage(packet, packetPath).value) ? `src/${packet.campaign.public_route_slug}` : null);
   const notes = [];
   // Context paths are target-relative; packet paths are packet-relative.
   const contextBase = intake
@@ -8660,7 +8672,7 @@ export function prepareBuildRerunCommand({ packet, packetPath = null, context = 
     : null;
   const abs = (base, value) => (base && optionalString(value) ? shellToken(resolve(base, value)) : optionalString(value) ? shellToken(value) : null);
   const parts = ["campaigns-os start"];
-  if (packet?.campaign?.map_public_route_slug) parts.push(`--route ${shellToken(packet.campaign.public_route_slug)}`);
+  if (!adopt && packet?.campaign?.map_public_route_slug) parts.push(`--route ${shellToken(packet.campaign.public_route_slug)}`);
   if (intake) {
     if (intake.spec_source === "local" || !intake.map_id) {
       const specPath = optionalString(intake.spec_path);
@@ -8675,7 +8687,7 @@ export function prepareBuildRerunCommand({ packet, packetPath = null, context = 
       parts.push(`--map-id ${shellToken(intake.map_id)}`);
     }
     parts.push(
-      `--source ${abs(contextBase, intake.source_root) || "<source-dir>"}`,
+      adopt ? `--adopt ${shellToken(adopt)}` : `--source ${abs(contextBase, intake.source_root) || "<source-dir>"}`,
       `--target ${abs(contextBase, intake.target_repo) || "<target-dir>"}`,
       `--template-family ${optionalString(intake.template_family) ? shellToken(intake.template_family) : optionalString(packet?.assembly?.template_family) ? shellToken(packet.assembly.template_family) : "<family>"}`,
     );
@@ -8693,7 +8705,7 @@ export function prepareBuildRerunCommand({ packet, packetPath = null, context = 
   else if (localSpec) parts.push(`--spec ${arg(localSpec, "<campaignspec.json>")}`);
   else parts.push("--spec <campaignspec.json>");
   parts.push(
-    `--source ${arg(packet?.source_html?.root, "<source-dir>")}`,
+    adopt ? `--adopt ${shellToken(adopt)}` : `--source ${arg(packet?.source_html?.root, "<source-dir>")}`,
     `--target ${arg(packet?.assembly?.target_repo, "<target-dir>")}`,
     `--template-family ${optionalString(packet?.assembly?.template_family) ? shellToken(packet.assembly.template_family) : "<family>"}`,
   );
@@ -8876,7 +8888,7 @@ function printPrepareResult(result, args) {
     console.log(
       `Funnel: route ${route} was set up as another funnel beside ${beside.packetPath} (route ${beside.route || "unnamed"})`
       + `${runtimeDir ? `, with its records under ${runtimeDir}/` : ""}. To rename that funnel's route instead, delete ${result.packetPath}`
-      + `${runtimeDir ? ` and ${runtimeDir}/` : ""}, then re-run prepare-build with --out ${beside.packetPath} --force.`,
+      + `${runtimeDir ? ` and ${runtimeDir}/` : ""}, then re-run prepare-build with --out ${beside.packetPath} --force${result.context?.intake?.adopt ? ` --adopt ${shellToken(result.context.intake.adopt)}` : ""}.`,
     );
   }
   if (result.briefPath) {

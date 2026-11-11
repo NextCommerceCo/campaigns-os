@@ -517,6 +517,7 @@ function manifestPagesForResolvedMappings(pages, mappings) {
 }
 
 function createCurrentHtmlFunnelScope({
+  adopted = false,
   packagePath,
   activePages,
   mappings,
@@ -584,6 +585,7 @@ function createCurrentHtmlFunnelScope({
   }
 
   return {
+    adopted,
     activePages,
     mappings: currentMappings,
     manifest,
@@ -601,6 +603,7 @@ function createCurrentHtmlFunnelScope({
 }
 
 function prepareDesignSourcePackage({
+  adopted = false,
   path,
   activePages,
   mappings,
@@ -622,6 +625,7 @@ function prepareDesignSourcePackage({
     campaignSlug: publicRouteSlug,
   };
   const currentHtmlFunnelScope = createCurrentHtmlFunnelScope({
+    adopted,
     packagePath: path,
     activePages,
     mappings,
@@ -666,15 +670,19 @@ function prepareDesignSourcePackage({
     const synthesizedHere = Array.isArray(priorProvenance?.synthesized)
       && priorProvenance.synthesized.includes(existingSha256);
     let problem = preparedDesignSourcePackageProblem(existingValue, currentPageScope, currentHtmlFunnelScope);
-    if (problem == null && existingValue.source_kind !== "html_funnel") {
-      problem = `declares source_kind ${JSON.stringify(existingValue.source_kind)}; html_funnel prepare-build requires "html_funnel".`;
+    if (problem == null && existingValue.source_kind !== (adopted ? "built_first" : "html_funnel")) {
+      problem = `declares source_kind ${JSON.stringify(existingValue.source_kind)}; this intake requires ${JSON.stringify(adopted ? "built_first" : "html_funnel")}.`;
     }
     if (problem != null) {
       // A package an earlier prepare-build synthesized, unchanged since, is
       // this producer's own stale output: --force regenerates it from the
       // current inputs. Anything else is left for the operator to reconcile.
-      if (synthesizedHere && force) return { stale: true, sha256: existingSha256 };
-      const recovery = synthesizedHere
+      if (synthesizedHere && force && existingValue.source_kind === (adopted ? "built_first" : "html_funnel")) return { stale: true, sha256: existingSha256 };
+      const recovery = existingValue.source_kind !== (adopted ? "built_first" : "html_funnel")
+        ? existingValue.source_kind === "built_first"
+          ? `This package was declared built first; rerun with --adopt src/${publicRouteSlug}. Keep the original source-kind declaration; an intake without --adopt cannot change it.`
+          : "Keep the original source-kind declaration; --adopt cannot convert an existing package."
+        : synthesizedHere
         ? "It was synthesized by an earlier prepare-build and is unchanged since, so rerun with --force to regenerate it from the current inputs "
           + "(--force also resets any stage evidence the Assembly Report carries)."
         : "prepare-build cannot show it synthesized these bytes (no Assembly Report records them as its own output, or the package changed since), so it will not overwrite it. "
