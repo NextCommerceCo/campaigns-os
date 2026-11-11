@@ -98,9 +98,8 @@ import { collectFigmaProvenanceFindings, FIGMA_EXPORT_FILE_CODES, SOURCE_PROVENA
 import { validateCampaignBuildBriefArtifact } from "../build-brief.mjs";
 import { briefFileUnusable, deriveInputCurrency, wellFormedBriefMaterial } from "../input-currency.mjs";
 import { ASSEMBLY_REPORT_STAGE_KEYS, stageIsTerminal } from "../orchestration-stage-contract.mjs";
-import { assemblyReportStagesWithEvidence } from "../design-source-publication.mjs";
-import { BUILT_FIRST_LABEL, isBuiltFirst } from "../design-source-package.mjs";
-import { readDesignSourcePackage } from "../parity/element-parity-record.mjs";
+import { assemblyReportStagesWithEvidence, readRecordedDesignSourcePackage } from "../design-source-publication.mjs";
+import { BUILT_FIRST_LABEL } from "../design-source-package.mjs";
 import {
   assemblySourcePackageFingerprintMissing,
   assessAssemblySourcePackageFreshnessWaivers,
@@ -450,7 +449,7 @@ const SPEC_DOCTOR_CHECKS = createDoctorCheckRegistry([
   {
     id: "design_source.built_first",
     phase: "built-output",
-    when: ({ packet, packetPath }) => isBuiltFirst(readDesignSourcePackage(packet, packetPath).value),
+    when: ({ packet, packetPath, buildState }) => readRecordedDesignSourcePackage(packet, packetPath, { report: buildState?.report }).builtFirst,
     run: ({ warnings }) => addIssue(warnings, "design_source.built_first", BUILT_FIRST_LABEL),
   },
   {
@@ -3846,7 +3845,7 @@ function validateSourceCoverage(packet, packetPath, spec, errors, warnings, read
   try { if (designPackagePath) designSourcePackage = JSON.parse(readFileSync(designPackagePath, "utf8")); } catch { /* Missing or unreadable package is checked separately. */ }
   const designManifest = isNonEmptyString(sourceRoot) && existsSync(sourceRoot) && statSync(sourceRoot).isDirectory()
     ? readSourceHtmlManifestFile(sourceRoot, { manifestPath: recordedDesignManifestPath(packet, packetPath) }).manifest : null;
-  recordQcResults({ derived, warnings, results: evaluateDesignAccess({ activePages: active, mappings: pages, manifest: designManifest, designSourcePackage, measured_at: new Date().toISOString() }) });
+  recordQcResults({ derived, warnings, results: evaluateDesignAccess({ activePages: active, mappings: pages, manifest: designManifest, designSourcePackage, packet, packetPath, report: buildState?.report, measured_at: new Date().toISOString() }) });
   const specPartialScope = spec?.build_scope?.mode === "partial";
   const specPartialReasons = Array.isArray(spec?.build_scope?.reasons) ? spec.build_scope.reasons.filter(isNonEmptyString) : [];
   const activeIds = new Set(active.map((page) => page.id));
@@ -4083,7 +4082,7 @@ function recordedDesignManifestPath(packet, packetPath) {
     return null;
   }
   const htmlFunnel = (Array.isArray(value?.contributions) ? value.contributions : [])
-    .find((contribution) => contribution?.kind === "html_funnel");
+    .find((contribution) => ["html_funnel", "built_first"].includes(contribution?.kind));
   const recorded = optionalString(htmlFunnel?.provenance?.manifest_path);
   return recorded ? resolve(dirname(packagePath), recorded) : null;
 }

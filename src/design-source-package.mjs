@@ -1078,6 +1078,9 @@ export function validateDesignSourcePackage(value, {
   contributions.forEach((contribution, index) => {
     const path = `$.contributions[${index}]`;
     if (!validateContribution(contribution, path, surfaceIds, add)) return;
+    if (contribution.kind === BUILT_FIRST_REASON && !isBuiltFirst(value)) {
+      add("design_source_package.built_first_contribution", `${path}.kind`, "A built_first contribution is allowed only in a built_first package declared by --adopt at intake.");
+    }
     if (contributionIds.has(contribution.id)) add("design_source_package.contribution_id_duplicate", `${path}.id`, `Duplicate contribution id "${contribution.id}".`);
     contributionIds.add(contribution.id);
   });
@@ -1138,6 +1141,11 @@ export function validateDesignSourcePackage(value, {
     }
   });
   validateReadiness(value.readiness, "$.readiness", add);
+  if (!isBuiltFirst(value) && isObject(value.readiness)) {
+    for (const field of ["source_basis", "label"]) {
+      if (Object.hasOwn(value.readiness, field)) add("design_source_package.built_first_readiness", `$.readiness.${field}`, `${field} is allowed only on a built_first package.`);
+    }
+  }
   validateReadback(value.readback, "$.readback", add);
 
   let authoritativeReadiness = null;

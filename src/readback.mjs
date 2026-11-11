@@ -58,8 +58,8 @@ import { deriveAssemblyReportSummary } from "./stage-ledger.mjs";
 import { assessEvidenceDebt } from "./evidence-debt.mjs";
 import { RUNTIME_DIR_REL_PATH, packetRuntimeRelPath } from "./campaign-workspace.mjs";
 import { normalizePublicRouteSlug } from "./route-identity.mjs";
-import { BUILT_FIRST_LABEL, isBuiltFirst } from "./design-source-package.mjs";
-import { readDesignSourcePackage } from "./parity/element-parity-record.mjs";
+import { BUILT_FIRST_LABEL } from "./design-source-package.mjs";
+import { readRecordedDesignSourcePackage } from "./design-source-publication.mjs";
 
 export const MAX_ARTIFACT_BYTES = 32 * 1024 * 1024;
 export const MAX_GIT_METADATA_BYTES = 64 * 1024;
@@ -1226,7 +1226,7 @@ function renderIdentity(views, lines) {
   if (verdict && verdict.run_id) entries.push(["qa run_id", verdict.run_id, "QA verdict"]);
   if (!entries.length) return;
   lines.push("RUN IDENTITY");
-  if (isBuiltFirst(readDesignSourcePackage(packet, views.packet?.path).value)) lines.push(`  ${BUILT_FIRST_LABEL}`);
+  if (readRecordedDesignSourcePackage(packet, views.packet?.path, { report: artifactData(views, "report") }).builtFirst) lines.push(`  ${BUILT_FIRST_LABEL}`);
   for (const [field, value, source] of entries) lines.push(`  ${field} = ${value}  [${source}]`);
   lines.push("");
 }

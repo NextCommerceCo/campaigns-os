@@ -15,7 +15,8 @@
 import { createHash } from "node:crypto";
 import { dirname, resolve } from "node:path";
 
-import { computeDesignSourcePackageMaterialFingerprint, BUILT_FIRST_REASON, BUILT_FIRST_LABEL, isBuiltFirst } from "../design-source-package.mjs";
+import { computeDesignSourcePackageMaterialFingerprint, BUILT_FIRST_REASON, BUILT_FIRST_LABEL } from "../design-source-package.mjs";
+import { readRecordedDesignSourcePackage } from "../design-source-publication.mjs";
 import { canonicalJson } from "../polish-capture.mjs";
 import { capturesIntegrity } from "../polish-captures-record.mjs";
 import {
@@ -472,6 +473,7 @@ function readRows(context, rules, comparisonCache) {
 
   const rows = [];
   const dsp = readDesignSourcePackage(packet, packetPath);
+  const builtFirst = readRecordedDesignSourcePackage(packet, packetPath, { report: context.report }).builtFirst;
   let dspReason = null;
   if (dsp.status !== "ok") dspReason = "source_package_unavailable";
   else {
@@ -491,7 +493,7 @@ function readRows(context, rules, comparisonCache) {
   }
   for (const cell of record.cells) {
     if (dspReason) { rows.push(...refusedCellRows(cell, dspReason, env)); continue; }
-    if (isBuiltFirst(dsp.value)) {
+    if (builtFirst) {
       rows.push(...evaluateElementParityCell({ page_id: cell.page_id, viewport: cell.viewport, builtFirst: true, measured_at: measuredAt }));
       continue;
     }

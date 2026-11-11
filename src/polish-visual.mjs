@@ -6,7 +6,8 @@ import { CAPTURES_SCHEMA, CAPTURES_PRODUCER, capturesIntegrity } from "./polish-
 import { pairCompatibility, pageCompatibility, compareImages, compareBands, readRgba, releaseComparison, DIFF_OPTIONS } from "./visual-diff.mjs";
 import { loadVisualDependencies, encodeHeatmap } from "./visual-diff.mjs";
 import { verifyReference, classifyProvenance } from "./visual-reference.mjs";
-import { computeDesignSourcePackageMaterialFingerprint, isBuiltFirst, BUILT_FIRST_REASON, BUILT_FIRST_LABEL } from "./design-source-package.mjs";
+import { computeDesignSourcePackageMaterialFingerprint, BUILT_FIRST_REASON, BUILT_FIRST_LABEL } from "./design-source-package.mjs";
+import { readRecordedDesignSourcePackage } from "./design-source-publication.mjs";
 import { currentSourcePackageMaterialFingerprint } from "./polish-gate.mjs";
 import { startSourceHtmlServer, readRegularFileSync, isRegularFileSync } from "./source-html-server.mjs";
 import { boundedPolishDeadline, runWithPolishProducerDeadline, POLISH_PRODUCER_TIMEOUT_ERROR_CODE,
@@ -247,7 +248,7 @@ export async function runVisualPass({ createBrowserAdapter, frozen, packet, pack
       dspReason = computeDesignSourcePackageMaterialFingerprint(dsp) === currentSourcePackageMaterialFingerprint(report) ? null : "source_package_stale";
     }
   } catch { /* unavailable, never fetch */ }
-  const builtFirst = isBuiltFirst(dsp);
+  const builtFirst = !dspReason && readRecordedDesignSourcePackage(packet, packetPath, { report }).builtFirst;
   if (builtFirst) Object.assign(source, { status: BUILT_FIRST_REASON, label: BUILT_FIRST_LABEL });
   // A report without a slug names no built output: S2 has nothing to hash,
   // and every route still gets its cells and rows.

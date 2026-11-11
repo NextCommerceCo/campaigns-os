@@ -22,6 +22,7 @@ import { cmd } from "../install-invocation.mjs";
 import { shellToken } from "../shell-token.mjs";
 import { isObject, isNonEmptyString, optionalString, resolveFromFile, addIssue, filesystemPathsMatch } from "../cli-helpers.mjs";
 import { orderPathDepthDrift } from "./checks.mjs";
+import { designSourceReferenceMismatches, readRecordedDesignSourcePackage } from "../design-source-publication.mjs";
 
 // The orchestration stage contract lives in orchestration-stage-contract.mjs so
 // report producers, validators, the `next` picker and the Assembly Report's
@@ -89,18 +90,6 @@ function reportStageBlockerIssues(reportStage, fallbackCode, fallbackMessage) {
     message: blocker.message || fallbackMessage,
     detail: blocker,
   }));
-}
-
-function designSourceReferenceMismatches(expected, expectedArtifactPath, actual, actualArtifactPath) {
-  if (!isObject(expected) || !isObject(actual)) return ["reference"];
-  const mismatches = [];
-  for (const field of ["schema_version", "sha256", "material_fingerprint"]) {
-    if (expected[field] !== actual[field]) mismatches.push(field);
-  }
-  const expectedPath = resolveFromFile(expectedArtifactPath, expected.path);
-  const actualPath = resolveFromFile(actualArtifactPath, actual.path);
-  if (!filesystemPathsMatch(expectedPath, actualPath)) mismatches.push("path");
-  return mismatches;
 }
 
 function nextPrepareBuildBindingIssues({
@@ -214,6 +203,16 @@ function nextPrepareBuildBindingIssues({
       `Assembly Report Design Source Package reference does not match the current packet/context (${dspMismatches.join(", ")}).`,
       { mismatched_fields: dspMismatches },
     );
+  }
+
+  if (issues.length === 0) {
+    const currentPackage = readRecordedDesignSourcePackage(packet, packetPath, { report });
+    if ((currentPackage.declaredBuiltFirst || isNonEmptyString(context?.intake?.adopt)) && !currentPackage.current) {
+      push("next.prepare_build.report_dsp_mismatch", "Design Source Package on disk does not match the recorded intake hash or material fingerprint. Restore the recorded package or rerun intake with the original inputs.", {
+        source: "disk",
+        mismatched_fields: designSourceReferenceMismatches(packet.design_source_package, packetPath, currentPackage.reference, packetPath),
+      });
+    }
   }
 
   return issues;
@@ -667,6 +666,9 @@ function doctorNextActions(errors, warnings, derived, { polishBlocked, polishGat
 // stages AFTER the picked one that cannot run until it clears, never the
 // picked stage itself; `command` is always present.
 function buildNextStep(errors, warnings, derived, report = null, packet = null, prepareBuildGate = prepareBuildGateIssue(report), { sidecarArgs = "" } = {}) {
+  if (prepareBuildGate?.issues?.some((issue) => issue.detail?.source === "disk")) {
+    addPrepareBuildGateErrors(errors, report, prepareBuildGate);
+  }
   const polishGate = derived.polish_gate || evaluatePolishGate({ report });
   const polishCheckpointGate = derived.polish_checkpoint_gate || null;
   const assemblyComplete = String(report?.stages?.assembly?.status || "").startsWith("completed");

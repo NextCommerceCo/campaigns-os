@@ -39,6 +39,16 @@ pages stand in for the design source. `--route` with `--source` keeps the
 ordinary design-proof rules. There is no source-kind flag to convert an
 existing package; reconcile an existing intake rather than relabelling it.
 
+The tool grants built-first treatment only when the recorded Build Context
+contains the adoption and the package on disk still matches the intake's
+Design Source Package references in the Build Packet, Build Context and Assembly
+Report, including the exact-byte sha256 and material fingerprint. Editing a
+package to say `built_first` cannot grant that treatment. An edited or mismatched
+package gets the ordinary source-render plan, no built-first label or excluded
+comparison rows, and intake's existing package-mismatch gate blocks progress.
+`readiness.source_basis` and `readiness.label`, and contributions of kind
+`built_first`, are valid only inside a `built_first` package.
+
 Design source is the built pages ("built first"); nothing was compared to a design.
 The readiness block carries `source_basis: "built_first"` and that label, even
 when its status is ready. Missing desktop/mobile source screenshots and their

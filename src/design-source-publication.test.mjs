@@ -52,7 +52,8 @@ test('the CLI restates no Design Source Package publication rule and imports the
     && /^\.\.?\//.test(node.source.value)
     && realpathSync(fileURLToPath(new URL(node.source.value, pathToFileURL(cliPath)))) === ownerPath);
   assert.equal(ownerImports.length, 1, 'src/cli.mjs must import the publication owner exactly once');
-  assert.equal(ownerImports[0].specifiers.length, 1, 'src/cli.mjs must import exactly one binding from the publication owner');
+  assert.deepEqual(ownerImports[0].specifiers.map(specifier => specifier.imported.name).sort(),
+    ['readRecordedDesignSourcePackage', 'withDesignSourcePublication'], 'the CLI uses the publication entry and its shared recorded-intake reader');
 });
 
 test('only the publication owner takes the target lock with withTargetLock', () => {

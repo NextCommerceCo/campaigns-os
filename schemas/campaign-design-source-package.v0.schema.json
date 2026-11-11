@@ -104,6 +104,21 @@
             "required": ["source_basis", "label"]
           }
         }
+      },
+      "else": {
+        "properties": {
+          "readiness": {
+            "type": "object",
+            "properties": { "source_basis": false, "label": false }
+          },
+          "contributions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": { "kind": { "not": { "const": "built_first" } } }
+            }
+          }
+        }
       }
     }
   ],

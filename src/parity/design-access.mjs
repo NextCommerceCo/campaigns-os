@@ -1,6 +1,7 @@
 import { normalizeDesignFileReference, resolveDesignFileReferences } from "../design-file-reference.mjs";
 import { buildQcResult } from "../qc-results.mjs";
 import { BUILT_FIRST_REASON, BUILT_FIRST_LABEL, isBuiltFirst } from "../design-source-package.mjs";
+import { readRecordedDesignSourcePackage } from "../design-source-publication.mjs";
 
 const array = (value) => Array.isArray(value) ? value : [];
 
@@ -12,8 +13,11 @@ function recordedType(contribution, fileRef) {
 
 // Recomputed from declarations and package records; a named file never proves
 // access. In particular this evaluator has no pass or accept-eligible path.
-export function evaluateDesignAccess({ activePages = [], mappings = [], manifest = null, designSourcePackage = null, measured_at } = {}) {
-  if (isBuiltFirst(designSourcePackage)) return activePages.map((page) => buildQcResult({
+export function evaluateDesignAccess({ activePages = [], mappings = [], manifest = null, designSourcePackage = null, packet = null, packetPath = null, report = null, measured_at } = {}) {
+  // Standalone evaluation describes an in-memory declaration. Campaign reads
+  // always supply the packet and use its recorded intake, like the other QC readers.
+  const builtFirst = packet ? readRecordedDesignSourcePackage(packet, packetPath, { report }).builtFirst : isBuiltFirst(designSourcePackage);
+  if (builtFirst) return activePages.map((page) => buildQcResult({
     check: "design.access", leg: "doctor", subject: { check: "design.access", page: page.id, key: "file" },
     result: "excluded", reason_code: BUILT_FIRST_REASON, accept_eligible: false,
     state: { source_kind: BUILT_FIRST_REASON }, observation: { label: BUILT_FIRST_LABEL }, measured_at,

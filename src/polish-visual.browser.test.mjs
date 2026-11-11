@@ -12,7 +12,7 @@ import { main, nextStage } from "./cli.mjs";
 import { computeBuildFingerprint } from "./built-site-scope.mjs";
 import { syntheticVisualFixture } from "./polish-visual-fixtures.mjs";
 import { sha256Hex, readPngStructure } from "./png-header.mjs";
-import { computeDesignSourcePackageMaterialFingerprint } from "./design-source-package.mjs";
+import { computeDesignSourcePackageMaterialFingerprint, createDesignSourcePackageArtifactReference } from "./design-source-package.mjs";
 import { loadVisualDependencies } from "./visual-diff.mjs";
 import { startSourceHtmlServer } from "./source-html-server.mjs";
 
@@ -71,8 +71,16 @@ browserTest("built first uses only the build browser and records both viewports 
   const dsp = readJson(dspPath);
   dsp.source_kind = "built_first";
   dsp.contributions[0].kind = "built_first";
+  dsp.material_fingerprint = computeDesignSourcePackageMaterialFingerprint(dsp);
   writeJson(dspPath, dsp);
-  f.input.report.design_source_package.material_fingerprint = computeDesignSourcePackageMaterialFingerprint(dsp);
+  const reference = createDesignSourcePackageArtifactReference(dsp, { path: dspPath, serialized: readFileSync(dspPath) });
+  f.input.packet.design_source_package = reference;
+  f.input.report.design_source_package = reference;
+  writeJson(f.input.packetPath, f.input.packet);
+  writeJson(resolve(f.targetRepo, ".campaign-runtime/build-context.json"), {
+    packet_path: "packet.json", intake: { adopt: "src/sample" }, design_source_package: reference,
+  });
+  writeJson(resolve(f.targetRepo, ".campaign-runtime/assembly-report.json"), f.input.report);
   // A Liquid page tree must never be used as rendered design input.
   writeFileSync(resolve(f.sourceRoot, "page.html"), '{% include "example-private-family/page.liquid" %}');
   const original = f.input.createBrowserAdapter;

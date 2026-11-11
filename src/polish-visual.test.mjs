@@ -12,7 +12,7 @@ import { readCaptures, qcResultRef } from "./qc-results.mjs";
 import { parseQcResultRef, planQcAccepts } from "./qc-accept.mjs";
 import { buildElementParityRecord, readElementParityRows, ELEMENT_PARITY_QC_RULES } from "./parity/element-parity-record.mjs";
 import { POLISH_PAGE_LOAD_SCHEMA_VERSION, POLISH_PAGE_LOAD_PRODUCER } from "./polish-page-load.mjs";
-import { computeDesignSourcePackageMaterialFingerprint } from "./design-source-package.mjs";
+import { computeDesignSourcePackageMaterialFingerprint, createDesignSourcePackageArtifactReference } from "./design-source-package.mjs";
 import { evaluatePolishGate, POLISH_PRODUCER } from "./polish-gate.mjs";
 import { execFile, execFileSync } from "node:child_process";
 import { rmSync } from "node:fs";
@@ -61,9 +61,17 @@ test("built first captures only builds and records the same PNGs as source evide
   dsp.surface_identity.push({ id: "other", mappings: { campaign_spec_page_id: "other" } });
   input.frozen.plan = planPolishCapture({ packet: input.packet, baseUrl: "http://127.0.0.1:1234" });
   input.frozen.page_load.subject.routes = input.frozen.plan.routes.map((route) => route.requested_route);
+  dsp.material_fingerprint = computeDesignSourcePackageMaterialFingerprint(dsp);
   writeFileSync(dspPath, JSON.stringify(dsp));
   const sourceFp = computeDesignSourcePackageMaterialFingerprint(dsp);
-  input.report.design_source_package.material_fingerprint = sourceFp;
+  const reference = createDesignSourcePackageArtifactReference(dsp, { path: dspPath, serialized: readFileSync(dspPath) });
+  input.packet.design_source_package = reference;
+  input.report.design_source_package = reference;
+  mkdirSync(resolve(f.targetRepo, ".campaign-runtime"), { recursive: true });
+  writeFileSync(resolve(f.targetRepo, ".campaign-runtime/build-context.json"), JSON.stringify({
+    packet_path: "packet.json", intake: { adopt: "src/sample" }, design_source_package: reference,
+  }));
+  writeFileSync(resolve(f.targetRepo, ".campaign-runtime/assembly-report.json"), JSON.stringify(input.report));
   writeFileSync(input.packetPath, JSON.stringify(input.packet));
   let browsers = 0, renders = 0;
   const record = await runVisualPass({ ...input, createBrowserAdapter: (options) => {
@@ -107,14 +115,65 @@ test("built first captures only builds and records the same PNGs as source evide
   const merged = mergePolishCaptureEvidence(report, { pageLoad, captures: record, elementParity: parity });
   assert.deepEqual(merged.stages.polish.evidence.visual_review.captures.source.built_first_source_evidence, record.source.built_first_source_evidence);
   t.diagnostic(`not applicable: built first: ${JSON.stringify(read[0])}`);
+  const recordedBytes = readFileSync(dspPath);
+  dsp.notes = ["Example administrative edit after intake"];
+  writeFileSync(dspPath, JSON.stringify(dsp));
+  assert.ok(readCaptures(context).every((row) => row.reason_code !== "built_first" && row.result !== "excluded"), "the exact-byte hash binds visual reference and diff exclusions");
+  assert.ok(readElementParityRows({ ...context, record: parity, captures: record }, {
+    ...ELEMENT_PARITY_QC_RULES, plan: planPolishCapture,
+  }).every((row) => row.reason_code !== "built_first" && row.result !== "excluded"), "the exact-byte hash binds parity exclusions");
+  writeFileSync(dspPath, recordedBytes);
   input.report.design_source_package.material_fingerprint = `sha256:${"b".repeat(64)}`;
+  let staleSourceBrowsers = 0;
   const stale = await runVisualPass({ ...input, createBrowserAdapter: (options) => {
-    assert.equal(options.seal, undefined, "a stale built-first package still cannot render templates as design");
+    if (options.seal) staleSourceBrowsers++;
     return fakeVisualAdapter();
   } });
-  assert.ok(VISUAL_QC_RULES.evaluate(stale).every((row) => row.result === "excluded" && !row.accept_eligible));
-  assert.ok(readCaptures({ ...context, record: stale, currentSource: input.report.design_source_package.material_fingerprint })
-    .every((row) => row.result === "unexercised" && !row.accept_eligible));
+  assert.equal(staleSourceBrowsers, 1, "a stale package gets the ordinary source render plan");
+  assert.notEqual(stale.source.status, "built_first");
+  assert.ok(VISUAL_QC_RULES.evaluate(stale).every((row) => row.reason_code !== "built_first"));
+  const staleRows = readCaptures({ ...context, record: stale, currentSource: input.report.design_source_package.material_fingerprint });
+  assert.ok(staleRows.every((row) => row.result !== "excluded" && row.reason_code !== "built_first"));
+  assert.ok(staleRows.some((row) => row.reason_code === "source_package_stale"));
+});
+
+for (const recompute of [false, true]) test(`ordinary package-only built_first edit (recomputed material: ${recompute}) renders the source and excludes no visual/parity checks`, async (t) => {
+  const f = syntheticVisualFixture(); t.after(f.cleanup);
+  const input = visualInputs(f);
+  input.packet.campaign = { public_route_slug: "sample" };
+  const path = resolve(f.targetRepo, "dsp.json");
+  const dsp = JSON.parse(readFileSync(path, "utf8"));
+  dsp.source_kind = "html_funnel";
+  dsp.material_fingerprint = computeDesignSourcePackageMaterialFingerprint(dsp);
+  writeFileSync(path, JSON.stringify(dsp));
+  const reference = createDesignSourcePackageArtifactReference(dsp, { path, serialized: readFileSync(path) });
+  input.packet.design_source_package = reference;
+  input.report.design_source_package = reference;
+  writeFileSync(input.packetPath, JSON.stringify(input.packet));
+  dsp.source_kind = "built_first";
+  if (recompute) dsp.material_fingerprint = computeDesignSourcePackageMaterialFingerprint(dsp);
+  writeFileSync(path, JSON.stringify(dsp));
+  let sourceBrowsers = 0;
+  const record = await runVisualPass({ ...input, createBrowserAdapter: (options) => {
+    if (options.seal) sourceBrowsers++;
+    return fakeVisualAdapter();
+  } });
+  assert.equal(sourceBrowsers, 1);
+  assert.notEqual(record.source.status, "built_first");
+  assert.equal(record.source.built_first_source_evidence, undefined);
+  assert.ok(record.cells.filter((cell) => cell.side === "source_html").every((cell) => cell.status === "rendered"));
+  const context = { record, packet: input.packet, packetPath: input.packetPath,
+    currentBuild: input.report.stages.assembly.build_fingerprint, currentSource: reference.material_fingerprint,
+    campaignSlug: "sample", targetRepo: f.targetRepo,
+    qcStandIns: { polish: { "visual.diff": { ...VISUAL_QC_RULES, plan: planPolishCapture } } } };
+  const parity = buildElementParityRecord({ plan: input.frozen.plan, captures: record, packet: input.packet, packetPath: input.packetPath,
+    buildFingerprint: context.currentBuild, sourceFingerprint: context.currentSource, measuredAt: input.now,
+    writeFile: () => { throw new Error("no measured parity probe in this fixture"); } });
+  const rows = [...VISUAL_QC_RULES.evaluate(record), ...readCaptures(context), ...readElementParityRows({ ...context, record: parity, captures: record }, {
+    ...ELEMENT_PARITY_QC_RULES, plan: planPolishCapture,
+  })];
+  for (const check of ["visual.reference", "visual.diff", "parity.element"]) assert.ok(rows.some((row) => row.check === check));
+  assert.ok(rows.every((row) => row.reason_code !== "built_first" && row.result !== "excluded"));
 });
 test("RC-1 and RC-2: select skips only its side/cell and onResult delivers the timed probe result in order", async (t) => {
   const f = syntheticVisualFixture(); t.after(f.cleanup); const input = visualInputs(f);

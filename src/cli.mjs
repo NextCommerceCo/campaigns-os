@@ -2,7 +2,7 @@ import { campaignSpecIdentity, resolveCampaignIdentity, campaignIdentitiesMatch,
 import { withDoctorCiReport } from "./doctor/ci.mjs";
 import { createHash, randomUUID } from "node:crypto";
 import { resolveDesignFileReferences } from "./design-file-reference.mjs";
-import { withDesignSourcePublication } from "./design-source-publication.mjs";
+import { withDesignSourcePublication, readRecordedDesignSourcePackage } from "./design-source-publication.mjs";
 import { createDemo, demoArguments } from "./demo.mjs";
 import { execFileSync } from "node:child_process";
 import {
@@ -194,11 +194,7 @@ import {
 } from "./build-brief.mjs";
 import { briefIntakeBindings, currentPacketInputs, currentSpecMaterial, inputRefreshCommands, inputStamps, specMaterialStamp, stageWriteInputs } from "./input-currency.mjs";
 import { prepareBuildStageStatus, priorBriefInputsForIntake } from "./input-refresh.mjs";
-import {
-  DESIGN_SOURCE_PACKAGE_REL_PATH,
-  isBuiltFirst,
-} from "./design-source-package.mjs";
-import { readDesignSourcePackage } from "./parity/element-parity-record.mjs";
+import { DESIGN_SOURCE_PACKAGE_REL_PATH } from "./design-source-package.mjs";
 import {
   appendDeviation,
   buildRecommendation,
@@ -4706,8 +4702,8 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
   // gate) and `next_actions` (exact commands — not prose) are always present,
   // and the recommendation is recorded on the active run session for
   // deviation telemetry.
-  const intakeAdopt = readJsonIfExists(contextPath)?.intake?.adopt
-    || (doctor.warnings.some((issue) => issue.code === "design_source.built_first") ? `src/${packet.campaign.public_route_slug}` : null);
+  const intakeAdopt = readRecordedDesignSourcePackage(packet, packetPath, { report }).builtFirst
+    ? readJsonIfExists(contextPath)?.intake?.adopt || `src/${packet.campaign.public_route_slug}` : null;
   const prepareBuildRecoveryPrompt = divergences.length
     ? `The assembly report's ledger and the repository's artifacts disagree: ${quoteDivergences(divergences)} Inspect both sides and decide which is right before acting. Do not rerun \`${cmd("prepare-build")}\` or \`${cmd("start")}\` on the strength of the ledger alone.`
     : prepareBuildGate?.binding_failure
@@ -8673,8 +8669,9 @@ const NEXT_ACTION_GATE_PREFIXES = [["theme_gate.", "theme_gate"], ["polish_gate.
 export function prepareBuildRerunCommand({ packet, packetPath = null, context = null, targetRepo = null } = {}) {
   const packetDir = packetPath ? dirname(resolve(packetPath)) : null;
   const intake = context?.intake && typeof context.intake === "object" ? context.intake : null;
-  const adopt = optionalString(intake?.adopt)
-    || (isBuiltFirst(readDesignSourcePackage(packet, packetPath).value) ? `src/${packet.campaign.public_route_slug}` : null);
+  const report = targetRepo && optionalString(context?.report_path) ? readJsonIfExists(resolve(targetRepo, context.report_path)) : null;
+  const adopt = readRecordedDesignSourcePackage(packet, packetPath, { report }).builtFirst
+    ? optionalString(intake?.adopt) || `src/${packet.campaign.public_route_slug}` : null;
   const notes = [];
   // Context paths are target-relative; packet paths are packet-relative.
   const contextBase = intake
