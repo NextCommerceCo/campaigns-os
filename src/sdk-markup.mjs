@@ -242,10 +242,9 @@ function describe(entry) {
  * page_id, file, message, detail } and the set of unknown data-next-* names.
  * `sdk_version` is the campaign's SDK pin, used when the page carries no
  * exact loader pin of its own. `document`, when a function, returns the
- * parse5 tree of `content` (the doctor's shared inputs parse once for every
- * consumer). `scripts`, an array or a function returning one, is the page's
- * local scripts ({ src, file, content }); it is read only on a page that runs
- * SDK 0.5.0 or later.
+ * parse5 tree of `content`. `scripts`, an array or a function returning one,
+ * is the page's local scripts ({ src, file, content }); it is read only on a
+ * page that runs SDK 0.5.0 or later.
  */
 export function scanPageMarkup({ page_id, file = null, content = "", sdk_version = null, page_type = null, document: parsed = null, scripts = null }) {
   const document = typeof parsed === "function" ? parsed() : parse(String(content || ""));

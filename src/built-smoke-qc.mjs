@@ -84,11 +84,10 @@
 // element paths, attribute names and counts are kept; no query string, script
 // body or page text.
 //
-// Callers hand in built HTML and the local scripts each page loads: either
-// `readScripts`, called with the srcs of the scripts the page's own parse
-// lists (doctor's bounded script collector), or a `page.scripts` list
-// ({src, file, content} when read, {src, file, unread} when not); a page with
-// neither reads every local script it loads unread. Every URL reference that
+// Callers hand in built HTML and `readScripts` (doctor's bounded script
+// collector), called with the srcs of the scripts each page's own parse lists
+// ({src, file, content} when read, {src, file, unread} when not); without it
+// every local script a page loads reads unread. Every URL reference that
 // names a file under _site/ (the og:image file, each local script) maps
 // through builtFileOf: the URL parser resolves it against the page's own URL
 // under the site root, and each segment of the resulting path is
@@ -101,7 +100,7 @@
 import { realpathSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
 
-import { CART_PLACEHOLDERS_LIMITS, isFileReadFailure, isPageReadFailure, scriptKind } from "./cart-placeholders.mjs";
+import { CART_PLACEHOLDERS_LIMITS, isFileReadFailure, isPageReadFailure, readBuiltPage, scriptKind } from "./cart-placeholders.mjs";
 import { MAX_ELEMENT_DEPTH, TooDeep, parseBounded } from "./html-scan.mjs";
 import { aggregateQcResults, buildQcResult } from "./qc-results.mjs";
 import { isLoopbackHostname } from "./remit.mjs";
@@ -560,12 +559,6 @@ export function builtFileOf(reference, builtPath, siteRoot, { bases = [] } = {})
   return { path: join(siteRoot, ...segments), site_path: url.pathname };
 }
 
-// Whether an error means the page cannot be read or parsed (see
-// isPageReadFailure), nesting past the bound found after the parse included:
-// walkElements throws the parser's TooDeep for nodes the parser moved, or a
-// nested document's depth added to its host element's.
-export const isBuiltPageReadFailure = isPageReadFailure;
-
 // Every element in document order with its path (`html[1]/body[1]/a[2]`),
 // its depth (the root element is 1) and whether it sits in <template>
 // content, without recursion. A nested document starts at its host element's
@@ -650,30 +643,6 @@ function loadedScriptSrc(node, tag, inTemplate) {
   const attrs = attrsOf(node);
   const src = attrs.get("src");
   return typeof src === "string" && src.trim() && scriptKind(attrs) ? src : null;
-}
-
-/**
- * One built page's parse5 tree, through the 1.5 gate's bounded parser. Throws
- * what it throws (isBuiltPageReadFailure reads it).
- *
- * @param {string} content  the page's HTML
- */
-export const parseBuiltPage = (content) => parseBounded(content);
-
-/**
- * The src of every script a built page loads, in document order, read from
- * its parse5 tree (see loadedScriptSrc).
- *
- * @param {object} document  the page's tree (parseBuiltPage)
- * @returns {string[]}
- */
-export function pageScriptSources(document) {
-  const sources = [];
-  walkElements(document, ({ node, tag, inTemplate }) => {
-    const src = loadedScriptSrc(node, tag, inTemplate);
-    if (src != null) sources.push(src);
-  });
-  return sources;
 }
 
 // The markup an element holds that the HTML parser keeps as text but a
@@ -778,7 +747,7 @@ function observeDocument(document) {
     // Markup with no `<` holds no element, so it is not parsed or counted.
     if (!inner || !inner.markup.includes("<")) return;
     if (!cap.takeMarkup(Buffer.byteLength(inner.markup, "utf8"))) return;
-    walk(parseBuiltPage(inner.markup), true, { path: `${frame.path}/${inner.at}`.replace(/\/$/, ""), depth: frame.depth });
+    walk(parseBounded(inner.markup), true, { path: `${frame.path}/${inner.at}`.replace(/\/$/, ""), depth: frame.depth });
   }, start);
   walk(document, false, {});
   return observed;
@@ -805,16 +774,11 @@ export function realPathOf(path) {
 }
 
 // The page's local scripts for the anchor hint: `contents` holds what was
-// read, `complete` whether every local script the page loads was. The list is
-// the caller's (`page.scripts`, or `readScripts` given the srcs the page
-// loads); without one, every local <script src> on the page counts as loaded
-// and unread.
-function pageScripts(page, observed, builtPath, ctx) {
-  const listed = Array.isArray(page.scripts)
-    ? page.scripts
-    : ctx.readScripts
-      ? ctx.readScripts(observed.scripts, builtPath)
-      : observed.scripts.filter((src) => builtFileOf(src, builtPath, ctx.siteRoot) != null).map((src) => ({ src, unread: "not_listed" }));
+// read, `complete` whether every local script the page loads was.
+function pageScripts(observed, builtPath, ctx) {
+  const listed = ctx.readScripts
+    ? ctx.readScripts(observed.scripts, builtPath)
+    : observed.scripts.filter((src) => builtFileOf(src, builtPath, ctx.siteRoot) != null).map((src) => ({ src, unread: "not_listed" }));
   const contents = listed.filter((script) => typeof script?.content === "string").map((script) => script.content);
   return { contents, loaded: listed.length, read: contents.length, complete: contents.length === listed.length };
 }
@@ -898,8 +862,8 @@ const environmentResult = (environment, found, reasonCode) => {
 // The page's results before any cap: { anchors: [...], fixed: [...] }, each
 // { key, result, reason_code, state, observation }, and `absence: true` on a
 // result that rests on something not being on the page.
-function pageFindings(page, file, observed, builtPath, ctx) {
-  const scripts = pageScripts(page, observed, builtPath, ctx);
+function pageFindings(file, observed, builtPath, ctx) {
+  const scripts = pageScripts(observed, builtPath, ctx);
   const anchors = [...observed.anchors.values()].map((anchor) => {
     const [result, reasonCode, outcome] = anchorOutcome(anchor, observed, scripts);
     const read = outcome === "resolved" || outcome === "in_template" ? null : scripts;
@@ -982,7 +946,7 @@ const capMembersFor = (reasons) => reasons.flatMap((reason) => aggregateQcResult
  * Evaluate the built-output smoke checks.
  *
  * @param {{
- *   pages: Array<{ file: string, content?: string, bytes?: number, unreadable?: boolean, document?: () => object, scripts?: Array<{ src: string, file?: string, content?: string, unread?: string }> }>,
+ *   pages: Array<{ file: string, content?: string, bytes?: number, unreadable?: boolean, document?: () => object }>,
  *   environment?: string|null,
  *   siteRoot: string|null,
  *   targetDir?: string|null,
@@ -991,13 +955,9 @@ const capMembersFor = (reasons) => reasons.flatMap((reason) => aggregateQcResult
  *   measuredAt?: string,
  * }} input  `pages` in a stable order, `file` relative to the doctor target
  *   ("_site/<slug>/index.html"); pages past the page cap may omit `content`.
- *   A page's `document`, when a function, returns the parseBuiltPage tree of
- *   its `content` (shared with the cart placeholder check) and throws what
- *   parseBuiltPage throws.
- *   `scripts` lists every local script the page loads, read or not (see the
- *   header); without it `readScripts`, when given, lists them from the srcs
- *   the page's parse found, and otherwise the page's local scripts read
- *   unread. `environment` is the recorded build environment ("production" or
+ *   Pages read as readBuiltPage reads them (cart-placeholders.mjs), and
+ *   `readScripts` lists their scripts as the header describes.
+ *   `environment` is the recorded build environment ("production" or
  *   "development"; anything else is unknown). `siteRoot` is the built site
  *   root (the scope's `_site/`, or the directory doctor was pointed at when
  *   it has none): every local reference maps onto it through builtFileOf
@@ -1044,7 +1004,7 @@ export function evaluateSmokeQc({ pages = [], environment = null, siteRoot = nul
       pageLevel(file, R.PAGE_CAP_REACHED);
       return;
     }
-    const read = readPage(page || {});
+    const read = readBuiltPage(page || {}, SMOKE_QC_LIMITS);
     if (read.outcome) {
       pageLevel(file, read.outcome, read.bytes == null ? {} : { bytes: read.bytes });
       return;
@@ -1053,9 +1013,9 @@ export function evaluateSmokeQc({ pages = [], environment = null, siteRoot = nul
     let observed;
     try {
       observed = observeDocument(read.document);
-      findings = pageFindings(page, file, observed, pageDir ? join(pageDir, file) : file, ctx);
+      findings = pageFindings(file, observed, pageDir ? join(pageDir, file) : file, ctx);
     } catch (error) {
-      if (!isBuiltPageReadFailure(error)) throw error;
+      if (!isPageReadFailure(error)) throw error;
       pageLevel(file, R.PAGE_UNREADABLE, { bytes: read.bytes });
       return;
     }
@@ -1086,22 +1046,6 @@ export function evaluateSmokeQc({ pages = [], environment = null, siteRoot = nul
     }
   });
   return results;
-}
-
-// One page's parse5 tree (parseBuiltPage), or a page-level outcome. A read or
-// parse failure, nesting past MAX_ELEMENT_DEPTH included, reads the page
-// unreadable; any other error is a defect and throws.
-function readPage(page) {
-  if (page.unreadable) return { outcome: R.PAGE_UNREADABLE };
-  const bytes = Number.isFinite(page.bytes) ? page.bytes : typeof page.content === "string" ? Buffer.byteLength(page.content, "utf8") : null;
-  if (bytes != null && bytes > SMOKE_QC_LIMITS.page_bytes) return { outcome: R.PAGE_TOO_LARGE, bytes };
-  if (typeof page.content !== "string") return { outcome: R.PAGE_UNREADABLE };
-  try {
-    return { document: typeof page.document === "function" ? page.document() : parseBuiltPage(page.content), bytes };
-  } catch (error) {
-    if (!isBuiltPageReadFailure(error)) throw error;
-    return { outcome: R.PAGE_UNREADABLE, bytes };
-  }
 }
 
 // Each deploy URL as a base an og:image maps through: its origin, its host
