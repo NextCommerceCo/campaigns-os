@@ -494,9 +494,11 @@ the existing file drift machinery. It carries:
 - `extra`, `missing`, `changed`: complete file path lists from the manifest
   comparison, without the human drift summary's truncation;
 - `changed_pages`: `{ "page_id": "landing", "built_path": "landing/index.html" }`
-  entries for added, removed, or modified HTML in the built-site page map;
-- `unmapped_files`: every differing path outside that map, including shared
-  CSS, scripts and assets. These changes still make build-bound evidence owed.
+  entries for added, removed, or modified HTML in the built-site page map,
+  and for the pages that link a changed stylesheet or image directly;
+- `unmapped_files`: every other differing path outside that map: scripts,
+  files no page links directly as a stylesheet or image, and anything else.
+  These changes still make build-bound evidence owed.
 
 Paths are relative to `_site/<public_route_slug>/` and sorted; page IDs use
 `resolveBuiltSiteScope`'s route-derived identities (nested routes use hyphens).
@@ -511,7 +513,10 @@ stage bindings still follow the fingerprint comparison.
 
 `changes.kind` classifies this drift (`none`, `page_only`,
 `commerce_affecting` or `unknown`) and `changes.reasons` lists why it counts as
-commerce, each `{ "code", "path"? }`. The rule is in
+commerce, each `{ "code", "path"? }`, then two codes that never make a change
+commerce: `linked_asset_changed` (`path` the stylesheet or image, `pages` the
+ids of the pages that link it) and `linked_asset_buy_page` (`path` a checkout
+or upsell page reached only through one). The rule is in
 [what a change owes](campaigns-os-build-flow.md#what-a-change-owes).
 
 The assembly baseline is explicit because it need not equal an older stage's
@@ -534,6 +539,9 @@ the build a stage reviewed are on that stage instead. An owed stage carries:
 - QA only, `scope` and `owed_pages`: `pages` with the changed pages when the
   change is `page_only` (`qa run --page` pays it), `full` otherwise, `null`
   when QA is not owed.
+- QA only, `browser_pages`: present when a page-scoped QA owes a browser run,
+  the ids of the checkout or upsell pages reached only through a changed
+  stylesheet or image. `qa run --page` then needs `--browser`.
 - QA only, `reviewed_at`: when the completed QA the change is read from was
   checked. Absent when QA did not complete.
 - QA only, `baseline`: `{ "accepted_by", "accepted_at", "reason",
