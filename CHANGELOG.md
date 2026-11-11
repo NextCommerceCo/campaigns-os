@@ -8,6 +8,12 @@ Notable supported-surface changes are recorded here.
 
 - `qa run` without `--currency` runs in the CampaignSpec's `campaign.currency`, a declared tag that did not fire on a build recorded as a development build reads not measured instead of blocking, and the private template family error names `PRIVATE_TEMPLATE_SOURCES_ROOT` first (#756).
 
+## [1.68.0+agent.2] - 2026-11-11
+
+### Changed
+
+- Doctor's shared-input code is smaller and simpler, with the same output and one fewer pass over the built files on packet and `--ci` runs (#730).
+
 ## [1.68.0+agent.1] - 2026-11-10
 
 ### Changed

@@ -1,4 +1,4 @@
-// API and storage observations in campaign scripts (#729, #730 milestone 3).
+// API and storage observations in campaign scripts (#729).
 //
 // Advisory only: every finding is a warning, never a blocker, and no ready
 // line or gate is added. A campaign script that reaches past the SDK's public
@@ -10,13 +10,12 @@
 //   browser's own localStorage/sessionStorage (no local binding shadows it on
 //   the way out) and the key or its literal start resolves statically. The
 //   prefix alone does not establish that the SDK owns the key.
-// - network_global_replaced: an assignment that replaces the page's `fetch`
-//   or `XMLHttpRequest.prototype.open`/`send` (`=`, or `&&=`, which assigns
-//   over the defined browser function; `||=` and `??=` do not), or a
-//   defineProperty whose literal descriptor sets its value or accessors.
-//   Every caller on the page,
-//   the SDK included, then goes through it; whether it changes an SDK request
-//   is not established statically, so no bypass is claimed.
+// - network_global_replaced: an `=` or `&&=` assignment that replaces the
+//   page's `fetch` or `XMLHttpRequest.prototype.open`/`send`, or a
+//   defineProperty whose literal descriptor sets fetch's value or accessors.
+//   Every caller on the page, the SDK included, then goes through it; whether
+//   it changes an SDK request is not established statically, so no bypass is
+//   claimed.
 // - sdk_debug_surface: a reference to the SDK's `nextDebug` global, its
 //   debugging surface.
 // - sdk_private_member: an underscore member reached from the SDK's own
@@ -26,25 +25,18 @@
 //   expression nested too deep to resolve), so its observations are not
 //   listed rather than read as none.
 //
-// Inputs: the local records of builtScriptReferences (remote and missing
-// scripts are not read; the syntax gate already warns about missing ones),
-// keyed by path plus classic/module, since the same bytes can parse and
-// resolve differently as either. Bytes come from readHtmlScanText; programs
-// from htmlScanScriptPrograms, parsed only when this check asks. A script that
-// cannot be read or does not parse yields no observation here; the syntax
-// gate owns that failure.
+// Inputs: the syntax gate's builtLocalScripts and their shared programs. A
+// script that cannot be read or does not parse yields no observation here;
+// the syntax gate owns that failure.
 //
 // Every finding records the delivery form (always `local` here), ownership
 // (`unknown`: these observations do not consult the family script reference
 // to tell campaign code from a family copy) and provenance (null until there
 // is an ownership claim to prove).
 
-import { relative, sep } from "node:path";
-
 import { parse as parseJs } from "acorn";
 
-import { builtScriptReferences } from "./built-script-syntax.mjs";
-import { htmlScanScriptPrograms, readHtmlScanText } from "./html-scan.mjs";
+import { builtLocalScripts, builtScriptReferences } from "./built-script-syntax.mjs";
 import { children as childNodes, javaScriptScopeAnalysis } from "./sdk-storage-compatibility.mjs";
 
 export const SCRIPT_OBSERVATIONS = "built_output.script_observations";
@@ -101,7 +93,6 @@ export function observeScriptProgram(program, { module = false } = {}) {
     });
   });
 
-  // An expression that is a reference to an unshadowed global named in `names`.
   const sdkGlobal = (node, names) => {
     const found = globalReference(node, scopes.get(node), names);
     return found && !found.shadowed ? found : null;
@@ -192,8 +183,7 @@ export function observeScriptProgram(program, { module = false } = {}) {
         add(SCRIPT_OBSERVATION_NETWORK_GLOBAL_REPLACED, node.id, { operation: "replace", receiver: "fetch" });
       }
     }
-    // A destructure from the global object reads nextDebug there:
-    // `const { nextDebug } = window` (its later uses are an alias, not reported).
+    // `const { nextDebug } = window` reads the global; its later uses are an alias.
     if (node.type === "VariableDeclarator" && node.id.type === "ObjectPattern" && node.init) {
       const global = browserGlobal(node.init, scopes.get(node));
       for (const property of global && !global.shadowed ? node.id.properties : []) {
@@ -240,11 +230,6 @@ export function observeScriptSource(source, { module = false } = {}) {
   return observeScriptProgram(program, { module });
 }
 
-function relFrom(root, path) {
-  const rel = relative(root, path);
-  return rel && !rel.startsWith("..") ? rel.split(sep).join("/") : path;
-}
-
 /**
  * Observations for every local script the built pages load, one entry per
  * path and mode in first-seen order (the script syntax gate's order).
@@ -254,32 +239,15 @@ function relFrom(root, path) {
  * @returns {{ scripts_observed: number, scripts: Array<{ file: string, module: boolean, pages: string[], observations: object[] }> }}
  */
 export function collectBuiltScriptObservations(scope, targetRepo) {
-  const scripts = new Map();
-  for (const ref of builtScriptReferences(scope).refs) {
-    if (ref.status !== "local") continue;
-    const key = `${ref.path}\u0000${ref.module ? "module" : "script"}`;
-    if (!scripts.has(key)) scripts.set(key, { path: ref.path, module: ref.module, pages: [] });
-    const entry = scripts.get(key);
-    if (!entry.pages.includes(ref.page_id)) entry.pages.push(ref.page_id);
-  }
-  const readable = [];
-  for (const script of scripts.values()) {
-    try {
-      readable.push({ ...script, text: readHtmlScanText(script.path) });
-    } catch {
-      // Unreadable: no observation. The syntax gate decides what it means.
-    }
-  }
-  const programs = htmlScanScriptPrograms(readable);
   const observed = [];
-  for (const script of readable) {
+  for (const script of builtLocalScripts(builtScriptReferences(scope).refs, targetRepo)) {
     let program;
     try {
-      program = programs(script.path, script.module, script.text);
+      program = script.program();
     } catch {
       continue;
     }
-    const entry = { file: relFrom(targetRepo, script.path), module: script.module, pages: script.pages, observations: [] };
+    const entry = { file: script.file, module: script.module, pages: script.pages, observations: [] };
     try {
       entry.observations = observeScriptProgram(program, { module: script.module });
     } catch (error) {
@@ -292,20 +260,20 @@ export function collectBuiltScriptObservations(scope, targetRepo) {
   return { scripts_observed: observed.length, scripts: observed };
 }
 
+function loadedAs(script) {
+  return `local ${script.module ? "module" : "classic script"}${script.pages.length ? `, loaded by ${script.pages.join(", ")}` : ""}`;
+}
+
 function describeIncomplete(script) {
-  const kind = script.module ? "module" : "classic script";
-  const pages = script.pages.length ? `, loaded by ${script.pages.join(", ")}` : "";
-  return `${script.file} (local ${kind}${pages}): doctor could not finish its script API/storage analysis (${script.incomplete.reason}), so any observations in it are not listed. The script parses; the syntax gate is unaffected.`;
+  return `${script.file} (${loadedAs(script)}): doctor could not finish its script API/storage analysis (${script.incomplete.reason}), so any observations in it are not listed. The script parses; the syntax gate is unaffected.`;
 }
 
 const OPERATION_VERBS = { read: "reads", write: "writes", remove: "removes", call: "calls", replace: "replaces" };
 
 function describe(observation, script) {
   const where = `${script.file}:${observation.line}:${observation.column}`;
-  const kind = script.module ? "module" : "classic script";
-  const pages = script.pages.length ? `, loaded by ${script.pages.join(", ")}` : "";
   const verb = OPERATION_VERBS[observation.operation] || observation.operation;
-  const origin = `(local ${kind}${pages}; owner not established)`;
+  const origin = `(${loadedAs(script)}; owner not established)`;
   switch (observation.code) {
     case SCRIPT_OBSERVATION_SDK_PREFIXED_STORAGE: {
       const key = observation.key.match === "exact"
