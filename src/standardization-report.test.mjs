@@ -65,6 +65,230 @@ layout: base
 
 const codes = (root) => root.findings.map((finding) => finding.code);
 
+function writeMultiRouteRoot(root) {
+  write(join(root, "package.json"), JSON.stringify({ dependencies: { "next-campaign-page-kit": "0.3.0" } }));
+  write(join(root, "_data/campaigns.json"), JSON.stringify(Object.fromEntries(
+    ["route-a", "route-b", "route-c"].map((slug) => [slug, { sdk_version: "0.4.30", store_url: "https://store.example/" }]),
+  )));
+  for (const slug of ["route-a", "route-b", "route-c"]) {
+    write(join(root, `src/${slug}/index.html`), "<div data-next-checkout>{{ 'hero.png' | campaign_asset }}</div>");
+    write(join(root, `src/${slug}/_includes/payment-methods.html`), "<div data-next-payment-methods></div>");
+    write(join(root, `_site/${slug}/index.html`), "<h1>Example</h1>");
+  }
+  write(join(root, "src/route-b/index.html"), "{% include 'shared/entry' %}<img src='/assets/b.png'>");
+  write(join(root, "src/route-c/index.html"), "{% render 'shared/entry.html' %}");
+  write(join(root, "src/route-c/own.html"), "<html><body>Other route</body></html>");
+  write(join(root, "src/shared/entry.html"), "{% include 'shared/blocker' %}");
+  write(join(root, "src/shared/blocker.html"), "{% raw %}Example{% endraw %}");
+}
+
+test("--slug excludes blockers and warnings belonging only to other routes", () => {
+  withTempDir((dir) => {
+    writeMultiRouteRoot(dir);
+    const report = createStandardizationReport({ targetRepo: dir, slug: "route-a", templateFamily: "apollo" });
+    assert.ok(!codes(report.roots[0]).includes("source.raw_block"), "another route's shared blocker is outside this audit");
+    assert.ok(!codes(report.roots[0]).includes("source.hardcoded_root_assets"));
+    assert.ok(!codes(report.roots[0]).includes("source.document_wrappers"));
+    assert.notEqual(report.status, "blocked");
+  });
+});
+
+test("--slug attributes transitive shared findings and leaves whole-project output unscoped", () => {
+  withTempDir((dir) => {
+    writeMultiRouteRoot(dir);
+    const report = createStandardizationReport({ targetRepo: dir, slug: "route-b", templateFamily: "apollo" });
+    const root = report.roots[0];
+    const raw = root.findings.find((item) => item.code === "source.raw_block");
+    assert.equal(report.status, "blocked");
+    assert.deepEqual(raw.shared_files, [{ path: "src/shared/blocker.html", routes: ["route-b", "route-c"] }]);
+    assert.deepEqual(raw.evidence[0].routes, ["route-b", "route-c"]);
+    assert.ok(codes(root).includes("source.hardcoded_root_assets"));
+    assert.ok(!codes(root).includes("source.document_wrappers"), "route-c's own page is not scanned");
+    assert.deepEqual(root.source_scope, { route: "route-b", kind: "route", unresolved_reference_count: 0 });
+    assert.equal(root.entry_point.name, "Hand-authored");
+    assert.match(root.entry_point.command, /campaigns-os doctor --built .* --family apollo --slug route-b --json$/);
+    const markdown = formatStandardizationReportMarkdown(report);
+    assert.match(markdown, /Source audit: limited to route route-b/);
+    assert.match(markdown, /Shared file: src\/shared\/blocker.html; used by routes: route-b, route-c/);
+    assert.match(markdown, /Entry point: Hand-authored/);
+    assert.match(markdown, /Re-enter: campaigns-os doctor --built .* --slug route-b --json/);
+    assert.ok(root.remediation.proof_commands[0].includes("--slug route-b"));
+
+    const whole = createStandardizationReport({ targetRepo: dir, templateFamily: "apollo" });
+    assert.ok(codes(whole.roots[0]).includes("source.raw_block"));
+    assert.ok(codes(whole.roots[0]).includes("source.document_wrappers"));
+    assert.ok(codes(whole.roots[0]).includes("source.hardcoded_root_assets"));
+    assert.equal("source_scope" in whole.roots[0], false);
+    assert.equal("entry_point" in whole.roots[0], false);
+    assert.equal("shared_files" in whole.roots[0].findings.find((item) => item.code === "source.raw_block"), false);
+    assert.doesNotMatch(formatStandardizationReportMarkdown(whole), /Source audit:|Entry point:|Shared file:/);
+  });
+});
+
+test("route scoping follows Page Kit Liquid and layout rules, terminates cycles, and notes variables", () => {
+  withTempDir((dir) => {
+    writeMultiRouteRoot(dir);
+    write(join(dir, "src/route-a/index.html"), `---
+page_layout: 'base.html'
+---
+{% campaign_include 'local.html' %}
+{%- include 'shared/plain' -%}
+{% render "shared/render.liquid" %}
+{% include variable_path %}
+{% render another_path %}
+{% campaign_include local_path %}
+{% include '../outside' %}
+{% render '/outside.html' %}
+{% campaign_include '../../../../outside.html' %}
+`);
+    const reachable = [
+      ["route-a/_includes/local.html", "{% include 'shared/transitive' %}"],
+      ["route-a/_layouts/base.html", "{% include 'shared/from-layout' %}"],
+      ["shared/plain.html", "{% include 'shared/cycle' %}"],
+      ["shared/render.liquid", ""],
+      ["shared/transitive.html", ""],
+      ["shared/from-layout.html", ""],
+      ["shared/cycle.html", "{% include 'shared/plain' %}"],
+    ];
+    for (const [path, body] of reachable) write(join(dir, "src", path), `{% raw %}${path}{% endraw %}${body}`);
+    write(join(dir, "outside.html"), "{% raw %}Outside src{% endraw %}");
+    write(join(dir, "src/shared/variable_path.html"), "{% raw %}Do not guess{% endraw %}");
+    write(join(dir, "src/_includes/local.html"), "{% raw %}Wrong include base{% endraw %}");
+    write(join(dir, "src/route-a/assets/script.js"), "const anchor = 'data-next-example';");
+    const report = createStandardizationReport({ targetRepo: dir, slug: "route-a" });
+    const root = report.roots[0];
+    assert.equal(root.source_structure.raw_blocks.count, reachable.length);
+    assert.deepEqual(root.source_structure.raw_blocks.samples.map((entry) => entry.path).sort(), reachable.map(([path]) => `src/${path}`).sort());
+    assert.equal(root.source_scope.unresolved_reference_count, 3);
+    assert.match(formatStandardizationReportMarkdown(report), /Unresolved variable Liquid references: 3 \(not guessed; not a blocker\)/);
+    assert.ok(root.runtime_contract.data_next.unique_attributes.includes("data-next-example"), "route-local assets stay in scope");
+  });
+});
+
+test("a route's Build Packet names the continuation command and its runtime artifacts", () => {
+  withTempDir((dir) => {
+    writeMultiRouteRoot(dir);
+    write(join(dir, "campaign-runtime.build.json"), JSON.stringify({ campaign: { public_route_slug: "route-c" } }));
+    const packet = join(dir, "campaign-runtime-route-a.build.json");
+    write(packet, JSON.stringify({ campaign: { public_route_slug: "route-a" }, assembly: { runtime_dir: ".campaign-runtime/funnels/route-a" } }));
+    write(join(dir, ".campaign-runtime/assembly-report.json"), JSON.stringify({ template_family: "example-other-family" }));
+    write(join(dir, ".campaign-runtime/funnels/route-a/build-context.json"), JSON.stringify({ template_family: "apollo" }));
+    write(join(dir, ".campaign-runtime/funnels/route-c/build-context.json"), JSON.stringify({ template_family: "example-other-family" }));
+    const report = createStandardizationReport({ targetRepo: dir, slug: "route-a" });
+    const root = report.roots[0];
+    assert.deepEqual(root.entry_point, { name: "Build Packet", packet, command: `campaigns-os next --packet ${packet}` });
+    assert.equal(root.identity.template_family.value, "apollo");
+    assert.deepEqual(root.runtime_contract.campaign_runtime.artifacts, [".campaign-runtime/funnels/route-a/build-context.json"]);
+    assert.ok(root.remediation.proof_commands.includes(root.entry_point.command));
+    assert.match(formatStandardizationReportMarkdown(report), /Entry point: Build Packet — .*campaign-runtime-route-a.build.json/);
+    assert.match(formatStandardizationReportMarkdown(report), /Re-enter: campaigns-os next --packet/);
+    assert.equal(createStandardizationReport({ targetRepo: dir, slug: "route-b" }).roots[0].entry_point.name, "Hand-authored", "another route's packet does not select this route's entry point");
+  });
+});
+
+test("unknown and escaping slugs stay unresolved without auditing another source or built directory", () => {
+  withTempDir((dir) => {
+    writeMultiRouteRoot(dir);
+    write(join(dir, "outside/index.html"), "{% raw %}Outside project source{% endraw %}");
+    for (const slug of ["unknown", "..", "../outside", "route-a/../route-b", "/route-a", "route-a\\route-b"]) {
+      const root = createStandardizationReport({ targetRepo: dir, slug }).roots[0];
+      assert.equal(root.source_structure.html_file_count, 0, slug);
+      assert.equal(root.built_output.scope_resolved, false, slug);
+      assert.equal(root.built_output.html_count, 0, slug);
+      assert.ok(codes(root).includes("built_output.scope_unresolved"), slug);
+      assert.ok(codes(root).includes("source.scope_unresolved"), slug);
+      assert.ok(!codes(root).includes("source.raw_block"), slug);
+    }
+  });
+});
+
+test("a scoped audit names missing source and available routes when the route folder does not exist", () => {
+  withTempDir((dir) => {
+    writeMultiRouteRoot(dir);
+    rmSync(join(dir, "_site"), { recursive: true });
+    const report = createStandardizationReport({ targetRepo: dir, slug: "nope" });
+    const root = report.roots[0];
+    const missing = root.findings.find((item) => item.code === "source.scope_unresolved");
+    assert.equal(missing.severity, "operator_readiness");
+    assert.equal(missing.category, "operator_readiness");
+    assert.match(missing.message, /route nope has no source pages to audit/);
+    assert.deepEqual(missing.evidence.slug_candidates, ["route-a", "route-b", "route-c"]);
+    assert.equal(root.source_scope.scope_resolved, false);
+    assert.deepEqual(root.source_scope.slug_candidates, missing.evidence.slug_candidates);
+    assert.equal(root.source_structure.page_file_count, 0);
+    assert.equal(report.status, "ready_with_warnings");
+    const markdown = formatStandardizationReportMarkdown(report);
+    assert.match(markdown, /Source audit: not audited — route nope has no source pages to audit; route folders: route-a, route-b, route-c/);
+    assert.doesNotMatch(markdown, /Source audit: limited to route|src\/nope\//);
+    const home = join(dir, "home");
+    mkdirSync(home);
+    const before = snapshotTree(dir);
+    const cli = runStandardize(home, ["--target", dir, "--slug", "nope", "--no-doctor"]);
+    assert.equal(cli.status, 0, cli.stderr);
+    assert.match(cli.stdout, /\[operator_readiness\] source\.scope_unresolved:/);
+    assert.match(cli.stdout, /Source audit: not audited/);
+    assert.doesNotMatch(cli.stdout, /Source audit: limited to route/);
+    assert.deepEqual(snapshotTree(dir), before);
+    assert.deepEqual(readdirSync(home), []);
+  });
+});
+
+test("a scoped audit reports no source pages for empty, assets-only, and include/layout-only route folders", () => {
+  withTempDir((dir) => {
+    writeMultiRouteRoot(dir);
+    mkdirSync(join(dir, "src/empty"));
+    for (const populate of [
+      () => {},
+      () => write(join(dir, "src/empty/assets/example.html"), "<div>Asset</div>"),
+      () => {
+        write(join(dir, "src/empty/_includes/example.html"), "{% include 'shared/clean' %}");
+        write(join(dir, "src/empty/_layouts/base.liquid"), "<main>{{ content }}</main>");
+        write(join(dir, "src/shared/clean.html"), "<div>Shared fragment</div>");
+      },
+    ]) {
+      populate();
+      const report = createStandardizationReport({ targetRepo: dir, slug: "empty" });
+      const root = report.roots[0];
+      const missing = root.findings.find((item) => item.code === "source.scope_unresolved");
+      assert.equal(missing.severity, "operator_readiness");
+      assert.equal(missing.category, "operator_readiness");
+      assert.match(missing.message, /route empty has no source pages to audit/);
+      assert.deepEqual(missing.evidence.slug_candidates, ["empty", "route-a", "route-b", "route-c"]);
+      assert.equal(root.source_scope.scope_resolved, false);
+      assert.equal(report.status, "ready_with_warnings");
+      const markdown = formatStandardizationReportMarkdown(report);
+      assert.match(markdown, /Source audit: not audited — route empty has no source pages to audit; route folders: empty, route-a, route-b, route-c/);
+      assert.doesNotMatch(markdown, /Source audit: limited to route/);
+    }
+  });
+});
+
+test("a scoped audit rejects slugs that are not a path segment without displaying a source path from them", () => {
+  withTempDir((dir) => {
+    writeMultiRouteRoot(dir);
+    rmSync(join(dir, "_site"), { recursive: true });
+    write(join(dir, "outside/index.html"), "{% raw %}Outside source{% endraw %}");
+    for (const slug of [".", "..", "../etc", "../outside", "route-a/../route-b", "/route-a", "route-a\\route-b"]) {
+      const report = createStandardizationReport({ targetRepo: dir, slug });
+      const root = report.roots[0];
+      const missing = root.findings.find((item) => item.code === "source.scope_unresolved");
+      assert.equal(missing.severity, "operator_readiness", slug);
+      assert.equal(missing.category, "operator_readiness", slug);
+      assert.ok(missing.message.includes(`route ${slug} has no source pages to audit`));
+      assert.match(missing.message, /slug must be a single path segment/);
+      assert.deepEqual(missing.evidence.slug_candidates, ["route-a", "route-b", "route-c"]);
+      assert.equal(root.source_structure.html_file_count, 0, slug);
+      assert.equal(root.source_scope.scope_resolved, false, slug);
+      assert.equal(report.status, "ready_with_warnings", slug);
+      assert.ok(!codes(root).includes("source.raw_block"), slug);
+      const markdown = formatStandardizationReportMarkdown(report);
+      assert.match(markdown, /Source audit: not audited/);
+      assert.doesNotMatch(markdown, /Source audit: limited to route/);
+      assert.ok(!markdown.includes(`src/${slug}/`), slug);
+    }
+  });
+});
+
 test("standardization report inventories a Page Kit root and classifies source/version risks", () => {
   withTempDir((dir) => {
     const root = join(dir, "campaign");
@@ -504,6 +728,26 @@ function snapshotTree(root) {
   return entries;
 }
 
+test("scoped CLI audits the selected route without writing and prints shared ownership", (t) => {
+  withTempDir((dir) => {
+    const home = join(dir, "home");
+    const target = join(dir, "example-project");
+    mkdirSync(home, { recursive: true });
+    writeMultiRouteRoot(target);
+    const before = snapshotTree(target);
+    const clean = runStandardize(home, ["--target", target, "--slug", "route-a", "--family", "apollo", "--no-doctor", "--json"]);
+    assert.equal(clean.status, 0, clean.stderr);
+    assert.ok(!codes(JSON.parse(clean.stdout).roots[0]).includes("source.raw_block"));
+    const shared = runStandardize(home, ["--target", target, "--slug", "route-b", "--family", "apollo", "--no-doctor"]);
+    assert.equal(shared.status, 2, shared.stderr);
+    assert.match(shared.stdout, /used by routes: route-b, route-c/);
+    assert.doesNotMatch(shared.stdout, /source.document_wrappers/);
+    assert.deepEqual(snapshotTree(target), before);
+    assert.deepEqual(readdirSync(home), []);
+    t.diagnostic(shared.stdout.replaceAll(target, "/tmp/example-project").replace(/^Generated: .*$/m, "Generated: <run timestamp>"));
+  });
+});
+
 test("standardize refuses unknown flags instead of running as if they were absent", () => {
   withTempDir((dir) => {
     const home = join(dir, "home");
@@ -574,6 +818,13 @@ test("standardize is read-only: a run with the built-output doctor leaves the ta
 
     assert.deepEqual(snapshotTree(target), before);
     assert.deepEqual(readdirSync(home), []);
+
+    const scoped = runStandardize(home, ["--target", target, "--slug", "acme", "--json"]);
+    assert.notEqual(scoped.status, 1, scoped.stderr);
+    assert.equal(JSON.parse(scoped.stdout).roots[0].source_scope.route, "acme");
+    assert.notEqual(JSON.parse(scoped.stdout).roots[0].built_output.doctor.status, "skipped");
+    assert.deepEqual(snapshotTree(target), before);
+    assert.deepEqual(readdirSync(home), []);
   });
 });
 
@@ -597,7 +848,7 @@ test("standardize never touches an existing doctor sidecar, with or without --no
       write(sidecar, JSON.stringify({ schema_version: "campaigns-os-doctor-output/v0", generated_at: "2026-09-15T03:02:05.568Z", generated_by: "doctor", ok: true, status: "ready_with_warnings" }, null, 2));
       const before = snapshotTree(target);
 
-      for (const args of [["--json"], ["--no-doctor", "--json"], []]) {
+      for (const args of [["--json"], ["--no-doctor", "--json"], [], ["--slug", "acme", "--json"], ["--slug", "acme", "--no-doctor", "--json"]]) {
         const run = runStandardize(home, ["--target", target, ...args]);
         assert.notEqual(run.status, 1, run.stderr);
         assert.deepEqual(snapshotTree(target), before, `standardize ${args.join(" ")} (site: ${withSite}) changed the target`);

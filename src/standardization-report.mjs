@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
+import { parse as parseYaml } from "yaml";
 
 import { shellToken } from "./shell-token.mjs";
 import {
@@ -15,6 +16,7 @@ import {
   unique,
 } from "./repo-scan.mjs";
 import { resolveBuiltSiteScope } from "./built-site-scope.mjs";
+import { packetRuntimeRelPath, projectFunnelPackets } from "./campaign-workspace.mjs";
 import {
   detectFrameworks,
   discoverCampaignCartAppRoots,
@@ -204,6 +206,14 @@ export function formatStandardizationReportMarkdown(report) {
     lines.push(`- Status: ${String(root.status || "unknown").toUpperCase()}`);
     lines.push(`- Implementation: ${root.implementation?.kind || "page_kit"}`);
     lines.push(`- Slug(s): ${root.identity.campaign_slugs.map((entry) => entry.slug).join(", ") || "(none)"}`);
+    if (root.source_scope) {
+      lines.push(root.source_scope.scope_resolved === false
+        ? `- Source audit: not audited — route ${root.source_scope.route} has no source pages to audit; route folders: ${root.source_scope.slug_candidates.join(", ") || "(none)"}`
+        : `- Source audit: limited to route ${root.source_scope.route} (src/${root.source_scope.route}/ and transitive Liquid dependencies)`);
+      lines.push(`- Unresolved variable Liquid references: ${root.source_scope.unresolved_reference_count} (not guessed; not a blocker)`);
+      lines.push(`- Entry point: ${root.entry_point.name}${root.entry_point.packet ? ` — ${root.entry_point.packet}` : ""}`);
+      if (root.entry_point.command) lines.push(`- Re-enter: ${root.entry_point.command}`);
+    }
     lines.push(`- SDK: ${root.identity.sdk_versions.join(", ") || "(unknown)"}`);
     if (root.version_policy) {
       lines.push(`- Version policy: min ${root.version_policy.minimum_supported || "(none)"}, preferred ${root.version_policy.preferred_minimum || "(none)"} (${root.version_policy.source})`);
@@ -236,6 +246,9 @@ export function formatStandardizationReportMarkdown(report) {
       lines.push("### Findings");
       for (const item of root.findings) {
         lines.push(`- [${item.severity}] ${item.code}: ${item.message}`);
+        for (const shared of item.shared_files || []) {
+          lines.push(`  - Shared file: ${shared.path}; used by routes: ${shared.routes.join(", ")}`);
+        }
       }
     }
     lines.push("");
@@ -337,12 +350,17 @@ function scanPageKitRoot({
   fieldContract = null,
   sdkSupportPolicy = null,
 }) {
-  const files = listFiles(rootPath);
+  const allFiles = listFiles(rootPath);
+  const campaigns = readCampaigns(rootPath);
+  const sourceScope = requestedSlug ? scopeRouteSources(rootPath, allFiles, campaigns.slugs, requestedSlug) : null;
+  const files = sourceScope ? allFiles.filter((file) => sourceScope.files.has(file)) : allFiles;
   const structureFiles = files.filter((file) => STRUCTURE_EXTENSIONS.has(extname(file).toLowerCase()));
   const sourceFiles = files.filter((file) => TEXT_EXTENSIONS.has(extname(file).toLowerCase()));
-  const campaigns = readCampaigns(rootPath);
   const packageInfo = readPackageInfo(rootPath);
-  const runtime = readRuntimeArtifacts(rootPath, targetRepo, files);
+  const packets = requestedSlug && isRouteSegment(requestedSlug) ? projectFunnelPackets(rootPath) : [];
+  const packet = packets.filter((entry) => entry.readable && entry.route === requestedSlug)
+    .reduce((best, entry) => !best || (entry.generatedAt ?? -Infinity) > (best.generatedAt ?? -Infinity) ? entry : best, null);
+  const runtime = readRuntimeArtifacts(rootPath, targetRepo, files, requestedSlug ? { route: requestedSlug, packet, packets } : null);
   // The checkout field contract applies wherever inline checkout bindings
   // exist; a Page Kit root that inlines checkout markup is inspected exactly
   // like an application root, and the capability is listed only when it ran.
@@ -351,7 +369,7 @@ function scanPageKitRoot({
   // the prefilter runs inside the one read scanSourceFiles already makes.
   const contract = loadCheckoutFieldContract(fieldContract);
   const bindingPattern = new RegExp(`\\b(?:${(contract?.binding_attributes || ["data-next-checkout-field", "os-checkout-field"]).map(escapeRegExp).join("|")})\\s*=`);
-  const sourceScan = scanSourceFiles(rootPath, structureFiles, sourceFiles, campaigns.slugs, bindingPattern);
+  const sourceScan = scanSourceFiles(rootPath, structureFiles, sourceFiles, campaigns.slugs, bindingPattern, sourceScope);
   const templateFamily = inferTemplateFamily({
     explicitTemplateFamily,
     runtime,
@@ -391,6 +409,15 @@ function scanPageKitRoot({
       frameworks: detectFrameworks(rootPath),
     },
     capabilities,
+    ...(sourceScope ? {
+      source_scope: {
+        route: requestedSlug, kind: "route", unresolved_reference_count: sourceScope.unresolvedReferenceCount,
+        ...(sourceScope.findings.length ? { scope_resolved: false, slug_candidates: sourceScope.slugCandidates } : {}),
+      },
+      entry_point: packet
+        ? { name: "Build Packet", packet: packet.path, command: `campaigns-os next --packet ${shellToken(packet.path)}` }
+        : { name: "Hand-authored", packet: null },
+    } : {}),
     identity: {
       repo: basename(targetRepo),
       target_repo: targetRepo,
@@ -424,6 +451,7 @@ function scanPageKitRoot({
       ...campaigns.findings,
       ...packageInfo.findings,
       ...contractFindings,
+      ...(sourceScope?.findings || []),
       ...sourceScan.findings,
       ...runtime.findings,
       ...builtOutput.findings,
@@ -437,6 +465,7 @@ function scanPageKitRoot({
   };
   addVersionFindings(root);
   addTemplateFamilyFindings(root);
+  if (sourceScope) attributeSharedFindings(contractFindings, sourceScope);
   finalizeRoot(root);
   return root;
 }
@@ -616,19 +645,36 @@ function findPageKitDependency(pkg) {
   return null;
 }
 
-function readRuntimeArtifacts(rootPath, targetRepo, rootFiles = []) {
-  const runtimeDirs = unique([join(rootPath, ".campaign-runtime"), join(targetRepo, ".campaign-runtime")]);
+function readRuntimeArtifacts(rootPath, targetRepo, rootFiles = [], scope = null) {
+  let runtimeRelPath = ".campaign-runtime";
+  if (scope?.packet) {
+    const parsed = readJsonFile(scope.packet.path);
+    try { runtimeRelPath = packetRuntimeRelPath(parsed.value); } catch { /* Malformed runtime declarations bind no extra directory. */ }
+  } else if (scope?.packets.some((packet) => packet.name === "campaign-runtime.build.json" && packet.route !== scope.route)) {
+    runtimeRelPath = isRouteSegment(scope.route) ? `.campaign-runtime/funnels/${scope.route}` : null;
+  }
+  const runtimeDirs = runtimeRelPath ? unique([join(rootPath, runtimeRelPath), join(targetRepo, runtimeRelPath)]) : [];
+  const runtimeFiles = (dir) => listFiles(dir, { includeRuntime: true }).filter((file) => {
+    if (!scope) return true;
+    if (!isRouteSegment(scope.route)) return false;
+    const rel = relPath(dir, file);
+    if (runtimeRelPath === ".campaign-runtime" && rel.startsWith("funnels/") && !rel.startsWith(`funnels/${scope.route}/`)) return false;
+    if (!file.endsWith(".json")) return true;
+    const parsed = readJsonFile(file);
+    const route = parsed.value?.campaign?.public_route_slug || parsed.value?.identity?.public_route_slug;
+    return !route || route === scope.route;
+  });
   const artifactFiles = [];
   for (const dir of runtimeDirs) {
     if (!existsSync(dir) || !statSync(dir).isDirectory()) continue;
-    artifactFiles.push(...listFiles(dir, { includeRuntime: true }).map((file) => ({
+    artifactFiles.push(...runtimeFiles(dir).map((file) => ({
       path: file,
       relative_path: relPath(rootPath, file),
     })));
   }
   const sourceManifestFiles = [
     ...rootFiles.filter((file) => file.endsWith(".campaigns-os/source-html-manifest.json")),
-    ...runtimeDirs.flatMap((dir) => listFiles(dir, { includeRuntime: true })
+    ...runtimeDirs.flatMap((dir) => runtimeFiles(dir)
       .filter((file) => file.endsWith("source-html-manifest.json"))),
   ];
   const present = artifactFiles.length > 0;
@@ -667,7 +713,113 @@ function readRuntimeArtifacts(rootPath, targetRepo, rootFiles = []) {
   };
 }
 
-function scanSourceFiles(rootPath, structureFiles, sourceFiles, slugs, bindingPattern = null) {
+function isRouteSegment(slug) {
+  return typeof slug === "string" && slug !== "." && slug !== ".." && !/[\/\\\0]/.test(slug);
+}
+
+function isSourcePage(rootPath, file) {
+  const rel = relPath(rootPath, file);
+  return STRUCTURE_EXTENSIONS.has(extname(file).toLowerCase())
+    && !rel.includes("/_includes/") && !rel.includes("/_layouts/") && !rel.includes("/assets/");
+}
+
+// Resolve only files already found by the regular-file walk. This also keeps
+// symlinks and references outside src/ out of the audit, just like the walk.
+function scopeRouteSources(rootPath, files, slugs, requestedSlug) {
+  const srcRoot = join(rootPath, "src");
+  const sourceFiles = files.filter((file) => file.startsWith(`${srcRoot}${sep}`));
+  const available = new Set(sourceFiles);
+  const references = new Map();
+  const users = new Map();
+  const routes = unique([...slugs.map((entry) => entry.slug), requestedSlug]).filter(isRouteSegment).sort();
+  let selected = new Set();
+  let hasSourcePage = false;
+
+  function readReferences(file) {
+    if (references.has(file)) return references.get(file);
+    const content = safeReadText(file);
+    const result = { includes: [], layout: null, unresolved: 0 };
+    if (content.ok) {
+      const text = content.value
+        .replace(/{%-?\s*comment\s*-?%}[\s\S]*?{%-?\s*endcomment\s*-?%}/g, maskIgnoredRegion)
+        .replace(/{%-?\s*raw\s*-?%}[\s\S]*?{%-?\s*endraw\s*-?%}/g, maskIgnoredRegion);
+      for (const match of text.matchAll(/{%-?\s*(campaign_include|include|render)\s+([\s\S]*?)\s*-?%}/g)) {
+        const literal = match[2].match(/^(['"])(.*?)\1(?:\s|,|$)/);
+        if (!literal || /{{|{%/.test(literal[2])) result.unresolved += 1;
+        else result.includes.push({ kind: match[1], path: literal[2] });
+      }
+      const frontmatter = content.value.match(/^\uFEFF?---\s*\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+      if (frontmatter) {
+        try {
+          const layout = parseYaml(frontmatter[1])?.page_layout;
+          if (typeof layout === "string") result.layout = layout;
+        } catch { /* Invalid frontmatter supplies no layout reference. */ }
+      }
+    }
+    references.set(file, result);
+    return result;
+  }
+
+  for (const route of routes) {
+    const routeRoot = join(srcRoot, route);
+    const queue = sourceFiles.filter((file) => file.startsWith(`${routeRoot}${sep}`));
+    if (route === requestedSlug) hasSourcePage = queue.some((file) => isSourcePage(rootPath, file));
+    const reached = new Set();
+    for (let index = 0; index < queue.length; index += 1) {
+      const file = queue[index];
+      if (reached.has(file)) continue;
+      reached.add(file);
+      const usedBy = users.get(file) || [];
+      usedBy.push(route);
+      users.set(file, usedBy);
+      const refs = readReferences(file);
+      const dependencies = refs.includes.map((ref) => ref.kind === "campaign_include"
+        ? resolve(routeRoot, "_includes", ref.path)
+        : resolve(srcRoot, extname(ref.path) ? ref.path : `${ref.path}.html`));
+      if (refs.layout) dependencies.push(resolve(routeRoot, "_layouts", refs.layout));
+      for (const dependency of dependencies) {
+        if (available.has(dependency) && !reached.has(dependency)) queue.push(dependency);
+      }
+    }
+    if (route === requestedSlug) selected = reached;
+  }
+  const directories = new Set(safeReadDir(srcRoot).filter((entry) => entry.isDirectory() && !shouldSkipDir(entry.name)).map((entry) => entry.name));
+  const slugCandidates = routes.filter((route) => directories.has(route));
+  const findings = hasSourcePage ? [] : [finding({
+    severity: "operator_readiness",
+    category: "operator_readiness",
+    code: "source.scope_unresolved",
+    message: `Unknown campaign slug or missing source pages: route ${requestedSlug} has no source pages to audit${isRouteSegment(requestedSlug) ? "" : "; the slug must be a single path segment"}. Route folders: ${slugCandidates.join(", ") || "(none)"}.`,
+    evidence: { requested_slug: requestedSlug, slug_candidates: slugCandidates },
+    next_action: "Pass --slug for an existing route with source pages, or add the route's source pages before auditing it.",
+  })];
+  return {
+    files: selected,
+    users,
+    routePrefix: isRouteSegment(requestedSlug) ? `src/${requestedSlug}/` : null,
+    unresolvedReferenceCount: [...selected].reduce((total, file) => total + readReferences(file).unresolved, 0),
+    slugCandidates,
+    findings,
+    rootPath,
+  };
+}
+
+function attributeSharedFindings(findings, scope) {
+  for (const item of findings) {
+    const evidence = Array.isArray(item.evidence) ? item.evidence : [];
+    const shared = new Map();
+    for (const sample of evidence) {
+      if (typeof sample.path !== "string" || !sample.path.startsWith("src/") || sample.path.startsWith(scope.routePrefix)) continue;
+      const routes = scope.users.get(resolve(scope.rootPath, sample.path));
+      if (!routes) continue;
+      sample.routes = routes;
+      shared.set(sample.path, { path: sample.path, routes });
+    }
+    if (shared.size) item.shared_files = [...shared.values()];
+  }
+}
+
+function scanSourceFiles(rootPath, structureFiles, sourceFiles, slugs, bindingPattern = null, sourceScope = null) {
   const findings = [];
   const helperCounts = {
     campaign_asset: 0,
@@ -689,10 +841,7 @@ function scanSourceFiles(rootPath, structureFiles, sourceFiles, slugs, bindingPa
 
   const includeFiles = structureFiles.filter((file) => relPath(rootPath, file).includes("/_includes/"));
   const layoutFiles = structureFiles.filter((file) => relPath(rootPath, file).includes("/_layouts/"));
-  const pageFiles = structureFiles.filter((file) => {
-    const rel = relPath(rootPath, file);
-    return !rel.includes("/_includes/") && !rel.includes("/_layouts/") && !rel.includes("/assets/");
-  });
+  const pageFiles = structureFiles.filter((file) => isSourcePage(rootPath, file));
 
   for (const file of sourceFiles) {
     const rel = relPath(rootPath, file);
@@ -805,6 +954,7 @@ function scanSourceFiles(rootPath, structureFiles, sourceFiles, slugs, bindingPa
     }));
   }
 
+  if (sourceScope) attributeSharedFindings(findings, sourceScope);
   return {
     source_structure: {
       html_file_count: structureFiles.length,
@@ -883,7 +1033,9 @@ function inspectBuiltOutput(rootPath, campaignSlug) {
       })],
     };
   }
-  const scope = resolveBuiltSiteScope(rootPath, { slug: requestedSlug || null });
+  const scope = campaignSlug.source === "operator_flag" && !isRouteSegment(requestedSlug)
+    ? { ok: false, error: `Unknown campaign slug: ${requestedSlug}`, slug_candidates: builtSlugCandidates(siteRoot) }
+    : resolveBuiltSiteScope(rootPath, { slug: requestedSlug || null });
   if (!scope.ok) {
     // A slug the scanner derived (not one the operator passed) with no matching
     // built directory is a mismatch, not an ambiguity: the built output belongs
@@ -999,7 +1151,7 @@ function buildRemediation(root) {
     risks.push("Production storefront/deploy URL is unknown.");
   }
   const proof = [
-    `campaigns-os standardize --target ${shellToken(root.identity.page_kit_root)} --json`,
+    `campaigns-os standardize --target ${shellToken(root.identity.page_kit_root)}${root.source_scope ? ` --slug ${shellToken(root.source_scope.route)}` : ""} --json`,
   ];
   const family = root.identity.template_family.value;
   const familyConfirmed = family && root.identity.template_family.confidence !== "tentative";
@@ -1016,6 +1168,8 @@ function buildRemediation(root) {
   } else if (root.built_output.present) {
     proof.push(`campaigns-os doctor --built ${shellToken(root.identity.page_kit_root)} --family <template-family>${slugFlag} --json`);
   }
+  if (root.entry_point?.packet) proof.push(root.entry_point.command);
+  else if (root.entry_point) root.entry_point.command = proof.find((command) => command.startsWith("campaigns-os doctor --built ")) || null;
   return {
     safe_agent_repairs: unique(safe),
     clarification_needed: unique(clarification),

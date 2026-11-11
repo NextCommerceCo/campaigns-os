@@ -98,6 +98,38 @@ run the doctor anyway).
 
 ### When `--slug` matters
 
+With `--slug <route>`, the Page Kit source audit is limited to that route:
+every source file under `src/<route>/`, plus files reached transitively through
+Liquid references. `campaign_include 'x.html'` resolves under the route's
+`_includes/`; `page_layout` frontmatter resolves under its `_layouts/`;
+plain `include 'a/b'` and `render 'a/b'` resolve from `src/`, with `.html`
+as the default extension. Cycles terminate. Variable references are counted
+in the report as unresolved, without guessing a file or adding a blocker.
+References outside `src/` are ignored. A slug must be a single path segment.
+If it is invalid, its `src/<route>/` folder is missing, or that folder contains
+no page files (only includes, layouts or assets, for example), the report adds
+`source.scope_unresolved` with severity and category `operator_readiness`,
+matching unresolved built-output scope. It says the route has no source pages
+to audit and lists the route folders that exist as candidates. Markdown says
+`Source audit: not audited` instead of claiming the audit was limited to that
+route; it never constructs a source path from an invalid slug. The overall
+status follows the existing rules: `ready_with_warnings` unless another finding
+blocks it. This status does not establish source readiness for that route.
+
+A finding evidenced in a shared file outside `src/<route>/` names the routes
+that use that file. Files the requested route never reaches contribute no
+source findings. Project inputs (`_data/campaigns.json` and `package.json`)
+remain in scope, along with the route's runtime artifacts and built output.
+The report and markdown explicitly name the source-audit route. Without
+`--slug`, the source audit and output remain whole-project and unchanged.
+
+Scoped reports also name where to re-enter. If the project has a Build Packet
+for that route, the report names the packet and prints
+`campaigns-os next --packet <path>`. Otherwise it names the
+[Hand-authored entry point](./entry-points.md#hand-authored) and keeps the
+existing `campaigns-os doctor --built ... --slug <route>` proof command when
+built output exists. This audit does not create a packet or run the stages.
+
 The built-output scope is the directory under `_site/` whose pages the
 built-output doctor inspects. It is resolved from, in order: `--slug`; the
 single slug `_data/campaigns.json` declares; the `campaign.public_route_slug`
@@ -280,6 +312,14 @@ Each Page Kit root contains these sections:
 - `source_structure`: HTML/page/include/layout counts, Liquid helper counts,
   raw blocks, document wrappers, hardcoded root asset refs, unreadable files,
   and payment-method include detection.
+- `source_scope`: present only with `--slug`; `kind: "route"`, `route`, and
+  `unresolved_reference_count` describe the limited source audit. When the route
+  has no source pages to audit, `scope_resolved: false` and `slug_candidates`
+  record that the source scope is unresolved and name existing route folders.
+- `entry_point`: present only with `--slug`; `name` is `Build Packet` or
+  `Hand-authored`, `packet` names the selected packet (otherwise null), and
+  `command` gives the continuation or existing built-doctor proof command
+  (null when there is no packet and no built output).
 - `runtime_contract`: `data-next-*` anchor summary, checkout/upsell/receipt
   surface signals, package/shipping refs, source manifest presence, and
   `.campaign-runtime` inventory.
@@ -291,7 +331,9 @@ Each Page Kit root contains these sections:
   slug-scope resolution state (`slug_candidates` when unresolved), and
   optional built-output doctor result.
 - `findings`: normalized blocker, warning, and operator-readiness items with
-  evidence and next action.
+  evidence and next action. In scoped reports, shared-file evidence samples
+  add `routes`; the finding adds `shared_files: [{path, routes}]`, also
+  printed in markdown. These fields are additive.
 - `remediation`: safe agent repairs, clarification needed, product or merchant
   risks, and proof commands.
 
