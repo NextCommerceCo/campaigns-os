@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync, mkdirSync, symlinkSync, readdirSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { VISUAL_QC_RULES, planVisualCapture, buildCapturesRecord, capturesIntegrity, writePolishPng,
+import { VISUAL_QC_RULES, planVisualCapture, buildCapturesRecord, capturesIntegrity, unavailableCapturesRecord, writePolishPng,
   evaluateVisualReference, evaluateVisualDiff, VISUAL_VIEWPORTS, compareVisualPair, pageKitOutputPaths } from "./polish-visual.mjs";
 import { createRgbaPng, createRgba, syntheticCapturesRecord, syntheticVisualFixture } from "./polish-visual-fixtures.mjs";
 import { loadVisualDependencies } from "./visual-diff.mjs";
@@ -13,6 +13,7 @@ import { evaluatePolishGate, POLISH_PRODUCER } from "./polish-gate.mjs";
 import { execFile, execFileSync } from "node:child_process";
 import { rmSync } from "node:fs";
 import { sha256Hex } from "./png-header.mjs";
+import { packageCapturesSatisfy } from "./polish-captures-record.mjs";
 
 function visualInputs(f) {
   const packet = { source_html: { root: "source", pages: [{ page_id: "page", path: "page.html", page_kit: { public_route: "/sample/page/", spec_route: "page/" } }] },
@@ -45,6 +46,40 @@ function fakeVisualAdapter({ consume = () => {} } = {}) {
       actual: shot, stabilized: { ...shot, treatment: { animations: "disabled", caret: "hide", mask_color: "#ff00ff", mask_selectors: "visual-masks/v1", masks: [], mask_cap_reached: false } } };
   } };
 }
+test("repo-origin routes get build captures, missing-source visual rows, and skipped-page reasons in the record", async (t) => {
+  const f = syntheticVisualFixture(); t.after(f.cleanup);
+  const input = visualInputs(f);
+  input.packet.source_html.pages.push(
+    { page_id: "upsell-2", origin: "repo", page_kit: { public_route: "/sample/upsell-2/", spec_route: "upsell-2/" } },
+    { page_id: "stock", skip_reason: "Template stock." },
+  );
+  input.frozen.plan = planPolishCapture({ packet: input.packet, baseUrl: "http://127.0.0.1:1234" });
+  input.frozen.page_load.subject = { ...input.frozen.page_load.subject, route_scope: "selected",
+    routes: input.frozen.plan.routes.map((route) => route.requested_route) };
+  const skipped = [{ page_id: "stock", skip_reason: "Template stock." }];
+  for (const root of ["source", "missing-source-root"]) {
+    input.packet.source_html.root = root;
+    const record = await runVisualPass({ ...input, createBrowserAdapter: async () => fakeVisualAdapter() });
+    assert.deepEqual(record.subject.skipped_pages, skipped);
+    assert.equal(record.integrity, capturesIntegrity(record));
+    assert.equal(packageCapturesSatisfy(record, input.report), true);
+    assert.ok(!record.cells.some((cell) => cell.page_id === "stock"));
+    const added = record.cells.filter((cell) => cell.page_id === "upsell-2");
+    assert.equal(added.length, 4);
+    assert.ok(added.filter((cell) => cell.side === "build").every((cell) => cell.status === "rendered" && cell.actual.status === "captured"));
+    assert.ok(added.filter((cell) => cell.side === "source_html").every((cell) => cell.status === "source_html_missing" && cell.actual.status === "skipped"));
+    const rows = VISUAL_QC_RULES.evaluate(record).filter((row) => row.subject.page === "/sample/upsell-2/");
+    assert.ok(rows.length > 0);
+    assert.ok(rows.every((row) => row.result === "unexercised" && !row.accept_eligible));
+    assert.ok(rows.some((row) => row.reason_code === "source_html_missing"));
+    assert.ok(rows.filter((row) => row.check === "visual.diff").every((row) => row.reason_code === "capture_unavailable"
+      && row.members.some((member) => member.reason_code === "source_html_missing")));
+  }
+  const unavailable = unavailableCapturesRecord({ plan: input.frozen.plan, subject: input.frozen.page_load.subject });
+  assert.deepEqual(unavailable.subject.skipped_pages, skipped);
+  assert.equal(unavailable.integrity, capturesIntegrity(unavailable));
+});
+
 test("RC-1 and RC-2: select skips only its side/cell and onResult delivers the timed probe result in order", async (t) => {
   const f = syntheticVisualFixture(); t.after(f.cleanup); const input = visualInputs(f);
   const selected = [], observed = [];

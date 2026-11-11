@@ -50,7 +50,7 @@ export function planVisualCapture(plan, viewports = plan?.viewports) {
   if (!Array.isArray(plan.routes) || !Array.isArray(viewports)) throw new TypeError("A computed page_load plan and viewports are required");
   if (plan.routes.some((route) => !object(route)) || viewports.some((v) => !object(v)
       || !VISUAL_VIEWPORTS.some((fixed) => fixed.key === own(v, "key") && fixed.width === v.width && fixed.height === v.height))) return null;
-  return { route_scope: plan.route_scope, routes: structuredClone(plan.routes), viewports: structuredClone(viewports),
+  return { route_scope: plan.route_scope, routes: structuredClone(plan.routes), skipped_pages: structuredClone(plan.skipped_pages || []), viewports: structuredClone(viewports),
     cells: plan.routes.flatMap((route) => viewports.flatMap((viewport) => ["build", "source_html"].map((side) => ({
       side, page_id: route.page_id, route: route.requested_route ?? route.route ?? route,
       viewport: viewport.key, width: viewport.width, height: viewport.height, device_scale_factor: 1, state: VISUAL_STATE,
@@ -130,7 +130,7 @@ async function verifyDeclared(args) {
 }
 
 export function unavailableCapturesRecord({ plan, subject, measuredAt } = {}) {
-  return buildCapturesRecord({ subject, cells: planVisualCapture(plan).cells.map((cell) => blankCell(cell, "browser_unavailable")), measuredAt });
+  return buildCapturesRecord({ subject: { ...subject, skipped_pages: plan.skipped_pages || [] }, cells: planVisualCapture(plan).cells.map((cell) => blankCell(cell, "browser_unavailable")), measuredAt });
 }
 
 // Proxy refusals are connections the per-context routes never saw (a
@@ -259,7 +259,8 @@ export async function runVisualPass({ createBrowserAdapter, frozen, packet, pack
     const ref = { ...await verifyDeclared({ path: mapping.path, sourceRoot: root || targetRepo, targetRepo,
       kind: "source_html", recorded: declared || {}, builtHtmlHashes, pageKitTargets }),
       page_id: route.page_id, route: route.requested_route, viewport: null, ref_id: "source_html" };
-    if (!rootAvailable) ref.input_reason = "source_root_unavailable";
+    if (mapping.origin === "repo" && !mapping.path) ref.input_reason = "source_html_missing";
+    else if (!rootAvailable) ref.input_reason = "source_root_unavailable";
     else if (!ref.identity.sha256 || ref.verification.reason) ref.input_reason = "source_html_missing";
     // Only files contained by the serving root may be rendered, including a
     // self-referential source which verification can otherwise read for QC.
@@ -387,7 +388,7 @@ export async function runVisualPass({ createBrowserAdapter, frozen, packet, pack
       comparisons.push(comparison);
     }
   }
-  return buildCapturesRecord({ subject: { ...frozen.page_load.subject, source_package_material_fingerprint: currentSourcePackageMaterialFingerprint(report) }, environment: { browser: instances.build?.browserVersion ?? instances.source?.browserVersion ?? null, device_scale_factor: 1 },
+  return buildCapturesRecord({ subject: { ...frozen.page_load.subject, skipped_pages: plan.skipped_pages, source_package_material_fingerprint: currentSourcePackageMaterialFingerprint(report) }, environment: { browser: instances.build?.browserVersion ?? instances.source?.browserVersion ?? null, device_scale_factor: 1 },
     source, adapters, dependencies, cells: cells.map(({ probes: _probes, ...cell }) => cell), references, comparisons, measuredAt: now });
 }
 

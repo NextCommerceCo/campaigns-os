@@ -78,8 +78,12 @@ campaigns-os polish capture \
   --base-url http://127.0.0.1:4173
 ```
 
-The command derives every mapped, non-skipped Page Kit route from the packet
-and captures each at desktop `1440x1200` and mobile `390x844`. It re-reads the
+The command derives the source-mapped Page Kit routes and the routes of pages
+added after handoff (`origin: "repo"`) from the packet, excluding any page with
+a non-empty `skip_reason`. It captures each planned route at desktop
+`1440x1200` and mobile `390x844`. The captures record's `subject.skipped_pages`
+lists every excluded page's `page_id` and `skip_reason`; these pages are not
+captured by the page-load or visual plan. It re-reads the
 packet and Assembly Report after the browser pass, refuses attachment if the
 governing build, campaign, route plan, report identity, or existing `page_load`
 changed before that final read, and otherwise merges only
@@ -153,7 +157,12 @@ The comparison is a diagnostic for a reviewer: it is listed for review, it never
 
 The stored comparison figures are tamper-evident only, like other Polish captures. The images are re-checked on every read against their SHA-256 and against the pixel size recorded for them.
 
-Template-stock pages are outside the mapped capture plan and produce no visual rows.
+Pages added after handoff get build-side captures even though they have no
+source HTML. Their source cells and reference rows report `source_html_missing`;
+visual comparisons remain unexercised (`capture_unavailable` with a
+`source_html_missing` member), with no source match claimed. Template-stock
+pages with `skip_reason` are listed in `captures.subject.skipped_pages`, outside
+the capture plan, and produce no visual rows.
 
 Hand-deleting `captures` reverts later reads to the legacy rule, but a new completed `record polish` still refuses. A fully reconstructed, internally consistent record can pass; the checksum is tamper evidence, not authorship proof. Pixel metrics and geometry are range-checked rather than recomputed on every read.
 
