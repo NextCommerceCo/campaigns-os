@@ -70,10 +70,12 @@ export function planVisualCapture(plan, viewports = plan?.viewports, { packet, p
       && !/[?#\\\s]/.test(declared) ? declared : null;
     const pageUrl = specPages.find((page) => page?.id === skipped.page_id)?.page_url;
     const specRoute = typeof pageUrl === "string" && pageUrl.trim() ? stripPublicRoutePrefix(pageUrl, slug) : null;
+    const reducedMatches = specRoute !== null ? built.filter((page) =>
+      runtimeRelativeRouteForSpecValue(page.route, slug) === runtimeRelativeRouteForSpecValue(specRoute, slug)) : [];
     const output = declaredRoute
       ? built.find((page) => normalizePageKitRoute(page.route) === stripPublicRoutePrefix(declaredRoute, slug))
       : (specRoute !== null && (built.find((page) => normalizePageKitRoute(page.route) === normalizePageKitRoute(specRoute))
-        || built.find((page) => runtimeRelativeRouteForSpecValue(page.route, slug) === runtimeRelativeRouteForSpecValue(specRoute, slug))))
+        || (reducedMatches.length === 1 ? reducedMatches[0] : null)))
         || built.find((page) => page.page_id === skipped.page_id);
     const route = declaredRoute || (output && routeRoot ? `${routeRoot}${output.route ? `${output.route}/` : ""}` : null);
     return viewports.map((viewport) => ({
