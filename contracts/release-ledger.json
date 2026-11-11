@@ -4039,6 +4039,27 @@
         }
       ],
       "entry_sha256": "1131da2f51e79891553daa07c4eb0c9faf7dfdd5969984878f923d3fb28312f7"
+    },
+    {
+      "id": "RL-0340",
+      "sequence": 323,
+      "date": "2026-11-11",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.68.0+agent.7",
+      "changelog_sha256": "26f83216da84ff54dc74bdc082141359d18801c6c606a2a6ffa4f70429b11cb4",
+      "agent_impact": "standardize --slug <route> now limits the source audit to src/<route>/ and the files its pages include, so findings from other routes no longer appear. The report gains source_scope and entry_point, a finding in a shared file carries shared_files with the routes that use it, and a slug with no source pages reports source.scope_unresolved. Without --slug the report is unchanged.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/campaign-standardization-report.md",
+          "surface_entry": "docs/campaign-standardization-report.md",
+          "summary": "Describe the route-scoped source audit, shared-file attribution, the entry-point line and source.scope_unresolved."
+        }
+      ],
+      "entry_sha256": "9c803e01f8a3fadfef79e90418dd392c705a1d90b7d1bd0531346e68576f26c7"
     }
   ]
 }

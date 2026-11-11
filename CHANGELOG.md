@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.68.0+agent.7] - 2026-11-11
+
+### Changed
+
+- `standardize --slug <route>` audits only that route's source, lists the routes that share a file a finding sits in, and names the entry point to come back in through (#754).
+
 ## [1.68.0+agent.1] - 2026-11-10
 
 ### Changed
