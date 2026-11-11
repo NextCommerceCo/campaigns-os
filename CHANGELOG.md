@@ -2,11 +2,17 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.68.0+agent.2] - 2026-11-11
+## [1.68.0+agent.3] - 2026-11-11
 
 ### Fixed
 
 - The pack check and the runtime-recipe test pass under npm 12, which prints `npm pack --json` as an object and runs a dependency's install scripts only once they are approved (#757).
+
+## [1.68.0+agent.2] - 2026-11-11
+
+### Changed
+
+- Doctor's shared-input code is smaller and simpler, with the same output and one fewer pass over the built files on packet and `--ci` runs (#730).
 
 ## [1.68.0+agent.1] - 2026-11-10
 
