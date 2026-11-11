@@ -4102,7 +4102,7 @@
       "surface_version": null,
       "changelog_section": "1.68.0+agent.6",
       "changelog_sha256": "8999f816c3cd296d3b4121495627b3a462d10d15a0317420072df9d45540a3f9",
-      "agent_impact": "A qa run with a spec and no --currency now enters each funnel's entry page with ?currency=<the spec's campaign.currency> and marks evidence.currency_defaulted_from_spec on that page's http row; pass --currency to choose another. A malformed spec currency, a spec with none, --site and legacy API order runs stay unpinned. On a build recorded with build_environment development, an analytics-correctness:tag:* row that did not fire is manual_review / warn with evidence.reason development_build_gates_vendor_loaders, on a hosted preview and on local-serve alike (local-serve runs used to read local_serve_development_render for these rows); run QA against a production build to check the tag. A tag:meta row whose observer was disarmed, oob rows and purchase-fires keep their earlier rules.",
+      "agent_impact": "A qa run with a spec and no --currency now enters each funnel's entry page with ?currency=<the spec's campaign.currency> and marks evidence.currency_defaulted_from_spec on that page's http row; pass --currency to choose another. A malformed spec currency, a spec with none, --site and legacy API order runs stay unpinned. On a build recorded with build_environment development, an analytics-correctness:tag:* row that did not fire is manual_review / warn with evidence.reason development_build_gates_vendor_loaders: on a hosted preview of that build, and on a local-serve run only when the capture stayed on the loopback render (those rows used to read local_serve_development_render). A local-serve capture that landed on another host keeps its blocker. Run QA against a production build to check the tag. A tag:meta row whose observer was disarmed, oob rows and purchase-fires keep their earlier rules.",
       "compatibility": "compatible",
       "migration": "none",
       "changes": [
@@ -4119,7 +4119,7 @@
           "summary": "spec derive's analytics warnings say a declared tag is checked on a production build."
         }
       ],
-      "entry_sha256": "acfc925903257903fa415a74b3330a69cb7f590946b4daf9a153d21680881a97"
+      "entry_sha256": "c3118e3bf6b4a2439c2d186bfa74f67f11b6fb8c5b0a7864381c8658e232cd9f"
     }
   ]
 }
