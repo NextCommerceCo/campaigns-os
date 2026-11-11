@@ -4048,7 +4048,7 @@
       "surface_version": null,
       "changelog_section": "1.68.0+agent.5",
       "changelog_sha256": "dda97f259af30e454e9d41ddd0ebff1c65098f0008a9f6466bed9d97626a594d",
-      "agent_impact": "A packet-backed qa run with no --currency now enters each funnel's entry page with ?currency=<the spec's campaign.currency> and marks evidence.currency_defaulted_from_spec on that page's http row; pass --currency to choose another. Legacy API order runs stay unpinned. On a build recorded with build_environment development, an analytics-correctness:tag:* row that did not fire is manual_review / warn with evidence.reason development_build_gates_vendor_loaders; run QA against a production build to check the tag.",
+      "agent_impact": "A qa run with a spec and no --currency now enters each funnel's entry page with ?currency=<the spec's campaign.currency> and marks evidence.currency_defaulted_from_spec on that page's http row; pass --currency to choose another. A malformed spec currency, a spec with none, --site and legacy API order runs stay unpinned. On a build recorded with build_environment development, an analytics-correctness:tag:* row that did not fire is manual_review / warn with evidence.reason development_build_gates_vendor_loaders, on a hosted preview and on local-serve alike (local-serve runs used to read local_serve_development_render for these rows); run QA against a production build to check the tag. A tag:meta row whose observer was disarmed, oob rows and purchase-fires keep their earlier rules.",
       "compatibility": "compatible",
       "migration": "none",
       "changes": [
@@ -4065,7 +4065,7 @@
           "summary": "spec derive's analytics warnings say a declared tag is checked on a production build."
         }
       ],
-      "entry_sha256": "8463c6d9bb69b7e64b983c95055d24dd4c77deafecd64f86927dac877c0627a8"
+      "entry_sha256": "489ba050657ec4312c11d9375954c65cbe37b7d99cdf362982401806906c5a2c"
     }
   ]
 }
