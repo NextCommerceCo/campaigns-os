@@ -6,14 +6,13 @@ import { parse as parseJs } from 'acorn';
 import { defaultTreeAdapter, parse } from 'parse5';
 
 // The shared input context of one read-only doctor inspection (#730): file
-// bytes, parsed trees and programs, and memoized collections (built-site
-// scope, source permalinks, the cart placeholder page inventory). A
-// synchronous doctor's snapshot ends with the invocation, so no file contents
-// survive into another command, and an inspection that follows a write opens
-// a fresh snapshot that never sees bytes from before the write. A snapshot
-// opened inside an active one, without `reuse`, runs uncached. Past a budget
-// an input is read, parsed or collected per use, as it was before the
-// snapshot existed. Read failures are never retained.
+// bytes, parsed trees and programs, and memoized collections. A synchronous
+// doctor's snapshot ends with the invocation, so no file contents survive into
+// another command, and an inspection that follows a write opens a fresh
+// snapshot that never sees bytes from before the write. A snapshot opened
+// inside an active one, without `reuse`, runs uncached. Past a budget a file
+// is read or parsed per use, as it was before the snapshot existed. Read
+// failures are never retained.
 const snapshots = new AsyncLocalStorage();
 const MAX_RETAINED_BYTES = 16 * 1024 * 1024;
 const MAX_RETAINED_FILES = 4096;
@@ -77,9 +76,7 @@ export function withHtmlScanSnapshot(operation, { reuse = false } = {}) {
       // AsyncLocalStorage propagates to queued callbacks too. Expire the store
       // at synchronous return, even if a future caller returns a Promise.
       snapshot.active = false;
-      snapshot.files.clear();
-      snapshot.paths.clear();
-      snapshot.memos.clear();
+      for (const held of [snapshot.files, snapshot.paths, snapshot.memos]) held.clear();
     }
   });
 }
@@ -88,12 +85,10 @@ export function withHtmlScanSnapshot(operation, { reuse = false } = {}) {
 // are one entry.
 function realKey(snapshot, path) {
   const key = resolve(path);
-  if (!snapshot.paths.has(key)) {
-    try {
-      snapshot.paths.set(key, realpathSync.native(key));
-    } catch {
-      return key;
-    }
+  try {
+    if (!snapshot.paths.has(key)) snapshot.paths.set(key, realpathSync.native(key));
+  } catch {
+    return key;
   }
   return snapshot.paths.get(key);
 }
@@ -136,13 +131,12 @@ export function htmlScanDigest(path) {
 
 // One shared parse per held file and kind (`html`, or a script as `script` or
 // `module`: the same bytes can parse differently, or fail, as either) for
-// every consumer in the snapshot. Returns `(path, kind, text) => parsed`,
-// parsing on first use, or null when the set cannot be shared: no snapshot, a
-// file whose bytes are not held, or parses past the budget. The result always
-// matches the `text` given: any text other than the held text is parsed per
-// use. Consumers read a shared tree or program and never change it. A script's
-// parse error, and a page's TooDeep, is shared like a result; any other HTML
-// parse error is not kept, so each consumer parses again.
+// every consumer in the snapshot, which reads it and never changes it. Returns
+// `(path, kind, text) => parsed`, parsing on first use, or null when the set
+// cannot be shared: no snapshot, a file whose bytes are not held, or parses
+// past the budget. Text other than the held text is parsed per use. A
+// script's parse error, and a page's TooDeep, is shared like a result; any
+// other HTML parse error is not kept, so each consumer parses again.
 //
 // The set is shared whole or not at all. Retaining only the first few trees is
 // worse than retaining none: V8 then pretenures parse5's node allocations, so
@@ -186,16 +180,15 @@ const HTML_PARSERS = Object.freeze({
   bounded: parseBounded,
 });
 
-// Shared parse5 trees for a set of files whose bytes the snapshot already
-// holds: one parseBounded tree per page, for every consumer whatever its
-// profile. Within the bound, parseBounded builds the located tree node for
-// node, and noloc consumers ignore locations. Returns `(path, text) =>
-// document`. A noloc or located consumer gets its own unbounded parse of a
-// page past the depth bound, so it sees every page it saw before trees were
-// shared. When the set is not shared, every page is parsed per use with the
-// profile asked for. Template content and other nested contexts stay inside
-// the tree as parse5 builds them; a consumer that reparses a fragment
-// (noscript, srcdoc) does so itself.
+// Shared parse5 trees for a set of held pages: one parseBounded tree per page
+// for every consumer whatever its profile, since within the bound it builds
+// the located tree node for node and noloc consumers ignore locations. Returns
+// `(path, text) => document`. A noloc or located consumer gets its own
+// unbounded parse of a page past the depth bound, so it sees every page it saw
+// before trees were shared; an unshared set is parsed per use with the profile
+// asked for. Template content and other nested contexts stay inside the tree
+// as parse5 builds them; a consumer that reparses a fragment (noscript,
+// srcdoc) does so itself.
 export function htmlScanDocuments(paths, profile = 'noloc') {
   if (!Object.hasOwn(HTML_PARSERS, profile)) throw new Error(`Unknown HTML parse profile: ${profile}`);
   const parseText = HTML_PARSERS[profile];
@@ -211,10 +204,9 @@ export function htmlScanDocuments(paths, profile = 'noloc') {
   };
 }
 
-// Shared acorn programs, with locations, for a set of local scripts
-// (`{ path, module }`) whose bytes the snapshot already holds. Returns
-// `(path, module, text) => program`, throwing the parser's error for a script
-// that does not parse.
+// Shared acorn programs, with locations, for a set of held local scripts
+// (`{ path, module }`). Returns `(path, module, text) => program`, throwing
+// the parser's error for a script that does not parse.
 export function htmlScanScriptPrograms(scripts) {
   const parseText = (text, kind) => parseJs(text, { ecmaVersion: 'latest', sourceType: kind, locations: true, allowHashBang: true });
   const kindOf = (module) => (module ? 'module' : 'script');
@@ -223,10 +215,9 @@ export function htmlScanScriptPrograms(scripts) {
 }
 
 // A collection computed once per snapshot under `key` (built-site scope, a
-// source tree's permalinks); with no snapshot it is computed per use. The
-// value is frozen either way, one level down: the value, its object and array
-// children, and those arrays' items. Deeper values are not frozen, so a memo
-// holds flat records.
+// source tree's permalinks), or per use with no snapshot. Either way the
+// value, its children and its array children's items are frozen, and nothing
+// deeper, so a memo holds flat records.
 export function htmlScanMemo(key, compute) {
   const snapshot = snapshots.getStore();
   if (!snapshot?.active) return freezeShallow(compute());
@@ -236,9 +227,9 @@ export function htmlScanMemo(key, compute) {
 
 function freezeShallow(value) {
   if (!value || typeof value !== 'object') return value;
+  // Object.freeze returns a primitive unchanged, so children need no type check.
   for (const child of Object.values(value)) {
-    if (!child || typeof child !== 'object') continue;
-    if (Array.isArray(child)) for (const item of child) if (item && typeof item === 'object') Object.freeze(item);
+    if (Array.isArray(child)) child.forEach((item) => Object.freeze(item));
     Object.freeze(child);
   }
   return Object.freeze(value);

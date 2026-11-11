@@ -48,7 +48,6 @@ import {
   validatePacket,
   recordUpsellSelectorScopeGate,
   collectBuiltPageIdentityInputs,
-  sdkMarkupPages,
   sharedBuiltPages,
   recordCampaignIdentityGate,
   recordScriptSyntaxGate,
@@ -156,8 +155,6 @@ export function doctorCommand(args, { runDoctor = doctorPacket, liveCampaign = u
   }
   const packetPath = resolve(requireArg(args, "packet"));
   const explicitSidecarArgs = Boolean(args.context || args.report);
-  // --ci reads the evidence debt inspection assessed, from the same packet,
-  // report and built output, rather than assessing it a second time.
   let inspectedDebt;
   const doctorOptions = {
     contextPath: args.context ? resolve(args.context) : explicitSidecarArgs ? null : undefined,
@@ -256,6 +253,7 @@ function inspectBuiltOutput(args) {
   const mapId = optionalString(args["map-id"]);
   const deployTarget = optionalString(args["deploy-target"], "unknown");
 
+  const subject = { public_route_slug: scope.slug || null, site_root: relFromDir(targetRepo, scope.campaign_dir) };
   const derived = {
     mode: "built_site",
     map_id: mapId || scope.slug || null,
@@ -327,10 +325,7 @@ function inspectBuiltOutput(args) {
   // assembly report exists on this path, so there are no waivers to assess — a
   // blocker here is repaired in the source, or waived through the packet path.
   recordUpsellSelectorScopeGate({
-    subject: {
-      public_route_slug: scope.slug || null,
-      site_root: relFromDir(targetRepo, scope.campaign_dir),
-    },
+    subject,
     pages: sharedBuiltPages(scope, targetRepo).map((page) => ({ ...page, page_type: builtPageTypeOverRouteGuess(page) })),
     waivers: null,
     errors,
@@ -345,10 +340,7 @@ function inspectBuiltOutput(args) {
   // is most often introduced on exactly the page-kit campaigns this path
   // inspects.
   recordCampaignIdentityGate({
-    subject: {
-      public_route_slug: scope.slug || null,
-      site_root: relFromDir(targetRepo, scope.campaign_dir),
-    },
+    subject,
     pages: collectBuiltPageIdentityInputs(scope, targetRepo),
     errors,
     ready,
@@ -357,15 +349,11 @@ function inspectBuiltOutput(args) {
   derived.doctor_checks.push(CAMPAIGN_IDENTITY);
 
   // Static SDK markup checks (#303). Same placement, same reasons. No
-  // page_type here: this path has no spec to declare a receipt, and the
-  // route-inferred type (route_type) is deliberately not one, so the gate
-  // reads only each page's own next-page-type meta, as it always has.
+  // page_type: this path has no spec to declare a receipt and route_type is
+  // not one, so the gate reads only each page's own next-page-type meta.
   recordSdkMarkupGate({
-    subject: {
-      public_route_slug: scope.slug || null,
-      site_root: relFromDir(targetRepo, scope.campaign_dir),
-    },
-    pages: sdkMarkupPages(scope, targetRepo),
+    subject,
+    pages: sharedBuiltPages(scope, targetRepo),
     errors,
     warnings,
     ready,
@@ -376,10 +364,7 @@ function inspectBuiltOutput(args) {
   // Campaign-owned script syntax (#480). Same placement, same reasons: a
   // hand-edited script that no longer parses is invisible to every HTML gate.
   recordScriptSyntaxGate({
-    subject: {
-      public_route_slug: scope.slug || null,
-      site_root: relFromDir(targetRepo, scope.campaign_dir),
-    },
+    subject,
     inputs: collectBuiltScriptSyntaxInputs(scope, targetRepo),
     errors,
     warnings,
@@ -406,10 +391,7 @@ function inspectBuiltOutput(args) {
   // Raw cart placeholders. Same placement, same reasons; a QC
   // check whose warnings no blocker above withholds.
   recordCartPlaceholders({
-    subject: {
-      public_route_slug: scope.slug || null,
-      site_root: relFromDir(targetRepo, scope.campaign_dir),
-    },
+    subject,
     pages: collectCartPlaceholderPages(targetRepo, optionalString(args.slug)),
     warnings,
     ready,
@@ -422,10 +404,7 @@ function inspectBuiltOutput(args) {
   // deploy base are unknown: the production-only rules and an absolute
   // og:image read unexercised here.
   recordSmokeQc({
-    subject: {
-      public_route_slug: scope.slug || null,
-      site_root: relFromDir(targetRepo, scope.campaign_dir),
-    },
+    subject,
     targetRepo,
     pages: collectCartPlaceholderPages(targetRepo, optionalString(args.slug)),
     environment: "unknown",
@@ -620,7 +599,7 @@ function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath =
   const evidenceDebt = assessEvidenceDebt({ packet, packetPath, report });
   derived.evidence_debt = evidenceDebt;
   // The assessment itself, before --strip-paths rewrites the output's paths.
-  if (typeof onEvidenceDebt === "function") onEvidenceDebt(evidenceDebt);
+  onEvidenceDebt?.(evidenceDebt);
   const polishCheckpointGate = applyPageOnlyChangeToCheckpoint(applyLocalPreviewToCheckpoint(
     evaluateRecordedHiddenEagerMediaCheckpoint({ packet, report }),
     { packet, report },

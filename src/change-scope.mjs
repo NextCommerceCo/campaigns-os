@@ -26,18 +26,6 @@ import { loadPageKitCampaignEntry } from "./page-kit-campaign-config.mjs";
 
 export const COMMERCE_SIGNATURE_ALGORITHM = "commerce-signature/v1";
 export const CHANGE_KINDS = Object.freeze(["none", "page_only", "commerce_affecting", "unknown"]);
-// The reasons a change counts as commerce, closed so readers can switch on them.
-export const COMMERCE_REASONS = Object.freeze([
-  "unmapped_file",
-  "page_added",
-  "page_removed",
-  "checkout_page",
-  "commerce_markup_changed",
-  "commerce_signature_unavailable",
-  "campaign_config_changed",
-  "campaign_config_unavailable",
-  "change_history_unavailable",
-]);
 // How many rebuilds `record build` keeps in build_changes, and how many paths
 // one entry lists per list. A stage that reviewed a build older than the
 // kept history reads its change as unknown, and so owes the full stages.
@@ -67,9 +55,8 @@ function textOf(node) {
 // script (src, or the inline body), every link target and form action. Copy,
 // images and styling are left out, so a copy edit keeps the signature.
 // `checkout` is true when the page carries checkout or payment markup.
-// `document`, when a function, returns the parse5 tree of `html` (the
-// doctor's shared inputs parse once for every consumer).
-export function pageCommerceFacts(html, document = null) {
+// `document` is the parse5 tree of `html` when the caller already holds one.
+export function pageCommerceFacts(html, document = parse(String(html))) {
   const facts = [];
   let pageType = null;
   let checkout = false;
@@ -95,7 +82,7 @@ export function pageCommerceFacts(html, document = null) {
       walk(child);
     }
   };
-  walk(typeof document === "function" ? document() : parse(String(html)));
+  walk(document);
   return { signature: sha256(facts.join("\n")), page_type: pageType, checkout };
 }
 
@@ -147,13 +134,8 @@ const capped = (items) => items.slice(0, CHANGE_PATH_LIMIT);
  * unmapped_files, extra, missing). `baseline` is the recorded
  * stages.assembly. Returns `{ kind, reasons }`, `kind` one of CHANGE_KINDS
  * and `reasons` the commerce reasons found, each `{ code, path? }`.
- * `pagePaths` is every page of the built-site scope: a changed page is read
- * from the run's shared inputs and takes the tree of that whole set when it
- * is shared (htmlScanDocuments), else it is parsed here. The set is shared
- * only when the run already holds every page's bytes, as doctor's built-output
- * checks do, and its trees fit the parse budget; otherwise (no CampaignSpec,
- * so no built-output checks; no snapshot at all; or a page set past the parse
- * budget) each changed page is parsed per use, as before.
+ * `pagePaths` is every page of the built-site scope, the set whose shared
+ * trees (htmlScanDocuments) a changed page reads.
  */
 export function classifyDrift({ changes, baseline, outputRoot, targetRepo, publicRouteSlug, pagePaths = [] }) {
   if (changes?.status !== "known") return { kind: "unknown", reasons: [] };
@@ -175,7 +157,7 @@ export function classifyDrift({ changes, baseline, outputRoot, targetRepo, publi
     try {
       const file = join(outputRoot, page.built_path);
       const html = readHtmlScanText(file);
-      current = pageCommerceFacts(html, () => documentOf(file, html));
+      current = pageCommerceFacts(html, documentOf(file, html));
     } catch {
       reasons.push({ code: "commerce_signature_unavailable", path: page.built_path });
       continue;
