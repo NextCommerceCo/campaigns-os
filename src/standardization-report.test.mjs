@@ -93,6 +93,17 @@ test("--slug excludes blockers and warnings belonging only to other routes", () 
   });
 });
 
+test("--slug attributes a checkout-contract finding in a shared file to the routes that use it", () => {
+  withTempDir((dir) => {
+    writeMultiRouteRoot(dir);
+    write(join(dir, "src/shared/blocker.html"), '<input data-next-checkout-field="state">');
+    const report = createStandardizationReport({ targetRepo: dir, slug: "route-b", templateFamily: "apollo" });
+    const binding = report.roots[0].findings.find((item) => item.code === "checkout.unsupported_field_binding");
+    assert.ok(binding, "the shared file's stale checkout alias is reported for a route that uses it");
+    assert.deepEqual(binding.shared_files, [{ path: "src/shared/blocker.html", routes: ["route-b", "route-c"] }]);
+  });
+});
+
 test("--slug attributes transitive shared findings and leaves whole-project output unscoped", () => {
   withTempDir((dir) => {
     writeMultiRouteRoot(dir);
