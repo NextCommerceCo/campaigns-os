@@ -307,6 +307,25 @@ export async function runVisualPass({ createBrowserAdapter, frozen, packet, pack
     sources.set(route.page_id, ref);
     const { url_path, ...persisted } = ref; references.push(persisted);
   }
+  // Without extra captures, retain the original sequential cleanup before diff.
+  // With them, resources stay open and close concurrently within one reserved
+  // close interval, so cleanup cannot consume the planned comparisons' budget.
+  let cleanupMs = 0;
+  const closeResources = async () => {
+    const closeAdapter = async (side) => {
+      try { await bounded(() => instances[side].close(), { timeoutMs: cleanupMs || Math.max(1, Math.min(closeMs, addedLeft())) }); adapters[side].close = "ok"; }
+      catch (error) { adapters[side].close = timedOut(error) ? "producer_timeout" : "failed"; }
+    };
+    const closeServer = async () => {
+      if (server) try { await bounded(() => server.close(), { timeoutMs: cleanupMs || Math.max(1, Math.min(closeMs, addedLeft())) }); } catch { /* listener closes all sockets synchronously */ }
+    };
+    if (plan.evidence_only.length) {
+      await Promise.all([...Object.keys(instances).map(closeAdapter), closeServer()]);
+    } else {
+      for (const side of ["build", "source"]) if (instances[side]) await closeAdapter(side);
+      await closeServer();
+    }
+  };
   try {
     try {
       if (rootAvailable && captureLeft() > 0) {
@@ -336,9 +355,11 @@ export async function runVisualPass({ createBrowserAdapter, frozen, packet, pack
       cells = plan.cells.map((cell) => blankCell(cell, cell.side === "source_html" ? "source_root_unavailable" : "browser_unavailable"));
       evidenceOnly = plan.evidence_only.map((cell) => evidenceCapture(blankCell(cell, cell.reason ? "not_built" : "browser_unavailable")));
     }
+    if (!plan.evidence_only.length) await closeResources();
+    else cleanupMs = Math.max(1, Math.min(closeMs, addedLeft()));
     const diffStarted = clock.now(), diffRealStarted = performance.now();
     const diffMs = boundedPolishDeadline(budget.diffMs, VISUAL_DIFF_RUN_MS);
-    const diffLeft = () => Math.min(diffMs - (clock.now() - diffStarted), diffMs - (performance.now() - diffRealStarted), addedLeft());
+    const diffLeft = () => Math.min(diffMs - (clock.now() - diffStarted), diffMs - (performance.now() - diffRealStarted), addedLeft() - cleanupMs);
     dependencies ||= await loadVisualDependencies();
     const captureHashes = cells.flatMap((c) => [c.actual?.png?.sha256, c.stabilized?.png?.sha256]).filter(Boolean);
     for (const route of plan.routes) {
@@ -423,9 +444,9 @@ export async function runVisualPass({ createBrowserAdapter, frozen, packet, pack
     }
     // Evidence cannot spend the planned comparisons' time or the bounded cleanup
     // of the resources they used. It shares the original capture/pass deadlines.
-    const cleanupMs = closeMs * (Object.keys(instances).length + (server ? 1 : 0));
-    const evidenceLeft = () => Math.min(captureLeft(), addedLeft() - cleanupMs);
-    if (!evidenceOnly.length) {
+    const evidenceCleanupMs = closeMs * (Object.keys(instances).length + (server ? 1 : 0));
+    const evidenceLeft = () => Math.min(captureLeft(), addedLeft() - evidenceCleanupMs);
+    if (plan.evidence_only.length && !evidenceOnly.length) {
       const buildTimedOut = cells.some((cell) => cell.side === "build" && cell.status === "producer_timeout");
       evidenceOnly = buildTimedOut ? plan.evidence_only.map((cell) => evidenceCapture(blankCell(cell,
         cell.reason ? "not_built" : evidenceLeft() <= 0 ? "run_budget_exhausted" : "producer_timeout")))
@@ -434,13 +455,9 @@ export async function runVisualPass({ createBrowserAdapter, frozen, packet, pack
           writePng: (bytes) => writePolishPng(targetRepo, "captures", bytes) })).map(evidenceCapture);
     }
   } finally {
-    for (const side of ["build", "source"]) if (instances[side]) {
-      try { await bounded(() => instances[side].close(), { timeoutMs: Math.max(1, Math.min(closeMs, addedLeft())) }); adapters[side].close = "ok"; }
-      catch (error) { adapters[side].close = timedOut(error) ? "producer_timeout" : "failed"; }
-    }
-    if (server) try { await bounded(() => server.close(), { timeoutMs: Math.max(1, Math.min(closeMs, addedLeft())) }); } catch { /* listener closes all sockets synchronously */ }
+    if (plan.evidence_only.length) await closeResources();
   }
-  return buildCapturesRecord({ subject: { ...frozen.page_load.subject, skipped_pages: plan.skipped_pages, source_package_material_fingerprint: currentSourcePackageMaterialFingerprint(report) }, environment: { browser: instances.build?.browserVersion ?? instances.source?.browserVersion ?? null, device_scale_factor: 1 },
+  return buildCapturesRecord({ subject: { ...frozen.page_load.subject, ...(plan.skipped_pages.length ? { skipped_pages: plan.skipped_pages } : {}), source_package_material_fingerprint: currentSourcePackageMaterialFingerprint(report) }, environment: { browser: instances.build?.browserVersion ?? instances.source?.browserVersion ?? null, device_scale_factor: 1 },
     source, adapters, dependencies, cells: cells.map(({ probes: _probes, ...cell }) => cell), evidenceOnly, references, comparisons, measuredAt: now });
 }
 
@@ -463,7 +480,7 @@ export function buildCapturesRecord({ subject, buildFingerprint, sourceFingerpri
       decoder: { status: "missing", version: null }, diff: { status: "missing", version: null } },
     adapters: adapters ?? { build: { startup: "failed", close: "not_started" }, source: { startup: "failed", close: "not_started", sealed: true } },
     source: source ?? { root_rel: null, status: "missing", server: "loopback_read_only" },
-    cells, evidence_only: evidenceOnly, references, comparisons: persistedComparisons, measured_at: new Date(measuredAt).toISOString() });
+    cells, ...(evidenceOnly.length ? { evidence_only: evidenceOnly } : {}), references, comparisons: persistedComparisons, measured_at: new Date(measuredAt).toISOString() });
   return { ...record, integrity: capturesIntegrity(record) };
 }
 

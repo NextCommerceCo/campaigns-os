@@ -63,6 +63,84 @@ function templateInputs(f) {
   input.frozen.page_load.subject.route_scope = "selected";
   return input;
 }
+async function mainVisualPass() {
+  const source = execFileSync("git", ["show", "origin/main:src/polish-visual.mjs"], {
+    cwd: new URL("..", import.meta.url), encoding: "utf8",
+  }).replace(/(from\s+")([.][/][^"]+)(")/g, (_, before, path, after) =>
+    `${before}${new URL(path, import.meta.url).href}${after}`);
+  return (await import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`)).runVisualPass;
+}
+async function slowVisualPass(input, run = runVisualPass, { renderMs = 60_000, compareMs = 30_000, budget = {} } = {}) {
+  const dependencies = await loadVisualDependencies();
+  assert.equal(dependencies.decoder.status, "available");
+  assert.equal(dependencies.diff.status, "available");
+  let time = 0;
+  const events = [], deadlines = [], armed = new Set();
+  const record = await run({ ...input, budget, clock: { now: () => time },
+    timers: {
+      setTimer(callback, ms) {
+        deadlines.push(ms);
+        const handle = {}; armed.add(handle);
+        if (ms <= 1) queueMicrotask(() => { if (armed.has(handle)) callback(); });
+        return handle;
+      },
+      clearTimer(handle) { armed.delete(handle); },
+    },
+    dependencies: { ...dependencies, diff: { ...dependencies.diff, compare(...args) {
+      events.push("diff"); time += compareMs;
+      return dependencies.diff.compare(...args);
+    } } },
+    createBrowserAdapter: async ({ seal }) => ({ ...fakeVisualAdapter({ consume() {
+      events.push("capture"); time += renderMs;
+    } }), async close() {
+      events.push(seal ? "source.close" : "build.close");
+      // A 1 ms deadline fires before completion; a normal close bound succeeds.
+      await new Promise((done) => setImmediate(done));
+    } }),
+  });
+  return { record, events, deadlines };
+}
+test("Slow planned-only capture closes before diff and preserves the entire main record", async (t) => {
+  const f = syntheticVisualFixture(); t.after(f.cleanup); const input = visualInputs(f);
+  assert.deepEqual(input.frozen.plan.skipped_pages, []);
+  const main = await slowVisualPass(input, await mainVisualPass());
+  const actual = await slowVisualPass(input);
+  const closes = (record) => [record.adapters.build.close, record.adapters.source.close];
+  assert.deepEqual(closes(main.record), ["ok", "ok"]);
+  t.diagnostic(`Main closes: ${JSON.stringify(closes(main.record))}; current closes: ${JSON.stringify(closes(actual.record))}`);
+  assert.deepEqual(closes(actual.record), ["ok", "ok"]);
+  assert.deepEqual(actual.events, main.events);
+  // Includes startup/cell deadlines and all three adapter/server close bounds.
+  assert.deepEqual(actual.deadlines, main.deadlines);
+  assert.deepEqual(actual.record, main.record);
+  assert.equal(JSON.stringify(actual.record), JSON.stringify(main.record));
+});
+test("Slow evidence pass reserves every close deadline after planned comparisons", async (t) => {
+  const f = syntheticVisualFixture(); t.after(f.cleanup); const input = templateInputs(f);
+  const { record, events, deadlines } = await slowVisualPass(input, runVisualPass, {
+    renderMs: 60_000, compareMs: 2_000, budget: { captureMs: 240_000, addedMs: 260_000 },
+  });
+  const closes = [record.adapters.build.close, record.adapters.source.close];
+  t.diagnostic(`Evidence closes: ${JSON.stringify(closes)}; close deadlines: ${JSON.stringify(deadlines.slice(-3))}`);
+  assert.deepEqual(closes, ["ok", "ok"]);
+  assert.deepEqual(deadlines.slice(-3), [10_000, 10_000, 10_000]);
+  assert.ok(record.cells.every((cell) => cell.status === "rendered"));
+  assert.equal(record.comparisons.length, 4);
+  assert.ok(record.comparisons.every((comparison) => comparison.status === "compared"));
+  assert.ok(record.references.filter((ref) => ref.ref_id !== "source_html").every((ref) => ref.verification.level === "decoded"));
+  assert.ok(record.evidence_only.every((cell) => cell.status === "rendered" || cell.status === "run_budget_exhausted"));
+  assert.ok(events.indexOf("build.close") > events.lastIndexOf("diff"));
+});
+test("An evidence pass keeps its close deadline even when a synchronous diff overruns its slice", async (t) => {
+  const f = syntheticVisualFixture(); t.after(f.cleanup); const input = templateInputs(f);
+  const { record, deadlines } = await slowVisualPass(input);
+  const closes = [record.adapters.build.close, record.adapters.source.close];
+  t.diagnostic(`Diff-overrun evidence closes: ${JSON.stringify(closes)}; close deadlines: ${JSON.stringify(deadlines.slice(-3))}`);
+  assert.deepEqual(closes, ["ok", "ok"]);
+  assert.deepEqual(deadlines.slice(-3), [10_000, 10_000, 10_000]);
+  assert.ok(record.comparisons.some((comparison) => comparison.reason === "diff_budget_exhausted"));
+  assert.ok(record.evidence_only.every((cell) => cell.status === "run_budget_exhausted"));
+});
 test("Template evidence extends only the visual plan, after the unchanged planned cells", (t) => {
   const f = syntheticVisualFixture(); t.after(f.cleanup); const input = templateInputs(f);
   const { plan } = input.frozen;

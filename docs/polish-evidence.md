@@ -169,7 +169,10 @@ build-side captures at both viewports for these pages when their declared
 public route, or their page id in `_site/<slug>/`,
 resolves to built output. They use the same stabilization, storage and
 five-minute pass budget, using only the time left after that planned work and
-reserving time to close its adapters and server. When none remains, the cells
+reserving time to close its adapters and server. With these extra cells, the
+planned diff also reserves a close interval, and the adapters and server close
+concurrently after the evidence captures. Without extra cells, cleanup stays
+between planned captures and diff. When none remains, the cells
 are listed as `run_budget_exhausted`. The separate `captures.evidence_only`
 list records each cell with `evidence_only: true`, page id, route, viewport, image identities
 and `skip_reason`. Missing output is listed with reason `page_not_built`;
