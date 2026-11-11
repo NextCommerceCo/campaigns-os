@@ -159,10 +159,11 @@ test("--slug with a malformed route explains the path-segment rule in both scope
       const item = root.findings.find((entry) => entry.code === code);
       assert.ok(item, code);
       assert.match(item.message, /slug must be a single path segment/);
-      assert.doesNotMatch(item.next_action, /Pass --slug when a repo has multiple/);
+      assert.equal(item.next_action, "Pass a slug that is one path segment (a route folder name).");
     }
-    assert.equal(root.findings.find((item) => item.code === "built_output.scope_unresolved").next_action,
-      "Pass a slug that is one path segment (a route folder name).");
+    const missing = createStandardizationReport({ targetRepo: dir, slug: "no-such-route" }).roots[0];
+    assert.equal(missing.findings.find((item) => item.code === "source.scope_unresolved").next_action,
+      "Pass --slug for an existing route with source pages, or add the route's source pages before auditing it.");
   });
 });
 

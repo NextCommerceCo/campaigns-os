@@ -794,7 +794,9 @@ function scopeRouteSources(rootPath, files, slugs, requestedSlug) {
     code: "source.scope_unresolved",
     message: `Unknown campaign slug or missing source pages: route ${requestedSlug} has no source pages to audit${isRouteSegment(requestedSlug) ? "" : "; the slug must be a single path segment"}. Route folders: ${slugCandidates.join(", ") || "(none)"}.`,
     evidence: { requested_slug: requestedSlug, slug_candidates: slugCandidates },
-    next_action: "Pass --slug for an existing route with source pages, or add the route's source pages before auditing it.",
+    next_action: isRouteSegment(requestedSlug)
+      ? "Pass --slug for an existing route with source pages, or add the route's source pages before auditing it."
+      : "Pass a slug that is one path segment (a route folder name).",
   })];
   return {
     files: selected,
