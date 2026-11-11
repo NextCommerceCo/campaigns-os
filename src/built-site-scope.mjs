@@ -207,6 +207,10 @@ export function resolveBuiltSiteScope(targetRepo, { slug = null, includeLinkedPa
   };
 }
 
+function trimTrailingSlash(value) {
+  return String(value || "").replace(/\/+$/, "");
+}
+
 // Build QA topologies (the spec-shaped { topology_id, pages: [{page_id,
 // page_type, url}] } structure runQa walks) from a built-site scope plus a
 // served base URL. base URL points at the campaign root the pages are served
@@ -214,7 +218,7 @@ export function resolveBuiltSiteScope(targetRepo, { slug = null, includeLinkedPa
 // the whole point of a topology is fetchable page URLs, so fail fast rather
 // than hand a direct caller (tests, future tools) a topology with null URLs.
 export function topologiesFromBuiltSiteScope(scope, baseUrl) {
-  const base = String(baseUrl || "").replace(/\/+$/, "");
+  const base = trimTrailingSlash(baseUrl);
   if (!base) {
     throw new Error("topologiesFromBuiltSiteScope requires a non-empty base URL so built pages have fetchable URLs.");
   }

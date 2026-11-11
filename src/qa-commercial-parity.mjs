@@ -18,7 +18,7 @@ import {
   recurringClaimAbsences,
   recurringClaimAbsentAssertions,
 } from "./commercial-parity.mjs";
-import { extractRenderedRefs } from "./live-campaign-refs.mjs";
+import { extractRenderedPackageRefs } from "./live-campaign-refs.mjs";
 
 export const COMMERCIAL_QA_LIMITS = Object.freeze({
   max_html_bytes: 2 * 1024 * 1024,
@@ -185,7 +185,7 @@ export function captureCommercialClaims(page, html) {
       }),
       // Every package the page renders, by the refs doctor reads, so a
       // subscription whose rebill copy yielded no claim is still seen (#533).
-      rendered_package_refs: [...extractRenderedRefs(html).package_refs],
+      rendered_package_refs: [...extractRenderedPackageRefs(html)],
     };
   } catch (error) {
     const code = error instanceof CommercialParityLimitError

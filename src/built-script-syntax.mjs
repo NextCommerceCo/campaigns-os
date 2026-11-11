@@ -242,15 +242,16 @@ export function endsUnclosed(node) {
  * `unclosed` instead: its src, or null for an inline script.
  *
  * @param {string} html
- * @param {() => object} [parse] returns the located parse5 tree of `html`
+ * @param {(() => object) | null} parsed returns the located parse5 tree of
+ *   `html`; by default the page is parsed here
  * @returns {{ base: string | null, refs: Array<{ src: string, module: boolean, base: string | null }>, unclosed: Array<{ src: string | null }> }}
  */
-export function pageScriptDocument(html, parse = () => parseHtml(String(html ?? ""), { sourceCodeLocationInfo: true })) {
+export function pageScriptDocument(html, parsed = null) {
   const refs = [];
   const unclosed = [];
   let document;
   try {
-    document = parse();
+    document = typeof parsed === "function" ? parsed() : parseHtml(String(html ?? ""), { sourceCodeLocationInfo: true });
   } catch {
     return { base: null, refs, unclosed };
   }

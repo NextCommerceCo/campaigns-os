@@ -72,7 +72,9 @@ export function withHtmlScanSnapshot(operation, { reuse = false } = {}) {
       // AsyncLocalStorage propagates to queued callbacks too. Expire the store
       // at synchronous return, even if a future caller returns a Promise.
       snapshot.active = false;
-      for (const held of [snapshot.files, snapshot.paths, snapshot.memos]) held.clear();
+      snapshot.files.clear();
+      snapshot.paths.clear();
+      snapshot.memos.clear();
     }
   });
 }
@@ -168,7 +170,11 @@ function reserve(items, parseText) {
   };
 }
 
-const HTML_PARSERS = { noloc: (text) => parse(text), located: (text) => parse(text, { sourceCodeLocationInfo: true }), bounded: parseBounded };
+const HTML_PARSERS = Object.freeze({
+  noloc: (text) => parse(text),
+  located: (text) => parse(text, { sourceCodeLocationInfo: true }),
+  bounded: parseBounded,
+});
 
 // Shared parse5 trees for a set of held pages: one parseBounded tree per page
 // for every profile, since within the bound it builds the located tree node
@@ -218,9 +224,9 @@ export function htmlScanMemo(key, compute) {
 
 function freezeShallow(value) {
   if (!value || typeof value !== 'object') return value;
-  // Object.freeze returns a primitive unchanged, so children need no type check.
   for (const child of Object.values(value)) {
-    if (Array.isArray(child)) child.forEach((item) => Object.freeze(item));
+    if (!child || typeof child !== 'object') continue;
+    if (Array.isArray(child)) for (const item of child) if (item && typeof item === 'object') Object.freeze(item);
     Object.freeze(child);
   }
   return Object.freeze(value);

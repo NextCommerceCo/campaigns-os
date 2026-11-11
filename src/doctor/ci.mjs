@@ -3,7 +3,8 @@ import { REFUSED_INVOCATION } from "../lifecycle.mjs";
 
 export const DOCTOR_CI_EXIT_CODES = Object.freeze({ current: 0, owed: 3, unknown: 4, usage: 2 });
 
-// The CI verdict from the evidence debt doctorPacket assessed (onEvidenceDebt).
+// The CI verdict from the evidence debt the inspection it follows assessed
+// (assessEvidenceDebt, reported through doctorPacket's onEvidenceDebt).
 export function assessDoctorCi(debt) {
   // Advisory Polish (a page-only change) is reported, never required.
   const stages = [debt.polish, debt.qa].filter((stage) => !stage.advisory);
@@ -44,11 +45,12 @@ const commerceReasonText = new Map([
 // Values can come from campaign files and will be rendered in a PR comment.
 // Encode punctuation as well as HTML: diagnostics are plain text, and may
 // contain Markdown, autolinks, code fences or line breaks from campaign files.
-const text = (value, keep = "") => String(value).replace(/\s/g, " ")
-  .replace(/[!-/:-@\[-`{-~]/g, (char) => keep.includes(char) ? char : `&#${char.charCodeAt(0)};`);
+const text = (value) => String(value).replace(/\s/g, " ")
+  .replace(/[!-/:-@\[-`{-~]/g, (char) => `&#${char.charCodeAt(0)};`);
 // Inline code already protects ordinary path punctuation; preserve those
 // bytes for readable page paths and issue codes, while preventing breakouts.
-const code = (value) => `\`${text(value, "./_-")}\``;
+const code = (value) => `\`${String(value).replace(/\s/g, " ")
+  .replace(/[!-/:-@\[-`{-~]/g, (char) => "./_-".includes(char) ? char : `&#${char.charCodeAt(0)};`)}\``;
 
 const unavailablePageChanges = new Map([
   ["packet_unavailable", "the build packet or its path is unavailable."],
