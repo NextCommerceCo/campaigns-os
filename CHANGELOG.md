@@ -2,6 +2,27 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.69.0] - 2026-11-11
+
+Hand-built Page Kit funnels can now join the workflow at the route their pages already use, keeping the saved Map's identity and labelling the built pages as their design source: "built first". This never establishes a design match, and the first QA is a full run with test orders, separately authorized by the PM; `record baseline` does not apply. To take it, pin `@nextcommerce/campaigns-os@1.69.0` and refresh installed skills to `1.69.0+skills.1`.
+
+### Added
+
+- Bind a saved Map to an existing route with `prepare-build --route <route> --source <source>` or adopt its pages with `prepare-build --adopt src/<route>`; `start` and `build` accept the same flags. The `Funnel:` line can offer the exact adoption command for this funnel instead of another funnel's rename steps (#754).
+- The packet's optional `campaign.map_public_route_slug` records the Map's own slug when it differs from the bound `campaign.public_route_slug`. Spec routes and SDK routing hints project to the bound route, where output and records stay; the Map is not rewritten (#754).
+- An adopted funnel's Design Source Package is `built_first`, labelled "built first" in doctor, `next` and readback. `polish capture` uses its build captures as source evidence; build-vs-design checks read `excluded` / `built_first` and cannot be accepted as a design match. The treatment requires recorded adoption and an unchanged recorded package (#754).
+- `doctor --built --emit-packet --map-id` fetches the saved Map and emits a minimal packet with its real Map id, local spec path and any differing route binding. Without `--map-id`, the existing stub is unchanged (#754).
+
+### Changed
+
+- Bundled skills advance to `1.69.0+skills.1`, each one patch higher; setup, lifecycle, build, Polish and QA skills explain how to follow a `Funnel:` adoption offer after asking the operator.
+- Publishes `1.68.0+agent.2`: doctor's shared-input code is smaller and simpler, with the same output and one fewer pass over built files on packet and `--ci` runs (#730, #752).
+- Publishes `1.68.0+agent.1`: the release-ledger authoring guide makes new `+agent.N` sections one line and leaves the summary to release sections (#751).
+
+### Fixed
+
+- Publishes `1.68.0+agent.3`: the pack check and runtime-recipe test support npm 12's pack JSON object and dependency install-script approval behaviour (#757).
+
 ## [1.68.0+agent.3] - 2026-11-11
 
 ### Fixed

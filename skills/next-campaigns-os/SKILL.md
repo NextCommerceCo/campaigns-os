@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-os
-version: 1.0.75
+version: 1.0.76
 description: Coordinate Campaigns OS lifecycle workflows from CampaignSpec, Build Packet, starter-template contracts, stage reports, deploy evidence, and QA proof depth.
 ---
 
-Bundle revision: 1.68.0+skills.1
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.68.0+skills.1`
+Bundle revision: 1.69.0+skills.1
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.69.0+skills.1`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -134,7 +134,7 @@ Rules:
 - Designed source owns visual composition and page-level content.
 - Brand-theme evidence is workflow-order neutral. Do not assume a Figma export came first; consume `context.theme` and `.campaign-runtime/theme/theme-report.json` when present. A truly missing/ungeneratable theme stays a warning, but a generatable-and-unapplied theme on a commerce-page campaign is a gate: apply it or waive it explicitly before polish/deploy/QA.
 - Follow `campaigns-os next` literally. Every `next` response carries its applicable Store Profile, SDK, hidden eager-media, theme, and broad Polish gates plus `next_actions` with exact commands — execute those instead of improvising. With an active run session, pipeline-advancing commands that don't match the last `next` recommendation are recorded to `.campaign-runtime/agent-deviations.jsonl`; declare a detour with `--deviation-reason "<the operator's reason>"` only when the operator has decided on that detour in this conversation, and quote their reason; never pass the flag on your own judgement. On `record build` after a brief or CampaignSpec change the flag records that the change needs no change to the built pages, so pass it there only on the operator's explicit decision, as `next-campaigns-build` says.
-- A Page Kit project can hold several funnels. The first one set up uses `campaign-runtime.build.json` and the `.campaign-runtime/` paths named here; each later funnel has `campaign-runtime-<route>.build.json` and keeps the same files under `.campaign-runtime/funnels/<route>/` (the packet's `assembly.runtime_dir`). Read and pass the funnel's own packet and paths; the paths `next` prints are already the right ones.
+- A Page Kit project can hold several funnels. The first one set up uses `campaign-runtime.build.json` and the `.campaign-runtime/` paths named here; each later funnel has `campaign-runtime-<route>.build.json` and keeps the same files under `.campaign-runtime/funnels/<route>/` (the packet's `assembly.runtime_dir`). Read and pass the funnel's own packet and paths; the paths `next` prints are already the right ones. When the `Funnel:` line offers to bind this funnel to the route its pages already use, make the deletions it names, then run the `--adopt src/<route>` command it prints (after asking the operator), instead of renaming another funnel.
 - Close the loop: when `next` reports `done` (or QA has published its verdict and the PR is up), finish with `campaigns-os run end` (tier `C`; `--no-write` still clears the session file) so the Run Record is assembled and the run session clears. `campaigns-os run status` (tier `none`: read-only) shows incomplete stages and the exact next command at any point.
 - Do not copy demo refs or unsupported optional surfaces into the target campaign.
 - Use SDK conditionals such as `cart.hasCoupon("CODE")` for code-specific presentation; do not mutate visible prices from campaign-specific JavaScript.

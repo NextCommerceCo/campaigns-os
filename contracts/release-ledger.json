@@ -4066,6 +4066,207 @@
         }
       ],
       "entry_sha256": "63617f16257551ed7d6643035a39e3698c634345b015cb16e0f259bc5c204200"
+    },
+    {
+      "id": "RL-0341",
+      "sequence": 324,
+      "date": "2026-11-11",
+      "kind": "release",
+      "surface_version": "1.69.0",
+      "changelog_section": "1.69.0",
+      "changelog_sha256": "116ad230005cc44198e7c3e09f66409966112de8e4f3d3d2549b990da5b6a32d",
+      "agent_impact": "The Funnel: line may now offer --adopt src/<route>; after asking the operator, run its printed command to bind this funnel to the pages' existing route instead of renaming another funnel. A bound packet carries campaign.map_public_route_slug when the Map's slug differs from the served campaign.public_route_slug; use the bound route for output and records while preserving the Map identity. Only recorded adoption with an unchanged recorded Design Source Package grants built-first treatment. Its build-vs-design checks read excluded / built_first and are never acceptable as a design match; its first QA must be the full run with test orders, separately authorized by the PM, and record baseline does not apply. doctor --built --emit-packet --map-id now fetches the saved Map and records its local spec path and any route binding. Refresh skills to 1.69.0+skills.1.",
+      "compatibility": "additive",
+      "migration": "Pin @nextcommerce/campaigns-os@1.69.0 and refresh installed skills to 1.69.0+skills.1 before starting a fresh session; nothing changes for a funnel that is not adopted or bound.",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "compatibility.json",
+          "surface_entry": "compatibility.json",
+          "summary": "Version advances to 1.69.0."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/effects.v1.json",
+          "surface_entry": "contracts/effects.v1.json",
+          "summary": "Declares the tier A doctor --built --emit-packet --map-id fetch, cache, managed ignore and packet writes."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Advances surface_version to 1.69.0 and refreshes the two changed schema hashes and effects hash."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Documents route binding, adoption, map_public_route_slug, the Funnel offer and saved-Map built inspection."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/design-source-package.md",
+          "surface_entry": "docs/design-source-package.md",
+          "summary": "Documents built-first source evidence, recorded-adoption freshness, excluded comparisons and the first full QA."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/effects.md",
+          "surface_entry": "docs/effects.md",
+          "summary": "Documents the saved-Map fetch and local writes for doctor --built --emit-packet --map-id."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Pins installation to @nextcommerce/campaigns-os@1.69.0."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerated at surface 1.69.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/readback.md",
+          "surface_entry": "docs/readback.md",
+          "summary": "Documents the built-first source label without claiming a design match or QA verdict."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerated at surface 1.69.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Updates bundle revision examples to 1.69.0+skills.1."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "Documents surface 1.69.0 route binding, built-first source semantics and saved-Map built inspection."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Advances only the two root version entries to 1.69.0."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Version advances to 1.69.0."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaign-design-source-package.v0.schema.json",
+          "surface_entry": "schemas/campaign-design-source-package.v0.schema.json",
+          "summary": "Adds built_first source and contribution kinds, with readiness basis and label restricted to built-first packages."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaign-runtime-build-packet.v0.schema.json",
+          "surface_entry": "schemas/campaign-runtime-build-packet.v0.schema.json",
+          "summary": "Adds optional campaign.map_public_route_slug as one normalized slug segment for a differing Map route."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advances bundle_revision to 1.69.0+skills.1 and each bundled skill by one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Advances the version and bundle revision to 1.69.0+skills.1; other text is unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Advances the version and bundle revision to 1.69.0+skills.1; other text is unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Advances the version and bundle revision to 1.69.0+skills.1; other text is unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Advances the version and bundle revision to 1.69.0+skills.1; other text is unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Advances the version and bundle revision; follows a Funnel adoption offer after asking the operator."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Advances the version and bundle revision; follows a Funnel adoption offer after asking the operator."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Advances the version and bundle revision; follows a Funnel adoption offer after asking the operator."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Advances the version and bundle revision; follows a Funnel adoption offer after asking the operator."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Advances the version and bundle revision; follows a Funnel adoption offer after asking the operator."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-sdk-bump/SKILL.md",
+          "surface_entry": null,
+          "summary": "Advances the version and bundle revision to 1.69.0+skills.1; other text is unchanged."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "Adds route binding and adoption intake, Funnel binding offers, built-first labels and saved-Map built inspection."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": null,
+          "summary": "Validates recorded route bindings and projected routing hints, labels genuine built-first sources and validates their recorded manifests."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/inspect.mjs",
+          "surface_entry": null,
+          "summary": "Carries the resolved saved-Map spec path and differing route binding into emitted minimal packets."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/next-step.mjs",
+          "surface_entry": null,
+          "summary": "Blocks built-first progress when the package no longer matches the recorded intake references."
+        }
+      ],
+      "entry_sha256": "cbd538fba842e15c2a2316dcf54b430f05ddc9369a65466c32770b14ca4b242b"
     }
   ]
 }

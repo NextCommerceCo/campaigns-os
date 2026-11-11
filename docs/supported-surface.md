@@ -9,6 +9,13 @@ enforced by `scripts/check-supported-surface.mjs` in `npm run check` and CI —
 names exactly what those consumers may depend on. If it is not listed, it is
 implementation detail, however stable it looks.
 
+Surface `1.69.0` adds route binding through `prepare-build --route` or `--adopt`,
+the optional Build Packet field `campaign.map_public_route_slug`, and the
+`built_first` Design Source Package kind for adopted pages. Built-first
+comparisons are excluded and never establish a design match. The
+`doctor --built --emit-packet --map-id` form fetches the saved Map and records
+its local spec path and any route binding in the emitted minimal packet.
+
 ## What is supported
 
 | Surface | Contract | Change discipline |
