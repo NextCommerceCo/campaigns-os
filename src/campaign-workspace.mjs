@@ -38,11 +38,15 @@ export const FUNNEL_PACKET_PATTERN = /^campaign-runtime-.+\.build\.json$/;
 
 // A route slug that can name a directory and a file: the characters the packet
 // schema allows in route_root, not starting with a dot (so never `.` or `..`).
-export const ROUTE_COMPONENT = /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/;
+const ROUTE_COMPONENT = /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/;
+
+export function isRouteComponent(value) {
+  return typeof value === "string" && ROUTE_COMPONENT.test(value);
+}
 
 function routeComponent(routeSlug) {
   const slug = normalizePublicRouteSlug(routeSlug);
-  if (!ROUTE_COMPONENT.test(slug)) {
+  if (!isRouteComponent(slug)) {
     throw new Error(
       `Public route slug ${JSON.stringify(routeSlug)} cannot name a funnel's runtime directory or packet file: `
       + "use letters, digits, dots, underscores and hyphens, not starting with a dot.",
@@ -75,7 +79,7 @@ export function packetRuntimeRelPath(packet) {
   const declared = packet?.assembly?.runtime_dir;
   if (declared === undefined || declared === null || declared === RUNTIME_DIR_REL_PATH) return RUNTIME_DIR_REL_PATH;
   const slug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
-  if (typeof declared === "string" && ROUTE_COMPONENT.test(slug) && declared === `${FUNNEL_RUNTIME_PARENT_REL_PATH}/${slug}`) return declared;
+  if (typeof declared === "string" && isRouteComponent(slug) && declared === `${FUNNEL_RUNTIME_PARENT_REL_PATH}/${slug}`) return declared;
   throw new Error(
     `Build Packet assembly.runtime_dir ${JSON.stringify(declared)} is not this funnel's runtime directory: `
     + `it must be "${RUNTIME_DIR_REL_PATH}" or "${FUNNEL_RUNTIME_PARENT_REL_PATH}/<campaign.public_route_slug>"`
@@ -321,7 +325,7 @@ function projectRecordsRoute(targetRepo) {
 export function planFunnelWorkspace(targetRepo, routeSlug, { packetPath: explicitPacketPath = null, force = false, routeBound = false, sourceRoute = null, routeHasPages = false } = {}) {
   const repo = resolve(targetRepo);
   const slug = normalizePublicRouteSlug(routeSlug);
-  const nameable = ROUTE_COMPONENT.test(slug);
+  const nameable = isRouteComponent(slug);
   const rootPacket = join(repo, DEFAULT_PACKET_FILENAME);
   const ownPacket = nameable ? join(repo, funnelPacketFilename(slug)) : null;
   const rootPacketState = readJsonState(rootPacket);

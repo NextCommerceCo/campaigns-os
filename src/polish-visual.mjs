@@ -219,7 +219,7 @@ export async function runVisualCells({ buildAdapter, sourceAdapter, pairs, sourc
 
 // All resources and failures here belong solely to captures. The frozen input
 // is never passed to a browser, a probe callback or an artifact writer.
-export async function runVisualPass({ createBrowserAdapter, frozen, packet, packetPath, report, targetRepo,
+export async function runVisualPass({ createBrowserAdapter, frozen, packet, packetPath, report, reportPath = null, targetRepo,
   headed = false, authCookie = null, probes = [], budget = {}, clock = monotonicClock,
   adapterStartupDeadlineMs, adapterCloseDeadlineMs, captureCellDeadlineMs, now = new Date(), dependencies, timers = {} } = {}) {
   const plan = planVisualCapture(frozen.plan);
@@ -248,7 +248,7 @@ export async function runVisualPass({ createBrowserAdapter, frozen, packet, pack
       dspReason = computeDesignSourcePackageMaterialFingerprint(dsp) === currentSourcePackageMaterialFingerprint(report) ? null : "source_package_stale";
     }
   } catch { /* unavailable, never fetch */ }
-  const builtFirst = !dspReason && readRecordedDesignSourcePackage(packet, packetPath, { report }).builtFirst;
+  const builtFirst = !dspReason && readRecordedDesignSourcePackage(packet, packetPath, { report, reportPath }).builtFirst;
   if (builtFirst) Object.assign(source, { status: BUILT_FIRST_REASON, label: BUILT_FIRST_LABEL });
   // A report without a slug names no built output: S2 has nothing to hash,
   // and every route still gets its cells and rows.

@@ -3799,7 +3799,7 @@ function validateSourceCoverage(packet, packetPath, spec, errors, warnings, read
   try { if (designPackagePath) designSourcePackage = JSON.parse(readFileSync(designPackagePath, "utf8")); } catch { /* Missing or unreadable package is checked separately. */ }
   const designManifest = isNonEmptyString(sourceRoot) && existsSync(sourceRoot) && statSync(sourceRoot).isDirectory()
     ? readSourceHtmlManifestFile(sourceRoot, { manifestPath: recordedDesignManifestPath(packet, packetPath) }).manifest : null;
-  recordQcResults({ derived, warnings, results: evaluateDesignAccess({ activePages: active, mappings: pages, manifest: designManifest, designSourcePackage, packet, packetPath, report: buildState?.report, measured_at: new Date().toISOString() }) });
+  recordQcResults({ derived, warnings, results: evaluateDesignAccess({ activePages: active, mappings: pages, manifest: designManifest, designSourcePackage, packet, packetPath, report: buildState?.report, reportPath: derived.assembly_report_path, measured_at: new Date().toISOString() }) });
   const specPartialScope = spec?.build_scope?.mode === "partial";
   const specPartialReasons = Array.isArray(spec?.build_scope?.reasons) ? spec.build_scope.reasons.filter(isNonEmptyString) : [];
   const activeIds = new Set(active.map((page) => page.id));

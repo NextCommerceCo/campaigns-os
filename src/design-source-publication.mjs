@@ -57,7 +57,7 @@ export function readRecordedDesignSourcePackage(packet, packetPath, { report = n
         builtFirst = isNonEmptyString(context?.intake?.adopt)
           && filesystemPathsMatch(resolve(workspace.targetRepo, context.packet_path), packetPath)
           && matches(context.design_source_package, workspace.contextPath)
-          && matches(recordedReport.design_source_package, reportPath || workspace.reportPath);
+          && matches(recordedReport.design_source_package, report ? (reportPath || workspace.reportPath) : workspace.reportPath);
       } catch { /* Missing adoption or lifecycle bindings never grant treatment. */ }
     }
     return { status: "ok", value, reference, current, declaredBuiltFirst, builtFirst };

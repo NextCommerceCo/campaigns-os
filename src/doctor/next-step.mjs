@@ -206,7 +206,7 @@ function nextPrepareBuildBindingIssues({
   }
 
   if (issues.length === 0) {
-    const currentPackage = readRecordedDesignSourcePackage(packet, packetPath, { report });
+    const currentPackage = readRecordedDesignSourcePackage(packet, packetPath, { report, reportPath });
     if ((currentPackage.declaredBuiltFirst || isNonEmptyString(context?.intake?.adopt)) && !currentPackage.current) {
       push("next.prepare_build.report_dsp_mismatch", "Design Source Package on disk does not match the recorded intake hash or material fingerprint. Restore the recorded package or rerun intake with the original inputs.", {
         source: "disk",

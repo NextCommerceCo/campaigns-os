@@ -13,10 +13,10 @@ function recordedType(contribution, fileRef) {
 
 // Recomputed from declarations and package records; a named file never proves
 // access. In particular this evaluator has no pass or accept-eligible path.
-export function evaluateDesignAccess({ activePages = [], mappings = [], manifest = null, designSourcePackage = null, packet = null, packetPath = null, report = null, measured_at } = {}) {
+export function evaluateDesignAccess({ activePages = [], mappings = [], manifest = null, designSourcePackage = null, packet = null, packetPath = null, report = null, reportPath = null, measured_at } = {}) {
   // Standalone evaluation describes an in-memory declaration. Campaign reads
   // always supply the packet and use its recorded intake, like the other QC readers.
-  const builtFirst = packet ? readRecordedDesignSourcePackage(packet, packetPath, { report }).builtFirst : isBuiltFirst(designSourcePackage);
+  const builtFirst = packet ? readRecordedDesignSourcePackage(packet, packetPath, { report, reportPath }).builtFirst : isBuiltFirst(designSourcePackage);
   if (builtFirst) return activePages.map((page) => buildQcResult({
     check: "design.access", leg: "doctor", subject: { check: "design.access", page: page.id, key: "file" },
     result: "excluded", reason_code: BUILT_FIRST_REASON, accept_eligible: false,

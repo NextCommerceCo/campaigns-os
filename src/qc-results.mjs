@@ -1267,7 +1267,7 @@ export function readReadability({ record, pageLoad = null, currentBuild = null, 
 
 // Captures are re-derived from one caller-selected packet snapshot. Neither
 // the stored route set nor a stored decision can supply the capture plan.
-export function readCaptures({ record, packet, packetPath, report = null, currentBuild, currentSource, buildOutput,
+export function readCaptures({ record, packet, packetPath, report = null, reportPath = null, currentBuild, currentSource, buildOutput,
   campaignSlug, targetRepo, qcStandIns, rederivers } = {}) {
   const resolved = resolvePolishRules({ check: "visual.diff", qcStandIns, rederivers });
   if (resolved.status === "missing") return [];
@@ -1502,7 +1502,7 @@ export function readCaptures({ record, packet, packetPath, report = null, curren
   if (record.source.status === BUILT_FIRST_REASON || references.some((ref) => ref.input_reason === BUILT_FIRST_REASON)
       || comparisons.some((comparison) => comparison.reason === BUILT_FIRST_REASON)) {
     try {
-      const dsp = readRecordedDesignSourcePackage(packet, packetPath, { report });
+      const dsp = readRecordedDesignSourcePackage(packet, packetPath, { report, reportPath });
       if (!dsp.builtFirst || dsp.reference.material_fingerprint !== currentSource) return fail("source_package_stale");
     } catch { return fail("source_package_unavailable"); }
   }
@@ -1619,11 +1619,11 @@ export function readCaptures({ record, packet, packetPath, report = null, curren
 // row of the record evidence_not_reproducible, never pass.
 export const parityApplies = (packet) => Array.isArray(packet?.source_html?.pages) && packet.source_html.pages.some((page) => isNonEmptyString(page?.path));
 
-export function readElementParity({ record, captures = null, packet = null, packetPath = null, report = null, currentBuild = null, currentSource = null,
+export function readElementParity({ record, captures = null, packet = null, packetPath = null, report = null, reportPath = null, currentBuild = null, currentSource = null,
   buildOutput = null, campaignSlug = null, targetRepo = null, qcAccepts = [], qcStandIns = null, rederivers = null } = {}) {
   if (packet && !parityApplies(packet)) return [];
   const resolved = resolvePolishRules({ check: "parity.element", qcStandIns, rederivers });
-  const context = { record, captures, packet, packetPath, report, currentBuild, currentSource, buildOutput, campaignSlug, targetRepo, qcAccepts };
+  const context = { record, captures, packet, packetPath, report, reportPath, currentBuild, currentSource, buildOutput, campaignSlug, targetRepo, qcAccepts };
   if (resolved.status === "loaded" && typeof resolved.rules.read === "function") {
     try {
       const rows = resolved.rules.read(context, resolved.rules);
@@ -1755,6 +1755,7 @@ export function readCurrentQcResults({ report, doctor, spec = null, targetRepo, 
   try { if (packetPath) { packet = JSON.parse(readRegularFileSync(packetPath, { maxBytes: 16 * 1024 * 1024 }).toString("utf8")); packetRead = true; } } catch { /* unavailable */ }
   const polishContext = recorded.length ? {
     report,
+    reportPath,
     pageLoad: visual.page_load,
     captures: visual.captures ?? null,
     packet,

@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { afterEach, test } from "node:test";
 import Ajv from "ajv/dist/2020.js";
 import { assertNoNetworkAttempts, readJson, ROOT, runCli, writeJson } from "./qc-test-factories.mjs";
-import { parseArgs, prepareBuildRerunCommand, specFetchCommand } from "./cli.mjs";
+import { main, parseArgs, prepareBuildRerunCommand, specFetchCommand } from "./cli.mjs";
 import { runReadbackCommand } from "./readback.mjs";
 import { validateRouteSlugIdentity, validateBuiltSdkMetaTags, validateSpecRoutingHintsCurrent, validateSpecRoutingMetaTags } from "./doctor/checks.mjs";
 import { __qaNodeTestHooks } from "./qa-node.mjs";
@@ -63,6 +63,27 @@ test("binding intake refuses an invalid spec slug before writing for every bindi
       assert.deepEqual(readdirSync(p.target, { recursive: true }).sort(), before, "refusal creates no packet, runtime or lock");
     }
   }
+});
+
+test("binding intake with --map-id refuses an invalid spec slug before creating a missing target", async (t) => {
+  const p = fixture(t);
+  const target = join(p.dir, "new-target");
+  p.spec.spec_identity.public_route_slug = p.spec.campaign.slug = "invalid/route";
+  let fetches = 0;
+  const stub = t.mock.method(globalThis, "fetch", async () => {
+    fetches += 1;
+    return { ok: true, status: 200, json: async () => ({ ok: true, data: p.spec }) };
+  });
+  try {
+    await assert.rejects(main(["prepare-build", "--map-id", "example-map", "--target", target,
+      "--source", p.source, "--route", "short", "--template-family", "olympus",
+      "--no-run-session", "--no-remit", "--json"]), /spec_identity\.public_route_slug.*single.*slug/);
+  } finally {
+    stub.mock.restore();
+  }
+  assert.equal(fetches, 1, "the saved Map is fetched through the injected stub");
+  assert.equal(existsSync(target), false, "refusal must not create the target directory");
+  assert.equal(existsSync(join(target, ".campaign-runtime/fetched-specs")), false, "refusal must not publish the fetched spec cache");
 });
 
 test("binding offer discovery never reads HTML through an invalid planned route", async (t) => {

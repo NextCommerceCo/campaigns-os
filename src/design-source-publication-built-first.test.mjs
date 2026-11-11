@@ -8,8 +8,44 @@ import { BUILT_FIRST_LABEL, computeDesignSourcePackageMaterialFingerprint, creat
 import { parseArgs, prepareBuildRerunCommand } from "./cli.mjs";
 import { runReadbackCommand } from "./readback.mjs";
 import { evaluateDesignAccess } from "./parity/design-access.mjs";
+import { readRecordedDesignSourcePackage } from "./design-source-publication.mjs";
 
 afterEach(assertNoNetworkAttempts);
+
+test("a null report ignores an unrelated reportPath when reading recorded adoption", async (t) => {
+  const f = await fixture(t, true);
+  const reportPath = join(f.target, "records/report.json");
+  f.report.design_source_package.path = relative(dirname(reportPath), f.dspPath);
+  writeJson(reportPath, f.report);
+  f.context.report_path = relative(f.target, reportPath);
+  writeJson(f.contextPath, f.context);
+  rmSync(f.reportPath);
+  const result = readRecordedDesignSourcePackage(f.packet, f.packetPath, {
+    report: null, reportPath: join(f.target, "unrelated/deep/report.json"),
+  });
+  assert.equal(result.builtFirst, true, "the workspace report uses its own directory");
+  assert.ok(runReadbackCommand(parseArgs(["readback", f.target, "--packet", f.packetPath])).text.includes(BUILT_FIRST_LABEL));
+});
+
+test("design access keeps built-first exclusions for a supplied external report", async (t) => {
+  const f = await fixture(t, true);
+  const reportPath = join(f.target, "copied/report.json");
+  const report = structuredClone(f.report);
+  report.design_source_package.path = relative(dirname(reportPath), f.dspPath);
+  writeJson(reportPath, report);
+  const rows = evaluateDesignAccess({ activePages: [{ id: "landing" }], mappings: [{ page_id: "landing", path: "landing.html" }],
+    manifest: { pages: [{ page_id: "landing", path: "landing.html", design_file: {
+      type: "other", file_url: "https://design.example.test/files/example-design",
+    } }] }, packet: f.packet,
+    packetPath: f.packetPath, report: readJson(reportPath), reportPath });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].result, "excluded", "the supplied report retains built-first design access");
+  assert.equal(rows[0].reason_code, "built_first");
+  const doctor = await runCli(["doctor", "--packet", f.packetPath, "--report", reportPath, "--no-live-refs", "--json"]);
+  const designRows = doctor.json.derived.qc_results.filter((row) => row.check === "design.access");
+  assert.equal(designRows.length, 4);
+  assert.ok(designRows.every((row) => row.result === "excluded" && row.reason_code === "built_first"));
+});
 
 async function fixture(t, adopted = false, customSidecars = false) {
   const dir = mkdtempSync(join(tmpdir(), "campaigns-os-recorded-source-"));

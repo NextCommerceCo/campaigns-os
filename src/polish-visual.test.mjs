@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync, mkdirSync, symlinkSync, readdirSync, existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, relative, resolve } from "node:path";
 import { VISUAL_QC_RULES, planVisualCapture, buildCapturesRecord, capturesIntegrity, writePolishPng,
   evaluateVisualReference, evaluateVisualDiff, VISUAL_VIEWPORTS, compareVisualPair, pageKitOutputPaths } from "./polish-visual.mjs";
 import { createRgbaPng, createRgba, syntheticCapturesRecord, syntheticVisualFixture } from "./polish-visual-fixtures.mjs";
@@ -73,6 +73,11 @@ test("built first captures only builds and records the same PNGs as source evide
   }));
   writeFileSync(resolve(f.targetRepo, ".campaign-runtime/assembly-report.json"), JSON.stringify(input.report));
   writeFileSync(input.packetPath, JSON.stringify(input.packet));
+  input.reportPath = resolve(f.targetRepo, "copied/report.json");
+  input.report = structuredClone(input.report);
+  input.report.design_source_package.path = relative(dirname(input.reportPath), dspPath);
+  mkdirSync(dirname(input.reportPath), { recursive: true });
+  writeFileSync(input.reportPath, JSON.stringify(input.report));
   let browsers = 0, renders = 0;
   const record = await runVisualPass({ ...input, createBrowserAdapter: (options) => {
     assert.equal(options.seal, undefined, "no source server or source browser");
@@ -89,12 +94,14 @@ test("built first captures only builds and records the same PNGs as source evide
     assert.deepEqual(evidence.png, record.cells.find((cell) => cell.side === "build" && cell.page_id === evidence.page_id && cell.viewport === evidence.viewport).actual.png);
   }
   const context = { record, packet: input.packet, packetPath: input.packetPath,
+    report: JSON.parse(readFileSync(input.reportPath, "utf8")), reportPath: input.reportPath,
     currentBuild: input.report.stages.assembly.build_fingerprint, currentSource: sourceFp,
     campaignSlug: "sample", targetRepo: f.targetRepo,
     qcStandIns: { polish: { "visual.diff": { ...VISUAL_QC_RULES, plan: planPolishCapture } } } };
   const raw = VISUAL_QC_RULES.evaluate(record);
   const read = readCaptures(context);
   assert.equal(read.length, 6);
+  assert.ok(!JSON.stringify(read).includes("source_package_stale"), "the supplied report resolves from its own directory");
   for (const row of [...raw, ...read]) {
     assert.equal(row.result, "excluded", JSON.stringify(row));
     assert.equal(row.reason_code, "built_first");

@@ -85,7 +85,7 @@ import { fingerprint12, readCurrentQcResults } from "./qc-results.mjs";
 import {
   DEFAULT_PACKET_FILENAME,
   RUNTIME_DIR_REL_PATH,
-  ROUTE_COMPONENT,
+  isRouteComponent,
   campaignSidecarPaths,
   explicitReportPath,
   packetRuntimeRelPath,
@@ -1561,7 +1561,7 @@ function campaignIdentity(spec, args) {
   const specSlug = specPublicRouteSlug(spec);
   const publicRouteSlug = optionalString(args.route) || optionalString(args["public-route-slug"]) || specSlug;
   const mapPublicRouteSlug = specSlug && publicRouteSlug !== specSlug ? specSlug : null;
-  if (mapPublicRouteSlug && !ROUTE_COMPONENT.test(mapPublicRouteSlug)) {
+  if (mapPublicRouteSlug && !isRouteComponent(mapPublicRouteSlug)) {
     const field = optionalString(spec.spec_identity?.public_route_slug) ? "spec_identity.public_route_slug"
       : optionalString(spec.campaign?.slug) ? "campaign.slug" : "campaign.id";
     throw refused(`CampaignSpec ${field} ${JSON.stringify(specSlug)} cannot be recorded as campaign.map_public_route_slug; fix ${field} to a single-segment slug of letters, digits, dots, underscores and hyphens, not starting with a dot.`);
@@ -1800,7 +1800,7 @@ async function prepareBuild(args, options = {}) {
     ? refusing(() => planFunnelWorkspace(targetRepo, plannedRoute, {
       packetPath: args.out || null, force: args.force === true, routeBound,
       sourceRoute: args.route || args["public-route-slug"] ? null : sourceRoute,
-      routeHasPages: Boolean(sourceRoute && ROUTE_COMPONENT.test(plannedRoute) && listPageKitPageFiles(join(targetRepo, "src", plannedRoute), plannedRoute,
+      routeHasPages: Boolean(sourceRoute && isRouteComponent(plannedRoute) && listPageKitPageFiles(join(targetRepo, "src", plannedRoute), plannedRoute,
         { assetsHtmlIgnored: pageKitIgnoresAssetsHtml(targetRepo) })?.length),
     }))
     : { packetPath: resolve(args.out || join(targetRepo, DEFAULT_PACKET_FILENAME)), runtimeRelPath: RUNTIME_DIR_REL_PATH, scoped: false, addedBeside: null };
@@ -3006,6 +3006,7 @@ export async function polishCaptureCommand(args, options = {}) {
   const capture = await (heldPlanError ? capturePolishReadability : capturePolishPageLoad)({
     packet,
     report,
+    reportPath,
     baseUrl,
     headed: args.headed === true,
     authCookie: optionalString(args["auth-cookie"]),
@@ -8675,8 +8676,9 @@ const NEXT_ACTION_GATE_PREFIXES = [["theme_gate.", "theme_gate"], ["polish_gate.
 export function prepareBuildRerunCommand({ packet, packetPath = null, context = null, targetRepo = null } = {}) {
   const packetDir = packetPath ? dirname(resolve(packetPath)) : null;
   const intake = context?.intake && typeof context.intake === "object" ? context.intake : null;
-  const report = targetRepo && optionalString(context?.report_path) ? readJsonIfExists(resolve(targetRepo, context.report_path)) : null;
-  const adopt = readRecordedDesignSourcePackage(packet, packetPath, { report }).builtFirst
+  const reportPath = targetRepo && optionalString(context?.report_path) ? resolve(targetRepo, context.report_path) : null;
+  const report = reportPath ? readJsonIfExists(reportPath) : null;
+  const adopt = readRecordedDesignSourcePackage(packet, packetPath, { report, reportPath }).builtFirst
     ? optionalString(intake?.adopt) || `src/${packet.campaign.public_route_slug}` : null;
   const notes = [];
   // Context paths are target-relative; packet paths are packet-relative.

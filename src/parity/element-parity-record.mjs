@@ -473,7 +473,7 @@ function readRows(context, rules, comparisonCache) {
 
   const rows = [];
   const dsp = readDesignSourcePackage(packet, packetPath);
-  const builtFirst = readRecordedDesignSourcePackage(packet, packetPath, { report: context.report }).builtFirst;
+  const builtFirst = readRecordedDesignSourcePackage(packet, packetPath, { report: context.report, reportPath: context.reportPath }).builtFirst;
   let dspReason = null;
   if (dsp.status !== "ok") dspReason = "source_package_unavailable";
   else {
