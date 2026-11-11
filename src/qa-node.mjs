@@ -1056,7 +1056,15 @@ function refuseBadPageScope(args) {
 // record for the same build is allowed too. Each requested id is a topology
 // page id or the page id of its route (the id the change lists use).
 export function applyQaPageScope(topologies, { pages, browser = false, baseUrl, debt, report, qaInputCurrency = undefined } = {}) {
-  if (!pages) return { topologies, scope: null };
+  if (!pages) {
+    // A full run pays a page-scoped debt too, but must not drop the browser
+    // run a checkout or upsell page owes for a changed stylesheet or image.
+    const owed = debt?.qa?.status === "owed" && debt.qa.scope === "pages" && Array.isArray(debt.qa.browser_pages) ? debt.qa.browser_pages : [];
+    if (owed.length && !browser) {
+      throw new Error(`qa run: ${owed.join(", ")} ${owed.length > 1 ? "are checkout or upsell pages" : "is a checkout or upsell page"} whose linked stylesheet or image changed, so QA owes a browser run. Run ${cmd("qa")} run ${debt.qa.owed_pages.map((page) => `--page ${page.page_id}`).join(" ")} --browser (no test orders are placed), or add --browser to this full run.`);
+    }
+    return { topologies, scope: null };
+  }
   const all = topologies.flatMap((topology) => topology.pages || []);
   const idsOf = (page) => [String(page.page_id), page.url && baseUrl ? routePageIdForUrl(page.url, baseUrl) : null].filter(Boolean);
   const known = new Set(all.flatMap(idsOf));

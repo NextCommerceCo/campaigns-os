@@ -181,8 +181,8 @@ export function formatDoctorCi(result) {
   // A stylesheet or image the pages link (#753), and the pages it maps to.
   const linkedAssets = new Map();
   for (const stage of [...owed, ...advisory]) {
-    for (const reason of ci[stage].change?.reasons || []) {
-      if (reason.code === "linked_asset_changed" && !linkedAssets.has(reason.path)) linkedAssets.set(reason.path, reason.pages || []);
+    for (const asset of ci[stage].change?.linked_assets || []) {
+      if (!linkedAssets.has(asset.path)) linkedAssets.set(asset.path, asset.pages || []);
     }
   }
   for (const [path, pages] of linkedAssets) {
@@ -208,10 +208,10 @@ export function formatDoctorCi(result) {
     if (matchingRequired) {
       const commands = [];
       if (owed.includes("polish")) commands.push("`campaigns-os polish capture --packet <packet> --base-url <served-current-build-url>` for the whole route", "`campaigns-os record polish --packet <packet> --evidence <polish-evidence.json>`");
-      if (owed.includes("qa")) commands.push("`campaigns-os qa run --packet <packet>`");
+      if (owed.includes("qa")) commands.push(`\`campaigns-os qa run --packet <packet>${browserPages.length ? " --browser" : ""}\``);
       lines.push("", `Remedy: re-run the required stages against the existing build: ${commands.join(", then ")}.`);
     } else {
-      lines.push("", "Remedy: rebuild, then run `campaigns-os record build --packet <packet>`, `campaigns-os polish capture --packet <packet> --base-url <served-current-build-url>` for the whole route, and `campaigns-os record polish --packet <packet> --evidence <polish-evidence.json>`, in that order. When QA is owed, run `campaigns-os qa run --packet <packet>` against that build.");
+      lines.push("", "Remedy: rebuild, then run `campaigns-os record build --packet <packet>`, `campaigns-os polish capture --packet <packet> --base-url <served-current-build-url>` for the whole route, and `campaigns-os record polish --packet <packet> --evidence <polish-evidence.json>`, in that order. When QA is owed, run `campaigns-os qa run --packet <packet>" + (browserPages.length ? " --browser" : "") + "` against that build.");
     }
   }
   if (ci.qa.baseline) lines.push("", baselineLine(ci.qa.baseline));

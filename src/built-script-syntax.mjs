@@ -294,6 +294,10 @@ function pageReferences(html, parsed) {
     } else if (node.tagName === "img" && node.namespaceURI === HTML_NAMESPACE) {
       link("image", attrs.src, node);
       if (typeof attrs.srcset === "string") for (const url of srcsetUrls(attrs.srcset)) link("image-srcset", url, node);
+    } else if (node.tagName === "source" && node.namespaceURI === HTML_NAMESPACE && node.parentNode?.tagName === "picture"
+      && typeof attrs.srcset === "string") {
+      // A <picture> source the browser may pick instead of its <img>.
+      for (const url of srcsetUrls(attrs.srcset)) link("image-srcset", url, node);
     }
     if (node.tagName === "noscript") return;
     for (const child of node.childNodes || []) walk(child);

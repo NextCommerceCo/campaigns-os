@@ -1317,10 +1317,8 @@ function renderEvidenceDebt(debt, lines) {
       lines.push(`    change since its build: ${stage.change.kind}; ${owes}`);
       for (const page of stage.change.changed_pages) lines.push(`    changed page: ${oneLine(page.page_id)} (${oneLine(page.built_path)})`);
       if (stage.browser_pages?.length) lines.push(`    browser run owed on: ${stage.browser_pages.map(oneLine).join(", ")} (qa run --page --browser)`);
-      for (const reason of stage.change.reasons) {
-        if (reason.code === "linked_asset_changed") lines.push(`    linked asset: ${oneLine(reason.path)} (linked by ${(reason.pages || []).map(oneLine).join(", ")})`);
-        else if (reason.code !== "linked_asset_buy_page") lines.push(`    commerce: ${oneLine(reason.code)}${reason.path ? ` (${oneLine(reason.path)})` : ""}`);
-      }
+      for (const asset of stage.change.linked_assets || []) lines.push(`    linked asset: ${oneLine(asset.path)} (linked by ${(asset.pages || []).map(oneLine).join(", ")})`);
+      for (const reason of stage.change.reasons) lines.push(`    commerce: ${oneLine(reason.code)}${reason.path ? ` (${oneLine(reason.path)})` : ""}`);
     }
   }
   const changes = debt.changes;

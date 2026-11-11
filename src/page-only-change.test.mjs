@@ -10,6 +10,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
+import Ajv2020 from "ajv/dist/2020.js";
+
 import { buildManifestEntries, computeBuildFingerprint } from "./built-site-scope.mjs";
 import { recordQaStageOutcome } from "./cli.mjs";
 import { doctorPacket } from "./doctor/inspect.mjs";
@@ -741,11 +743,14 @@ test("a stylesheet checkout links owes a browser QA run on checkout with no test
   assert.equal(debt.qa.change.kind, "page_only");
   assert.deepEqual(debt.qa.owed_pages.map((page) => page.page_id), ["checkout"]);
   assert.deepEqual(debt.qa.browser_pages, ["checkout"]);
-  assert.deepEqual(debt.qa.change.reasons, [
-    { code: "linked_asset_buy_page", path: "checkout/index.html" },
-    { code: "linked_asset_changed", path: "css/checkout.css", pages: ["checkout"] },
-  ]);
+  assert.deepEqual(debt.qa.change.reasons, [], "the notes are not commerce reasons");
+  assert.deepEqual(debt.qa.change.linked_assets, [{ path: "css/checkout.css", pages: ["checkout"] }]);
+  assert.deepEqual(debt.qa.change.browser_pages, ["checkout/index.html"]);
+  assert.deepEqual(f.readReport().stages.assembly.build_changes.at(-1).browser_pages, ["checkout/index.html"], "record build keeps them");
   assert.throws(() => scopeLinked(f, ["checkout"]), /checkout is a checkout or upsell page whose linked stylesheet or image changed, so it owes a browser run; add --browser\./);
+  assert.throws(() => scopeLinked(f, undefined), /QA owes a browser run\. Run campaigns-os qa run --page checkout --browser \(no test orders are placed\), or add --browser to this full run\./,
+    "a full run without --browser does not drop it");
+  assert.equal(scopeLinked(f, undefined, { browser: true }).scope, null, "a full run with --browser may pay it");
   assert.deepEqual(scopeLinked(f, ["checkout"], { browser: true }).scope.owed_pages, ["checkout"]);
   const markdown = ci(f);
   assert.equal(markdown.status, 3);
@@ -754,6 +759,13 @@ test("a stylesheet checkout links owes a browser QA run on checkout with no test
   const readback = runReadbackCommand({ _: ["readback", f.root], packet: f.packetPath });
   assert.match(readback.text, /browser run owed on: checkout \(qa run --page --browser\)/);
   assert.match(readback.text, /linked asset: css\/checkout\.css \(linked by checkout\)/);
+  // The published readback schema accepts the payload unchanged: the notes are
+  // fields of their own, not reason codes its closed enum would reject.
+  const json = JSON.parse(runReadbackCommand({ _: ["readback", f.root], json: true, packet: f.packetPath }).text);
+  assert.deepEqual(json.evidence_debt.qa.change.linked_assets, [{ path: "css/checkout.css", pages: ["checkout"] }]);
+  const validate = new Ajv2020({ strict: true, allErrors: true })
+    .compile(JSON.parse(readFileSync(new URL("../schemas/campaigns-os-readback.v2.schema.json", import.meta.url), "utf8")));
+  assert.ok(validate(json), JSON.stringify(validate.errors, null, 2));
 
   const script = linkedFixture(t);
   script.writeFile("js/checkout.js", "window.checkout = 2;\n");

@@ -1708,9 +1708,11 @@ change from a commerce-affecting one
   "unmapped_files", "unmapped_file_count", "reasons" }`. `kind` is `page_only`,
   `commerce_affecting` or `unknown`, and `reasons` names why a change counts as
   commerce (for example `checkout_page`, `commerce_markup_changed`,
-  `campaign_config_changed`, `unmapped_file`, `page_added`), then any
-  `linked_asset_changed` and `linked_asset_buy_page` notes for a stylesheet or
-  image the pages link directly, which do not make it commerce. Entries no stage
+  `campaign_config_changed`, `unmapped_file`, `page_added`). An entry whose
+  rebuild changed a stylesheet or image the pages link directly also keeps
+  `linked_assets` (each `{ "path", "pages" }`, the ids of the pages that link
+  it) and `browser_pages` (the built paths of the checkout or upsell pages
+  among them); neither makes it commerce. Entries no stage
   needs any more are dropped, and at most 25 are kept; a stage that reviewed an
   older build reads its change as unknown and owes the full stage.
 

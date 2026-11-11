@@ -45,11 +45,6 @@ export const COMMERCE_REASONS = Object.freeze([
   "campaign_config_unavailable",
   "change_history_unavailable",
 ]);
-// Reasons that explain a page-only change without making it commerce:
-// `linked_asset_changed` names a changed asset and the pages that link it
-// (`pages`, their ids); `linked_asset_buy_page` names a checkout or upsell
-// page reached only through one, which owes a browser QA run.
-export const LINKED_ASSET_REASONS = Object.freeze(["linked_asset_changed", "linked_asset_buy_page"]);
 // How many rebuilds `record build` keeps in build_changes, and how many paths
 // one entry lists per list. A stage that reviewed a build older than the
 // kept history reads its change as unknown, and so owes the full stages.
@@ -203,11 +198,13 @@ export function mapLinkedAssets({ files = [], pages = [], outputRoot, siteRoot }
  * `changes` is assessEvidenceDebt's known change list (changed_pages,
  * unmapped_files, extra, missing). `baseline` is the recorded
  * stages.assembly. Returns `{ kind, reasons }`, `kind` one of CHANGE_KINDS
- * and `reasons` the commerce reasons found, each `{ code, path? }`, then the
- * LINKED_ASSET_REASONS, which never make a change commerce.
- * `linkedAssets` is mapLinkedAssets's `linked`: a page reached only through
- * one (its own HTML unchanged) is not checked for commerce markup, and a
- * checkout or upsell page among them reads `linked_asset_buy_page`.
+ * and `reasons` the commerce reasons found, each `{ code, path? }`.
+ * `linkedAssets` is mapLinkedAssets's `linked`. When there are any, the result
+ * also has `linked_assets` (each `{ path, pages }`, `pages` the ids of the
+ * pages that link it) and `browser_pages` (the built paths of the checkout or
+ * upsell pages among those pages, which owe a browser QA run); neither makes
+ * a change commerce. A page reached only through a linked asset (its own HTML
+ * unchanged) is not checked for commerce markup.
  * `pagePaths` is every page of the built-site scope: a changed page is read
  * from the run's shared inputs and takes the tree of that whole set when it
  * is shared (htmlScanDocuments), else it is parsed here. The set is shared
@@ -229,10 +226,14 @@ export function classifyDrift({ changes, baseline, outputRoot, targetRepo, publi
     reasons.push({ code: signature.campaign_config.startsWith("unavailable:") ? "campaign_config_unavailable" : "campaign_config_changed" });
   }
   const documentOf = htmlScanDocuments(pagePaths);
+  const facts = new Map();
   const factsOf = (page) => {
-    const file = join(outputRoot, page.built_path);
-    const html = readHtmlScanText(file);
-    return pageCommerceFacts(html, () => documentOf(file, html));
+    if (!facts.has(page.built_path)) {
+      const file = join(outputRoot, page.built_path);
+      const html = readHtmlScanText(file);
+      facts.set(page.built_path, pageCommerceFacts(html, () => documentOf(file, html)));
+    }
+    return facts.get(page.built_path);
   };
   const typeOf = (page, facts) => facts.page_type || inferPageType(routeForFile(outputRoot, join(outputRoot, page.built_path)));
   for (const page of changes.changed_pages) {
@@ -253,26 +254,38 @@ export function classifyDrift({ changes, baseline, outputRoot, targetRepo, publi
       reasons.push({ code: "commerce_markup_changed", path: page.built_path });
     }
   }
-  // Pages whose HTML is unchanged but whose linked stylesheet or image is:
-  // their markup still matches its hash, so only a buy page needs a note.
+  if (!linkedAssets.length) return { kind: reasons.length ? "commerce_affecting" : "page_only", reasons: capped(reasons) };
+  // Every page a changed stylesheet or image reaches: a checkout or upsell
+  // page among them owes a browser run, whether or not its own HTML changed
+  // too. One whose HTML did not change is read here only for its type, and
+  // must still be readable.
   const markupChanged = new Set(changes.changed_pages.map((page) => page.built_path));
-  const linkedOnly = new Map(linkedAssets.flatMap((asset) => asset.pages)
-    .filter((page) => !markupChanged.has(page.built_path)).map((page) => [page.built_path, page]));
-  const buyPages = [];
-  for (const page of [...linkedOnly.values()].sort((a, b) => a.built_path.localeCompare(b.built_path))) {
+  const linkedPages = new Map(linkedAssets.flatMap((asset) => asset.pages).map((page) => [page.built_path, page]));
+  const browserPages = [];
+  for (const page of [...linkedPages.values()].sort((a, b) => a.built_path.localeCompare(b.built_path))) {
     let current;
     try {
       current = factsOf(page);
     } catch {
-      reasons.push({ code: "commerce_signature_unavailable", path: page.built_path });
+      if (!markupChanged.has(page.built_path)) reasons.push({ code: "commerce_signature_unavailable", path: page.built_path });
       continue;
     }
-    if (BUY_PAGE_TYPES.has(typeOf(page, current)) || current.checkout) buyPages.push({ code: "linked_asset_buy_page", path: page.built_path });
+    if (BUY_PAGE_TYPES.has(typeOf(page, current)) || current.checkout) browserPages.push(page.built_path);
   }
-  const kind = reasons.length ? "commerce_affecting" : "page_only";
-  // After the commerce reasons, so the cap drops notes before causes.
-  reasons.push(...buyPages, ...linkedAssets.map((asset) => ({ code: "linked_asset_changed", path: asset.path, pages: asset.pages.map((page) => page.page_id) })));
-  return { kind, reasons: capped(reasons) };
+  return {
+    kind: reasons.length ? "commerce_affecting" : "page_only",
+    reasons: capped(reasons),
+    linked_assets: capped(linkedAssets.map((asset) => ({ path: asset.path, pages: asset.pages.map((page) => page.page_id) }))),
+    browser_pages: browserPages,
+  };
+}
+
+// The linked-asset notes of a classification or build_changes entry, as the
+// fields to spread into it: present only when an asset was linked.
+function linkedAssetNotes(from) {
+  const assets = Array.isArray(from?.linked_assets) ? from.linked_assets : [];
+  if (!assets.length) return {};
+  return { linked_assets: assets, browser_pages: Array.isArray(from.browser_pages) ? from.browser_pages : [] };
 }
 
 // True when a kept rebuild was read against a build recorded before markup
@@ -296,6 +309,7 @@ export function buildChangeEntry({ from, to, at, changes, classification }) {
     unmapped_files: changes.status === "known" ? capped(changes.unmapped_files) : [],
     unmapped_file_count: changes.status === "known" ? changes.unmapped_files.length : 0,
     reasons: classification.reasons,
+    ...linkedAssetNotes(classification),
   };
 }
 
@@ -335,8 +349,10 @@ export function worseChangeKind(a, b) {
  * The change a stage that reviewed `anchor` owes for: the recorded rebuilds
  * from `anchor` to the recorded build, then the drift from the recorded build
  * to the output on disk. Returns `{ kind, since_build_fingerprint,
- * changed_pages, unmapped_files, reasons, commerce_rebuild }`; `kind` is
- * unknown when the history does not reach `anchor` or the drift cannot be read.
+ * changed_pages, unmapped_files, reasons, commerce_rebuild }`, plus
+ * `linked_assets` and `browser_pages` (classifyDrift) when a rebuild in it
+ * changed a linked stylesheet or image; `kind` is unknown when the history
+ * does not reach `anchor` or the drift cannot be read.
  * `commerce_rebuild`, when there is one, is the latest recorded rebuild since
  * `anchor` that was not page-only, with the kind of the latest change
  * (`latest_change_kind`), so a page-only edit on top of it can say why it still
@@ -359,19 +375,24 @@ export function changeSince(anchor, { assembly, drift, driftClassification }) {
   }
   const pages = new Map();
   const unmapped = new Set();
+  const linked = new Map();
+  const browser = new Set();
   let kind = "none";
-  const add = (part, partKind, reasons) => {
+  const add = (part, partKind, reasons, notes) => {
     kind = worseChangeKind(kind, partKind);
     for (const page of part.changed_pages || []) pages.set(page.built_path, { page_id: page.page_id, built_path: page.built_path });
     for (const path of part.unmapped_files || []) unmapped.add(path);
     result.reasons.push(...(reasons || []));
+    const { linked_assets: assets = [], browser_pages: buy = [] } = linkedAssetNotes(notes);
+    for (const asset of assets) linked.set(asset.path, [...new Set([...(linked.get(asset.path) || []), ...(asset.pages || [])])]);
+    for (const path of buy) browser.add(path);
   };
   for (const segment of segments) {
-    add(segment, segment.kind, segment.reasons);
+    add(segment, segment.kind, segment.reasons, segment);
     if (!["none", "page_only"].includes(segment.kind)) result.commerce_rebuild = { recorded_at: segment.recorded_at ?? null, build_fingerprint: segment.build_fingerprint, kind: segment.kind };
   }
   if (drift?.status !== "known") kind = "unknown";
-  else add(drift, driftClassification?.kind || "unknown", driftClassification?.reasons);
+  else add(drift, driftClassification?.kind || "unknown", driftClassification?.reasons, driftClassification);
   if (result.commerce_rebuild) {
     const driftKind = driftClassification?.kind || "unknown";
     result.commerce_rebuild.latest_change_kind = driftKind === "none" ? segments.at(-1).kind : driftKind;
@@ -381,9 +402,11 @@ export function changeSince(anchor, { assembly, drift, driftClassification }) {
     kind,
     changed_pages: [...pages.values()].sort((a, b) => a.built_path.localeCompare(b.built_path)),
     unmapped_files: capped([...unmapped].sort()),
-    // Asset notes last, so the cap drops them before a cause or a buy page.
-    reasons: capped([...result.reasons.filter((reason) => reason?.code !== "linked_asset_changed"),
-      ...result.reasons.filter((reason) => reason?.code === "linked_asset_changed")]),
+    reasons: capped(result.reasons),
+    ...linkedAssetNotes({
+      linked_assets: capped([...linked].map(([path, ids]) => ({ path, pages: ids }))),
+      browser_pages: [...browser].sort(),
+    }),
   };
 }
 

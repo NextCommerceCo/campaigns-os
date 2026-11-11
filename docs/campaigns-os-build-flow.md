@@ -72,12 +72,12 @@ stay listed after `record build`. A change is one of two kinds:
   `_data/campaigns.json` (SDK pin, analytics ids, store fields) is unchanged.
   A stylesheet (`.css`) or image file that built pages link directly, by
   `<link rel="stylesheet" href>` or `<img src>` / `srcset`, is a change to
-  those pages too (reason `linked_asset_changed`, naming the file and the
-  pages). A checkout or upsell page reached only that way, its own HTML
-  unchanged, owes a browser run (`qa.browser_pages`, reason
-  `linked_asset_buy_page`), still without test orders: styling can hide or
-  cover a buy button. `@import` and `url()` inside a stylesheet are not
-  followed.
+  those pages too (`linked_assets` on the change, naming the file and the
+  pages; `<picture>` sources count as `<img>` sources). A checkout or upsell
+  page it reaches owes a browser run (`qa.browser_pages`), still without test
+  orders, whether or not its own copy changed too: styling can hide or cover a
+  buy button. `qa run`, page-scoped or full, then needs `--browser`. `@import`
+  and `url()` inside a stylesheet are not followed.
   It owes QA on the changed pages only: `qa.scope` is `pages` and
   `qa.owed_pages` lists them. Polish is advisory (`polish.advisory: true`): it
   is reported, and `next`, the CI check and the QA gate do not require it.

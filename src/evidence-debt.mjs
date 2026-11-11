@@ -26,10 +26,10 @@ export function sharedBuildFingerprint(outputDir) {
   return htmlScanMemo(JSON.stringify(["build-fingerprint", String(outputDir || "")]), () => computeBuildFingerprint(outputDir));
 }
 
-// The owed pages a page-scoped QA run must render in a browser: those a
-// `linked_asset_buy_page` reason names (change-scope.mjs).
+// The owed pages a page-scoped QA run must render in a browser: the change's
+// `browser_pages` (change-scope.mjs), as page ids.
 function browserOwedPages(change) {
-  const paths = new Set(change.reasons.filter((reason) => reason.code === "linked_asset_buy_page").map((reason) => reason.path));
+  const paths = new Set(Array.isArray(change.browser_pages) ? change.browser_pages : []);
   return change.changed_pages.filter((page) => paths.has(page.built_path)).map((page) => page.page_id);
 }
 
@@ -147,7 +147,7 @@ export function assessEvidenceDebt({ packet = null, packetPath = null, report = 
     linkedAssets,
   });
   // The pages reached through a linked asset are changed pages too: QA is
-  // owed on them, and the reasons say which asset reached each.
+  // owed on them, and linked_assets says which asset reached each.
   if (linkedAssets.length) {
     const pages = new Map(changes.changed_pages.map((page) => [page.built_path, page]));
     for (const asset of linkedAssets) for (const page of asset.pages) if (!pages.has(page.built_path)) pages.set(page.built_path, page);
@@ -155,6 +155,10 @@ export function assessEvidenceDebt({ packet = null, packetPath = null, report = 
   }
   changes.kind = driftClassification.kind;
   changes.reasons = driftClassification.reasons;
+  if (driftClassification.linked_assets) {
+    changes.linked_assets = driftClassification.linked_assets;
+    changes.browser_pages = driftClassification.browser_pages;
+  }
   const changeFor = (anchor) => changeSince(anchor, { assembly, drift: changes, driftClassification });
 
   // Polish reviewed the build a terminal record is bound to; once `record

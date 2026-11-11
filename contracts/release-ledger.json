@@ -4102,7 +4102,7 @@
       "surface_version": null,
       "changelog_section": "1.68.0+agent.8",
       "changelog_sha256": "2dfae3bf4f074ecf316c1427496973002a6201294c3e36276ea44c640fd64d46",
-      "agent_impact": "A change whose only non-page file is a stylesheet or image built pages link directly now reads page_only, with QA owed on those pages, instead of commerce_affecting. Its reasons carry two new non-commerce codes: linked_asset_changed (path, and pages: the page ids that link it) and linked_asset_buy_page (a checkout or upsell page reached only through one). When there is a buy page, evidence_debt.qa.browser_pages lists it, and qa run --page then needs --browser. Readers that treat every reason as commerce should switch on the change kind, or skip these two codes.",
+      "agent_impact": "A change whose only non-page file is a stylesheet or image built pages link directly (link rel=stylesheet, img src or srcset, picture source srcset) now reads page_only, with QA owed on those pages, instead of commerce_affecting. The change, and the build_changes entry record build keeps, then carry linked_assets (each path, with pages: the ids of the pages that link it) and browser_pages (the built paths of the checkout or upsell pages it reaches); reasons stay the commerce causes, with no new codes. When QA is page-scoped and there is such a page, evidence_debt.qa.browser_pages lists its id, and qa run, with or without --page, then needs --browser.",
       "compatibility": "additive",
       "migration": "none",
       "changes": [
@@ -4110,7 +4110,7 @@
           "class": "cli_surface",
           "path": "src/doctor/ci.mjs",
           "surface_entry": null,
-          "summary": "doctor --ci names each linked stylesheet or image that changed and the pages it maps to, says which page owes a browser run, and adds --browser to the page-scoped remedy when one does."
+          "summary": "doctor --ci names each linked stylesheet or image that changed and the pages it maps to, says which page owes a browser run, and adds --browser to its QA remedy when one does."
         },
         {
           "class": "cli_surface",
@@ -4122,22 +4122,22 @@
           "class": "named_surface",
           "path": "docs/campaigns-os-build-flow.md",
           "surface_entry": "docs/campaigns-os-build-flow.md",
-          "summary": "What a change owes: a stylesheet or image built pages link directly is a page-only change to those pages, and a checkout or upsell page reached only that way owes a browser QA run with no test orders."
+          "summary": "What a change owes: a stylesheet or image built pages link directly is a page-only change to those pages, and a checkout or upsell page it reaches owes a browser QA run with no test orders."
         },
         {
           "class": "named_surface",
           "path": "docs/readback.md",
           "surface_entry": "docs/readback.md",
-          "summary": "evidence_debt documents the linked_asset_changed and linked_asset_buy_page reason codes, the pages a linked asset adds to changed_pages, and qa.browser_pages."
+          "summary": "The change and evidence debt can carry linked_assets and browser_pages, and qa.browser_pages, for a linked stylesheet or image."
         },
         {
           "class": "named_surface",
           "path": "docs/build-packet.md",
           "surface_entry": "docs/build-packet.md",
-          "summary": "build_changes reasons can carry the linked_asset_changed and linked_asset_buy_page notes, which do not make a change commerce."
+          "summary": "build_changes entries can carry linked_assets and browser_pages, which do not make a change commerce."
         }
       ],
-      "entry_sha256": "f9f7420afc30884ca437cc15f1eb4e1a60f149de86591b99c773cce0bb098df3"
+      "entry_sha256": "ccc63c6a06899291c64fdabb38eaa7f2c59f9c7234c4a2b42feb8f653dfe5584"
     }
   ]
 }
