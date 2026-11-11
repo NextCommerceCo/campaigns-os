@@ -4073,6 +4073,33 @@
       "date": "2026-11-11",
       "kind": "release",
       "surface_version": null,
+      "changelog_section": "1.68.0+agent.4",
+      "changelog_sha256": "58a9295968e438203c7438421b2ad88417a804a6d152a32fd4f02c0f57782a90",
+      "agent_impact": "Pin and bundle parse5 8.0.1 and entities 8.1.0 to preserve saved commerce-signature/v1 records in registry installs as well as checkouts. parse5 8.1.0 changes foreign-element reconstruction and can classify a copy-only edit as commerce_markup_changed. The parser upgrade is deferred; no saved records or existing literal baselines are rewritten. entities is a direct dependency solely to pin and bundle the decoder, not a new package export.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Pin and bundle the v1 parser and decoder for consumer installs."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Record exact bundled parser dependencies."
+        }
+      ],
+      "entry_sha256": "f43cd05d36051a9df300c4c522e829d0fe5cf12e10118904f22b1fe3101faaf2"
+    },
+    {
+      "id": "RL-0341",
+      "sequence": 325,
+      "date": "2026-11-11",
+      "kind": "release",
+      "surface_version": null,
       "changelog_section": "1.68.0+agent.8",
       "changelog_sha256": "2dfae3bf4f074ecf316c1427496973002a6201294c3e36276ea44c640fd64d46",
       "agent_impact": "A change whose only non-page file is a stylesheet or image built pages link directly now reads page_only, with QA owed on those pages, instead of commerce_affecting. Its reasons carry two new non-commerce codes: linked_asset_changed (path, and pages: the page ids that link it) and linked_asset_buy_page (a checkout or upsell page reached only through one). When there is a buy page, evidence_debt.qa.browser_pages lists it, and qa run --page then needs --browser. Readers that treat every reason as commerce should switch on the change kind, or skip these two codes.",
@@ -4110,7 +4137,7 @@
           "summary": "build_changes reasons can carry the linked_asset_changed and linked_asset_buy_page notes, which do not make a change commerce."
         }
       ],
-      "entry_sha256": "90264cb66febc8eb97314558b1cdae2e4b85fd57af204538cb5895181a182010"
+      "entry_sha256": "ed671fa1d04f6a76deb19075ec47080a7178bf12b0cdfb9c4ce26b6abab2ab50"
     }
   ]
 }
