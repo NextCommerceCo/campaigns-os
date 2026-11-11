@@ -163,6 +163,55 @@ test("Template evidence uses only the capture budget remaining after all planned
   assert.ok(record.evidence_only.every((cell) => cell.status === "run_budget_exhausted" && cell.reason === "run_budget_exhausted"));
   assert.equal(packageCapturesSatisfy(record, input.report), true);
 });
+test("Template evidence preserves planned captures, references and comparisons on a slow clock", async (t) => {
+  const f = syntheticVisualFixture(); t.after(f.cleanup); const input = templateInputs(f);
+  const dependencies = await loadVisualDependencies();
+  assert.equal(dependencies.decoder.status, "available");
+  assert.equal(dependencies.diff.status, "available");
+  const run = async (withEvidence) => {
+    let time = 0;
+    return runVisualPass({ ...input, frozen: { ...input.frozen, plan: { ...input.frozen.plan,
+      skipped_pages: withEvidence ? input.frozen.plan.skipped_pages : [] } },
+      dependencies, clock: { now: () => time }, budget: { captureMs: 200_000, addedMs: 260_000, diffMs: 60_000 },
+      createBrowserAdapter: async () => ({ ...fakeVisualAdapter({ consume() { time += 45_000; } }),
+        async close() { time += 30_000; } }) });
+  };
+  const without = await run(false), withEvidence = await run(true);
+  const statuses = (record) => record.comparisons.map(({ viewport, basis, status, reason }) => ({ viewport, basis, status, reason }));
+  assert.deepEqual(statuses(without).map(({ status }) => status), ["compared", "compared", "compared", "compared"]);
+  t.diagnostic(`Without evidence: ${JSON.stringify(statuses(without))}`);
+  t.diagnostic(`With evidence: ${JSON.stringify(statuses(withEvidence))}`);
+  assert.deepEqual(withEvidence.cells, without.cells);
+  assert.deepEqual(withEvidence.references, without.references);
+  assert.deepEqual(withEvidence.comparisons, without.comparisons);
+  assert.deepEqual(withEvidence.adapters, without.adapters);
+});
+test("Template evidence gets no time when planned comparisons and cleanup use the pass budget", async (t) => {
+  const f = syntheticVisualFixture(); t.after(f.cleanup); const input = templateInputs(f);
+  const dependencies = await loadVisualDependencies();
+  const run = async (withEvidence) => {
+    let time = 0, renders = 0;
+    const record = await runVisualPass({ ...input, frozen: { ...input.frozen, plan: { ...input.frozen.plan,
+      skipped_pages: withEvidence ? input.frozen.plan.skipped_pages : [] } }, clock: { now: () => time },
+      budget: { captureMs: 240_000, addedMs: 200_000, diffMs: 60_000 },
+      dependencies: { ...dependencies, diff: { ...dependencies.diff, compare(...args) {
+        time += 2_000;
+        return dependencies.diff.compare(...args);
+      } } },
+      createBrowserAdapter: async () => ({ ...fakeVisualAdapter({ consume() { time += 45_000; renders++; } }),
+        async close() { time += 5_000; } }) });
+    assert.equal(renders, 4);
+    return record;
+  };
+  const without = await run(false), record = await run(true);
+  assert.ok(record.comparisons.every((comparison) => comparison.status === "compared"));
+  assert.ok(record.evidence_only.every((cell) => cell.status === "run_budget_exhausted" && cell.reason === "run_budget_exhausted"));
+  assert.deepEqual(record.adapters, { build: { startup: "ok", close: "ok" }, source: { startup: "ok", close: "ok", sealed: true } });
+  assert.deepEqual(record.cells, without.cells);
+  assert.deepEqual(record.references, without.references);
+  assert.deepEqual(record.comparisons, without.comparisons);
+  assert.deepEqual(record.adapters, without.adapters);
+});
 test("repo-origin routes get build captures, missing-source visual rows, and skipped-page reasons in the record", async (t) => {
   const f = syntheticVisualFixture(); t.after(f.cleanup);
   const input = visualInputs(f);

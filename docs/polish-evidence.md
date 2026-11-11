@@ -163,12 +163,15 @@ visual comparisons remain unexercised (`capture_unavailable` with a
 `source_html_missing` member), with no source match claimed.
 
 Template-stock pages with `skip_reason` remain outside the mapped capture plan
-and are listed in `captures.subject.skipped_pages`. After all planned cells,
-the same visual pass takes build-side captures at both viewports for these
-pages when their declared public route, or their page id in `_site/<slug>/`,
+and are listed in `captures.subject.skipped_pages`. After the planned routes'
+captures, reference verification and comparisons, the same visual pass takes
+build-side captures at both viewports for these pages when their declared
+public route, or their page id in `_site/<slug>/`,
 resolves to built output. They use the same stabilization, storage and
-five-minute pass budget. The separate `captures.evidence_only` list records
-each cell with `evidence_only: true`, page id, route, viewport, image identities
+five-minute pass budget, using only the time left after that planned work and
+reserving time to close its adapters and server. When none remains, the cells
+are listed as `run_budget_exhausted`. The separate `captures.evidence_only`
+list records each cell with `evidence_only: true`, page id, route, viewport, image identities
 and `skip_reason`. Missing output is listed with reason `page_not_built`;
 navigation failures, unavailable browsers and exhausted budgets are recorded
 with their reasons too. These captures never produce source, reference, diff
