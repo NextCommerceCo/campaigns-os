@@ -774,9 +774,7 @@ export function realPathOf(path) {
 }
 
 // The page's local scripts for the anchor hint: `contents` holds what was
-// read, `complete` whether every local script the page loads was. The list is
-// `readScripts` given the srcs the page loads; without it, every local
-// <script src> on the page counts as loaded and unread.
+// read, `complete` whether every local script the page loads was.
 function pageScripts(observed, builtPath, ctx) {
   const listed = ctx.readScripts
     ? ctx.readScripts(observed.scripts, builtPath)
@@ -957,9 +955,8 @@ const capMembersFor = (reasons) => reasons.flatMap((reason) => aggregateQcResult
  *   measuredAt?: string,
  * }} input  `pages` in a stable order, `file` relative to the doctor target
  *   ("_site/<slug>/index.html"); pages past the page cap may omit `content`.
- *   Pages read as readBuiltPage reads them (cart-placeholders.mjs).
- *   `readScripts` lists every local script a page loads, read or not, from
- *   the srcs its parse found (see the header); without it they read unread.
+ *   Pages read as readBuiltPage reads them (cart-placeholders.mjs), and
+ *   `readScripts` lists their scripts as the header describes.
  *   `environment` is the recorded build environment ("production" or
  *   "development"; anything else is unknown). `siteRoot` is the built site
  *   root (the scope's `_site/`, or the directory doctor was pointed at when

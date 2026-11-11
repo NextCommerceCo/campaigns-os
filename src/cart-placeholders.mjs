@@ -536,11 +536,10 @@ function observePage(page) {
   }
 }
 
-// One built page's parse5 tree (its `document()` when it has one, else
-// parseBounded of its `content`) and size, or a page-level outcome and the
-// size when known. The smoke checks read pages through it too. A page over
-// the size cap may come without its HTML. A read or parse failure reads the
-// page unreadable; any other error is a defect and throws.
+// One built page's parse5 tree and size, or a page-level outcome and the size
+// when known. A page over the size cap may come without its HTML. A read or
+// parse failure reads the page unreadable; any other error is a defect and
+// throws.
 export function readBuiltPage(page) {
   if (page.unreadable) return { outcome: R.PAGE_UNREADABLE };
   const bytes = Number.isFinite(page.bytes) ? page.bytes : typeof page.content === "string" ? Buffer.byteLength(page.content, "utf8") : null;

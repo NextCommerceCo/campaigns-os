@@ -5,14 +5,13 @@ import { resolve } from 'node:path';
 import { parse as parseJs } from 'acorn';
 import { defaultTreeAdapter, parse } from 'parse5';
 
-// The shared input context of one read-only doctor inspection (#730): file
-// bytes, parsed trees and programs, and memoized collections. A synchronous
-// doctor's snapshot ends with the invocation, so no file contents survive into
-// another command, and an inspection that follows a write opens a fresh
-// snapshot that never sees bytes from before the write. A snapshot opened
-// inside an active one, without `reuse`, runs uncached. Past a budget a file
-// is read or parsed per use, as it was before the snapshot existed. Read
-// failures are never retained.
+// The shared input context of one read-only doctor inspection: file bytes,
+// parsed trees and programs, and memoized collections. A synchronous doctor's
+// snapshot ends with the invocation, so no file contents survive into another
+// command, and an inspection that follows a write opens a fresh snapshot that
+// never sees bytes from before the write. A snapshot opened inside an active
+// one, without `reuse`, runs uncached. Past a budget a file is read or parsed
+// per use. Read failures are never retained.
 const snapshots = new AsyncLocalStorage();
 const MAX_RETAINED_BYTES = 16 * 1024 * 1024;
 const MAX_RETAINED_FILES = 4096;
@@ -29,11 +28,10 @@ export const MAX_ELEMENT_DEPTH = 512;
 
 export class TooDeep extends Error {}
 
-// parse5 with source locations and a tree adapter that stops the parse once an
+// parse5 with source locations and a tree adapter that throws TooDeep once an
 // element would sit deeper than MAX_ELEMENT_DEPTH (template content counts
 // from its <template>). parse5's own cost grows with the square of the
-// nesting, so the bound has to hold during the parse, not after it. Throws
-// TooDeep past the bound.
+// nesting, so the bound has to hold during the parse, not after it.
 export function parseBounded(html) {
   const templateOf = new WeakMap();
   const check = (parent, node) => {
@@ -81,8 +79,7 @@ export function withHtmlScanSnapshot(operation, { reuse = false } = {}) {
   });
 }
 
-// The file's identity: its real path, so `/var/...` and `/private/var/...`
-// are one entry.
+// Keyed by real path, so `/var/...` and `/private/var/...` are one entry.
 function realKey(snapshot, path) {
   const key = resolve(path);
   try {
@@ -116,8 +113,7 @@ export function readHtmlScanText(path) {
 }
 
 // The raw bytes, for a consumer that bounds a read by its byte length. The
-// Buffer is the snapshot's own, shared by every consumer of the file in this
-// inspection: read it, never write to it.
+// Buffer is shared with every other consumer in the snapshot: never write to it.
 export function readHtmlScanBytes(path) {
   return file(path).bytes;
 }
@@ -129,14 +125,14 @@ export function htmlScanDigest(path) {
   return entry.digest ??= createHash('sha256').update(entry.bytes).digest('hex');
 }
 
-// One shared parse per held file and kind (`html`, or a script as `script` or
-// `module`: the same bytes can parse differently, or fail, as either) for
-// every consumer in the snapshot, which reads it and never changes it. Returns
-// `(path, kind, text) => parsed`, parsing on first use, or null when the set
-// cannot be shared: no snapshot, a file whose bytes are not held, or parses
-// past the budget. Text other than the held text is parsed per use. A
-// script's parse error, and a page's TooDeep, is shared like a result; any
-// other HTML parse error is not kept, so each consumer parses again.
+// One shared parse per held file and kind (`html`, `script` or `module`: the
+// same bytes can parse differently, or fail, as a script or a module), which
+// consumers read and never change. Returns `(path, kind, text) => parsed`,
+// parsing on first use, or null when the set cannot be shared: no snapshot, a
+// file not held, or parses past the budget. Text other than the held text is
+// parsed per use. A script's parse error and a page's TooDeep are shared like
+// a result; any other HTML parse error is not kept, so each consumer parses
+// again.
 //
 // The set is shared whole or not at all. Retaining only the first few trees is
 // worse than retaining none: V8 then pretenures parse5's node allocations, so
@@ -181,14 +177,13 @@ const HTML_PARSERS = Object.freeze({
 });
 
 // Shared parse5 trees for a set of held pages: one parseBounded tree per page
-// for every consumer whatever its profile, since within the bound it builds
-// the located tree node for node and noloc consumers ignore locations. Returns
+// for every profile, since within the bound it builds the located tree node
+// for node and noloc consumers ignore locations. Returns
 // `(path, text) => document`. A noloc or located consumer gets its own
-// unbounded parse of a page past the depth bound, so it sees every page it saw
-// before trees were shared; an unshared set is parsed per use with the profile
-// asked for. Template content and other nested contexts stay inside the tree
-// as parse5 builds them; a consumer that reparses a fragment (noscript,
-// srcdoc) does so itself.
+// unbounded parse of a page past the depth bound, so the bound hides no page
+// from it; an unshared set is parsed per use with the profile asked for.
+// Template content stays inside the tree as parse5 builds it; a fragment a
+// consumer reparses itself (noscript, srcdoc) is not shared.
 export function htmlScanDocuments(paths, profile = 'noloc') {
   if (!Object.hasOwn(HTML_PARSERS, profile)) throw new Error(`Unknown HTML parse profile: ${profile}`);
   const parseText = HTML_PARSERS[profile];

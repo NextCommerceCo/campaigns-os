@@ -227,7 +227,7 @@ function recordDoctorStageOutcome(report, result, { command, doctorOutPath, targ
 // gates the family brand contract drives, and auto-emit a minimal Build Packet
 // (optionally written with --emit-packet) so QA can run against the same
 // campaign without a hand-authored packet.
-// One read-only inspection, so the gates share its inputs (html-scan.mjs, #730).
+// One read-only inspection, so the gates share its inputs (html-scan.mjs).
 export function doctorBuiltOutput(args) {
   return withHtmlScanSnapshot(() => inspectBuiltOutput(args));
 }

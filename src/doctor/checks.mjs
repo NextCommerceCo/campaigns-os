@@ -2092,8 +2092,7 @@ function validateBuiltLiveCampaignRefs({ spec, packet, errors, warnings, ready, 
 // The built pages the commerce-ref (built_output.pages, spec pages only) and
 // live-reference checks read, in order: mapped spec pages (`page` is the spec
 // page), then the other built HTML under the route, build noise excluded. Both
-// checks ask for the whole set's trees (`document`), so they share them whole
-// or not at all.
+// checks share the set's trees (`document`), whole or not at all.
 function liveRefBuiltPages(spec, packet, derived) {
   const targetRepo = derived.target_repo;
   const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
@@ -2256,19 +2255,16 @@ function builtRoute(packet, derived) {
   return { targetRepo, publicRouteSlug, siteRoot, subject };
 }
 
-// The built-site scope of a packet-path gate, resolved once per inspection
-// through the shared input context (html-scan.mjs, #730).
+// The built-site scope of a packet-path gate, resolved once per inspection.
 function sharedBuiltSiteScope(targetRepo, slug) {
   return htmlScanMemo(JSON.stringify(["built-site-scope", resolve(targetRepo), slug ?? null]), () => resolveBuiltSiteScope(targetRepo, { slug }));
 }
 
 // A scope's built pages as the upsell-selector, campaign identity and SDK
-// markup gates read them. Each gate calls this for its own page list; the
-// shared input context behind it reads each page's bytes once and keeps one
-// parse5 tree per page for the gates that parse, parsed only when a gate asks
-// for it (`document`) and shared only while the page set fits the parse budget.
-// `scripts()` reads the page's local scripts: identity reads every page's, the
-// SDK markup gate only a page pinned to SDK 0.5 or later.
+// markup gates read them; the snapshot shares each page's bytes and, while the
+// page set fits the parse budget, its tree (`document`, parsed on first use)
+// across the gates. `scripts()` reads the page's local scripts: identity reads
+// every page's, the SDK markup gate only a page pinned to SDK 0.5 or later.
 function sharedBuiltPages(scope, targetRepo) {
   const contents = scope.pages.map((page) => readHtmlScanText(page.built_path));
   const documentOf = htmlScanDocuments(scope.pages.map((page) => page.built_path));
@@ -2347,7 +2343,7 @@ function builtLocalScriptPath(scope, src, builtPath) {
 // parser resolves it against the page's URL under the site root (a
 // root-relative src starts at the site root, never the campaign directory),
 // and its path segments are percent-decoded. Each script file is read at most
-// once per run, its bytes from the shared input context.
+// once per run.
 function boundedPageScripts(siteRoot, targetRepo, bounds) {
   const realSiteRoot = realPathOf(siteRoot);
   const cache = new Map();
@@ -2542,10 +2538,9 @@ function packetBuiltPages(packet, targetRepo) {
 // unreadable, never followed). Pages within the page cap carry their HTML,
 // read one page at a time, unless they are over the size cap or cannot be
 // read; pages past it carry only their path. The inventory is resolved once
-// per inspection for both QC checks; each check still probes and reads its
-// pages itself (the bytes from the snapshot), so a read failure is never
-// shared. Each page read gets one parseBounded tree (`document`), shared only
-// while the pages read fit the parse budget.
+// per inspection for both QC checks, but each check probes and reads its pages
+// itself, so a read failure is never shared. A page read carries its bounded
+// tree (`document`), shared only while the pages read fit the parse budget.
 function collectCartPlaceholderPages(targetRepo, slug) {
   const { capped, past } = htmlScanMemo(JSON.stringify(["cart-placeholder-pages", resolve(targetRepo), slug ?? null]), () => {
     const scope = resolveBuiltSiteScope(targetRepo, { slug, includeLinkedPages: true });
@@ -3210,8 +3205,8 @@ function sourcePermalinkForPage(targetOutputDir, publicRouteSlug, page, { assets
   return candidates.length === 1 ? candidates[0] : null;
 }
 
-// Every permalink the source pages state, in file order. One walk of the
-// source tree per inspection (#730), however many spec pages and validators ask.
+// Every permalink the source pages state, in file order: one walk of the
+// source tree per inspection, however many spec pages and validators ask.
 // Each value is copied code unit for code unit: a substring would keep its
 // whole source page alive for the run, outside the byte budget.
 function sourcePermalinks(targetOutputDir, assetsHtmlIgnored) {

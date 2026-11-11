@@ -1,4 +1,4 @@
-// API and storage observations in campaign scripts (#729, #730 milestone 3).
+// API and storage observations in campaign scripts (#729).
 //
 // Advisory only: every finding is a warning, never a blocker, and no ready
 // line or gate is added. A campaign script that reaches past the SDK's public
@@ -10,13 +10,12 @@
 //   browser's own localStorage/sessionStorage (no local binding shadows it on
 //   the way out) and the key or its literal start resolves statically. The
 //   prefix alone does not establish that the SDK owns the key.
-// - network_global_replaced: an assignment that replaces the page's `fetch`
-//   or `XMLHttpRequest.prototype.open`/`send` (`=`, or `&&=`, which assigns
-//   over the defined browser function; `||=` and `??=` do not), or a
-//   defineProperty whose literal descriptor sets its value or accessors.
-//   Every caller on the page,
-//   the SDK included, then goes through it; whether it changes an SDK request
-//   is not established statically, so no bypass is claimed.
+// - network_global_replaced: an `=` or `&&=` assignment that replaces the
+//   page's `fetch` or `XMLHttpRequest.prototype.open`/`send`, or a
+//   defineProperty whose literal descriptor sets fetch's value or accessors.
+//   Every caller on the page, the SDK included, then goes through it; whether
+//   it changes an SDK request is not established statically, so no bypass is
+//   claimed.
 // - sdk_debug_surface: a reference to the SDK's `nextDebug` global, its
 //   debugging surface.
 // - sdk_private_member: an underscore member reached from the SDK's own
@@ -26,10 +25,9 @@
 //   expression nested too deep to resolve), so its observations are not
 //   listed rather than read as none.
 //
-// Inputs: the syntax gate's builtLocalScripts and their shared programs,
-// keyed by path plus classic/module, since the same bytes can parse and
-// resolve differently as either. A script that cannot be read or does not
-// parse yields no observation here; the syntax gate owns that failure.
+// Inputs: the syntax gate's builtLocalScripts and their shared programs. A
+// script that cannot be read or does not parse yields no observation here;
+// the syntax gate owns that failure.
 //
 // Every finding records the delivery form (always `local` here), ownership
 // (`unknown`: these observations do not consult the family script reference
@@ -95,7 +93,6 @@ export function observeScriptProgram(program, { module = false } = {}) {
     });
   });
 
-  // An expression that is a reference to an unshadowed global named in `names`.
   const sdkGlobal = (node, names) => {
     const found = globalReference(node, scopes.get(node), names);
     return found && !found.shadowed ? found : null;
@@ -186,8 +183,7 @@ export function observeScriptProgram(program, { module = false } = {}) {
         add(SCRIPT_OBSERVATION_NETWORK_GLOBAL_REPLACED, node.id, { operation: "replace", receiver: "fetch" });
       }
     }
-    // A destructure from the global object reads nextDebug there:
-    // `const { nextDebug } = window` (its later uses are an alias, not reported).
+    // `const { nextDebug } = window` reads the global; its later uses are an alias.
     if (node.type === "VariableDeclarator" && node.id.type === "ObjectPattern" && node.init) {
       const global = browserGlobal(node.init, scopes.get(node));
       for (const property of global && !global.shadowed ? node.id.properties : []) {
