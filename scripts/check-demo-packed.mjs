@@ -5,14 +5,15 @@ import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { packedTarballName } from "./npm-pack-json.mjs";
 import { validateDemoArtifact } from "../src/demo-artifact.mjs";
 const root = fileURLToPath(new URL("..", import.meta.url));
 const scratch = mkdtempSync(join(tmpdir(), "campaigns-os-demo-packed-"));
 try {
-  const packed = JSON.parse(execFileSync("npm", ["pack", "--ignore-scripts", "--json", "--pack-destination", scratch], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }))[0];
+  const tarball = packedTarballName(JSON.parse(execFileSync("npm", ["pack", "--ignore-scripts", "--json", "--pack-destination", scratch], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })));
   const consumer = join(scratch, "consumer"); mkdirSync(consumer);
   writeFileSync(join(consumer, "package.json"), JSON.stringify({ private: true, type: "module" }));
-  execFileSync("npm", ["install", "--save-dev", "--save-exact", "--ignore-scripts", "--omit=optional", "--no-audit", "--no-fund", join(scratch, packed.filename)], { cwd: consumer, stdio: ["ignore", "pipe", "pipe"] });
+  execFileSync("npm", ["install", "--save-dev", "--save-exact", "--ignore-scripts", "--omit=optional", "--no-audit", "--no-fund", join(scratch, tarball)], { cwd: consumer, stdio: ["ignore", "pipe", "pipe"] });
   for (const name of ["next-campaign-page-kit", "tailwindcss", "playwright"]) assert.equal(existsSync(join(consumer, "node_modules", name)), false, name);
   const installed = join(consumer, "node_modules/@nextcommerce/campaigns-os");
   assert.equal(existsSync(join(installed, "scripts/demo-toolchain")), false);
