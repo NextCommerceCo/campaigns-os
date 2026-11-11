@@ -26,7 +26,7 @@ Ledger schema id: `campaigns-os-release-ledger/v1`
 Change policy version: `1.0.0`  
 Reason-code vocabulary version: `1.0.0`  
 Limits version: `1.0.0`  
-Supported surface at generation time: `1.66.0`
+Supported surface at generation time: `1.68.0`
 
 ## Forward compatibility
 
@@ -91,12 +91,13 @@ exactly its data files (steps 1 to 8):
 The archive files are not among them: they are optional history reads and count against no limit, and their
 sections and entries are not in `section_count` or `ledger_entries`.
 
-Current floor: last archived entry `RL-0124` (sequence 124), first kept entry
-`RL-0125`, recorded by `RL-0190`. Archives, oldest rotation first:
+Current floor: last archived entry `RL-0264` (sequence 257), first kept entry
+`RL-0268`, recorded by `RL-0333`. Archives, oldest rotation first:
 
 - [`contracts/archive/release-ledger.2026-09-30.json`](../contracts/archive/release-ledger.2026-09-30.json) and [`contracts/archive/CHANGELOG.2026-09-30.md`](../contracts/archive/CHANGELOG.2026-09-30.md)
+- [`contracts/archive/release-ledger.2026-11-10.json`](../contracts/archive/release-ledger.2026-11-10.json) and [`contracts/archive/CHANGELOG.2026-11-10.md`](../contracts/archive/CHANGELOG.2026-11-10.md)
 
-A consumer whose reviewed baseline's newest ledger entry is older than `RL-0124` refuses with
+A consumer whose reviewed baseline's newest ledger entry is older than `RL-0264` refuses with
 `baseline_below_floor`. Adopt a newer reviewed baseline whose ledger reaches the floor's last_archived_id; every commit at or after the floor's first_kept_id qualifies. Do not orient on the partial live window, and do not stitch the archive in as a substitute: the archive holds the history for reference, not for this read.
 
 ## Release-ledger digest canonicalization

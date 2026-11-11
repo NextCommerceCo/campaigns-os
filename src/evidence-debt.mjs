@@ -10,6 +10,7 @@ import {
   routeForFile,
 } from "./built-site-scope.mjs";
 import { changeSince, classifyDrift } from "./change-scope.mjs";
+import { htmlScanMemo } from "./html-scan.mjs";
 import { normalizePublicRouteSlug } from "./route-identity.mjs";
 import { isFileReadFailure } from "./cart-placeholders.mjs";
 import { polishReviewedBuild, qaExtendedBuildFingerprint, qaRecordedBuildFingerprint, qaRecordedForCurrentBuild, qaRestsOnBaseline } from "./stage-ledger.mjs";
@@ -18,6 +19,12 @@ export const EVIDENCE_DEBT_STATUSES = Object.freeze(["current", "owed", "unknown
 
 const fingerprint = (value) => typeof value === "string" && value.trim() ? value.trim() : null;
 const portable = (value) => value.split(sep).join("/");
+
+// computeBuildFingerprint once per root within a read-only doctor inspection
+// (html-scan.mjs), where the fingerprint check and evidence debt hash one tree.
+export function sharedBuildFingerprint(outputDir) {
+  return htmlScanMemo(JSON.stringify(["build-fingerprint", String(outputDir || "")]), () => computeBuildFingerprint(outputDir));
+}
 
 /**
  * Compare recorded Polish/QA build bindings with bytes under _site/<slug>.
@@ -54,7 +61,7 @@ export function assessEvidenceDebt({ packet = null, packetPath = null, report = 
     targetRepo = resolve(dirname(resolve(packetPath)), target);
     outputRoot = join(targetRepo, "_site", slug);
     try {
-      current = computeBuildFingerprint(outputRoot);
+      current = sharedBuildFingerprint(outputRoot);
       if (!current.ok) reason = "build_output_missing";
       // Resolve only the chosen built directory: never discover another
       // campaign, or fall back to source HTML when _site is absent.
@@ -119,7 +126,10 @@ export function assessEvidenceDebt({ packet = null, packetPath = null, report = 
       else changes.unmapped_files.push(path);
     }
   }
-  const driftClassification = classifyDrift({ changes, baseline: assembly, outputRoot, targetRepo, publicRouteSlug: slug });
+  const driftClassification = classifyDrift({
+    changes, baseline: assembly, outputRoot, targetRepo, publicRouteSlug: slug,
+    pagePaths: scope?.ok ? scope.pages.map((page) => page.built_path) : [],
+  });
   changes.kind = driftClassification.kind;
   changes.reasons = driftClassification.reasons;
   const changeFor = (anchor) => changeSince(anchor, { assembly, drift: changes, driftClassification });

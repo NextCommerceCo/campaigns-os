@@ -19,6 +19,7 @@
 //   demo slot or a stale template.
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
+import { readHtmlScanText } from "./html-scan.mjs";
 
 export const NEEDS_INPUT_MARKER = /NEEDS[ -]MERCHANT[ -]INPUT/i;
 
@@ -169,7 +170,7 @@ export function collectRenderedHtmlFiles(rootDir) {
 export function scanBuiltOutputContentResidue(outputDir, { urgencyVerified = false } = {}) {
   const findings = [];
   for (const file of collectRenderedHtmlFiles(outputDir)) {
-    const { hard, review } = scanRenderedHtml(readFileSync(file, "utf8"), { urgencyVerified });
+    const { hard, review } = scanRenderedHtml(readHtmlScanText(file), { urgencyVerified });
     for (const finding of [...hard, ...review]) {
       findings.push({ ...finding, file: relative(outputDir, file) });
     }
