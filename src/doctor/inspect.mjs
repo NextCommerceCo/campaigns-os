@@ -599,7 +599,7 @@ function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath =
   const evidenceDebt = assessEvidenceDebt({ packet, packetPath, report });
   derived.evidence_debt = evidenceDebt;
   // The assessment itself, before --strip-paths rewrites the output's paths.
-  onEvidenceDebt?.(evidenceDebt);
+  if (typeof onEvidenceDebt === "function") onEvidenceDebt(evidenceDebt);
   const polishCheckpointGate = applyPageOnlyChangeToCheckpoint(applyLocalPreviewToCheckpoint(
     evaluateRecordedHiddenEagerMediaCheckpoint({ packet, report }),
     { packet, report },

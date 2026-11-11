@@ -55,8 +55,9 @@ function textOf(node) {
 // script (src, or the inline body), every link target and form action. Copy,
 // images and styling are left out, so a copy edit keeps the signature.
 // `checkout` is true when the page carries checkout or payment markup.
-// `document` is the parse5 tree of `html` when the caller already holds one.
-export function pageCommerceFacts(html, document = parse(String(html))) {
+// `document`, when the caller already holds one, is the parse5 tree of `html`
+// or a function returning it.
+export function pageCommerceFacts(html, document = null) {
   const facts = [];
   let pageType = null;
   let checkout = false;
@@ -82,7 +83,7 @@ export function pageCommerceFacts(html, document = parse(String(html))) {
       walk(child);
     }
   };
-  walk(document);
+  walk(typeof document === "function" ? document() : document ?? parse(String(html)));
   return { signature: sha256(facts.join("\n")), page_type: pageType, checkout };
 }
 
@@ -134,8 +135,10 @@ const capped = (items) => items.slice(0, CHANGE_PATH_LIMIT);
  * unmapped_files, extra, missing). `baseline` is the recorded
  * stages.assembly. Returns `{ kind, reasons }`, `kind` one of CHANGE_KINDS
  * and `reasons` the commerce reasons found, each `{ code, path? }`.
- * `pagePaths` is every page of the built-site scope, the set whose shared
- * trees (htmlScanDocuments) a changed page reads.
+ * `pagePaths` is every page of the built-site scope. A changed page reads its
+ * shared tree (htmlScanDocuments) only when the run already holds every page's
+ * bytes, as doctor's built-output checks do, and the trees fit the parse
+ * budget; otherwise each changed page is parsed per use.
  */
 export function classifyDrift({ changes, baseline, outputRoot, targetRepo, publicRouteSlug, pagePaths = [] }) {
   if (changes?.status !== "known") return { kind: "unknown", reasons: [] };

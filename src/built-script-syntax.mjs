@@ -500,15 +500,27 @@ export function collectBuiltScriptSyntaxInputs(scope, targetRepo) {
     }
   }
   // The shared program is parsed with parseScriptSyntax's options, so the
-  // diagnostic is the same; the API/storage observations reuse it.
+  // diagnostic is the same; the API/storage observations reuse it. `syntax` is
+  // computed on first read, so a caller that wants only the references (the
+  // fixture refresh) parses nothing. It is enumerable, so a spread,
+  // JSON.stringify or deepEqual of a record reads it and parses, and
+  // configurable, so a caller can `delete` it.
   const scripts = builtLocalScripts(refs, targetRepo).map(({ file, module, content, pages, program }) => {
-    let syntax = null;
-    try {
-      program();
-    } catch (error) {
-      syntax = parseFailureDiagnostic(error);
-    }
-    return { file, module, content, pages, syntax };
+    let syntax;
+    return Object.defineProperty({ file, module, content, pages }, "syntax", {
+      enumerable: true,
+      configurable: true,
+      get() {
+        if (syntax !== undefined) return syntax;
+        try {
+          program();
+          syntax = null;
+        } catch (error) {
+          syntax = parseFailureDiagnostic(error);
+        }
+        return syntax;
+      },
+    });
   });
   return {
     pages_scanned: pagesScanned,
