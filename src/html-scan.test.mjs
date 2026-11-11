@@ -417,7 +417,7 @@ test('drift classification reads the tree the cart and smoke checks share', asyn
   const rich = `<!doctype html><html><head><meta name="next-page-type" content="upsell"><meta name="next-upsell-accept-url" content="../r/">
 <script src="loader.js"></script><script>window.nextConfig = { a: 1 };</script></head><body><template><a href="../x/" data-next-offer-id="4">t</a></template>
 <form action="/pay" data-next-checkout="form"><button onclick="next.go()">Pay</button></form><svg><a href="#s"></a></svg><table><td data-next-package-id="9">x</table></body></html>`;
-  assert.deepEqual(pageCommerceFacts(rich, parseBounded(rich)), pageCommerceFacts(rich));
+  assert.deepEqual(pageCommerceFacts(rich, () => parseBounded(rich)), pageCommerceFacts(rich));
   withHtmlScanSnapshot(() => {
     const [index] = collectCartPlaceholderPages(repo, 'demo').filter(({ file }) => file.endsWith('index.html'));
     assert.deepEqual(classify().reasons, [{ code: 'checkout_page', path: 'deep.html' }]);

@@ -537,13 +537,13 @@ function observePage(page) {
 }
 
 // One built page's parse5 tree and size, or a page-level outcome and the size
-// when known. A page over the size cap may come without its HTML. A read or
-// parse failure reads the page unreadable; any other error is a defect and
-// throws.
-export function readBuiltPage(page) {
+// when known. A page over the calling check's size cap (`limits.page_bytes`)
+// may come without its HTML. A read or parse failure reads the page
+// unreadable; any other error is a defect and throws.
+export function readBuiltPage(page, limits) {
   if (page.unreadable) return { outcome: R.PAGE_UNREADABLE };
   const bytes = Number.isFinite(page.bytes) ? page.bytes : typeof page.content === "string" ? Buffer.byteLength(page.content, "utf8") : null;
-  if (bytes != null && bytes > CART_PLACEHOLDERS_LIMITS.page_bytes) return { outcome: R.PAGE_TOO_LARGE, bytes };
+  if (bytes != null && bytes > limits.page_bytes) return { outcome: R.PAGE_TOO_LARGE, bytes };
   if (typeof page.content !== "string") return { outcome: R.PAGE_UNREADABLE };
   try {
     return { document: typeof page.document === "function" ? page.document() : parseBounded(page.content), bytes };
@@ -554,7 +554,7 @@ export function readBuiltPage(page) {
 }
 
 function observeReadablePage(page) {
-  const read = readBuiltPage(page);
+  const read = readBuiltPage(page, CART_PLACEHOLDERS_LIMITS);
   if (read.outcome) return { pin: null, ...read };
   const { document, bytes } = read;
   // A backstop for nesting the parser reached by moving nodes.

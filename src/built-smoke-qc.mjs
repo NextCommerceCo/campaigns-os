@@ -1004,7 +1004,7 @@ export function evaluateSmokeQc({ pages = [], environment = null, siteRoot = nul
       pageLevel(file, R.PAGE_CAP_REACHED);
       return;
     }
-    const read = readBuiltPage(page || {});
+    const read = readBuiltPage(page || {}, SMOKE_QC_LIMITS);
     if (read.outcome) {
       pageLevel(file, read.outcome, read.bytes == null ? {} : { bytes: read.bytes });
       return;
