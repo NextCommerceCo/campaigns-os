@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { checkPackedDocLinks } from "./check-packed-doc-links.mjs";
+import { packedTarballName } from "./npm-pack-json.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const fail = (msg) => {
@@ -56,7 +57,7 @@ try {
   const packed = JSON.parse(
     execFileSync("npm", ["pack", "--json", "--pack-destination", work, ...(skipPrepare ? ["--ignore-scripts"] : [])], { cwd: ROOT, encoding: "utf8" })
   );
-  tarball = join(work, packed[0].filename);
+  tarball = join(work, packedTarballName(packed));
   execFileSync("tar", ["-xzf", tarball, "-C", work]);
   const pkgRoot = join(work, "package");
   if (skipPrepare) {
@@ -206,7 +207,8 @@ try {
   // family may ship in it.
   const referenceModule = await import(join(pkgRoot, "src/family-script-reference.mjs"));
   const reference = referenceModule.loadFamilyScriptReference();
-  if (reference.root !== pkgRoot) fail(`the packed family script reference resolved outside the tarball: ${reference.root}`);
+  // Compare real paths: on macOS the temp dir sits behind the /var -> /private/var link.
+  if (realpathSync(reference.root) !== realpathSync(pkgRoot)) fail(`the packed family script reference resolved outside the tarball: ${reference.root}`);
   const privateFamilies = Object.keys(JSON.parse(readFileSync(join(pkgRoot, "contracts/private-template-sources.json"), "utf8")).sources ?? {});
   let referenceScripts = 0;
   for (const [family, entry] of Object.entries(reference.families ?? {})) {

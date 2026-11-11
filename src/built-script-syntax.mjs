@@ -33,7 +33,7 @@ import { basename, isAbsolute, posix, relative, resolve, sep } from "node:path";
 import { parse as parseJs } from "acorn";
 import { parse as parseHtml } from "parse5";
 
-import { htmlScanMemo, htmlScanScriptPrograms, readHtmlScanText } from "./html-scan.mjs";
+import { htmlScanDocuments, htmlScanMemo, htmlScanScriptPrograms, readHtmlScanText } from "./html-scan.mjs";
 
 export const SCRIPT_SYNTAX = "built_output.script_syntax";
 export const SCRIPT_SYNTAX_PARSE_FAILURE = `${SCRIPT_SYNTAX}.parse_failure`;
@@ -242,14 +242,16 @@ export function endsUnclosed(node) {
  * `unclosed` instead: its src, or null for an inline script.
  *
  * @param {string} html
+ * @param {(() => object) | null} parsed returns the located parse5 tree of
+ *   `html`; by default the page is parsed here
  * @returns {{ base: string | null, refs: Array<{ src: string, module: boolean, base: string | null }>, unclosed: Array<{ src: string | null }> }}
  */
-export function pageScriptDocument(html) {
+export function pageScriptDocument(html, parsed = null) {
   const refs = [];
   const unclosed = [];
   let document;
   try {
-    document = parseHtml(String(html ?? ""), { sourceCodeLocationInfo: true });
+    document = typeof parsed === "function" ? parsed() : parseHtml(String(html ?? ""), { sourceCodeLocationInfo: true });
   } catch {
     return { base: null, refs, unclosed };
   }
@@ -363,8 +365,7 @@ function relFrom(root, path) {
 
 /**
  * Every built page's `<script src>` references, resolved against the
- * filesystem once per inspection: the shared script input of the doctor's
- * html-scan context (#730). Each src resolves as the browser resolves it:
+ * filesystem once per inspection. Each src resolves as the browser resolves it:
  * against the base in effect when the script is prepared (the first `<base
  * href>` before it in tree order, else the page URL; a `data:`, `javascript:`
  * or unparsable base falls back to the page URL), with the page URL being its
@@ -379,9 +380,7 @@ function relFrom(root, path) {
  * src when it resolves to none), `outside_site` (its real path leaves the site
  * root: a symlinked file or directory pointing elsewhere; `path` is the link)
  * or `remote`. A page that cannot be read contributes nothing; one that ends
- * inside a script element is listed in `unclosed`. No script is read here:
- * each consumer reads the bytes it needs and decides what an unreadable one
- * means.
+ * inside a script element is listed in `unclosed`. No script is read here.
  *
  * @param {{ site_root: string, campaign_dir: string, pages: Array<{ page_id: string, built_path: string }> }} scope
  */
@@ -395,14 +394,16 @@ function resolveScriptReferences(scope, pages) {
   const refs = [];
   const unclosed = [];
   const siteRootReal = scope?.site_root ? realPathOf(scope.site_root) : null;
-  for (const page of pages) {
-    let html;
+  const read = pages.flatMap((page) => {
     try {
-      html = readHtmlScanText(page.built_path);
+      return [{ page, html: readHtmlScanText(page.built_path) }];
     } catch {
-      continue;
+      return [];
     }
-    const document = pageScriptDocument(html);
+  });
+  const documentOf = htmlScanDocuments(read.map(({ page }) => page.built_path), "located");
+  for (const { page, html } of read) {
+    const document = pageScriptDocument(html, () => documentOf(page.built_path, html));
     // One entry per page: the file ends inside at most one script, and the
     // warning is about the page's truncated output.
     if (document.unclosed.length) unclosed.push({ page_id: page.page_id, src: document.unclosed[0].src });
@@ -440,28 +441,55 @@ function resolveScriptReferences(scope, pages) {
   return { pages_scanned: pages.length, refs, unclosed };
 }
 
+function onPage(entry, pageId) {
+  if (!entry.pages.includes(pageId)) entry.pages.push(pageId);
+}
+
+/**
+ * The readable `local` scripts among builtScriptReferences records, one per
+ * path and mode (the same bytes can pass as a module and fail as a classic
+ * script) in first-seen order, with every page that loads each. `program()`
+ * returns the run's shared acorn program, or throws the parser's error.
+ *
+ * @param {Array<object>} refs builtScriptReferences(scope).refs
+ * @param {string} targetRepo
+ * @returns {Array<{ path: string, file: string, module: boolean, pages: string[], content: string, program: () => object }>}
+ */
+export function builtLocalScripts(refs, targetRepo) {
+  const scripts = new Map();
+  for (const ref of refs) {
+    if (ref.status !== "local") continue;
+    const key = `${ref.path}\u0000${ref.module ? "module" : "script"}`;
+    if (!scripts.has(key)) scripts.set(key, { path: ref.path, file: relFrom(targetRepo, ref.path), module: ref.module, pages: [] });
+    onPage(scripts.get(key), ref.page_id);
+  }
+  const readable = [...scripts.values()].flatMap((script) => {
+    try {
+      return [{ ...script, content: readHtmlScanText(script.path) }];
+    } catch {
+      return [];
+    }
+  });
+  const programs = htmlScanScriptPrograms(readable);
+  return readable.map((script) => ({ ...script, program: () => programs(script.path, script.module, script.content) }));
+}
+
 /**
  * The script syntax gate's inputs, projected from builtScriptReferences.
  * Missing scripts are keyed by the URL the browser resolves, so two spellings
  * of one URL (`check&#9;out.js`, `checkout.js`) are one entry, under the first
  * spelling met. A symlink leaving the site root is not read and is listed in
- * `outside_site` by the link's own path. Readable scripts are keyed by path
- * and mode: the same bytes can pass as a module and fail as a classic script.
- * Each carries `syntax`, computed on first read: null when it parses, else
- * its parseScriptSyntax diagnostic, from the run's shared parse
- * (htmlScanScriptPrograms).
+ * `outside_site` by the link's own path. Readable scripts are builtLocalScripts,
+ * each with `syntax`: null when it parses, else its parseScriptSyntax
+ * diagnostic, from the run's shared parse.
  *
  * @param {{ site_root: string, campaign_dir: string, pages: Array<{ page_id: string, built_path: string }> }} scope
  * @param {string} targetRepo
  */
 export function collectBuiltScriptSyntaxInputs(scope, targetRepo) {
-  const scripts = new Map();
   const unresolved = new Map();
   const outsideSite = new Map();
   const { pages_scanned: pagesScanned, refs, unclosed } = builtScriptReferences(scope);
-  const onPage = (entry, pageId) => {
-    if (!entry.pages.includes(pageId)) entry.pages.push(pageId);
-  };
   for (const ref of refs) {
     if (ref.status === "missing") {
       if (!unresolved.has(ref.url_key)) unresolved.set(ref.url_key, { src: ref.src, pages: [] });
@@ -470,40 +498,23 @@ export function collectBuiltScriptSyntaxInputs(scope, targetRepo) {
       const file = relFrom(targetRepo, ref.path);
       if (!outsideSite.has(file)) outsideSite.set(file, { file, src: ref.src, pages: [] });
       onPage(outsideSite.get(file), ref.page_id);
-    } else if (ref.status === "local") {
-      const key = `${ref.path}\u0000${ref.module ? "module" : "script"}`;
-      if (!scripts.has(key)) {
-        let content;
-        try {
-          content = readHtmlScanText(ref.path);
-        } catch {
-          continue;
-        }
-        scripts.set(key, { path: ref.path, file: relFrom(targetRepo, ref.path), module: ref.module, content, pages: [] });
-      }
-      onPage(scripts.get(key), ref.page_id);
     }
   }
-  // Each script is parsed once per run and mode, through the run's shared
-  // programs (the API/storage observations read the same set), with the same
-  // options as parseScriptSyntax, so the diagnostic is the same. The parse is
-  // lazy: `syntax` is computed on first read, so a caller that wants only the
-  // references (the fixture refresh) parses nothing. It is enumerable, so a
-  // spread, JSON.stringify or deepEqual of a record reads it and parses. The parse-budget
-  // reservation is not: inside a snapshot, htmlScanScriptPrograms charges the
-  // whole set when called here, whether or not `syntax` is read. Outside one
-  // it reserves nothing.
-  const programs = htmlScanScriptPrograms([...scripts.values()]);
-  const parsed = [...scripts.values()].map(({ path, ...script }) => {
+  // The shared program is parsed with parseScriptSyntax's options, so the
+  // diagnostic is the same; the API/storage observations reuse it. `syntax` is
+  // computed on first read, so a caller that wants only the references (the
+  // fixture refresh) parses nothing. It is enumerable, so a spread,
+  // JSON.stringify or deepEqual of a record reads it and parses, and
+  // configurable, so a caller can `delete` it.
+  const scripts = builtLocalScripts(refs, targetRepo).map(({ file, module, content, pages, program }) => {
     let syntax;
-    return Object.defineProperty(script, "syntax", {
+    return Object.defineProperty({ file, module, content, pages }, "syntax", {
       enumerable: true,
-      // Configurable, so a caller can `delete` it.
       configurable: true,
       get() {
         if (syntax !== undefined) return syntax;
         try {
-          programs(path, script.module, script.content);
+          program();
           syntax = null;
         } catch (error) {
           syntax = parseFailureDiagnostic(error);
@@ -514,7 +525,7 @@ export function collectBuiltScriptSyntaxInputs(scope, targetRepo) {
   });
   return {
     pages_scanned: pagesScanned,
-    scripts: parsed,
+    scripts,
     unresolved: [...unresolved.values()],
     outside_site: [...outsideSite.values()],
     unclosed: unclosed.map((entry) => ({ src: entry.src, pages: [entry.page_id] })),
@@ -534,12 +545,8 @@ function gateBase(subject) {
 /**
  * Evaluate the syntax of the campaign-owned scripts built pages load. The
  * caller hands in each script's content and, optionally, its parse result as
- * `syntax` (null when it parses). A `syntax` that is not undefined wins over
- * `content`: the evaluator trusts it and does not parse again, so a caller
- * that changes `content` after collection must drop `syntax` too (`delete
- * script.syntax`, or a copy without it; the adapter's `syntax` is a getter,
- * so it cannot be assigned). Without
- * one, the evaluator parses `content` itself and reads nothing else.
+ * `syntax` (null when it parses), which is trusted over `content`; without
+ * it, the evaluator parses `content` itself.
  *
  * @param {{ subject?: object, pages_scanned?: number,
  *   scripts?: Array<{ file: string, module?: boolean, content: string, pages?: string[], syntax?: null | { line: number, column: number, message: string } }>,
@@ -611,8 +618,6 @@ export function evaluateBuiltScriptSyntax({ subject, pages_scanned: pagesScanned
 
   const findings = [];
   for (const script of list) {
-    // `syntax` (null: parses) is the adapter's result from the run's shared
-    // parse; without one (undefined), the content is parsed here.
     const failure = script.syntax === undefined ? parseScriptSyntax(script.content, { module: Boolean(script.module) }) : script.syntax;
     if (!failure) continue;
     const pages = Array.isArray(script.pages) ? script.pages : [];

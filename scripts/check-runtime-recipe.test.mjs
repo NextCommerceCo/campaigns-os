@@ -524,7 +524,10 @@ test("the recipe's install command runs no lifecycle script, and the control pro
     // Control. Without it this test passes just as happily against a fixture whose
     // scripts would never have fired at all.
     rmSync(join(scratch, "node_modules"), { recursive: true, force: true });
-    execFileSync(executable, args.filter((arg) => arg !== "--ignore-scripts"), { cwd: scratch, env, stdio: "ignore" });
+    // npm 12 runs a dependency's install scripts only once approved, so the
+    // control approves them all; npm 10 and 11 run them by default.
+    const allowAll = Number(execFileSync("npm", ["--version"], { encoding: "utf8" }).split(".")[0]) >= 12 ? ["--dangerously-allow-all-scripts"] : [];
+    execFileSync(executable, [...args.filter((arg) => arg !== "--ignore-scripts"), ...allowAll], { cwd: scratch, env, stdio: "ignore" });
     const fired = lines(env[hostile.tripwire_log_env]);
     assert.ok(fired.length > 0, "the control must fire lifecycle scripts, or the suppression proves nothing");
     assert.ok(fired.some((line) => line.includes("dependency:")), `a DEPENDENCY lifecycle script must fire in the control, got: ${fired.join(", ")}`);
