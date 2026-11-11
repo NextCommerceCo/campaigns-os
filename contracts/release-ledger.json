@@ -4041,8 +4041,35 @@
       "entry_sha256": "1131da2f51e79891553daa07c4eb0c9faf7dfdd5969984878f923d3fb28312f7"
     },
     {
-      "id": "RL-0337",
+      "id": "RL-0335",
       "sequence": 323,
+      "date": "2026-11-11",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.68.0+agent.2",
+      "changelog_sha256": "48daaf95793a2d9c80345c0e8747a15268729eba6af1bfd95f73b92dbb2a66ba",
+      "agent_impact": "None. Doctor output is unchanged: the same codes, messages, ordering, ready lines, checkpoint gates and CI verdicts. The internal helpers in src/doctor/checks.mjs and src/doctor/inspect.mjs that this change merges or removes are not on the supported surface; every in-repo caller is updated.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": null,
+          "summary": "The packet-path page, cart and smoke readers share one route helper and one page reader, the output fingerprint is computed once per inspection, and the helpers no caller used are removed."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/inspect.mjs",
+          "surface_entry": null,
+          "summary": "The built-only path reads SDK markup pages through the same shared page list as the other gates."
+        }
+      ],
+      "entry_sha256": "63617f16257551ed7d6643035a39e3698c634345b015cb16e0f259bc5c204200"
+    },
+    {
+      "id": "RL-0337",
+      "sequence": 324,
       "date": "2026-11-11",
       "kind": "release",
       "surface_version": null,
@@ -4065,7 +4092,7 @@
           "summary": "The record deploy help line says the command is refused when doctor's theme or Polish gate is blocked."
         }
       ],
-      "entry_sha256": "db0c1f8dcc886ae2a5201f776ac5b6efb35896ed781ccb8cc64f2b7c56a63bd9"
+      "entry_sha256": "afa56e01154f3d868b70d91d40c4d59cfeeac4ae1f6ab772c2ac4e5101f8e691"
     }
   ]
 }
