@@ -248,15 +248,33 @@ export function endsUnclosed(node) {
  * @returns {{ base: string | null, refs: Array<{ src: string, module: boolean, base: string | null }>, unclosed: Array<{ src: string | null }> }}
  */
 export function pageScriptDocument(html, parsed = null) {
+  const { base, refs, unclosed } = pageReferences(html, parsed);
+  return { base, refs, unclosed };
+}
+
+// The HTML "split a string on ASCII whitespace" of a rel value, lower-cased.
+const relTokens = (value) => String(value).toLowerCase().split(/[\t\n\f\r ]+/).filter(Boolean);
+
+// pageScriptDocument's walk, which also collects the page's direct stylesheet
+// and image links (`links`): every HTML-namespace `<link rel="stylesheet"
+// href>` (an alternate stylesheet included) and `<img src>` / `srcset` URL,
+// each `{ kind: "stylesheet" | "image", src, base }` with the `<base href>` in
+// effect when the parser inserts it. Nothing a stylesheet loads is followed.
+function pageReferences(html, parsed) {
   const refs = [];
   const unclosed = [];
+  const links = [];
   let document;
   try {
     document = typeof parsed === "function" ? parsed() : parseHtml(String(html ?? ""), { sourceCodeLocationInfo: true });
   } catch {
-    return { base: null, refs, unclosed };
+    return { base: null, refs, unclosed, links };
   }
   const bases = documentBases(document);
+  const link = (kind, value, node) => {
+    const src = kind === "image-srcset" ? value : stripUrlSpace(value ?? "");
+    if (src) links.push({ kind: kind === "image-srcset" ? "image" : kind, src, base: baseInEffect(bases, node) });
+  };
   const walk = (node) => {
     const attrs = node.tagName ? Object.fromEntries((node.attrs || []).map((attr) => [attr.name, attr.value])) : {};
     // Only an HTML-namespace <script> loads its `src`; an SVG script reads
@@ -271,12 +289,17 @@ export function pageScriptDocument(html, parsed = null) {
       } else if (kind && hasSrc) {
         refs.push({ src: stripUrlSpace(attrs.src), module: kind === "module", base: baseInEffect(bases, node) });
       }
+    } else if (node.tagName === "link" && node.namespaceURI === HTML_NAMESPACE && relTokens(attrs.rel ?? "").includes("stylesheet")) {
+      link("stylesheet", attrs.href, node);
+    } else if (node.tagName === "img" && node.namespaceURI === HTML_NAMESPACE) {
+      link("image", attrs.src, node);
+      if (typeof attrs.srcset === "string") for (const url of srcsetUrls(attrs.srcset)) link("image-srcset", url, node);
     }
     if (node.tagName === "noscript") return;
     for (const child of node.childNodes || []) walk(child);
   };
   walk(document);
-  return { base: bases[0]?.href ?? null, refs, unclosed };
+  return { base: bases[0]?.href ?? null, refs, unclosed, links };
 }
 
 /**
@@ -382,6 +405,8 @@ function relFrom(root, path) {
  * root: a symlinked file or directory pointing elsewhere; `path` is the link)
  * or `remote`. A page that cannot be read contributes nothing; one that ends
  * inside a script element is listed in `unclosed`. No script is read here.
+ * The same walk keeps each page's direct stylesheet and image links in
+ * `links`, unresolved, for builtAssetReferences.
  *
  * @param {{ site_root: string, campaign_dir: string, pages: Array<{ page_id: string, built_path: string }> }} scope
  */
@@ -394,11 +419,14 @@ export function builtScriptReferences(scope) {
 function resolveScriptReferences(scope, pages) {
   const refs = [];
   const unclosed = [];
+  const links = [];
   const siteRootReal = scope?.site_root ? realPathOf(scope.site_root) : null;
   const read = readPages(pages);
   const documentOf = htmlScanDocuments(read.map(({ page }) => page.built_path), "located");
   for (const { page, html } of read) {
-    const document = pageScriptDocument(html, () => documentOf(page.built_path, html));
+    const document = pageReferences(html, () => documentOf(page.built_path, html));
+    // Kept unresolved: builtAssetReferences resolves them only when asked.
+    for (const entry of document.links) links.push({ page_id: page.page_id, built_path: page.built_path, ...entry });
     // One entry per page: the file ends inside at most one script, and the
     // warning is about the page's truncated output.
     if (document.unclosed.length) unclosed.push({ page_id: page.page_id, src: document.unclosed[0].src });
@@ -408,7 +436,7 @@ function resolveScriptReferences(scope, pages) {
       refs.push({ page_id: page.page_id, src: ref.src, module: ref.module, url_key: urlKey, path, status });
     }
   }
-  return { pages_scanned: pages.length, refs, unclosed };
+  return { pages_scanned: pages.length, refs, unclosed, links };
 }
 
 function readPages(pages) {
@@ -446,66 +474,29 @@ function resolveBuiltReference(scope, siteRootReal, pageUrl, src, base) {
   return { ...record, path: resolve(path), status: outside ? "outside_site" : "local" };
 }
 
-// The HTML "split a string on ASCII whitespace" of a rel value, lower-cased.
-const relTokens = (value) => String(value).toLowerCase().split(/[\t\n\f\r ]+/).filter(Boolean);
-
 /**
- * Every built page's directly linked stylesheets and images: each
- * HTML-namespace `<link rel="stylesheet" href>` (an alternate stylesheet
- * included) and `<img src>` / `srcset` URL, resolved exactly as
- * builtScriptReferences resolves a script src, against the `<base href>` in
- * effect when the parser inserts the element. Template content and noscript
- * are not walked, and nothing a stylesheet loads (`@import`, `url()`) is
- * followed. Reads the run's shared page trees; computed once per inspection.
- *
- * One record per reference, in page then document order: `{ page_id,
- * built_path, kind: "stylesheet" | "image", src, status, path, candidates? }`,
- * `status` as builtScriptReferences (a `missing` record also carries the
- * `candidates` a static server would look for). A page that cannot be read
- * or parsed contributes nothing.
+ * Every built page's direct stylesheet and image links (pageScriptDocument's
+ * walk collects them, from the same page trees as builtScriptReferences, so
+ * reading them parses nothing more), each resolved exactly as a script src:
+ * `{ page_id, built_path, kind: "stylesheet" | "image", src, status, path,
+ * url_key, candidates? }`, `status` as builtScriptReferences, and a `missing`
+ * record carrying the `candidates` a static server would look for. Template
+ * content and noscript are not walked; a page that cannot be read or parsed
+ * contributes nothing. Computed once per inspection.
  *
  * @param {{ site_root: string, campaign_dir: string, pages: Array<{ page_id: string, built_path: string }> }} scope
  */
 export function builtAssetReferences(scope) {
   const pages = Array.isArray(scope?.pages) ? scope.pages : [];
   const key = ["built-asset-references", scope?.site_root, scope?.campaign_dir, ...pages.flatMap((page) => [page.page_id, page.built_path])];
-  return htmlScanMemo(JSON.stringify(key), () => resolveAssetReferences(scope, pages));
-}
-
-function resolveAssetReferences(scope, pages) {
-  const refs = [];
-  const siteRootReal = scope?.site_root ? realPathOf(scope.site_root) : null;
-  const read = readPages(pages);
-  const documentOf = htmlScanDocuments(read.map(({ page }) => page.built_path), "located");
-  for (const { page, html } of read) {
-    let document;
-    try {
-      document = documentOf(page.built_path, html);
-    } catch {
-      continue;
-    }
-    const bases = documentBases(document);
-    const pageUrl = pageUrlFor(scope.site_root, page.built_path);
-    const add = (kind, src, node) => {
-      if (!src) return;
-      const resolved = resolveBuiltReference(scope, siteRootReal, pageUrl, src, baseInEffect(bases, node));
-      refs.push({ page_id: page.page_id, built_path: page.built_path, kind, src, ...resolved });
-    };
-    const walk = (node) => {
-      if (node.namespaceURI === HTML_NAMESPACE) {
-        const attrs = new Map((node.attrs || []).map((attr) => [attr.name, attr.value]));
-        if (node.tagName === "link" && relTokens(attrs.get("rel") ?? "").includes("stylesheet")) add("stylesheet", stripUrlSpace(attrs.get("href") ?? ""), node);
-        if (node.tagName === "img") {
-          add("image", stripUrlSpace(attrs.get("src") ?? ""), node);
-          if (attrs.has("srcset")) for (const url of srcsetUrls(attrs.get("srcset"))) add("image", url, node);
-        }
-        if (node.tagName === "noscript") return;
-      }
-      for (const child of node.childNodes || []) walk(child);
-    };
-    walk(document);
-  }
-  return { pages_scanned: pages.length, refs };
+  return htmlScanMemo(JSON.stringify(key), () => {
+    const siteRootReal = scope?.site_root ? realPathOf(scope.site_root) : null;
+    const refs = builtScriptReferences(scope).links.map((link) => ({
+      page_id: link.page_id, built_path: link.built_path, kind: link.kind, src: link.src,
+      ...resolveBuiltReference(scope, siteRootReal, pageUrlFor(scope.site_root, link.built_path), link.src, link.base),
+    }));
+    return { pages_scanned: pages.length, refs };
+  });
 }
 
 function onPage(entry, pageId) {
