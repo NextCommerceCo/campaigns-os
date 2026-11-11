@@ -150,6 +150,19 @@ without `design_source`, no manifest, files on disk.
 
 ## Built first
 
+To inspect existing built output and save a minimal packet joined to its saved
+Map, use:
+
+```bash
+campaigns-os doctor --built <page-kit-dir> --family <family> --slug <route> --emit-packet <path> --map-id <id>
+```
+
+This fetches the Map and records its cached spec path and any differing Map
+route binding. `--cached-spec` reuses the local copy; `--proxy-base` selects the
+proxy. The packet remains `_synthesized`, with no source or assembly provenance.
+Without `--map-id` it is the existing stub; `--map-id` without `--emit-packet`
+only labels the inspection and never fetches.
+
 For hand-built Page Kit pages with a saved Map, adopt their existing route:
 
 ```bash

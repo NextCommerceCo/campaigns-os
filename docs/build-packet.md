@@ -1947,6 +1947,20 @@ and report proof policy fields above.
 
 ## CampaignSpec Retrieval (`--map-id`)
 
+For existing built pages with a saved Map, `campaigns-os doctor --built
+<target> --slug <route> --emit-packet <path> --map-id <id>` fetches the Map using
+the same proxy, `--proxy-base`, `--cached-spec`, cache path and symlink refusal
+as intake below. The emitted minimal packet carries `spec.map_id` and
+`spec.local_path` pointing at that cache file. If the Map's slug differs from
+the built route, `campaign.map_public_route_slug` records the Map's slug while
+`campaign.public_route_slug` stays the built route; equal slugs add no binding.
+The packet stays marked `_synthesized`: source HTML and assembly provenance are
+still absent. This joins the inspection to the saved Map; it does not record
+completed stages. A fetch failure writes no packet or cache. The same managed
+`.gitignore` handling keeps `fetched-specs/` committable. Without `--map-id`,
+`--emit-packet` writes the existing stub unchanged; without `--emit-packet`,
+`--map-id` only labels the inspection and never fetches.
+
 `campaigns-os start` / `campaigns-os prepare-build` accept the CampaignSpec via either of two routes:
 
 | Flag | Source | When to use |

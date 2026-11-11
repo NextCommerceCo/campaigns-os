@@ -341,7 +341,7 @@ Usage:
                      [--allow-uncertified-template "<reason>"] [--order-path-depth <off|common|full>]
                      [--deploy-target <target>] [--preview-url <url>] [--production-url <url>] [--no-run-session] [--force]   # intake alias for prepare-build + doctor
   campaigns-os doctor --packet <campaign-runtime.build.json> [--context <json>] [--report <json>] [--strip-paths] [--write] [--no-write] [--doctor-out <path>] [--proxy-base <url>] [--no-live-refs] [--ci] [--json]   # inspection by default; --doctor-out requires --write; --no-write wins. --ci: Markdown (or JSON ci object), exits 0 current / 3 owed / 4 unknown / 2 packet usage error; other doctor errors do not affect the CI exit. Without --ci: 0 ok / 2 errors. When the packet's built _site/<route>/ exists and a public Campaigns API key resolves (packet, its local CampaignSpec, or the declared campaign-key env var), doctor makes one read-only GET of {proxy-base}/api/campaign under X-Campaign-Key to check each built page's shipping and package refs against the live campaign; --proxy-base overrides the canonical proxy (https, or a loopback host over http). --no-live-refs skips the read and records not_run with reason disabled. No key, no built page, or a failed read records derived.live_campaign_refs as not_run with its reason. Only doctor and qa run make this read; other commands that run doctor record not_read
-  campaigns-os doctor --built <page-kit-target-repo> --family <family> [--slug <slug>] [--base-url <url>] [--emit-packet [path]] [--json]   # L7: doctor a built _site/ with no Build Packet. Reads the local files only: --base-url is not fetched, it fills deploy.preview_url in the minimal packet (check served pages with qa run --site)
+  campaigns-os doctor --built <page-kit-target-repo> --family <family> [--slug <slug>] [--base-url <url>] [--emit-packet [path]] [--map-id <id>] [--proxy-base <url>] [--cached-spec] [--json]   # L7: doctor a local built _site/ with no Build Packet. --emit-packet --map-id fetches and caches the saved Map; --cached-spec reuses it. Without --emit-packet, --map-id labels only and never fetches. --base-url is not fetched; it fills deploy.preview_url (check served pages with qa run --site)
   campaigns-os bundle check --packet <campaign-runtime.build.json> [--require-qa] [--json]   # validate the canonical migration/readback JSON bundle; never substitutes markdown
   campaigns-os sdk storage-check --target <git-root> --target-sdk <x.y.z> --manifest <SDK-manifest.json> --scope <dir,file> [--exclude <dir,file>] [--json]
   campaigns-os sdk repin --target <static-campaign-repo> [--target-sdk <x.y.z>] [--apply] [--json]   # rewrite the version segment of each semver-pinned Campaign Cart loader.js / campaign-cart.css URL (the references standardize's scan finds, @vX.Y.Z or @X.Y.Z) below the target, default the SDK support policy's preferred_minimum; @latest, @main, commit and prerelease refs, and pins at or above the target, are reported and left alone. Preview by default (path:line, old -> new URL, nothing written); --apply writes the files and a change record at .campaign-runtime/sdk-repin.json (campaigns-os-sdk-repin/v0: files touched, reference count, from/to versions) a Run Record can cite. A repo with _data/campaigns.json is refused (exit 2): page-kit sync owns that pin
@@ -1104,6 +1104,16 @@ async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = nul
   }
 
   if (command === "doctor") {
+    // Only the CLI's packet-emitting built-site form retrieves a saved Map.
+    // Keep built-output inspection synchronous for standardize and QA callers.
+    if ((args.built || args.site) && !args.packet && args["emit-packet"] && args["map-id"]) {
+      const targetRepo = resolve(requireArg(args, args.built ? "built" : "site"));
+      const mapId = requireArg(args, "map-id");
+      if (Object.hasOwn(args, "proxy-base")) requireArg(args, "proxy-base");
+      const resolved = await resolveSpecPath({ "map-id": mapId, "proxy-base": args["proxy-base"], "cached-spec": args["cached-spec"] }, { targetRepo });
+      args.spec = resolved.specPath;
+      ensureRuntimeStateIgnored(targetRepo);
+    }
     // The live campaign ref check's one read (#533), made before the
     // synchronous inspection; see readDoctorLiveCampaign.
     const liveCampaign = await readDoctorLiveCampaign(args);

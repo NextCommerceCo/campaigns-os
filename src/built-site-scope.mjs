@@ -244,6 +244,8 @@ export function synthesizeMinimalBuildPacket({
   scope,
   family = null,
   mapId = null,
+  specPath = null,
+  mapPublicRouteSlug = null,
   baseUrl = null,
   deployTarget = "unknown",
 }) {
@@ -262,10 +264,12 @@ export function synthesizeMinimalBuildPacket({
     },
     campaign: {
       public_route_slug: slug || (mapId || "local-campaign"),
+      ...(mapPublicRouteSlug && mapPublicRouteSlug !== slug ? { map_public_route_slug: mapPublicRouteSlug } : {}),
       allowed_domains_confirmed: false,
     },
     spec: {
       map_id: mapId || slug || "local-campaign",
+      ...(specPath ? { local_path: specPath } : {}),
     },
     assembly: {
       target_repo: targetRepo,

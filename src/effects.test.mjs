@@ -684,6 +684,16 @@ const INVOCATIONS = {
   "doctor|--write --no-live-refs": { prepare: seedBuiltSite, argv: (s, receiver) => ["doctor", "--packet", s.packetPath, "--write", "--proxy-base", receiver, "--no-live-refs", "--json"] },
   "doctor|--built": { prepare: seedBuiltSite, argv: (s) => ["doctor", "--built", s.targetRepo, "--family", "olympus", "--json"] },
   "doctor|--built --emit-packet": { prepare: seedBuiltSite, argv: (s) => ["doctor", "--built", s.targetRepo, "--family", "olympus", "--emit-packet", "--json"] },
+  "doctor|--built --emit-packet --map-id": {
+    prepare: seedBuiltSite, serveSpec: true,
+    argv: (s, receiver) => ["doctor", "--built", s.targetRepo, "--family", "olympus", "--emit-packet", "--map-id", readJson(s.packetPath).spec.map_id, "--proxy-base", receiver, "--json"],
+    expect: (result, s) => {
+      assert.equal(result.code, 0, result.stderr);
+      const packet = readJson(join(s.targetRepo, ".campaign-runtime/minimal-build-packet.json"));
+      assert.equal(packet.spec.map_id, readJson(s.packetPath).spec.map_id);
+      assert.deepEqual(readJson(packet.spec.local_path), readJson(s.specPath));
+    },
+  },
   "sdk storage-check": {
     prepare: seedStorageScan,
     argv: (s) => ["sdk", "storage-check", "--target", s.targetRepo, "--target-sdk", "0.4.38", "--manifest", join(s.targetRepo, "SDK-manifest.json"), "--scope", "_data", "--json"],
