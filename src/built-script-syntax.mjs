@@ -454,10 +454,21 @@ function readPages(pages) {
 // raw src when it resolves to none; `candidates` the files a server would
 // look for), `outside_site` or `local` (`path` the file).
 function resolveBuiltReference(scope, siteRootReal, pageUrl, src, base) {
-  const record = { url_key: null, path: null };
+  return resolveCandidates(scope, siteRootReal, referenceCandidates(scope, pageUrl, src, base));
+}
+
+// The URL a reference resolves to and the files a static server would look
+// for, from strings alone: `{ remote, url_key, candidates }`.
+function referenceCandidates(scope, pageUrl, src, base) {
   const { remote, pathname } = isRemote(src) ? { remote: true } : resolveScriptUrl(src, base, pageUrl);
-  if (remote) return { ...record, status: "remote" };
+  if (remote) return { remote: true, url_key: null, candidates: [] };
   const candidates = pathname ? [fileUnder(scope.site_root, pathname), fileUnder(scope.campaign_dir, pathname)].filter(Boolean) : [];
+  return { remote: false, url_key: pathname ?? `\u0000${src}`, candidates };
+}
+
+function resolveCandidates(scope, siteRootReal, { remote, url_key: urlKey, candidates }) {
+  const record = { url_key: null, path: null };
+  if (remote) return { ...record, status: "remote" };
   const path = candidates.find((candidate) => existsSync(candidate)) || null;
   let isFile = false;
   try {
@@ -465,7 +476,7 @@ function resolveBuiltReference(scope, siteRootReal, pageUrl, src, base) {
   } catch {
     isFile = false;
   }
-  if (!isFile) return { ...record, url_key: pathname ?? `\u0000${src}`, status: "missing", candidates };
+  if (!isFile) return { ...record, url_key: urlKey, status: "missing", candidates };
   // Served only while the real path stays inside the site root. When
   // either real path is unknown the check is undecidable, and the file
   // counts as local.
@@ -475,28 +486,30 @@ function resolveBuiltReference(scope, siteRootReal, pageUrl, src, base) {
 }
 
 /**
- * Every built page's direct stylesheet and image links (pageScriptDocument's
- * walk collects them, from the same page trees as builtScriptReferences, so
- * reading them parses nothing more), each resolved exactly as a script src:
- * `{ page_id, built_path, kind: "stylesheet" | "image", src, status, path,
- * url_key, candidates? }`, `status` as builtScriptReferences, and a `missing`
- * record carrying the `candidates` a static server would look for. Template
- * content and noscript are not walked; a page that cannot be read or parsed
- * contributes nothing. Computed once per inspection.
+ * The built pages' direct stylesheet and image links that could name one of
+ * `files` (absolute paths), each resolved exactly as a script src: `{ page_id,
+ * built_path, kind: "stylesheet" | "image", src, status, path, url_key,
+ * candidates? }`, `status` as builtScriptReferences, and a `missing` record
+ * carrying the `candidates` a static server would look for. The links come
+ * from pageScriptDocument's walk over the same page trees as
+ * builtScriptReferences, so reading them parses nothing more, and only a link
+ * whose URL maps onto one of `files` touches the disk. Template content and
+ * noscript are not walked; a page that cannot be read or parsed contributes
+ * nothing.
  *
  * @param {{ site_root: string, campaign_dir: string, pages: Array<{ page_id: string, built_path: string }> }} scope
+ * @param {Iterable<string>} files
  */
-export function builtAssetReferences(scope) {
-  const pages = Array.isArray(scope?.pages) ? scope.pages : [];
-  const key = ["built-asset-references", scope?.site_root, scope?.campaign_dir, ...pages.flatMap((page) => [page.page_id, page.built_path])];
-  return htmlScanMemo(JSON.stringify(key), () => {
-    const siteRootReal = scope?.site_root ? realPathOf(scope.site_root) : null;
-    const refs = builtScriptReferences(scope).links.map((link) => ({
-      page_id: link.page_id, built_path: link.built_path, kind: link.kind, src: link.src,
-      ...resolveBuiltReference(scope, siteRootReal, pageUrlFor(scope.site_root, link.built_path), link.src, link.base),
-    }));
-    return { pages_scanned: pages.length, refs };
-  });
+export function builtAssetReferences(scope, files) {
+  const wanted = new Set(files);
+  const siteRootReal = scope?.site_root ? realPathOf(scope.site_root) : null;
+  const refs = [];
+  for (const link of builtScriptReferences(scope).links) {
+    const resolved = referenceCandidates(scope, pageUrlFor(scope.site_root, link.built_path), link.src, link.base);
+    if (!resolved.candidates.some((candidate) => wanted.has(candidate))) continue;
+    refs.push({ page_id: link.page_id, built_path: link.built_path, kind: link.kind, src: link.src, ...resolveCandidates(scope, siteRootReal, resolved) });
+  }
+  return { refs };
 }
 
 function onPage(entry, pageId) {

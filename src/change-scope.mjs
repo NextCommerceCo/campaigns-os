@@ -182,7 +182,7 @@ export function mapLinkedAssets({ files = [], pages = [], outputRoot, siteRoot }
   }));
   if (!candidates.size || !pages.length) return { linked: [], unmapped: [...files] };
   const linkedPages = new Map();
-  for (const ref of builtAssetReferences({ site_root: siteRoot, campaign_dir: outputRoot, pages }).refs) {
+  for (const ref of builtAssetReferences({ site_root: siteRoot, campaign_dir: outputRoot, pages }, candidates.keys()).refs) {
     const served = ref.status === "local" ? [ref.path] : ref.status === "missing" ? ref.candidates || [] : [];
     const file = served.map((path) => candidates.get(path)).find((entry) => entry && entry.type === ref.kind);
     if (!file) continue;
