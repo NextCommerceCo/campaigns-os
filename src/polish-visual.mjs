@@ -69,11 +69,12 @@ export function planVisualCapture(plan, viewports = plan?.viewports, { packet, p
     const declaredRoute = typeof declared === "string" && declared.startsWith("/") && !declared.startsWith("//")
       && !/[?#\\\s]/.test(declared) ? declared : null;
     const pageUrl = specPages.find((page) => page?.id === skipped.page_id)?.page_url;
-    const specRoute = typeof pageUrl === "string" && pageUrl.trim() ? runtimeRelativeRouteForSpecValue(pageUrl, slug) : null;
+    const specRoute = typeof pageUrl === "string" && pageUrl.trim() ? stripPublicRoutePrefix(pageUrl, slug) : null;
     const output = declaredRoute
       ? built.find((page) => normalizePageKitRoute(page.route) === stripPublicRoutePrefix(declaredRoute, slug))
-      : specRoute !== null ? built.find((page) => normalizePageKitRoute(page.route) === normalizePageKitRoute(specRoute))
-      : built.find((page) => page.page_id === skipped.page_id);
+      : (specRoute !== null && (built.find((page) => normalizePageKitRoute(page.route) === normalizePageKitRoute(specRoute))
+        || built.find((page) => runtimeRelativeRouteForSpecValue(page.route, slug) === runtimeRelativeRouteForSpecValue(specRoute, slug))))
+        || built.find((page) => page.page_id === skipped.page_id);
     const route = declaredRoute || (output && routeRoot ? `${routeRoot}${output.route ? `${output.route}/` : ""}` : null);
     return viewports.map((viewport) => ({
       side: "build", page_id: skipped.page_id, route, viewport: viewport.key, width: viewport.width, height: viewport.height,

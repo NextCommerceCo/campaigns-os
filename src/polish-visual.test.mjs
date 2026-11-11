@@ -185,6 +185,31 @@ test("Template evidence resolves production mappings through CampaignSpec runtim
   writeFileSync(resolve(f.targetRepo, "spec.json"), JSON.stringify({ funnels: [{ pages: [{ id: "oto-1", page_url: "absent/" }] }] }));
   assert.ok(planVisualCapture(input.frozen.plan, undefined, input).evidence_only.every((cell) => cell.reason === null));
 });
+for (const { name, page_id, page_url, builtRoutes, expectedRoute } of [
+  { name: "resolves nested built routes", page_id: "stock-step", page_url: "checkout/step-1/",
+    builtRoutes: ["checkout/step-1"], expectedRoute: "/sample/checkout/step-1/" },
+  { name: "prefers an exact route over a shared terminal segment", page_id: "stock-step", page_url: "/sample/b/step-1/",
+    builtRoutes: ["a/step-1", "b/step-1"], expectedRoute: "/sample/b/step-1/" },
+  { name: "falls back to page id after a spec route misses", page_id: "checkout", page_url: "absent/",
+    builtRoutes: ["checkout"], expectedRoute: "/sample/checkout/" },
+  { name: "reports missing output when neither route nor id matches", page_id: "stock-step", page_url: "absent/",
+    builtRoutes: ["checkout"], expectedRoute: null },
+]) test(`Template evidence ${name}`, (t) => {
+  const f = syntheticVisualFixture(); t.after(f.cleanup); const input = visualInputs(f);
+  input.packet.campaign = { public_route_slug: "sample", route_root: "/sample/" };
+  input.packet.spec = { local_path: "spec.json" };
+  input.packet.source_html.pages.push({ page_id, skip_reason: "Synthetic template stock." });
+  input.frozen.plan = planPolishCapture({ packet: input.packet, baseUrl: "http://127.0.0.1:1234" });
+  for (const route of builtRoutes) {
+    mkdirSync(resolve(f.targetRepo, `_site/sample/${route}`), { recursive: true });
+    writeFileSync(resolve(f.targetRepo, `_site/sample/${route}/index.html`), "<!doctype html><p>Synthetic template</p>");
+  }
+  writeFileSync(resolve(f.targetRepo, "spec.json"), JSON.stringify({ funnels: [{ pages: [{ id: page_id, page_url }] }] }));
+  const visual = planVisualCapture(input.frozen.plan, undefined, input);
+  assert.deepEqual(visual.evidence_only.map(({ route, url, reason }) => ({ route, url, reason })),
+    ["desktop", "mobile"].map(() => ({ route: expectedRoute,
+      url: expectedRoute ? `http://127.0.0.1:1234${expectedRoute}` : null, reason: expectedRoute ? null : "page_not_built" })));
+});
 test("Template evidence falls back to page ids when the spec route is unavailable", (t) => {
   const f = syntheticVisualFixture(); t.after(f.cleanup); const input = templateInputs(f);
   input.packet.spec = { local_path: "spec.json" };

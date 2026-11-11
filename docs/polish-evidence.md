@@ -167,8 +167,8 @@ and are listed in `captures.subject.skipped_pages`. After the planned routes'
 captures, reference verification and comparisons, the same visual pass takes
 build-side captures at both viewports for these pages when they resolve to built
 output in `_site/<slug>/`: first by their declared public route, else by the
-CampaignSpec route for the same page id (projected to its runtime-relative
-route), else by page id when that spec route is unavailable. They use the same stabilization, storage and
+CampaignSpec route for the same page id (as written with the campaign slug prefix
+stripped, then reduced to its last segment), else by page id. They use the same stabilization, storage and
 five-minute pass budget, using only the time left after that planned work and
 reserving one close interval for its adapters and server. With these extra cells, the
 planned diff reserves the same close interval, and the adapters and server close
