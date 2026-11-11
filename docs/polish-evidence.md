@@ -165,12 +165,13 @@ visual comparisons remain unexercised (`capture_unavailable` with a
 Template-stock pages with `skip_reason` remain outside the mapped capture plan
 and are listed in `captures.subject.skipped_pages`. After the planned routes'
 captures, reference verification and comparisons, the same visual pass takes
-build-side captures at both viewports for these pages when their declared
-public route, or their page id in `_site/<slug>/`,
-resolves to built output. They use the same stabilization, storage and
+build-side captures at both viewports for these pages when they resolve to built
+output in `_site/<slug>/`: first by their declared public route, else by the
+CampaignSpec route for the same page id (projected to its runtime-relative
+route), else by page id when that spec route is unavailable. They use the same stabilization, storage and
 five-minute pass budget, using only the time left after that planned work and
-reserving time to close its adapters and server. With these extra cells, the
-planned diff also reserves a close interval, and the adapters and server close
+reserving one close interval for its adapters and server. With these extra cells, the
+planned diff reserves the same close interval, and the adapters and server close
 concurrently after the evidence captures. Without extra cells, cleanup stays
 between planned captures and diff. When none remains, the cells
 are listed as `run_budget_exhausted`. The separate `captures.evidence_only`
@@ -181,6 +182,10 @@ with their reasons too. These captures never produce source, reference, diff
 or parity comparison rows, never qualify for accepting a design match, and
 never affect a gate, checkpoint, plan count or carry decision. Their failure
 does not block Polish or `record polish`.
+The evidence-only rows are covered by the record's integrity hash like the rest
+of the record. Their image files are not re-opened or re-hashed on read; only
+the planned captures and comparison artifacts receive those image checks.
+A SHA-256 stored in an evidence-only row is therefore the value recorded at capture.
 
 When every page has `skip_reason`, the plan still has no capturable route
 (`no_capturable_routes`). `polish capture` then measures readability on the

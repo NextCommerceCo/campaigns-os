@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync, mkdirSync, symlinkSync, readdirSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { VISUAL_QC_RULES, planVisualCapture, buildCapturesRecord, capturesIntegrity, unavailableCapturesRecord, writePolishPng,
-  evaluateVisualReference, evaluateVisualDiff, VISUAL_VIEWPORTS, compareVisualPair, pageKitOutputPaths } from "./polish-visual.mjs";
+  evaluateVisualReference, evaluateVisualDiff, VISUAL_VIEWPORTS, VISUAL_VOCABULARY, compareVisualPair, pageKitOutputPaths } from "./polish-visual.mjs";
 import { createRgbaPng, createRgba, syntheticCapturesRecord, syntheticVisualFixture } from "./polish-visual-fixtures.mjs";
 import { loadVisualDependencies } from "./visual-diff.mjs";
 import { runVisualPass, runVisualCells } from "./polish-visual.mjs";
@@ -63,8 +63,17 @@ function templateInputs(f) {
   input.frozen.page_load.subject.route_scope = "selected";
   return input;
 }
-async function mainVisualPass() {
-  const source = execFileSync("git", ["show", "origin/main:src/polish-visual.mjs"], {
+const VISUAL_BASELINE = "5101976f34810373cc8cb2bedcae869d31712c6c";
+async function baselineVisualPass(t) {
+  try {
+    execFileSync("git", ["cat-file", "-e", `${VISUAL_BASELINE}^{commit}`], { cwd: new URL("..", import.meta.url), stdio: "ignore" });
+  } catch {
+    t.skip(`Pinned baseline ${VISUAL_BASELINE} is absent from this checkout, or git is unavailable`);
+    return null;
+  }
+  // The baseline module is bound to the working tree's dependencies. Move this
+  // pin only when the no-extra-cells path is changed on purpose.
+  const source = execFileSync("git", ["show", `${VISUAL_BASELINE}:src/polish-visual.mjs`], {
     cwd: new URL("..", import.meta.url), encoding: "utf8",
   }).replace(/(from\s+")([.][/][^"]+)(")/g, (_, before, path, after) =>
     `${before}${new URL(path, import.meta.url).href}${after}`);
@@ -100,10 +109,12 @@ async function slowVisualPass(input, run = runVisualPass, { renderMs = 60_000, c
   });
   return { record, events, deadlines };
 }
-test("Slow planned-only capture closes before diff and preserves the entire main record", async (t) => {
+test("Slow planned-only capture closes before diff and preserves the entire pinned baseline record", async (t) => {
+  const baseline = await baselineVisualPass(t);
+  if (!baseline) return;
   const f = syntheticVisualFixture(); t.after(f.cleanup); const input = visualInputs(f);
   assert.deepEqual(input.frozen.plan.skipped_pages, []);
-  const main = await slowVisualPass(input, await mainVisualPass());
+  const main = await slowVisualPass(input, baseline);
   const actual = await slowVisualPass(input);
   const closes = (record) => [record.adapters.build.close, record.adapters.source.close];
   assert.deepEqual(closes(main.record), ["ok", "ok"]);
@@ -115,7 +126,7 @@ test("Slow planned-only capture closes before diff and preserves the entire main
   assert.deepEqual(actual.record, main.record);
   assert.equal(JSON.stringify(actual.record), JSON.stringify(main.record));
 });
-test("Slow evidence pass reserves every close deadline after planned comparisons", async (t) => {
+test("Slow evidence pass reserves one concurrent close interval after planned comparisons", async (t) => {
   const f = syntheticVisualFixture(); t.after(f.cleanup); const input = templateInputs(f);
   const { record, events, deadlines } = await slowVisualPass(input, runVisualPass, {
     renderMs: 60_000, compareMs: 2_000, budget: { captureMs: 240_000, addedMs: 260_000 },
@@ -130,6 +141,113 @@ test("Slow evidence pass reserves every close deadline after planned comparisons
   assert.ok(record.references.filter((ref) => ref.ref_id !== "source_html").every((ref) => ref.verification.level === "decoded"));
   assert.ok(record.evidence_only.every((cell) => cell.status === "rendered" || cell.status === "run_budget_exhausted"));
   assert.ok(events.indexOf("build.close") > events.lastIndexOf("diff"));
+});
+test("One close interval leaves time for later evidence cells within the pass budget", async (t) => {
+  const f = syntheticVisualFixture(); t.after(f.cleanup); const input = templateInputs(f);
+  const dependencies = await loadVisualDependencies();
+  let time = 0, renders = 0;
+  const record = await runVisualPass({ ...input, clock: { now: () => time },
+    budget: { captureMs: 240_000, addedMs: 240_000, diffMs: 60_000 },
+    dependencies: { ...dependencies, diff: { ...dependencies.diff, compare(...args) {
+      time += 2_000; return dependencies.diff.compare(...args);
+    } } },
+    createBrowserAdapter: async () => ({ ...fakeVisualAdapter({ consume() {
+      time += renders++ < 4 ? 45_000 : 10_000;
+    } }), async close() { time += 5_000; } }),
+  });
+  // Planned cells: 180,000 ms; comparisons: 8,000 ms; evidence: 40,000 ms;
+  // two close callbacks: 10,000 ms. Reserving 30,000 ms wrongly skips cell 4.
+  assert.deepEqual(record.evidence_only.map((cell) => cell.status), ["rendered", "rendered", "rendered", "rendered"]);
+  assert.deepEqual([record.adapters.build.close, record.adapters.source.close], ["ok", "ok"]);
+  assert.equal(time, 238_000);
+  assert.ok(time <= 240_000);
+});
+test("Template evidence resolves production mappings through CampaignSpec runtime routes", async (t) => {
+  const f = syntheticVisualFixture(); t.after(f.cleanup); const input = visualInputs(f);
+  input.packet.campaign = { public_route_slug: "sample", route_root: "/sample/" };
+  input.packet.spec = { local_path: "spec.json" };
+  input.packet.source_html.pages.push({ page_id: "oto-1", skip_reason: "Synthetic template stock." });
+  input.frozen.plan = planPolishCapture({ packet: input.packet, baseUrl: "http://127.0.0.1:1234" });
+  mkdirSync(resolve(f.targetRepo, "_site/sample"), { recursive: true });
+  writeFileSync(resolve(f.targetRepo, "_site/sample/one-time-offer.html"), "<!doctype html><p>Synthetic template</p>");
+  for (const page_url of ["one-time-offer/", "/sample/nested/one-time-offer/"]) {
+    writeFileSync(resolve(f.targetRepo, "spec.json"), JSON.stringify({ funnels: [{ pages: [{ id: "oto-1", page_url }] }] }));
+    const visual = planVisualCapture(input.frozen.plan, undefined, input);
+    assert.deepEqual(visual.evidence_only.map(({ route, url, reason }) => ({ route, url, reason })),
+      ["desktop", "mobile"].map(() => ({ route: "/sample/one-time-offer/", url: "http://127.0.0.1:1234/sample/one-time-offer/", reason: null })));
+    const unavailable = unavailableCapturesRecord({ ...input, plan: input.frozen.plan, subject: input.frozen.page_load.subject });
+    assert.ok(unavailable.evidence_only.every((cell) => cell.route === "/sample/one-time-offer/" && cell.reason === "browser_unavailable"));
+  }
+  const record = await runVisualPass({ ...input, createBrowserAdapter: async () => fakeVisualAdapter() });
+  assert.ok(record.evidence_only.every((cell) => cell.status === "rendered" && cell.route === "/sample/one-time-offer/" && cell.reason === null));
+  // A declared route remains first, even when the spec points elsewhere.
+  input.packet.source_html.pages[1].page_kit = { public_route: "/sample/one-time-offer/" };
+  writeFileSync(resolve(f.targetRepo, "spec.json"), JSON.stringify({ funnels: [{ pages: [{ id: "oto-1", page_url: "absent/" }] }] }));
+  assert.ok(planVisualCapture(input.frozen.plan, undefined, input).evidence_only.every((cell) => cell.reason === null));
+});
+test("Template evidence falls back to page ids when the spec route is unavailable", (t) => {
+  const f = syntheticVisualFixture(); t.after(f.cleanup); const input = templateInputs(f);
+  input.packet.spec = { local_path: "spec.json" };
+  // Both mappings have the production shape, with no page_kit projection.
+  delete input.packet.source_html.pages[1].page_kit;
+  input.packet.source_html.pages.push({ page_id: "absent", skip_reason: "Synthetic absent template." });
+  input.frozen.plan = planPolishCapture({ packet: input.packet, baseUrl: "http://127.0.0.1:1234" });
+  for (const bytes of [null, "{", JSON.stringify({ funnels: [{ pages: [{ id: "checkout" }] }] })]) {
+    if (bytes !== null) writeFileSync(resolve(f.targetRepo, "spec.json"), bytes);
+    const cells = planVisualCapture(input.frozen.plan, undefined, input).evidence_only;
+    assert.ok(cells.filter((cell) => cell.page_id !== "absent").every((cell) => cell.reason === null));
+    assert.ok(cells.filter((cell) => cell.page_id === "absent").every((cell) => cell.reason === "page_not_built"));
+  }
+});
+test("Evidence status vocabulary covers every producer path while planned not_built is refused", async (t) => {
+  const f = syntheticVisualFixture(); t.after(f.cleanup); const input = templateInputs(f);
+  delete input.packet.source_html.pages[1].page_kit;
+  input.packet.source_html.pages.push({ page_id: "absent", skip_reason: "Synthetic absent template." });
+  input.frozen.plan = planPolishCapture({ packet: input.packet, baseUrl: "http://127.0.0.1:1234" });
+  assert.deepEqual(VISUAL_VOCABULARY.evidence_status, [...VISUAL_VOCABULARY.cell_status, "not_built"]);
+  const records = [unavailableCapturesRecord({ ...input, plan: input.frozen.plan, subject: input.frozen.page_load.subject })];
+  const captured = await runVisualPass({ ...input, createBrowserAdapter: async () => {
+    const adapter = fakeVisualAdapter();
+    return { ...adapter, async renderForCompare(args) {
+      if (args.url.endsWith("/upsell/")) throw new Error("Synthetic navigation failure");
+      return adapter.renderForCompare(args);
+    } };
+  } });
+  records.push(captured);
+  let failClock = false;
+  const setupFailed = await runVisualPass({ ...input, clock: { now() {
+    if (failClock) { failClock = false; throw new Error("Synthetic setup failure"); }
+    return 0;
+  } }, createBrowserAdapter: async ({ seal }) => {
+    if (seal) failClock = true;
+    return fakeVisualAdapter();
+  } });
+  assert.ok(setupFailed.cells.some((cell) => cell.status === "source_root_unavailable"));
+  assert.ok(setupFailed.evidence_only.filter((cell) => cell.page_id !== "absent").every((cell) => cell.status === "browser_unavailable"));
+  records.push(setupFailed);
+  const timedOut = await runVisualPass({ ...input, createBrowserAdapter: async ({ seal }) => seal ? fakeVisualAdapter() : {
+    async close() {}, async renderForCompare() { throw Object.assign(new Error("Synthetic timeout"), { code: "POLISH_PRODUCER_TIMEOUT" }); },
+  } });
+  assert.ok(timedOut.evidence_only.filter((cell) => cell.page_id !== "absent").every((cell) => cell.status === "producer_timeout"));
+  records.push(timedOut);
+  let time = 0;
+  records.push(await runVisualPass({ ...input, clock: { now: () => time }, budget: { captureMs: 200_000 },
+    createBrowserAdapter: async () => fakeVisualAdapter({ consume() { time += 50_000; } }) }));
+  const seen = new Set();
+  for (const record of records) for (const cell of record.evidence_only) {
+    assert.ok(VISUAL_VOCABULARY.evidence_status.includes(cell.status), cell.status);
+    seen.add(cell.status);
+  }
+  assert.deepEqual([...seen].sort(), ["browser_unavailable", "navigation_failed", "not_built", "producer_timeout", "rendered", "run_budget_exhausted"]);
+  const rederivers = await loadQcRederivers();
+  captured.cells[0].status = "not_built";
+  captured.integrity = capturesIntegrity(captured);
+  const rows = readCaptures({ record: captured, packet: input.packet, currentBuild: captured.subject.build_fingerprint,
+    currentSource: captured.subject.source_package_material_fingerprint, buildOutput: { status: "pass" },
+    campaignSlug: "sample", targetRepo: input.targetRepo, rederivers });
+  assert.ok(rows.length > 0);
+  assert.ok(rows.every((row) => row.reason_code === "evidence_not_reproducible"
+    && row.members.some((member) => member.reason_code === "cell_shape_invalid")), JSON.stringify(rows));
 });
 test("An evidence pass keeps its close deadline even when a synchronous diff overruns its slice", async (t) => {
   const f = syntheticVisualFixture(); t.after(f.cleanup); const input = templateInputs(f);
@@ -278,13 +396,14 @@ test("Template evidence gets no time when planned comparisons and cleanup use th
         time += 2_000;
         return dependencies.diff.compare(...args);
       } } },
-      createBrowserAdapter: async () => ({ ...fakeVisualAdapter({ consume() { time += 45_000; renders++; } }),
+      createBrowserAdapter: async () => ({ ...fakeVisualAdapter({ consume() { time += 45_500; renders++; } }),
         async close() { time += 5_000; } }) });
     assert.equal(renders, 4);
     return record;
   };
   const without = await run(false), record = await run(true);
-  assert.ok(record.comparisons.every((comparison) => comparison.status === "compared"));
+  assert.deepEqual(record.comparisons.map((comparison) => comparison.status), ["compared", "compared", "compared", "unavailable"]);
+  assert.equal(record.comparisons.at(-1).reason, "diff_budget_exhausted");
   assert.ok(record.evidence_only.every((cell) => cell.status === "run_budget_exhausted" && cell.reason === "run_budget_exhausted"));
   assert.deepEqual(record.adapters, { build: { startup: "ok", close: "ok" }, source: { startup: "ok", close: "ok", sealed: true } });
   assert.deepEqual(record.cells, without.cells);

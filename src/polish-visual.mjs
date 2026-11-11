@@ -10,7 +10,8 @@ import { computeDesignSourcePackageMaterialFingerprint } from "./design-source-p
 import { currentSourcePackageMaterialFingerprint } from "./polish-gate.mjs";
 import { startSourceHtmlServer, readRegularFileSync, isRegularFileSync } from "./source-html-server.mjs";
 import { resolveBuiltSiteScope } from "./built-site-scope.mjs";
-import { campaignRouteRoot, normalizePageKitRoute, stripPublicRoutePrefix } from "./route-identity.mjs";
+import { campaignRouteRoot, normalizePageKitRoute, stripPublicRoutePrefix, runtimeRelativeRouteForSpecValue } from "./route-identity.mjs";
+import { readJsonIfExists, resolveFromFile } from "./cli-helpers.mjs";
 import { boundedPolishDeadline, runWithPolishProducerDeadline, POLISH_PRODUCER_TIMEOUT_ERROR_CODE,
   POLISH_CAPTURE_CELL_DEADLINE_MS, POLISH_CAPTURE_STARTUP_DEADLINE_MS, POLISH_CAPTURE_CLOSE_DEADLINE_MS,
   VISUAL_CAPTURE_RUN_MS, VISUAL_DIFF_RUN_MS, VISUAL_ADDED_RUN_MS } from "./polish-deadline.mjs";
@@ -35,6 +36,7 @@ export const VISUAL_VIEWPORTS = Object.freeze([
 export const VISUAL_VOCABULARY = Object.freeze({
   side: ["build", "source_html"], state: [VISUAL_STATE],
   cell_status: ["rendered", "navigation_failed", "http_error", "probe_failed", "document_changed", "run_budget_exhausted", "producer_timeout", "probe_timeout", "browser_unavailable", "source_html_missing", "source_root_unavailable"],
+  evidence_status: ["rendered", "navigation_failed", "http_error", "probe_failed", "document_changed", "run_budget_exhausted", "producer_timeout", "probe_timeout", "browser_unavailable", "source_html_missing", "source_root_unavailable", "not_built"],
   shot_status: ["captured", "timeout", "failed", "skipped"], dependency_status: ["available", "missing", "failed"],
   verification_level: ["decoded", "header_checked", "unverifiable"], provenance_class: ["declared_source", "self_referential", "unknown"],
   comparison_status: ["compared", "unsupported", "unavailable", "not_run"],
@@ -47,23 +49,30 @@ export const VISUAL_VOCABULARY = Object.freeze({
   part_reason: ["capture_truncated", "section_mapping_missing", "section_mapping_duplicate", "section_not_rendered", "beyond_capture_height", "band_cap_reached", "source_section_offsets_unrecorded", "no_section_keys"],
 });
 
-export function planVisualCapture(plan, viewports = plan?.viewports, { packet, targetRepo, slug = packet?.campaign?.public_route_slug } = {}) {
+export function planVisualCapture(plan, viewports = plan?.viewports, { packet, packetPath, targetRepo, slug = packet?.campaign?.public_route_slug } = {}) {
   if (!plan) return null;
   if (!Array.isArray(plan.routes) || !Array.isArray(viewports)) throw new TypeError("A computed page_load plan and viewports are required");
   if (plan.routes.some((route) => !object(route)) || viewports.some((v) => !object(v)
       || !VISUAL_VIEWPORTS.some((fixed) => fixed.key === own(v, "key") && fixed.width === v.width && fixed.height === v.height))) return null;
   let built = [];
+  let spec = null;
   if (plan.skipped_pages?.length && targetRepo && slug) {
     try { built = resolveBuiltSiteScope(targetRepo, { slug }).pages; } catch { /* unavailable output is evidence only */ }
+    try { spec = readJsonIfExists(resolveFromFile(packetPath, packet?.spec?.local_path)); } catch { /* unreadable spec falls back to page ids */ }
   }
+  const specPages = Array.isArray(spec?.funnels) ? spec.funnels.flatMap((funnel) => Array.isArray(funnel?.pages) ? funnel.pages : [])
+    : Array.isArray(spec?.funnel_pages) ? spec.funnel_pages : [];
   const routeRoot = campaignRouteRoot(packet) || (slug ? `/${slug}/` : null);
   const evidenceOnly = (plan.skipped_pages || []).flatMap((skipped) => {
     const mapping = packet?.source_html?.pages?.find((page) => page.page_id === skipped.page_id);
     const declared = mapping?.page_kit?.public_route;
     const declaredRoute = typeof declared === "string" && declared.startsWith("/") && !declared.startsWith("//")
       && !/[?#\\\s]/.test(declared) ? declared : null;
+    const pageUrl = specPages.find((page) => page?.id === skipped.page_id)?.page_url;
+    const specRoute = typeof pageUrl === "string" && pageUrl.trim() ? runtimeRelativeRouteForSpecValue(pageUrl, slug) : null;
     const output = declaredRoute
       ? built.find((page) => normalizePageKitRoute(page.route) === stripPublicRoutePrefix(declaredRoute, slug))
+      : specRoute !== null ? built.find((page) => normalizePageKitRoute(page.route) === normalizePageKitRoute(specRoute))
       : built.find((page) => page.page_id === skipped.page_id);
     const route = declaredRoute || (output && routeRoot ? `${routeRoot}${output.route ? `${output.route}/` : ""}` : null);
     return viewports.map((viewport) => ({
@@ -153,8 +162,8 @@ async function verifyDeclared(args) {
     provenance: classifyProvenance({ ...args, path: resolved, sha256: null }) };
 }
 
-export function unavailableCapturesRecord({ plan, subject, measuredAt, packet, targetRepo } = {}) {
-  const visual = planVisualCapture(plan, plan.viewports, { packet, targetRepo, slug: subject?.campaign_slug });
+export function unavailableCapturesRecord({ plan, subject, measuredAt, packet, packetPath, targetRepo } = {}) {
+  const visual = planVisualCapture(plan, plan.viewports, { packet, packetPath, targetRepo, slug: subject?.campaign_slug });
   return buildCapturesRecord({ subject: { ...subject, skipped_pages: plan.skipped_pages || [] },
     cells: visual.cells.map((cell) => blankCell(cell, "browser_unavailable")),
     evidenceOnly: visual.evidence_only.map((cell) => evidenceCapture(blankCell(cell, cell.reason ? "not_built" : "browser_unavailable"))), measuredAt });
@@ -253,7 +262,7 @@ export async function runVisualCells({ buildAdapter, sourceAdapter, pairs, sourc
 export async function runVisualPass({ createBrowserAdapter, frozen, packet, packetPath, report, targetRepo,
   headed = false, authCookie = null, probes = [], budget = {}, clock = monotonicClock,
   adapterStartupDeadlineMs, adapterCloseDeadlineMs, captureCellDeadlineMs, now = new Date(), dependencies, timers = {} } = {}) {
-  const plan = planVisualCapture(frozen.plan, frozen.plan?.viewports, { packet, targetRepo,
+  const plan = planVisualCapture(frozen.plan, frozen.plan?.viewports, { packet, packetPath, targetRepo,
     slug: packet?.campaign?.public_route_slug ?? frozen.page_load.subject.campaign_slug });
   // `timers` ({ setTimer, clearTimer }) lets a test fire a deadline without wall-clock time.
   const bounded = (operation, options) => runWithPolishProducerDeadline(operation, { ...timers, ...options });
@@ -444,8 +453,7 @@ export async function runVisualPass({ createBrowserAdapter, frozen, packet, pack
     }
     // Evidence cannot spend the planned comparisons' time or the bounded cleanup
     // of the resources they used. It shares the original capture/pass deadlines.
-    const evidenceCleanupMs = closeMs * (Object.keys(instances).length + (server ? 1 : 0));
-    const evidenceLeft = () => Math.min(captureLeft(), addedLeft() - evidenceCleanupMs);
+    const evidenceLeft = () => Math.min(captureLeft(), addedLeft() - cleanupMs);
     if (plan.evidence_only.length && !evidenceOnly.length) {
       const buildTimedOut = cells.some((cell) => cell.side === "build" && cell.status === "producer_timeout");
       evidenceOnly = buildTimedOut ? plan.evidence_only.map((cell) => evidenceCapture(blankCell(cell,

@@ -13,6 +13,7 @@ import { execFileSync } from "node:child_process";
 import { createRgbaPng, syntheticCapturesRecord } from "./polish-visual-fixtures.mjs";
 import { capturesIntegrity } from "./polish-captures-record.mjs";
 import { recordStageCommand } from "./stage-record.mjs";
+import { evaluatePolishGate } from "./polish-gate.mjs";
 
 test("F3C-W10: direct polish capture on an upgraded repo creates ignored captures/diffs and preserves both ignore files", async (t) => {
   const f = fixture(); t.after(() => rmSync(f.dir, { recursive: true, force: true }));
@@ -222,7 +223,7 @@ test("record polish accepts failed evidence-only captures with the same gate and
   writeJson(f.reportPath, report);
   const args = { _: ["record", "polish"], packet: f.packetPath, "dry-run": true,
     evidence: join(import.meta.dirname, "../fixtures/stage-record/polish-evidence.json") };
-  const before = recordStageCommand(args);
+  assert.equal(recordStageCommand(args).ok, true);
   captures.evidence_only = [{ evidence_only: true, page_id: "template-checkout", route: "/runtime-packet-demo/checkout/",
     viewport: "desktop", side: "build", skip_reason: "Synthetic template stock.", status: "navigation_failed",
     reason: "navigation_failed", actual: { status: "skipped", png: null }, stabilized: { status: "skipped", png: null } }];
@@ -230,11 +231,17 @@ test("record polish accepts failed evidence-only captures with the same gate and
   writeJson(f.reportPath, report);
   const { "dry-run": _dryRun, ...writeArgs } = args;
   const after = recordStageCommand(writeArgs);
-  assert.equal(before.ok, true); assert.equal(after.ok, true); assert.equal(after.status, "recorded");
-  assert.equal(after.record.status, before.record.status);
-  assert.equal(after.record.evidence.visual_review.captures.evidence_only[0].reason, "navigation_failed");
-  assert.deepEqual(evaluateRecordedHiddenEagerMediaCheckpoint({ packet: readJson(f.packetPath), report: readJson(f.reportPath) }),
-    evaluateRecordedHiddenEagerMediaCheckpoint({ packet: readJson(f.packetPath), report }));
+  assert.equal(after.ok, true); assert.equal(after.status, "recorded");
+  const persisted = readJson(f.reportPath);
+  assert.deepEqual(persisted.stages.polish.evidence.visual_review.captures.evidence_only, captures.evidence_only);
+  assert.equal(persisted.stages.polish.evidence.visual_review.captures.evidence_only[0].reason, "navigation_failed");
+  const without = structuredClone(persisted);
+  delete without.stages.polish.evidence.visual_review.captures.evidence_only;
+  without.stages.polish.evidence.visual_review.captures.integrity = capturesIntegrity(without.stages.polish.evidence.visual_review.captures);
+  const now = Date.parse("2026-01-01T00:00:00.000Z");
+  assert.deepEqual(evaluatePolishGate({ report: persisted, now }), evaluatePolishGate({ report: without, now }));
+  assert.deepEqual(evaluateRecordedHiddenEagerMediaCheckpoint({ packet: readJson(f.packetPath), report: persisted }),
+    evaluateRecordedHiddenEagerMediaCheckpoint({ packet: readJson(f.packetPath), report: without }));
 });
 
 test("polish capture names the report when the re-read after the browser pass is not valid JSON", async () => {
