@@ -3,13 +3,14 @@
 import { dirname, join, relative, resolve, sep } from "node:path";
 
 import {
+  computeBuildFingerprint,
   describeBuildOutputDrift,
   pageIdForRoute,
   resolveBuiltSiteScope,
   routeForFile,
-  sharedBuildFingerprint,
 } from "./built-site-scope.mjs";
 import { changeSince, classifyDrift } from "./change-scope.mjs";
+import { htmlScanMemo } from "./html-scan.mjs";
 import { normalizePublicRouteSlug } from "./route-identity.mjs";
 import { isFileReadFailure } from "./cart-placeholders.mjs";
 import { polishReviewedBuild, qaExtendedBuildFingerprint, qaRecordedBuildFingerprint, qaRecordedForCurrentBuild, qaRestsOnBaseline } from "./stage-ledger.mjs";
@@ -18,6 +19,12 @@ export const EVIDENCE_DEBT_STATUSES = Object.freeze(["current", "owed", "unknown
 
 const fingerprint = (value) => typeof value === "string" && value.trim() ? value.trim() : null;
 const portable = (value) => value.split(sep).join("/");
+
+// computeBuildFingerprint once per root within a read-only doctor inspection
+// (html-scan.mjs), where the fingerprint check and evidence debt hash one tree.
+export function sharedBuildFingerprint(outputDir) {
+  return htmlScanMemo(JSON.stringify(["build-fingerprint", String(outputDir || "")]), () => computeBuildFingerprint(outputDir));
+}
 
 /**
  * Compare recorded Polish/QA build bindings with bytes under _site/<slug>.

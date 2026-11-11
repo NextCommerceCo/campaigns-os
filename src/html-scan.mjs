@@ -20,7 +20,7 @@ const MAX_RETAINED_FILES = 4096;
 // the certified-family pages and 90x on markup made of bare attributes, an
 // acorn program with locations 21x on the certified-family scripts.
 const MAX_RETAINED_PARSE_COST = 64 * 1024 * 1024;
-const PARSE_COST_PER_BYTE = { html: 56, script: 32, module: 32 };
+const PARSE_COST_PER_BYTE = { html: 56, noloc: 30, script: 32, module: 32 };
 
 // Nesting deeper than a browser's HTML parser builds (Blink stops nesting at
 // 512) is not the DOM a shopper gets, so the bounded profile does not build it.
@@ -60,12 +60,10 @@ export function parseBounded(html) {
   return parse(html, { sourceCodeLocationInfo: true, treeAdapter });
 }
 
-const UNCACHED = Object.freeze({ active: false });
-
 export function withHtmlScanSnapshot(operation, { reuse = false } = {}) {
   const live = snapshots.getStore();
-  if (live === UNCACHED) return operation();
-  if (live?.active) return reuse ? operation() : snapshots.run(UNCACHED, operation);
+  if (live?.under?.active) return operation();
+  if (live?.active) return reuse ? operation() : snapshots.run({ active: false, under: live }, operation);
   const snapshot = { files: new Map(), paths: new Map(), memos: new Map(), bytes: 0, parseCost: 0, active: true };
   return snapshots.run(snapshot, () => {
     try {
@@ -160,7 +158,7 @@ function reserve(items, parseText) {
       try {
         parsed = { value: parseText(entry.text, kind) };
       } catch (error) {
-        if (kind === 'html' && !(error instanceof TooDeep)) throw error;
+        if (!(error instanceof TooDeep) && kind !== 'script' && kind !== 'module') throw error;
         parsed = { error };
       }
       entry.parsed.set(kind, parsed);
@@ -177,14 +175,16 @@ const HTML_PARSERS = { noloc: (text) => parse(text), located: (text) => parse(te
 // for node and noloc consumers ignore locations. Returns
 // `(path, text) => document`. A noloc or located consumer gets its own
 // unbounded parse of a page past the depth bound, so the bound hides no page
-// from it; an unshared set is parsed per use with the profile asked for.
+// from it. Past the parse budget a noloc set may still share noloc trees of its
+// own, which cost about half as much; otherwise each page is parsed per use.
 // Template content stays inside the tree as parse5 builds it; a fragment a
 // consumer reparses itself (noscript, srcdoc) is not shared.
 export function htmlScanDocuments(paths, profile = 'noloc') {
   if (!Object.hasOwn(HTML_PARSERS, profile)) throw new Error(`Unknown HTML parse profile: ${profile}`);
   const parseText = HTML_PARSERS[profile];
   const shared = reserve(paths.map((path) => ({ path, kind: 'html' })), parseBounded);
-  if (!shared) return (path, text) => parseText(text);
+  const noloc = !shared && profile === 'noloc' && reserve(paths.map((path) => ({ path, kind: 'noloc' })), parseText);
+  if (!shared) return noloc ? (path, text) => noloc(path, 'noloc', text) : (path, text) => parseText(text);
   return (path, text) => {
     try {
       return shared(path, 'html', text);

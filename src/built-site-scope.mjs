@@ -17,7 +17,6 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, join, relative, sep } from "node:path";
 
 import { isFileReadFailure } from "./cart-placeholders.mjs";
-import { htmlScanMemo } from "./html-scan.mjs";
 
 const HTML_EXT = ".html";
 
@@ -344,12 +343,6 @@ export function computeBuildFingerprint(outputDir) {
     manifest,
     error: null,
   };
-}
-
-// computeBuildFingerprint once per root within a read-only doctor inspection
-// (html-scan.mjs), where the fingerprint check and evidence debt hash one tree.
-export function sharedBuildFingerprint(outputDir) {
-  return htmlScanMemo(JSON.stringify(["build-fingerprint", String(outputDir || "")]), () => computeBuildFingerprint(outputDir));
 }
 
 // The manifest as `{ path, sha256 }` entries, the shape `record build` keeps

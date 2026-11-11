@@ -78,7 +78,8 @@ import {
   resolveTemplateBrandContract,
 } from "../private-template-source.mjs";
 import { assessTemplateFreshness, defaultSdkSupportPolicy, renderTemplateFreshness } from "../template-freshness.mjs";
-import { BUILD_DRIFT_PATH_LIMIT, describeBuildOutputDrift, resolveBuiltSiteScope, sharedBuildFingerprint } from "../built-site-scope.mjs";
+import { BUILD_DRIFT_PATH_LIMIT, describeBuildOutputDrift, resolveBuiltSiteScope } from "../built-site-scope.mjs";
+import { sharedBuildFingerprint } from "../evidence-debt.mjs";
 import {
   UPSELL_SELECTOR_SCOPE,
   builtPageTypeOverRouteGuess,

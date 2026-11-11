@@ -303,19 +303,21 @@ test('noloc and located requests share the bounded tree, and a page past its dep
   assert.ok(findElement(located(path, '<p>a</p>'), 'p').sourceCodeLocation);
 });
 
-test('a page set too big to share as bounded trees is parsed per use with the profile asked for', t => {
+test('a page set too big to share as bounded trees shares noloc trees of its own, and parses bounded and located sets per use', t => {
   const small = fixture(t);
   writeFileSync(small, '<p>small</p>');
   const big = join(dirname(small), 'big.html');
-  // 1.5 MiB: bounded trees (84 MiB estimated) exceed the parse budget.
+  // 1.5 MiB: bounded trees (84 MiB estimated) exceed the parse budget; noloc trees (45 MiB) fit.
   writeFileSync(big, Buffer.alloc(1.5 * 1024 * 1024, 97));
   withHtmlScanSnapshot(() => {
     for (const path of [small, big]) readHtmlScanText(path);
-    for (const profile of ['bounded', 'noloc', 'located']) {
+    for (const profile of ['bounded', 'located']) {
       const documentOf = htmlScanDocuments([small, big], profile);
       assert.notEqual(documentOf(small, '<p>small</p>'), documentOf(small, '<p>small</p>'));
     }
-    assert.equal(findElement(htmlScanDocuments([small, big])(small, '<p>small</p>'), 'p').sourceCodeLocation, undefined);
+    const noloc = htmlScanDocuments([small, big]);
+    assert.equal(noloc(small, '<p>small</p>'), noloc(small, '<p>small</p>'));
+    assert.equal(findElement(noloc(small, '<p>small</p>'), 'p').sourceCodeLocation, undefined);
   });
 });
 
