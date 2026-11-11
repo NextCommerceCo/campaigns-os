@@ -4039,6 +4039,33 @@
         }
       ],
       "entry_sha256": "1131da2f51e79891553daa07c4eb0c9faf7dfdd5969984878f923d3fb28312f7"
+    },
+    {
+      "id": "RL-0338",
+      "sequence": 323,
+      "date": "2026-11-11",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.68.0+agent.5",
+      "changelog_sha256": "dda97f259af30e454e9d41ddd0ebff1c65098f0008a9f6466bed9d97626a594d",
+      "agent_impact": "A packet-backed qa run with no --currency now enters each funnel's entry page with ?currency=<the spec's campaign.currency> and marks evidence.currency_defaulted_from_spec on that page's http row; pass --currency to choose another. Legacy API order runs stay unpinned. On a build recorded with build_environment development, an analytics-correctness:tag:* row that did not fire is manual_review / warn with evidence.reason development_build_gates_vendor_loaders; run QA against a production build to check the tag.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Document the spec-currency default for qa run and the development-build rule for declared tag rows."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "spec derive's analytics warnings say a declared tag is checked on a production build."
+        }
+      ],
+      "entry_sha256": "8463c6d9bb69b7e64b983c95055d24dd4c77deafecd64f86927dac877c0627a8"
     }
   ]
 }
