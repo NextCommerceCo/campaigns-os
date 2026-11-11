@@ -4068,13 +4068,40 @@
       "entry_sha256": "63617f16257551ed7d6643035a39e3698c634345b015cb16e0f259bc5c204200"
     },
     {
-      "id": "RL-0337",
+      "id": "RL-0336",
       "sequence": 324,
       "date": "2026-11-11",
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.68.0+agent.4",
-      "changelog_sha256": "597a18693df8bdaf7e0532602dbbce5702b86964ac695e1fd9d961705046bb9a",
+      "changelog_sha256": "58a9295968e438203c7438421b2ad88417a804a6d152a32fd4f02c0f57782a90",
+      "agent_impact": "Pin and bundle parse5 8.0.1 and entities 8.1.0 to preserve saved commerce-signature/v1 records in registry installs as well as checkouts. parse5 8.1.0 changes foreign-element reconstruction and can classify a copy-only edit as commerce_markup_changed. The parser upgrade is deferred; no saved records or existing literal baselines are rewritten. entities is a direct dependency solely to pin and bundle the decoder, not a new package export.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Pin and bundle the v1 parser and decoder for consumer installs."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Record exact bundled parser dependencies."
+        }
+      ],
+      "entry_sha256": "f43cd05d36051a9df300c4c522e829d0fe5cf12e10118904f22b1fe3101faaf2"
+    },
+    {
+      "id": "RL-0337",
+      "sequence": 325,
+      "date": "2026-11-11",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.68.0+agent.5",
+      "changelog_sha256": "142eb0099aa78dc28eba7d09761a584a8c8565b21a0ea1f8563b568caba42e20",
       "agent_impact": "record deploy now refuses, writing nothing, when doctor's Polish gate is blocked, naming the gate code (for a Polish recorded skipped: polish.evidence_missing) and its required actions. Finish Polish, or follow next, before record deploy. A gate doctor carries forward (a page-only change, or the local preview) still deploys.",
       "compatibility": "compatible",
       "migration": "none",
@@ -4092,7 +4119,7 @@
           "summary": "The record deploy help line says the command is refused when doctor's theme or Polish gate is blocked."
         }
       ],
-      "entry_sha256": "afa56e01154f3d868b70d91d40c4d59cfeeac4ae1f6ab772c2ac4e5101f8e691"
+      "entry_sha256": "30b981f8294786a41d3c2b6bc7db53942be24bdeb8b0b6a15d537f4b5460335a"
     }
   ]
 }
