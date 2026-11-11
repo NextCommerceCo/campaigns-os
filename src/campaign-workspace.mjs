@@ -313,9 +313,12 @@ function projectRecordsRoute(targetRepo) {
  * Returns `{ packetPath, runtimeRelPath, scoped, addedBeside }`; `scoped` is
  * true when the packet must record `assembly.runtime_dir`, and `addedBeside`
  * names the default packet and its route when this run sets the funnel up as
- * a new one beside it (null otherwise).
+ * a new one beside it (null otherwise). A new bound route uses its own runtime
+ * directory even in an empty project. An unclaimed sourceRoute beside a route
+ * with no Page Kit pages adds a bindingOffer for intake's rerun guidance.
+ * Intake supplies sourceRoute and routeHasPages from Page Kit page discovery.
  */
-export function planFunnelWorkspace(targetRepo, routeSlug, { packetPath: explicitPacketPath = null, force = false } = {}) {
+export function planFunnelWorkspace(targetRepo, routeSlug, { packetPath: explicitPacketPath = null, force = false, routeBound = false, sourceRoute = null, routeHasPages = false } = {}) {
   const repo = resolve(targetRepo);
   const slug = normalizePublicRouteSlug(routeSlug);
   const nameable = ROUTE_COMPONENT.test(slug);
@@ -353,7 +356,13 @@ export function planFunnelWorkspace(targetRepo, routeSlug, { packetPath: explici
     && rootPacketState.state === "present" && rootPacketRoute !== slug
     ? { packetPath: rootPacket, route: rootPacketRoute }
     : null;
-  const plan = (runtimeRelPath) => ({ packetPath, runtimeRelPath, scoped: runtimeRelPath !== RUNTIME_DIR_REL_PATH, addedBeside });
+  const bindingOffer = !routeBound && sourceRoute && sourceRoute !== slug
+    && !routeHasPages
+    && !projectFunnelPackets(repo).some((packet) => packet.route === sourceRoute)
+    ? { route: sourceRoute } : null;
+  const plan = (runtimeRelPath) => ({ packetPath, runtimeRelPath, scoped: runtimeRelPath !== RUNTIME_DIR_REL_PATH, addedBeside,
+    ...(bindingOffer ? { bindingOffer } : {}),
+  });
 
   const owner = projectRecordsRoute(repo);
   if (existing && existingRoute === slug) {
@@ -365,6 +374,7 @@ export function planFunnelWorkspace(targetRepo, routeSlug, { packetPath: explici
     return plan(RUNTIME_DIR_REL_PATH);
   }
   const ownRuntime = nameable ? funnelRuntimeRelPath(slug) : null;
+  if (routeBound && ownRuntime) return plan(ownRuntime);
   if (ownRuntime && existsSync(join(repo, ownRuntime))) return plan(ownRuntime);
   if (owner === undefined || owner === slug) return plan(RUNTIME_DIR_REL_PATH);
   if (!ownRuntime) {

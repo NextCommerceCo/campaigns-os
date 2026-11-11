@@ -9,9 +9,40 @@ import {
   normalizePublicRouteSlug,
   packetRouteRoot,
   resolveRouteRoot,
+  routeSlugIdentity,
   runtimeRelativeRouteForSpecValue,
   stripPublicRoutePrefix,
 } from "./route-identity.mjs";
+
+test("binding strips the Map prefix only at a whole segment and translates spec roots", () => {
+  for (const [route, expected] of [
+    ["checkout/", "checkout/"],
+    ["/long-campaign-name/checkout/", "checkout/"],
+    ["long-campaign-name/checkout/", "checkout/"],
+    ["long-campaign-name-v2/x/", "long-campaign-name-v2/x/"],
+    ["/long-campaign-name/", ""],
+  ]) {
+    assert.equal(stripPublicRoutePrefix(route, "short", "long-campaign-name"), expected);
+  }
+  assert.equal(runtimeRelativeRouteForSpecValue("/long-campaign-name/", "short", "long-campaign-name"), "");
+  assert.equal(intakeRouteRoot("/long-campaign-name/", "short", "long-campaign-name"), "/short/");
+  assert.equal(intakeRouteRoot("/", "short", "long-campaign-name"), "/");
+  const packet = { campaign: { public_route_slug: "short", map_public_route_slug: "long-campaign-name" } };
+  assert.deepEqual(resolveRouteRoot({ packet, spec: { campaign: { route_root: "/long-campaign-name/" } } }),
+    { route_root: "/short/", declared: "/long-campaign-name/", source: "spec", accepted: true });
+  assert.equal(resolveRouteRoot({ packet, spec: { campaign: { route_root: "/" } } }).route_root, "/");
+});
+
+test("route identity refuses missing and stale bindings even when the spec and packet slugs agree", () => {
+  const spec = { spec_identity: { public_route_slug: "long-campaign-name", map_id: "example-map" } };
+  for (const [campaign, expected] of [
+    [{ public_route_slug: "short" }, "slug_mismatch"],
+    [{ public_route_slug: "short", map_public_route_slug: "stale" }, "binding_mismatch"],
+    [{ public_route_slug: "long-campaign-name", map_public_route_slug: "stale" }, "binding_mismatch"],
+    [{ public_route_slug: "example-map", map_public_route_slug: "long-campaign-name" }, "map_id"],
+    [{ public_route_slug: "short", map_public_route_slug: "long-campaign-name" }, null],
+  ]) assert.equal(routeSlugIdentity(spec, { campaign }).reason, expected);
+});
 
 test("isAbsoluteHttpUrl accepts http(s) URLs only", () => {
   assert.equal(isAbsoluteHttpUrl("https://x.example/a"), true);

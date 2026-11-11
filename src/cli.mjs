@@ -151,7 +151,9 @@ import { derivePackagePin, LOCAL_INVOCATION_PREFIX, localInstallStatus, resolveI
 import {
   campaignRouteRoot,
   normalizePublicRouteSlug,
+  intakeRouteRoot,
   specPublicRouteSlug,
+  routeSlugIdentity,
 } from "./route-identity.mjs";
 import {
   PAGE_KIT_BUILD_SUMMARY_CAPTURE_COMMAND,
@@ -320,17 +322,18 @@ Usage:
   campaigns-os help
   campaigns-os --version   # print the installed package version; -v is equivalent
   campaigns-os demo --target <new-directory>   # offline inert sample; open landing/index.html; no campaign evidence
-  campaigns-os start (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
+  campaigns-os start (--spec <json> | --map-id <id>) (--source <html-dir> [--route <slug>] | --adopt <src/route>) --target <page-kit-dir> --template-family <family>
                      [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
                      [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>] [--design-manifest <path>]
                      [--allow-uncertified-template "<reason>"] [--order-path-depth <off|common|full>]
                      [--deploy-target <target>] [--preview-url <url>] [--production-url <url>] [--no-run-session] [--force]   # --force overwrites an assembly report that carries stage evidence (destructive; prints the cleared stage keys) and regenerates a stale Design Source Package an earlier intake synthesized and nobody changed; with --out naming another route's packet it replaces that funnel (renaming its route)
-  campaigns-os prepare-build (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
+  campaigns-os prepare-build (--spec <json> | --map-id <id>) (--source <html-dir> [--route <slug>] | --adopt <src/route>) --target <page-kit-dir> --template-family <family>
                              [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
                              [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>] [--design-manifest <path>]
                              [--allow-uncertified-template "<reason>"] [--order-path-depth <off|common|full>]
                              [--deploy-target <target>] [--preview-url <url>] [--production-url <url>] [--no-run-session] [--force]
-  campaigns-os build (--spec <json> | --map-id <id>) --source <html-dir> --target <page-kit-dir> --template-family <family>
+  campaigns-os build (--spec <json> | --map-id <id>) (--source <html-dir> [--route <slug>] | --adopt <src/route>) --target <page-kit-dir> --template-family <family>
+                     # --route binds the Map to a served route; --public-route-slug is the same flag. --adopt reads route and source from <target>/src/<route>/ holding page files (all three intake commands).
                      [--brief <yaml|json>] [--proxy-base <url>] [--cached-spec] [--theme-policy <inspect_only|auto|off>]
                      [--wrapper-policy <strip_document_wrappers|preserve_document_wrappers|not_required|unknown>] [--design-manifest <path>]
                      [--allow-uncertified-template "<reason>"] [--order-path-depth <off|common|full>]
@@ -1045,10 +1048,11 @@ async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = nul
     if (!mode) throw new Error(`No intake mode registered for "${command}"; add it to PREPARE_MODES.`);
     // Validate argv before --spec is inspected or --map-id fetches and caches.
     // Preserve resolveSpecPath's missing-input and map-id/target diagnostics.
-    for (const flag of ["spec", "map-id", "source", "target", "source-kind", "proxy-base"]) {
+    for (const flag of ["spec", "map-id", "source", "target", "source-kind", "proxy-base", "route", "adopt", "public-route-slug"]) {
       if (Object.hasOwn(args, flag)) requireArg(args, flag);
     }
-    if (args.spec || (args["map-id"] && args.target)) requireArg(args, "source");
+    refusing(() => resolveIntakeRouteFlags(args));
+    if ((args.spec || (args["map-id"] && args.target)) && !args.adopt) requireArg(args, "source");
     if (args.spec) requireArg(args, "target");
     const sourceKind = optionalString(args["source-kind"], "html_funnel");
     if (sourceKind !== "html_funnel") {
@@ -1544,11 +1548,38 @@ function campaignIdentity(spec, args) {
   const mapId = optionalString(args["map-id"])
     || optionalString(spec.spec_identity?.map_id)
     || optionalString(spec.map_id);
-  const publicRouteSlug = optionalString(args["public-route-slug"])
-    || optionalString(spec.spec_identity?.public_route_slug)
-    || optionalString(spec.campaign?.slug)
-    || optionalString(spec.campaign?.id);
-  return { mapId, publicRouteSlug, localSpecId: spec.spec_identity?.local_spec_id ?? null };
+  const specSlug = specPublicRouteSlug(spec);
+  const publicRouteSlug = optionalString(args.route) || optionalString(args["public-route-slug"]) || specSlug;
+  const mapPublicRouteSlug = specSlug && publicRouteSlug !== specSlug ? specSlug : null;
+  return { mapId, publicRouteSlug, mapPublicRouteSlug, localSpecId: spec.spec_identity?.local_spec_id ?? null };
+}
+
+function resolveIntakeRouteFlags(args) {
+  const route = optionalString(args.route) || optionalString(args["public-route-slug"]);
+  if (args.route && args["public-route-slug"] && args.route !== args["public-route-slug"]) {
+    throw new Error("--route and --public-route-slug must name the same route.");
+  }
+  if (route && (!/^[A-Za-z0-9_-][A-Za-z0-9._-]*$/.test(route) || route !== (args.route || args["public-route-slug"]))) {
+    throw new Error("--route must be a single normalized slug: letters, digits, dots, underscores and hyphens, not starting with a dot.");
+  }
+  if (!args.adopt) return;
+  const target = resolve(requireArg(args, "target"));
+  const source = resolve(target, args.adopt);
+  const slug = intakePageKitRoute(target, source);
+  if (!slug) throw new Error("--adopt must name a Page Kit route folder of the target: <target>/src/<route>/ holding page files.");
+  if (route && route !== slug) throw new Error("--adopt and --route must name the same route.");
+  if (args.source && !sameFile(resolve(args.source), source)) throw new Error("--adopt and --source must name the same folder.");
+  args.route = slug;
+  args.source = source;
+}
+
+function intakePageKitRoute(target, source) {
+  const slug = basename(source);
+  if (dirname(source) !== join(target, "src") || !/^[A-Za-z0-9_-][A-Za-z0-9._-]*$/.test(slug)
+    || canonicalPath(source) !== join(canonicalPath(target), "src", slug)) return null;
+  const manifest = readJsonIfExists(join(target, "package.json"));
+  const pageKit = manifest?.dependencies?.["next-campaign-page-kit"] || manifest?.devDependencies?.["next-campaign-page-kit"];
+  return pageKit && listPageKitPageFiles(source, slug, { assetsHtmlIgnored: pageKitIgnoresAssetsHtml(target) })?.length ? slug : null;
 }
 
 function preferredTemplateFamily(spec) {
@@ -1745,9 +1776,17 @@ async function prepareBuild(args, options = {}) {
   // project's first funnel uses the default packet and the project-level
   // .campaign-runtime/, every later one its own (planFunnelWorkspace). The
   // route is read here, before the lock, and checked again under it.
-  const plannedRoute = intakeRouteSlug(options.fetchedSpec || readSpecForRoute(specPath), args);
+  const plannedSpec = options.fetchedSpec || readSpecForRoute(specPath);
+  const plannedRoute = intakeRouteSlug(plannedSpec, args);
+  const routeBound = Boolean(plannedSpec && campaignIdentity(plannedSpec, args).mapPublicRouteSlug);
+  const sourceRoute = intakePageKitRoute(targetRepo, sourceRoot);
   const planFunnel = () => plannedRoute
-    ? refusing(() => planFunnelWorkspace(targetRepo, plannedRoute, { packetPath: args.out || null, force: args.force === true }))
+    ? refusing(() => planFunnelWorkspace(targetRepo, plannedRoute, {
+      packetPath: args.out || null, force: args.force === true, routeBound,
+      sourceRoute: args.route || args["public-route-slug"] ? null : sourceRoute,
+      routeHasPages: Boolean(sourceRoute && listPageKitPageFiles(join(targetRepo, "src", plannedRoute), plannedRoute,
+        { assetsHtmlIgnored: pageKitIgnoresAssetsHtml(targetRepo) })?.length),
+    }))
     : { packetPath: resolve(args.out || join(targetRepo, DEFAULT_PACKET_FILENAME)), runtimeRelPath: RUNTIME_DIR_REL_PATH, scoped: false, addedBeside: null };
   const funnel = planFunnel();
   const sidecars = campaignSidecarPaths(targetRepo, funnel.runtimeRelPath);
@@ -1777,7 +1816,7 @@ function readSpecForRoute(specPath) {
 // The public route slug intake will use, from the flag or the spec; null when
 // neither names one (prepare-build then refuses under the lock).
 function intakeRouteSlug(spec, args) {
-  if (!isObject(spec)) return optionalString(args["public-route-slug"]) || null;
+  if (!isObject(spec)) return optionalString(args.route) || optionalString(args["public-route-slug"]) || null;
   return normalizePublicRouteSlug(campaignIdentity(spec, args).publicRouteSlug) || null;
 }
 
@@ -1808,7 +1847,7 @@ function prepareBuildUnderLock({
     : null;
   const spec = strippedSpecBytes == null ? specOnDisk : hostStripped.spec;
   const specFileHash = strippedSpecBytes == null ? sha256File(specPath) : createHash("sha256").update(strippedSpecBytes).digest("hex");
-  const { mapId, publicRouteSlug, localSpecId } = campaignIdentity(spec, args);
+  const { mapId, publicRouteSlug, mapPublicRouteSlug, localSpecId } = campaignIdentity(spec, args);
   if (!resolveCampaignIdentity({ map_id: mapId, local_spec_id: localSpecId })) {
     throw new Error("CampaignSpec requires exactly one identity: a saved spec_identity.map_id, or an agent-authored spec_identity.local_spec_id (1–64 letters, digits, underscores or hyphens). Keep the local ID stable across revisions; do not invent a Map ID.");
   }
@@ -1908,6 +1947,7 @@ function prepareBuildUnderLock({
     specPages: activePages,
     htmlFiles,
     publicRouteSlug,
+    mapPublicRouteSlug,
     outputDir,
     buildScope: isObject(spec.build_scope) ? spec.build_scope : null,
     manifestPath: designManifestPath,
@@ -1963,10 +2003,8 @@ function prepareBuildUnderLock({
     || optionalString(spec.campaign?.route_root);
   let specRouteRoot = null;
   if (rawSpecRouteRoot) {
-    const clean = rawSpecRouteRoot.trim();
-    if (clean === "/") specRouteRoot = "/";
-    else if (normalizePublicRouteSlug(clean) === publicRouteSlug) specRouteRoot = `/${publicRouteSlug}/`;
-    else {
+    specRouteRoot = intakeRouteRoot(rawSpecRouteRoot, publicRouteSlug, mapPublicRouteSlug);
+    if (!specRouteRoot) {
       throw new Error(`CampaignSpec declares route_root ${JSON.stringify(rawSpecRouteRoot)}, which is neither "/" (root-served) nor "/${publicRouteSlug}/" (the public route slug). Fix the spec's route_root or public route slug before assembly.`);
     }
   }
@@ -2073,6 +2111,7 @@ function prepareBuildUnderLock({
     campaigns_os_version: packageVersion(),
     campaign: {
       public_route_slug: publicRouteSlug,
+      ...(mapPublicRouteSlug ? { map_public_route_slug: mapPublicRouteSlug } : {}),
       ...(specRouteRoot ? { route_root: specRouteRoot } : {}),
       campaign_directory: optionalString(args["campaign-directory"], basename(outputDir)),
       live_url_path: liveUrlPath,
@@ -2342,18 +2381,22 @@ function prepareBuildUnderLock({
     publication.publishDoctorOutput(doctor, { command: options.command });
   }
 
+  const bindingOffer = funnel.bindingOffer ? {
+    route: funnel.bindingOffer.route,
+    deletePaths: funnel.scoped ? [packetPath, `${funnel.runtimeRelPath}/`]
+      : [packetPath, contextPath, reportPath, briefPath, designSourcePackagePath, doctorOutPath].filter(existsSync),
+    command: asInvocation(["campaigns-os", options.command || "prepare-build",
+      ...Object.entries(args).filter(([key]) => !["_", "source", "route", "adopt", "public-route-slug", "out"].includes(key)
+        && !(key === "spec" && options.specInput?.source !== "local" && options.specInput?.mapId))
+        .flatMap(([key, value]) => value === true ? [`--${key}`] : [`--${key}`, shellToken(String(value))]),
+      "--adopt", shellToken(`src/${funnel.bindingOffer.route}`),
+    ].join(" ")),
+  } : null;
   return {
-    packetPath,
-    contextPath,
-    reportPath,
-    doctorOutPath,
-    briefPath,
-    designSourcePackagePath,
+    packetPath, contextPath, reportPath, doctorOutPath, briefPath, designSourcePackagePath,
     designSourcePackageMode: designSourcePackage.mode,
-    packet,
-    context,
-    report,
-    doctor,
+    packet, context, report, doctor,
+    ...(bindingOffer ? { funnelBindingOffer: bindingOffer } : {}),
     ...(funnel.addedBeside ? { funnelAddedBeside: funnel.addedBeside } : {}),
   };
 }
@@ -3498,7 +3541,7 @@ export function pageKitSyncCommand(args) {
     const specSlug = specPublicRouteSlug(spec);
     const specMapId = optionalString(spec.spec_identity?.map_id) || optionalString(spec.map_id);
     const packetMapId = optionalString(packet.spec?.map_id);
-    if (specSlug && specSlug !== publicRouteSlug) {
+    if (!routeSlugIdentity(spec, packet).ok) {
       addIssue(result.errors, "page_kit.sync.spec_identity_mismatch", `CampaignSpec identifies route "${singleLineField(specSlug)}" but the packet's campaign.public_route_slug is "${publicRouteSlug}". Point spec.local_path at this campaign's export (or re-run prepare-build from it); nothing was written.`);
     } else if (specMapId && packetMapId && specMapId !== packetMapId) {
       addIssue(result.errors, "page_kit.sync.spec_identity_mismatch", `CampaignSpec spec_identity.map_id "${singleLineField(specMapId)}" does not match the packet's spec.map_id "${singleLineField(packetMapId)}". Point spec.local_path at this campaign's export (or re-run prepare-build from it); nothing was written.`);
@@ -3809,26 +3852,31 @@ export async function specFetchCommand(args, { fetchImpl = undefined } = {}) {
     addIssue(result.errors, "spec.fetch.not_saved_map", `spec.local_path is ${localPath}, not this Map's copy (.campaign-runtime/fetched-specs/${basename(cachePath)}), so spec fetch cannot restore it. Restore that file from where it is kept.`);
     return result;
   }
+  const checkSpecRouteIdentity = (candidate, source) => {
+    const candidateMapId = optionalString(candidate?.spec_identity?.map_id) || optionalString(candidate?.map_id);
+    const identity = routeSlugIdentity(candidate, workspace.packet);
+    if ((candidateMapId && candidateMapId !== mapId) || !identity.ok) {
+      addIssue(result.errors, "spec.fetch.identity_mismatch", `${source} identifies ${singleLineField(candidateMapId || mapId)} on route "${singleLineField(identity.specSlug)}", but this packet is ${singleLineField(mapId)} on route "${singleLineField(identity.packetSlug)}" without a matching route identity; nothing was written.`);
+      return false;
+    }
+    return true;
+  };
   let boundMaterial;
   let specMaterial;
   try {
     const report = existsSync(workspace.reportPath) ? readJson(workspace.reportPath) : null;
     boundMaterial = specMaterialStamp(report?.identity?.spec_material_hash);
     if (existsSync(specPath)) {
-      specMaterial = currentSpecMaterial(readJson(specPath));
+      const existing = readJson(specPath);
+      if (!checkSpecRouteIdentity(existing, "The local Map copy")) return result;
+      specMaterial = currentSpecMaterial(existing);
       result.status = "present";
       result.ready.push(`${localPath} is already here; it was left as it is and nothing was fetched.`);
     } else {
       assertFetchedSpecCacheWritable(workspace.targetRepo, cachePath);
       const fetched = await fetchSpecByMapId(mapId, { proxyBase: optionalString(args["proxy-base"]) || DEFAULT_PROXY_BASE, fetchImpl });
       // This file is what the records and spec derive read, so it must be this campaign's.
-      const fetchedMapId = optionalString(fetched?.spec_identity?.map_id) || optionalString(fetched?.map_id);
-      const fetchedSlug = specPublicRouteSlug(fetched);
-      const packetSlug = normalizePublicRouteSlug(workspace.packet?.campaign?.public_route_slug);
-      if ((fetchedMapId && fetchedMapId !== mapId) || (fetchedSlug && packetSlug && fetchedSlug !== packetSlug)) {
-        addIssue(result.errors, "spec.fetch.identity_mismatch", `The Map returned a spec for ${singleLineField(fetchedMapId || mapId)} on route "${singleLineField(fetchedSlug || "")}", but this packet is ${singleLineField(mapId)} on route "${singleLineField(packetSlug || "")}"; nothing was written.`);
-        return result;
-      }
+      if (!checkSpecRouteIdentity(fetched, "The Map response")) return result;
       // The same reduction intake made, so the copy reads as the records' did.
       const { spec } = stripHostPrefixedRoutes(fetched);
       // Again at the write: the links can change during the request.
@@ -3960,7 +4008,7 @@ export function specDeriveCommand(args, { store: storeRead = null, liveCampaign 
     const specSlug = specPublicRouteSlug(spec);
     const specMapId = optionalString(spec.spec_identity?.map_id) || optionalString(spec.map_id);
     const packetMapId = optionalString(packet.spec?.map_id);
-    if (specSlug && specSlug !== publicRouteSlug) {
+    if (!routeSlugIdentity(spec, packet).ok) {
       addIssue(result.errors, "spec.derive.spec_identity_mismatch", `CampaignSpec identifies route "${singleLineField(specSlug)}" but the packet's campaign.public_route_slug is "${publicRouteSlug}". Point spec.local_path at this campaign's export (or re-run prepare-build from it); nothing was written.`);
     } else if (specMapId && packetMapId && specMapId !== packetMapId) {
       addIssue(result.errors, "spec.derive.spec_identity_mismatch", `CampaignSpec spec_identity.map_id "${singleLineField(specMapId)}" does not match the packet's spec.map_id "${singleLineField(packetMapId)}". Point spec.local_path at this campaign's export (or re-run prepare-build from it); nothing was written.`);
@@ -4082,7 +4130,7 @@ export function specDeriveCommand(args, { store: storeRead = null, liveCampaign 
   }
   // After handoff the page tree also says which pages exist (#721).
   const handedOff = campaignHandedOff(report);
-  const plan = planSpecDerive({ spec, entry, pageFiles, packetBindings, waivedGates, waiversUnknown, publicRouteSlug, handedOff });
+  const plan = planSpecDerive({ spec, entry, pageFiles, packetBindings, waivedGates, waiversUnknown, publicRouteSlug, mapPublicRouteSlug: packet.campaign?.map_public_route_slug, handedOff });
   result.page_scope = plan.page_scope;
   // The mirrored offer and package fields, from the live campaign read
   // (#721). A read that did not happen leaves them as they are and says why.
@@ -8612,6 +8660,7 @@ export function prepareBuildRerunCommand({ packet, packetPath = null, context = 
     : null;
   const abs = (base, value) => (base && optionalString(value) ? shellToken(resolve(base, value)) : optionalString(value) ? shellToken(value) : null);
   const parts = ["campaigns-os start"];
+  if (packet?.campaign?.map_public_route_slug) parts.push(`--route ${shellToken(packet.campaign.public_route_slug)}`);
   if (intake) {
     if (intake.spec_source === "local" || !intake.map_id) {
       const specPath = optionalString(intake.spec_path);
@@ -8812,7 +8861,12 @@ function printPrepareResult(result, args) {
     }
   }
   console.log(`Packet: ${result.packetPath}`);
-  if (result.funnelAddedBeside) {
+  if (result.funnelBindingOffer) {
+    const offer = result.funnelBindingOffer;
+    console.log(`Funnel: route ${result.packet.campaign.public_route_slug} has no page folder; the source pages use ${offer.route}. To bind this funnel to that route, delete ${offer.deletePaths.join(" and ")}, then re-run: ${offer.command}`);
+  } else if (result.packet?.campaign?.map_public_route_slug) {
+    console.log(`Funnel: Map slug "${result.packet.campaign.map_public_route_slug}" → bound route "${result.packet.campaign.public_route_slug}"`);
+  } else if (result.funnelAddedBeside) {
     // A route differing from the default packet's is either another funnel
     // or a rename of that one; only the operator knows which, so say what was
     // done and how to undo it.

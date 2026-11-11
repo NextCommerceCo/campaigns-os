@@ -1209,6 +1209,9 @@ function renderIdentity(views, lines) {
     if (spec.local_spec_id) entries.push(["local_spec_id", spec.local_spec_id, "build packet"]);
     if (campaign.public_route_slug) {
       entries.push(["public_route_slug", campaign.public_route_slug, "build packet"]);
+      if (campaign.map_public_route_slug) {
+        entries.push(["route binding", `Map slug "${oneLine(campaign.map_public_route_slug)}" → bound route "${oneLine(campaign.public_route_slug)}"`, "build packet"]);
+      }
     }
     const assembly = packet.assembly || {};
     if (assembly.template_family) entries.push(["template_family", assembly.template_family, "build packet"]);

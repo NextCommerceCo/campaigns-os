@@ -523,10 +523,13 @@ async function resolveQaInputs(args, {
   const targetOutputDir = targetRepo && packet?.assembly?.output_dir ? resolve(targetRepo, packet.assembly.output_dir) : null;
   const mappingById = new Map((packet?.source_html?.pages || []).map((page) => [page.page_id, page]));
   const topologies = extractTopologies(normalized, {
-    baseUrl, publicRouteSlug, templateFamily, commerceStructureContract,
+    baseUrl: packet?.campaign?.map_public_route_slug && analyticsCaptureTarget.route_root === "/" ? analyticsCaptureTarget.url : baseUrl,
+    publicRouteSlug, templateFamily, commerceStructureContract,
+    mapPublicRouteSlug: packet?.campaign?.map_public_route_slug,
     entryServingRoute: (page) => entryPageKitServingRoute(targetRepo, publicRouteSlug, page, {
       targetOutputDir,
       mapping: mappingById.get(page.id),
+      mapPublicRouteSlug: packet?.campaign?.map_public_route_slug,
     }),
   });
   const themeGate = resolveThemeGate({
@@ -3560,14 +3563,14 @@ function normalizeSpec(raw) {
   return { ...raw, funnels: [] };
 }
 
-function extractTopologies(spec, { baseUrl = null, publicRouteSlug = null, templateFamily = null, commerceStructureContract = null, entryServingRoute = null } = {}) {
+function extractTopologies(spec, { baseUrl = null, publicRouteSlug = null, mapPublicRouteSlug = null, templateFamily = null, commerceStructureContract = null, entryServingRoute = null } = {}) {
   const pageById = new Map();
   for (const funnel of spec.funnels || []) {
     for (const page of funnel.pages || []) pageById.set(page.id, page);
   }
   const urlById = new Map();
   for (const [id, page] of pageById) {
-    urlById.set(id, resolvePageUrl(page, baseUrl, publicRouteSlug, entryServingRoute?.(page)));
+    urlById.set(id, resolvePageUrl(page, baseUrl, publicRouteSlug, entryServingRoute?.(page), mapPublicRouteSlug));
   }
   return (spec.funnels || []).map((funnel) => ({
     funnel_id: funnel.id || "default",
@@ -3584,19 +3587,19 @@ function extractTopologies(spec, { baseUrl = null, publicRouteSlug = null, templ
         label: page.label || page.id,
         url: urlById.get(page.id) || null,
         is_entry: Boolean(page.is_entry),
-        expected_meta_tags: extractExpectedMetaTags(page, { baseUrl, pageById, urlById, publicRouteSlug }),
+        expected_meta_tags: extractExpectedMetaTags(page, { baseUrl, pageById, urlById, publicRouteSlug, mapPublicRouteSlug }),
         // Same resolver as build-time wiring. This previously read
         // `next_page || success_url` and ignored on_accept entirely, so the QA
         // expectation and the built page could disagree about which declared
         // field wins on any page carrying more than one.
-        expected_next_url: resolveSibling(pageById, urlById, forwardRouteTarget(page), baseUrl, publicRouteSlug),
+        expected_next_url: resolveSibling(pageById, urlById, forwardRouteTarget(page), baseUrl, publicRouteSlug, mapPublicRouteSlug),
         // acceptRouteTarget, never `page.on_accept` raw. Reading the field
         // directly outlived its correctness: since #234 gated `on_accept` to
         // offer pages, a `select` page's inert on_accept produced an
         // expected_accept_url, so QA hunted for an accept link the built page
         // correctly does not have and flagged a correct build.
-        expected_accept_url: resolveSibling(pageById, urlById, acceptRouteTarget(page), baseUrl, publicRouteSlug),
-        expected_decline_url: resolveSibling(pageById, urlById, declineRouteTarget(page), baseUrl, publicRouteSlug),
+        expected_accept_url: resolveSibling(pageById, urlById, acceptRouteTarget(page), baseUrl, publicRouteSlug, mapPublicRouteSlug),
+        expected_decline_url: resolveSibling(pageById, urlById, declineRouteTarget(page), baseUrl, publicRouteSlug, mapPublicRouteSlug),
         // Forward fields the author declared that routing skipped because this
         // page type cannot satisfy them. Carried into the topology so QA can
         // tell "terminates on purpose" (a thank-you page, a partial-scope
@@ -3622,13 +3625,14 @@ function extractTopologies(spec, { baseUrl = null, publicRouteSlug = null, templ
   }));
 }
 
-function resolvePageUrl(page, baseUrl, publicRouteSlug = null, entryServingRoute = null) {
-  if (typeof page.url === "string" && page.url.trim()) return page.url.trim();
+function resolvePageUrl(page, baseUrl, publicRouteSlug = null, entryServingRoute = null, mapPublicRouteSlug = null) {
+  if (typeof page.url === "string" && page.url.trim() && (!mapPublicRouteSlug || isAbsoluteHttpUrl(page.url.trim()))) return page.url.trim();
   if (!baseUrl) return null;
-  const route = isRootRoutedEntryPage(page, publicRouteSlug)
+  const specRoute = mapPublicRouteSlug && typeof page.url === "string" && page.url.trim() ? page.url : page.page_url;
+  const route = isRootRoutedEntryPage(page, publicRouteSlug, mapPublicRouteSlug)
     ? entryServingRoute?.route || ""
-    : typeof page.page_url === "string" && page.page_url.trim()
-      ? runtimeRelativeRouteForSpecValue(page.page_url, publicRouteSlug)
+    : typeof specRoute === "string" && specRoute.trim()
+      ? runtimeRelativeRouteForSpecValue(specRoute, publicRouteSlug, mapPublicRouteSlug)
       : defaultRouteForType(page.type);
   if (isAbsoluteHttpUrl(route)) return route;
   try {
@@ -3645,13 +3649,14 @@ function defaultRouteForType(type) {
   return `${type || "page"}/`;
 }
 
-function resolveSibling(pageById, urlById, ref, baseUrl, publicRouteSlug = null) {
+function resolveSibling(pageById, urlById, ref, baseUrl, publicRouteSlug = null, mapPublicRouteSlug = null) {
   if (typeof ref !== "string" || !ref.trim()) return undefined;
   if (urlById.has(ref)) return urlById.get(ref) || null;
   if (isAbsoluteHttpUrl(ref)) return ref;
   if (baseUrl && (ref.startsWith("/") || ref.includes(".") || ref.endsWith("/"))) {
     try {
-      return joinBaseUrl(baseUrl, runtimeRelativeRouteForSpecValue(ref, publicRouteSlug) || ref);
+      const route = runtimeRelativeRouteForSpecValue(ref, publicRouteSlug, mapPublicRouteSlug);
+      return joinBaseUrl(baseUrl, mapPublicRouteSlug ? route : route || ref);
     } catch {
       return ref;
     }
@@ -3670,14 +3675,14 @@ function joinBaseUrl(baseUrl, route) {
   return new URL(normalizedRoute, base).toString();
 }
 
-function extractExpectedMetaTags(page, { baseUrl, pageById, urlById, publicRouteSlug } = {}) {
+function extractExpectedMetaTags(page, { baseUrl, pageById, urlById, publicRouteSlug, mapPublicRouteSlug } = {}) {
   const source = page.sdk_hints?.meta_tags;
   if (!source || typeof source !== "object") return undefined;
   const out = {};
   for (const [key, value] of Object.entries(source)) {
     if (typeof value !== "string") continue;
     if (isRoutingMetaTag(key)) {
-      const resolved = resolveSibling(pageById || new Map(), urlById || new Map(), value, baseUrl, publicRouteSlug);
+      const resolved = resolveSibling(pageById || new Map(), urlById || new Map(), value, baseUrl, publicRouteSlug, mapPublicRouteSlug);
       out[key] = stripOrigin(resolved || value);
     } else {
       out[key] = value;

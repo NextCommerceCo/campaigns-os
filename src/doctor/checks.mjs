@@ -36,7 +36,7 @@ import {
   normalizePublicRouteSlug,
   packetRouteRoot,
   runtimeRelativeRouteForSpecValue,
-  specPublicRouteSlug,
+  routeSlugIdentity,
   stripPublicRoutePrefix,
 } from "../route-identity.mjs";
 import { evaluatePageKitBuildSummary } from "../page-kit-build-summary.mjs";
@@ -579,6 +579,10 @@ function validatePacket(packet, packetPath, errors, warnings, ready, derived, bu
   Object.defineProperty(derived, "page_kit_entry_mappings", {
     value: Object.fromEntries((packet.source_html?.pages || [])
       .filter((page) => page?.page_kit?.target_path).map((page) => [page.page_id, page])),
+    configurable: true,
+  });
+  Object.defineProperty(derived, "map_public_route_slug", {
+    value: packet.campaign?.map_public_route_slug,
     configurable: true,
   });
   const synthesizedBuiltSite = isSynthesizedBuiltSitePacket(packet);
@@ -1593,18 +1597,12 @@ function validateSpecIdentityExport(spec, warnings, ready) {
 // roots at _site/<public_route_slug>/, finds nothing to check, and silently
 // stops running, so doctor output is indistinguishable from a healthy run
 // while all built-output guarantees are off. The packet slug must match the
-// spec's declared public route slug and must not be the Map ID.
+// spec's declared public route slug (or record a spec-matching route binding)
+// and must not be the Map ID unless the spec itself declares that route.
 export function validateRouteSlugIdentity(spec, packet, errors, ready) {
-  const packetSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  const { ok, reason, packetSlug, specSlug, specDeclaresMapIdSlug } = routeSlugIdentity(spec, packet);
   if (!packetSlug) return;
-
-  const mapId = optionalString(spec?.spec_identity?.map_id)
-    || optionalString(spec?.map_id)
-    || optionalString(packet?.spec?.map_id);
-  const specSlug = specPublicRouteSlug(spec);
-  const specDeclaresMapIdSlug = Boolean(specSlug) && Boolean(mapId) && specSlug === mapId;
-
-  if (mapId && packetSlug === mapId && !specDeclaresMapIdSlug) {
+  if (reason === "map_id") {
     addIssue(
       errors,
       "campaign.route_slug_identity",
@@ -1613,16 +1611,20 @@ export function validateRouteSlugIdentity(spec, packet, errors, ready) {
     return;
   }
 
-  if (specSlug && packetSlug !== specSlug) {
+  if (!ok) {
     addIssue(
       errors,
       "campaign.route_slug_identity",
-      `Packet campaign.public_route_slug "${packetSlug}" does not match the CampaignSpec declared public route slug "${specSlug}". Built-output checks root at _site/<public_route_slug>/, so a wrong slug silently disarms them. Correct the packet slug or re-run prepare-build from the spec.`
+      `Packet campaign.public_route_slug "${packetSlug}" does not match the CampaignSpec declared public route slug "${specSlug}" through a valid binding${reason === "binding_mismatch" ? ` (recorded campaign.map_public_route_slug "${packet.campaign.map_public_route_slug}" disagrees with the spec)` : ""}. Built-output checks root at _site/<public_route_slug>/, so a wrong slug silently disarms them. Correct the packet slug or re-run prepare-build with --route <served route> from the spec.`
     );
     return;
   }
 
   if (specSlug) {
+    if (packetSlug !== specSlug) {
+      ready.push(`Route binding: Map slug "${specSlug}" → bound route "${packetSlug}"`);
+      return;
+    }
     // Kilo review (PR #174): only claim "not the Map ID" when that is true —
     // a spec may (confusingly, but authoritatively) declare its route slug
     // equal to its Map ID, and the packet matching it is not an error here.
@@ -1706,7 +1708,9 @@ export function validateSpecRoutingMetaTags(spec, packet, warnings, ready, deriv
       const value = metaTags[tag];
       if (!isNonEmptyString(value)) continue;
       const route = value.trim();
-      if (isRuntimeRootedRoutingMeta(route, publicRouteSlug, routeRoot)) continue;
+      const mapSlug = packet.campaign?.map_public_route_slug;
+      const projected = mapSlug ? runtimeRouteForMetaValue(route, publicRouteSlug, routeRoot, mapSlug) : route;
+      if (isRuntimeRootedRoutingMeta(projected, publicRouteSlug, routeRoot)) continue;
       // A host in front of the path is validateSpecHostPrefixedRoutes'
       // blocker, not this warning.
       if (parseHostPrefixedRoute(route, { keepAbsolute: true })) {
@@ -1742,7 +1746,7 @@ export function validateSpecRoutingMetaTags(spec, packet, warnings, ready, deriv
 // routes-only bind on the same function (spec-derive.mjs staleRoutingHints).
 export function validateSpecRoutingHintsCurrent(spec, packet, errors, ready) {
   const publicRouteSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
-  const stale = staleRoutingHints(spec, { publicRouteSlug });
+  const stale = staleRoutingHints(spec, { publicRouteSlug, mapPublicRouteSlug: packet.campaign?.map_public_route_slug });
   if (!stale.length) {
     if (activeSpecPages(spec).some((page) => isObject(page.sdk_hints?.meta_tags))) ready.push("CampaignSpec routing hints match the routes of the pages they name");
     return;
@@ -1893,7 +1897,7 @@ export function validateBuiltSdkMetaTags({ spec, packet, errors, warnings, ready
         continue;
       }
       if (SDK_ROUTING_META_TAGS.includes(name) && isNonEmptyString(expectedValue)) {
-        const expectedRoute = runtimeRouteForMetaValue(expectedValue, publicRouteSlug, campaignRouteRoot(packet));
+        const expectedRoute = runtimeRouteForMetaValue(expectedValue, publicRouteSlug, campaignRouteRoot(packet), packet.campaign?.map_public_route_slug);
         if (expectedRoute && actualValue.trim() !== expectedRoute) {
           addIssue(
             assemblyComplete ? errors : warnings,
@@ -3181,28 +3185,29 @@ function builtHtmlPathForPage(targetRepo, publicRouteSlug, page, derived = {}) {
   const entryRoute = entryPageKitServingRoute(targetRepo, publicRouteSlug, page, {
     targetOutputDir: derived?.target_output_dir,
     mapping: derived?.page_kit_entry_mappings?.[page?.id],
+    mapPublicRouteSlug: derived?.map_public_route_slug,
   });
   if (entryRoute) return join(targetRepo, "_site", publicRouteSlug, ...(entryRoute.route ? [entryRoute.route] : []), "index.html");
   const sourcePermalink = sourcePermalinkForPage(derived?.target_output_dir, publicRouteSlug, page, { assetsHtmlIgnored: pageKitIgnoresAssetsHtml(targetRepo) });
-  const route = sourcePermalink || runtimeRelativeRouteForSpecValue(publicRouteForPage(page), publicRouteSlug);
+  const route = sourcePermalink || runtimeRelativeRouteForSpecValue(publicRouteForPage(page), publicRouteSlug, derived?.map_public_route_slug);
   if (!route) return join(targetRepo, "_site", publicRouteSlug, "index.html");
   const clean = route.replace(/^\/+|\/+$/g, "");
   return clean ? join(targetRepo, "_site", publicRouteSlug, clean, "index.html") : join(targetRepo, "_site", publicRouteSlug, "index.html");
 }
 
-export function isRootRoutedEntryPage(page, publicRouteSlug) {
-  return Boolean(page?.is_entry) && runtimeRelativeRouteForSpecValue(publicRouteForPage(page), publicRouteSlug) === "";
+export function isRootRoutedEntryPage(page, publicRouteSlug, mapPublicRouteSlug = null) {
+  return Boolean(page?.is_entry) && runtimeRelativeRouteForSpecValue(publicRouteForPage(page), publicRouteSlug, mapPublicRouteSlug) === "";
 }
 
 // An explicit permalink belongs to this entry's Page Kit source file. It wins
 // even when an older build left output at the filename-derived route.
-export function entryPageKitServingRoute(targetRepo, publicRouteSlug, page, { targetOutputDir = null, mapping = null } = {}) {
-  if (!targetRepo || !publicRouteSlug || !isRootRoutedEntryPage(page, publicRouteSlug)) return null;
+export function entryPageKitServingRoute(targetRepo, publicRouteSlug, page, { targetOutputDir = null, mapping = null, mapPublicRouteSlug = null } = {}) {
+  if (!targetRepo || !publicRouteSlug || !isRootRoutedEntryPage(page, publicRouteSlug, mapPublicRouteSlug)) return null;
   const permalink = entrySourcePermalink(targetOutputDir, publicRouteSlug, page, mapping);
   if (permalink !== null) return { route: permalink, source: "permalink" };
   const root = join(targetRepo, "_site", publicRouteSlug, "index.html");
   if (existsSync(root) && statSync(root).isFile()) return { route: "", source: "root" };
-  const fileRoute = entryPageKitFileRoute(targetRepo, publicRouteSlug, page, { targetOutputDir, mapping });
+  const fileRoute = entryPageKitFileRoute(targetRepo, publicRouteSlug, page, { targetOutputDir, mapping, mapPublicRouteSlug });
   return fileRoute ? { route: `${fileRoute}/`, source: "file" } : { route: "", source: "declared" };
 }
 
@@ -3224,8 +3229,8 @@ function entrySourcePermalink(targetOutputDir, publicRouteSlug, page, mapping) {
 // Page Kit serves a page file without a permalink at its basename route.
 // Only the recorded target file (or the family's own materialised stock file)
 // may identify an entry fallback; an unrelated built index is not evidence.
-export function entryPageKitFileRoute(targetRepo, publicRouteSlug, page, { targetOutputDir = null, mapping = null } = {}) {
-  if (!targetRepo || !publicRouteSlug || !isRootRoutedEntryPage(page, publicRouteSlug)) return null;
+export function entryPageKitFileRoute(targetRepo, publicRouteSlug, page, { targetOutputDir = null, mapping = null, mapPublicRouteSlug = null } = {}) {
+  if (!targetRepo || !publicRouteSlug || !isRootRoutedEntryPage(page, publicRouteSlug, mapPublicRouteSlug)) return null;
   if (entrySourcePermalink(targetOutputDir, publicRouteSlug, page, mapping) !== null) return null;
   const root = join(targetRepo, "_site", publicRouteSlug, "index.html");
   if (existsSync(root) && statSync(root).isFile()) return null;
@@ -3280,13 +3285,13 @@ function extractMetaContent(content, name) {
   return contentAttr ? contentAttr[1] : "";
 }
 
-function runtimeRouteForMetaValue(value, publicRouteSlug, routeRoot = null) {
+function runtimeRouteForMetaValue(value, publicRouteSlug, routeRoot = null, mapPublicRouteSlug = null) {
   if (!isNonEmptyString(value)) return null;
   const route = value.trim();
   if (isAbsoluteHttpUrl(route)) return route;
-  if (isRuntimeRootedRoutingMeta(route, publicRouteSlug, routeRoot)) return route;
+  if (!mapPublicRouteSlug && isRuntimeRootedRoutingMeta(route, publicRouteSlug, routeRoot)) return route;
   const root = routeRoot || `/${publicRouteSlug}/`;
-  const normalized = runtimeRelativeRouteForSpecValue(route, publicRouteSlug);
+  const normalized = runtimeRelativeRouteForSpecValue(route, publicRouteSlug, mapPublicRouteSlug);
   return normalized ? `${root}${normalized}` : root;
 }
 
@@ -3853,9 +3858,12 @@ function validateSourceCoverage(packet, packetPath, spec, errors, warnings, read
       ? entryPageKitServingRoute(derived.target_repo, publicRouteSlug, specPage, {
         targetOutputDir: derived.target_output_dir,
         mapping: page,
+        mapPublicRouteSlug: packet.campaign?.map_public_route_slug,
       })
       : null;
-    const builtRoute = entryRoute ? entryRoute.route : specPage ? publicRouteForPage(specPage) : null;
+    const builtRoute = entryRoute ? entryRoute.route : specPage ? packet.campaign?.map_public_route_slug
+      ? stripPublicRoutePrefix(publicRouteForPage(specPage), publicRouteSlug, packet.campaign.map_public_route_slug)
+      : publicRouteForPage(specPage) : null;
     const rootOutput = entryRoute?.route ? join(derived.target_repo, "_site", publicRouteSlug, "index.html") : null;
     if (rootOutput && (entryRoute.source === "file" || entryRoute.source === "permalink")
       && !(existsSync(rootOutput) && statSync(rootOutput).isFile())) {
