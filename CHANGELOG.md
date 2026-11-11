@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.68.0+agent.3] - 2026-11-11
+## [1.68.0+agent.4] - 2026-11-11
 
 ### Changed
 
