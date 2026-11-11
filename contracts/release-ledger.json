@@ -4068,13 +4068,40 @@
       "entry_sha256": "63617f16257551ed7d6643035a39e3698c634345b015cb16e0f259bc5c204200"
     },
     {
-      "id": "RL-0338",
+      "id": "RL-0336",
       "sequence": 324,
       "date": "2026-11-11",
       "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.68.0+agent.5",
-      "changelog_sha256": "dda97f259af30e454e9d41ddd0ebff1c65098f0008a9f6466bed9d97626a594d",
+      "changelog_section": "1.68.0+agent.4",
+      "changelog_sha256": "58a9295968e438203c7438421b2ad88417a804a6d152a32fd4f02c0f57782a90",
+      "agent_impact": "Pin and bundle parse5 8.0.1 and entities 8.1.0 to preserve saved commerce-signature/v1 records in registry installs as well as checkouts. parse5 8.1.0 changes foreign-element reconstruction and can classify a copy-only edit as commerce_markup_changed. The parser upgrade is deferred; no saved records or existing literal baselines are rewritten. entities is a direct dependency solely to pin and bundle the decoder, not a new package export.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Pin and bundle the v1 parser and decoder for consumer installs."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Record exact bundled parser dependencies."
+        }
+      ],
+      "entry_sha256": "f43cd05d36051a9df300c4c522e829d0fe5cf12e10118904f22b1fe3101faaf2"
+    },
+    {
+      "id": "RL-0338",
+      "sequence": 325,
+      "date": "2026-11-11",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.68.0+agent.6",
+      "changelog_sha256": "8999f816c3cd296d3b4121495627b3a462d10d15a0317420072df9d45540a3f9",
       "agent_impact": "A qa run with a spec and no --currency now enters each funnel's entry page with ?currency=<the spec's campaign.currency> and marks evidence.currency_defaulted_from_spec on that page's http row; pass --currency to choose another. A malformed spec currency, a spec with none, --site and legacy API order runs stay unpinned. On a build recorded with build_environment development, an analytics-correctness:tag:* row that did not fire is manual_review / warn with evidence.reason development_build_gates_vendor_loaders, on a hosted preview and on local-serve alike (local-serve runs used to read local_serve_development_render for these rows); run QA against a production build to check the tag. A tag:meta row whose observer was disarmed, oob rows and purchase-fires keep their earlier rules.",
       "compatibility": "compatible",
       "migration": "none",
@@ -4092,7 +4119,7 @@
           "summary": "spec derive's analytics warnings say a declared tag is checked on a production build."
         }
       ],
-      "entry_sha256": "de8a8c725d54d27d3b711ee8a1b05468bcb76eaa3334b38d97d2622fa27698ec"
+      "entry_sha256": "acfc925903257903fa415a74b3330a69cb7f590946b4daf9a153d21680881a97"
     }
   ]
 }

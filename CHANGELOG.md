@@ -2,11 +2,17 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.68.0+agent.5] - 2026-11-11
+## [1.68.0+agent.6] - 2026-11-11
 
 ### Fixed
 
 - `qa run` without `--currency` runs in the CampaignSpec's `campaign.currency`, a declared tag that did not fire on a build recorded as a development build reads not measured instead of blocking, and the private template family error names `PRIVATE_TEMPLATE_SOURCES_ROOT` first (#756).
+
+## [1.68.0+agent.4] - 2026-11-11
+
+### Fixed
+
+- Pin and bundle parse5 and entities to preserve saved commerce-signature/v1 records across consumer installs (#744).
 
 ## [1.68.0+agent.3] - 2026-11-11
 
