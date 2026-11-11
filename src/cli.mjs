@@ -154,6 +154,7 @@ import {
   intakeRouteRoot,
   specPublicRouteSlug,
   routeSlugIdentity,
+  effectiveMapPublicRouteSlug,
 } from "./route-identity.mjs";
 import {
   PAGE_KIT_BUILD_SUMMARY_CAPTURE_COMMAND,
@@ -4142,7 +4143,7 @@ export function specDeriveCommand(args, { store: storeRead = null, liveCampaign 
   }
   // After handoff the page tree also says which pages exist (#721).
   const handedOff = campaignHandedOff(report);
-  const plan = planSpecDerive({ spec, entry, pageFiles, packetBindings, waivedGates, waiversUnknown, publicRouteSlug, mapPublicRouteSlug: packet.campaign?.map_public_route_slug, handedOff });
+  const plan = planSpecDerive({ spec, entry, pageFiles, packetBindings, waivedGates, waiversUnknown, publicRouteSlug, mapPublicRouteSlug: effectiveMapPublicRouteSlug(packet), handedOff });
   result.page_scope = plan.page_scope;
   // The mirrored offer and package fields, from the live campaign read
   // (#721). A read that did not happen leaves them as they are and says why.
@@ -8679,7 +8680,7 @@ export function prepareBuildRerunCommand({ packet, packetPath = null, context = 
     : null;
   const abs = (base, value) => (base && optionalString(value) ? shellToken(resolve(base, value)) : optionalString(value) ? shellToken(value) : null);
   const parts = ["campaigns-os start"];
-  if (!adopt && packet?.campaign?.map_public_route_slug) parts.push(`--route ${shellToken(packet.campaign.public_route_slug)}`);
+  if (!adopt && effectiveMapPublicRouteSlug(packet)) parts.push(`--route ${shellToken(packet.campaign.public_route_slug)}`);
   if (intake) {
     if (intake.spec_source === "local" || !intake.map_id) {
       const specPath = optionalString(intake.spec_path);
@@ -8883,8 +8884,8 @@ function printPrepareResult(result, args) {
   if (result.funnelBindingOffer) {
     const offer = result.funnelBindingOffer;
     console.log(`Funnel: route ${result.packet.campaign.public_route_slug} has no page folder; the source pages use ${offer.route}. To bind this funnel to that route, delete ${offer.deletePaths.join(" and ")}, then re-run: ${offer.command}`);
-  } else if (result.packet?.campaign?.map_public_route_slug) {
-    console.log(`Funnel: Map slug "${result.packet.campaign.map_public_route_slug}" → bound route "${result.packet.campaign.public_route_slug}"`);
+  } else if (effectiveMapPublicRouteSlug(result.packet)) {
+    console.log(`Funnel: Map slug "${effectiveMapPublicRouteSlug(result.packet)}" → bound route "${result.packet.campaign.public_route_slug}"`);
   } else if (result.funnelAddedBeside) {
     // A route differing from the default packet's is either another funnel
     // or a rename of that one; only the operator knows which, so say what was

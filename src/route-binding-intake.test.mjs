@@ -3,13 +3,16 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlin
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, test } from "node:test";
+import Ajv from "ajv/dist/2020.js";
 import { assertNoNetworkAttempts, readJson, ROOT, runCli, writeJson } from "./qc-test-factories.mjs";
 import { parseArgs, prepareBuildRerunCommand, specFetchCommand } from "./cli.mjs";
 import { runReadbackCommand } from "./readback.mjs";
-import { validateRouteSlugIdentity, validateBuiltSdkMetaTags, validateSpecRoutingHintsCurrent } from "./doctor/checks.mjs";
+import { validateRouteSlugIdentity, validateBuiltSdkMetaTags, validateSpecRoutingHintsCurrent, validateSpecRoutingMetaTags } from "./doctor/checks.mjs";
 import { __qaNodeTestHooks } from "./qa-node.mjs";
 import { projectPageKitTargets } from "./source-html-intake.mjs";
 import { planSpecDerive, staleRoutingHints } from "./spec-derive.mjs";
+import { recordSpec } from "./input-refresh.mjs";
+import { doctorPacket } from "./doctor/inspect.mjs";
 
 process.env.CAMPAIGNS_OS_TELEMETRY = "off";
 afterEach(assertNoNetworkAttempts);
@@ -44,6 +47,168 @@ function sourceTree(p, paths) {
   }
   writeJson(join(p.target, "package.json"), { private: true, devDependencies: { "next-campaign-page-kit": "0.3.0" } });
   writeJson(join(p.target, "node_modules/next-campaign-page-kit/package.json"), { version: "0.3.0" });
+}
+
+test("equal slugs stay unbound at intake and in rerun, readback and doctor lines", async (t) => {
+  const p = fixture(t);
+  p.spec.spec_identity.public_route_slug = p.spec.campaign.slug = "short";
+  writeJson(p.specPath, p.spec);
+  const prepared = await intake(p, ["--source", p.source, "--route", "short"]);
+  assert.equal(prepared.error, null, prepared.error?.stack);
+  const { packet, packetPath, context } = prepared.json;
+  assert.equal(Object.hasOwn(packet.campaign, "map_public_route_slug"), false);
+  const unbound = prepareBuildRerunCommand({ packet, packetPath, context, targetRepo: p.target });
+  const unboundReadback = runReadbackCommand(parseArgs(["readback", p.target, "--packet", packetPath]));
+  packet.campaign.map_public_route_slug = "short";
+  assert.deepEqual(prepareBuildRerunCommand({ packet, packetPath, context, targetRepo: p.target }), unbound);
+  assert.doesNotMatch(unbound.command, /--route/);
+  writeJson(packetPath, packet);
+  const readback = runReadbackCommand(parseArgs(["readback", p.target, "--packet", packetPath]));
+  assert.deepEqual(readback.text, unboundReadback.text);
+  assert.doesNotMatch(readback.text, /route binding|bound route/);
+  const expected = [], actual = [], errors = [];
+  validateRouteSlugIdentity(p.spec, { campaign: { public_route_slug: "short" } }, [], expected);
+  validateRouteSlugIdentity(p.spec, packet, errors, actual);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(actual, expected);
+});
+
+for (const routeRoot of ["/short/", "/"]) {
+  test(`equal binding leaves built routing-meta checks unchanged at ${routeRoot}`, (t) => {
+    const p = fixture(t);
+    const packet = { campaign: { public_route_slug: "short", route_root: routeRoot } };
+    const spec = { funnels: [{ id: "example", pages: [
+      { id: "checkout", type: "checkout", page_url: "a/b/checkout/", next_page: "upsell",
+        sdk_hints: { meta_tags: { "next-success-url": "a/b/upsell/" } } },
+      { id: "upsell", type: "upsell", page_url: "a/b/upsell/" },
+    ] }] };
+    const file = join(p.target, "_site/short/checkout/index.html");
+    mkdirSync(dirname(file), { recursive: true });
+    const check = (binding) => {
+      const errors = [], warnings = [], ready = [];
+      validateBuiltSdkMetaTags({ spec, packet: { ...packet, campaign: { ...packet.campaign, ...(binding ? { map_public_route_slug: binding } : {}) } },
+        errors, warnings, ready, derived: { target_repo: p.target, ...(binding ? { map_public_route_slug: binding } : {}) },
+        buildState: { report: { stages: { assembly: { status: "completed" } } } } });
+      validateSpecRoutingHintsCurrent(spec, { ...packet, campaign: { ...packet.campaign, ...(binding ? { map_public_route_slug: binding } : {}) } }, errors, ready);
+      return { errors, warnings, ready };
+    };
+    for (const actualRoot of [routeRoot, "/other/"]) {
+      writeFileSync(file, `<meta name="next-success-url" content="${actualRoot}upsell/">`);
+      const unbound = check();
+      assert.deepEqual(check("short"), unbound);
+      assert.equal(unbound.errors.some((issue) => issue.code === "sdk_hints.meta_tags.route_mismatch"), actualRoot !== routeRoot);
+      assert.ok(unbound.ready.some((line) => /checked.*1 page/.test(line)), JSON.stringify(unbound));
+    }
+  });
+
+  test(`equal binding leaves packet QA, doctor and spec refresh unchanged at ${routeRoot}`, async (t) => {
+    const p = fixture(t);
+    p.spec.spec_identity.public_route_slug = p.spec.campaign.slug = "short";
+    p.spec.spec_identity.route_root = routeRoot;
+    writeJson(p.specPath, p.spec);
+    const prepared = await intake(p, ["--source", p.source]);
+    assert.equal(prepared.error, null, prepared.error?.stack);
+    const { packet, packetPath } = prepared.json;
+    const page = p.spec.funnels[0].pages.find((page) => page.type === "upsell");
+    page.page_url = "a/b/upsell/";
+    writeJson(p.specPath, p.spec);
+    const now = () => new Date("2026-11-01T00:00:00Z");
+    const refresh = recordSpec({ packetPath, dryRun: true }, { now });
+    assert.equal(refresh.ok, true, JSON.stringify(refresh));
+    const doctor = doctorPacket(packetPath, { contextPath: null, reportPath: null });
+    const qaArgs = { _: ["qa", "resolve"], packet: packetPath, "base-url": "https://example.test/short/" };
+    const qa = await __qaNodeTestHooks.resolveQaInputs(qaArgs);
+    packet.campaign.map_public_route_slug = "short";
+    writeJson(packetPath, packet);
+    assert.deepEqual(recordSpec({ packetPath, dryRun: true }, { now }), refresh);
+    const boundDoctor = doctorPacket(packetPath, { contextPath: null, reportPath: null });
+    for (const key of ["errors", "warnings", "ready", "derived"]) assert.deepEqual(boundDoctor[key], doctor[key], key);
+    const boundQa = await __qaNodeTestHooks.resolveQaInputs(qaArgs);
+    assert.deepEqual(boundQa.topologies, qa.topologies);
+    assert.deepEqual(boundQa.analyticsCaptureTarget, qa.analyticsCaptureTarget);
+  });
+}
+
+test("route binding doctor table distinguishes absent, inert, valid, stale and malformed values", async (t) => {
+  const p = fixture(t);
+  const prepared = await intake(p, ["--adopt", "src/short"]);
+  assert.equal(prepared.error, null);
+  const { packet, packetPath } = prepared.json;
+  const rows = [
+    ["absent, equal slugs", undefined, "short", false],
+    ["inert, equal slugs", "short", "short", false],
+    ["valid binding, different slugs", "long-campaign-name", "long-campaign-name", false],
+    ["stale binding, different slugs", "other", "long-campaign-name", true],
+    ...["a/b", "../x", " padded ", ".hidden", "", "/short/"].flatMap((value) => [
+      [`malformed ${JSON.stringify(value)}, equal slugs`, value, "short", true],
+      [`malformed ${JSON.stringify(value)}, different slugs`, value, "long-campaign-name", true],
+    ]),
+  ];
+  for (const [label, value, specSlug, refused] of rows) {
+    await t.test(label, () => {
+      p.spec.spec_identity.public_route_slug = p.spec.campaign.slug = specSlug;
+      writeJson(p.specPath, p.spec);
+      delete packet.campaign.map_public_route_slug;
+      if (value !== undefined) packet.campaign.map_public_route_slug = value;
+      writeJson(packetPath, packet);
+      const inspected = doctorPacket(packetPath, { contextPath: null, reportPath: null });
+      const errors = inspected.errors.filter((issue) => issue.code === "campaign.route_slug_identity");
+      assert.equal(errors.length, refused ? 1 : 0);
+      if (refused) {
+        assert.match(errors[0].message, /map_public_route_slug/);
+        assert.equal(inspected.ok, false);
+        assert.ok(!inspected.ready.some((line) => /matches CampaignSpec identity|Route binding:/.test(line)));
+      } else {
+        assert.ok(inspected.ready.some((line) => specSlug === "short"
+          ? /matches CampaignSpec identity/.test(line)
+          : /Map slug "long-campaign-name" → bound route "short"/.test(line)));
+      }
+    });
+  }
+});
+
+test("Map binding schema and doctor refuse malformed slug segments", async (t) => {
+  const p = fixture(t);
+  const prepared = await intake(p, ["--adopt", "src/short"]);
+  assert.equal(prepared.error, null);
+  const { packet, packetPath } = prepared.json;
+  const validate = new Ajv({ strict: false, validateFormats: false }).compile(readJson(join(ROOT, "schemas/campaign-runtime-build-packet.v0.schema.json")));
+  assert.equal(validate(packet), true, JSON.stringify(validate.errors));
+  for (const value of ["a/b", "../x", " padded ", ".hidden", "", "/short/"]) {
+    packet.campaign.map_public_route_slug = value;
+    assert.equal(validate(packet), false, value);
+    assert.ok(validate.errors.some((error) => error.instancePath === "/campaign/map_public_route_slug"), JSON.stringify(validate.errors));
+    writeJson(packetPath, packet);
+    const inspected = await runCli(["doctor", "--packet", packetPath, "--no-live-refs", "--json"]);
+    assert.ok(inspected.json.errors.some((issue) => issue.code === "campaign.route_slug_identity"), value);
+    assert.equal(inspected.json.ok, false, value);
+  }
+  for (const value of ["example", "Example_2.v1-3", "_example", "-example"]) {
+    packet.campaign.map_public_route_slug = value;
+    assert.equal(validate(packet), true, JSON.stringify(validate.errors));
+  }
+});
+
+for (const [shape, route, unboundWarns, boundWarns] of [
+  ["relative", "upsell/", true, true],
+  ["Map-prefixed", "/long-campaign-name/upsell/", true, false],
+  ["relative Map-prefixed", "long-campaign-name/upsell/", true, true],
+  ["packet-prefixed", "/short/upsell/", false, false],
+  ["other-prefixed", "/other/upsell/", true, true],
+  ["absolute URL", "https://example.test/other/upsell/", false, false],
+]) {
+  test(`runtime-root warning preserves ${shape} hint shape under binding`, () => {
+    const spec = { funnel_pages: [{ id: "checkout", type: "checkout", sdk_hints: { meta_tags: { "next-success-url": route } } }] };
+    let unbound;
+    for (const [binding, warns] of [[undefined, unboundWarns], ["long-campaign-name", boundWarns], ["short", unboundWarns]]) {
+      const packet = { campaign: { public_route_slug: "short", ...(binding === undefined ? {} : { map_public_route_slug: binding }) } };
+      const warnings = [], ready = [];
+      validateSpecRoutingMetaTags(spec, packet, warnings, ready);
+      assert.deepEqual(warnings.map((issue) => issue.code), warns ? ["routing_meta.runtime_root"] : [], `${shape}, binding=${binding}`);
+      if (binding === undefined) unbound = { warnings, ready };
+      if (binding === "short") assert.deepEqual({ warnings, ready }, unbound);
+    }
+  });
 }
 
 for (const flags of [["--route", "short"], ["--adopt", "src/short"], ["--public-route-slug", "short"]]) {
@@ -294,6 +459,13 @@ for (const routeRoot of ["/short/", "/"]) {
       { id: "entry", type: "upsell", is_entry: true, page_url: "/long-campaign-name/", sdk_hints: { meta_tags: tags }, on_accept: "receipt", on_decline: "entry" },
       { id: "receipt", type: "thankyou", page_url: "receipt/" },
     ] }] };
+    const prebuildWarnings = [];
+    validateSpecRoutingMetaTags(spec, packet, prebuildWarnings, []);
+    // Relative hints still warn, but rooted Map hints must be projected. This
+    // assertion detects removing the spec-meta binding projection altogether.
+    assert.equal(prebuildWarnings.length, 1);
+    assert.match(prebuildWarnings[0].message, /next-upsell-accept-url=long-campaign-name\/receipt\//);
+    assert.doesNotMatch(prebuildWarnings[0].message, /next-success-url=|next-upsell-decline-url=/);
     const file = join(p.target, "_site/short/index.html");
     mkdirSync(join(p.target, "_site/short"), { recursive: true });
     const html = (root) => `<html><head>${Object.keys(tags).map((tag, index) => `<meta name="${tag}" content="${root}${["checkout/", "receipt/", ""][index]}">`).join("")}</head><body>Example</body></html>`;
@@ -366,6 +538,7 @@ test("route binding: spec fetch applies the binding rule before restoring the Ma
 test("unbound projection retains byte-for-byte output when no binding is supplied", () => {
   const input = { specPages: [{ id: "checkout", type: "checkout", page_url: "/short/checkout/", next_page: "receipt" },
     { id: "receipt", type: "thankyou", page_url: "receipt/" }], publicRouteSlug: "short", outputDir: "src/short" };
+  assert.deepEqual(projectPageKitTargets({ ...input, mapPublicRouteSlug: "short" }), projectPageKitTargets(input));
   assert.equal(JSON.stringify([...projectPageKitTargets(input)]), JSON.stringify([
     ["checkout", { target_path: "checkout.html", output_path: "src/short/checkout.html", public_route: "/short/checkout/", spec_route: "checkout/", page_type: "checkout", permalink_required: false, frontmatter: { page_type: "checkout", next_url: "/short/receipt/" } }],
     ["receipt", { target_path: "receipt.html", output_path: "src/short/receipt.html", public_route: "/short/receipt/", spec_route: "receipt/", page_type: "receipt", permalink_required: false, frontmatter: { page_type: "receipt" } }],

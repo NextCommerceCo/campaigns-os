@@ -1376,7 +1376,9 @@ dots, underscores or hyphens and not starting with a dot.
 
 The Map keeps its own slug. The packet's `campaign.public_route_slug` is the
 bound built and served route; optional `campaign.map_public_route_slug` records
-the Map's own slug only when it differs. A difference without that recorded,
+the Map's own slug only when it differs, as one normalized slug segment (letters,
+digits, dots, underscores or hyphens, not starting with a dot). An equal value
+is treated as no binding. A difference without that recorded,
 spec-matching binding still blocks doctor, sync, derive and record spec. The
 binding is checked even when page routes have not changed. Spec page routes and
 SDK routing hints may be relative or prefixed by the Map's slug: with Map slug

@@ -32,6 +32,7 @@
         "map_public_route_slug": {
           "type": "string",
           "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-][A-Za-z0-9._-]*$",
           "description": "The CampaignSpec's own normalized public_route_slug, recorded by --route (also --public-route-slug) or --adopt only when it differs from campaign.public_route_slug. This declares a binding to the built and served route; the recorded Map slug must still equal the spec's slug. It does not change the Map."
         },
         "route_root": {

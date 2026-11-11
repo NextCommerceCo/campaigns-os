@@ -36,6 +36,33 @@ const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CLI = resolve(ROOT, "bin/campaigns-os.mjs");
 const EXAMPLES = new URL("../examples/", import.meta.url);
 
+for (const route of ["a/b/upsell/", "upsell/", "/short/upsell/"]) {
+  test(`equal binding leaves derive and stale hints unchanged for ${route}`, () => {
+    const spec = { spec_identity: { public_route_slug: "short" }, funnels: [{ id: "example", pages: [
+      { id: "checkout", type: "checkout", page_url: "checkout/", next_page: "upsell", sdk_hints: { meta_tags: { "next-success-url": route } } },
+      { id: "upsell", type: "upsell", page_url: route },
+    ] }] };
+    const options = { spec, entry: {}, publicRouteSlug: "short", pageFiles: [
+      { path: "checkout.html", basename: "checkout", route: "checkout/" },
+      { path: "upsell.html", basename: "upsell", route: route.replace(/^\/short\//, "") },
+    ] };
+    const unbound = planSpecDerive(options);
+    assert.deepEqual(unbound.stale_hints, []);
+    assert.deepEqual(planSpecDerive({ ...options, mapPublicRouteSlug: "short" }), unbound);
+    for (const handedOff of [false, true]) {
+      const repointed = { ...options, handedOff,
+        packetBindings: new Map([["checkout", "checkout.html"], ["upsell", "upsell.html"]]),
+        pageFiles: options.pageFiles.map((file) => ({ ...file, page_type: file.basename, next_url: "/short/new-offer/" })).concat([
+          { path: "new-offer.html", basename: "new-offer", route: "new-offer/", page_type: "upsell" },
+        ]),
+      };
+      assert.deepEqual(planSpecDerive({ ...repointed, mapPublicRouteSlug: "short" }), planSpecDerive(repointed));
+    }
+    const hintOptions = { publicRouteSlug: "short", routeByPageId: new Map([["upsell", route]]) };
+    assert.deepEqual(staleRoutingHints(spec, { ...hintOptions, mapPublicRouteSlug: "short" }), staleRoutingHints(spec, hintOptions));
+  });
+}
+
 function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));
 }

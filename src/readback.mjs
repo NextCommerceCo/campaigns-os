@@ -57,7 +57,7 @@ import { assessInputCurrency, currentPacketInputs, effectiveStageStatus } from "
 import { deriveAssemblyReportSummary } from "./stage-ledger.mjs";
 import { assessEvidenceDebt } from "./evidence-debt.mjs";
 import { RUNTIME_DIR_REL_PATH, packetRuntimeRelPath } from "./campaign-workspace.mjs";
-import { normalizePublicRouteSlug } from "./route-identity.mjs";
+import { normalizePublicRouteSlug, effectiveMapPublicRouteSlug } from "./route-identity.mjs";
 import { BUILT_FIRST_LABEL } from "./design-source-package.mjs";
 import { readRecordedDesignSourcePackage } from "./design-source-publication.mjs";
 
@@ -1211,8 +1211,8 @@ function renderIdentity(views, lines) {
     if (spec.local_spec_id) entries.push(["local_spec_id", spec.local_spec_id, "build packet"]);
     if (campaign.public_route_slug) {
       entries.push(["public_route_slug", campaign.public_route_slug, "build packet"]);
-      if (campaign.map_public_route_slug) {
-        entries.push(["route binding", `Map slug "${oneLine(campaign.map_public_route_slug)}" → bound route "${oneLine(campaign.public_route_slug)}"`, "build packet"]);
+      if (effectiveMapPublicRouteSlug(packet)) {
+        entries.push(["route binding", `Map slug "${oneLine(effectiveMapPublicRouteSlug(packet))}" → bound route "${oneLine(campaign.public_route_slug)}"`, "build packet"]);
       }
     }
     const assembly = packet.assembly || {};

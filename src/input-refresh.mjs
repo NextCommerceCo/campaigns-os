@@ -49,7 +49,7 @@ import {
   wellFormedBriefMaterial,
 } from "./input-currency.mjs";
 import { cmd } from "./install-invocation.mjs";
-import { campaignRouteRoot, intakeRouteRoot, normalizePublicRouteSlug, specPublicRouteSlug, routeSlugIdentity } from "./route-identity.mjs";
+import { campaignRouteRoot, effectiveMapPublicRouteSlug, intakeRouteRoot, normalizePublicRouteSlug, specPublicRouteSlug, routeSlugIdentity } from "./route-identity.mjs";
 import { projectPageKitTargets, publicRouteForPage } from "./source-html-intake.mjs";
 import { staleRoutingHints } from "./spec-derive.mjs";
 import { routeMaskedSpecMaterialHash, specHashesMatch } from "./spec-identity.mjs";
@@ -629,7 +629,7 @@ function specRouteRefusal(spec, packet) {
   const packetRoot = campaignRouteRoot(packet);
   const declaredRoot = optionalString(spec.spec_identity?.route_root) || optionalString(spec.campaign?.route_root);
   const identity = routeSlugIdentity(spec, packet);
-  const specRoot = declaredRoot ? intakeRouteRoot(declaredRoot, slug, packet.campaign?.map_public_route_slug) : null;
+  const specRoot = declaredRoot ? intakeRouteRoot(declaredRoot, slug, effectiveMapPublicRouteSlug(packet)) : null;
   if (!identity.ok || (declaredRoot && specRoot !== packetRoot)) {
     return ["route_root_changed", `the CampaignSpec ${specSlug && specSlug !== slug ? `names route slug "${specSlug}"` : `declares route_root ${JSON.stringify(declaredRoot)}`}, but the packet serves the campaign at ${packetRoot || "(no route root)"}; the recorded preview and deploy are rooted there, so moving the route root or slug needs intake (${cmd("prepare-build")}).`];
   }
@@ -650,7 +650,7 @@ function specRouteRefusal(spec, packet) {
 function planPageRebind({ spec, packet, packetPath, report, reportPath, context, targetRepo, scope }) {
   const refuse = (code, detail) => ({ refusal: [code, detail] });
   const slug = normalizePublicRouteSlug(packet.campaign?.public_route_slug);
-  const mapPublicRouteSlug = packet.campaign?.map_public_route_slug;
+  const mapPublicRouteSlug = effectiveMapPublicRouteSlug(packet);
   const stale = staleRoutingHints(spec, { publicRouteSlug: slug, mapPublicRouteSlug });
   if (stale.length) {
     return refuse("routing_hint_stale", `the CampaignSpec's routing hints name routes their pages no longer have: ${stale.map((hint) => `${hint.page_id} sdk_hints.meta_tags.${hint.tag} ${JSON.stringify(hint.value)} (page "${hint.target_page_id}" routes to ${JSON.stringify(hint.derived_route)})`).join("; ")}. The built meta tag follows the hint, so shoppers would be sent to the old path. Edit each hint to the route shown in the spec (${cmd("spec")} derive rewrites the ones on an edge it re-points after handoff; while the Map is still the spec's source, re-saving it regenerates them), then run ${cmd("record")} spec again.`);

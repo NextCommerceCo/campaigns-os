@@ -32,7 +32,7 @@ import { ANALYTICS_VENDORS, isPlaceholderVendorId, isReleasedSdkVersion } from "
 import { PAGE_KIT_CAMPAIGNS_REL_PATH } from "./page-kit-campaign-config.mjs";
 import { PAGE_KIT_STORE_PROFILE_FIELDS } from "./page-kit-store-profile.mjs";
 import { compareReleasedSdkVersions, entryInScaffoldState, resolveSpecSdkPin } from "./page-kit-sdk-version.mjs";
-import { isAbsoluteHttpUrl, normalizePageKitRoute, runtimeRelativeRouteForSpecValue, stripPublicRoutePrefix } from "./route-identity.mjs";
+import { effectiveMapPublicRouteSlug, isAbsoluteHttpUrl, normalizePageKitRoute, runtimeRelativeRouteForSpecValue, stripPublicRoutePrefix } from "./route-identity.mjs";
 import { cpkPageTypeForSpecType, publicRouteForPage } from "./source-html-intake.mjs";
 import { MIRRORED_OFFER_FIELDS, MIRRORED_PACKAGE_FIELDS, MIRRORED_PAGE_OFFER_FIELDS } from "./spec-derive-campaign.mjs";
 
@@ -286,6 +286,7 @@ export function frontmatterScalars(text, keys = PAGE_FILE_FRONTMATTER_KEYS) {
  * one owner.
  */
 export function staleRoutingHints(spec, { publicRouteSlug = "", mapPublicRouteSlug = null, routeByPageId = null } = {}) {
+  mapPublicRouteSlug = effectiveMapPublicRouteSlug({ campaign: { public_route_slug: publicRouteSlug, map_public_route_slug: mapPublicRouteSlug } });
   const pages = activePagesWithPaths(spec).map(({ page }) => page);
   const byId = new Map();
   for (const page of pages) if (!byId.has(page.id)) byId.set(page.id, page);
@@ -611,6 +612,7 @@ function planPageScope({ spec, activePages, pageFiles, packetBindings, boundFile
 // from the packet's page-kit projection; `waivedGates` as the checkpoint
 // gates an active named-human waiver currently covers.
 export function planSpecDerive({ spec, entry, pageFiles = null, packetBindings = new Map(), waivedGates = [], waiversUnknown = false, publicRouteSlug = "", mapPublicRouteSlug = null, handedOff = false } = {}) {
+  mapPublicRouteSlug = effectiveMapPublicRouteSlug({ campaign: { public_route_slug: publicRouteSlug, map_public_route_slug: mapPublicRouteSlug } });
   const target = isPlainObject(entry) ? entry : {};
   const changes = [];
   const unchanged = [];

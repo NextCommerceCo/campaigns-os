@@ -10,9 +10,57 @@ import {
   packetRouteRoot,
   resolveRouteRoot,
   routeSlugIdentity,
+  effectiveMapPublicRouteSlug,
   runtimeRelativeRouteForSpecValue,
   stripPublicRoutePrefix,
 } from "./route-identity.mjs";
+
+test("an equal Map slug is absent for identity and route projection", () => {
+  for (const value of [undefined, null, "", "short", "a/b", "../x", " padded ", ".hidden", "/short/", 42, {}, ["long-campaign-name"]]) {
+    assert.deepEqual(effectiveMapPublicRouteSlug({ campaign: { public_route_slug: "short", map_public_route_slug: value } }), undefined, JSON.stringify(value));
+  }
+  assert.equal(effectiveMapPublicRouteSlug(), undefined);
+  assert.equal(effectiveMapPublicRouteSlug({ campaign: { public_route_slug: "short", map_public_route_slug: "long-campaign-name" } }), "long-campaign-name");
+  for (const specSlug of ["short", "other", undefined]) {
+    const spec = { spec_identity: { public_route_slug: specSlug } };
+    assert.deepEqual(routeSlugIdentity(spec, { campaign: { public_route_slug: "short", map_public_route_slug: "short" } }),
+      routeSlugIdentity(spec, { campaign: { public_route_slug: "short" } }));
+  }
+  for (const route of ["a/b/checkout/", "/short/checkout/", "/short/", "checkout/"]) {
+    assert.equal(runtimeRelativeRouteForSpecValue(route, "short", "short"), runtimeRelativeRouteForSpecValue(route, "short"));
+    assert.equal(stripPublicRoutePrefix(route, "short", "short"), stripPublicRoutePrefix(route, "short"));
+    assert.equal(intakeRouteRoot(route, "short", "short"), intakeRouteRoot(route, "short"));
+    for (const source of ["spec", "rawSpec"]) {
+      const options = { [source]: { campaign: { route_root: route } } };
+      assert.deepEqual(resolveRouteRoot({ ...options, packet: { campaign: { public_route_slug: "short", map_public_route_slug: "short" } } }),
+        resolveRouteRoot({ ...options, packet: { campaign: { public_route_slug: "short" } } }));
+    }
+  }
+});
+
+test("route binding identity table distinguishes absent, inert, valid, stale and malformed values", async (t) => {
+  const rows = [
+    ["absent, equal slugs", undefined, "short", null, undefined],
+    ["inert, equal slugs", "short", "short", null, undefined],
+    ["valid binding, different slugs", "long-campaign-name", "long-campaign-name", null, "long-campaign-name"],
+    ["stale binding, different slugs", "other", "long-campaign-name", "binding_mismatch", "other"],
+    ...["a/b", "../x", " padded ", ".hidden", "", "/short/"].flatMap((value) => [
+      [`malformed ${JSON.stringify(value)}, equal slugs`, value, "short", "binding_mismatch", undefined],
+      [`malformed ${JSON.stringify(value)}, different slugs`, value, "long-campaign-name", "binding_mismatch", undefined],
+    ]),
+  ];
+  for (const [label, value, specSlug, reason, binding] of rows) {
+    await t.test(label, () => {
+      const campaign = { public_route_slug: "short" };
+      if (value !== undefined) campaign.map_public_route_slug = value;
+      const packet = { campaign };
+      const identity = routeSlugIdentity({ spec_identity: { public_route_slug: specSlug } }, packet);
+      assert.equal(identity.ok, reason === null);
+      assert.equal(identity.reason, reason);
+      assert.equal(effectiveMapPublicRouteSlug(packet), binding);
+    });
+  }
+});
 
 test("binding strips the Map prefix only at a whole segment and translates spec roots", () => {
   for (const [route, expected] of [

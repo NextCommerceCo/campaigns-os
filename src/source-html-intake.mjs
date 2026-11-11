@@ -5,7 +5,7 @@ import {
 // Built output of campaign-spec (same import shape as src/page-kit-sdk-version.mjs),
 // so build-time wiring and spec-time analysis share one edge resolver.
 import { checkoutPathFrom, declineRouteTarget, forwardRouteTarget, forwardTargetPage, isCheckoutStepPage, isPrePaymentPage } from "../campaign-spec/dist/index.js";
-import { isAbsoluteHttpUrl, normalizePageKitRoute, normalizePublicRouteSlug, stripPublicRoutePrefix } from "./route-identity.mjs";
+import { effectiveMapPublicRouteSlug, isAbsoluteHttpUrl, normalizePageKitRoute, normalizePublicRouteSlug, stripPublicRoutePrefix } from "./route-identity.mjs";
 
 const CPK_PAGE_TYPES = new Set(["product", "checkout", "upsell", "receipt"]);
 
@@ -575,6 +575,7 @@ export function projectPageKitTargets({ specPages = [], publicRouteSlug, mapPubl
 }
 
 function pageKitProjectionForPage(page, { pageById, publicRouteSlug, mapPublicRouteSlug, outputDir, specPages = [] }) {
+  mapPublicRouteSlug = effectiveMapPublicRouteSlug({ campaign: { public_route_slug: publicRouteSlug, map_public_route_slug: mapPublicRouteSlug } });
   const specRoute = publicRouteForPage(page);
   const relativeRoute = stripPublicRoutePrefix(specRoute, publicRouteSlug, mapPublicRouteSlug);
   const publicRoute = rootedCampaignRoute(relativeRoute, publicRouteSlug, mapPublicRouteSlug);

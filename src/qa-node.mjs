@@ -9,6 +9,7 @@ import { applyQaBuildScope, specForQaScope } from "./qa-build-scope.mjs";
 import { requiredActionText } from "./gate-actions.mjs";
 import { parseOrderPathDepthFlag } from "./proof-policy.mjs";
 import {
+  effectiveMapPublicRouteSlug,
   isAbsoluteHttpUrl,
   normalizePageKitRoute,
   normalizePublicRouteSlug,
@@ -522,14 +523,15 @@ async function resolveQaInputs(args, {
   const targetRepo = checkpointPreflight?.targetRepo || (packetPath && packet ? targetRepoFor(packetPath, packet) : null);
   const targetOutputDir = targetRepo && packet?.assembly?.output_dir ? resolve(targetRepo, packet.assembly.output_dir) : null;
   const mappingById = new Map((packet?.source_html?.pages || []).map((page) => [page.page_id, page]));
+  const mapPublicRouteSlug = effectiveMapPublicRouteSlug(packet);
   const topologies = extractTopologies(normalized, {
-    baseUrl: packet?.campaign?.map_public_route_slug && analyticsCaptureTarget.route_root === "/" ? analyticsCaptureTarget.url : baseUrl,
+    baseUrl: mapPublicRouteSlug && analyticsCaptureTarget.route_root === "/" ? analyticsCaptureTarget.url : baseUrl,
     publicRouteSlug, templateFamily, commerceStructureContract,
-    mapPublicRouteSlug: packet?.campaign?.map_public_route_slug,
+    mapPublicRouteSlug,
     entryServingRoute: (page) => entryPageKitServingRoute(targetRepo, publicRouteSlug, page, {
       targetOutputDir,
       mapping: mappingById.get(page.id),
-      mapPublicRouteSlug: packet?.campaign?.map_public_route_slug,
+      mapPublicRouteSlug,
     }),
   });
   const themeGate = resolveThemeGate({
@@ -3564,6 +3566,7 @@ function normalizeSpec(raw) {
 }
 
 function extractTopologies(spec, { baseUrl = null, publicRouteSlug = null, mapPublicRouteSlug = null, templateFamily = null, commerceStructureContract = null, entryServingRoute = null } = {}) {
+  mapPublicRouteSlug = effectiveMapPublicRouteSlug({ campaign: { public_route_slug: publicRouteSlug, map_public_route_slug: mapPublicRouteSlug } });
   const pageById = new Map();
   for (const funnel of spec.funnels || []) {
     for (const page of funnel.pages || []) pageById.set(page.id, page);
