@@ -4068,13 +4068,40 @@
       "entry_sha256": "63617f16257551ed7d6643035a39e3698c634345b015cb16e0f259bc5c204200"
     },
     {
-      "id": "RL-0339",
+      "id": "RL-0336",
       "sequence": 324,
       "date": "2026-11-11",
       "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.68.0+agent.6",
-      "changelog_sha256": "6dad46a49814af893d5fb399149a5881a4a6492ffaa14f7a75549549c40b5e24",
+      "changelog_section": "1.68.0+agent.4",
+      "changelog_sha256": "58a9295968e438203c7438421b2ad88417a804a6d152a32fd4f02c0f57782a90",
+      "agent_impact": "Pin and bundle parse5 8.0.1 and entities 8.1.0 to preserve saved commerce-signature/v1 records in registry installs as well as checkouts. parse5 8.1.0 changes foreign-element reconstruction and can classify a copy-only edit as commerce_markup_changed. The parser upgrade is deferred; no saved records or existing literal baselines are rewritten. entities is a direct dependency solely to pin and bundle the decoder, not a new package export.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Pin and bundle the v1 parser and decoder for consumer installs."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Record exact bundled parser dependencies."
+        }
+      ],
+      "entry_sha256": "f43cd05d36051a9df300c4c522e829d0fe5cf12e10118904f22b1fe3101faaf2"
+    },
+    {
+      "id": "RL-0339",
+      "sequence": 325,
+      "date": "2026-11-11",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.68.0+agent.7",
+      "changelog_sha256": "21ac7d520cbf651091933d51f2a9841564fc25423bdfd75666d4c02b25911dcd",
       "agent_impact": "After spec derive and record spec add a page, polish capture no longer refuses it as neither mapped nor explicitly skipped: the page is planned and captured build-side, with its source side reported as source_html_missing. Do not hand-write skip_reason on added pages. The plan and the captures record list skipped_pages with their reasons, and captures.evidence_only holds build-side captures of template-stock pages; those never gate, compare or count toward the capturable-route rule.",
       "compatibility": "additive",
       "migration": "none",
@@ -4086,7 +4113,7 @@
           "summary": "Say that a page record spec adds after handoff is planned for capture and QA without a hand-written skip_reason."
         }
       ],
-      "entry_sha256": "2ee21289e1a7e92ac3307fb85ecc5a12b3dcc8faf26febe47d225447985f7330"
+      "entry_sha256": "1f46631f08f97d65317ea7ae8f365d425acb311909c8f34cf891fc3b869c0f27"
     }
   ]
 }
