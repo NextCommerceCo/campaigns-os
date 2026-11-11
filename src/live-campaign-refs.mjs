@@ -99,10 +99,6 @@ export function extractRenderedPackageRefs(content) {
   return extractRenderedRefs(content).package_refs;
 }
 
-export function extractRenderedShippingRefs(content) {
-  return extractRenderedRefs(content).shipping_refs;
-}
-
 function addRenderedRef(refs, value) {
   const ref = String(value || "").trim();
   if (/^[A-Za-z0-9_-]+$/.test(ref)) refs.add(ref);

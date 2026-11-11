@@ -78,7 +78,7 @@ import {
   resolveTemplateBrandContract,
 } from "../private-template-source.mjs";
 import { assessTemplateFreshness, defaultSdkSupportPolicy, renderTemplateFreshness } from "../template-freshness.mjs";
-import { BUILD_DRIFT_PATH_LIMIT, computeBuildFingerprint, describeBuildOutputDrift, resolveBuiltSiteScope } from "../built-site-scope.mjs";
+import { BUILD_DRIFT_PATH_LIMIT, describeBuildOutputDrift, resolveBuiltSiteScope, sharedBuildFingerprint } from "../built-site-scope.mjs";
 import {
   UPSELL_SELECTOR_SCOPE,
   builtPageTypeOverRouteGuess,
@@ -1943,7 +1943,7 @@ export function validateBuildOutputFingerprint({ packet, errors, warnings, ready
     return;
   }
 
-  const current = computeBuildFingerprint(siteRoot);
+  const current = sharedBuildFingerprint(siteRoot);
   // The root was a directory a moment ago; if it is not one now (removed
   // between the check and the walk) there is no output to fingerprint and no
   // verdict to give, the same skip as a missing root.

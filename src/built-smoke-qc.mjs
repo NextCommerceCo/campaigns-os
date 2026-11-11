@@ -560,12 +560,6 @@ export function builtFileOf(reference, builtPath, siteRoot, { bases = [] } = {})
   return { path: join(siteRoot, ...segments), site_path: url.pathname };
 }
 
-// Whether an error means the page cannot be read or parsed (see
-// isPageReadFailure), nesting past the bound found after the parse included:
-// walkElements throws the parser's TooDeep for nodes the parser moved, or a
-// nested document's depth added to its host element's.
-export const isBuiltPageReadFailure = isPageReadFailure;
-
 // Every element in document order with its path (`html[1]/body[1]/a[2]`),
 // its depth (the root element is 1) and whether it sits in <template>
 // content, without recursion. A nested document starts at its host element's
@@ -654,7 +648,7 @@ function loadedScriptSrc(node, tag, inTemplate) {
 
 /**
  * One built page's parse5 tree, through the 1.5 gate's bounded parser. Throws
- * what it throws (isBuiltPageReadFailure reads it).
+ * what it throws (isPageReadFailure reads it).
  *
  * @param {string} content  the page's HTML
  */
@@ -1055,7 +1049,7 @@ export function evaluateSmokeQc({ pages = [], environment = null, siteRoot = nul
       observed = observeDocument(read.document);
       findings = pageFindings(page, file, observed, pageDir ? join(pageDir, file) : file, ctx);
     } catch (error) {
-      if (!isBuiltPageReadFailure(error)) throw error;
+      if (!isPageReadFailure(error)) throw error;
       pageLevel(file, R.PAGE_UNREADABLE, { bytes: read.bytes });
       return;
     }
@@ -1099,7 +1093,7 @@ function readPage(page) {
   try {
     return { document: typeof page.document === "function" ? page.document() : parseBuiltPage(page.content), bytes };
   } catch (error) {
-    if (!isBuiltPageReadFailure(error)) throw error;
+    if (!isPageReadFailure(error)) throw error;
     return { outcome: R.PAGE_UNREADABLE, bytes };
   }
 }

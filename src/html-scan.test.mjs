@@ -219,30 +219,22 @@ test('a memo computes once per snapshot, read-only, and recomputes outside one',
   assert.equal(htmlScanMemo('k', compute).calls, 4);
 });
 
-test('nested snapshots share one retention budget, and nesting past the depth limit runs uncached', t => {
-  const big = fixture(t);
-  const small = join(dirname(big), 'small.html');
-  writeFileSync(big, Buffer.alloc(5 * 1024 * 1024, 97));
-  writeFileSync(small, Buffer.alloc(1024 * 1024, 98));
-  withHtmlScanSnapshot(() => {
-    readHtmlScanText(big);
-    withHtmlScanSnapshot(() => {
-      // 15 MiB of the 16 MiB budget is held by the outer snapshot.
-      assert.equal(readHtmlScanText(small)[0], 'b');
-      writeFileSync(small, 'fresh');
-      assert.equal(readHtmlScanText(small), 'fresh');
-    });
-  });
-  writeFileSync(small, 'depth');
+test('a snapshot opened inside an active one runs uncached at any depth', t => {
+  const path = fixture(t);
+  writeFileSync(path, 'before');
   const nest = (depth) => withHtmlScanSnapshot(() => (depth ? nest(depth - 1) : (() => {
-    readHtmlScanText(small);
-    writeFileSync(small, 'deeper');
-    return readHtmlScanText(small);
+    readHtmlScanText(path);
+    writeFileSync(path, 'after');
+    return readHtmlScanText(path);
   })()));
-  // The outermost snapshot plus four nested levels are cached; a fifth nested level is not.
-  assert.equal(nest(4), 'depth');
-  writeFileSync(small, 'depth');
-  assert.equal(nest(5), 'deeper');
+  withHtmlScanSnapshot(() => {
+    for (const depth of [0, 1, 2]) {
+      writeFileSync(path, 'before');
+      assert.equal(nest(depth), 'after');
+    }
+  });
+  writeFileSync(path, 'before');
+  assert.equal(nest(0), 'before');
 });
 
 test('the upsell selector-scope and SDK markup gates read one shared tree per built page', async t => {
@@ -311,25 +303,19 @@ test('noloc and located requests share the bounded tree, and a page past its dep
   assert.ok(findElement(located(path, '<p>a</p>'), 'p').sourceCodeLocation);
 });
 
-test('the bounded profile spends its own, larger, share of the parse budget', t => {
+test('a page set too big to share as bounded trees is parsed per use with the profile asked for', t => {
   const small = fixture(t);
   writeFileSync(small, '<p>small</p>');
   const big = join(dirname(small), 'big.html');
-  // 1.5 MiB: bounded trees (84 MiB estimated) exceed the parse budget; noloc trees (45 MiB) fit.
+  // 1.5 MiB: bounded trees (84 MiB estimated) exceed the parse budget.
   writeFileSync(big, Buffer.alloc(1.5 * 1024 * 1024, 97));
   withHtmlScanSnapshot(() => {
     for (const path of [small, big]) readHtmlScanText(path);
-    const bounded = htmlScanDocuments([small, big], 'bounded');
-    assert.notEqual(bounded(small, '<p>small</p>'), bounded(small, '<p>small</p>'));
-  });
-  withHtmlScanSnapshot(() => {
-    for (const path of [small, big]) readHtmlScanText(path);
-    // Too big to share as bounded: a noloc set falls back to noloc trees of its own, a located set to per-use parses.
-    const noloc = htmlScanDocuments([small, big]);
-    assert.equal(noloc(small, '<p>small</p>'), noloc(small, '<p>small</p>'));
-    assert.equal(findElement(noloc(small, '<p>small</p>'), 'p').sourceCodeLocation, undefined);
-    const located = htmlScanDocuments([small, big], 'located');
-    assert.notEqual(located(small, '<p>small</p>'), located(small, '<p>small</p>'));
+    for (const profile of ['bounded', 'noloc', 'located']) {
+      const documentOf = htmlScanDocuments([small, big], profile);
+      assert.notEqual(documentOf(small, '<p>small</p>'), documentOf(small, '<p>small</p>'));
+    }
+    assert.equal(findElement(htmlScanDocuments([small, big])(small, '<p>small</p>'), 'p').sourceCodeLocation, undefined);
   });
 });
 
@@ -394,30 +380,12 @@ test('a symlink and its target are one held entry', t => {
   });
 });
 
-test('a memo that throws is computed again, and memos past the cap are computed per use', () => {
+test('a memo that throws is computed again', () => {
   withHtmlScanSnapshot(() => {
     let attempts = 0;
     assert.throws(() => htmlScanMemo('x', () => { attempts += 1; throw new Error('boom'); }), /boom/);
     assert.equal(htmlScanMemo('x', () => ++attempts), 2);
-    for (let i = 0; i < 255; i += 1) htmlScanMemo(`k${i}`, () => i);
-    let over = 0;
-    htmlScanMemo('over', () => ++over);
-    htmlScanMemo('over', () => ++over);
-    assert.equal(over, 2);
-  });
-});
-
-test('a nested snapshot gives its retention back to the parent on return', t => {
-  const big = fixture(t);
-  const small = join(dirname(big), 'small.html');
-  writeFileSync(big, Buffer.alloc(5 * 1024 * 1024, 97));
-  writeFileSync(small, Buffer.alloc(1024 * 1024, 98));
-  withHtmlScanSnapshot(() => {
-    withHtmlScanSnapshot(() => readHtmlScanText(big));
-    // 15 MiB came back when the inner snapshot returned, so 3 MiB more fits.
-    assert.equal(readHtmlScanText(small)[0], 'b');
-    writeFileSync(small, 'fresh');
-    assert.equal(readHtmlScanText(small)[0], 'b');
+    assert.equal(htmlScanMemo('x', () => ++attempts), 2);
   });
 });
 

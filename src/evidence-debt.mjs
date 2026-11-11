@@ -3,11 +3,11 @@
 import { dirname, join, relative, resolve, sep } from "node:path";
 
 import {
-  computeBuildFingerprint,
   describeBuildOutputDrift,
   pageIdForRoute,
   resolveBuiltSiteScope,
   routeForFile,
+  sharedBuildFingerprint,
 } from "./built-site-scope.mjs";
 import { changeSince, classifyDrift } from "./change-scope.mjs";
 import { normalizePublicRouteSlug } from "./route-identity.mjs";
@@ -54,7 +54,7 @@ export function assessEvidenceDebt({ packet = null, packetPath = null, report = 
     targetRepo = resolve(dirname(resolve(packetPath)), target);
     outputRoot = join(targetRepo, "_site", slug);
     try {
-      current = computeBuildFingerprint(outputRoot);
+      current = sharedBuildFingerprint(outputRoot);
       if (!current.ok) reason = "build_output_missing";
       // Resolve only the chosen built directory: never discover another
       // campaign, or fall back to source HTML when _site is absent.

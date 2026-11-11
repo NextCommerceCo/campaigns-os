@@ -69,7 +69,8 @@ after(() => assertNoNetworkAttempts());
 const { doctorBuiltOutput } = await import("./doctor/inspect.mjs");
 const { boundedPageScripts, collectBuiltPageIdentityInputs, collectCartPlaceholderPages, recordSmokeQc } = await import("./doctor/checks.mjs");
 const { computeBuildFingerprint, resolveBuiltSiteScope } = await import("./built-site-scope.mjs");
-const { SMOKE_QC, SMOKE_QC_CHECK, SMOKE_QC_LIMITS, URL_ATTRIBUTES, cssUrlValues, evaluateSmokeQc, isBuiltPageReadFailure, pageScriptSources, parseBuiltPage } = await import("./built-smoke-qc.mjs");
+const { SMOKE_QC, SMOKE_QC_CHECK, SMOKE_QC_LIMITS, URL_ATTRIBUTES, cssUrlValues, evaluateSmokeQc, pageScriptSources, parseBuiltPage } = await import("./built-smoke-qc.mjs");
+const { isPageReadFailure } = await import("./cart-placeholders.mjs");
 
 const CHECK = "smoke_qc";
 const GATE = "built_output.smoke_qc";
@@ -373,7 +374,7 @@ function boundedPages(dir) {
     try {
       return pageScriptSources(parseBuiltPage(content));
     } catch (error) {
-      if (!isBuiltPageReadFailure(error)) throw error;
+      if (!isPageReadFailure(error)) throw error;
       return null;
     }
   };
