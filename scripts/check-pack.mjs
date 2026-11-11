@@ -7,7 +7,7 @@
 // rather than `npm install` the tarball so this stays offline and fast (a full
 // install would fetch every dependency from the registry, playwright included).
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -56,7 +56,10 @@ try {
   const packed = JSON.parse(
     execFileSync("npm", ["pack", "--json", "--pack-destination", work, ...(skipPrepare ? ["--ignore-scripts"] : [])], { cwd: ROOT, encoding: "utf8" })
   );
-  tarball = join(work, packed[0].filename);
+  // npm 11 prints an array of packed packages; npm 12 an object keyed by name.
+  const [entry] = Array.isArray(packed) ? packed : Object.values(packed);
+  if (!entry?.filename) fail(`npm pack --json named no tarball: ${JSON.stringify(packed).slice(0, 200)}`);
+  tarball = join(work, entry.filename);
   execFileSync("tar", ["-xzf", tarball, "-C", work]);
   const pkgRoot = join(work, "package");
   if (skipPrepare) {
@@ -174,7 +177,8 @@ try {
   // family may ship in it.
   const referenceModule = await import(join(pkgRoot, "src/family-script-reference.mjs"));
   const reference = referenceModule.loadFamilyScriptReference();
-  if (reference.root !== pkgRoot) fail(`the packed family script reference resolved outside the tarball: ${reference.root}`);
+  // Compare real paths: on macOS the temp dir sits behind the /var -> /private/var link.
+  if (realpathSync(reference.root) !== realpathSync(pkgRoot)) fail(`the packed family script reference resolved outside the tarball: ${reference.root}`);
   const privateFamilies = Object.keys(JSON.parse(readFileSync(join(pkgRoot, "contracts/private-template-sources.json"), "utf8")).sources ?? {});
   let referenceScripts = 0;
   for (const [family, entry] of Object.entries(reference.families ?? {})) {
