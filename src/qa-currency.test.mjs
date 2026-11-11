@@ -537,7 +537,7 @@ test("a non-USD --currency on an ordering run with no --test-country warns, and 
     return lines[0] || null;
   };
   const line = warned(["--currency", "gbp", "--test-order", "common"]);
-  assert.match(line, /^\[qa:test-order\] --currency GBP with no --test-country: test orders use the default US shipping address\./);
+  assert.equal(line, "[qa:test-order] --currency GBP with no --test-country: test orders use the default US shipping address. Pass --test-country, --test-address1, --test-city, --test-province and --test-postal for the GBP market, or ignore this if a US address is intended.\n");
   assert.match(line, /--test-country, --test-address1, --test-city, --test-province and --test-postal/);
   assert.ok(warned(["--currency", "EUR", "--test-order"]), "a bare --test-order places orders");
   assert.equal(warned(["--currency", "GBP", "--test-order", "common", "--test-country", "GB"]), null);
@@ -553,7 +553,7 @@ test("a defaulted non-USD currency warns without --test-country just as an expli
   const lines = [];
   const write = (line) => lines.push(line);
   assert.equal(warnCurrencyWithoutTestCountry({ "test-order": "common" }, write, spec), true);
-  assert.match(lines[0], /--currency GBP with no --test-country/);
+  assert.equal(lines[0], "[qa:test-order] the run currency GBP (from the spec's campaign.currency) with no --test-country: test orders use the default US shipping address. Pass --test-country, --test-address1, --test-city, --test-province and --test-postal for the GBP market, or ignore this if a US address is intended.\n");
   assert.equal(warnCurrencyWithoutTestCountry({ "test-order": "common", "test-country": "GB" }, write, spec), false);
   assert.equal(warnCurrencyWithoutTestCountry({ "test-order": "common", currency: "USD" }, write, spec), false);
   assert.equal(lines.length, 1);
@@ -794,10 +794,11 @@ test("qa run --currency GBP: a campaign that prices in USD blocks the verdict (e
   assert.ok(priced.requested.every((request) => request.currency === "GBP"));
   assert.equal(priced.verdict.assertions.some((entry) => entry.id.startsWith("commercial-currency:")), false);
 
-  // Control: no --currency, the same USD answer, the campaign currency asked for, no row.
+  // Control: no --currency pins the run to the spec's USD; the matching USD answer produces no row.
   const plain = await run({}, "USD");
   assert.ok(plain.requested.every((request) => request.currency === "USD"));
   assert.equal(plain.verdict.assertions.some((entry) => entry.id.startsWith("commercial-currency:")), false);
+  // The same no-flag run is pinned to USD, so a GBP answer produces a currency blocker.
   const defaultMismatch = await run({}, "GBP");
   assert.ok(defaultMismatch.requested.every((request) => request.currency === "USD"));
   assert.equal(defaultMismatch.verdict.assertions.find((entry) => entry.id === "commercial-currency:USD:GBP")?.severity, "blocker");

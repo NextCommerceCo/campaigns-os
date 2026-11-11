@@ -2372,7 +2372,10 @@ function warnCurrencyWithoutTestCountry(args, write = (message) => process.stder
   if (!currency || currency === "USD") return false;
   if (String(args["test-order"] || "off").toLowerCase() === "off") return false;
   if (stringArg(args["test-country"])) return false;
-  write(`[qa:test-order] --currency ${currency} with no --test-country: test orders use the default US shipping address. Pass --test-country, --test-address1, --test-city, --test-province and --test-postal for the ${currency} market, or ignore this if a US address is intended.\n`);
+  const source = Object.hasOwn(args, "currency")
+    ? `--currency ${currency}`
+    : `the run currency ${currency} (from the spec's campaign.currency)`;
+  write(`[qa:test-order] ${source} with no --test-country: test orders use the default US shipping address. Pass --test-country, --test-address1, --test-city, --test-province and --test-postal for the ${currency} market, or ignore this if a US address is intended.\n`);
   return true;
 }
 
@@ -2849,8 +2852,10 @@ function applyLocalServeAnalyticsReview(assertions, localServe, buildEnvironment
   for (const [index, item] of assertions.entries()) {
     if (item?.status !== STATUS.FAIL || !FIRE_DEPENDENT_ANALYTICS_ID.test(String(item.id || ""))) continue;
     if (isCaptureErrorFailure(item)) continue;
+    if (localServe && !localServeMeasuredOnLoopback(item, assertions)) continue;
     // Declared tags are gated out of every recorded development build,
-    // including hosted previews. Other rows retain the local-serve rule.
+    // including hosted previews. With a local-serve record, only the measured
+    // loopback development render qualifies. Other rows retain the local-serve rule.
     // A disarmed observer is not a clean reading of a tag that did not fire;
     // it remains eligible for the existing local-serve loopback rule below.
     if (buildEnvironment === "development" && item.id.startsWith("analytics-correctness:tag:")
@@ -2870,7 +2875,6 @@ function applyLocalServeAnalyticsReview(assertions, localServe, buildEnvironment
       continue;
     }
     if (!localServe) continue;
-    if (!localServeMeasuredOnLoopback(item, assertions)) continue;
     assertions[index] = {
       ...item,
       status: STATUS.MANUAL_REVIEW,

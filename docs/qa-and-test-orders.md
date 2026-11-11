@@ -1158,7 +1158,10 @@ development`, a declared `analytics-correctness:tag:*` that did not fire becomes
 build gates vendor loaders`, and its evidence carries `reason:
 development_build_gates_vendor_loaders`, the recorded build environment and a
 `follow_up` to check the tag on a production build. This applies to hosted
-previews as well as loopback captures. On a qualifying local-serve run, this
+previews as well as loopback captures. When a local-serve record exists, the
+tag rule applies only if the same loopback measurement check used by local-serve
+review passes; a remote built-entry fallback or redirect keeps its blocker
+without `development_build_gates_vendor_loaders`. On a qualifying local-serve run, this
 tag row carries `development_build_gates_vendor_loaders` instead of
 `local_serve_development_render` and does not carry `local_serve_status`. A tag
 that fired still passes. A production build or a build with no recorded

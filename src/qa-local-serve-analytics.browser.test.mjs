@@ -1,7 +1,8 @@
 // Real-browser proof for #500: the analytics-correctness inventory records the
 // page URL it actually settled on, so a localhost campaign root that redirects
-// to a hosted page preserves that location. Declared tags on a recorded
-// development build are not measured regardless of the capture host.
+// to a production host is not mistaken for a local development render. A
+// declared tag on a recorded development build reads not measured only when
+// the capture stayed on the loopback render.
 //
 // Chromium is not part of `npm ci --ignore-scripts`, so the file skips when it
 // cannot launch locally. The browser CI lane requires Chromium.
@@ -107,15 +108,14 @@ if (!available) {
   test.skip("Playwright Chromium is unavailable; browser-backed local-serve redirect proof skipped (run `npm run qa:install-browser`)", () => {});
 }
 
-browserTest("a recorded development build that redirects to a hosted page records the final URL and reviews the declared tag", async () => {
+browserTest("a localhost root that redirects to a production host records the final URL and keeps the pixel blocker", async () => {
   const inventory = await captureLeg({ redirect: true });
   const capture = inventory.find((item) => item.id === "analytics-correctness:capture");
   assert.equal(capture.evidence.capture_page.url, LOCAL_ROOT);
   assert.equal(capture.evidence.final_url, REMOTE_ROOT);
   const meta = (await reviewed(inventory)).find((item) => item.id === "analytics-correctness:tag:meta");
-  assert.equal(meta.status, STATUS.MANUAL_REVIEW);
-  assert.equal(meta.evidence.reason, "development_build_gates_vendor_loaders");
-  assert.match(meta.actual, /^not measured: development build gates vendor loaders/);
+  assert.equal(meta.status, STATUS.FAIL);
+  assert.equal(meta.evidence.reason, undefined);
 });
 
 browserTest("a localhost root served in place records a loopback final URL and is reviewed", async () => {

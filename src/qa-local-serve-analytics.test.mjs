@@ -5,6 +5,9 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { __qaBrowserTestHooks } from "./qa-browser.mjs";
 import { __qaNodeTestHooks } from "./qa-node.mjs";
@@ -14,7 +17,7 @@ import { resolveTestOrderTopology } from "./qa-test-order-topology.mjs";
 import { computeDisposition, SEVERITY, STATUS } from "./qa-verdict.mjs";
 import { recordedBuildEnvironment } from "./local-proof.mjs";
 
-const { runAnalyticsOrderSequence, resolveLocalServeAnalytics } = __qaNodeTestHooks;
+const { runAnalyticsOrderSequence, resolveLocalServeAnalytics, resolveQaInputs } = __qaNodeTestHooks;
 const {
   analyticsCorrectnessCaptureAssertions,
   analyticsCorrectnessRunnerFailureAssertion,
@@ -110,36 +113,70 @@ const FIRE_DEPENDENT = [
 const DATA_LAYER_PURCHASE = "analytics-correctness:data-layer-purchase:accept";
 
 // Before (main) -> after, by context:
-//                                      local development | hosted development | production | unknown
-// tag:gtm, not observed                         L -> D     | F -> D             | F -> F     | F -> F
-// tag:meta, not observed                        L -> D     | F -> D             | F -> F     | F -> F
-// tag:meta, observer disarmed                    L -> L     | B -> B             | B -> B     | B -> B
-// oob:tiktok                                    L -> L     | F -> F             | F -> F     | F -> F
-// purchase-fires                                L -> L     | F -> F             | F -> F     | F -> F
+//                                      local development | hosted development | production | unknown | local record, remote capture
+// tag:gtm, not observed                         L -> D     | F -> D             | F -> F     | F -> F  | F -> F
+// tag:meta, not observed                        L -> D     | F -> D             | F -> F     | F -> F  | F -> F
+// tag:meta, observer disarmed                    L -> L     | B -> B             | B -> B     | B -> B  | B -> B
+// oob:tiktok                                    L -> L     | F -> F             | F -> F     | F -> F  | F -> F
+// purchase-fires                                L -> L     | F -> F             | F -> F     | F -> F  | F -> F
 // F/B = fail/blocker (B retains fbq_observer_disarmed); L/D = manual_review/warn
 // with local_serve_development_render / development_build_gates_vendor_loaders.
 const FIRE_REVIEW_CONTEXTS = [
-  { name: "local-serve loopback development", environment: "development", url: LOCAL_URL },
-  { name: "hosted development", environment: "development", url: PREVIEW_URL },
-  { name: "production", environment: "production", url: LOCAL_URL },
-  { name: "no recorded environment", environment: undefined, url: LOCAL_URL },
+  { name: "local-serve loopback development", environment: "development", url: LOCAL_URL, hasLocalServe: true },
+  { name: "hosted development", environment: "development", url: PREVIEW_URL, hasLocalServe: false },
+  { name: "production", environment: "production", url: LOCAL_URL, hasLocalServe: false },
+  { name: "no recorded environment", environment: undefined, url: LOCAL_URL, hasLocalServe: false },
+  { name: "local-serve remote capture", environment: "development", url: PREVIEW_URL, rootUrl: LOCAL_URL, hasLocalServe: true },
 ];
+// Each cell is [status, severity, reason, local_serve_status], in context order.
+// These are literal expectations, independent of the resolver's result.
 const FIRE_REVIEW_ROWS = [
-  { name: "tag:gtm not observed", id: "analytics-correctness:tag:gtm", developmentTag: true },
-  { name: "tag:meta not observed", id: "analytics-correctness:tag:meta", developmentTag: true },
-  { name: "tag:meta observer disarmed", id: "analytics-correctness:tag:meta", disarmed: true },
-  { name: "oob:tiktok", id: "analytics-correctness:oob:tiktok" },
-  { name: "purchase-fires", id: "analytics-correctness:purchase-fires" },
+  { name: "tag:gtm not observed", id: "analytics-correctness:tag:gtm", expected: [
+    ["manual_review", "warn", "development_build_gates_vendor_loaders", undefined],
+    ["manual_review", "warn", "development_build_gates_vendor_loaders", undefined],
+    ["fail", "blocker", undefined, undefined],
+    ["fail", "blocker", undefined, undefined],
+    ["fail", "blocker", undefined, undefined],
+  ] },
+  { name: "tag:meta not observed", id: "analytics-correctness:tag:meta", expected: [
+    ["manual_review", "warn", "development_build_gates_vendor_loaders", undefined],
+    ["manual_review", "warn", "development_build_gates_vendor_loaders", undefined],
+    ["fail", "blocker", undefined, undefined],
+    ["fail", "blocker", undefined, undefined],
+    ["fail", "blocker", undefined, undefined],
+  ] },
+  { name: "tag:meta observer disarmed", id: "analytics-correctness:tag:meta", disarmed: true, expected: [
+    ["manual_review", "warn", "local_serve_development_render", "fail"],
+    ["fail", "blocker", "fbq_observer_disarmed", undefined],
+    ["fail", "blocker", "fbq_observer_disarmed", undefined],
+    ["fail", "blocker", "fbq_observer_disarmed", undefined],
+    ["fail", "blocker", "fbq_observer_disarmed", undefined],
+  ] },
+  { name: "oob:tiktok", id: "analytics-correctness:oob:tiktok", expected: [
+    ["manual_review", "warn", "local_serve_development_render", "fail"],
+    ["fail", "blocker", undefined, undefined],
+    ["fail", "blocker", undefined, undefined],
+    ["fail", "blocker", undefined, undefined],
+    ["fail", "blocker", undefined, undefined],
+  ] },
+  { name: "purchase-fires", id: "analytics-correctness:purchase-fires", expected: [
+    ["manual_review", "warn", "local_serve_development_render", "fail"],
+    ["fail", "blocker", undefined, undefined],
+    ["fail", "blocker", undefined, undefined],
+    ["fail", "blocker", undefined, undefined],
+    ["fail", "blocker", undefined, undefined],
+  ] },
 ];
 
-for (const context of FIRE_REVIEW_CONTEXTS) {
+for (const [contextIndex, context] of FIRE_REVIEW_CONTEXTS.entries()) {
   for (const row of FIRE_REVIEW_ROWS) {
     test(`fire-dependent review: ${row.name}, ${context.name}`, async () => {
       const report = { stages: { assembly: { evidence: {
         ...parityReport.stages.assembly.evidence,
         build_environment: context.environment,
       } } } };
-      const localServeAnalytics = resolveLocalServeAnalytics({ packet: localServePacket, report, captureUrl: context.url });
+      const localServeAnalytics = resolveLocalServeAnalytics({ packet: localServePacket, report, captureUrl: context.rootUrl || context.url });
+      assert.equal(localServeAnalytics !== null, context.hasLocalServe, "local-serve record presence is part of the context contract");
       const contract = { ...CONTRACT, providers: { ...CONTRACT.providers, gtm: { enabled: true, containerId: "GTM-EXAMPLE1" } } };
       const capture = { ...normalizeCapture({ events: [], tagFires: [] }), ...(row.disarmed ? { metaObserver: "disarmed" } : {}) };
       const assertions = [];
@@ -161,19 +198,12 @@ for (const context of FIRE_REVIEW_CONTEXTS) {
       });
       const item = assertions.find((entry) => entry.id === row.id);
       assert.ok(item, "the real capture/receipt assessment emitted the row");
-      const developmentTag = context.environment === "development" && row.developmentTag;
-      const reviewed = developmentTag || !!localServeAnalytics;
-      const reason = developmentTag ? "development_build_gates_vendor_loaders"
-        : localServeAnalytics ? "local_serve_development_render"
-          : row.disarmed ? "fbq_observer_disarmed" : undefined;
-      assert.equal(item.status, reviewed ? STATUS.MANUAL_REVIEW : STATUS.FAIL);
-      assert.equal(item.severity, reviewed ? SEVERITY.WARN : SEVERITY.BLOCKER);
-      assert.equal(item.evidence.reason, reason);
-      assert.equal(item.evidence.local_serve_status, localServeAnalytics && !developmentTag ? STATUS.FAIL : undefined);
-      if (developmentTag) {
+      const expected = row.expected[contextIndex];
+      assert.deepEqual([item.status, item.severity, item.evidence.reason, item.evidence.local_serve_status], expected);
+      if (expected[2] === "development_build_gates_vendor_loaders") {
         assert.match(item.actual, /^not measured: development build gates vendor loaders/);
         assert.match(item.evidence.follow_up, /production build/);
-      } else if (localServeAnalytics) {
+      } else if (expected[2] === "local_serve_development_render") {
         assert.match(item.actual, /local-serve development render/);
         assert.deepEqual(item.evidence.production_parity, localServeAnalytics.production_parity);
         assert.match(item.evidence.follow_up, /PR preview.*--base-url/);
@@ -181,6 +211,33 @@ for (const context of FIRE_REVIEW_CONTEXTS) {
     });
   }
 }
+
+test("packet input resolution carries the recorded build environment into hosted QA", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "qa-build-environment-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, ".campaign-runtime"));
+  const packetPath = join(dir, "campaign-runtime.build.json");
+  const packet = {
+    campaign: { public_route_slug: "campaign" },
+    spec: { map_id: "example-map", local_path: "campaignspec.json" },
+    assembly: { target_repo: ".", output_dir: "_site" },
+    deploy: { target: "netlify", preview_url: PREVIEW_URL },
+  };
+  const spec = { schema_version: "4.3", campaign: {}, funnels: [{ id: "default", pages: [
+    { id: "landing", type: "landing", order: 1 },
+  ] }] };
+  writeFileSync(packetPath, JSON.stringify(packet));
+  writeFileSync(join(dir, "campaignspec.json"), JSON.stringify(spec));
+  for (const [evidence, expected] of [[{ build_environment: "development" }, "development"], [{}, null]]) {
+    writeFileSync(join(dir, ".campaign-runtime/assembly-report.json"), JSON.stringify({
+      identity: { map_id: "example-map", public_route_slug: "campaign" },
+      stages: { assembly: { evidence } },
+    }));
+    const resolved = await resolveQaInputs({ _: ["qa", "run"], packet: packetPath });
+    assert.equal(resolved.buildEnvironment, expected);
+    assert.equal(resolved.localServeAnalytics, null, "hosted QA receives its environment without a local-serve record");
+  }
+});
 
 test("a missing declared GTM tag on a hosted development build is not measured; production and unknown builds still block", async () => {
   for (const environment of ["development", "production", undefined]) {
@@ -388,7 +445,7 @@ test("a local-serve packet whose recorded build is not a development render keep
 // loopback.
 const REMOTE_ENTRY = "https://preview.example/campaign/checkout/";
 
-test("a remote built-entry capture on a development build reviews declared tags but keeps out-of-band blockers", async () => {
+test("a remote built-entry capture under a local-serve record keeps tag and out-of-band blockers", async () => {
   const localServeAnalytics = resolveLocalServeAnalytics({ packet: localServePacket, report: parityReport, captureUrl: LOCAL_URL });
   assert.ok(localServeAnalytics);
   // The localhost root answered 404, so the #493 fallback captured the built
@@ -399,8 +456,7 @@ test("a remote built-entry capture on a development build reviews declared tags 
     inventory: { source: "built_entry" },
     receiptAttempt: { planId: "accept", receiptRecognized: true, receiptUrl: `${LOCAL_URL}receipt/`, receiptDocumentUrl: `${LOCAL_URL}receipt/`, capture: normalizeCapture({ events: [] }) },
   });
-  assert.equal(assertions.find((entry) => entry.id === "analytics-correctness:tag:meta").status, STATUS.MANUAL_REVIEW);
-  for (const id of ["analytics-correctness:oob:tiktok"]) {
+  for (const id of ["analytics-correctness:tag:meta", "analytics-correctness:oob:tiktok"]) {
     const item = assertions.find((entry) => entry.id === id);
     assert.equal(item.status, STATUS.FAIL, id);
     assert.equal(item.severity, SEVERITY.BLOCKER, id);
@@ -411,14 +467,13 @@ test("a remote built-entry capture on a development build reviews declared tags 
   assert.equal(computeDisposition(assertions), "blocked");
 });
 
-test("a redirected development-build capture reviews declared tags but keeps out-of-band blockers", async () => {
+test("a redirected capture under a local-serve record keeps tag and out-of-band blockers", async () => {
   const localServeAnalytics = resolveLocalServeAnalytics({ packet: localServePacket, report: parityReport, captureUrl: LOCAL_URL });
   assert.ok(localServeAnalytics);
   const assertions = await runSequence({ url: LOCAL_URL, localServeAnalytics, inventory: { finalUrl: PREVIEW_URL } });
   const capture = assertions.find((entry) => entry.id === "analytics-correctness:capture");
   assert.equal(capture.evidence.final_url, PREVIEW_URL);
-  assert.equal(assertions.find((entry) => entry.id === "analytics-correctness:tag:meta").status, STATUS.MANUAL_REVIEW);
-  for (const id of ["analytics-correctness:oob:tiktok"]) {
+  for (const id of ["analytics-correctness:tag:meta", "analytics-correctness:oob:tiktok"]) {
     const item = assertions.find((entry) => entry.id === id);
     assert.equal(item.status, STATUS.FAIL, id);
     assert.equal(item.severity, SEVERITY.BLOCKER, id);
@@ -427,12 +482,14 @@ test("a redirected development-build capture reviews declared tags but keeps out
   assert.equal(computeDisposition(assertions), "blocked");
 });
 
-test("a development-build capture with no final URL reviews declared tags but keeps out-of-band blockers", async () => {
+test("a capture with no final URL under a local-serve record keeps tag and out-of-band blockers", async () => {
   const localServeAnalytics = resolveLocalServeAnalytics({ packet: localServePacket, report: parityReport, captureUrl: LOCAL_URL });
   const assertions = await runSequence({ url: LOCAL_URL, localServeAnalytics, inventory: { finalUrl: null } });
-  assert.equal(assertions.find((entry) => entry.id === "analytics-correctness:tag:meta").status, STATUS.MANUAL_REVIEW);
-  for (const id of ["analytics-correctness:oob:tiktok"]) {
-    assert.equal(assertions.find((entry) => entry.id === id).status, STATUS.FAIL, id);
+  for (const id of ["analytics-correctness:tag:meta", "analytics-correctness:oob:tiktok"]) {
+    const item = assertions.find((entry) => entry.id === id);
+    assert.equal(item.status, STATUS.FAIL, id);
+    assert.equal(item.severity, SEVERITY.BLOCKER, id);
+    assert.equal(item.evidence.reason, undefined, id);
   }
 });
 
