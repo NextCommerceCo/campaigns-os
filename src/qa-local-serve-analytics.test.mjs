@@ -109,6 +109,79 @@ const FIRE_DEPENDENT = [
 // still blocks on localhost.
 const DATA_LAYER_PURCHASE = "analytics-correctness:data-layer-purchase:accept";
 
+// Before (main) -> after, by context:
+//                                      local development | hosted development | production | unknown
+// tag:gtm, not observed                         L -> D     | F -> D             | F -> F     | F -> F
+// tag:meta, not observed                        L -> D     | F -> D             | F -> F     | F -> F
+// tag:meta, observer disarmed                    L -> L     | B -> B             | B -> B     | B -> B
+// oob:tiktok                                    L -> L     | F -> F             | F -> F     | F -> F
+// purchase-fires                                L -> L     | F -> F             | F -> F     | F -> F
+// F/B = fail/blocker (B retains fbq_observer_disarmed); L/D = manual_review/warn
+// with local_serve_development_render / development_build_gates_vendor_loaders.
+const FIRE_REVIEW_CONTEXTS = [
+  { name: "local-serve loopback development", environment: "development", url: LOCAL_URL },
+  { name: "hosted development", environment: "development", url: PREVIEW_URL },
+  { name: "production", environment: "production", url: LOCAL_URL },
+  { name: "no recorded environment", environment: undefined, url: LOCAL_URL },
+];
+const FIRE_REVIEW_ROWS = [
+  { name: "tag:gtm not observed", id: "analytics-correctness:tag:gtm", developmentTag: true },
+  { name: "tag:meta not observed", id: "analytics-correctness:tag:meta", developmentTag: true },
+  { name: "tag:meta observer disarmed", id: "analytics-correctness:tag:meta", disarmed: true },
+  { name: "oob:tiktok", id: "analytics-correctness:oob:tiktok" },
+  { name: "purchase-fires", id: "analytics-correctness:purchase-fires" },
+];
+
+for (const context of FIRE_REVIEW_CONTEXTS) {
+  for (const row of FIRE_REVIEW_ROWS) {
+    test(`fire-dependent review: ${row.name}, ${context.name}`, async () => {
+      const report = { stages: { assembly: { evidence: {
+        ...parityReport.stages.assembly.evidence,
+        build_environment: context.environment,
+      } } } };
+      const localServeAnalytics = resolveLocalServeAnalytics({ packet: localServePacket, report, captureUrl: context.url });
+      const contract = { ...CONTRACT, providers: { ...CONTRACT.providers, gtm: { enabled: true, containerId: "GTM-EXAMPLE1" } } };
+      const capture = { ...normalizeCapture({ events: [], tagFires: [] }), ...(row.disarmed ? { metaObserver: "disarmed" } : {}) };
+      const assertions = [];
+      await runAnalyticsOrderSequence({
+        args: {},
+        resolved: { spec: { analytics: contract }, analyticsCaptureTarget: { url: context.url }, localServeAnalytics, buildEnvironment: recordedBuildEnvironment(report) },
+        runId: "fire-review-matrix",
+        assertions,
+      }, {
+        async runInventory() {
+          return analyticsCorrectnessCaptureAssertions({ capture, contract, url: context.url, finalUrl: context.url, capturePage: { url: context.url, http_status: 200 } });
+        },
+        async runOrders() {
+          return { orders: [], receiptAnalytics: { plannedPlanIds: ["accept"], attempts: [{
+            planId: "accept", receiptRecognized: true, receiptUrl: `${context.url}receipt/`, receiptDocumentUrl: `${context.url}receipt/`, capture,
+          }] } };
+        },
+        assessReceipt: assessReceiptPurchase,
+      });
+      const item = assertions.find((entry) => entry.id === row.id);
+      assert.ok(item, "the real capture/receipt assessment emitted the row");
+      const developmentTag = context.environment === "development" && row.developmentTag;
+      const reviewed = developmentTag || !!localServeAnalytics;
+      const reason = developmentTag ? "development_build_gates_vendor_loaders"
+        : localServeAnalytics ? "local_serve_development_render"
+          : row.disarmed ? "fbq_observer_disarmed" : undefined;
+      assert.equal(item.status, reviewed ? STATUS.MANUAL_REVIEW : STATUS.FAIL);
+      assert.equal(item.severity, reviewed ? SEVERITY.WARN : SEVERITY.BLOCKER);
+      assert.equal(item.evidence.reason, reason);
+      assert.equal(item.evidence.local_serve_status, localServeAnalytics && !developmentTag ? STATUS.FAIL : undefined);
+      if (developmentTag) {
+        assert.match(item.actual, /^not measured: development build gates vendor loaders/);
+        assert.match(item.evidence.follow_up, /production build/);
+      } else if (localServeAnalytics) {
+        assert.match(item.actual, /local-serve development render/);
+        assert.deepEqual(item.evidence.production_parity, localServeAnalytics.production_parity);
+        assert.match(item.evidence.follow_up, /PR preview.*--base-url/);
+      }
+    });
+  }
+}
+
 test("a missing declared GTM tag on a hosted development build is not measured; production and unknown builds still block", async () => {
   for (const environment of ["development", "production", undefined]) {
     const report = { stages: { assembly: { evidence: { build_environment: environment } } } };
@@ -192,7 +265,7 @@ test("a local-serve run with a declared pixel that did not fire leaves only the 
   assert.deepEqual(blockers.map((item) => item.id), [DATA_LAYER_PURCHASE]);
 });
 
-test("a development build never downgrades a disarmed Meta observer or a capture error", async () => {
+test("a hosted development build never downgrades a disarmed Meta observer or a capture error", async () => {
   const capture = { ...normalizeCapture({ tagFires: [] }), metaObserver: "disarmed" };
   const rows = analyticsCorrectnessCaptureAssertions({ capture, contract: CONTRACT, url: PREVIEW_URL });
   rows.push(analyticsCorrectnessRunnerFailureAssertion({ url: PREVIEW_URL, error: new Error("capture unavailable") }));

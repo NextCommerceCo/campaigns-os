@@ -323,10 +323,11 @@ test("spec derive warns when it creates a vendor block, and says QA's analytics 
     const dry = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath, "dry-run": true });
     const created = dry.warnings.filter((issue) => issue.code === "spec.derive.analytics_vendor_created");
     assert.equal(created.length, 1);
-    assert.match(created[0].message, /tag is checked on a production build/);
+    assert.doesNotMatch(created[0].message, /tag is checked on a production build|development-build tag rule/);
     assert.match(created[0].message, /^analytics\.vendors\.ga4 would be created from the repo's id: doctor would then read that vendor's campaigns\.json key against the spec, and the spec would then carry an analytics block, so QA runs its analytics leg/);
     assert.equal(readJson(specPath).analytics, undefined, "dry run writes nothing");
     const run = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath });
+    assert.doesNotMatch(run.warnings.find((issue) => issue.code === "spec.derive.analytics_vendor_created").message, /tag is checked on a production build|development-build tag rule/);
     assert.ok(run.changes.some((row) => row.field === "analytics.vendors.ga4.id"));
     assert.deepEqual(readJson(specPath).analytics, { vendors: { ga4: { enabled: true, id: "G-AB12CD34EF" } } });
     assert.ok(specDeriveTextLines(run).some((line) => line.includes("analytics.vendors.ga4.id") && line.includes("G-AB12CD34EF")), "the diff names the vendor field");
@@ -590,7 +591,9 @@ test("spec derive is partial, not blocked, when a page cannot be bound, and stil
     assert.match(bound.warnings[0].message, /page "checkout" carries sdk_hints\.meta_tags\.next-success-url "upsell\/"/);
     assert.match(bound.warnings[1].message, /campaigns-os prepare-build/);
     assert.deepEqual(result.warnings.map((issue) => issue.code), ["spec.derive.page_file_not_found", "spec.derive.analytics_block_created", "spec.derive.analytics_block_created"], "the first run created both provider blocks and said so");
-    for (const warning of result.warnings.filter((issue) => issue.code === "spec.derive.analytics_block_created")) {
+    for (const block of ["analytics.providers.gtm", "analytics.providers.facebook"]) {
+      const warning = result.warnings.find((issue) => issue.code === "spec.derive.analytics_block_created" && issue.message.startsWith(`${block} `));
+      assert.ok(warning, `${block} creation is reported`);
       assert.match(warning.message, /tag is checked on a production build/);
       assert.match(warning.message, /recorded development build.*not measured/);
     }

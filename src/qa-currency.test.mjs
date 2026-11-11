@@ -41,7 +41,7 @@ test("--currency parses from the command line and is upper-cased; absent, there 
 });
 
 test("an invalid --currency is refused with a clear message, before anything resolves or is fetched", async () => {
-  for (const argv of [["--currency"], ["--currency", "GB"], ["--currency", "GBPX"], ["--currency", "GBP,EUR"], ["--currency", "G1P"], ["--currency", " GBP"], ["--currency", "ÉUR"], ["--currency", "£"]]) {
+  for (const argv of [["--currency"], ["--currency", "GB"], ["--currency", "GBPX"], ["--currency", "GBP,EUR"], ["--currency", "G1P"], ["--currency", " GBP"], ["--currency", "ÉUR"], ["--currency", "£"], ["--currency", "US Dollar"]]) {
     const args = parseArgs(["qa", "run", ...argv]);
     assert.throws(() => qaRunCurrency(args), (error) => {
       assert.equal(error.code, REFUSED_INVOCATION, argv.join(" "));
@@ -403,6 +403,28 @@ test("control: a spec without currency leaves the run unpinned", async () => {
   const withoutCurrencyDetail = shape(gbp.persisted).map((row) => (row.id === "http:landing" ? { ...row, keys: row.keys.filter((key) => key !== "evidence") } : row));
   assert.deepEqual(shape(plain.persisted), withoutCurrencyDetail);
   assert.equal(plain.persisted.disposition, gbp.persisted.disposition);
+});
+
+test("a malformed spec currency without --currency leaves the run unpinned without refusing", async () => {
+  for (const currency of ["US Dollar", "", "US", "USDX", " USD", "ÉUR", 123, true]) {
+    assert.equal(qaRunCurrency({}, { campaign: { currency } }), null);
+  }
+  const { result, persisted, fetched } = await runWith({}, { specCurrency: "US Dollar" });
+  assert.deepEqual([...new Set(fetched)].sort(), [LANDING_URL, CHECKOUT_URL].sort());
+  assert.deepEqual(result.entry_urls.map((entry) => entry.url), [LANDING_URL]);
+  assert.equal(fetched.some((url) => new URL(url).searchParams.has("currency")), false);
+  assert.equal(persisted.assertions.find((entry) => entry.id === "http:landing").evidence, undefined);
+  assert.equal(persisted.disposition, "ready_with_exceptions");
+});
+
+test("an explicit malformed --currency still refuses when the spec currency is malformed", async () => {
+  const message = '--currency takes one three-letter currency code, such as GBP or EUR (got "US Dollar"). Run qa run once per currency.';
+  assert.throws(() => qaRunCurrency({ currency: "US Dollar" }, { campaign: { currency: "US Dollar" } }), (error) => {
+    assert.equal(error.code, REFUSED_INVOCATION);
+    assert.equal(error.message, message);
+    return true;
+  });
+  await assert.rejects(runWith({ currency: "US Dollar" }, { specCurrency: "US Dollar" }), (error) => error.code === REFUSED_INVOCATION && error.message === message);
 });
 
 test("a spec currency does not pin or refuse a legacy API test-order run without --currency", async () => {

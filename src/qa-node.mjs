@@ -2338,7 +2338,7 @@ const refuseBadOrderCreationLimit = (args) => refusing(() => validatedOrderCreat
 // refused here, before anything is resolved, fetched or launched. So is a run
 // whose orders are legacy direct API orders: that request carries no
 // currency, so the order would be placed in the default one. Without the flag,
-// use the spec's campaign.currency, except on those unpinned legacy runs.
+// use a well-formed spec campaign.currency, except on unpinned legacy runs.
 function qaRunCurrency(args, spec = null) {
   const explicit = Object.hasOwn(args, "currency");
   const browserMode = String(args["test-order"] || "off").toLowerCase();
@@ -2348,8 +2348,10 @@ function qaRunCurrency(args, spec = null) {
   // behavior unless an explicit flag must be refused below.
   if (!explicit && legacyOrders) return null;
   const value = explicit ? args.currency : spec?.campaign?.currency;
-  if (!explicit && value == null) return null;
   if (typeof value !== "string" || !/^[A-Za-z]{3}$/.test(value)) {
+    // Doctor reports malformed campaign.currency; it is not an operator's
+    // request to pin this run, so preserve the existing unpinned behavior.
+    if (!explicit) return null;
     const got = typeof value === "string" && value !== "" ? JSON.stringify(value) : "no value";
     throw refused(`--currency takes one three-letter currency code, such as GBP or EUR (got ${got}). Run qa run once per currency.`);
   }
@@ -2849,9 +2851,10 @@ function applyLocalServeAnalyticsReview(assertions, localServe, buildEnvironment
     if (isCaptureErrorFailure(item)) continue;
     // Declared tags are gated out of every recorded development build,
     // including hosted previews. Other rows retain the local-serve rule.
-    if (buildEnvironment === "development" && item.id.startsWith("analytics-correctness:tag:")) {
-      // A disarmed observer is not a clean reading of a tag that did not fire.
-      if (item.evidence?.reason === "fbq_observer_disarmed") continue;
+    // A disarmed observer is not a clean reading of a tag that did not fire;
+    // it remains eligible for the existing local-serve loopback rule below.
+    if (buildEnvironment === "development" && item.id.startsWith("analytics-correctness:tag:")
+      && item.evidence?.reason !== "fbq_observer_disarmed") {
       assertions[index] = {
         ...item,
         status: STATUS.MANUAL_REVIEW,

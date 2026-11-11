@@ -4131,7 +4131,7 @@ export function specDeriveCommand(args, { store: storeRead = null, liveCampaign 
   // created beside it already says so).
   const vendorOpensAnalytics = plan.analytics_created === true && !(plan.created_blocks || []).length;
   for (const block of plan.created_vendor_blocks || []) {
-    addIssue(result.warnings, "spec.derive.analytics_vendor_created", `${block} ${dryRun ? "would be" : "is"} created from the repo's id: doctor ${dryRun ? "would then read" : "now reads"} that vendor's campaigns.json key against the spec${vendorOpensAnalytics ? `, and the spec ${dryRun ? "would then carry" : "now carries"} an analytics block, so QA runs its analytics leg and expects the typed-card order to fire a Purchase` : ""}. A declared provider tag is checked on a production build; the development-build tag rule does not change out-of-band pixel or Purchase checks.`);
+    addIssue(result.warnings, "spec.derive.analytics_vendor_created", `${block} ${dryRun ? "would be" : "is"} created from the repo's id: doctor ${dryRun ? "would then read" : "now reads"} that vendor's campaigns.json key against the spec${vendorOpensAnalytics ? `, and the spec ${dryRun ? "would then carry" : "now carries"} an analytics block, so QA runs its analytics leg and expects the typed-card order to fire a Purchase` : ""}.`);
   }
 
   // What a write entails is said in both modes, so a dry run previews the
