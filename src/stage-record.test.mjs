@@ -21,6 +21,7 @@ import { resolveInvocationPolicy } from "./invocation.mjs";
 import { buildReadabilityRecord } from "./polish-readability.mjs";
 import { recordCommand, recordStageCommand } from "./stage-record.mjs";
 import { recordPendingDesignSourceProvenance } from "./design-source-publication.mjs";
+import { computeDesignSourcePackageMaterialFingerprint } from "./design-source-package.mjs";
 import { withTargetLockSync } from "./target-lock.mjs";
 import { readdirSync } from "node:fs";
 import { unavailableCapturesRecord, VISUAL_VIEWPORTS } from "./polish-visual.mjs";
@@ -1337,6 +1338,14 @@ function hostedDeployArgs(f) {
 
 const DEPLOY_FETCH = { fetchImpl: async () => ({ status: 200, headers: { get: () => null }, body: null }) };
 
+// Exercise the CLI exit status with the same offline probe as recordCommand.
+function hostedDeployCli(f, args, extra = []) {
+  const preload = `data:text/javascript,${encodeURIComponent(`globalThis.fetch = ${DEPLOY_FETCH.fetchImpl.toString()};`)}`;
+  return runCli(["record", "deploy", "--packet", args.packet, "--base-url", args["base-url"], ...extra], f.dir, {
+    NODE_OPTIONS: [process.env.NODE_OPTIONS, `--import=${preload}`].filter(Boolean).join(" "),
+  });
+}
+
 for (const status of ["skipped", "blocked"]) {
   test(`record deploy refuses a hosted Polish recorded ${status}, ${status === "skipped" ? "naming doctor's gate" : "naming Polish as the stage to finish"} and writing nothing`, async () => {
     await guardedLifecycle(async (f) => {
@@ -1371,6 +1380,72 @@ for (const status of ["skipped", "blocked"]) {
     });
   });
 }
+
+for (const [label, spoil, code] of [
+  ["self-certified evidence", (f) => {
+    mutateJson(f.reportPath, (report) => { report.stages.polish.performed_by = "next-campaigns-build"; });
+  }, "polish.self_certified"],
+  ["a Design Source Package changed after Build", (f) => {
+    const dsp = readJson(dspPathOf(f));
+    const mapping = dsp.contributions.flatMap((contribution) => contribution.mappings)[0];
+    assert.ok(mapping, "setup: the source package has a coverage mapping");
+    mapping.confidence = mapping.confidence === "medium" ? "high" : "medium";
+    dsp.material_fingerprint = computeDesignSourcePackageMaterialFingerprint(dsp);
+    assert.notEqual(dsp.material_fingerprint, readJson(f.reportPath).stages.assembly.source_package_material_fingerprint);
+    writeJson(dspPathOf(f), dsp);
+    for (const path of [f.packetPath, f.contextPath, f.reportPath]) {
+      mutateJson(path, (artifact) => {
+        artifact.design_source_package.sha256 = `sha256:${sha256File(dspPathOf(f))}`;
+        artifact.design_source_package.material_fingerprint = dsp.material_fingerprint;
+      });
+    }
+  }, "polish.assembly_source_package_stale"],
+]) {
+  test(`record deploy refuses a hosted completed Polish with ${label} and preserves the report bytes`, async () => {
+    await guardedLifecycle(async (f) => {
+      const args = hostedDeployArgs(f);
+      await recordThroughPolish(f);
+      assert.equal(doctorOk(f).derived.polish_gate.status, "pass", "control: the recorded completed Polish passes the gate");
+      spoil(f);
+      assert.equal(readJson(f.reportPath).stages.polish.status, "completed", "the terminal stage still passes the ladder");
+      const gate = doctorOk(f).derived.polish_gate;
+      assert.equal(gate.status, "blocked");
+      assert.equal(gate.code, code);
+      const before = treeDigest(f.dir);
+      const reportBefore = readFileSync(f.reportPath);
+      const result = hostedDeployCli(f, args);
+      assert.notEqual(result.status, 0, result.stdout);
+      assert.ok(result.stderr.includes([
+        "record deploy refused; nothing was written:",
+        `- ${gate.code}: ${gate.reason}`,
+        ...(gate.required_actions || []).map((action) => `- required action: ${action.command || action.description}`),
+      ].join("\n")), result.stderr);
+      assert.deepEqual(readFileSync(f.reportPath), reportBefore, "refusal leaves the report byte-identical");
+      assertNothingWritten(f.dir, before, "the refused completed-Polish deploy");
+    });
+  });
+}
+
+test("record deploy --dry-run refuses a hosted skipped Polish with the same gate refusal and writes nothing", async () => {
+  await guardedLifecycle(async (f) => {
+    const args = hostedDeployArgs(f);
+    recordThroughBuild(f);
+    recordOk(f, "polish", ["--evidence", writeEvidence(f, "polish-skipped.json", SKIPPED_POLISH)]);
+    const gate = doctorOk(f).derived.polish_gate;
+    assert.equal(gate.status, "blocked");
+    const before = treeDigest(f.dir);
+    const reportBefore = readFileSync(f.reportPath);
+    const dryRun = hostedDeployCli(f, args, ["--dry-run"]);
+    assert.notEqual(dryRun.status, 0, dryRun.stdout);
+    assertNothingWritten(f.dir, before, "the refused deploy dry run");
+    const refused = hostedDeployCli(f, args);
+    assert.notEqual(refused.status, 0, refused.stdout);
+    assert.equal(dryRun.stderr, refused.stderr, "dry run reports the same refusal as record deploy");
+    assert.ok(dryRun.stderr.includes(`- ${gate.code}: ${gate.reason}`), dryRun.stderr);
+    assert.deepEqual(readFileSync(f.reportPath), reportBefore, "dry run leaves the report byte-identical");
+    assertNothingWritten(f.dir, before, "the refused deploy and dry run");
+  });
+});
 
 test("record deploy accepts a hosted current Polish, then carries it forward after a page-only edit", async () => {
   await guardedLifecycle(async (f) => {
