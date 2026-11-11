@@ -234,8 +234,10 @@ test("Template captures and failures stay evidence only, with no visual or parit
 test("Template evidence uses only the capture budget remaining after all planned cells", async (t) => {
   const f = syntheticVisualFixture(); t.after(f.cleanup); const input = templateInputs(f);
   let time = 0, renders = 0;
-  const record = await runVisualPass({ ...input, clock: { now: () => time }, budget: { captureMs: 200 },
-    createBrowserAdapter: async () => fakeVisualAdapter({ consume() { time += 50; renders++; } }) });
+  // The pass budget is also bounded by real elapsed time, so the fake budget is
+  // large enough that a slow runner cannot exhaust it in wall-clock terms.
+  const record = await runVisualPass({ ...input, clock: { now: () => time }, budget: { captureMs: 200_000 },
+    createBrowserAdapter: async () => fakeVisualAdapter({ consume() { time += 50_000; renders++; } }) });
   assert.equal(renders, 4);
   assert.ok(record.cells.every((cell) => cell.status === "rendered"));
   assert.ok(record.evidence_only.every((cell) => cell.status === "run_budget_exhausted" && cell.reason === "run_budget_exhausted"));
