@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.68.0+agent.4] - 2026-11-11
+
+### Fixed
+
+- `record deploy` refuses when doctor's Polish gate is blocked, so a Polish recorded as skipped no longer earns a deploy record (#756).
+
 ## [1.68.0+agent.1] - 2026-11-10
 
 ### Changed
