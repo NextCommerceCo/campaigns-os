@@ -1,14 +1,51 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { parse } from 'acorn';
 import { withDesignSourcePublication } from './design-source-publication.mjs';
+import { computeDesignSourcePackageMaterialFingerprint } from './design-source-package.mjs';
 
 const src = import.meta.dirname;
 const ownerPath = realpathSync(join(src, 'design-source-publication.mjs'));
+
+for (const [sourceKind, adopted, recovery] of [
+  ['figma_frames', false, path => 'prepare-build cannot show it synthesized these bytes (no Assembly Report records them as its own output, or the package changed since), so it will not overwrite it. '
+    + `Reconcile the package with the current inputs, or, if no downstream stage has consumed it, delete ${path} and rerun prepare-build to synthesize a fresh one.`],
+  ['figma_frames', true, () => 'Keep the original source-kind declaration; --adopt cannot convert an existing package.'],
+  ['html_funnel', true, () => 'Keep the original source-kind declaration; --adopt cannot convert an existing package.'],
+  ['built_first', false, () => 'This package was declared built first; rerun with --adopt src/example-route. Keep the original source-kind declaration; an intake without --adopt cannot change it.'],
+]) {
+  test(`source-kind refusal recovery for ${sourceKind}, adoption: ${adopted}`, async t => {
+    const target = mkdtempSync(join(tmpdir(), 'campaigns-os-source-recovery-'));
+    t.after(() => rmSync(target, { recursive: true, force: true }));
+    const sourceRoot = join(target, 'source');
+    mkdirSync(sourceRoot);
+    const outputs = Object.fromEntries(['packet', 'context', 'report', 'doctorOut', 'brief'].map(name => [`${name}Path`, join(target, `${name}.json`)]));
+    const inputs = {
+      activePages: [], mappings: [], manifestResult: { manifest: null }, sourceAssetCrawl: null, templateFamily: null,
+      templateStockPageIds: [], commerceCatalog: null, sourceRoot, mapId: 'example-map', publicRouteSlug: 'example-route',
+    };
+    const original = await withDesignSourcePublication({ targetRepo: target, outputs }, publication => publication.package(inputs));
+    const value = { ...original.value, source_kind: sourceKind };
+    value.material_fingerprint = computeDesignSourcePackageMaterialFingerprint(value);
+    const bytes = `${JSON.stringify(value)}\n`;
+    writeFileSync(original.path, bytes);
+    for (const force of [false, true]) {
+      await assert.rejects(withDesignSourcePublication({ targetRepo: target, outputs, force }, publication => publication.package({ ...inputs, adopted })), error => {
+        assert.ok(error.message.startsWith(`Design Source Package at ${original.path} is invalid, stale, or contradictory: `), error.message);
+        assert.ok(error.message.endsWith(recovery(original.path)), error.message);
+        if (sourceKind === 'figma_frames' && !adopted) {
+          assert.equal(error.message, `Design Source Package at ${original.path} is invalid, stale, or contradictory: declares source_kind "figma_frames"; html_funnel prepare-build requires "html_funnel". ${recovery(original.path)}`);
+        }
+        return true;
+      });
+      assert.equal(readFileSync(original.path, 'utf8'), bytes, 'refusal must preserve the existing package');
+    }
+  });
+}
 
 const walk = (node, visit) => {
   if (!node || typeof node.type !== 'string') return;
