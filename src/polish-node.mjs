@@ -694,7 +694,8 @@ export async function capturePolishPageLoad(options = {}) {
   try { captures = await runVisualPass({ ...options, ...options.visual, frozen, probes: parity ? [parity.run.probe] : [] }); }
   catch {
     // Even unexpected artifact/dependency failures cannot discard prior work.
-    captures = unavailableCapturesRecord({ plan, subject: { ...frozen.page_load.subject,
+    captures = unavailableCapturesRecord({ plan, packet: options.packet, targetRepo: options.visual.targetRepo ?? options.targetRepo,
+      subject: { ...frozen.page_load.subject,
       source_package_material_fingerprint: currentSourcePackageMaterialFingerprint(options.report) }, measuredAt: options.now });
   }
   let elementParity = null;

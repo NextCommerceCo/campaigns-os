@@ -7,13 +7,15 @@ import { VISUAL_QC_RULES, planVisualCapture, buildCapturesRecord, capturesIntegr
 import { createRgbaPng, createRgba, syntheticCapturesRecord, syntheticVisualFixture } from "./polish-visual-fixtures.mjs";
 import { loadVisualDependencies } from "./visual-diff.mjs";
 import { runVisualPass, runVisualCells } from "./polish-visual.mjs";
-import { planPolishCapture } from "./polish-node.mjs";
+import { planPolishCapture, evaluateRecordedHiddenEagerMediaCheckpoint } from "./polish-node.mjs";
 import { computeDesignSourcePackageMaterialFingerprint } from "./design-source-package.mjs";
 import { evaluatePolishGate, POLISH_PRODUCER } from "./polish-gate.mjs";
 import { execFile, execFileSync } from "node:child_process";
 import { rmSync } from "node:fs";
 import { sha256Hex } from "./png-header.mjs";
 import { packageCapturesSatisfy } from "./polish-captures-record.mjs";
+import { readCaptures } from "./qc-results.mjs";
+import { loadQcRederivers } from "./qc-check-registry.mjs";
 
 function visualInputs(f) {
   const packet = { source_html: { root: "source", pages: [{ page_id: "page", path: "page.html", page_kit: { public_route: "/sample/page/", spec_route: "page/" } }] },
@@ -46,6 +48,121 @@ function fakeVisualAdapter({ consume = () => {} } = {}) {
       actual: shot, stabilized: { ...shot, treatment: { animations: "disabled", caret: "hide", mask_color: "#ff00ff", mask_selectors: "visual-masks/v1", masks: [], mask_cap_reached: false } } };
   } };
 }
+function templateInputs(f) {
+  const input = visualInputs(f);
+  input.packet.campaign = { public_route_slug: "sample", route_root: "/sample/" };
+  input.packet.source_html.pages.push(
+    { page_id: "checkout", skip_reason: "Template checkout.", page_kit: { public_route: "/sample/checkout/" } },
+    { page_id: "upsell", skip_reason: "Template upsell." },
+  );
+  for (const page of ["checkout", "upsell"]) {
+    mkdirSync(resolve(f.targetRepo, `_site/sample/${page}`), { recursive: true });
+    writeFileSync(resolve(f.targetRepo, `_site/sample/${page}/index.html`), "<!doctype html><p>Synthetic template</p>");
+  }
+  input.frozen.plan = planPolishCapture({ packet: input.packet, baseUrl: "http://127.0.0.1:1234" });
+  input.frozen.page_load.subject.route_scope = "selected";
+  return input;
+}
+test("Template evidence extends only the visual plan, after the unchanged planned cells", (t) => {
+  const f = syntheticVisualFixture(); t.after(f.cleanup); const input = templateInputs(f);
+  const { plan } = input.frozen;
+  // P1's complete gating plan for this packet, including its property order.
+  const checkpointPlan = { route_scope: "selected", routes: [{ page_id: "page", requested_route: "/sample/page/",
+    spec_route: "/page/", url: "http://127.0.0.1:1234/sample/page/" }],
+  skipped_pages: [{ page_id: "checkout", skip_reason: "Template checkout." }, { page_id: "upsell", skip_reason: "Template upsell." }],
+  viewports: [{ key: "desktop", width: 1440, height: 1200 }, { key: "mobile", width: 390, height: 844 }] };
+  assert.equal(JSON.stringify(plan), JSON.stringify(checkpointPlan));
+  const before = JSON.stringify(plan);
+  const visual = planVisualCapture(plan, plan.viewports, input);
+  assert.equal(JSON.stringify(plan), before);
+  assert.deepEqual(visual.cells, planVisualCapture(checkpointPlan).cells);
+  assert.ok(Array.isArray(visual.evidence_only), "visual plan additionally lists template evidence-only cells");
+  assert.deepEqual(visual.evidence_only.map((cell) => [cell.page_id, cell.route, cell.viewport, cell.side, cell.evidence_only, cell.skip_reason]), [
+    ["checkout", "/sample/checkout/", "desktop", "build", true, "Template checkout."],
+    ["checkout", "/sample/checkout/", "mobile", "build", true, "Template checkout."],
+    ["upsell", "/sample/upsell/", "desktop", "build", true, "Template upsell."],
+    ["upsell", "/sample/upsell/", "mobile", "build", true, "Template upsell."],
+  ]);
+  assert.ok(visual.evidence_only.every((cell) => cell.reason === null));
+  const stock = { ...input.packet, source_html: { ...input.packet.source_html, pages: input.packet.source_html.pages.slice(1) } };
+  assert.throws(() => planPolishCapture({ packet: stock, baseUrl: "http://127.0.0.1:1234" }), {
+    code: "no_capturable_routes",
+    message: "polish capture has no mapped non-skipped routes to capture: every mapped page is template stock (skip_reason), so there is no design route to compare."
+      + " On a local or hosted preview, missing polish evidence is carried forward as a warning; run `next` for the next stage.",
+  });
+});
+test("Template captures and failures stay evidence only, with no visual or parity rows and unchanged gates", async (t) => {
+  const f = syntheticVisualFixture(); t.after(f.cleanup); const input = templateInputs(f);
+  input.packet.source_html.pages.push({ page_id: "not-built", skip_reason: "Template not built." });
+  input.frozen.plan = planPolishCapture({ packet: input.packet, baseUrl: "http://127.0.0.1:1234" });
+  const renders = [], probes = [];
+  const record = await runVisualPass({ ...input, probes: [{ name: "parity", select: () => true,
+    onResult: (cell) => probes.push(cell.page_id) }], createBrowserAdapter: async ({ seal }) => {
+    const adapter = fakeVisualAdapter();
+    return { ...adapter, async renderForCompare(args) {
+      renders.push([seal ? "source" : "build", new URL(args.url).pathname, args.viewport.key]);
+      if (args.url.endsWith("/upsell/")) throw new Error("synthetic navigation failure");
+      return adapter.renderForCompare(args);
+    } };
+  } });
+  assert.deepEqual(renders.slice(4), [["build", "/sample/checkout/", "desktop"], ["build", "/sample/checkout/", "mobile"],
+    ["build", "/sample/upsell/", "desktop"], ["build", "/sample/upsell/", "mobile"]]);
+  assert.deepEqual(probes, ["page", "page", "page", "page"]);
+  assert.equal(record.cells.length, 4);
+  assert.equal(record.evidence_only.length, 6);
+  for (const cell of record.evidence_only) {
+    assert.equal(cell.evidence_only, true); assert.equal(cell.side, "build");
+    assert.match(cell.skip_reason, /^Template/);
+    if (cell.page_id === "checkout") {
+      assert.equal(cell.status, "rendered"); assert.equal(cell.reason, null);
+      for (const shot of [cell.actual, cell.stabilized]) {
+        assert.equal(shot.status, "captured");
+        assert.equal(`sha256:${sha256Hex(readFileSync(resolve(f.targetRepo, shot.png.path)))}`, shot.png.sha256);
+        assert.match(shot.png.path, /^\.campaign-runtime\/polish\/captures\/[a-f0-9]{64}\.png$/);
+      }
+      assert.equal(cell.stabilized.treatment.mask_selectors, "visual-masks/v1");
+    } else {
+      assert.equal(cell.reason, cell.page_id === "not-built" ? "page_not_built" : "navigation_failed");
+      assert.equal(cell.actual.png, null);
+    }
+  }
+  assert.ok(record.references.every((row) => row.page_id === "page"));
+  assert.ok(record.comparisons.every((row) => row.page_id === "page"));
+  assert.ok(VISUAL_QC_RULES.evaluate(record).every((row) => row.subject.page === "/sample/page/"));
+  const without = structuredClone(record); delete without.evidence_only; without.integrity = capturesIntegrity(without);
+  const rederivers = await loadQcRederivers();
+  const read = (value) => readCaptures({ record: value, packet: input.packet, currentBuild: record.subject.build_fingerprint,
+    currentSource: record.subject.source_package_material_fingerprint, buildOutput: { status: "pass" },
+    campaignSlug: "sample", targetRepo: input.targetRepo, rederivers });
+  const rows = read(record);
+  assert.ok(rows.length > 0);
+  assert.ok(rows.every((row) => row.reason_code !== "evidence_not_reproducible"), JSON.stringify(rows));
+  assert.deepEqual(rows, read(without));
+  assert.equal(record.integrity, capturesIntegrity(record));
+  assert.equal(packageCapturesSatisfy(record, input.report), true);
+  assert.equal(packageCapturesSatisfy(record, input.report), packageCapturesSatisfy(without, input.report));
+  const reportWith = (captures) => {
+    const report = completedPolishReport(input.report);
+    report.stages.polish.evidence.visual_review.captures = captures;
+    return report;
+  };
+  assert.deepEqual(evaluatePolishGate({ report: reportWith(record) }), evaluatePolishGate({ report: reportWith(without) }));
+  assert.deepEqual(evaluateRecordedHiddenEagerMediaCheckpoint({ packet: input.packet, report: reportWith(record) }),
+    evaluateRecordedHiddenEagerMediaCheckpoint({ packet: input.packet, report: reportWith(without) }));
+  const unavailable = unavailableCapturesRecord({ plan: input.frozen.plan, subject: record.subject, packet: input.packet, targetRepo: input.targetRepo });
+  assert.deepEqual(unavailable.evidence_only.map((cell) => cell.reason),
+    ["browser_unavailable", "browser_unavailable", "page_not_built", "page_not_built", "browser_unavailable", "browser_unavailable"]);
+});
+test("Template evidence uses only the capture budget remaining after all planned cells", async (t) => {
+  const f = syntheticVisualFixture(); t.after(f.cleanup); const input = templateInputs(f);
+  let time = 0, renders = 0;
+  const record = await runVisualPass({ ...input, clock: { now: () => time }, budget: { captureMs: 200 },
+    createBrowserAdapter: async () => fakeVisualAdapter({ consume() { time += 50; renders++; } }) });
+  assert.equal(renders, 4);
+  assert.ok(record.cells.every((cell) => cell.status === "rendered"));
+  assert.ok(record.evidence_only.every((cell) => cell.status === "run_budget_exhausted" && cell.reason === "run_budget_exhausted"));
+  assert.equal(packageCapturesSatisfy(record, input.report), true);
+});
 test("repo-origin routes get build captures, missing-source visual rows, and skipped-page reasons in the record", async (t) => {
   const f = syntheticVisualFixture(); t.after(f.cleanup);
   const input = visualInputs(f);

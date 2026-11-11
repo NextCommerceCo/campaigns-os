@@ -219,6 +219,49 @@ browserTest("F3C-W9: real-browser frozen records remain byte-identical after vis
   const checkpoint = evaluateRecordedHiddenEagerMediaCheckpoint({ packet: f.input.packet, report: merged });
   assert.equal(checkpoint.status, "pass");
 });
+browserTest("Template pages have build-only package evidence at both viewports, with no comparison or parity rows", async (t) => {
+  const f = await scenario(t);
+  for (const page_id of ["checkout", "upsell"]) {
+    f.input.packet.source_html.pages.push({ page_id, skip_reason: "Synthetic template stock.",
+      ...(page_id === "checkout" ? { page_kit: { public_route: "/sample/checkout/" } } : {}) });
+    mkdirSync(resolve(f.targetRepo, `_site/sample/${page_id}`), { recursive: true });
+    writeFileSync(resolve(f.targetRepo, `_site/sample/${page_id}/index.html`), fixtureBytes("identical-build.html"));
+  }
+  f.input.packet.source_html.pages.push({ page_id: "not-built", skip_reason: "Synthetic template not built." });
+  // Exercise the caller too: parity rides planned cells only and page-load,
+  // readability and media weight have already been frozen before the pass.
+  let before;
+  const project = (value) => JSON.stringify([value.plan, value.page_load, value.media_weight, value.readability]);
+  const captured = await capturePolishPageLoad({ ...f.input, baseUrl: f.baseUrl,
+    visual: { packetPath: f.input.packetPath }, onFrozen(value) { before = project(value); } });
+  assert.equal(project(captured), before);
+  const record = captured.captures;
+  assert.equal(record.cells.length, 4);
+  const evidence = record.evidence_only.filter((cell) => cell.page_id !== "not-built");
+  assert.deepEqual(evidence.map((cell) => [cell.page_id, cell.viewport]),
+    [["checkout", "desktop"], ["checkout", "mobile"], ["upsell", "desktop"], ["upsell", "mobile"]]);
+  for (const cell of evidence) {
+    assert.equal(cell.evidence_only, true); assert.equal(cell.side, "build");
+    assert.equal(cell.skip_reason, "Synthetic template stock."); assert.equal(cell.reason, null);
+    assert.equal(cell.status, "rendered");
+    assert.equal(cell.actual.status, "captured"); assert.equal(cell.stabilized.status, "captured");
+    assert.equal(cell.stabilized.treatment.mask_selectors, "visual-masks/v1");
+    for (const shot of [cell.actual, cell.stabilized]) {
+      const bytes = readFileSync(resolve(f.targetRepo, shot.png.path));
+      assert.equal(`sha256:${sha256Hex(bytes)}`, shot.png.sha256);
+      assert.equal(readPngStructure(bytes).ihdr.width_px, cell.width);
+    }
+  }
+  assert.ok(record.evidence_only.filter((cell) => cell.page_id === "not-built").every((cell) => cell.reason === "page_not_built"));
+  assert.ok(record.references.every((row) => row.page_id === "page"));
+  assert.ok(record.comparisons.every((row) => row.page_id === "page"));
+  assert.ok(VISUAL_QC_RULES.evaluate(record).every((row) => row.subject.page === "/sample/page/"));
+  assert.ok(captured.element_parity.cells.every((cell) => cell.page_id === "page"));
+  const merged = mergePolishCaptureEvidence(f.input.report, { pageLoad: captured.page_load, captures: record });
+  const without = structuredClone(merged); delete without.stages.polish.evidence.visual_review.captures;
+  assert.deepEqual(evaluateRecordedHiddenEagerMediaCheckpoint({ packet: f.input.packet, report: merged }),
+    evaluateRecordedHiddenEagerMediaCheckpoint({ packet: f.input.packet, report: without }));
+});
 browserTest("F3C-I1: unresolved data-next-await times out within five seconds and keeps shots", async (t) => {
   // One `polish capture` run: its written record carries the row, and its exit status and gate are checked.
   const cli = await cliCapture(t, "identical-source.html", "await.html"), record = cli.captures;

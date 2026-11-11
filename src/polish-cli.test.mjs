@@ -10,7 +10,9 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { execFileSync } from "node:child_process";
-import { createRgbaPng } from "./polish-visual-fixtures.mjs";
+import { createRgbaPng, syntheticCapturesRecord } from "./polish-visual-fixtures.mjs";
+import { capturesIntegrity } from "./polish-captures-record.mjs";
+import { recordStageCommand } from "./stage-record.mjs";
 
 test("F3C-W10: direct polish capture on an upgraded repo creates ignored captures/diffs and preserves both ignore files", async (t) => {
   const f = fixture(); t.after(() => rmSync(f.dir, { recursive: true, force: true }));
@@ -205,6 +207,35 @@ function commandArgs(f, extra = {}) {
     ...extra,
   };
 }
+
+test("record polish accepts failed evidence-only captures with the same gate and checkpoint", async (t) => {
+  const f = fixture(); t.after(() => rmSync(f.dir, { recursive: true, force: true }));
+  const packet = readJson(f.packetPath);
+  mkdirSync(join(f.targetRepo, packet.assembly.output_dir), { recursive: true });
+  writeJson(join(f.dir, packet.spec.local_path), readJson(new URL("campaignspec.v42.basic.json", EXAMPLES)));
+  const initial = readJson(f.reportPath); initial.stages.setup.status = "completed"; writeJson(f.reportPath, initial);
+  recordStageCommand({ _: ["record", "build"], packet: f.packetPath });
+  await polishCaptureCommand(commandArgs(f), { createBrowserAdapter: successfulAdapter() });
+  const report = readJson(f.reportPath);
+  const captures = syntheticCapturesRecord(report, { targetRepo: f.targetRepo });
+  report.stages.polish.evidence.visual_review.captures = captures;
+  writeJson(f.reportPath, report);
+  const args = { _: ["record", "polish"], packet: f.packetPath, "dry-run": true,
+    evidence: join(import.meta.dirname, "../fixtures/stage-record/polish-evidence.json") };
+  const before = recordStageCommand(args);
+  captures.evidence_only = [{ evidence_only: true, page_id: "template-checkout", route: "/runtime-packet-demo/checkout/",
+    viewport: "desktop", side: "build", skip_reason: "Synthetic template stock.", status: "navigation_failed",
+    reason: "navigation_failed", actual: { status: "skipped", png: null }, stabilized: { status: "skipped", png: null } }];
+  captures.integrity = capturesIntegrity(captures);
+  writeJson(f.reportPath, report);
+  const { "dry-run": _dryRun, ...writeArgs } = args;
+  const after = recordStageCommand(writeArgs);
+  assert.equal(before.ok, true); assert.equal(after.ok, true); assert.equal(after.status, "recorded");
+  assert.equal(after.record.status, before.record.status);
+  assert.equal(after.record.evidence.visual_review.captures.evidence_only[0].reason, "navigation_failed");
+  assert.deepEqual(evaluateRecordedHiddenEagerMediaCheckpoint({ packet: readJson(f.packetPath), report: readJson(f.reportPath) }),
+    evaluateRecordedHiddenEagerMediaCheckpoint({ packet: readJson(f.packetPath), report }));
+});
 
 test("polish capture names the report when the re-read after the browser pass is not valid JSON", async () => {
   const f = fixture();

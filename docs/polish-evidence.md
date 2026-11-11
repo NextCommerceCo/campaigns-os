@@ -160,9 +160,27 @@ The stored comparison figures are tamper-evident only, like other Polish capture
 Pages added after handoff get build-side captures even though they have no
 source HTML. Their source cells and reference rows report `source_html_missing`;
 visual comparisons remain unexercised (`capture_unavailable` with a
-`source_html_missing` member), with no source match claimed. Template-stock
-pages with `skip_reason` are listed in `captures.subject.skipped_pages`, outside
-the capture plan, and produce no visual rows.
+`source_html_missing` member), with no source match claimed.
+
+Template-stock pages with `skip_reason` remain outside the mapped capture plan
+and are listed in `captures.subject.skipped_pages`. After all planned cells,
+the same visual pass takes build-side captures at both viewports for these
+pages when their declared public route, or their page id in `_site/<slug>/`,
+resolves to built output. They use the same stabilization, storage and
+five-minute pass budget. The separate `captures.evidence_only` list records
+each cell with `evidence_only: true`, page id, route, viewport, image identities
+and `skip_reason`. Missing output is listed with reason `page_not_built`;
+navigation failures, unavailable browsers and exhausted budgets are recorded
+with their reasons too. These captures never produce source, reference, diff
+or parity comparison rows, never qualify for accepting a design match, and
+never affect a gate, checkpoint, plan count or carry decision. Their failure
+does not block Polish or `record polish`.
+
+When every page has `skip_reason`, the plan still has no capturable route
+(`no_capturable_routes`). `polish capture` then measures readability on the
+built pages only, as before, and takes no evidence-only captures, because the
+visual pass runs only where the plan has a route. All-template funnels carry
+Polish forward on a local or hosted preview exactly as before.
 
 Hand-deleting `captures` reverts later reads to the legacy rule, but a new completed `record polish` still refuses. A fully reconstructed, internally consistent record can pass; the checksum is tamper evidence, not authorship proof. Pixel metrics and geometry are range-checked rather than recomputed on every read.
 
