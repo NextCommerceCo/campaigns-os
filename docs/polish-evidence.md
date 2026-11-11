@@ -585,7 +585,10 @@ report it would write against
 `schemas/campaign-runtime-assembly-report.v0.schema.json` and doctor's report
 checks and, for a `completed*` status, evaluates this gate and the hidden
 eager-media checkpoint over it exactly as doctor does. A `blocked` or `skipped`
-record keeps this gate blocked, so `next` stays at Polish and QA stays blocked. Any failure is printed by field or gate code
+record keeps this gate blocked unless doctor carries it forward under the
+existing preview or page-only policy. While the gate is blocked, `next` stays
+at Polish, `record deploy` refuses without writing, and QA stays blocked.
+Any failure is printed by field or gate code
 (for example `repair_loop_defect must be null or an object ... (got string)`, or
 `polish.evidence_incomplete` with its per-field problems), the command exits
 non-zero, and nothing is written. `--dry-run` runs every check and writes
