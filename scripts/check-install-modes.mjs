@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
 import { delimiter, dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { packedTarballName } from "./npm-pack-json.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const scratch = mkdtempSync(join(tmpdir(), "campaigns-os-install-modes-"));
@@ -25,7 +26,7 @@ function json(command, args, cwd, env, status = 0) { return JSON.parse(run(comma
 
 try {
   const pack = json(npm, ["pack", "--ignore-scripts", "--json", "--pack-destination", scratch], root);
-  const tarball = join(scratch, pack[0].filename);
+  const tarball = join(scratch, packedTarballName(pack));
   const project = join(scratch, "campaign");
   const prefix = join(scratch, "global");
   mkdirSync(project);

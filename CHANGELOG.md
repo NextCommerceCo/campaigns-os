@@ -8,6 +8,12 @@ Notable supported-surface changes are recorded here.
 
 - `qa run` without `--currency` runs in the CampaignSpec's `campaign.currency`, a declared tag that did not fire on a build recorded as a development build reads not measured instead of blocking, and the private template family error names `PRIVATE_TEMPLATE_SOURCES_ROOT` first (#756).
 
+## [1.68.0+agent.3] - 2026-11-11
+
+### Fixed
+
+- The pack check and the runtime-recipe test pass under npm 12, which prints `npm pack --json` as an object and runs a dependency's install scripts only once they are approved (#757).
+
 ## [1.68.0+agent.2] - 2026-11-11
 
 ### Changed
