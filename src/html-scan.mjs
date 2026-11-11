@@ -170,11 +170,7 @@ function reserve(items, parseText) {
   };
 }
 
-const HTML_PARSERS = Object.freeze({
-  noloc: (text) => parse(text),
-  located: (text) => parse(text, { sourceCodeLocationInfo: true }),
-  bounded: parseBounded,
-});
+const HTML_PARSERS = { noloc: (text) => parse(text), located: (text) => parse(text, { sourceCodeLocationInfo: true }), bounded: parseBounded };
 
 // Shared parse5 trees for a set of held pages: one parseBounded tree per page
 // for every profile, since within the bound it builds the located tree node
