@@ -323,6 +323,7 @@ test("spec derive warns when it creates a vendor block, and says QA's analytics 
     const dry = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath, "dry-run": true });
     const created = dry.warnings.filter((issue) => issue.code === "spec.derive.analytics_vendor_created");
     assert.equal(created.length, 1);
+    assert.match(created[0].message, /tag is checked on a production build/);
     assert.match(created[0].message, /^analytics\.vendors\.ga4 would be created from the repo's id: doctor would then read that vendor's campaigns\.json key against the spec, and the spec would then carry an analytics block, so QA runs its analytics leg/);
     assert.equal(readJson(specPath).analytics, undefined, "dry run writes nothing");
     const run = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath });
@@ -589,6 +590,10 @@ test("spec derive is partial, not blocked, when a page cannot be bound, and stil
     assert.match(bound.warnings[0].message, /page "checkout" carries sdk_hints\.meta_tags\.next-success-url "upsell\/"/);
     assert.match(bound.warnings[1].message, /campaigns-os prepare-build/);
     assert.deepEqual(result.warnings.map((issue) => issue.code), ["spec.derive.page_file_not_found", "spec.derive.analytics_block_created", "spec.derive.analytics_block_created"], "the first run created both provider blocks and said so");
+    for (const warning of result.warnings.filter((issue) => issue.code === "spec.derive.analytics_block_created")) {
+      assert.match(warning.message, /tag is checked on a production build/);
+      assert.match(warning.message, /recorded development build.*not measured/);
+    }
     assert.equal(readJson(specPath).funnels[0].pages[2].page_url, "upsell-1/");
     // The hint stays reported on every later run until the Map is re-saved.
     const later = specDeriveCommand({ _: ["spec", "derive"], packet: packetPath, "dry-run": true });

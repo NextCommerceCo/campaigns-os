@@ -379,7 +379,17 @@ npm run campaigns-os -- qa run \
 
 The runner fetches deployed pages, checks route availability, verifies CampaignSpec `sdk_hints.meta_tags` (a key the Campaign Cart SDK does not read, `next-currency` or `next-predictive-address` from `src/sdk-meta-tags.mjs`, is a `warn` row at severity `warn` carrying the shared note, never `manual_review` and never a blocker, whether or not the tag rendered; doctor reports the same key as `sdk_hints.meta_tags.ignored_by_sdk`), writes a local verdict JSON under `<target-repo>/qa-output/<qa-storage-key>/<run-id>.json` (the packet's `assembly.target_repo`, else the packet's directory; `--output-dir` overrides it, and a packet-less run uses `qa-output/` under the current directory), and returns exit code `4` when the verdict is blocked. The storage key is the Map ID for saved-Map QA and `local-spec-<local_spec_id>` for local-spec packet QA. The target's managed ignore block lists `qa-output/`, because full verdicts carry live storefront URLs; the committed form is the `.campaign-runtime/qa-verdict.json` projection.
 
-`--currency <code>` proves one currency per run: the runner adds
+`qa run` defaults to the CampaignSpec's `campaign.currency` when `--currency`
+is omitted. An explicit `--currency <code>` overrides it. Both use the same
+entry URL, order-currency and calculate-currency checks described below. The
+entry page's `http:<page_id>` row records `evidence.currency` and, when the
+currency was defaulted from the spec, `evidence.currency_defaulted_from_spec:
+true`. A spec with no currency, or `qa run --site` with no spec, leaves the run
+unpinned. A run using legacy API test orders also stays unpinned without the
+flag: the direct API request cannot carry a currency. Passing an explicit
+`--currency` on that legacy path is still refused.
+
+The run proves one currency at a time: the runner adds
 `?currency=<CODE>` to each funnel's entry URL (the HTTP fetch, the browser load
 and `entry_urls`) and to the first page load of each test-order path (the
 checkout probe, or the entry page or checkout when that load comes first),
@@ -427,14 +437,16 @@ can load with `?currency=GBP` and still take a USD order:
   what was not compared. With `--currency` set to the Map's own currency, the
   claims are compared as before.
 
-Either blocker makes the verdict `blocked` and the command exit `4`. Without
-`--currency` neither row is written and expected totals use
-`campaign.currency`, as before.
+Either blocker makes the verdict `blocked` and the command exit `4`. When no
+run currency is available (or the legacy API path leaves it unpinned), neither
+currency-check row is written and expected totals use `campaign.currency`, as
+before.
 
 `--currency` sets the currency only. Test orders still ship to the address the
 `--test-*` flags give, a US address by default (see
 [Test customer and shipping address](#test-customer-and-shipping-address)). A
-non-USD `--currency` on a run that places orders, with no `--test-country`,
+non-USD run currency, explicit or defaulted from the spec, on a run that places
+orders with no `--test-country`,
 prints a warning on stderr and the run goes ahead. Only the missing flag is
 checked: a currency such as EUR covers many countries, so an explicit
 `--test-country` is taken as meant. `qa run --site` takes `--currency` the same
@@ -1135,15 +1147,31 @@ entry on a different path is never marked `query_routed`, whatever query it
 carries. A URL with no query of its own names the page at that path whatever
 query the other URL carries.
 
+### Declared tags on a development build (`manual_review`)
+
+When the Assembly Report records `stages.assembly.evidence.build_environment:
+development`, a declared `analytics-correctness:tag:*` that did not fire becomes
+`manual_review` at severity `warn`. Its text starts `not measured: development
+build gates vendor loaders`, and its evidence carries `reason:
+development_build_gates_vendor_loaders`, the recorded build environment and a
+`follow_up` to check the tag on a production build. This applies to hosted
+previews as well as loopback captures. A tag that fired still passes. A
+production build or a build with no recorded environment keeps the missing-tag
+blocker. Capture and runner errors remain blockers, including a disarmed Meta
+observer whose missing tag could not be measured.
+
+This rule covers only `tag:*`. Out-of-band pixels, Purchase and data-layer
+Purchase retain their existing rules below.
+
 ### Local-serve review (`manual_review`)
 
 A local proof run renders the development environment on purpose (see
 [Local proof mode](#local-proof-mode-deploytarget-local-serve)), and the
 starter templates gate every vendor loader out of that render. A pixel that
 did not fire there is the render's design, not a campaign defect. So on a
-local-serve run, a failing fire-dependent check becomes `manual_review` at
-`warn` instead of a blocker. The fire-dependent checks are
-`analytics-correctness:tag:*`, `analytics-correctness:oob:*` and
+local-serve run, the remaining failing fire-dependent checks become
+`manual_review` at `warn` instead of blockers. These checks are
+`analytics-correctness:oob:*` and
 `analytics-correctness:purchase-fires`.
 
 The run qualifies only when all of these hold:
@@ -1156,7 +1184,7 @@ The run qualifies only when all of these hold:
   keeps its blockers.
 
 Each failing check is then downgraded only when the page it measured is on
-record as loopback. For `tag:*` and `oob:*`, the check's own URL, the passing
+record as loopback. For `oob:*`, the check's own URL, the passing
 capture's `capture_page.url` and its `final_url` must all be loopback, so a
 built-entry fallback on a remote host, or a localhost root that redirected to
 a production host, keeps the blocker. For `purchase-fires`, there must be at

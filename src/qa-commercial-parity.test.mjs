@@ -875,7 +875,7 @@ test("canonical resolved qa run fetches HTML once and writes deterministic comme
   let pageFetches = 0;
   let previewFetches = 0;
   globalThis.fetch = async (url, options = {}) => {
-    if (String(url) === pageUrl && !options.method) {
+    if (String(url) === `${pageUrl}?currency=USD` && !options.method) {
       pageFetches += 1;
       return new Response(`
         <span data-next-display="bundle.main.price" data-next-format="currency">$30.00</span>
@@ -942,7 +942,7 @@ test("a real qa run with no campaign key reports the gap in exceptions and the s
   delete rawSpec.campaign.campaigns_api_key;
   const pageUrl = "https://preview.example.test/checkout/";
   globalThis.fetch = async (url, options = {}) => {
-    if (String(url) === pageUrl && !options.method) {
+    if (String(url) === `${pageUrl}?currency=USD` && !options.method) {
       return new Response('<div data-next-package-toggle><strong data-next-package-id="5">Game Club</strong> then $29.99 every 30 days</div>', { status: 200 });
     }
     throw new Error(`Unexpected fetch: ${String(url)}`);

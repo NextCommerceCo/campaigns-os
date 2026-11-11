@@ -4124,14 +4124,14 @@ export function specDeriveCommand(args, { store: storeRead = null, liveCampaign 
     addIssue(result.warnings, "spec.derive.routing_hint_stale", `page "${hint.page_id}" carries sdk_hints.meta_tags.${hint.tag} ${JSON.stringify(hint.value)}, but page "${hint.target_page_id}" now derives to ${JSON.stringify(hint.derived_route)}. Derive rewrites a hint only on an edge it re-points after handoff; edit the hint to that route in the spec (or, while the Map is still the spec's source, re-save the Map) so the built meta tag and doctor's expectation agree. Doctor blocks and record spec refuses until then.`, hint);
   }
   for (const block of plan.created_blocks || []) {
-    addIssue(result.warnings, "spec.derive.analytics_block_created", `${block} ${dryRun ? "would be" : "is"} created from the repo's id: the spec ${dryRun ? "would then declare" : "now declares"} an analytics contract, so QA expects that tag to fire instead of treating analytics as advisory.`);
+    addIssue(result.warnings, "spec.derive.analytics_block_created", `${block} ${dryRun ? "would be" : "is"} created from the repo's id: the spec ${dryRun ? "would then declare" : "now declares"} an analytics contract, so the tag is checked on a production build. A recorded development build gates vendor loaders, so QA reports the tag as not measured there.`);
   }
   // A vendor block changes what doctor reads; it turns on QA's analytics leg
   // only when it is the first analytics the spec carries (a provider block
   // created beside it already says so).
   const vendorOpensAnalytics = plan.analytics_created === true && !(plan.created_blocks || []).length;
   for (const block of plan.created_vendor_blocks || []) {
-    addIssue(result.warnings, "spec.derive.analytics_vendor_created", `${block} ${dryRun ? "would be" : "is"} created from the repo's id: doctor ${dryRun ? "would then read" : "now reads"} that vendor's campaigns.json key against the spec${vendorOpensAnalytics ? `, and the spec ${dryRun ? "would then carry" : "now carries"} an analytics block, so QA runs its analytics leg and expects the typed-card order to fire a Purchase` : ""}.`);
+    addIssue(result.warnings, "spec.derive.analytics_vendor_created", `${block} ${dryRun ? "would be" : "is"} created from the repo's id: doctor ${dryRun ? "would then read" : "now reads"} that vendor's campaigns.json key against the spec${vendorOpensAnalytics ? `, and the spec ${dryRun ? "would then carry" : "now carries"} an analytics block, so QA runs its analytics leg and expects the typed-card order to fire a Purchase` : ""}. A declared provider tag is checked on a production build; the development-build tag rule does not change out-of-band pixel or Purchase checks.`);
   }
 
   // What a write entails is said in both modes, so a dry run previews the
