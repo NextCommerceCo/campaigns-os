@@ -86,10 +86,141 @@ test("--slug excludes blockers and warnings belonging only to other routes", () 
   withTempDir((dir) => {
     writeMultiRouteRoot(dir);
     const report = createStandardizationReport({ targetRepo: dir, slug: "route-a", templateFamily: "apollo" });
+    assert.equal(report.roots[0].source_structure.page_file_count, 1);
+    assert.ok(!codes(report.roots[0]).includes("source.scope_unresolved"));
     assert.ok(!codes(report.roots[0]).includes("source.raw_block"), "another route's shared blocker is outside this audit");
     assert.ok(!codes(report.roots[0]).includes("source.hardcoded_root_assets"));
     assert.ok(!codes(report.roots[0]).includes("source.document_wrappers"));
     assert.notEqual(report.status, "blocked");
+  });
+});
+
+test("--slug keeps the project source manifest in scope", () => {
+  withTempDir((dir) => {
+    writeMultiRouteRoot(dir);
+    write(join(dir, ".campaigns-os/source-html-manifest.json"), "{}");
+    const whole = createStandardizationReport({ targetRepo: dir }).roots[0];
+    const scoped = createStandardizationReport({ targetRepo: dir, slug: "route-a" }).roots[0];
+    assert.equal(whole.runtime_contract.source_html_manifest.present, true);
+    assert.deepEqual(scoped.runtime_contract.source_html_manifest, whole.runtime_contract.source_html_manifest);
+    assert.ok(!codes(scoped).includes("campaigns_os.source_manifest_missing"));
+    assert.ok(!scoped.remediation.clarification_needed.some((line) => line.includes("source-html manifest")));
+  });
+});
+
+test("--slug reports source absences only for a resolved source scope", () => {
+  withTempDir((dir) => {
+    writeMultiRouteRoot(dir);
+    write(join(dir, "src/route-a/index.html"), "<div>Example</div>");
+    rmSync(join(dir, "src/route-a/_includes"), { recursive: true });
+    const resolved = createStandardizationReport({ targetRepo: dir, slug: "route-a" }).roots[0];
+    const report = createStandardizationReport({ targetRepo: dir, slug: "missing-route" });
+    const unresolved = report.roots[0];
+    assert.equal(resolved.source_structure.page_file_count, 1);
+    assert.ok(!codes(resolved).includes("source.scope_unresolved"));
+    assert.ok(codes(unresolved).includes("source.scope_unresolved"));
+    for (const code of ["source.payment_methods_include_not_detected", "source.campaign_asset_missing", "runtime.data_next_missing"]) {
+      assert.ok(codes(resolved).includes(code), code);
+      assert.ok(!codes(unresolved).includes(code), code);
+      assert.ok(!formatStandardizationReportMarkdown(report).includes(code), code);
+    }
+    assert.ok(resolved.remediation.clarification_needed.some((line) => line.includes("payment-methods.html")));
+    assert.ok(!unresolved.remediation.clarification_needed.some((line) => line.includes("payment-methods.html")));
+  });
+});
+
+test("--slug candidates include unregistered source-page folders using the same page rule", () => {
+  withTempDir((dir) => {
+    writeMultiRouteRoot(dir);
+    write(join(dir, "_data/campaigns.json"), JSON.stringify({ "route-a": { sdk_version: "0.4.30" } }));
+    rmSync(join(dir, "src/route-b"), { recursive: true });
+    rmSync(join(dir, "src/route-c"), { recursive: true });
+    rmSync(join(dir, "src/shared"), { recursive: true });
+    write(join(dir, "src/legacy-2024/index.html"), "<div>Legacy page</div>");
+    write(join(dir, "src/shared/_includes/fragment.html"), "<span>Fragment</span>");
+    write(join(dir, "src/route-a/index.html"), "{% include 'shared/_includes/fragment' %}");
+    const candidates = () => createStandardizationReport({ targetRepo: dir, slug: "typo" }).roots[0];
+    assert.deepEqual(candidates().source_scope.slug_candidates, ["legacy-2024", "route-a"]);
+    write(join(dir, "src/shared/entry.html"), "<span>Fragment with a page filename</span>");
+    const root = candidates();
+    assert.deepEqual(root.source_scope.slug_candidates, ["legacy-2024", "route-a", "shared"]);
+    assert.deepEqual(root.findings.find((item) => item.code === "source.scope_unresolved").evidence.slug_candidates, root.source_scope.slug_candidates);
+    const legacy = createStandardizationReport({ targetRepo: dir, slug: "legacy-2024" }).roots[0];
+    assert.equal(legacy.source_structure.page_file_count, 1);
+    assert.ok(!codes(legacy).includes("source.scope_unresolved"));
+  });
+});
+
+test("--slug with a malformed route explains the path-segment rule in both scope findings", () => {
+  withTempDir((dir) => {
+    writeMultiRouteRoot(dir);
+    const root = createStandardizationReport({ targetRepo: dir, slug: "../outside" }).roots[0];
+    for (const code of ["source.scope_unresolved", "built_output.scope_unresolved"]) {
+      const item = root.findings.find((entry) => entry.code === code);
+      assert.ok(item, code);
+      assert.match(item.message, /slug must be a single path segment/);
+      assert.doesNotMatch(item.next_action, /Pass --slug when a repo has multiple/);
+    }
+    assert.equal(root.findings.find((item) => item.code === "built_output.scope_unresolved").next_action,
+      "Pass a slug that is one path segment (a route folder name).");
+  });
+});
+
+test("--slug filters all four runtime route fields and retains route-less records", () => {
+  withTempDir((dir) => {
+    writeMultiRouteRoot(dir);
+    const artifacts = [
+      ["build-packet.json", (route) => ({ campaign: { public_route_slug: route } })],
+      ["assembly-report.json", (route) => ({ identity: { public_route_slug: route } })],
+      ["doctor-output.json", (route) => ({ derived: { public_route_slug: route } })],
+      ["qa-verdict.json", (route) => ({ public_route_slug: route })],
+    ];
+    for (const [name, record] of artifacts) {
+      write(join(dir, ".campaign-runtime", name), JSON.stringify(record("route-b")));
+      const other = createStandardizationReport({ targetRepo: dir, slug: "route-a" }).roots[0];
+      assert.deepEqual(other.runtime_contract.campaign_runtime.artifacts, [], `${name} belongs to another route`);
+      assert.equal(other.runtime_contract.campaign_runtime.present, false);
+      assert.ok(codes(other).includes("campaigns_os.artifacts_missing"));
+      write(join(dir, ".campaign-runtime", name), JSON.stringify(record("route-a")));
+      const own = createStandardizationReport({ targetRepo: dir, slug: "route-a" }).roots[0];
+      assert.deepEqual(own.runtime_contract.campaign_runtime.artifacts, [`.campaign-runtime/${name}`]);
+      rmSync(join(dir, ".campaign-runtime", name));
+    }
+    write(join(dir, ".campaign-runtime/build-context.json"), "{}");
+    const root = createStandardizationReport({ targetRepo: dir, slug: "route-a" }).roots[0];
+    assert.deepEqual(root.runtime_contract.campaign_runtime.artifacts, [".campaign-runtime/build-context.json"]);
+  });
+});
+
+test("--slug with no source page selects no files or blockers", () => {
+  withTempDir((dir) => {
+    writeMultiRouteRoot(dir);
+    write(join(dir, "src/partial-only/_includes/x.html"), "{% raw %}Example{% endraw %}");
+    const root = createStandardizationReport({ targetRepo: dir, slug: "partial-only" }).roots[0];
+    assert.ok(codes(root).includes("source.scope_unresolved"));
+    assert.equal(root.source_structure.html_file_count, 0);
+    assert.equal(root.source_structure.page_file_count, 0);
+    assert.ok(!codes(root).includes("source.raw_block"));
+    assert.notEqual(root.status, "blocked");
+  });
+});
+
+test("--slug labels external files shared only when multiple routes use them", () => {
+  withTempDir((dir) => {
+    writeMultiRouteRoot(dir);
+    write(join(dir, "src/route-c/index.html"), "<div>Independent page</div>");
+    for (const [body, code] of [
+      ["{% raw %}Example{% endraw %}", "source.raw_block"],
+      ['<input data-next-checkout-field="state">', "checkout.unsupported_field_binding"],
+    ]) {
+      write(join(dir, "src/shared/blocker.html"), body);
+      const report = createStandardizationReport({ targetRepo: dir, slug: "route-b" });
+      const item = report.roots[0].findings.find((entry) => entry.code === code);
+      assert.ok(item, "the dependency is still audited");
+      assert.equal("shared_files" in item, false);
+      assert.ok(item.evidence.every((sample) => !("routes" in sample)));
+      assert.doesNotMatch(formatStandardizationReportMarkdown(report), /Shared file:/);
+    }
   });
 });
 
@@ -223,13 +354,13 @@ test("a scoped audit names missing source and available routes when the route fo
     assert.equal(missing.severity, "operator_readiness");
     assert.equal(missing.category, "operator_readiness");
     assert.match(missing.message, /route nope has no source pages to audit/);
-    assert.deepEqual(missing.evidence.slug_candidates, ["route-a", "route-b", "route-c"]);
+    assert.deepEqual(missing.evidence.slug_candidates, ["route-a", "route-b", "route-c", "shared"]);
     assert.equal(root.source_scope.scope_resolved, false);
     assert.deepEqual(root.source_scope.slug_candidates, missing.evidence.slug_candidates);
     assert.equal(root.source_structure.page_file_count, 0);
     assert.equal(report.status, "ready_with_warnings");
     const markdown = formatStandardizationReportMarkdown(report);
-    assert.match(markdown, /Source audit: not audited — route nope has no source pages to audit; route folders: route-a, route-b, route-c/);
+    assert.match(markdown, /Source audit: not audited — route nope has no source pages to audit; route folders: route-a, route-b, route-c, shared/);
     assert.doesNotMatch(markdown, /Source audit: limited to route|src\/nope\//);
     const home = join(dir, "home");
     mkdirSync(home);
@@ -264,11 +395,12 @@ test("a scoped audit reports no source pages for empty, assets-only, and include
       assert.equal(missing.severity, "operator_readiness");
       assert.equal(missing.category, "operator_readiness");
       assert.match(missing.message, /route empty has no source pages to audit/);
-      assert.deepEqual(missing.evidence.slug_candidates, ["empty", "route-a", "route-b", "route-c"]);
+      assert.deepEqual(missing.evidence.slug_candidates, ["route-a", "route-b", "route-c", "shared"]);
       assert.equal(root.source_scope.scope_resolved, false);
+      assert.equal(root.source_structure.html_file_count, 0);
       assert.equal(report.status, "ready_with_warnings");
       const markdown = formatStandardizationReportMarkdown(report);
-      assert.match(markdown, /Source audit: not audited — route empty has no source pages to audit; route folders: empty, route-a, route-b, route-c/);
+      assert.match(markdown, /Source audit: not audited — route empty has no source pages to audit; route folders: route-a, route-b, route-c, shared/);
       assert.doesNotMatch(markdown, /Source audit: limited to route/);
     }
   });
@@ -287,7 +419,7 @@ test("a scoped audit rejects slugs that are not a path segment without displayin
       assert.equal(missing.category, "operator_readiness", slug);
       assert.ok(missing.message.includes(`route ${slug} has no source pages to audit`));
       assert.match(missing.message, /slug must be a single path segment/);
-      assert.deepEqual(missing.evidence.slug_candidates, ["route-a", "route-b", "route-c"]);
+      assert.deepEqual(missing.evidence.slug_candidates, ["route-a", "route-b", "route-c", "shared"]);
       assert.equal(root.source_structure.html_file_count, 0, slug);
       assert.equal(root.source_scope.scope_resolved, false, slug);
       assert.equal(report.status, "ready_with_warnings", slug);

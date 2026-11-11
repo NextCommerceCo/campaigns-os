@@ -105,21 +105,34 @@ Liquid references. `campaign_include 'x.html'` resolves under the route's
 plain `include 'a/b'` and `render 'a/b'` resolve from `src/`, with `.html`
 as the default extension. Cycles terminate. Variable references are counted
 in the report as unresolved, without guessing a file or adding a blocker.
-References outside `src/` are ignored. A slug must be a single path segment.
+References outside `src/` are ignored. A slug must be a single path segment;
+both source and built-output scope findings state that rule for malformed
+slugs, and the built-output next action asks for one path segment (a route
+folder name).
 If it is invalid, its `src/<route>/` folder is missing, or that folder contains
 no page files (only includes, layouts or assets, for example), the report adds
 `source.scope_unresolved` with severity and category `operator_readiness`,
 matching unresolved built-output scope. It says the route has no source pages
-to audit and lists the route folders that exist as candidates. Markdown says
+to audit and lists, sorted, every directory directly under `src/` that contains
+at least one source page, registered or not. A source page is an HTML or Liquid
+file outside `_includes/`, `_layouts/` and `assets/` directories: even a fragment
+at `src/shared/entry.html` qualifies, while `src/shared/_includes/entry.html`
+alone does not. An unresolved scope selects no source files and emits no
+missing payment-method include, `campaign_asset` or `data-next-*` findings or
+remediation derived from those absences. Markdown says
 `Source audit: not audited` instead of claiming the audit was limited to that
 route; it never constructs a source path from an invalid slug. The overall
 status follows the existing rules: `ready_with_warnings` unless another finding
 blocks it. This status does not establish source readiness for that route.
 
-A finding evidenced in a shared file outside `src/<route>/` names the routes
-that use that file. Files the requested route never reaches contribute no
-source findings. Project inputs (`_data/campaigns.json` and `package.json`)
-remain in scope, along with the route's runtime artifacts and built output.
+A finding evidenced in a file outside `src/<route>/` calls it shared and names
+its routes only when more than one route reaches it. Files the requested route
+never reaches contribute no source findings. Project inputs (`_data/campaigns.json` and `package.json`)
+and `.campaigns-os/source-html-manifest.json` remain in scope, along with the
+route's runtime artifacts and built output. Runtime records are filtered by
+`campaign.public_route_slug`, `identity.public_route_slug`,
+`derived.public_route_slug` (doctor output), or top-level `public_route_slug`
+(QA verdict); records with no route field, such as build context, stay in scope.
 The report and markdown explicitly name the source-audit route. Without
 `--slug`, the source audit and output remain whole-project and unchanged.
 
@@ -315,7 +328,8 @@ Each Page Kit root contains these sections:
 - `source_scope`: present only with `--slug`; `kind: "route"`, `route`, and
   `unresolved_reference_count` describe the limited source audit. When the route
   has no source pages to audit, `scope_resolved: false` and `slug_candidates`
-  record that the source scope is unresolved and name existing route folders.
+  record that the source scope is unresolved and name, sorted, every direct
+  `src/` directory with a source page, including unregistered folders.
 - `entry_point`: present only with `--slug`; `name` is `Build Packet` or
   `Hand-authored`, `packet` names the selected packet (otherwise null), and
   `command` gives the continuation or existing built-doctor proof command
@@ -331,8 +345,9 @@ Each Page Kit root contains these sections:
   slug-scope resolution state (`slug_candidates` when unresolved), and
   optional built-output doctor result.
 - `findings`: normalized blocker, warning, and operator-readiness items with
-  evidence and next action. In scoped reports, shared-file evidence samples
-  add `routes`; the finding adds `shared_files: [{path, routes}]`, also
+  evidence and next action. In scoped reports, evidence samples for files
+  outside the audited route's folder that more than one route reaches add
+  `routes`; the finding adds `shared_files: [{path, routes}]`, also
   printed in markdown. These fields are additive.
 - `remediation`: safe agent repairs, clarification needed, product or merchant
   risks, and proof commands.

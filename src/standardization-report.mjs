@@ -360,7 +360,7 @@ function scanPageKitRoot({
   const packets = requestedSlug && isRouteSegment(requestedSlug) ? projectFunnelPackets(rootPath) : [];
   const packet = packets.filter((entry) => entry.readable && entry.route === requestedSlug)
     .reduce((best, entry) => !best || (entry.generatedAt ?? -Infinity) > (best.generatedAt ?? -Infinity) ? entry : best, null);
-  const runtime = readRuntimeArtifacts(rootPath, targetRepo, files, requestedSlug ? { route: requestedSlug, packet, packets } : null);
+  const runtime = readRuntimeArtifacts(rootPath, targetRepo, allFiles, requestedSlug ? { route: requestedSlug, packet, packets } : null);
   // The checkout field contract applies wherever inline checkout bindings
   // exist; a Page Kit root that inlines checkout markup is inspected exactly
   // like an application root, and the capability is listed only when it ran.
@@ -661,7 +661,8 @@ function readRuntimeArtifacts(rootPath, targetRepo, rootFiles = [], scope = null
     if (runtimeRelPath === ".campaign-runtime" && rel.startsWith("funnels/") && !rel.startsWith(`funnels/${scope.route}/`)) return false;
     if (!file.endsWith(".json")) return true;
     const parsed = readJsonFile(file);
-    const route = parsed.value?.campaign?.public_route_slug || parsed.value?.identity?.public_route_slug;
+    const route = parsed.value?.campaign?.public_route_slug || parsed.value?.identity?.public_route_slug
+      || parsed.value?.derived?.public_route_slug || parsed.value?.public_route_slug;
     return !route || route === scope.route;
   });
   const artifactFiles = [];
@@ -763,7 +764,8 @@ function scopeRouteSources(rootPath, files, slugs, requestedSlug) {
   for (const route of routes) {
     const routeRoot = join(srcRoot, route);
     const queue = sourceFiles.filter((file) => file.startsWith(`${routeRoot}${sep}`));
-    if (route === requestedSlug) hasSourcePage = queue.some((file) => isSourcePage(rootPath, file));
+    if (!queue.some((file) => isSourcePage(rootPath, file))) continue;
+    if (route === requestedSlug) hasSourcePage = true;
     const reached = new Set();
     for (let index = 0; index < queue.length; index += 1) {
       const file = queue[index];
@@ -784,7 +786,8 @@ function scopeRouteSources(rootPath, files, slugs, requestedSlug) {
     if (route === requestedSlug) selected = reached;
   }
   const directories = new Set(safeReadDir(srcRoot).filter((entry) => entry.isDirectory() && !shouldSkipDir(entry.name)).map((entry) => entry.name));
-  const slugCandidates = routes.filter((route) => directories.has(route));
+  const slugCandidates = [...directories].filter((route) => sourceFiles.some((file) =>
+    file.startsWith(`${join(srcRoot, route)}${sep}`) && isSourcePage(rootPath, file))).sort();
   const findings = hasSourcePage ? [] : [finding({
     severity: "operator_readiness",
     category: "operator_readiness",
@@ -811,7 +814,7 @@ function attributeSharedFindings(findings, scope) {
     for (const sample of evidence) {
       if (typeof sample.path !== "string" || !sample.path.startsWith("src/") || sample.path.startsWith(scope.routePrefix)) continue;
       const routes = scope.users.get(resolve(scope.rootPath, sample.path));
-      if (!routes) continue;
+      if (!routes || routes.length < 2) continue;
       sample.routes = routes;
       shared.set(sample.path, { path: sample.path, routes });
     }
@@ -926,7 +929,8 @@ function scanSourceFiles(rootPath, structureFiles, sourceFiles, slugs, bindingPa
       next_action: "Move document-level markup into layouts and keep page files body-owned.",
     }));
   }
-  if (!paymentMethodFiles.length) {
+  const sourceAudited = !sourceScope || !sourceScope.findings.length;
+  if (sourceAudited && !paymentMethodFiles.length) {
     findings.push(finding({
       severity: "warning",
       category: "standardization_warning",
@@ -935,7 +939,7 @@ function scanSourceFiles(rootPath, structureFiles, sourceFiles, slugs, bindingPa
       next_action: "Confirm the template family before treating this as a repair task.",
     }));
   }
-  if (!helperCounts.campaign_asset) {
+  if (sourceAudited && !helperCounts.campaign_asset) {
     findings.push(finding({
       severity: "warning",
       category: "standardization_warning",
@@ -944,7 +948,7 @@ function scanSourceFiles(rootPath, structureFiles, sourceFiles, slugs, bindingPa
       next_action: "Confirm asset references are portable through Page Kit before standardizing this repo.",
     }));
   }
-  if (sumMap(dataNextCounts) === 0) {
+  if (sourceAudited && sumMap(dataNextCounts) === 0) {
     findings.push(finding({
       severity: "warning",
       category: "standardization_warning",
@@ -1033,8 +1037,9 @@ function inspectBuiltOutput(rootPath, campaignSlug) {
       })],
     };
   }
-  const scope = campaignSlug.source === "operator_flag" && !isRouteSegment(requestedSlug)
-    ? { ok: false, error: `Unknown campaign slug: ${requestedSlug}`, slug_candidates: builtSlugCandidates(siteRoot) }
+  const invalidSlug = campaignSlug.source === "operator_flag" && !isRouteSegment(requestedSlug);
+  const scope = invalidSlug
+    ? { ok: false, error: `Invalid campaign slug: ${requestedSlug}; the slug must be a single path segment.`, slug_candidates: builtSlugCandidates(siteRoot) }
     : resolveBuiltSiteScope(rootPath, { slug: requestedSlug || null });
   if (!scope.ok) {
     // A slug the scanner derived (not one the operator passed) with no matching
@@ -1081,7 +1086,9 @@ function inspectBuiltOutput(rootPath, campaignSlug) {
           code: "built_output.scope_unresolved",
           message: scope.error || "Built output exists but scope could not be resolved.",
           evidence: scope.slug_candidates?.length ? { slug_candidates: scope.slug_candidates } : null,
-          next_action: "Pass --slug when a repo has multiple built campaign outputs and neither _data/campaigns.json nor a .campaign-runtime packet names one.",
+          next_action: invalidSlug
+            ? "Pass a slug that is one path segment (a route folder name)."
+            : "Pass --slug when a repo has multiple built campaign outputs and neither _data/campaigns.json nor a .campaign-runtime packet names one.",
         })],
     };
   }
