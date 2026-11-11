@@ -4073,8 +4073,8 @@
       "date": "2026-11-11",
       "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.68.0+agent.4",
-      "changelog_sha256": "7bbad21369b5c700ae3b5c04fa31e96882dd36494bc69882e2c0171b3cc176cd",
+      "changelog_section": "1.68.0+agent.8",
+      "changelog_sha256": "2dfae3bf4f074ecf316c1427496973002a6201294c3e36276ea44c640fd64d46",
       "agent_impact": "A change whose only non-page file is a stylesheet or image built pages link directly now reads page_only, with QA owed on those pages, instead of commerce_affecting. Its reasons carry two new non-commerce codes: linked_asset_changed (path, and pages: the page ids that link it) and linked_asset_buy_page (a checkout or upsell page reached only through one). When there is a buy page, evidence_debt.qa.browser_pages lists it, and qa run --page then needs --browser. Readers that treat every reason as commerce should switch on the change kind, or skip these two codes.",
       "compatibility": "additive",
       "migration": "none",
@@ -4110,7 +4110,7 @@
           "summary": "build_changes reasons can carry the linked_asset_changed and linked_asset_buy_page notes, which do not make a change commerce."
         }
       ],
-      "entry_sha256": "f1b4003d116191bd14e049384fa4fa89d373226def7fc1e5969f371f7e405f7f"
+      "entry_sha256": "90264cb66febc8eb97314558b1cdae2e4b85fd57af204538cb5895181a182010"
     }
   ]
 }
