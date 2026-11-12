@@ -36,23 +36,36 @@ Read readiness from two places instead:
 
 The text report prints a `Readiness:` line directly under `Status:` that reads
 those fields for you. The remedy for a blocked doctor is to resolve its errors
-and re-run `campaigns-os doctor --packet campaign-runtime.build.json
---write --strip-paths` so the retained sidecar records a ready run.
+and re-run `campaigns-os doctor --packet <packet> --write --strip-paths`
+with that funnel's packet so the retained sidecar records a ready run.
 
 ## Canonical bundle
 
 | Kind | Canonical path | Requirement | Schema/version | Freshness |
 | --- | --- | --- | --- | --- |
-| Build Packet | `campaign-runtime.build.json` | Required | `campaign-runtime-build-packet/v0` | Its `generated_at` is the bundle-selection authority. Never select a packet by mtime. |
-| Build Context | `.campaign-runtime/build-context.json` | Required | `campaign-runtime-build-context/v0` | Producer-stamped `generated_at`; `packet_path` must point to the root packet. |
-| Assembly Report | `.campaign-runtime/assembly-report.json` | Required | `campaign-runtime-assembly-report/v0` | Producer-stamped `generated_at`; authored stage evidence is preserved. |
-| Doctor Output | `.campaign-runtime/doctor-output.json` | Required | `campaigns-os-doctor-output/v0` | Refresh after any doctor-input change; an explicit `stale: true` fails conformance. `generated_by` names the command that persisted it (`doctor`, `next`, `start`, `build`, `qa run`); a sidecar without it predates the stamp. |
-| QA Verdict projection | `.campaign-runtime/qa-verdict.json` | Required after QA | QA schema `1.0`, constrained by the sidecar projection schema | `generated_at` is the projection/promotion instant. |
+| Build Packet | Repository-root `campaign-runtime.build.json` or `campaign-runtime-<route>.build.json` for its own public route | Required | `campaign-runtime-build-packet/v0` | Its `generated_at` is the bundle-selection authority. Never select a packet by mtime. |
+| Build Context | `<runtime_dir>/build-context.json` | Required | `campaign-runtime-build-context/v0` | Producer-stamped `generated_at`; `packet_path` must point to the packet being checked. |
+| Assembly Report | `<runtime_dir>/assembly-report.json` | Required | `campaign-runtime-assembly-report/v0` | Producer-stamped `generated_at`; `inputs.packet_path` must point to the packet being checked; authored stage evidence is preserved. |
+| Doctor Output | `<runtime_dir>/doctor-output.json` | Required | `campaigns-os-doctor-output/v0` | Refresh after any doctor-input change; an explicit `stale: true` fails conformance. `generated_by` names the command that persisted it (`doctor`, `next`, `start`, `build`, `qa run`); a sidecar without it predates the stamp. |
+| QA Verdict projection | `<runtime_dir>/qa-verdict.json` | Required after QA | QA schema `1.0`, constrained by the sidecar projection schema | `generated_at` is the projection/promotion instant. |
 
-The packet stays at repository root because that is the default discovery
-contract. A packet found only at
-`.campaign-runtime/campaign-runtime.build.json` is reported with a root-path
-remedy; conformance does not silently widen discovery.
+The packet stays at repository root. The first funnel normally keeps
+`campaign-runtime.build.json` and the default runtime directory
+`.campaign-runtime`. A later funnel's packet is named
+`campaign-runtime-<route>.build.json`, where `<route>` is that packet's own
+`campaign.public_route_slug`; its records live under
+`.campaign-runtime/funnels/<route>`, recorded as `assembly.runtime_dir` on
+the packet. `bundle check --packet campaign-runtime-<route>.build.json`
+checks that funnel's bundle. A root `campaign-runtime.build.json` may also
+record its own per-funnel runtime directory. An absent `assembly.runtime_dir`
+keeps the default layout; any recorded directory outside these two shapes is
+nonconformant and no sidecars are read. Missing per-funnel records never fall
+back to the project-level directory.
+
+A packet found only at `.campaign-runtime/campaign-runtime.build.json` is
+reported with a repository-root remedy naming both canonical packet forms.
+A packet named for another public route is also noncanonical. Each result's
+artifact paths name the repository-relative files actually checked.
 
 The checker validates canonical paths, declared schema versions, strict UTC
 timestamps, cross-artifact Map ID or local-spec ID, public slug, campaign directory, live URL
@@ -98,6 +111,10 @@ Later CI runs must preserve the authored packet, context, and Assembly Report
 rather than recreating them with `--force` and erasing stage decisions.
 
 Refresh generated evidence at that commit:
+
+For a later funnel, use `--packet campaign-runtime-<route>.build.json` in
+each CI producer command below and preserve that funnel's packet, Build
+Context and Assembly Report in their recorded locations.
 
 ```bash
 campaigns-os doctor \

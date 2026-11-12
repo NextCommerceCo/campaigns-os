@@ -1457,9 +1457,9 @@ Every command that takes `--packet` reads and writes that funnel's records:
 guess when the project holds more than one: `readback <root>` refuses with
 exit 2 and names each packet with its route, and `tooling status` reads no
 packet pin and says why. Pass `--packet` to name the funnel. In CI, run the
-evidence check once per packet. `bundle check` still validates only the
-repository-root bundle of the first funnel; a later funnel's packet reports
-`bundle.packet.noncanonical_path`.
+evidence check once per packet. `bundle check --packet
+campaign-runtime-<route>.build.json` validates that funnel's packet and the
+sidecars under its recorded `assembly.runtime_dir`.
 
 A single-funnel project set up before per-funnel records reads exactly as it
 did. Its packet records no `assembly.runtime_dir`, so every command keeps

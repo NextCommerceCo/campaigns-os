@@ -1117,7 +1117,7 @@ async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = nul
 
   if (command === "bundle") {
     const subcommand = args._[1] || "check";
-    if (subcommand !== "check") throw refused('Unknown bundle subcommand. Use: campaigns-os bundle check --packet <campaign-runtime.build.json> [--require-qa] [--json].');
+    if (subcommand !== "check") throw refused('Unknown bundle subcommand. Use: campaigns-os bundle check --packet <packet> [--require-qa] [--json].');
     const { inspectSidecarBundle, sidecarBundleReadinessLine } = await import("./sidecar-bundle.mjs");
     const result = inspectSidecarBundle({
       packetPath: requireArg(args, "packet"),

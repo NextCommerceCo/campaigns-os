@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -42,6 +43,192 @@ function withFixture(fn) {
     rmSync(root, { recursive: true, force: true });
   }
 }
+
+function writeFunnelBundle(root, { route = "some-other-route", mapId = "some-other-map", packetName = `campaign-runtime-${route}.build.json` } = {}) {
+  const runtimeDir = `.campaign-runtime/funnels/${route}`;
+  const packet = readJson(join(FIXTURE, "campaign-runtime.build.json"));
+  packet.campaign.public_route_slug = route;
+  packet.campaign.campaign_directory = route;
+  packet.campaign.live_url_path = `/${route}/`;
+  packet.spec.map_id = mapId;
+  packet.assembly.runtime_dir = runtimeDir;
+  writeJson(join(root, packetName), packet);
+
+  const context = readJson(join(FIXTURE, ".campaign-runtime/build-context.json"));
+  context.packet_path = packetName;
+  context.report_path = `${runtimeDir}/assembly-report.json`;
+  writeJson(join(root, runtimeDir, "build-context.json"), context);
+
+  const report = readJson(join(FIXTURE, ".campaign-runtime/assembly-report.json"));
+  Object.assign(report.identity, {
+    map_id: mapId,
+    public_route_slug: route,
+    campaign_directory: route,
+    live_url_path: `/${route}/`,
+  });
+  report.inputs.packet_path = packetName;
+  report.inputs.context_path = `${runtimeDir}/build-context.json`;
+  writeJson(join(root, runtimeDir, "assembly-report.json"), report);
+
+  const doctor = readJson(join(FIXTURE, ".campaign-runtime/doctor-output.json"));
+  Object.assign(doctor.derived, { packet_path: packetName, map_id: mapId, public_route_slug: route });
+  writeJson(join(root, runtimeDir, "doctor-output.json"), doctor);
+
+  const qa = readJson(join(FIXTURE, ".campaign-runtime/qa-verdict.json"));
+  Object.assign(qa, { campaign_slug: mapId, public_route_slug: route });
+  writeJson(join(root, runtimeDir, "qa-verdict.json"), qa);
+  return { packetPath: join(root, packetName), packetName, runtimeDir };
+}
+
+test("the default bundle result preserves the origin/main digest and artifact paths", () => {
+  const result = inspectSidecarBundle({ packetPath: join(FIXTURE, "campaign-runtime.build.json"), requireQa: true });
+  // Captured from origin/main d4e837bc before changing the checker.
+  const artifacts = [
+    ["build_packet", "campaign-runtime.build.json", "required", "campaign-runtime-build-packet/v0", "2026-08-24T00:00:00.000Z", "56d809378d9582780aa0d3d0f86dcad27bafa5cb430ee092e6c84c00954973b4", "7dde828f647ca8af6c7cb070fea9c814b986b170ad500f5654bfcadaaf1fb6d4"],
+    ["build_context", ".campaign-runtime/build-context.json", "required", "campaign-runtime-build-context/v0", "2026-08-24T00:00:00.000Z", "ec7e6cf3a1f526ed92ee665b443103e73debc25fa45c8d29737f44040a6bb2b6", "2734f64a1af3741063d1a55951b6a645ad63cb725ef4dd70e7f7b6e3a841a224"],
+    ["assembly_report", ".campaign-runtime/assembly-report.json", "required", "campaign-runtime-assembly-report/v0", "2026-08-24T00:00:00.000Z", "3b7207c438d59340a9ab788701a46041e70448c96769c4b95a96a3a153d77d62", "524ddde74571d0ba3c3d9a4c137a4252729f4834b2719c569ff325130818ae0d"],
+    ["doctor_output", ".campaign-runtime/doctor-output.json", "required", "campaigns-os-doctor-output/v0", "2026-08-24T00:01:00.000Z", "49b911334afb0873d7717f78420f586c16149596cf9edfae50a48c9456426599", "5a023262b415313144b1267f63666a2d4adb34de4fb0dbeb7b76676cf69f27c6"],
+    ["qa_verdict", ".campaign-runtime/qa-verdict.json", "required_after_qa", "1.0", "2026-08-24T00:04:00.000Z", "1445c823553e7ad173cf2078cf46e25b03faaaaa1c6354e3fccfd01104093f3f", "38e257b02fdd203be39030a89048513f08c4ff74e71edd8a158f539f0d3c14b2"],
+  ].map(([kind, path, requirement, schema_version, generated_at, sha256, material_sha256]) => ({
+    kind, path, requirement, present: true, schema_version, generated_at,
+    sha256: `sha256:${sha256}`, material_sha256: `sha256:${material_sha256}`,
+  }));
+  assert.deepEqual(result, {
+    schema_version: "campaigns-os-sidecar-bundle-conformance/v0",
+    bundle_id: "campaigns-os-migration-sidecar-bundle/v0",
+    ok: true,
+    status: "conformant",
+    stage_blocked: false,
+    root: FIXTURE,
+    packet_generated_at: "2026-08-24T00:00:00.000Z",
+    material_digest: "sha256:ace7d8f87ec371487fec5c68c672e318f74f5c18486f2955de347b507864fc1c",
+    artifacts,
+    errors: [],
+    warnings: [],
+  });
+});
+
+test("a root packet reads its own per-funnel runtime directory", () => withFixture((root) => {
+  const { packetPath, runtimeDir } = writeFunnelBundle(root, { packetName: "campaign-runtime.build.json" });
+  // Leave no project-level records to satisfy the checked packet by accident.
+  for (const name of ["build-context.json", "assembly-report.json", "doctor-output.json", "qa-verdict.json"]) {
+    rmSync(join(root, ".campaign-runtime", name));
+  }
+  const result = inspectSidecarBundle({ packetPath, requireQa: true });
+  assert.equal(result.ok, true, JSON.stringify(result.errors, null, 2));
+  assert.deepEqual(result.artifacts.map((artifact) => artifact.path), [
+    "campaign-runtime.build.json",
+    ...["build-context.json", "assembly-report.json", "doctor-output.json", "qa-verdict.json"].map((name) => `${runtimeDir}/${name}`),
+  ]);
+}));
+
+test("two funnels read only their own packet and records", () => withFixture((root) => {
+  const firstPacket = join(root, "campaign-runtime.build.json");
+  const before = inspectSidecarBundle({ packetPath: firstPacket, requireQa: true });
+  const second = writeFunnelBundle(root);
+  const results = [
+    inspectSidecarBundle({ packetPath: firstPacket, requireQa: true }),
+    inspectSidecarBundle({ packetPath: second.packetPath, requireQa: true }),
+  ];
+  for (const result of results) {
+    assert.equal(result.ok, true, JSON.stringify(result.errors, null, 2));
+    assert.deepEqual(result.errors.filter((finding) => finding.code.startsWith("bundle.identity.")), []);
+    for (const artifact of result.artifacts) {
+      assert.equal(artifact.sha256, `sha256:${createHash("sha256").update(readFileSync(join(root, artifact.path))).digest("hex")}`);
+    }
+  }
+  assert.deepEqual(results[0], before);
+  assert.equal(results[1].artifacts[0].path, second.packetName);
+  assert.ok(results[1].artifacts.slice(1).every((artifact) => artifact.path.startsWith(`${second.runtimeDir}/`)));
+  assert.notEqual(results[1].material_digest, results[0].material_digest);
+  const first = readJson(firstPacket);
+  const other = readJson(second.packetPath);
+  assert.notEqual(first.spec.map_id, other.spec.map_id);
+  assert.notEqual(first.campaign.public_route_slug, other.campaign.public_route_slug);
+}));
+
+test("a missing per-funnel record never borrows a project-level record", () => withFixture((root) => {
+  const { packetPath, runtimeDir } = writeFunnelBundle(root);
+  rmSync(join(root, runtimeDir, "doctor-output.json"));
+  const result = inspectSidecarBundle({ packetPath, requireQa: true });
+  const finding = result.errors.find((entry) => entry.code === "bundle.doctor_output.missing");
+  assert.ok(finding, JSON.stringify(result.errors, null, 2));
+  assert.equal(finding.message, `Missing canonical JSON artifact ${runtimeDir}/doctor-output.json.`);
+  const artifact = result.artifacts.find((entry) => entry.kind === "doctor_output");
+  assert.equal(artifact.path, `${runtimeDir}/doctor-output.json`);
+  assert.equal(artifact.present, false);
+  assert.equal(artifact.sha256, null);
+  assert.equal(artifact.material_sha256, null);
+  assert.equal(result.errors.some((entry) => entry.code.startsWith("bundle.identity.")), false);
+}));
+
+test("a packet named for another route is noncanonical", () => withFixture((root) => {
+  const { packetPath } = writeFunnelBundle(root, { packetName: "campaign-runtime-foreign-route.build.json" });
+  const result = inspectSidecarBundle({ packetPath, requireQa: true });
+  assert.equal(result.ok, false);
+  const finding = result.errors.find((entry) => entry.code === "bundle.packet.noncanonical_path");
+  assert.ok(finding);
+  assert.match(finding.message, /campaign-runtime\.build\.json/);
+  assert.match(finding.message, /campaign-runtime-<public_route_slug>\.build\.json/);
+}));
+
+test("an invalid runtime directory is refused before any sidecar is read", () => withFixture((root) => {
+  const packetPath = join(root, "campaign-runtime.build.json");
+  for (const runtimeDir of ["../outside", "/tmp/outside", ".campaign-runtime/funnels/some-other-route", ".campaign-runtime/funnels", "https://example.test/records", "", 42]) {
+    const packet = readJson(packetPath);
+    packet.assembly.runtime_dir = runtimeDir;
+    writeJson(packetPath, packet);
+    const result = inspectSidecarBundle({ packetPath, requireQa: true });
+    assert.equal(result.ok, false, String(runtimeDir));
+    const finding = result.errors.find((entry) => entry.code === "bundle.packet.runtime_dir");
+    assert.ok(finding, JSON.stringify(result.errors, null, 2));
+    assert.equal(finding.artifact, "build_packet");
+    assert.match(finding.message, /"\.campaign-runtime" or "\.campaign-runtime\/funnels\/<campaign.public_route_slug>"/);
+    assert.deepEqual(result.artifacts.map((artifact) => artifact.kind), ["build_packet"]);
+    assert.equal(result.errors.some((entry) => entry.artifact !== "build_packet"), false);
+    assert.deepEqual(result.warnings, []);
+  }
+}));
+
+test("per-funnel packet pointers must name the packet checked", () => withFixture((root) => {
+  const { packetPath, runtimeDir, packetName } = writeFunnelBundle(root);
+  for (const [name, code] of [["build-context.json", "bundle.build_context.packet_path"], ["assembly-report.json", "bundle.assembly_report.packet_path"]]) {
+    const path = join(root, runtimeDir, name);
+    const record = readJson(path);
+    const input = name === "build-context.json" ? record : record.inputs;
+    input.packet_path = "campaign-runtime.build.json";
+    writeJson(path, record);
+    const result = inspectSidecarBundle({ packetPath, requireQa: true });
+    const finding = result.errors.find((entry) => entry.code === code);
+    assert.ok(finding, JSON.stringify(result.errors, null, 2));
+    assert.ok(finding.message.includes(packetName));
+    input.packet_path = `./${packetName}`;
+    writeJson(path, record);
+    const restored = inspectSidecarBundle({ packetPath, requireQa: true });
+    assert.equal(restored.ok, true, JSON.stringify(restored.errors, null, 2));
+  }
+}));
+
+test("per-funnel doctor remedies name that funnel's packet", () => withFixture((root) => {
+  const { packetPath, runtimeDir, packetName } = writeFunnelBundle(root);
+  const doctorPath = join(root, runtimeDir, "doctor-output.json");
+  const doctor = readJson(doctorPath);
+  doctor.stale = true;
+  doctor.status = "blocked";
+  doctor.ok = false;
+  writeJson(doctorPath, doctor);
+  for (const requireQa of [false, true]) {
+    const result = inspectSidecarBundle({ packetPath, requireQa });
+    for (const code of ["bundle.doctor_output.stale", "bundle.doctor_output.blocked"]) {
+      const finding = [...result.errors, ...result.warnings].find((entry) => entry.code === code);
+      assert.ok(finding, JSON.stringify(result));
+      assert.ok(finding.remedy.includes(`campaigns-os doctor --packet ${packetName} --write --strip-paths`), finding.remedy);
+    }
+  }
+  rmSync(doctorPath);
+  const missing = inspectSidecarBundle({ packetPath });
+  assert.ok(missing.errors.find((entry) => entry.code === "bundle.doctor_output.missing").remedy.includes(`--packet ${packetName}`));
+}));
 
 test("the public production-shaped fixture is a QA-complete conformant bundle", () => {
   const result = inspectSidecarBundle({
@@ -136,6 +323,7 @@ test("the legacy sidecar packet path gets the explicit root-path remedy", () => 
   assert.equal(result.ok, false);
   const finding = result.errors.find((entry) => entry.code === "bundle.packet.legacy_path");
   assert.ok(finding);
+  assert.match(finding.message, /campaign-runtime\.build\.json or campaign-runtime-<public_route_slug>\.build\.json/);
   assert.match(finding.remedy, /repository-root campaign-runtime\.build\.json/);
 }));
 
@@ -556,6 +744,18 @@ test("fresh prepare-build, doctor, and QA projection form a conformant bundle wh
 });
 
 test("the machine contract forbids mtime selection and requires explicit historical QA promotion", () => {
+  assert.equal(SIDECAR_BUNDLE_CONTRACT.packet_discovery.canonical_funnel_path, "campaign-runtime-<public_route_slug>.build.json");
+  assert.equal(SIDECAR_BUNDLE_CONTRACT.packet_discovery.canonical_funnel_route_field, "campaign.public_route_slug");
+  assert.deepEqual(SIDECAR_BUNDLE_CONTRACT.sidecar_paths, {
+    packet_runtime_directory_field: "assembly.runtime_dir",
+    default_runtime_directory: ".campaign-runtime",
+    funnel_runtime_directory: ".campaign-runtime/funnels/<public_route_slug>",
+    rule: "Each sidecar's runtime_relative_path is relative to the packet's runtime directory, resolved by the shared workspace resolver. An absent assembly.runtime_dir uses .campaign-runtime; a recorded per-funnel directory must name the packet's own campaign.public_route_slug. Any other runtime directory is nonconformant and no sidecars are read. Artifact path values describe the default layout.",
+  });
+  assert.deepEqual(SIDECAR_BUNDLE_CONTRACT.artifacts.slice(1).map((artifact) => artifact.runtime_relative_path), [
+    "build-context.json", "assembly-report.json", "doctor-output.json", "qa-verdict.json",
+  ]);
+  assert.match(SIDECAR_BUNDLE_CONTRACT.ci_producer.packet_rule, /Every --packet argument takes the funnel's own repository-root packet/);
   assert.equal(SIDECAR_BUNDLE_CONTRACT.packet_discovery.selection_authority, "campaign-runtime.build.json#generated_at");
   assert.equal(SIDECAR_BUNDLE_CONTRACT.packet_discovery.forbidden_selection_authority, "filesystem_mtime");
   const identities = Object.fromEntries(
