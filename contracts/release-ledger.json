@@ -4554,34 +4554,34 @@
       "kind": "release",
       "surface_version": "1.70.0",
       "changelog_section": "1.70.0",
-      "changelog_sha256": "dfe5a3c98614b924795c63ec823fdc93e6fab7247c86393011eeb7fe4507d3e4",
-      "agent_impact": "After any change to a handed-off funnel, build with Page Kit, then run campaigns-os after-edit --packet <packet> and commit the files it lists; this replaces the hand-run sequence of record build, spec derive and doctor --ci. Exit 2 means it stopped (for example, spec derivation needs --yes); otherwise the exit code is doctor --ci's: 0 current, 3 owed, 4 unknown. Add --run-qa only for the page QA it names. It never builds, runs Polish, runs full QA or places test orders: full QA still needs the project manager's go. It writes records; doctor --ci stays the read-only way to ask what is owed. The agent instruction files and the lifecycle skill now point here.",
+      "changelog_sha256": "9961cbebc363b9946c0336b298449b9404b8791a7141567350441b339ffbe449",
+      "agent_impact": "After any change to a handed-off funnel, build with Page Kit, then run campaigns-os after-edit --packet <packet> and commit the files it lists; this replaces the hand-run sequence of record build, spec derive and doctor --ci. Exit 2 means it stopped (for example, spec derivation needs --yes); otherwise the exit code is doctor --ci's: 0 current, 3 owed, 4 unknown. Add --run-qa only for the page QA it names. It never builds, runs Polish, runs full QA or places test orders: full QA still needs the project manager's go. It writes records; doctor --ci stays the read-only way to ask what is owed. The agent instruction files and the lifecycle skill now point here. Separately, doctor --ci, readback and after-edit now read a Polish or QA whose last run on the current build was blocked as owed (reason stage_blocked, exit 3) where they read it as current: a blocked page QA owes its pages again, a blocked full QA or Polish owes the full stage. Do not treat a blocked run as having cleared the debt.",
       "compatibility": "additive",
-      "migration": "Pin @nextcommerce/campaigns-os@1.70.0 and refresh installed skills to 1.70.0+skills.1 before starting a fresh session. Re-run install-agent-context to pick up the after-edit step in the agent instruction files. Nothing changes for existing commands.",
+      "migration": "Pin @nextcommerce/campaigns-os@1.70.0 and refresh installed skills to 1.70.0+skills.1 before starting a fresh session. Re-run install-agent-context to pick up the after-edit step in the agent instruction files. Nothing changes for existing commands. A pull-request check that was green over a blocked Polish or QA on the current build now reports it owed.",
       "changes": [
         {
           "class": "documentation",
           "path": "agents/claude/CLAUDE.md",
           "surface_entry": null,
-          "summary": "After the final edit: build with Page Kit, run after-edit and commit the files it lists; the pull-request check runs doctor --ci for every root Build Packet."
+          "summary": "After the final edit: build with Page Kit, run after-edit and commit the files it lists, following the run sheet shipped in the package; the pull-request check runs doctor --ci for every root Build Packet."
         },
         {
           "class": "documentation",
           "path": "agents/codex/AGENTS.md",
           "surface_entry": null,
-          "summary": "After the final edit: build with Page Kit, run after-edit and commit the files it lists; the pull-request check runs doctor --ci for every root Build Packet."
+          "summary": "After the final edit: build with Page Kit, run after-edit and commit the files it lists, following the run sheet shipped in the package; the pull-request check runs doctor --ci for every root Build Packet."
         },
         {
           "class": "documentation",
           "path": "agents/copilot/copilot-instructions.md",
           "surface_entry": null,
-          "summary": "After the final edit: build with Page Kit, run after-edit and commit the files it lists; the pull-request check runs doctor --ci for every root Build Packet."
+          "summary": "After the final edit: build with Page Kit, run after-edit and commit the files it lists, following the run sheet shipped in the package; the pull-request check runs doctor --ci for every root Build Packet."
         },
         {
           "class": "documentation",
           "path": "agents/cursor/campaigns-os.mdc",
           "surface_entry": null,
-          "summary": "After the final edit: build with Page Kit, run after-edit and commit the files it lists; the pull-request check runs doctor --ci for every root Build Packet."
+          "summary": "After the final edit: build with Page Kit, run after-edit and commit the files it lists, following the run sheet shipped in the package; the pull-request check runs doctor --ci for every root Build Packet."
         },
         {
           "class": "compatibility_policy",
@@ -4599,7 +4599,7 @@
           "class": "compatibility_policy",
           "path": "contracts/supported-surface.json",
           "surface_entry": "contracts/supported-surface.json",
-          "summary": "Surface 1.70.0: after-edit joins the CLI commands; new hashes for the effects contract and the surface doc."
+          "summary": "Surface 1.70.0: after-edit joins the CLI commands; new hashes for the effects contract, the readback schema and the surface doc."
         },
         {
           "class": "named_surface",
@@ -4624,6 +4624,12 @@
           "path": "docs/orientation-contract-reference.md",
           "surface_entry": "docs/orientation-contract-reference.md",
           "summary": "Regenerated for surface 1.70.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/readback.md",
+          "surface_entry": "docs/readback.md",
+          "summary": "A stage whose last run on the current build was blocked reads owed with reason stage_blocked; current now also requires that the stage is not blocked."
         },
         {
           "class": "named_surface",
@@ -4654,6 +4660,12 @@
           "path": "package.json",
           "surface_entry": null,
           "summary": "Package version 1.70.0."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-readback.v2.schema.json",
+          "surface_entry": "schemas/campaigns-os-readback.v2.schema.json",
+          "summary": "The stage debt reason enum gains stage_blocked."
         },
         {
           "class": "skill",
@@ -4728,7 +4740,7 @@
           "summary": "The after-edit command and its help line."
         }
       ],
-      "entry_sha256": "ff4edab599e0510b2d84f5f64a6203c38b749bc0c9595989d8cea793ac54d302"
+      "entry_sha256": "9eac8aedaeaab93d044ac60c366cd68285d2f6db1fde1b0ac70ad5c1ebf9d902"
     }
   ]
 }

@@ -168,8 +168,35 @@ test("blocked page QA is recorded, stopped and assessed again (E2 d)", async (t)
   const doctor = doctorCommand({ _: ["doctor"], packet: f.packetPath, ci: true, "no-live-refs": true });
   assert.deepEqual(result.ci, doctor.ci);
   assert.ok(step(result, "run_qa").detail.endsWith(formatDoctorCi(doctor)));
+  assert.equal(result.ci.qa.status, "owed");
+  assert.equal(result.ci.qa.reason, "stage_blocked");
+  assert.equal(result.ci.qa.matches_current_build, true);
+  assert.equal(result.ci.qa.scope, "pages");
+  assert.deepEqual(result.ci.qa.owed_pages, [{ page_id: "upsell", built_path: "upsell/index.html" }]);
+  assert.equal(result.ci.status, "owed");
+  assert.equal(result.ci.exit_code, 3);
+  assert.match(step(result, "run_qa").detail, /Owed after QA:\n## Campaign evidence: owed \(exit 3\)/);
+  assert.doesNotMatch(step(result, "run_qa").detail, /QA is current/);
+  assert.match(formatDoctorCi(doctor), /Owed qa: the last run on this build was blocked\./);
+  assert.match(formatDoctorCi(doctor), /`campaigns-os qa run --packet <packet> --page upsell`/);
+  assert.doesNotMatch(formatDoctorCi(doctor), /record baseline/);
   assert.equal(json(f.reportPath).stages.qa.status, "blocked");
   assert.ok(result.files.includes(".campaign-runtime/qa-verdict.json"));
+}));
+
+test("after-edit without --run-qa still exits 3 after blocked page QA", async (t) => withNetworkGuard(async () => {
+  const f = await fixture(t);
+  f.page("upsell", PAGES.upsell.replace("Example offer", "Revised offer"));
+  await run(f, { "run-qa": true }, { runQa: qaStub(f, [], { blocked: true }) });
+  const result = await run(f);
+  assert.equal(afterEditExitCode(result), 3);
+  assert.equal(result.stopped_at, null);
+  assert.equal(result.ci.qa.status, "owed");
+  assert.equal(result.ci.qa.reason, "stage_blocked");
+  assert.equal(result.ci.qa.scope, "pages");
+  assert.deepEqual(result.ci.qa.owed_pages.map((page) => page.page_id), ["upsell"]);
+  assert.equal(result.ci.status, "owed");
+  assert.match(result.next, /qa run .* --page upsell$/);
 }));
 
 test("page QA exceptions or throws cannot return success without current evidence", async (t) => withNetworkGuard(async () => {
@@ -422,6 +449,15 @@ test("CLI --run-qa JSON is one result, using the real QA preflight and recording
   assert.ok(existsSync(result.qa.verdict_path));
   assert.ok(result.files.includes(".campaign-runtime/qa-verdict.json"));
   assert.equal(json(f.reportPath).stages.qa.status, "blocked");
+  assert.equal(result.ci.qa.status, "owed");
+  assert.equal(result.ci.qa.reason, "stage_blocked");
+  assert.equal(result.ci.qa.matches_current_build, true);
+  assert.equal(result.ci.qa.scope, "pages");
+  assert.deepEqual(result.ci.qa.owed_pages, [{ page_id: "upsell", built_path: "upsell/index.html" }]);
+  assert.equal(result.ci.status, "owed");
+  assert.equal(result.ci.exit_code, 3);
+  assert.match(step(result, "run_qa").detail, /Owed after QA:\n## Campaign evidence: owed \(exit 3\)/);
+  assert.doesNotMatch(step(result, "run_qa").detail, /QA is current/);
 }));
 
 test("unknown evidence has only the CI assessment and exits 4", async (t) => withNetworkGuard(async () => {

@@ -121,6 +121,106 @@ test("doctor --ci only QA bound to older build exits 3", (t) => {
   assert.deepEqual(payload.ci.changes.changed_pages, []);
 });
 
+for (const stage of ["qa", "polish"]) {
+  test(`blocked ${stage} on the current build reads owed at full scope`, (t) => {
+    const f = fixture(t);
+    f.report.stages[stage].status = "blocked";
+    f.save();
+    const debt = assessEvidenceDebt({ packet: f.packet, packetPath: f.packetPath, report: f.report });
+    assert.equal(debt[stage].status, "owed");
+    assert.equal(debt[stage].reason, "stage_blocked");
+    assert.equal(debt[stage].matches_current_build, true);
+    if (stage === "qa") {
+      assert.equal(debt.qa.scope, "full");
+      assert.deepEqual(debt.qa.owed_pages, []);
+      assert.equal(debt.polish.status, "current");
+    } else {
+      assert.equal(debt.polish.advisory, false);
+      assert.equal(debt.qa.status, "current");
+    }
+    const payload = jsonCi(f, 3);
+    assert.equal(payload.ci.status, "owed");
+    const markdown = formatDoctorCi(payload);
+    assert.match(markdown, new RegExp(`Owed ${stage}: the last run on this build was blocked\\.`));
+    const remedy = markdown.split("\n").find((line) => line.startsWith("Remedy:"));
+    const commands = [...remedy.matchAll(/`(campaigns-os [^`]+)`/g)].map((match) => match[1]);
+    assert.deepEqual(commands, stage === "qa" ? ["campaigns-os qa run --packet <packet>"] : [
+      "campaigns-os polish capture --packet <packet> --base-url <served-current-build-url>",
+      "campaigns-os record polish --packet <packet> --evidence <polish-evidence.json>",
+    ]);
+    assert.doesNotMatch(remedy, /rebuild|record build/);
+    assert.doesNotMatch(markdown, /record baseline/);
+  });
+}
+
+test("blocked QA on an older build keeps fingerprint drift reason and full scope", (t) => {
+  const f = fixture(t);
+  const completed = assessEvidenceDebt({ packet: f.packet, packetPath: f.packetPath, report: f.report });
+  assert.equal(completed.qa.status, "current");
+  assert.equal(completed.polish.status, "current");
+  f.report.stages.qa.evidence.source_build_fingerprint = "older-build";
+  const before = assessEvidenceDebt({ packet: f.packet, packetPath: f.packetPath, report: f.report });
+  f.report.stages.qa.status = "blocked";
+  const after = assessEvidenceDebt({ packet: f.packet, packetPath: f.packetPath, report: f.report });
+  assert.equal(after.qa.status, "owed");
+  assert.equal(after.qa.reason, "build_fingerprint_changed");
+  assert.equal(after.qa.matches_current_build, false);
+  assert.equal(after.qa.scope, "full");
+  assert.equal(after.qa.scope, before.qa.scope);
+});
+
+test("blocked stages preserve unknown inputs and required stages keep their reason", (t) => {
+  const f = fixture(t);
+  const assess = (overrides = {}) => assessEvidenceDebt({ packet: f.packet, packetPath: f.packetPath, report: f.report, ...overrides });
+  for (const stage of ["polish", "qa"]) f.report.stages[stage].status = "blocked";
+  for (const overrides of [{ packet: null }, { packetPath: null }]) {
+    const debt = assess(overrides);
+    for (const stage of ["polish", "qa"]) {
+      assert.equal(debt[stage].status, "unknown");
+      assert.equal(debt[stage].reason, "packet_unavailable");
+    }
+  }
+  const original = structuredClone(f.report);
+  delete f.report.stages.polish.source_build_fingerprint;
+  delete f.report.stages.qa.evidence.source_build_fingerprint;
+  const missing = assess();
+  for (const stage of ["polish", "qa"]) {
+    assert.equal(missing[stage].status, "unknown");
+    assert.equal(missing[stage].reason, "stage_build_fingerprint_missing");
+    assert.equal(missing[stage].matches_current_build, null);
+    Object.assign(f.report.stages[stage], { status: "required", required_by: "spec", blockers: ["Previous run blocked"] });
+  }
+  const required = assess();
+  for (const stage of ["polish", "qa"]) {
+    assert.equal(required[stage].status, "owed");
+    assert.equal(required[stage].reason, "stage_required_by_spec");
+  }
+  f.report = original;
+  delete f.report.stages.assembly.build_fingerprint;
+  const noAssembly = assess();
+  for (const stage of ["polish", "qa"]) {
+    assert.equal(noAssembly[stage].status, "unknown");
+    assert.equal(noAssembly[stage].reason, "assembly_build_fingerprint_missing");
+    assert.equal(noAssembly[stage].matches_current_build, true);
+  }
+  rmSync(f.output, { recursive: true });
+  const noBuild = assess();
+  for (const stage of ["polish", "qa"]) {
+    assert.equal(noBuild[stage].status, "unknown");
+    assert.equal(noBuild[stage].reason, "build_output_missing");
+  }
+});
+
+test("skipped Polish on the current build remains current", (t) => {
+  const f = fixture(t);
+  f.report.stages.polish.status = "skipped";
+  const debt = assessEvidenceDebt({ packet: f.packet, packetPath: f.packetPath, report: f.report });
+  assert.equal(debt.polish.status, "current");
+  assert.equal(debt.polish.reason, null);
+  assert.equal(debt.polish.advisory, false);
+  assert.equal(debt.qa.status, "current");
+});
+
 test("doctor --ci rebuilt assembly cannot refresh older Polish/QA evidence", (t) => {
   const f = fixture(t);
   writeFileSync(join(f.output, "landing", "index.html"), "<main>rebuilt</main>");
@@ -499,6 +599,7 @@ test("baseline sign-off excludes page QA, unknown QA, input changes, and mixed o
     { status: "unknown" },
     { reason: "stage_required_by_brief" },
     { reason: "stage_required_by_spec" },
+    { reason: "stage_blocked" },
     { change: { reasons: [] } },
     { change: { reasons: [{ code: "commerce_signature_unavailable", path: "checkout/index.html" }] } },
     ...[{ code: "checkout_page" }, null, "commerce_signature_unavailable"].map((other) => ({

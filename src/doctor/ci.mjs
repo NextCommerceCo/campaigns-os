@@ -90,11 +90,12 @@ function baselineLine(baseline) {
   return `QA rests on a baseline ${text(baseline.accepted_by)} accepted${at ? ` on ${at}` : ""}, not a test. No purchase has been tested since.`;
 }
 
-const requiredStageReasons = new Map([
+const owedStageReasons = new Map([
   ["stage_required_by_build", "the build requires this stage again"],
   ["stage_required_by_brief", "the brief requires this stage again"],
   ["stage_required_by_spec", "the spec requires this stage again"],
   ["stage_required", "the lifecycle requires this stage again"],
+  ["stage_blocked", "the last run on this build was blocked"],
 ]);
 
 export function doctorCiFailure(error, { usage = false, code = usage ? "doctor.ci.packet" : "doctor.ci.failed" } = {}) {
@@ -148,7 +149,7 @@ export function doctorCiEvidenceLines(ci, encode = code) {
   for (const stage of owed) {
     const reason = ci[stage].reason === "build_fingerprint_changed"
       ? "the recorded build fingerprint differs from the current build"
-      : requiredStageReasons.get(ci[stage].reason) ?? "the recorded stage evidence is owed";
+      : owedStageReasons.get(ci[stage].reason) ?? "the recorded stage evidence is owed";
     lines.push(`- Owed ${stage}: ${reason}.`);
   }
   for (const stage of advisory) {
@@ -212,10 +213,10 @@ export function formatDoctorCi(result) {
     const recorded = ci.changes.recorded_build_fingerprint && ci.changes.recorded_build_fingerprint === ci.changes.current_build_fingerprint;
     lines.push("", `Remedy: ${recorded ? "" : "run `campaigns-os record build --packet <packet>` for the rebuilt output, then "}run \`campaigns-os qa run --packet <packet>${pages}\` against that build. Polish capture is optional for a page-only change.`);
   } else if (ci.status === "owed" || ci.status === "unknown") {
-    const matchingRequired = owed.length > 0
-      && owed.every((stage) => requiredStageReasons.has(ci[stage].reason) && ci[stage].matches_current_build === true)
+    const matchingOwed = owed.length > 0
+      && owed.every((stage) => owedStageReasons.has(ci[stage].reason) && ci[stage].matches_current_build === true)
       && ["polish", "qa"].every((stage) => ci[stage].status !== "unknown");
-    if (matchingRequired) {
+    if (matchingOwed) {
       const commands = [];
       if (owed.includes("polish")) commands.push("`campaigns-os polish capture --packet <packet> --base-url <served-current-build-url>` for the whole route", "`campaigns-os record polish --packet <packet> --evidence <polish-evidence.json>`");
       if (owed.includes("qa")) commands.push(`\`campaigns-os qa run --packet <packet>${browserPages.length ? " --browser" : ""}\``);

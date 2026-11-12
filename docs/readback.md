@@ -468,7 +468,7 @@ does not rerun doctor, Polish, or QA and does not reinterpret their verdicts.
 - `recorded_build_fingerprint`: the stage's build binding, or `null`;
 - `current_build_fingerprint`: the fingerprint computed from current built
   output with `computeBuildFingerprint`, or `null`;
-- `reason`: `null` for `current`; `build_fingerprint_changed`,
+- `reason`: `null` for `current`; `build_fingerprint_changed`, `stage_blocked`,
   `stage_required_by_build`, `stage_required_by_brief`,
   `stage_required_by_spec`, or `stage_required` for `owed`; or an explicit
   reason for `unknown`.
@@ -480,7 +480,7 @@ to `source_build_fingerprint`, and the same build-binding comparison as `next`.
 It does not require uncommitted capture files to be present.
 
 `current` means the stage's binding equals the bytes on disk and the assembly
-fingerprint is available and the stage is not recorded as `required`. `owed`
+fingerprint is available and the stage is not recorded as `required` or `blocked`. `owed`
 means that binding differs from the current build, or the lifecycle recorded
 the stage as `required`, even without a stage fingerprint. Its `required_by`
 selects `stage_required_by_build`, `stage_required_by_brief`, or
@@ -493,10 +493,11 @@ explicitly `unknown`; a missing stage fingerprint does too unless the stage is
 `packet_unavailable`, `build_output_location_unknown`, `build_output_missing`,
 `build_output_unreadable`, `assembly_build_fingerprint_missing`, and
 `stage_build_fingerprint_missing`.
+`stage_blocked` means the last run on the current build was blocked, so the stage remains owed.
 When both stage and disk fingerprints are available, `matches_current_build`
 reports their equality even if a missing assembly fingerprint makes status unknown.
 `matches_current_build: true` together with `status: owed` means the lifecycle
-requires the stage again over matching evidence. Consumers decide whether
+requires the stage again over matching evidence or the last run was blocked. Consumers decide whether
 evidence is owed from `status`, never from `matches_current_build`.
 
 `changes` compares current output to **the retained assembly manifest**, using
