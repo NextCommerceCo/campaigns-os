@@ -6,7 +6,7 @@ Notable supported-surface changes are recorded here.
 
 ### Fixed
 
-- `record build`, `record baseline`, readback and `doctor --ci` agree on what is owed: the record commands print `doctor --ci`'s reading, readback marks a doctor reading older than the report as stale, and the `--ci` remedy for a funnel from before 1.62 names `record baseline` (#756).
+- `record build`, `record baseline`, readback and `doctor --ci` agree on what is owed: the record commands print `doctor --ci`'s reading once Polish or QA has reviewed a build, readback shows when the retained doctor reading was marked stale and why, and `doctor --ci` adds a `record baseline` sign-off line for a funnel recorded before 1.62 (#756).
 
 ## [1.68.0+agent.14] - 2026-11-12
 
