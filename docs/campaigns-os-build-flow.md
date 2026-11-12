@@ -70,13 +70,22 @@ stay listed after `record build`. A change is one of two kinds:
   (`data-next-checkout*`, `data-next-payment*`, `data-next-express-checkout*`,
   `os-checkout*`). The campaign's own entry in
   `_data/campaigns.json` (SDK pin, analytics ids, store fields) is unchanged.
+  A stylesheet (`.css`) or image file that built pages link directly, by
+  `<link rel="stylesheet" href>` or `<img src>` / `srcset`, is a change to
+  those pages too (`linked_assets` on the change, naming the file and the
+  pages; `<picture>` sources count as `<img>` sources). A checkout or upsell
+  page it reaches owes a browser run (`qa.browser_pages`), still without test
+  orders, whether or not its own copy changed too: styling can hide or cover a
+  buy button. `qa run`, page-scoped or full, then needs `--browser`. `@import`
+  and `url()` inside a stylesheet are not followed.
   It owes QA on the changed pages only: `qa.scope` is `pages` and
   `qa.owed_pages` lists them. Polish is advisory (`polish.advisory: true`): it
   is reported, and `next`, the CI check and the QA gate do not require it.
 - **Commerce-affecting.** Anything else: a checkout page, commerce markup or
   the config entry changed, a page was added or removed (a route change), or a
-  built file other than a page's HTML changed (a script, stylesheet or image
-  file cannot be mapped to one page). It owes the full Polish and QA, as
+  built file other than a page's HTML changed that no page links directly as a
+  stylesheet or image (a script, `_data/campaigns.json`, or a file reached
+  only through `@import`, `url()` or another file). It owes the full Polish and QA, as
   does a change that cannot be read (a record made before `record build`
   kept a commerce signature, or a rebuild history that no longer reaches the
   reviewed build). A Polish or QA requirement a brief or spec change made is

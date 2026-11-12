@@ -4191,13 +4191,58 @@
       "entry_sha256": "d36834a2912d242db62c66a19963d17222462e38f93337a23c54b6e7a4fc303b"
     },
     {
-      "id": "RL-0341",
+      "id": "RL-0345",
       "sequence": 329,
+      "date": "2026-11-11",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.68.0+agent.13",
+      "changelog_sha256": "545ae9d420c7f949b009af39f56f268b66ce3e2cb323220ec97878f57aa4645b",
+      "agent_impact": "A change whose only non-page file is a stylesheet or image built pages link directly (link rel=stylesheet, img src or srcset, picture source srcset) now reads page_only, with QA owed on those pages, instead of commerce_affecting. The change, and the build_changes entry record build keeps, then carry linked_assets (each path, with pages: the ids of the pages that link it) and browser_pages (the built paths of the checkout or upsell pages it reaches); reasons stay the commerce causes, with no new codes. When QA is owed, page-scoped or full, and there is such a page, evidence_debt.qa.browser_pages lists its id, and qa run, with or without --page, then needs --browser.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/ci.mjs",
+          "surface_entry": null,
+          "summary": "doctor --ci names each linked stylesheet or image that changed and the pages it maps to, says which page owes a browser run, and adds --browser to its QA remedy when one does."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/next-step.mjs",
+          "surface_entry": null,
+          "summary": "next adds --browser to the page-scoped QA command when a checkout or upsell page owes a browser run."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/campaigns-os-build-flow.md",
+          "surface_entry": "docs/campaigns-os-build-flow.md",
+          "summary": "What a change owes: a stylesheet or image built pages link directly is a page-only change to those pages, and a checkout or upsell page it reaches owes a browser QA run with no test orders."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/readback.md",
+          "surface_entry": "docs/readback.md",
+          "summary": "The change and evidence debt can carry linked_assets and browser_pages, and qa.browser_pages, for a linked stylesheet or image."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "build_changes entries can carry linked_assets and browser_pages, which do not make a change commerce."
+        }
+      ],
+      "entry_sha256": "b8a842a6d0371aa2e48e4448c9bb0890a2dab353023a53fd9add16be3f53f674"
+    },
+    {
+      "id": "RL-0341",
+      "sequence": 330,
       "date": "2026-11-11",
       "kind": "release",
       "surface_version": "1.69.0",
       "changelog_section": "1.69.0",
-      "changelog_sha256": "5b37429be795b674ec9317d0203c4e8e9f3f13d6a4505635a846424f9245f09d",
+      "changelog_sha256": "e90db85eaf8f3f46c437e5c08a7694768d48ad7ba7c979c277d239ce00356683",
       "agent_impact": "The Funnel: line may now offer --adopt src/<route>; after asking the operator, run its printed command to bind this funnel to the pages' existing route instead of renaming another funnel. A bound packet carries campaign.map_public_route_slug when the Map's slug differs from the served campaign.public_route_slug; use the bound route for output and records while preserving the Map identity. Only recorded adoption with an unchanged recorded Design Source Package grants built-first treatment. Its build-vs-design checks read excluded / built_first and are never acceptable as a design match; its first QA must be the full run with test orders, separately authorized by the PM, and record baseline does not apply. doctor --built --emit-packet --map-id now fetches the saved Map and records its local spec path and any route binding. Refresh skills to 1.69.0+skills.1.",
       "compatibility": "additive",
       "migration": "Pin @nextcommerce/campaigns-os@1.69.0 and refresh installed skills to 1.69.0+skills.1 before starting a fresh session; nothing changes for a funnel that is not adopted or bound.",
@@ -4389,7 +4434,7 @@
           "summary": "Blocks built-first progress when the package no longer matches the recorded intake references."
         }
       ],
-      "entry_sha256": "08ba1715a688cc2340f7bfb1f1ed18e5ef4904aee12a9bceb8d0623b47802966"
+      "entry_sha256": "20c5e4cd2655d41a1896cef34b3c4cbc86deee8351125c12b460ac6aee53b47a"
     }
   ]
 }

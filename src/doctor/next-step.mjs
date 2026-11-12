@@ -506,10 +506,10 @@ function pickNextStage(report, { errors = [], derived = null }, prepareBuildGate
       // changed pages only (#720); qa run --page pays it.
       const qaDebt = derived?.evidence_debt?.qa;
       if (qaDebt?.scope === "pages" && qaDebt.owed_pages?.length) {
-        const pages = qaDebt.owed_pages.map((page) => `--page ${page.page_id}`).join(" ");
+        const pages = qaDebt.owed_pages.map((page) => `--page ${page.page_id}`).join(" ") + (qaDebt.browser_pages?.length ? " --browser" : "");
         return { stage: "qa", reason: `QA was recorded for a different build, and the change since then is page-only: run QA on the changed pages with ${cmd("qa")} run --packet <packet> ${pages}.` };
       }
-      return { stage: "qa", reason: "QA was recorded for a different build; run QA against the current build." };
+      return { stage: "qa", reason: `QA was recorded for a different build; run QA against the current build${qaDebt?.browser_pages?.length ? ` with --browser (${qaDebt.browser_pages.join(", ")} reached by a changed stylesheet or image)` : ""}.` };
     }
     // A terminal QA status is not the same claim as purchase proof. QA finalizes
     // a verdict and records a terminal status even when no order path ran, so a
