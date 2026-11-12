@@ -1,5 +1,10 @@
 # Run-artifact readback — `campaigns-os readback`
 
+For an adopted funnel whose packet names a `built_first` Design Source
+Package, readback reads that package and adds the identity line:
+Design source is the built pages ("built first"); nothing was compared to a design.
+This label conveys source provenance, never a design match or QA verdict.
+
 `campaigns-os readback <target-repo-root>` projects a read-only view of the
 artifacts a Campaigns OS run has already emitted into a target: the Build
 Packet, the doctor output sidecar, the build context, the assembly report, a QA

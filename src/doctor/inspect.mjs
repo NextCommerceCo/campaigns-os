@@ -13,7 +13,7 @@ import { annotateDoctorIssueCauses } from "../finding-cause.mjs";
 import { DOCTOR_SIDECAR_SCHEMA } from "../doctor-sidecar.mjs";
 import { recordQcResults } from "../qc-results.mjs";
 import { packetRuntimeRelPath, resolveCampaignWorkspace } from "../campaign-workspace.mjs";
-import { normalizePublicRouteSlug } from "../route-identity.mjs";
+import { normalizePublicRouteSlug, specPublicRouteSlug } from "../route-identity.mjs";
 import { DEFAULT_PROXY_BASE } from "../spec-fetch.mjs";
 import { disabledLiveRead, liveRefsDisabled, readLiveCampaignForPacket } from "../live-campaign-refs.mjs";
 import { evaluateThemeGate } from "../theme-gate.mjs";
@@ -439,12 +439,18 @@ function inspectBuiltOutput(args) {
   });
   derived.doctor_checks.push(SMOKE_QC);
 
+  // The CLI resolves this saved-Map copy before synchronous inspection. Other
+  // built-site callers still synthesize the same label-only packet as before.
+  const specPath = args["emit-packet"] && mapId ? optionalString(args.spec) : null;
+  const mapPublicRouteSlug = specPath ? specPublicRouteSlug(JSON.parse(readFileSync(specPath, "utf8"))) : null;
   const synthesized = synthesizeMinimalBuildPacket({
     schemaVersion: PACKET_SCHEMA,
     targetRepo,
     scope,
     family,
     mapId,
+    specPath,
+    mapPublicRouteSlug,
     baseUrl,
     deployTarget,
   });

@@ -102,6 +102,15 @@ and the write are observed rather than taken on trust.
 packet's copy is missing, and it never replaces one. It also writes the target's
 `.gitignore` when the managed block is missing or still lists `fetched-specs/`.
 
+`doctor --built --emit-packet` is tier A: when `--map-id` is given, its row
+declares the same spec request, cache replacement and managed `.gitignore`
+handling as intake, then a minimal synthesized packet with
+`spec.map_id`, `spec.local_path` and a differing Map route binding when needed.
+`--cached-spec` reuses the copy without fetching or rewriting it. A failed fetch
+writes no packet or cache. Without `--map-id`, emission keeps the existing stub,
+sends nothing and writes no fetched-spec cache. Without `--emit-packet`,
+`--map-id` labels the inspection only and sends nothing.
+
 `record baseline` writes only the Assembly Report and sends nothing. It is tier C
 because it replaces the live Polish and QA records, so any purchase proof they
 held stops counting. History keeps them.

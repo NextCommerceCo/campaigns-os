@@ -1007,19 +1007,33 @@
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
-        "openWorldHint": false,
+        "openWorldHint": true,
         "idempotentHint": true
       },
-      "tier": "B",
+      "tier": "A",
       "writes": [
         {
           "path": "{target}/.campaign-runtime/minimal-build-packet.json",
-          "when": "always — the minimal Build Packet derived from the built site is emitted (--emit-packet <path> writes it where the path names instead)",
+          "when": "spec resolution succeeds and built scope resolves; --emit-packet <path> writes the minimal packet where the path names instead",
           "observed_in": [
             "no_session",
             "ambient_session",
             "stale_session",
             "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/fetched-specs/*.json",
+          "when": "--map-id is given without --cached-spec and the saved Map fetch succeeds; replaces an earlier copy of that Map",
+          "observed_in": [
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.gitignore",
+          "when": "--map-id is given, spec resolution succeeds and the managed block is missing, lacks a required entry, or still lists fetched-specs/",
+          "observed_in": [
             "persisted_consent"
           ]
         },
@@ -1031,10 +1045,20 @@
           ]
         }
       ],
-      "sends": [],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/spec/{map-id}",
+          "what": "the CampaignSpec fetch",
+          "when": "--map-id is given without --cached-spec",
+          "requires_consent": false,
+          "observed_in": [
+            "persisted_consent"
+          ]
+        }
+      ],
       "effect_test": "effects: doctor --built --emit-packet",
       "test_scope": "full",
-      "notes": "--emit-packet turns the inspection into a writer: the minimal Build Packet derived from the built _site/ is written under the target's runtime directory (or to the path the flag names), so QA can run against the same campaign without a packet of its own."
+      "notes": "Emits the minimal Build Packet derived from the built _site/ under the target's runtime directory (or to the path --emit-packet names). When --map-id is given, fetches the saved Map before synchronous inspection and names the cached spec and any differing Map route binding, using the intake cache and managed ignore handling. A failed fetch writes no packet or cache. Without --map-id, emits a stub, sends nothing and writes no fetched-spec cache; --map-id without --emit-packet remains label-only and sends nothing."
     },
     {
       "command": "telemetry",
@@ -6793,7 +6817,7 @@
       ],
       "effect_test": "effects: record deploy",
       "test_scope": "full",
-      "notes": "Destructive: it replaces stages.deploy, stamped with the build fingerprint it probed, and the packet's deploy.preview_url. On a local-serve packet the requests stay on this machine: --base-url must be a loopback origin. On any other deploy target --base-url is an https origin and the served scripts and stylesheets are compared by sha256 with the built output (HTML is not compared). Refused, writing nothing but the lifecycle entry, when the URL breaks those rules or is not the campaign's route root, a built page does not answer (2xx locally, 200 hosted), a served asset is missing or differs, polish is not recorded, build or Polish is owed again after a brief or CampaignSpec change or its record does not say which content it was made against, the built output changed since build was recorded or a record build of other output lands between the probe and the write (on either deploy target), or the theme gate is blocked. The Build Context is read, not written."
+      "notes": "Destructive: it replaces stages.deploy, stamped with the build fingerprint it probed, and the packet's deploy.preview_url. On a local-serve packet the requests stay on this machine: --base-url must be a loopback origin. On any other deploy target --base-url is an https origin and the served scripts and stylesheets are compared by sha256 with the built output (HTML is not compared). Refused, writing nothing but the lifecycle entry, when the URL breaks those rules or is not the campaign's route root, a built page does not answer (2xx locally, 200 hosted), a served asset is missing or differs, polish is not recorded, build or Polish is owed again after a brief or CampaignSpec change or its record does not say which content it was made against, the built output changed since build was recorded or a record build of other output lands between the probe and the write (on either deploy target), or doctor's theme gate or Polish gate is blocked. The Build Context is read, not written."
     },
     {
       "command": "record",

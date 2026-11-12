@@ -15,7 +15,8 @@
 import { createHash } from "node:crypto";
 import { dirname, resolve } from "node:path";
 
-import { computeDesignSourcePackageMaterialFingerprint } from "../design-source-package.mjs";
+import { computeDesignSourcePackageMaterialFingerprint, BUILT_FIRST_REASON, BUILT_FIRST_LABEL } from "../design-source-package.mjs";
+import { readRecordedDesignSourcePackage } from "../design-source-publication.mjs";
 import { canonicalJson } from "../polish-capture.mjs";
 import { capturesIntegrity } from "../polish-captures-record.mjs";
 import {
@@ -103,7 +104,7 @@ export function dspSurfaceId(dsp, pageId) {
   return surface ? surface.id : null;
 }
 
-const htmlFunnel = (dsp) => (Array.isArray(dsp?.contributions) ? dsp.contributions : []).find((c) => isPlainObject(c) && c.kind === "html_funnel") || null;
+const htmlFunnel = (dsp) => (Array.isArray(dsp?.contributions) ? dsp.contributions : []).find((c) => isPlainObject(c) && ["html_funnel", BUILT_FIRST_REASON].includes(c.kind)) || null;
 
 // The sha256 the DSP records for a surface's source-<surface>-html ref, or null.
 export function dspRecordedSha(dsp, surfaceId) {
@@ -251,12 +252,13 @@ function elementState(category, members) {
 // are the two ProbeOutputs (for labels and selector paths only). A malformed
 // or throwing comparator reads comparator_failed.
 export function evaluateElementParityCell({ page_id, viewport, design = null, build = null, comparison, compareError = false,
-  designFileRecorded = false, measured_at = null } = {}) {
+  designFileRecorded = false, builtFirst = false, measured_at = null } = {}) {
   const comparisonRow = (decision, observation = {}) => buildQcResult({ check: ELEMENT_PARITY_CHECK, leg: "polish",
     subject: subjectOf(page_id, viewport, "comparison"), result: decision.result, reason_code: decision.reason_code ?? null,
     members: decision.members ?? [], accept_eligible: false,
     coverage: decision.coverage ?? { observed: 0, expected: null, limits: [FONT_USAGE_LIMIT, decision.reason_code] },
     state: { reason_code: decision.reason_code ?? null, ...(decision.state ?? {}) }, observation, measured_at });
+  if (builtFirst) return [comparisonRow({ result: "excluded", reason_code: BUILT_FIRST_REASON }, { label: BUILT_FIRST_LABEL })];
   if (compareError || !comparisonShapeOk(comparison)) return [comparisonRow({ result: "unexercised", reason_code: "comparator_failed" })];
   if (comparison.status !== "compared") return [comparisonRow({ result: "unexercised", reason_code: COMPARATOR_STOPS[comparison.status] })];
   const conditions = parityCoverageConditions(design?.coverage, build?.coverage);
@@ -471,6 +473,7 @@ function readRows(context, rules, comparisonCache) {
 
   const rows = [];
   const dsp = readDesignSourcePackage(packet, packetPath);
+  const builtFirst = readRecordedDesignSourcePackage(packet, packetPath, { report: context.report, reportPath: context.reportPath }).builtFirst;
   let dspReason = null;
   if (dsp.status !== "ok") dspReason = "source_package_unavailable";
   else {
@@ -490,6 +493,10 @@ function readRows(context, rules, comparisonCache) {
   }
   for (const cell of record.cells) {
     if (dspReason) { rows.push(...refusedCellRows(cell, dspReason, env)); continue; }
+    if (builtFirst) {
+      rows.push(...evaluateElementParityCell({ page_id: cell.page_id, viewport: cell.viewport, builtFirst: true, measured_at: measuredAt }));
+      continue;
+    }
     rows.push(...cellRows(cell, { ...env, captures, dsp: dsp.value }));
   }
   return [...new Map(rows.map((row) => [row.id, row])).values()];

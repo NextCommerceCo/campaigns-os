@@ -19,7 +19,9 @@
 // stages.qa.waivers and report.waivers[] are never read here.
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
-import { isAbsolute, relative, resolve } from "node:path";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { BUILT_FIRST_REASON } from "./design-source-package.mjs";
+import { readRecordedDesignSourcePackage } from "./design-source-publication.mjs";
 
 import { campaignSidecarPaths, packetRuntimeRelPath } from "./campaign-workspace.mjs";
 import { checkpointStateFingerprint } from "./checkpoint-waiver.mjs";
@@ -1265,7 +1267,7 @@ export function readReadability({ record, pageLoad = null, currentBuild = null, 
 
 // Captures are re-derived from one caller-selected packet snapshot. Neither
 // the stored route set nor a stored decision can supply the capture plan.
-export function readCaptures({ record, packet, currentBuild, currentSource, buildOutput,
+export function readCaptures({ record, packet, packetPath, report = null, reportPath = null, currentBuild, currentSource, buildOutput,
   campaignSlug, targetRepo, qcStandIns, rederivers } = {}) {
   const resolved = resolvePolishRules({ check: "visual.diff", qcStandIns, rederivers });
   if (resolved.status === "missing") return [];
@@ -1403,8 +1405,8 @@ export function readCaptures({ record, packet, currentBuild, currentSource, buil
     return null;
   };
   const provenanceReasons = ["path_in_build_output", "path_in_runtime_dir", "hash_equals_package_capture", "linked_source_self_referential", "hash_equals_built_html", "source_is_campaign_page", "source_link_missing", "linked_source_missing", "source_hash_unrecorded", "source_hash_mismatch", "capture_time_unrecorded"];
-  const inputReasons = ["source_root_unavailable", "source_html_missing", "source_package_unavailable", "source_package_stale"];
-  const comparisonReasons = [...vocab.part_reason, "width_unknown", "dpr_unknown", "width_mismatch", "dpr_mismatch", "mask_cap_reached", "diff_budget_exhausted", "image_too_large", "decode_failed", "file_missing", "path_outside_source_root", "too_large", "diff_unavailable", "capture_unavailable", "reference_not_usable", "comparison_unsupported", "readiness_incomplete"];
+  const inputReasons = ["source_root_unavailable", "source_html_missing", "source_package_unavailable", "source_package_stale", BUILT_FIRST_REASON];
+  const comparisonReasons = [...vocab.part_reason, "width_unknown", "dpr_unknown", "width_mismatch", "dpr_mismatch", "mask_cap_reached", "diff_budget_exhausted", "image_too_large", "decode_failed", "file_missing", "path_outside_source_root", "too_large", "diff_unavailable", "capture_unavailable", "reference_not_usable", "comparison_unsupported", "readiness_incomplete", BUILT_FIRST_REASON];
   const validateReference = (ref) => {
     if (!isPlainObject(ref) || !isNonEmptyString(ref.page_id) || !isPlainObject(ref.verification)
       || !isPlainObject(ref.provenance) || !isPlainObject(ref.identity)
@@ -1497,6 +1499,13 @@ export function readCaptures({ record, packet, currentBuild, currentSource, buil
     || record.subject.source_package_material_fingerprint !== (currentSource || null) || outputDrifted(buildOutput);
   const outsidePlan = routes.some((route) => !planned.some((p) => p.requested_route === route))
     || cells.some((c) => !planned.some((p) => p.requested_route === c.route && p.page_id === c.page_id));
+  if (record.source.status === BUILT_FIRST_REASON || references.some((ref) => ref.input_reason === BUILT_FIRST_REASON)
+      || comparisons.some((comparison) => comparison.reason === BUILT_FIRST_REASON)) {
+    try {
+      const dsp = readRecordedDesignSourcePackage(packet, packetPath, { report, reportPath });
+      if (!dsp.builtFirst || dsp.reference.material_fingerprint !== currentSource) return fail("source_package_stale");
+    } catch { return fail("source_package_unavailable"); }
+  }
   const context = stale ? { staleBinding: true } : {};
   const rows = [];
   const referenceGroups = new Map(), cappedReferences = new Set();
@@ -1610,11 +1619,11 @@ export function readCaptures({ record, packet, currentBuild, currentSource, buil
 // row of the record evidence_not_reproducible, never pass.
 export const parityApplies = (packet) => Array.isArray(packet?.source_html?.pages) && packet.source_html.pages.some((page) => isNonEmptyString(page?.path));
 
-export function readElementParity({ record, captures = null, packet = null, packetPath = null, currentBuild = null, currentSource = null,
+export function readElementParity({ record, captures = null, packet = null, packetPath = null, report = null, reportPath = null, currentBuild = null, currentSource = null,
   buildOutput = null, campaignSlug = null, targetRepo = null, qcAccepts = [], qcStandIns = null, rederivers = null } = {}) {
   if (packet && !parityApplies(packet)) return [];
   const resolved = resolvePolishRules({ check: "parity.element", qcStandIns, rederivers });
-  const context = { record, captures, packet, packetPath, currentBuild, currentSource, buildOutput, campaignSlug, targetRepo, qcAccepts };
+  const context = { record, captures, packet, packetPath, report, reportPath, currentBuild, currentSource, buildOutput, campaignSlug, targetRepo, qcAccepts };
   if (resolved.status === "loaded" && typeof resolved.rules.read === "function") {
     try {
       const rows = resolved.rules.read(context, resolved.rules);
@@ -1745,6 +1754,8 @@ export function readCurrentQcResults({ report, doctor, spec = null, targetRepo, 
   let packet = null, packetRead = false;
   try { if (packetPath) { packet = JSON.parse(readRegularFileSync(packetPath, { maxBytes: 16 * 1024 * 1024 }).toString("utf8")); packetRead = true; } } catch { /* unavailable */ }
   const polishContext = recorded.length ? {
+    report,
+    reportPath,
     pageLoad: visual.page_load,
     captures: visual.captures ?? null,
     packet,

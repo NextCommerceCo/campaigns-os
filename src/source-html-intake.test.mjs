@@ -9,6 +9,7 @@ import test from "node:test";
 import Ajv2020 from "ajv/dist/2020.js";
 import {
   createSourceHtmlIntake,
+  projectPageKitTargets,
   parseHostPrefixedRoute,
   publicRouteForPage,
   stripHostPrefixedRoutes,
@@ -23,6 +24,23 @@ import { checkoutPathFrom, forwardRouteTarget, isCheckoutFlowPage, isPrePaymentP
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CLI = resolve(ROOT, "bin/campaigns-os.mjs");
+
+for (const route of ["a/b/checkout/", "/short/checkout/", "/short/short/checkout/", "/short/"]) {
+  test(`equal binding leaves source intake and projection unchanged for ${route}`, () => {
+    const input = {
+      sourceRoot: resolve(ROOT, "no-source-html-manifest-here"),
+      specPages: [
+        { id: "checkout", type: "checkout", page_url: route, next_page: "upsell" },
+        { id: "upsell", type: "upsell", page_url: "a/b/upsell/", on_accept: "receipt", on_decline: "checkout" },
+        { id: "receipt", type: "thankyou", page_url: "receipt/" },
+      ],
+      htmlFiles: ["checkout", "upsell", "receipt"].map((name) => ({ path: `${name}.html`, basename: name })),
+      publicRouteSlug: "short", outputDir: "src/short",
+    };
+    assert.deepEqual(createSourceHtmlIntake({ ...input, mapPublicRouteSlug: "short" }), createSourceHtmlIntake(input));
+    assert.deepEqual(projectPageKitTargets({ ...input, mapPublicRouteSlug: "short" }), projectPageKitTargets(input));
+  });
+}
 
 test("P1 schema agreement: identical declaration inputs are accepted by runtime and Ajv, row by row", async (t) => {
   const { resolveDesignFileReferences } = await import("./design-file-reference.mjs");

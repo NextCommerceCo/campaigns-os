@@ -49,7 +49,7 @@ import {
   wellFormedBriefMaterial,
 } from "./input-currency.mjs";
 import { cmd } from "./install-invocation.mjs";
-import { campaignRouteRoot, intakeRouteRoot, normalizePublicRouteSlug, specPublicRouteSlug } from "./route-identity.mjs";
+import { campaignRouteRoot, effectiveMapPublicRouteSlug, intakeRouteRoot, normalizePublicRouteSlug, specPublicRouteSlug, routeSlugIdentity } from "./route-identity.mjs";
 import { projectPageKitTargets, publicRouteForPage } from "./source-html-intake.mjs";
 import { staleRoutingHints } from "./spec-derive.mjs";
 import { routeMaskedSpecMaterialHash, specHashesMatch } from "./spec-identity.mjs";
@@ -594,6 +594,8 @@ function specRefusal({ read, specPath, packet, packetPath, report, reportPath, c
   if (packetKind || reportKind) {
     return refuse("spec_identity_changed", `the CampaignSpec's ${(packetKind || reportKind) === "local_spec" ? "local_spec_id" : "map_id"} names another campaign than the ${packetKind ? "Build Packet" : "Assembly Report"} binds; point spec.local_path at this campaign's spec. A new campaign identity needs intake.`);
   }
+  const routeRefusal = specRouteRefusal(read.spec, packet);
+  if (routeRefusal) return { refusal: routeRefusal, rebind: null };
   const scope = pageScopeChange(read.spec, context);
   const intake = `${cmd("prepare-build")}; with --force it clears recorded stage evidence and operator decisions, archiving the build, Polish and QA records`;
   if (scope.unbindable) {
@@ -619,11 +621,28 @@ const canonicalJson = (value) => {
   return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
 };
 
+// Route identity and the served root are checked on every refresh, before
+// page-scope planning, including an unchanged spec or a non-page edit.
+function specRouteRefusal(spec, packet) {
+  const slug = normalizePublicRouteSlug(packet.campaign?.public_route_slug);
+  const specSlug = specPublicRouteSlug(spec);
+  const packetRoot = campaignRouteRoot(packet);
+  const declaredRoot = optionalString(spec.spec_identity?.route_root) || optionalString(spec.campaign?.route_root);
+  const identity = routeSlugIdentity(spec, packet);
+  const specRoot = declaredRoot ? intakeRouteRoot(declaredRoot, slug, effectiveMapPublicRouteSlug(packet)) : null;
+  if (!identity.ok || (declaredRoot && specRoot !== packetRoot)) {
+    return ["route_root_changed", identity.reason === "binding_mismatch"
+      ? `the recorded campaign.map_public_route_slug ${JSON.stringify(packet.campaign.map_public_route_slug)} disagrees with the CampaignSpec; fix the recorded binding through intake (${cmd("prepare-build")}) before refreshing the spec.`
+      : `the CampaignSpec ${specSlug && specSlug !== slug ? `names route slug "${specSlug}"` : `declares route_root ${JSON.stringify(declaredRoot)}`}, but the packet serves the campaign at ${packetRoot || "(no route root)"}; the recorded preview and deploy are rooted there, so moving the route root or slug needs intake (${cmd("prepare-build")}).`];
+  }
+  return null;
+}
+
 /**
  * What binding the changed active pages writes (#531, #721), or the refusal
  * that stops it. Every page is re-projected to its page-kit target (a page's
  * next_url reads the routes of the pages it links to). Refused, in order:
- * a move of the route root or slug, a routing hint left stale, two pages on
+ * a routing hint left stale, two pages on
  * one target, and a Design Source Package record spec cannot rewrite (one
  * prepare-build did not synthesize, or one edited since it was recorded).
  * Returns the next packet pages and page map, the rewritten package (or
@@ -633,14 +652,8 @@ const canonicalJson = (value) => {
 function planPageRebind({ spec, packet, packetPath, report, reportPath, context, targetRepo, scope }) {
   const refuse = (code, detail) => ({ refusal: [code, detail] });
   const slug = normalizePublicRouteSlug(packet.campaign?.public_route_slug);
-  const specSlug = specPublicRouteSlug(spec);
-  const packetRoot = campaignRouteRoot(packet);
-  const declaredRoot = optionalString(spec.spec_identity?.route_root) || optionalString(spec.campaign?.route_root);
-  const specRoot = declaredRoot ? intakeRouteRoot(declaredRoot, slug) : null;
-  if ((specSlug && specSlug !== slug) || (declaredRoot && specRoot !== packetRoot)) {
-    return refuse("route_root_changed", `the CampaignSpec ${specSlug && specSlug !== slug ? `names route slug "${specSlug}"` : `declares route_root ${JSON.stringify(declaredRoot)}`}, but the packet serves the campaign at ${packetRoot || "(no route root)"}; the recorded preview and deploy are rooted there, so moving the route root or slug needs intake (${cmd("prepare-build")}).`);
-  }
-  const stale = staleRoutingHints(spec, { publicRouteSlug: slug });
+  const mapPublicRouteSlug = effectiveMapPublicRouteSlug(packet);
+  const stale = staleRoutingHints(spec, { publicRouteSlug: slug, mapPublicRouteSlug });
   if (stale.length) {
     return refuse("routing_hint_stale", `the CampaignSpec's routing hints name routes their pages no longer have: ${stale.map((hint) => `${hint.page_id} sdk_hints.meta_tags.${hint.tag} ${JSON.stringify(hint.value)} (page "${hint.target_page_id}" routes to ${JSON.stringify(hint.derived_route)})`).join("; ")}. The built meta tag follows the hint, so shoppers would be sent to the old path. Edit each hint to the route shown in the spec (${cmd("spec")} derive rewrites the ones on an edge it re-points after handoff; while the Map is still the spec's source, re-saving it regenerates them), then run ${cmd("record")} spec again.`);
   }
@@ -648,7 +661,7 @@ function planPageRebind({ spec, packet, packetPath, report, reportPath, context,
   const activePages = activeSpecPages(spec);
   const pageById = new Map(activePages.map((page) => [page.id, page]));
   const outputDir = optionalString(packet.assembly?.output_dir) || `src/${slug}`;
-  const projections = projectPageKitTargets({ specPages: activePages, publicRouteSlug: slug, outputDir });
+  const projections = projectPageKitTargets({ specPages: activePages, publicRouteSlug: slug, mapPublicRouteSlug, outputDir });
   const removed = new Set(scope.removed);
   const previousPages = Array.isArray(packet.source_html?.pages) ? packet.source_html.pages : [];
   const nextPages = [];
