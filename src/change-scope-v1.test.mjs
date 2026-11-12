@@ -536,8 +536,13 @@ test("classifyDrift v1: every branch against a literal recorded baseline", () =>
   write("landing", PAGES.landing.replace("Landing headline", "A new headline"));
   assert.deepEqual(classify(known({ changed_pages: [page("landing")] })), { kind: "page_only", reasons: [] }, "a copy-only landing edit is page-only");
 
+  // #753 narrows this: a stylesheet or image a built page links directly is
+  // mapped to that page (mapLinkedAssets) before classifyDrift sees it, and
+  // reaches it as `linkedAssets`, never as an unmapped file. A stylesheet no
+  // page links still arrives here unmapped and is still commerce. The hashes
+  // are unchanged: commerce-signature/v1 never covered styling.
   assert.deepEqual(classify(known({ unmapped_files: ["assets/site.css"] })),
-    { kind: "commerce_affecting", reasons: [{ code: "unmapped_file", path: "assets/site.css" }] }, "a CSS-only asset is an unmapped file in v1");
+    { kind: "commerce_affecting", reasons: [{ code: "unmapped_file", path: "assets/site.css" }] }, "a CSS asset no page links is an unmapped file in v1");
 
   write("checkout", PAGES.checkout.replace("<h1>Checkout</h1>", "<h1>Secure checkout</h1>"));
   assert.deepEqual(classify(known({ changed_pages: [page("checkout")] })),

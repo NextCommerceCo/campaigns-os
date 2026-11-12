@@ -357,7 +357,7 @@ function buildChangeFacts(report, { packet, packetPath, fingerprint, now }) {
   if (!from || from === fingerprint) return { signature, buildChanges: previousAssembly.build_changes };
   const debt = assessEvidenceDebt({ packet, packetPath, report });
   const entry = buildChangeEntry({ from, to: fingerprint, at: now, changes: debt.changes,
-    classification: { kind: debt.changes.kind, reasons: debt.changes.reasons } });
+    classification: { kind: debt.changes.kind, reasons: debt.changes.reasons, linked_assets: debt.changes.linked_assets, browser_pages: debt.changes.browser_pages } });
   const anchors = [qaRecordedBuildFingerprint(report), qaExtendedBuildFingerprint(report), polishReviewedBuild(stageObject(report, "polish"))];
   return { signature, buildChanges: nextBuildChanges(previousAssembly.build_changes, entry, anchors) };
 }
@@ -1295,7 +1295,9 @@ function buildChangeReadyLines(assembly) {
   const latest = Array.isArray(assembly.build_changes) ? assembly.build_changes.at(-1) : null;
   if (!latest || latest.build_fingerprint !== assembly.build_fingerprint) return [];
   const pages = latest.changed_pages.map((page) => page.page_id).join(", ") || "none";
-  return [`stages.assembly.build_changes: this rebuild is ${latest.kind.replace("_", "-")} (changed pages: ${pages}${latest.unmapped_file_count ? `; ${latest.unmapped_file_count} file(s) outside any page` : ""})`];
+  const linked = (Array.isArray(latest.linked_assets) ? latest.linked_assets : [])
+    .map((asset) => `${asset.path} (linked by ${(asset.pages || []).join(", ")})`);
+  return [`stages.assembly.build_changes: this rebuild is ${latest.kind.replace("_", "-")} (changed pages: ${pages}${linked.length ? `; linked assets: ${linked.join(", ")}` : ""}${latest.unmapped_file_count ? `; ${latest.unmapped_file_count} file(s) outside any page` : ""})`];
 }
 
 // Everything a record reads from the target, in order, all under the target

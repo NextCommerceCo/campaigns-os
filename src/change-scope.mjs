@@ -8,6 +8,12 @@
 // order and routes, and scripts. A file that cannot be mapped to one page
 // counts as commerce, and so does any change this module cannot classify.
 //
+// A stylesheet or image that built pages link directly (#753) is a change to
+// those pages: mapLinkedAssets maps it, and it owes QA on them only. A
+// checkout or upsell page reached only that way owes a browser QA run, still
+// without test orders: styling cannot change what a page sends to the SDK,
+// but it can hide or cover a buy button.
+//
 // `record build` keeps a commerce signature beside the build manifest: one
 // hash per built page over the page's commerce-bearing markup, plus one hash
 // of the campaign's config entry. A later change compares the pages that
@@ -16,10 +22,11 @@
 // which pages changed since then after the manifest has moved on.
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { extname, join, relative, sep } from "node:path";
 
 import { parse } from "parse5";
 
+import { builtAssetReferences } from "./built-script-syntax.mjs";
 import { inferPageType, pageIdForRoute, routeForFile } from "./built-site-scope.mjs";
 import { htmlScanDocuments, readHtmlScanText } from "./html-scan.mjs";
 import { loadPageKitCampaignEntry } from "./page-kit-campaign-config.mjs";
@@ -45,6 +52,14 @@ export const BUILD_CHANGES_LIMIT = 25;
 export const CHANGE_PATH_LIMIT = 20;
 // CPK page types that take payment or render the checkout surface.
 const CHECKOUT_PAGE_TYPES = new Set(["checkout", "checkout_step", "select"]);
+// Page types that carry a buy button: checkout and the post-purchase offers.
+const BUY_PAGE_TYPES = new Set([...CHECKOUT_PAGE_TYPES, "upsell", "downsell"]);
+// What a direct link can map: a stylesheet the browser applies (text/css, so
+// .css) and an image format. Anything else a link or img names stays unmapped.
+const LINKED_ASSET_EXTENSIONS = Object.freeze({
+  stylesheet: new Set([".css"]),
+  image: new Set([".apng", ".avif", ".bmp", ".gif", ".ico", ".jpeg", ".jpg", ".png", ".svg", ".webp"]),
+});
 // Attribute names that carry package, offer, shipping, upsell or checkout
 // identity on built pages: data-next-*, the older os-checkout-* bindings and
 // other data-* names for those refs. Inline event handlers (onclick and the
@@ -142,11 +157,54 @@ function recordedSignature(assembly) {
 const capped = (items) => items.slice(0, CHANGE_PATH_LIMIT);
 
 /**
+ * Map changed files that built pages link directly to those pages (#753).
+ * `files` are changed paths relative to `outputRoot` that are not a page's
+ * HTML; `pages` the built-site scope's pages (`page_id`, absolute
+ * `built_path`), and `siteRoot` the directory the site is served from. Each
+ * page's `<link rel="stylesheet">` and `<img src|srcset>` are read from the
+ * run's shared trees and resolved as the browser resolves them
+ * (builtAssetReferences). A deleted file maps when a page still names it.
+ * A file reached only through `@import` or `url()`, a symlink leaving the
+ * site, or a file of another type stays unmapped.
+ *
+ * Returns `{ linked: [{ path, pages: [{ page_id, built_path }] }], unmapped }`,
+ * both in `files` order, page paths relative to `outputRoot`.
+ */
+export function mapLinkedAssets({ files = [], pages = [], outputRoot, siteRoot }) {
+  const candidates = new Map(files.flatMap((path) => {
+    const type = Object.keys(LINKED_ASSET_EXTENSIONS).find((kind) => LINKED_ASSET_EXTENSIONS[kind].has(extname(path).toLowerCase()));
+    return type ? [[join(outputRoot, path), { path, type }]] : [];
+  }));
+  if (!candidates.size || !pages.length) return { linked: [], unmapped: [...files] };
+  const linkedPages = new Map();
+  for (const ref of builtAssetReferences({ site_root: siteRoot, campaign_dir: outputRoot, pages }, candidates.keys()).refs) {
+    const served = ref.status === "local" ? [ref.path] : ref.status === "missing" ? ref.candidates || [] : [];
+    const file = served.map((path) => candidates.get(path)).find((entry) => entry && entry.type === ref.kind);
+    if (!file) continue;
+    if (!linkedPages.has(file.path)) linkedPages.set(file.path, new Map());
+    const builtPath = relative(outputRoot, ref.built_path).split(sep).join("/");
+    linkedPages.get(file.path).set(builtPath, { page_id: ref.page_id, built_path: builtPath });
+  }
+  return {
+    linked: files.filter((path) => linkedPages.has(path)).map((path) => ({
+      path, pages: [...linkedPages.get(path).values()].sort((a, b) => a.built_path.localeCompare(b.built_path)),
+    })),
+    unmapped: files.filter((path) => !linkedPages.has(path)),
+  };
+}
+
+/**
  * Classify the drift between a recorded build and the output on disk.
  * `changes` is assessEvidenceDebt's known change list (changed_pages,
  * unmapped_files, extra, missing). `baseline` is the recorded
  * stages.assembly. Returns `{ kind, reasons }`, `kind` one of CHANGE_KINDS
  * and `reasons` the commerce reasons found, each `{ code, path? }`.
+ * `linkedAssets` is mapLinkedAssets's `linked`. When there are any, the result
+ * also has `linked_assets` (each `{ path, pages }`, `pages` the ids of the
+ * pages that link it) and `browser_pages` (the built paths of the checkout or
+ * upsell pages among those pages, which owe a browser QA run); neither makes
+ * a change commerce. A page reached only through a linked asset (its own HTML
+ * unchanged) is not checked for commerce markup.
  * `pagePaths` is every page of the built-site scope: a changed page is read
  * from the run's shared inputs and takes the tree of that whole set when it
  * is shared (htmlScanDocuments), else it is parsed here. The set is shared
@@ -155,9 +213,9 @@ const capped = (items) => items.slice(0, CHANGE_PATH_LIMIT);
  * so no built-output checks; no snapshot at all; or a page set past the parse
  * budget) each changed page is parsed per use, as before.
  */
-export function classifyDrift({ changes, baseline, outputRoot, targetRepo, publicRouteSlug, pagePaths = [] }) {
+export function classifyDrift({ changes, baseline, outputRoot, targetRepo, publicRouteSlug, pagePaths = [], linkedAssets = [] }) {
   if (changes?.status !== "known") return { kind: "unknown", reasons: [] };
-  if (!changes.changed_pages.length && !changes.unmapped_files.length) return { kind: "none", reasons: [] };
+  if (!changes.changed_pages.length && !changes.unmapped_files.length && !linkedAssets.length) return { kind: "none", reasons: [] };
   const reasons = [];
   const signature = recordedSignature(baseline);
   // First, so the list's cap never drops it: `record baseline` reads it.
@@ -168,19 +226,27 @@ export function classifyDrift({ changes, baseline, outputRoot, targetRepo, publi
     reasons.push({ code: signature.campaign_config.startsWith("unavailable:") ? "campaign_config_unavailable" : "campaign_config_changed" });
   }
   const documentOf = htmlScanDocuments(pagePaths);
+  const facts = new Map();
+  const factsOf = (page) => {
+    if (!facts.has(page.built_path)) {
+      const file = join(outputRoot, page.built_path);
+      const html = readHtmlScanText(file);
+      facts.set(page.built_path, pageCommerceFacts(html, () => documentOf(file, html)));
+    }
+    return facts.get(page.built_path);
+  };
+  const typeOf = (page, facts) => facts.page_type || inferPageType(routeForFile(outputRoot, join(outputRoot, page.built_path)));
   for (const page of changes.changed_pages) {
     if (changes.extra.includes(page.built_path)) { reasons.push({ code: "page_added", path: page.built_path }); continue; }
     if (changes.missing.includes(page.built_path)) { reasons.push({ code: "page_removed", path: page.built_path }); continue; }
     let current;
     try {
-      const file = join(outputRoot, page.built_path);
-      const html = readHtmlScanText(file);
-      current = pageCommerceFacts(html, () => documentOf(file, html));
+      current = factsOf(page);
     } catch {
       reasons.push({ code: "commerce_signature_unavailable", path: page.built_path });
       continue;
     }
-    const type = current.page_type || inferPageType(routeForFile(outputRoot, join(outputRoot, page.built_path)));
+    const type = typeOf(page, current);
     if (CHECKOUT_PAGE_TYPES.has(type) || current.checkout) reasons.push({ code: "checkout_page", path: page.built_path });
     else if (!signature || !Object.hasOwn(signature.pages, page.built_path)) {
       if (signature) reasons.push({ code: "commerce_signature_unavailable", path: page.built_path });
@@ -188,7 +254,38 @@ export function classifyDrift({ changes, baseline, outputRoot, targetRepo, publi
       reasons.push({ code: "commerce_markup_changed", path: page.built_path });
     }
   }
-  return { kind: reasons.length ? "commerce_affecting" : "page_only", reasons: capped(reasons) };
+  if (!linkedAssets.length) return { kind: reasons.length ? "commerce_affecting" : "page_only", reasons: capped(reasons) };
+  // Every page a changed stylesheet or image reaches: a checkout or upsell
+  // page among them owes a browser run, whether or not its own HTML changed
+  // too. One whose HTML did not change is read here only for its type, and
+  // must still be readable.
+  const markupChanged = new Set(changes.changed_pages.map((page) => page.built_path));
+  const linkedPages = new Map(linkedAssets.flatMap((asset) => asset.pages).map((page) => [page.built_path, page]));
+  const browserPages = [];
+  for (const page of [...linkedPages.values()].sort((a, b) => a.built_path.localeCompare(b.built_path))) {
+    let current;
+    try {
+      current = factsOf(page);
+    } catch {
+      if (!markupChanged.has(page.built_path)) reasons.push({ code: "commerce_signature_unavailable", path: page.built_path });
+      continue;
+    }
+    if (BUY_PAGE_TYPES.has(typeOf(page, current)) || current.checkout) browserPages.push(page.built_path);
+  }
+  return {
+    kind: reasons.length ? "commerce_affecting" : "page_only",
+    reasons: capped(reasons),
+    linked_assets: capped(linkedAssets.map((asset) => ({ path: asset.path, pages: asset.pages.map((page) => page.page_id) }))),
+    browser_pages: browserPages,
+  };
+}
+
+// The linked-asset notes of a classification or build_changes entry, as the
+// fields to spread into it: present only when an asset was linked.
+function linkedAssetNotes(from) {
+  const assets = Array.isArray(from?.linked_assets) ? from.linked_assets : [];
+  if (!assets.length) return {};
+  return { linked_assets: assets, browser_pages: Array.isArray(from.browser_pages) ? from.browser_pages : [] };
 }
 
 // True when a kept rebuild was read against a build recorded before markup
@@ -212,6 +309,7 @@ export function buildChangeEntry({ from, to, at, changes, classification }) {
     unmapped_files: changes.status === "known" ? capped(changes.unmapped_files) : [],
     unmapped_file_count: changes.status === "known" ? changes.unmapped_files.length : 0,
     reasons: classification.reasons,
+    ...linkedAssetNotes(classification),
   };
 }
 
@@ -251,8 +349,10 @@ export function worseChangeKind(a, b) {
  * The change a stage that reviewed `anchor` owes for: the recorded rebuilds
  * from `anchor` to the recorded build, then the drift from the recorded build
  * to the output on disk. Returns `{ kind, since_build_fingerprint,
- * changed_pages, unmapped_files, reasons, commerce_rebuild }`; `kind` is
- * unknown when the history does not reach `anchor` or the drift cannot be read.
+ * changed_pages, unmapped_files, reasons, commerce_rebuild }`, plus
+ * `linked_assets` and `browser_pages` (classifyDrift) when a rebuild in it
+ * changed a linked stylesheet or image; `kind` is unknown when the history
+ * does not reach `anchor` or the drift cannot be read.
  * `commerce_rebuild`, when there is one, is the latest recorded rebuild since
  * `anchor` that was not page-only, with the kind of the latest change
  * (`latest_change_kind`), so a page-only edit on top of it can say why it still
@@ -275,19 +375,29 @@ export function changeSince(anchor, { assembly, drift, driftClassification }) {
   }
   const pages = new Map();
   const unmapped = new Set();
+  const linked = new Map();
+  const browser = new Set();
   let kind = "none";
-  const add = (part, partKind, reasons) => {
+  const add = (part, partKind, reasons, notes) => {
     kind = worseChangeKind(kind, partKind);
     for (const page of part.changed_pages || []) pages.set(page.built_path, { page_id: page.page_id, built_path: page.built_path });
     for (const path of part.unmapped_files || []) unmapped.add(path);
     result.reasons.push(...(reasons || []));
+    const { linked_assets: assets = [], browser_pages: buy = [] } = linkedAssetNotes(notes);
+    for (const asset of assets) {
+      // Re-inserted so the most recent change's assets sort last, for the cap.
+      const ids = [...new Set([...(linked.get(asset.path) || []), ...(asset.pages || [])])];
+      linked.delete(asset.path);
+      linked.set(asset.path, ids);
+    }
+    for (const path of buy) browser.add(path);
   };
   for (const segment of segments) {
-    add(segment, segment.kind, segment.reasons);
+    add(segment, segment.kind, segment.reasons, segment);
     if (!["none", "page_only"].includes(segment.kind)) result.commerce_rebuild = { recorded_at: segment.recorded_at ?? null, build_fingerprint: segment.build_fingerprint, kind: segment.kind };
   }
   if (drift?.status !== "known") kind = "unknown";
-  else add(drift, driftClassification?.kind || "unknown", driftClassification?.reasons);
+  else add(drift, driftClassification?.kind || "unknown", driftClassification?.reasons, driftClassification);
   if (result.commerce_rebuild) {
     const driftKind = driftClassification?.kind || "unknown";
     result.commerce_rebuild.latest_change_kind = driftKind === "none" ? segments.at(-1).kind : driftKind;
@@ -298,6 +408,12 @@ export function changeSince(anchor, { assembly, drift, driftClassification }) {
     changed_pages: [...pages.values()].sort((a, b) => a.built_path.localeCompare(b.built_path)),
     unmapped_files: capped([...unmapped].sort()),
     reasons: capped(result.reasons),
+    ...linkedAssetNotes({
+      // The cap keeps the most recently changed assets (the drift last).
+      linked_assets: capped([...linked].reverse().map(([path, ids]) => ({ path, pages: ids })))
+        .sort((a, b) => a.path.localeCompare(b.path)),
+      browser_pages: [...browser].sort(),
+    }),
   };
 }
 

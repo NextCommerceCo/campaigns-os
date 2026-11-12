@@ -2,11 +2,17 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.68.0+agent.13] - 2026-11-12
+## [1.68.0+agent.14] - 2026-11-12
 
 ### Fixed
 
 - `spec derive` re-points a never-built spec page at the one built page that sells exactly its packages, instead of adding a duplicate page beside it (#756).
+
+## [1.68.0+agent.13] - 2026-11-11
+
+### Changed
+
+- Editing a stylesheet or image that built pages link directly now owes QA on those pages only, and a browser run with no test orders on a checkout or upsell page among them, instead of the full Polish and QA (#753).
 
 ## [1.68.0+agent.12] - 2026-11-11
 
