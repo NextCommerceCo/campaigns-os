@@ -2073,14 +2073,21 @@ function validateBuiltLiveCampaignRefs({ spec, packet, errors, warnings, ready, 
     live: buildState.liveCampaign,
   });
   // The Map's mirrored prices, product fields, recurring terms and offers
-  // against the same read (#764): advisory, folded into the drift warning.
+  // against the same read (#764): advisory, folded into the drift warning. A
+  // comparison that throws on an unexpected campaign shape is skipped, never
+  // allowed to abort doctor.
   const live = buildState.liveCampaign;
-  const mirror = result.status !== "not_run" && isObject(live?.campaign)
-    ? campaignMirrorDrift({ spec, campaign: live.campaign, campaignRef: live.campaign_ref_id || null })
-    : null;
+  let mirror = null;
+  if (result.status !== "not_run" && isObject(live?.campaign)) {
+    try {
+      mirror = campaignMirrorDrift({ spec, campaign: live.campaign, campaignRef: live.campaign_ref_id || null });
+    } catch {
+      mirror = null;
+    }
+  }
   if (mirror) {
-    const none = { map_only: [], live_only: [] };
-    result.drift = { packages: none, shipping_methods: none, ...result.drift, mirror };
+    const none = () => ({ map_only: [], live_only: [] });
+    result.drift = { packages: none(), shipping_methods: none(), ...result.drift, mirror };
   }
   derived.live_campaign_refs = {
     status: result.status,
@@ -2097,7 +2104,12 @@ function validateBuiltLiveCampaignRefs({ spec, packet, errors, warnings, ready, 
   for (const finding of result.page_findings) {
     addIssue(errors, finding.code, liveRefFindingMessage(finding), { page_id: finding.page_id, file: finding.file, ...(finding.in_spec === false ? { in_spec: false } : {}), refs: finding.refs });
   }
-  if (result.drift) addIssue(warnings, LIVE_REF_CODES.drift, campaignDriftMessage(result.drift), { drift: result.drift });
+  // The change rows stay in derived.live_campaign_refs.drift only; the
+  // warning carries the counts.
+  if (result.drift) {
+    const detail = result.drift.mirror ? { ...result.drift, mirror: { counts: result.drift.mirror.counts } } : result.drift;
+    addIssue(warnings, LIVE_REF_CODES.drift, campaignDriftMessage(result.drift), { drift: detail });
+  }
   if (result.status === "pass") ready.push(`Built page shipping and package refs are served by the live campaign (${result.checked_pages} page(s))`);
 }
 

@@ -697,7 +697,7 @@ function matchingSpec(spec) {
 function mirroredCampaign(spec) {
   const packages = new Map();
   for (const pkg of spec.funnels.flatMap((funnel) => funnel.pages).flatMap((entry) => entry.packages || [])) {
-    if (!packages.has(pkg.ref_id)) packages.set(pkg.ref_id, { ref_id: pkg.ref_id, name: pkg.name, price: pkg.price, ...(pkg.interval ? { is_recurring: true, interval: pkg.interval } : {}) });
+    if (!packages.has(pkg.ref_id)) packages.set(pkg.ref_id, { ref_id: pkg.ref_id, name: pkg.name, price: pkg.price, ...(pkg.interval ? { is_recurring: true, interval: pkg.interval } : {}), ...(pkg.product_sku ? { product_sku: pkg.product_sku } : {}), ...(pkg.product_purchase_availability ? { product_purchase_availability: pkg.product_purchase_availability } : {}) });
   }
   return {
     ref_id: 501,
@@ -731,12 +731,16 @@ test("#764 mirror drift: price, offer percentage, a campaign offer the Map lacks
     matchingSpec(spec);
     const upsell = spec.funnels.flatMap((funnel) => funnel.pages).find((entry) => entry.id === "upsell-stepper");
     Object.assign(upsell.packages[0], { is_recurring: true, interval: "month" });
+    const checkout = spec.funnels.flatMap((funnel) => funnel.pages).find((entry) => entry.id === "checkout");
+    for (const pkg of checkout.packages.filter((entry) => entry.ref_id === 10)) Object.assign(pkg, { product_sku: "SKU-10", product_purchase_availability: "available" });
   };
   const cases = [
     ["price", (body) => { body.packages.find((pkg) => pkg.ref_id === 10).price = "12.00"; }, { price: 1 }, /on 1 price\./],
     ["offer percentage", (body) => { body.offers[0].benefit.value = "40.00"; }, { offers_changed: 1 }, /on 1 offer\./],
     ["campaign offer missing from the Map", (body) => { body.offers.push({ ref_id: "3", name: "New", type: "offer", code: "NEW10" }); }, { offers_missing: 1 }, /^The campaign has 1 offer the CampaignSpec doesn't list\./],
     ["recurring interval", (body) => { body.packages.find((pkg) => pkg.ref_id === 30).interval = "week"; }, { recurring: 1 }, /on 1 recurring term\./],
+    ["availability", (body) => { body.packages.find((pkg) => pkg.ref_id === 10).product_purchase_availability = "unavailable"; }, { availability: 1 }, /on 1 availability field\./],
+    ["product sku", (body) => { body.packages.find((pkg) => pkg.ref_id === 10).product_sku = "SKU-NEW"; }, { product: 1 }, /on 1 product field\./],
   ];
   for (const [label, edit, expected, message] of cases) {
     await withBuiltCampaign({ checkoutHtml: MIRROR_HTML, specEdit: recurring }, ({ spec, doctor }) => {
@@ -750,13 +754,16 @@ test("#764 mirror drift: price, offer percentage, a campaign offer the Map lacks
       const counts = { price: 0, product: 0, availability: 0, recurring: 0, offers_changed: 0, offers_missing: 0, ...expected };
       assert.deepEqual(drift.detail.drift.mirror.counts, counts, label);
       assert.deepEqual(drift.detail.drift.packages, { map_only: [], live_only: [] }, `${label}: package ids unchanged`);
-      assert.ok(drift.detail.drift.mirror.rows.length >= 1);
+      const derivedDrift = result.derived.live_campaign_refs.drift;
+      assert.ok(derivedDrift.mirror.rows.length >= 1, `${label}: the change rows are in derived`);
+      assert.equal(drift.detail.drift.mirror.rows, undefined, `${label}: the warning carries counts only`);
       assert.match(drift.message, message, label);
-      assert.match(drift.message, /spec derive --dry-run`.*spec derive`/);
+      assert.match(drift.message, /spec derive --packet <packet> --dry-run`.*spec derive --packet <packet>`/);
       assert.doesNotMatch(drift.message, /\n/);
       // Advisory: the same errors with or without the drift.
       assert.deepEqual(codes(result.errors), codes(clean.errors), `${label}: errors unchanged`);
-      assert.deepEqual(result.derived.live_campaign_refs.drift, drift.detail.drift);
+      assert.deepEqual(derivedDrift.mirror.counts, drift.detail.drift.mirror.counts);
+      assert.match(drift.message, /owed again\.$/);
     });
   }
 });
@@ -771,7 +778,7 @@ test("#764 mirror drift: several kinds at once read as one line, and a package o
     const drift = result.warnings.find((entry) => entry.code === "spec.campaign_drift");
     // Packages 10 (three tiers on one page), 17, 19 and 30.
     assert.equal(drift.detail.drift.mirror.counts.price, 4);
-    assert.equal(drift.message, "The CampaignSpec differs from the live campaign on 4 prices, 1 offer, and the campaign has 2 offers the CampaignSpec doesn't list. Run `campaigns-os spec derive --dry-run` to see each change, then `campaigns-os spec derive` to write it.");
+    assert.equal(drift.message, "The CampaignSpec differs from the live campaign on 4 prices, 1 offer, and the campaign has 2 offers the CampaignSpec doesn't list. Run `campaigns-os spec derive --packet <packet> --dry-run` to see each change, then `campaigns-os spec derive --packet <packet>` to write it; a rewritten spec makes the build, Polish and QA owed again.");
   });
 });
 
@@ -793,5 +800,49 @@ test("#764: doctor's live read keeps the campaign body for the mirror comparison
     const live = await readDoctorLiveCampaign({ packet: packetPath, "proxy-base": PROXY_BASE }, { env: {}, fetchImpl: jsonFetch(liveBody()) });
     assert.equal(live.status, "read");
     assert.equal(live.campaign?.ref_id, 501);
+  });
+});
+
+test("#764 mirror drift: fields the Map does not state are not drift (page offers by ref_id only, no image, no root offers)", async () => {
+  const bare = (spec) => {
+    matchingSpec(spec);
+    for (const entry of spec.funnels.flatMap((funnel) => funnel.pages)) entry.offers = (entry.offers || []).map((offer) => ({ ref_id: offer.ref_id }));
+  };
+  await withBuiltCampaign({ checkoutHtml: MIRROR_HTML, specEdit: bare }, ({ spec, doctor }) => {
+    const body = mirroredCampaign(spec);
+    for (const pkg of body.packages) pkg.image = `https://cdn.example.test/${pkg.ref_id}.png`;
+    const result = doctor(liveRead(body));
+    assert.equal(codes(result.warnings).includes("spec.campaign_drift"), false, "page offers listed by ref_id, as docs/build-packet.md describes, match");
+  });
+  await withBuiltCampaign({ checkoutHtml: MIRROR_HTML, specEdit: (spec) => { bare(spec); delete spec.offers; } }, ({ spec, doctor }) => {
+    const body = mirroredCampaign({ ...spec, offers: [] });
+    body.offers = [{ ref_id: "1", code: "A" }, { ref_id: "2", code: "B" }];
+    const result = doctor(liveRead(body));
+    assert.equal(codes(result.warnings).includes("spec.campaign_drift"), false, "a spec with no root offers list states no offers to compare");
+  });
+});
+
+test("#764 mirror drift: a comparison that throws never aborts doctor", async () => {
+  await withBuiltCampaign({ checkoutHtml: MIRROR_HTML, specEdit: matchingSpec }, ({ spec, doctor }) => {
+    const body = mirroredCampaign(spec);
+    body.packages[0].product_variant_attribute_values = JSON.parse(`${"[".repeat(20000)}${"]".repeat(20000)}`);
+    const result = doctor(liveRead(body));
+    assert.equal(result.derived.live_campaign_refs.status, "pass", "the ref check still records its result");
+    assert.equal(codes(result.warnings).includes("spec.campaign_drift"), false);
+  });
+});
+
+test("#764 mirror drift: package-id drift and field drift together keep both lists and read as one line", async () => {
+  await withBuiltCampaign({ checkoutHtml: MIRROR_HTML, specEdit: matchingSpec }, ({ spec, doctor }) => {
+    const body = mirroredCampaign(spec);
+    body.shipping_methods = body.shipping_methods.filter((method) => method.ref_id !== 21);
+    body.packages.find((pkg) => pkg.ref_id === 10).price = "12.00";
+    const result = doctor(liveRead(body));
+    const drift = result.warnings.find((entry) => entry.code === "spec.campaign_drift");
+    assert.deepEqual(drift.detail.drift.shipping_methods, { map_only: ["21"], live_only: [] });
+    assert.deepEqual(drift.detail.drift.packages, { map_only: [], live_only: [] });
+    assert.equal(drift.detail.drift.mirror.counts.price, 1);
+    assert.match(drift.message, /Re-save the Map from the live campaign.*The CampaignSpec differs from the live campaign on 1 price\. Run/);
+    assert.doesNotMatch(drift.message, /\n/);
   });
 });

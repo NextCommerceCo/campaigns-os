@@ -331,8 +331,9 @@ export async function readLiveCampaign({
   if (!refs) return notRun("unexpected_body", "The live campaign did not carry package and shipping-method lists with a ref on every entry.", requested);
   // `spec derive` refreshes the spec's mirrored offer and package fields from
   // the same read (#721), and doctor compares those fields with the Map
-  // (#764), so both ask for the campaign body as well; neither doctor nor QA
-  // carries the body in its results.
+  // (#764), so both ask for the campaign body as well. QA never carries the
+  // body; doctor carries only the differing fields' change rows, in
+  // derived.live_campaign_refs.drift.mirror.
   return { status: "read", ...requested, ...refs, ...(includeCampaign ? { campaign: picked.campaign } : {}) };
 }
 
@@ -499,7 +500,7 @@ export function campaignDriftMessage(drift) {
     ].filter(Boolean);
     const missing = counts.offers_missing ? `the campaign has ${noun(counts.offers_missing, "offer", "offers")} the CampaignSpec doesn't list` : "";
     const what = fields.length ? `the CampaignSpec differs from the live campaign on ${fields.join(", ")}${missing ? `, and ${missing}` : ""}` : missing;
-    sentences.push(`${what.charAt(0).toUpperCase()}${what.slice(1)}. Run \`campaigns-os spec derive --dry-run\` to see each change, then \`campaigns-os spec derive\` to write it.`);
+    sentences.push(`${what.charAt(0).toUpperCase()}${what.slice(1)}. Run \`campaigns-os spec derive --packet <packet> --dry-run\` to see each change, then \`campaigns-os spec derive --packet <packet>\` to write it; a rewritten spec makes the build, Polish and QA owed again.`);
   }
   return sentences.join(" ");
 }

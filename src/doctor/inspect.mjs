@@ -134,7 +134,8 @@ export async function readDoctorLiveCampaign(args, { fetchImpl = globalThis.fetc
     fetchImpl,
     proxyBase: optionalString(args["proxy-base"]) || DEFAULT_PROXY_BASE,
     // The body lets doctor compare the Map's mirrored fields with the
-    // campaign (#764); only the counts and change rows reach its results.
+    // campaign (#764); only the counts and the differing fields' change rows
+    // reach its results, never the body itself.
     includeCampaign: true,
     ...(warn ? { warn } : {}),
   });
