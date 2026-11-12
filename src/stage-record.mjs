@@ -1248,7 +1248,10 @@ export function recordStageCommand(args, { now = () => new Date(), beforeLock = 
   const { composed, facts, layer, reportPath, contextPath, after } = recorded;
   const debt = ["build", "baseline"].includes(stage) ? after?.derived?.evidence_debt : null;
   const ci = debt ? assessDoctorCi(debt) : null;
-  const showCi = ci && [ci.polish, ci.qa].some((assessment) => assessment.recorded_build_fingerprint || assessment.baseline);
+  // A rebuild keeps the build Polish reviewed as owed_since_build_fingerprint,
+  // not as its recorded fingerprint, so read that anchor too.
+  const showCi = ci && (polishReviewedBuild(composed.report.stages?.polish)
+    || [ci.polish, ci.qa].some((assessment) => assessment.recorded_build_fingerprint || assessment.baseline));
 
   const stageKey = stage === "build" ? "assembly" : stage === "baseline" ? "qa" : stage;
   const writes = [...(composed.context ? [contextPath] : []), ...(composed.packet ? [packetPath] : []), reportPath];

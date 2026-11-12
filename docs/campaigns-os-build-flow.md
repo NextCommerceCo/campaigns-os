@@ -133,14 +133,16 @@ campaigns-os record baseline --packet <packet> --accepted-by "<named person>" --
 ```
 
 This needs a completed QA on record. After its existing remedy, `doctor --ci`
-adds a sentence offering this named person's sign-off only when a rebuild owes
-QA at full scope and every change reason is `commerce_signature_unavailable`
-without a page path, with at least one reason. Brief or spec changes, page-only
-QA, unknown QA and mixed reasons do not receive this sentence. The sign-off
+adds a sentence offering this named person's sign-off only when `record build`
+has recorded the current build, that rebuild owes QA at full scope, and every
+change reason is `commerce_signature_unavailable` without a page path, with at
+least one reason. Brief or spec changes, page-only QA, unknown QA, mixed reasons
+and a rebuild not yet recorded do not receive this sentence. The sign-off
 accepts the current build as the starting point and tests nothing.
 After acceptance, the record command prints `Owed stages: none.`. If deploy is
-still required, it names deploy as the served-URL record that follows; otherwise the
-stage doctor's picker names is printed as the next stage. Its JSON
+still required, it names deploy as the served-URL record that follows. The stage
+doctor's picker names is still printed as the next stage unless it is deploy and
+the served-URL line already names it. Its JSON
 `next_stage` still carries doctor's stage picker result; that field is separate
 from the evidence owed in `ci`.
 

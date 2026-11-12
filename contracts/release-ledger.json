@@ -4270,7 +4270,7 @@
       "surface_version": null,
       "changelog_section": "1.68.0+agent.16",
       "changelog_sha256": "9b4c27c261d2cca2741a598e20619be6695bed8f443b8853c84941077fd7562f",
-      "agent_impact": "After record build or record baseline on a funnel Polish or QA has already reviewed, read the lines under \"doctor --ci reads this build as:\" (and the ci object in --json) for what Polish and QA owe; they are doctor --ci's own reading for that build, in plain text. An advisory Polish is then not printed as stages.polish.status = required, and a baseline over current evidence prints \"Owed stages: none.\" with deploy named as the served-URL record that follows when deploy is required; any other next stage is still printed. A first build and a dry run print what they printed before. In readback, a STALE reading line in the doctor block means a record was written after that doctor output: run doctor before relying on it; it does not change clean. On a funnel recorded before 1.62 whose rebuild owes a full QA for that reason alone, doctor --ci adds a line naming record baseline as a named person's sign-off, which tests nothing and needs a completed QA on record.",
+      "agent_impact": "After record build or record baseline on a funnel Polish or QA has already reviewed, read the lines under \"doctor --ci reads this build as:\" (and the ci object in --json) for what Polish and QA owe; they are doctor --ci's own reading for that build, in plain text. An advisory Polish is then not printed as stages.polish.status = required, and a baseline over current evidence prints \"Owed stages: none.\" with deploy named as the served-URL record that follows when deploy is required; any other next stage is still printed. A first build and a dry run print what they printed before. In readback, a STALE reading line in the doctor block means a later command changed what doctor reads after that doctor output was written: run doctor before relying on it; it does not change clean. On a funnel recorded before 1.62 whose rebuild owes a full QA for that reason alone, doctor --ci adds a line naming record baseline as a named person's sign-off, which tests nothing and needs a completed QA on record.",
       "compatibility": "additive",
       "migration": "none",
       "changes": [
@@ -4305,7 +4305,7 @@
           "summary": "doctor --ci adds one line naming record baseline after its remedy when a full QA is owed by a rebuild and the pre-1.62 reason is the only reason; remedies, the ci object, statuses and exit codes are unchanged."
         }
       ],
-      "entry_sha256": "90c79dfa119ff92b7c52d472cf38d542a50a099ce9986b375a932ad971fc26a9"
+      "entry_sha256": "2acc53e4dd785989afa06255c1101e053a5242248f82ffe212b0dca9ef5bb262"
     }
   ]
 }

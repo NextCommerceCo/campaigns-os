@@ -208,6 +208,21 @@ test("record build shares CI's advisory Polish and changed-page QA lines", (t) =
   t.diagnostic(`Page-only record build:\n${resultTextLines(result).join("\n")}`);
 });
 
+test("record build after Polish and before any QA still reads Polish as advisory", (t) => {
+  const f = fixture(t);
+  const report = f.readReport();
+  report.stages.qa = { stage: "qa", status: "pending" };
+  writeFileSync(f.reportPath, JSON.stringify(report));
+  copyEdit(f);
+  const result = f.recordBuild();
+  const { expected } = compareRecordedCi(f, result);
+  assert.equal(expected.polish.advisory, true);
+  assert.equal(expected.polish.recorded_build_fingerprint, null, "the rebuild kept the reviewed build as owed_since_build_fingerprint");
+  assert.equal(expected.qa.status, "unknown");
+  assert.ok(result.ready.includes("Change found: page-only. QA is unknown; Polish is advisory."));
+  assert.ok(!result.ready.includes("stages.polish.status = required"), "advisory Polish is not presented as plain required");
+});
+
 test("first build has CI JSON but keeps the original ready lines without a change block", (t) => {
   const f = fixture(t, { reviewed: false });
   const result = f.firstBuild;
@@ -602,7 +617,7 @@ test("record baseline control keeps an already-recorded deploy and dry-run outpu
   const preview = recordBaseline(f, { "dry-run": true });
   assert.equal(preview.ci, undefined, "a dry run has no post-write reading");
   assert.equal(preview.next_stage, undefined);
-  assert.doesNotMatch(preview.ready.join("\n"), /Campaign evidence:|Owed stages:|Served-URL record follows:/);
+  assert.doesNotMatch(preview.ready.join("\n"), /doctor --ci reads this build as:|Owed stages:|Served-URL record follows:/);
   assert.deepEqual(resultTextLines(preview), [
     "Status: DRY_RUN", "Would record: baseline",
     `Would write: ${f.reportPath} (nothing was written)`, "Ready:",
@@ -666,11 +681,10 @@ test("readback fresh doctor control preserves the doctor block after a doctor wr
   doctorCommand({ _: ["doctor"], packet: f.packetPath, write: true });
   const payload = JSON.parse(runReadbackCommand({ _: ["readback", f.root], packet: f.packetPath, json: true }).text);
   assert.equal(payload.doctor.stale, undefined);
-  assert.equal(payload.doctor.refresh_command, undefined);
   assert.deepEqual(Object.keys(payload.doctor), ["present", "status", "error_count", "warning_count", "warning_groups"]);
   const text = runReadbackCommand({ _: ["readback", f.root], packet: f.packetPath }).text;
   assert.ok(text.includes(`DOCTOR  [doctor output; status: ${payload.doctor.status}]`));
-  assert.doesNotMatch(text, /STALE reading|doctor --packet <packet> --write/);
+  assert.doesNotMatch(text, /STALE reading/);
 });
 
 test("a baseline is its own status, keeps no purchase proof, and says what it is", (t) => {

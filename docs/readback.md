@@ -411,7 +411,9 @@ When the retained doctor output carries `stale: true`, the doctor block prints
 one stale line with the stamp's reason, flattened for safe terminal output.
 Without a usable reason, it says the retained doctor output is marked stale
 and to re-run `campaigns-os doctor`. JSON adds `stale: true` and `stale_reason`
-to `doctor`; an absent reason becomes an empty string. Unstamped readings keep
+to `doctor`; an absent reason becomes an empty string. Plain `doctor` prints the
+current state and leaves the retained output as it is, so the stale line stays
+until `doctor --write` or `next` rewrites that output. Unstamped readings keep
 their existing fields, regardless of report timestamps or file mtimes.
 
 - `present` — whether a doctor output loaded. When false, `status` is `null` and

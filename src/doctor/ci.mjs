@@ -129,9 +129,9 @@ export function doctorCiEvidenceLines(ci, encode = code) {
   const pageScoped = change.scope === "pages";
   const browserPages = ci.qa.status === "owed" && Array.isArray(ci.qa.browser_pages) ? ci.qa.browser_pages : [];
   // A page-scoped run places no test orders; a full run may (--test-order).
-  const inBrowser = browserPages.length ? `, in a browser on ${browserPages.map(encode).join(", ")} (a checkout or upsell page whose linked stylesheet or image changed${ci.qa.scope === "pages" ? "; no test orders" : ""})` : "";
+  const inBrowser = browserPages.length ? `, in a browser on ${browserPages.map((page) => encode(page)).join(", ")} (a checkout or upsell page whose linked stylesheet or image changed${ci.qa.scope === "pages" ? "; no test orders" : ""})` : "";
   if (pageScoped) {
-    lines.push(`Change found: page-only. ${owed.length ? `It owes QA on ${ci.qa.owed_pages.map((page) => encode(page.page_id)).join(", ")}${inBrowser}` : "QA is current"}; Polish is advisory.`);
+    lines.push(`Change found: page-only. ${owed.length ? `It owes QA on ${ci.qa.owed_pages.map((page) => encode(page.page_id)).join(", ")}${inBrowser}` : ci.qa.status === "current" ? "QA is current" : "QA is unknown"}; Polish is advisory.`);
   } else if (change.scope === "full") {
     const reasons = [...new Set((ci.polish.change?.reasons || []).concat(ci.qa.change?.reasons || [])
       .map((reason) => commerceReasonText.get(reason?.code)).filter(Boolean))];
@@ -178,7 +178,7 @@ export function doctorCiEvidenceLines(ci, encode = code) {
     }
   }
   for (const [path, pages] of linkedAssets) {
-    lines.push(`- Linked asset changed: ${encode(path)}${pages.length ? `, linked by ${pages.map(encode).join(", ")}` : ""}`);
+    lines.push(`- Linked asset changed: ${encode(path)}${pages.length ? `, linked by ${pages.map((page) => encode(page)).join(", ")}` : ""}`);
   }
   if (!changedPages.length && (owed.length || ci.changes.status === "unknown")) {
     lines.push(ci.changes.status === "unknown"
@@ -226,6 +226,7 @@ export function formatDoctorCi(result) {
   }
   if (ci.qa.status === "owed" && ci.qa.scope === "full"
     && ["build_fingerprint_changed", "stage_required_by_build"].includes(ci.qa.reason)
+    && ci.changes?.recorded_build_fingerprint && ci.changes.recorded_build_fingerprint === ci.changes.current_build_fingerprint
     && ci.qa.change?.reasons?.length > 0
     && ci.qa.change.reasons.every((reason) => reason?.code === "commerce_signature_unavailable" && !reason?.path)) {
     lines.push("This funnel was recorded before Campaigns OS 1.62, so instead of re-running the stages a named person can sign off to accept the current build as the starting point with `campaigns-os record baseline --packet <packet> --accepted-by <person> --reason <why>`; this tests nothing and needs a completed QA on record.");
