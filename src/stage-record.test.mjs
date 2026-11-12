@@ -1909,9 +1909,22 @@ test("record baseline shares CI's nothing-owed line and labels deploy as the ser
     const text = resultTextLines(result).join("\n");
     assert.match(text, /^- doctor --ci reads this build as: current$/m);
     assert.doesNotMatch(text, /\(exit|^- - /m);
-    assert.doesNotMatch(text, /Next stage:/);
+    // Only the picker's deploy is replaced by the served-URL line; any other
+    // stage it names (a blocked checkpoint, doctor blockers) is still printed.
+    if (result.next_stage === "deploy") assert.doesNotMatch(text, /Next stage:/);
+    else assert.match(text, new RegExp(`^Next stage: ${result.next_stage}`, "m"));
     assert.match(text, /Served-URL record follows: deploy/);
   });
+});
+
+test("record baseline text drops only the picker's deploy when evidence is current", () => {
+  const current = { status: "current", exit_code: 0, polish: { status: "current" }, qa: { status: "current" } };
+  const base = { ok: true, status: "recorded", action: "record", stage: "baseline", written: [], ready: [], ci: current };
+  assert.doesNotMatch(resultTextLines({ ...base, next_stage: "deploy", next_stage_reason: "served URL" }).join("\n"), /Next stage:/);
+  assert.match(resultTextLines({ ...base, next_stage: "doctor-blocked", next_stage_reason: "Doctor reported 2 blocker(s)" }).join("\n"), /^Next stage: doctor-blocked \(Doctor reported 2 blocker\(s\)\)$/m);
+  assert.match(resultTextLines({ ...base, next_stage: "polish" }).join("\n"), /^Next stage: polish$/m);
+  const owed = { ...current, status: "owed", qa: { status: "owed" } };
+  assert.match(resultTextLines({ ...base, ci: owed, next_stage: "deploy" }).join("\n"), /^Next stage: deploy$/m);
 });
 
 // record deploy on the local preview, with a stand-in fetch answering every

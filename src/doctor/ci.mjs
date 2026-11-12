@@ -12,7 +12,7 @@ export function assessDoctorCi(debt) {
   const status = stages.some((stage) => stage.status === "owed") ? "owed"
     : stages.some((stage) => stage.status === "unknown") ? "unknown" : "current";
   const legacyBuild = [debt.polish, debt.qa].some((stage) => stage.status === "owed"
-    && stage.change?.reasons?.some((reason) => reason.code === "commerce_signature_unavailable"));
+    && stage.change?.reasons?.some((reason) => reason.code === "commerce_signature_unavailable" && !reason.path));
   return { status, exit_code: DOCTOR_CI_EXIT_CODES[status], ...debt,
     ...(legacyBuild ? { remedy: "Remedy: run `campaigns-os record build --packet <packet>`, then `campaigns-os record baseline --packet <packet> --accepted-by <person> --reason <why>` to accept the current build as the starting point. This needs a completed QA on record and tests nothing. The other way is to rebuild, record build, and re-run `campaigns-os polish capture --packet <packet> --base-url <served-current-build-url>` for the whole route, `campaigns-os record polish --packet <packet> --evidence <polish-evidence.json>`, and a full `campaigns-os qa run --packet <packet>`." } : {}),
   };

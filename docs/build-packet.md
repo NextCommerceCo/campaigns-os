@@ -1516,7 +1516,8 @@ change the CI exit. It prints Markdown for a PR comment that opens with the
 kind of change it found and what that owes, or adds `ci.status`,
 `ci.exit_code`, `ci.polish`, `ci.qa` and `ci.changes` under `--json`.
 `ci.remedy` is a single line of text, present only when the reason is
-`commerce_signature_unavailable`. It names baseline acceptance, but
+`commerce_signature_unavailable` with no page path (a funnel recorded before 1.62).
+It names baseline acceptance, but
 `record baseline` can still refuse for its own reasons, such as no completed
 QA on record.
 `--ci` adds no writes or network reads; pass `--no-live-refs` in CI to disable

@@ -8868,7 +8868,10 @@ export function resultTextLines(result, { headerLines = [] } = {}) {
   if (result.action === "record") {
     lines.push(`${result.dry_run ? "Would record" : "Recorded"}: ${result.stage}`);
     for (const path of result.dry_run ? result.would_write : result.written) lines.push(`${result.dry_run ? "Would write" : "Wrote"}: ${path}${result.dry_run ? " (nothing was written)" : ""}`);
-    if (!(result.stage === "baseline" && result.ci?.polish.status === "current" && result.ci?.qa.status === "current") && result.next_stage) {
+    // A baseline over current evidence names deploy as the served-URL record
+    // that follows (a ready line), not as the next stage. Any other stage the
+    // picker names is still printed.
+    if (!(result.stage === "baseline" && result.next_stage === "deploy" && result.ci?.polish.status === "current" && result.ci?.qa.status === "current") && result.next_stage) {
       lines.push(`Next stage: ${result.next_stage}${result.next_stage_reason ? ` (${result.next_stage_reason})` : ""}`);
     }
   }

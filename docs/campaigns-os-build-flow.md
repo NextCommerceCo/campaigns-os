@@ -43,8 +43,8 @@ doctor errors remain visible but do not determine the CI exit code. Without
 `--ci`, doctor retains its usual inspection output and 0/2 result. `--json`
 adds a `ci` object containing `status`, `exit_code`, `polish`, `qa`, and
 `changes` when assessment completes. `ci.remedy` is a single line of text,
-present only when the reason is `commerce_signature_unavailable`.
-It names baseline acceptance, but `record baseline` can still refuse for its
+present only when the reason is `commerce_signature_unavailable` with no page path
+(a funnel recorded before 1.62). It names baseline acceptance, but `record baseline` can still refuse for its
 own reasons, such as no completed QA on record. Without `--json`, every CI outcome prints
 an escaped Markdown report, including a "could not evaluate" report for packet
 usage errors (exit 2) or inspection failures (exit 4). Page changes are compared
@@ -131,12 +131,13 @@ campaigns-os record build --packet <packet>
 campaigns-os record baseline --packet <packet> --accepted-by "<named person>" --reason "<why>"
 ```
 
-This needs a completed QA on record. When `commerce_signature_unavailable` is
+This needs a completed QA on record. When `commerce_signature_unavailable` with no page path is
 the reason, `doctor --ci` names this acceptance in its remedy, including the
 `ci.remedy` string in JSON. Rebuilding, recording build, and re-running Polish
 and full QA is the other way. Other reasons keep their existing remedies.
 After acceptance, the record command prints `Owed stages: none.`. If deploy is
-still required, it names deploy as the served-URL record that follows. Its JSON
+still required, it names deploy as the served-URL record that follows; any other
+stage doctor's picker names is still printed as the next stage. Its JSON
 `next_stage` still carries doctor's stage picker result; that field is separate
 from the evidence owed in `ci`.
 

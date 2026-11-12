@@ -8,7 +8,7 @@ import { test } from "node:test";
 import { buildManifestEntries, computeBuildFingerprint } from "./built-site-scope.mjs";
 import { assessEvidenceDebt } from "./evidence-debt.mjs";
 import { doctorCommand } from "./doctor/inspect.mjs";
-import { doctorCiFailure, formatDoctorCi } from "./doctor/ci.mjs";
+import { assessDoctorCi, doctorCiFailure, formatDoctorCi } from "./doctor/ci.mjs";
 import { openRunSession } from "./run-session.mjs";
 import { recordStageCommand } from "./stage-record.mjs";
 
@@ -430,4 +430,13 @@ test("doctor --ci reads the evidence debt inspection assessed instead of assessi
   } });
   assert.equal(ci.ci.status, "owed");
   assert.equal(ci.ci.qa, owed.qa);
+});
+
+test("the baseline remedy is offered only for a pathless signature reason", () => {
+  const stage = (reasons) => ({ status: "owed", change: { reasons } });
+  const debt = (reasons) => ({ polish: stage(reasons), qa: stage(reasons), changes: { status: "known" } });
+  // A funnel recorded before markup hashes existed: no path on the reason.
+  assert.match(assessDoctorCi(debt([{ code: "commerce_signature_unavailable" }])).remedy, /record baseline/);
+  // A later funnel with one unreadable page: `record baseline` refuses it.
+  assert.equal(assessDoctorCi(debt([{ code: "commerce_signature_unavailable", path: "checkout/index.html" }])).remedy, undefined);
 });
