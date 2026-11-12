@@ -499,7 +499,8 @@ export function campaignDriftMessage(drift) {
       counts.offers_changed && noun(counts.offers_changed, "offer", "offers"),
     ].filter(Boolean);
     const missing = counts.offers_missing ? `the campaign has ${noun(counts.offers_missing, "offer", "offers")} the CampaignSpec doesn't list` : "";
-    const what = fields.length ? `the CampaignSpec differs from the live campaign on ${fields.join(", ")}${missing ? `, and ${missing}` : ""}` : missing;
+    const list = fields.length > 1 ? `${fields.slice(0, -1).join(", ")} and ${fields.at(-1)}` : fields.join("");
+    const what = fields.length ? `the CampaignSpec differs from the live campaign on ${list}${missing ? `, and ${missing}` : ""}` : missing;
     sentences.push(`${what.charAt(0).toUpperCase()}${what.slice(1)}. Run \`campaigns-os spec derive --packet <packet> --dry-run\` to see each change, then \`campaigns-os spec derive --packet <packet>\` to write it; a rewritten spec makes the build, Polish and QA owed again.`);
   }
   return sentences.join(" ");

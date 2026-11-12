@@ -6,7 +6,9 @@ import { test } from "node:test";
 
 import { doctorPacket, readDoctorLiveCampaign } from "./doctor/inspect.mjs";
 import { __qaNodeTestHooks } from "./qa-node.mjs";
+import { campaignMirrorDrift } from "./spec-derive-campaign.mjs";
 import {
+  campaignDriftMessage,
   evaluateLiveCampaignRefs,
   extractRenderedRefs,
   readLiveCampaign,
@@ -778,7 +780,7 @@ test("#764 mirror drift: several kinds at once read as one line, and a package o
     const drift = result.warnings.find((entry) => entry.code === "spec.campaign_drift");
     // Packages 10 (three tiers on one page), 17, 19 and 30.
     assert.equal(drift.detail.drift.mirror.counts.price, 4);
-    assert.equal(drift.message, "The CampaignSpec differs from the live campaign on 4 prices, 1 offer, and the campaign has 2 offers the CampaignSpec doesn't list. Run `campaigns-os spec derive --packet <packet> --dry-run` to see each change, then `campaigns-os spec derive --packet <packet>` to write it; a rewritten spec makes the build, Polish and QA owed again.");
+    assert.equal(drift.message, "The CampaignSpec differs from the live campaign on 4 prices and 1 offer, and the campaign has 2 offers the CampaignSpec doesn't list. Run `campaigns-os spec derive --packet <packet> --dry-run` to see each change, then `campaigns-os spec derive --packet <packet>` to write it; a rewritten spec makes the build, Polish and QA owed again.");
   });
 });
 
@@ -845,4 +847,15 @@ test("#764 mirror drift: package-id drift and field drift together keep both lis
     assert.match(drift.message, /Re-save the Map from the live campaign.*The CampaignSpec differs from the live campaign on 1 price\. Run/);
     assert.doesNotMatch(drift.message, /\n/);
   });
+});
+
+test("#764 mirror drift: a root offers value that is not a list is not drift", () => {
+  for (const offers of [null, {}, "none"]) {
+    assert.equal(campaignMirrorDrift({ spec: { offers, funnels: [] }, campaign: { packages: [], offers: [{ ref_id: "1", code: "A" }] } }), null, JSON.stringify(offers));
+  }
+});
+
+test("#764 drift message: several field kinds read as a list joined by and", () => {
+  const message = campaignDriftMessage({ mirror: { counts: { price: 1, product: 2, availability: 0, recurring: 1, offers_changed: 0, offers_missing: 0 } } });
+  assert.match(message, /^The CampaignSpec differs from the live campaign on 1 price, 2 product fields and 1 recurring term\. Run/);
 });

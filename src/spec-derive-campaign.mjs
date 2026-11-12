@@ -236,14 +236,17 @@ function valueAt(root, path) {
  * doctor reports it (#764): `counts` by kind and the change `rows`, taken from
  * planCampaignMirrorDerive. Only what the spec states is compared: a field it
  * leaves out (a page offer listed by ref_id alone, a package with no image)
- * or a spec with no root offers list is not drift, though `spec derive` would
+ * or a spec with no root offers list (absent, null or not an array) is not
+ * drift, though `spec derive` would
  * fill it; a campaign offer missing from a stated offers list is. A field or
  * offer that several pages carry is counted once, by its ref. Null when
  * nothing differs.
  */
 export function campaignMirrorDrift({ spec, campaign, campaignRef = null } = {}) {
   const changes = planCampaignMirrorDerive({ spec, campaign, campaignRef }).changes
-    .filter((row) => row.op === "insert" || row.before !== undefined);
+    // The whole-list row is the spec stating no offers list (absent, null or
+    // not an array), which is not drift.
+    .filter((row) => row.path.length > 1 && (row.op === "insert" || row.before !== undefined));
   if (!changes.length) return null;
   const seen = { price: new Set(), product: new Set(), availability: new Set(), recurring: new Set(), offers_changed: new Set(), offers_missing: new Set() };
   for (const row of changes) {
