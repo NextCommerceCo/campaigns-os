@@ -43,6 +43,7 @@ import { singleLineFragment } from "./text-safety.mjs";
 import { assessEvidenceDebt } from "./evidence-debt.mjs";
 import { writeJsonAtomic } from "./doctor-sidecar.mjs";
 import { doctorPacket } from "./doctor/inspect.mjs";
+import { assessDoctorCi, doctorCiEvidenceLines } from "./doctor/ci.mjs";
 import { validateAssemblyReport } from "./doctor/checks.mjs";
 import { cmd } from "./install-invocation.mjs";
 import { refused } from "./lifecycle.mjs";
@@ -1245,6 +1246,12 @@ export function recordStageCommand(args, { now = () => new Date(), beforeLock = 
   });
   const recorded = dryRun ? run() : withTargetLockSync(lockedTarget, run, { command: `record ${stage}` });
   const { composed, facts, layer, reportPath, contextPath, after } = recorded;
+  const debt = ["build", "baseline"].includes(stage) ? after?.derived?.evidence_debt : null;
+  const ci = debt ? assessDoctorCi(debt) : null;
+  // A rebuild keeps the build Polish reviewed as owed_since_build_fingerprint,
+  // not as its recorded fingerprint, so read that anchor too.
+  const showCi = ci && (polishReviewedBuild(composed.report.stages?.polish)
+    || [ci.polish, ci.qa].some((assessment) => assessment.recorded_build_fingerprint || assessment.baseline));
 
   const stageKey = stage === "build" ? "assembly" : stage === "baseline" ? "qa" : stage;
   const writes = [...(composed.context ? [contextPath] : []), ...(composed.packet ? [packetPath] : []), reportPath];
@@ -1261,11 +1268,17 @@ export function recordStageCommand(args, { now = () => new Date(), beforeLock = 
     ...(stage === "build" && Array.isArray(composed.report.stages.assembly.build_manifest) ? [`stages.assembly.build_manifest lists ${composed.report.stages.assembly.build_manifest.length} file(s), so a later fingerprint mismatch names the paths that differ`] : []),
     ...(stage === "build" && buildEnvironment ? [`stages.assembly.evidence.build_environment = ${buildEnvironment}`] : []),
     ...(stage === "build" && adapterDecisions ? Object.entries(adapterDecisions).map(([key, value]) => `report.adapter_decisions.${key} = ${value}`) : []),
-    ...(stage === "build" ? buildChangeReadyLines(composed.report.stages.assembly) : []),
-    ...(stage === "build" ? [`stages.polish.status = ${composed.report.stages.polish.status}`] : []),
+    ...(stage === "build" ? buildChangeReadyLines(composed.report.stages.assembly).map((line) => singleLineFragment(line)) : []),
+    ...(stage === "build" && !(showCi && ci.polish.advisory) ? [`stages.polish.status = ${composed.report.stages.polish.status}`] : []),
     ...(stage === "baseline" ? [`Polish and QA read baseline_accepted: ${baseline.acceptedBy} accepted build ${facts.fingerprint}. Nothing was tested, and no purchase is proven from here until a full ${cmd("qa")} run.`] : []),
     ...(stage === "build" && composed.report.stages.deploy?.required_by === "build" ? [`stages.deploy.status = ${composed.report.stages.deploy.status} (the recorded deploy probed other output; run ${cmd("record")} deploy again)`] : []),
     ...(composed.context ? ["Build Context scaffold.required = false"] : []),
+    ...(showCi ? [
+      `doctor --ci reads this build as: ${ci.status}`,
+      ...doctorCiEvidenceLines(ci, singleLineFragment).map((line) => line.replace(/^- /, "")),
+    ] : []),
+    ...(stage === "baseline" && ci?.polish.status === "current" && ci?.qa.status === "current" && composed.report.stages.deploy?.status === "required"
+      ? [`Served-URL record follows: deploy (run ${cmd("record")} deploy --packet <packet> --base-url <served-current-build-url>).`] : []),
   ];
   return {
     ok: true,
@@ -1283,6 +1296,7 @@ export function recordStageCommand(args, { now = () => new Date(), beforeLock = 
     ...(composed.context ? { scaffold: composed.context.scaffold } : {}),
     ...(stage === "polish" && input.hasRepairLoopDefect ? { repair_loop_defect: input.repairLoopDefect } : {}),
     ...(after ? { next_stage: after.next?.stage || null, next_stage_reason: after.next?.reason || null } : {}),
+    ...(ci ? { ci } : {}),
     ready,
     note: dryRun
       ? "Dry run: every check passed and nothing was written. Re-run without --dry-run to record."

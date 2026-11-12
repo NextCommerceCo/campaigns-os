@@ -2,6 +2,48 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.71.0] - 2026-11-13
+
+### Fixed
+
+- `bundle check` reads the records of the funnel its packet names. In a project with more than one funnel it used to read the first funnel's records whatever packet it was given, and refused a later funnel's packet as non-canonical. It now reads the sidecars under the packet's recorded runtime directory, accepts `campaign-runtime-<route>.build.json` for its own route, and names the packet it checked in every remedy. A project with one funnel gets the same result as before (#756).
+
+## [1.69.0] - 2026-11-12
+
+Hand-built Page Kit funnels can now join the workflow at the route their pages already use, keeping the saved Map's identity and labelling the built pages as their design source: "built first". This never establishes a design match, and the first QA is a full run with test orders, separately authorized by the PM; `record baseline` does not apply. To take it, pin `@nextcommerce/campaigns-os@1.69.0` and refresh installed skills to `1.69.0+skills.1`.
+
+### Added
+
+- Bind a saved Map to an existing route with `prepare-build --route <route> --source <source>` or adopt its pages with `prepare-build --adopt src/<route>`; `start` and `build` accept the same flags. The `Funnel:` line can offer the exact adoption command for this funnel instead of another funnel's rename steps (#754).
+- The packet's optional `campaign.map_public_route_slug` records the Map's own slug when it differs from the bound `campaign.public_route_slug`. Spec routes and SDK routing hints project to the bound route, where output and records stay; the Map is not rewritten (#754).
+- An adopted funnel's Design Source Package is `built_first`, labelled "built first" in doctor, `next` and readback. `polish capture` uses its build captures as source evidence; build-vs-design checks read `excluded` / `built_first` and cannot be accepted as a design match. The treatment requires recorded adoption and an unchanged recorded package (#754).
+- `doctor --built --emit-packet --map-id` fetches the saved Map and emits a minimal packet with its real Map id, local spec path and any differing route binding. Without `--map-id`, the existing stub is unchanged (#754).
+
+### Changed
+
+- Bundled skills advance to `1.69.0+skills.1`, each one patch higher; setup, lifecycle, build, Polish and QA skills explain how to follow a `Funnel:` adoption offer after asking the operator.
+- Publishes `1.68.0+agent.15`: doctor warns when prices, product fields, recurring terms or offers the CampaignSpec states have fallen behind the live campaign, with a count by kind and `spec derive` as the fix (#764, #766).
+- Publishes `1.68.0+agent.13`: editing a stylesheet or image that built pages link directly now owes QA on those pages only, and a browser run with no test orders on a checkout or upsell page among them, instead of the full Polish and QA (#753, #762).
+- Publishes `1.68.0+agent.9`: `standardize --slug <route>` audits only that route's source, lists the routes that share a file a finding sits in, and names the entry point to come back in through (#754, #758).
+- Publishes `1.68.0+agent.2`: doctor's shared-input code is smaller and simpler, with the same output and one fewer pass over built files on packet and `--ci` runs (#730, #752).
+- Publishes `1.68.0+agent.1`: the release-ledger authoring guide makes new `+agent.N` sections one line and leaves the summary to release sections (#751).
+
+### Fixed
+
+- Publishes `1.68.0+agent.16`: `record build`, `record baseline`, readback and `doctor --ci` agree on what is owed: the record commands print `doctor --ci`'s reading once Polish or QA has reviewed a build, readback shows when the retained doctor reading was marked stale and why, and `doctor --ci` adds a `record baseline` sign-off line for a funnel recorded before 1.62 (#756, #767).
+- Publishes `1.68.0+agent.14`: `spec derive` re-points a never-built spec page at the one built page that sells exactly its packages, instead of adding a duplicate page beside it (#756, #765).
+- Publishes `1.68.0+agent.12`: `polish capture` plans the pages `spec derive` adds after handoff, lists the pages it leaves out, and takes evidence-only captures of template-stock pages (#756, #761).
+- Publishes `1.68.0+agent.11`: `qa run` without `--currency` runs in the CampaignSpec's `campaign.currency`, a declared tag that did not fire on a build recorded as a development build reads not measured instead of blocking, and the private template family error names `PRIVATE_TEMPLATE_SOURCES_ROOT` first (#756, #759).
+- Publishes `1.68.0+agent.10`: `record deploy` refuses when doctor's Polish gate is blocked, so a Polish recorded as skipped no longer earns a deploy record (#756, #760).
+- Publishes `1.68.0+agent.4`: parse5 and entities are pinned and bundled, so saved commerce-signature/v1 records stay valid across consumer installs (#744).
+- Publishes `1.68.0+agent.3`: the pack check and runtime-recipe test support npm 12's pack JSON object and dependency install-script approval behaviour (#757).
+
+## [1.68.0+agent.16] - 2026-11-12
+
+### Fixed
+
+- `record build`, `record baseline`, readback and `doctor --ci` agree on what is owed: the record commands print `doctor --ci`'s reading once Polish or QA has reviewed a build, readback shows when the retained doctor reading was marked stale and why, and `doctor --ci` adds a `record baseline` sign-off line for a funnel recorded before 1.62 (#756).
+
 ## [1.68.0+agent.15] - 2026-11-12
 
 ### Changed

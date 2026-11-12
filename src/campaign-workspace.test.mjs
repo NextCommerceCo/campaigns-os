@@ -8,10 +8,18 @@ import {
   ASSEMBLY_REPORT_REL_PATH,
   BUILD_CONTEXT_REL_PATH,
   campaignSidecarPaths,
+  isRouteComponent,
   resolveCampaignWorkspace,
   targetRepoFor,
 } from "./campaign-workspace.mjs";
 import { DOCTOR_SIDECAR_REL_PATH } from "./doctor-sidecar.mjs";
+
+test("isRouteComponent accepts only strings that already are route components", () => {
+  for (const value of [null, undefined, "", " a", "a/b", ".hidden", "..", "/a/", "a "]) {
+    assert.equal(isRouteComponent(value), false, JSON.stringify(value));
+  }
+  for (const value of ["route-a", "a.b_c"]) assert.equal(isRouteComponent(value), true, value);
+});
 
 function withDir(fn) {
   const dir = mkdtempSync(join(tmpdir(), "campaign-workspace-"));

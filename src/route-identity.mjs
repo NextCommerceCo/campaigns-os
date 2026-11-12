@@ -49,11 +49,44 @@ export function specPublicRouteSlug(spec) {
   return "";
 }
 
+// Only a valid, different Map slug changes route interpretation. Read packets
+// here before branching on a binding, including values copied into options.
+export function effectiveMapPublicRouteSlug(packet) {
+  const value = packet?.campaign?.map_public_route_slug;
+  return typeof value === "string" && /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/.test(value)
+    && value !== normalizePublicRouteSlug(packet?.campaign?.public_route_slug) ? value : undefined;
+}
+
+// A different served slug is legitimate only with an explicit binding to the
+// slug this spec still declares. A stale binding is an identity failure even
+// if the packet and spec happen to name the same served slug now.
+export function routeSlugIdentity(spec, packet) {
+  const packetSlug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  const specSlug = specPublicRouteSlug(spec);
+  const mapSlug = effectiveMapPublicRouteSlug(packet);
+  const declaredMapSlug = packet?.campaign?.map_public_route_slug;
+  // Validate the declaration without the served slug's no-op rule: malformed
+  // values are inert for projection but still refuse identity validation.
+  const malformedBinding = declaredMapSlug !== undefined
+    && effectiveMapPublicRouteSlug({ campaign: { map_public_route_slug: declaredMapSlug } }) === undefined;
+  const mapId = [spec?.spec_identity?.map_id, spec?.map_id, packet?.spec?.map_id]
+    .find((value) => typeof value === "string" && value.trim())?.trim() || "";
+  const specDeclaresMapIdSlug = Boolean(specSlug && mapId && specSlug === mapId);
+  const reason = malformedBinding ? "binding_mismatch"
+    : packetSlug && mapId && packetSlug === mapId && !specDeclaresMapIdSlug ? "map_id"
+    : mapSlug !== undefined && (!specSlug || mapSlug !== specSlug) ? "binding_mismatch"
+      : specSlug && packetSlug !== specSlug && mapSlug !== specSlug ? "slug_mismatch"
+        : null;
+  return { ok: reason === null, reason, packetSlug, specSlug, specDeclaresMapIdSlug };
+}
+
 // The route with the slug prefix removed, when it carries one: "slug/checkout/"
 // → "checkout/", "slug/" → "", "checkout/" → "checkout/".
-export function stripPublicRoutePrefix(route, publicRouteSlug) {
+export function stripPublicRoutePrefix(route, publicRouteSlug, mapPublicRouteSlug = null) {
   const normalized = normalizePageKitRoute(route);
-  const slug = normalizePublicRouteSlug(publicRouteSlug);
+  // Spec values retain the Map's vocabulary under a binding. Built values
+  // still use the served slug and call this without the third argument.
+  const slug = effectiveMapPublicRouteSlug({ campaign: { public_route_slug: publicRouteSlug, map_public_route_slug: mapPublicRouteSlug } }) || normalizePublicRouteSlug(publicRouteSlug);
   if (!normalized || !slug) return normalized;
   const clean = normalized.replace(/^\/+|\/+$/g, "");
   if (clean === slug) return "";
@@ -64,10 +97,14 @@ export function stripPublicRoutePrefix(route, publicRouteSlug) {
 // A CampaignSpec route value reduced to the runtime-relative route the SDK
 // composes onto the served root: the slug prefix stripped, and a nested value
 // reduced to its terminal segment ("a/b/checkout/" → "checkout/").
-export function runtimeRelativeRouteForSpecValue(value, publicRouteSlug) {
+export function runtimeRelativeRouteForSpecValue(value, publicRouteSlug, mapPublicRouteSlug = null) {
+  mapPublicRouteSlug = effectiveMapPublicRouteSlug({ campaign: { public_route_slug: publicRouteSlug, map_public_route_slug: mapPublicRouteSlug } });
   const normalized = normalizePageKitRoute(value);
   if (!normalized) return "";
-  const stripped = stripPublicRoutePrefix(normalized, publicRouteSlug);
+  const stripped = stripPublicRoutePrefix(normalized, publicRouteSlug, mapPublicRouteSlug);
+  // A binding projects the Map's path onto another root, preserving every
+  // relative segment. Unbound SDK hints retain their legacy terminal rule.
+  if (mapPublicRouteSlug) return stripped;
   const segments = stripped.replace(/^\/+|\/+$/g, "").split("/").filter(Boolean);
   if (segments.length > 1) return `${segments[segments.length - 1]}/`;
   return stripped;
@@ -93,12 +130,13 @@ export function packetRouteRoot(declared, publicRouteSlug) {
 // A spec is intake: prepare-build canonicalises what it declares, so any
 // spelling of the slug ("/slug", "slug/") reads as "/<slug>/"; only a foreign
 // prefix is refused.
-export function intakeRouteRoot(declared, publicRouteSlug) {
+export function intakeRouteRoot(declared, publicRouteSlug, mapPublicRouteSlug = null) {
   const slug = normalizePublicRouteSlug(publicRouteSlug);
   const clean = typeof declared === "string" ? declared.trim() : "";
   if (!clean) return null;
   if (clean === "/") return "/";
-  if (slug && normalizePublicRouteSlug(clean) === slug) return `/${slug}/`;
+  const mapSlug = effectiveMapPublicRouteSlug({ campaign: { public_route_slug: slug, map_public_route_slug: mapPublicRouteSlug } });
+  if (slug && normalizePublicRouteSlug(clean) === (mapSlug || slug)) return `/${slug}/`;
   return null;
 }
 
@@ -126,7 +164,7 @@ export function resolveRouteRoot({ packet = null, spec = null, rawSpec = null, p
   for (const [source, value, rule] of declarations) {
     const declared = typeof value === "string" ? value.trim() : "";
     if (!declared) continue;
-    const honoured = rule(declared, slug);
+    const honoured = rule(declared, slug, source === "packet" ? null : effectiveMapPublicRouteSlug(packet));
     return { route_root: honoured ?? fallback, declared, source, accepted: honoured !== null };
   }
   return { route_root: fallback, declared: null, source: null, accepted: null };
