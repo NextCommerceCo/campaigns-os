@@ -15,6 +15,7 @@ import {
 import { createDoctorCheckRegistry, runDoctorCheckRegistry } from "../doctor-check-registry.mjs";
 import { evaluateSourcePreparation } from "../source-prep.mjs";
 import { staleRoutingHints } from "../spec-derive.mjs";
+import { campaignMirrorDrift } from "../spec-derive-campaign.mjs";
 import { isLoopbackHostname } from "../remit.mjs";
 import {
   HOST_STRIPPED_CODE,
@@ -2071,6 +2072,16 @@ function validateBuiltLiveCampaignRefs({ spec, packet, errors, warnings, ready, 
     map: { package_refs: specPackageRefs(spec), shipping_refs: specShippingRefs(spec) },
     live: buildState.liveCampaign,
   });
+  // The Map's mirrored prices, product fields, recurring terms and offers
+  // against the same read (#764): advisory, folded into the drift warning.
+  const live = buildState.liveCampaign;
+  const mirror = result.status !== "not_run" && isObject(live?.campaign)
+    ? campaignMirrorDrift({ spec, campaign: live.campaign, campaignRef: live.campaign_ref_id || null })
+    : null;
+  if (mirror) {
+    const none = { map_only: [], live_only: [] };
+    result.drift = { packages: none, shipping_methods: none, ...result.drift, mirror };
+  }
   derived.live_campaign_refs = {
     status: result.status,
     ...(result.reason_code ? { reason_code: result.reason_code, reason: result.reason } : {}),

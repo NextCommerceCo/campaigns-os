@@ -133,6 +133,9 @@ export async function readDoctorLiveCampaign(args, { fetchImpl = globalThis.fetc
     env,
     fetchImpl,
     proxyBase: optionalString(args["proxy-base"]) || DEFAULT_PROXY_BASE,
+    // The body lets doctor compare the Map's mirrored fields with the
+    // campaign (#764); only the counts and change rows reach its results.
+    includeCampaign: true,
     ...(warn ? { warn } : {}),
   });
 }

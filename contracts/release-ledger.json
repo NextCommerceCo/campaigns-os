@@ -4234,6 +4234,39 @@
         }
       ],
       "entry_sha256": "b8a842a6d0371aa2e48e4448c9bb0890a2dab353023a53fd9add16be3f53f674"
+    },
+    {
+      "id": "RL-0347",
+      "sequence": 330,
+      "date": "2026-11-12",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.68.0+agent.14",
+      "changelog_sha256": "b895ed9511f6861fb717de476bcfcc586cd2129d37348163a5ceaca4ed6d56ad",
+      "agent_impact": "When doctor reads the live campaign, it now also compares the CampaignSpec mirrored package fields (prices, product fields, availability, recurring terms) and offers with it, using the same planner as spec derive. Differences are reported on the existing spec.campaign_drift warning: detail.drift (and derived.live_campaign_refs.drift) gains mirror: { counts: { price, product, availability, recurring, offers_changed, offers_missing }, rows } where rows are the spec derive change rows. drift.packages and drift.shipping_methods are always present when drift is (empty lists when only the mirror differs). The warning never changes errors, evidence debt or the doctor --ci exit code. Run spec derive --dry-run, then spec derive, to clear it.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "doctor help says it warns when the CampaignSpec mirrored prices, product fields, recurring terms or offers differ from the live campaign."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": null,
+          "summary": "The live campaign ref check folds the spec derive mirror comparison into spec.campaign_drift as drift.mirror, with counts by kind and the change rows."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/inspect.mjs",
+          "surface_entry": null,
+          "summary": "Doctor keeps the live campaign body from its existing read so the mirrored fields can be compared; no new request, and the body never enters doctor output."
+        }
+      ],
+      "entry_sha256": "aace7f1c2d30957554f2bfffa7fdef317541cdb53789517617e4289227a5a5ff"
     }
   ]
 }

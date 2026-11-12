@@ -306,8 +306,9 @@ export async function readLiveCampaign({
   const refs = liveCampaignRefs(picked.campaign);
   if (!refs) return notRun("unexpected_body", "The live campaign did not carry package and shipping-method lists with a ref on every entry.", requested);
   // `spec derive` refreshes the spec's mirrored offer and package fields from
-  // the same read (#721), so it asks for the campaign body as well; doctor and
-  // QA compare refs only and never carry the body in their results.
+  // the same read (#721), and doctor compares those fields with the Map
+  // (#764), so both ask for the campaign body as well; neither doctor nor QA
+  // carries the body in its results.
   return { status: "read", ...requested, ...refs, ...(includeCampaign ? { campaign: picked.campaign } : {}) };
 }
 
@@ -455,12 +456,28 @@ export function liveRefFindingMessage(finding) {
 
 export function campaignDriftMessage(drift) {
   const parts = [];
-  const side = (label, values) => { if (values.length) parts.push(`${label}: ${values.join(", ")}`); };
-  side("packages in the CampaignSpec but not the live campaign", drift.packages.map_only);
-  side("packages in the live campaign but not the CampaignSpec", drift.packages.live_only);
-  side("shipping methods in the CampaignSpec but not the live campaign", drift.shipping_methods.map_only);
-  side("shipping methods in the live campaign but not the CampaignSpec", drift.shipping_methods.live_only);
-  return `The saved CampaignSpec and the live campaign differ — ${parts.join("; ")}. Re-save the Map from the live campaign so doctor and QA compare against what checkout serves.`;
+  const side = (label, values) => { if (values?.length) parts.push(`${label}: ${values.join(", ")}`); };
+  side("packages in the CampaignSpec but not the live campaign", drift.packages?.map_only);
+  side("packages in the live campaign but not the CampaignSpec", drift.packages?.live_only);
+  side("shipping methods in the CampaignSpec but not the live campaign", drift.shipping_methods?.map_only);
+  side("shipping methods in the live campaign but not the CampaignSpec", drift.shipping_methods?.live_only);
+  const sentences = [];
+  if (parts.length) sentences.push(`The saved CampaignSpec and the live campaign differ — ${parts.join("; ")}. Re-save the Map from the live campaign so doctor and QA compare against what checkout serves.`);
+  const counts = drift.mirror?.counts;
+  if (counts) {
+    const noun = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+    const fields = [
+      counts.price && noun(counts.price, "price", "prices"),
+      counts.product && noun(counts.product, "product field", "product fields"),
+      counts.availability && noun(counts.availability, "availability field", "availability fields"),
+      counts.recurring && noun(counts.recurring, "recurring term", "recurring terms"),
+      counts.offers_changed && noun(counts.offers_changed, "offer", "offers"),
+    ].filter(Boolean);
+    const missing = counts.offers_missing ? `the campaign has ${noun(counts.offers_missing, "offer", "offers")} the CampaignSpec doesn't list` : "";
+    const what = fields.length ? `the CampaignSpec differs from the live campaign on ${fields.join(", ")}${missing ? `, and ${missing}` : ""}` : missing;
+    sentences.push(`${what.charAt(0).toUpperCase()}${what.slice(1)}. Run \`campaigns-os spec derive --dry-run\` to see each change, then \`campaigns-os spec derive\` to write it.`);
+  }
+  return sentences.join(" ");
 }
 
 export function liveRefsNotRunMessage(result) {

@@ -214,3 +214,49 @@ function recordFromLive(live) {
   for (const field of MIRRORED_OFFER_FIELDS) if (Object.hasOwn(live, field) && live[field] !== undefined) record[field] = clone(live[field]);
   return record;
 }
+
+// The field classes doctor counts the mirror drift in (#764).
+const DRIFT_CLASS = Object.freeze({
+  price: "price",
+  price_retail: "price",
+  price_recurring: "price",
+  product_purchase_availability: "availability",
+  product_inventory_availability: "availability",
+  is_recurring: "recurring",
+  interval: "recurring",
+  interval_count: "recurring",
+});
+
+function valueAt(root, path) {
+  return path.reduce((node, segment) => (node == null ? undefined : node[segment]), root);
+}
+
+/**
+ * Where the spec's mirrored fields have fallen behind the live campaign, as
+ * doctor reports it (#764): `counts` by kind and the change `rows` from
+ * planCampaignMirrorDerive, so they match `spec derive --dry-run`. A field or
+ * offer that several pages carry is counted once, by its ref. Null when
+ * nothing differs.
+ */
+export function campaignMirrorDrift({ spec, campaign, campaignRef = null } = {}) {
+  const { changes } = planCampaignMirrorDerive({ spec, campaign, campaignRef });
+  if (!changes.length) return null;
+  const seen = { price: new Set(), product: new Set(), availability: new Set(), recurring: new Set(), offers_changed: new Set(), offers_missing: new Set() };
+  for (const row of changes) {
+    if (row.path.length === 1 && row.path[0] === "offers") {
+      for (const record of row.after || []) seen.offers_missing.add(refOf(record.ref_id));
+      continue;
+    }
+    if (row.op === "insert") {
+      seen.offers_missing.add(refOf(row.after?.ref_id));
+      continue;
+    }
+    const field = row.path.at(-1);
+    const recordPath = row.path.slice(0, -1);
+    const ref = refOf(valueAt(spec, recordPath)?.ref_id) || pathLabel(recordPath);
+    if (recordPath.at(-2) === "offers") seen.offers_changed.add(ref);
+    else seen[DRIFT_CLASS[field] || "product"].add(`${ref}:${field}`);
+  }
+  const counts = Object.fromEntries(Object.entries(seen).map(([key, set]) => [key, set.size]));
+  return { counts, rows: changes };
+}

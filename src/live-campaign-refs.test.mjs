@@ -680,3 +680,118 @@ test("coverage: a stale 404.html and pages under _ or . directories are build no
     assert.equal(landing.derived.live_campaign_refs.status, "blocked");
   });
 });
+
+// #764: the Map's mirrored fields against the live campaign. A spec whose
+// package and page-offer records already carry what the live campaign states,
+// and a campaign body built from it, so the clean case is a true match.
+const MIRROR_HTML = page('<div data-next-package-id="10"></div><input data-next-shipping-id="20">');
+
+function matchingSpec(spec) {
+  const pages = spec.funnels.flatMap((funnel) => funnel.pages);
+  for (const pkg of pages.flatMap((entry) => entry.packages || [])) Object.assign(pkg, { name: `Package ${pkg.ref_id}`, price: "10.00" });
+  const rootOffer = spec.offers.find((offer) => offer.ref_id === "1");
+  const pageOffer = pages.find((entry) => entry.id === "upsell-stepper").offers[0];
+  for (const field of ["name", "type", "condition", "benefit"]) pageOffer[field] = structuredClone(rootOffer[field]);
+}
+
+function mirroredCampaign(spec) {
+  const packages = new Map();
+  for (const pkg of spec.funnels.flatMap((funnel) => funnel.pages).flatMap((entry) => entry.packages || [])) {
+    if (!packages.has(pkg.ref_id)) packages.set(pkg.ref_id, { ref_id: pkg.ref_id, name: pkg.name, price: pkg.price, ...(pkg.interval ? { is_recurring: true, interval: pkg.interval } : {}) });
+  }
+  return {
+    ref_id: 501,
+    packages: [...packages.values()],
+    shipping_methods: spec.shipping_methods.map((method) => ({ ref_id: method.ref_id })),
+    offers: structuredClone(spec.offers),
+  };
+}
+
+function liveRead(campaignBody) {
+  return {
+    status: "read",
+    package_refs: campaignBody.packages.map((pkg) => String(pkg.ref_id)),
+    shipping_refs: campaignBody.shipping_methods.map((method) => String(method.ref_id)),
+    campaign: campaignBody,
+  };
+}
+
+test("#764 mirror drift: a Map that matches its campaign gives no drift warning", async () => {
+  await withBuiltCampaign({ checkoutHtml: MIRROR_HTML, specEdit: matchingSpec }, ({ spec, doctor }) => {
+    const result = doctor(liveRead(mirroredCampaign(spec)));
+    assert.equal(codes(result.warnings).includes("spec.campaign_drift"), false);
+    assert.equal(result.derived.live_campaign_refs.drift, null);
+    assert.equal(result.derived.live_campaign_refs.status, "pass");
+    assert.doesNotMatch(JSON.stringify(result), /"campaign":\{/, "the campaign body never reaches doctor's result");
+  });
+});
+
+test("#764 mirror drift: price, offer percentage, a campaign offer the Map lacks and a recurring interval are counted under unchanged package ids", async () => {
+  const recurring = (spec) => {
+    matchingSpec(spec);
+    const upsell = spec.funnels.flatMap((funnel) => funnel.pages).find((entry) => entry.id === "upsell-stepper");
+    Object.assign(upsell.packages[0], { is_recurring: true, interval: "month" });
+  };
+  const cases = [
+    ["price", (body) => { body.packages.find((pkg) => pkg.ref_id === 10).price = "12.00"; }, { price: 1 }, /on 1 price\./],
+    ["offer percentage", (body) => { body.offers[0].benefit.value = "40.00"; }, { offers_changed: 1 }, /on 1 offer\./],
+    ["campaign offer missing from the Map", (body) => { body.offers.push({ ref_id: "3", name: "New", type: "offer", code: "NEW10" }); }, { offers_missing: 1 }, /^The campaign has 1 offer the CampaignSpec doesn't list\./],
+    ["recurring interval", (body) => { body.packages.find((pkg) => pkg.ref_id === 30).interval = "week"; }, { recurring: 1 }, /on 1 recurring term\./],
+  ];
+  for (const [label, edit, expected, message] of cases) {
+    await withBuiltCampaign({ checkoutHtml: MIRROR_HTML, specEdit: recurring }, ({ spec, doctor }) => {
+      const body = mirroredCampaign(spec);
+      const clean = doctor(liveRead(body));
+      assert.equal(codes(clean.warnings).includes("spec.campaign_drift"), false, `${label}: the unedited campaign matches`);
+      edit(body);
+      const result = doctor(liveRead(body));
+      const drift = result.warnings.find((entry) => entry.code === "spec.campaign_drift");
+      assert.ok(drift, `${label}: drift warned`);
+      const counts = { price: 0, product: 0, availability: 0, recurring: 0, offers_changed: 0, offers_missing: 0, ...expected };
+      assert.deepEqual(drift.detail.drift.mirror.counts, counts, label);
+      assert.deepEqual(drift.detail.drift.packages, { map_only: [], live_only: [] }, `${label}: package ids unchanged`);
+      assert.ok(drift.detail.drift.mirror.rows.length >= 1);
+      assert.match(drift.message, message, label);
+      assert.match(drift.message, /spec derive --dry-run`.*spec derive`/);
+      assert.doesNotMatch(drift.message, /\n/);
+      // Advisory: the same errors with or without the drift.
+      assert.deepEqual(codes(result.errors), codes(clean.errors), `${label}: errors unchanged`);
+      assert.deepEqual(result.derived.live_campaign_refs.drift, drift.detail.drift);
+    });
+  }
+});
+
+test("#764 mirror drift: several kinds at once read as one line, and a package on several pages counts once", async () => {
+  await withBuiltCampaign({ checkoutHtml: MIRROR_HTML, specEdit: matchingSpec }, ({ spec, doctor }) => {
+    const body = mirroredCampaign(spec);
+    for (const pkg of body.packages) pkg.price = "11.00";
+    body.offers[0].benefit.value = "40.00";
+    body.offers.push({ ref_id: "3", code: "NEW10" }, { ref_id: "4", code: "NEW20" });
+    const result = doctor(liveRead(body));
+    const drift = result.warnings.find((entry) => entry.code === "spec.campaign_drift");
+    // Packages 10 (three tiers on one page), 17, 19 and 30.
+    assert.equal(drift.detail.drift.mirror.counts.price, 4);
+    assert.equal(drift.message, "The CampaignSpec differs from the live campaign on 4 prices, 1 offer, and the campaign has 2 offers the CampaignSpec doesn't list. Run `campaigns-os spec derive --dry-run` to see each change, then `campaigns-os spec derive` to write it.");
+  });
+});
+
+test("#764 mirror drift: without the campaign body, or with --no-live-refs, nothing is compared", async () => {
+  await withBuiltCampaign({ checkoutHtml: MIRROR_HTML, specEdit: matchingSpec }, async ({ spec, doctor, packetPath }) => {
+    const body = mirroredCampaign(spec);
+    body.packages[0].price = "99.00";
+    const { campaign: _omit, ...refsOnly } = liveRead(body);
+    assert.equal(codes(doctor(refsOnly).warnings).includes("spec.campaign_drift"), false);
+    const disabled = await readDoctorLiveCampaign({ packet: packetPath, "proxy-base": PROXY_BASE, "no-live-refs": true }, { env: {}, fetchImpl: () => assert.fail("no request under --no-live-refs") });
+    const result = doctor(disabled);
+    assert.equal(result.derived.live_campaign_refs.status, "not_run");
+    assert.equal(codes(result.warnings).includes("spec.campaign_drift"), false);
+  });
+});
+
+test("#764: doctor's live read keeps the campaign body for the mirror comparison", async () => {
+  await withBuiltCampaign({ checkoutHtml: MIRROR_HTML }, async ({ packetPath }) => {
+    const live = await readDoctorLiveCampaign({ packet: packetPath, "proxy-base": PROXY_BASE }, { env: {}, fetchImpl: jsonFetch(liveBody()) });
+    assert.equal(live.status, "read");
+    assert.equal(live.campaign?.ref_id, 501);
+  });
+});
