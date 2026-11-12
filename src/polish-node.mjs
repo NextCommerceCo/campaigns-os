@@ -134,18 +134,21 @@ export function planPolishCapture({ packet, baseUrl } = {}) {
   }
   const base = captureBaseUrl(baseUrl);
   const routes = [];
-  let skipped = false;
+  const skippedPages = [];
 
   for (const mapping of packet.source_html.pages) {
     const pageId = typeof mapping?.page_id === "string" && mapping.page_id.length <= 128
       ? nonemptyString(mapping.page_id)
       : null;
     if (!pageId) throw new Error("Every polish capture page mapping needs page_id.");
-    if (nonemptyString(mapping?.skip_reason)) {
-      skipped = true;
+    const skipReason = nonemptyString(mapping?.skip_reason);
+    if (skipReason) {
+      skippedPages.push({ page_id: pageId, skip_reason: skipReason });
       continue;
     }
-    if (!nonemptyString(mapping?.path)) {
+    if (!nonemptyString(mapping?.path)
+      && !(mapping?.origin === "repo" && isPlainObject(mapping?.page_kit)
+        && nonemptyString(mapping.page_kit.public_route))) {
       throw new Error(`Polish capture page "${pageId}" is neither mapped nor explicitly skipped.`);
     }
     if (!isPlainObject(mapping?.page_kit)) {
@@ -180,8 +183,9 @@ export function planPolishCapture({ packet, baseUrl } = {}) {
   }
 
   return {
-    route_scope: skipped ? "selected" : "all",
+    route_scope: skippedPages.length ? "selected" : "all",
     routes,
+    skipped_pages: skippedPages.sort((a, b) => a.page_id.localeCompare(b.page_id)),
     viewports: POLISH_CAPTURE_VIEWPORTS,
   };
 }
@@ -369,6 +373,7 @@ function bindingPlanProjection(plan) {
   }
   return {
     route_scope: plan.route_scope,
+    skipped_pages: plan.skipped_pages || [],
     routes: plan.routes.map((route) => ({
       page_id: route.page_id,
       requested_route: route.requested_route,
@@ -689,7 +694,9 @@ export async function capturePolishPageLoad(options = {}) {
   try { captures = await runVisualPass({ ...options, ...options.visual, frozen, probes: parity ? [parity.run.probe] : [] }); }
   catch {
     // Even unexpected artifact/dependency failures cannot discard prior work.
-    captures = unavailableCapturesRecord({ plan, subject: { ...frozen.page_load.subject,
+    captures = unavailableCapturesRecord({ plan, packet: options.packet, packetPath: options.visual.packetPath ?? options.packetPath,
+      targetRepo: options.visual.targetRepo ?? options.targetRepo,
+      subject: { ...frozen.page_load.subject,
       source_package_material_fingerprint: currentSourcePackageMaterialFingerprint(options.report) }, measuredAt: options.now });
   }
   let elementParity = null;
