@@ -4191,7 +4191,7 @@
           "class": "compatibility_policy",
           "path": "contracts/effects.v1.json",
           "surface_entry": "contracts/effects.v1.json",
-          "summary": "The doctor --built --emit-packet row becomes tier A and declares, as conditional effects when --map-id is given, the saved-Map fetch, the fetched-spec cache write and the managed ignore; without --map-id it sends nothing, as before."
+          "summary": "The doctor --built --emit-packet row becomes tier A and declares, as conditional effects when --map-id is given, the saved-Map fetch, the fetched-spec cache write and the managed ignore; without --map-id it sends nothing, as before. The record deploy row's refusal list names doctor's Polish gate beside the theme gate, matching the command since 1.68.0+agent.10."
         },
         {
           "class": "compatibility_policy",
@@ -4368,7 +4368,7 @@
           "summary": "Blocks built-first progress when the package no longer matches the recorded intake references."
         }
       ],
-      "entry_sha256": "5dea2aafd2d022c13353a7a18c7b1def9812b63737a5693861eefe2df1e3d279"
+      "entry_sha256": "7c7176e6c3c6c86f23317a6182a8d8c5dc96f42817f1e6b72481208f72ecb7e0"
     }
   ]
 }
