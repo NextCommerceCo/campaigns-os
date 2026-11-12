@@ -31,6 +31,7 @@ import {
   staleRoutingHints,
 } from "./spec-derive.mjs";
 import { planCampaignMirrorDerive } from "./spec-derive-campaign.mjs";
+import { extractRenderedPackageRefs } from "./live-campaign-refs.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const CLI = resolve(ROOT, "bin/campaigns-os.mjs");
@@ -1669,6 +1670,231 @@ const TREE_WITH_LINKS = Object.freeze([
   { path: "receipt.html", basename: "receipt", route: "receipt/", permalink: null, page_type: "receipt" },
 ]);
 const PROJECTED = new Map([["landing", "landing.html"], ["checkout", "checkout.html"], ["upsell", "upsell.html"], ["receipt", "receipt.html"]]);
+
+function neverBuiltUpsell() {
+  return specFixture((draft) => {
+    const page = draft.funnels[0].pages[2];
+    page.id = "planned-offer";
+    page.page_url = "unused-offer/";
+    page.packages = [{ ref_id: "42", name: "Example package", price: "19.00", qty: 1 }];
+    page.offers = [{ ref_id: "7", code: "EXTRA" }];
+    draft.funnels[0].pages[1].success_url = page.id;
+    draft.funnels[0].pages[1].sdk_hints.meta_tags["next-success-url"] = page.page_url;
+    draft.funnel_pages = structuredClone(draft.funnels[0].pages);
+  });
+}
+
+const PACKAGE_TREE = TREE_WITH_LINKS.map((file) => file.basename === "upsell" ? { ...file, package_refs: ["42"] } : file);
+const NEVER_BUILT_BINDINGS = new Map([...PROJECTED].filter(([id]) => id !== "upsell"));
+const neverBuiltPlan = (spec = neverBuiltUpsell(), pageFiles = PACKAGE_TREE, extra = {}) => planSpecDerive({
+  spec, entry: CONFIGURED_ENTRY, pageFiles, packetBindings: NEVER_BUILT_BINDINGS, publicRouteSlug: "runtime-packet-demo", handedOff: true, ...extra,
+});
+
+test("planSpecDerive re-points a never-built upsell on a unique exact package match without inserting a page", () => {
+  const original = neverBuiltUpsell();
+  const plan = neverBuiltPlan(original);
+  assert.deepEqual(plan.page_scope.added, [], "the built upsell must not be inserted beside the never-built page");
+  assert.equal(plan.changes.some((row) => row.op), false);
+  assert.deepEqual(plan.changes.filter((row) => row.page_id === "planned-offer").map((row) => [row.field, row.before, row.after]), [
+    ["funnels[0].pages[2].page_url", "unused-offer/", "upsell/"],
+    ["funnel_pages[2].page_url", "unused-offer/", "upsell/"],
+  ]);
+  assert.match(plan.changes.find((row) => row.field === "funnels[0].pages[2].page_url").source, /upsell.html.*matched by the packages it sells/);
+  assert.equal(plan.not_derived.some((row) => row.page_id === "planned-offer"), false);
+  assert.deepEqual(plan.stale_hints.map((row) => [row.page_id, row.target_page_id, row.derived_route]), [["checkout", "planned-offer", "upsell/"]]);
+  const written = applySpecDerive(structuredClone(original), plan);
+  assert.equal(written.funnels[0].pages.filter((page) => page.type === "upsell").length, 1);
+  assert.deepEqual(written.funnels[0].pages[2], { ...original.funnels[0].pages[2], page_url: "upsell/" });
+  assert.deepEqual(written.funnel_pages[2], { ...original.funnel_pages[2], page_url: "upsell/" });
+  assert.deepEqual(neverBuiltPlan(written).page_scope.added, [], "a second derive uses the route binding");
+});
+
+test("planSpecDerive holds two exact files for one never-built page", () => {
+  const tree = [...PACKAGE_TREE, { ...PACKAGE_TREE[2], path: "alternate.html", basename: "alternate", route: "alternate/" }];
+  const plan = neverBuiltPlan(neverBuiltUpsell(), tree);
+  assert.deepEqual(plan.page_scope.added, []);
+  assert.equal(plan.changes.some((row) => row.page_id === "planned-offer"), false);
+  const pairs = plan.not_derived.filter((row) => row.reason === "page_likely_pair");
+  assert.deepEqual(pairs.map((row) => [row.field, row.page_id]), [["page file upsell.html", "planned-offer"], ["page file alternate.html", "planned-offer"]]);
+  for (const row of pairs) assert.match(row.detail, /not one-to-one.*page_url.*by hand.*remove the page.*derive again/);
+});
+
+test("planSpecDerive compares package refs as sets across the existing spec ref spellings", () => {
+  const spec = neverBuiltUpsell();
+  spec.funnels[0].pages[2].packages = [{ ref_id: 42 }, { package_ref_id: "43" }, { package_id: "44" }, { id: "45" }, { ref_id: "42" }];
+  const tree = PACKAGE_TREE.map((file) => file.basename === "upsell" ? { ...file, package_refs: ["45", "44", "43", "42", "42"] } : file);
+  const plan = neverBuiltPlan(spec, tree);
+  assert.deepEqual(plan.page_scope.added, []);
+  assert.equal(plan.changes.find((row) => row.field === "funnels[0].pages[2].page_url").after, "upsell/");
+  assert.deepEqual(applySpecDerive(structuredClone(spec), plan).funnels[0].pages[2].packages, spec.funnels[0].pages[2].packages);
+});
+
+test("planSpecDerive holds one exact file for two never-built pages", () => {
+  const spec = neverBuiltUpsell();
+  spec.funnels[0].pages.push({ ...structuredClone(spec.funnels[0].pages[2]), id: "other-offer", page_url: "other-unused/" });
+  const plan = neverBuiltPlan(spec);
+  assert.deepEqual(plan.page_scope.added, []);
+  assert.equal(plan.changes.some((row) => row.page_id === "planned-offer" || row.page_id === "other-offer"), false);
+  assert.deepEqual(plan.not_derived.filter((row) => row.reason === "page_likely_pair").map((row) => [row.field, row.page_id]), [["page file upsell.html", "planned-offer"], ["page file upsell.html", "other-offer"]]);
+});
+
+test("planSpecDerive includes offers' package refs in the exact set, excluding offer ids and codes", () => {
+  for (const field of ["package_id", "package_ref_id"]) {
+    const spec = neverBuiltUpsell();
+    spec.funnels[0].pages[2].offers = [{ [field]: "43", ref_id: "7", id: "8", code: "EXTRA" }];
+    const partial = neverBuiltPlan(spec);
+    assert.deepEqual(partial.page_scope.added.map((row) => row.page_id), ["upsell"]);
+    assert.equal(partial.changes.some((row) => row.page_id === "planned-offer"), false);
+    assert.match(partial.not_derived.find((row) => row.reason === "page_likely_pair").detail, /share package refs.*still added/);
+    const tree = PACKAGE_TREE.map((file) => file.basename === "upsell" ? { ...file, package_refs: ["42", "43"] } : file);
+    const exact = neverBuiltPlan(spec, tree);
+    assert.deepEqual(exact.page_scope.added, []);
+    assert.equal(exact.changes.find((row) => row.field === "funnels[0].pages[2].page_url").after, "upsell/");
+    assert.deepEqual(applySpecDerive(structuredClone(spec), exact).funnels[0].pages[2].offers, spec.funnels[0].pages[2].offers);
+  }
+});
+
+test("planSpecDerive re-points an offers-only package set and combines both offer package fields", () => {
+  for (const offer of [{ package_id: "42" }, { package_ref_id: 42 }, { package_id: "42", package_ref_id: "43" }]) {
+    const spec = neverBuiltUpsell();
+    const page = spec.funnels[0].pages[2];
+    delete page.packages;
+    page.offers = [{ ...offer, ref_id: "7", id: "8", code: "EXTRA" }];
+    const refs = [...new Set(Object.values(offer).map(String))];
+    const tree = PACKAGE_TREE.map((file) => file.basename === "upsell" ? { ...file, package_refs: refs } : file);
+    const plan = neverBuiltPlan(spec, tree);
+    assert.deepEqual(plan.page_scope.added, []);
+    assert.equal(plan.not_derived.some((row) => row.page_id === page.id), false);
+    assert.deepEqual(applySpecDerive(structuredClone(spec), plan).funnels[0].pages[2], { ...page, page_url: "upsell/" });
+  }
+});
+
+test("planSpecDerive adds a partial package overlap and notes the possible pair", () => {
+  const tree = PACKAGE_TREE.map((file) => file.basename === "upsell" ? { ...file, package_refs: ["42", "43"] } : file);
+  const plan = neverBuiltPlan(neverBuiltUpsell(), tree);
+  assert.deepEqual(plan.page_scope.added.map((row) => row.page_id), ["upsell"]);
+  assert.equal(plan.changes.some((row) => row.page_id === "planned-offer"), false);
+  const note = plan.not_derived.find((row) => row.reason === "page_likely_pair");
+  assert.deepEqual([note.field, note.page_id], ["page file upsell.html", "planned-offer"]);
+  assert.match(note.detail, /share package refs.*still added.*page_url.*by hand/);
+});
+
+test("planSpecDerive package matching leaves pre-handoff and unrelated trees byte-for-byte unchanged", () => {
+  const withoutRefs = PACKAGE_TREE.map(({ package_refs, ...file }) => file);
+  assert.equal(JSON.stringify(neverBuiltPlan(neverBuiltUpsell(), PACKAGE_TREE, { handedOff: false })), JSON.stringify(neverBuiltPlan(neverBuiltUpsell(), withoutRefs, { handedOff: false })));
+  for (const refs of [[], ["99"]]) {
+    const tree = PACKAGE_TREE.map((file) => file.basename === "upsell" ? { ...file, package_refs: refs } : file);
+    assert.equal(JSON.stringify(neverBuiltPlan(neverBuiltUpsell(), tree)), JSON.stringify(neverBuiltPlan(neverBuiltUpsell(), withoutRefs)));
+  }
+  const noPackages = neverBuiltUpsell();
+  noPackages.funnels[0].pages[2].packages = [];
+  assert.equal(JSON.stringify(neverBuiltPlan(noPackages)), JSON.stringify(neverBuiltPlan(noPackages, withoutRefs)));
+  const otherType = PACKAGE_TREE.map((file) => file.basename === "upsell" ? { ...file, page_type: "product" } : file);
+  assert.equal(JSON.stringify(neverBuiltPlan(neverBuiltUpsell(), otherType)), JSON.stringify(neverBuiltPlan(neverBuiltUpsell(), otherType.map(({ package_refs, ...file }) => file))));
+  assert.equal(JSON.stringify(neverBuiltPlan(specFixture())), JSON.stringify(neverBuiltPlan(specFixture(), withoutRefs)), "no stale page");
+});
+
+test("planSpecDerive gives the gone-page rename hold priority over package matches", () => {
+  const spec = neverBuiltUpsell();
+  spec.funnels[0].pages.push({ id: "gone-offer", type: "upsell", page_url: "gone/", packages: [{ ref_id: "42" }] });
+  const plan = neverBuiltPlan(spec, PACKAGE_TREE, { packetBindings: new Map([...NEVER_BUILT_BINDINGS, ["gone-offer", "gone.html"]]) });
+  assert.deepEqual(plan.page_scope.added, []);
+  assert.equal(plan.changes.some((row) => row.page_id === "planned-offer" || row.page_id === "gone-offer"), false);
+  assert.equal(plan.not_derived.some((row) => row.reason === "page_likely_pair"), false);
+  assert.deepEqual(plan.not_derived.filter((row) => row.reason === "page_renamed").map((row) => row.page_id), ["upsell", "gone-offer"]);
+});
+
+test("spec derive reads literal package refs from page files, previews the re-point and writes it", async () => {
+  const fx = fixture({ spec: (draft) => Object.assign(draft, neverBuiltUpsell()) });
+  try {
+    const packet = readJson(fx.packetPath);
+    packet.source_html.pages = packet.source_html.pages.filter((page) => page.page_id !== "upsell");
+    writeJson(fx.packetPath, packet);
+    const report = readJson(fx.reportPath);
+    report.stages.deploy.status = "completed";
+    writeJson(fx.reportPath, report);
+    const pageTree = join(fx.targetRepo, "src", "runtime-packet-demo");
+    writeFileSync(join(pageTree, "upsell.html"), '---\npage_type: upsell\n---\n<button data-next-package-id="{{ package.ref_id }}">Dynamic</button>\n');
+    const dynamic = await specDeriveCommand({ packet: fx.packetPath, "dry-run": true });
+    assert.equal(dynamic.changes.some((row) => row.page_id === "planned-offer"), false, "Liquid is not a literal package ref");
+    writeFileSync(join(pageTree, "upsell.html"), '---\npage_type: upsell\n---\n<button data-next-package-id="42">Accept</button>\n<button data-package-id="42">Accept again</button>\n');
+    const before = readFileSync(fx.specPath, "utf8");
+    const preview = await specDeriveCommand({ packet: fx.packetPath, "dry-run": true });
+    assert.deepEqual(preview.page_scope.added, []);
+    assert.equal(preview.changes.find((row) => row.page_id === "planned-offer").after, "upsell/");
+    assert.equal(readFileSync(fx.specPath, "utf8"), before);
+    assert.match(specDeriveTextLines(preview).join("\n"), /unused-offer\/.*upsell\/.*matched by the packages it sells/);
+    const result = await specDeriveCommand({ packet: fx.packetPath });
+    assert.equal(result.written, true);
+    assert.deepEqual(result.changes, preview.changes);
+    const written = readJson(fx.specPath);
+    assert.deepEqual(written.funnels[0].pages[2], { ...neverBuiltUpsell().funnels[0].pages[2], page_url: "upsell/" });
+    assert.equal(written.funnels[0].pages.length, 4);
+  } finally {
+    rmSync(fx.dir, { recursive: true, force: true });
+  }
+});
+
+const LITERAL_PACKAGE_CASES = [
+  ["quoted attribute", '<button data-next-package-id="42">Accept</button>', ["42"]],
+  ["unquoted legacy attribute", '<button data-package-id=42>Accept</button>', ["42"]],
+  ["entity-encoded attribute", '<button DATA-NEXT-PACKAGE-ID="&#52;2">Accept</button>', ["42"]],
+  ["integer config", '<script>const config = {packageId: 42};</script>', ["42"]],
+  ["quoted config key and id", '<script>const config = {"packageId": "42"};</script>', ["42"]],
+  ["single-quoted inline config", '<button onclick="accept({packageId: \'42\'})">Accept</button>', ["42"]],
+  ["Liquid output attribute", '<button data-next-package-id="{{ package.ref_id }}">Dynamic</button>', []],
+  ["embedded Liquid output attribute", '<button data-package-id="42{{ suffix }}">Dynamic</button>', []],
+  ["Liquid tag attribute", '<button data-next-package-id="{% if enabled %}42{% endif %}">Dynamic</button>', []],
+  ["embedded Liquid tag attribute", '<button data-package-id="42{% assign value = 1 %}">Dynamic</button>', []],
+  ["config arithmetic", '<script>const config = {packageId: 42 + 1};</script>', []],
+  ["config identifier", '<script>const config = {packageId: base42};</script>', []],
+  ["config indexed value", '<script>const config = {packageId: ids[0]};</script>', []],
+  ["config template literal", '<script>const config = {packageId: `42`};</script>', []],
+  ["config interpolated template", '<script>const config = {packageId: `42${suffix}`};</script>', []],
+  ["quoted config continuation", '<script>const config = {packageId: "42" + suffix};</script>', []],
+  ["config property continuation", '<script>const config = {packageId: 42..toString()};</script>', []],
+  ["config call continuation", '<script>const config = {packageId: 42()};</script>', []],
+  ["inline config expression", '<button onclick="accept({packageId: 42 + 1})">Accept</button>', []],
+  ["Liquid config value", '<script>const config = {packageId: "{{ package.ref_id }}"};</script>', []],
+  ["Liquid comment attribute", '{% comment %}<button data-next-package-id="42">Hidden</button>{% endcomment %}', []],
+  ["Liquid raw attribute", '{% raw %}<button data-package-id="42">Raw</button>{% endraw %}', []],
+  ["Liquid comment config", '{%- comment -%}<script>const config = {packageId: 42};</script>{%- endcomment -%}', []],
+  ["Liquid raw config", '{%- raw -%}<script>const config = {packageId: 42};</script>{%- endraw -%}', []],
+];
+
+test("spec derive page-file rows require every package value to be a complete literal", async (t) => {
+  const fx = fixture({ spec: (draft) => Object.assign(draft, neverBuiltUpsell()) });
+  try {
+    const packet = readJson(fx.packetPath);
+    packet.source_html.pages = packet.source_html.pages.filter((page) => page.page_id !== "upsell");
+    writeJson(fx.packetPath, packet);
+    const report = readJson(fx.reportPath);
+    report.stages.deploy.status = "completed";
+    writeJson(fx.reportPath, report);
+    for (const [name, markup, refs] of LITERAL_PACKAGE_CASES) {
+      await t.test(name, async () => {
+        // A second literal proves a dynamic value poisons the entire file's
+        // set, rather than leaving a misleading partial match on package 42.
+        const content = `---\npage_type: upsell\n---\n<button data-next-package-id="42">Literal</button>\n${markup}`;
+        assert.deepEqual([...extractRenderedPackageRefs(markup, { literalPackages: true })], refs);
+        assert.deepEqual([...extractRenderedPackageRefs(content, { literalPackages: true })], refs);
+        writeFileSync(join(fx.targetRepo, "src", "runtime-packet-demo", "upsell.html"), content);
+        const plan = await specDeriveCommand({ packet: fx.packetPath, "dry-run": true });
+        if (refs.length) {
+          assert.deepEqual(plan.page_scope.added, []);
+          assert.equal(plan.changes.find((row) => row.page_id === "planned-offer").after, "upsell/");
+        } else {
+          assert.deepEqual(plan.page_scope.added.map((row) => row.page_id), ["upsell"]);
+          assert.equal(plan.changes.some((row) => row.page_id === "planned-offer"), false);
+          assert.equal(plan.not_derived.some((row) => row.reason === "page_likely_pair"), false);
+          assert.ok(plan.not_derived.some((row) => row.page_id === "planned-offer" && row.reason === "page_file_not_found"));
+        }
+      });
+    }
+  } finally {
+    rmSync(fx.dir, { recursive: true, force: true });
+  }
+});
 
 test("planSpecDerive adds a page the tree builds after handoff, appended by id, with its routing from the frontmatter links, and order reported as not derived", () => {
   const tree = [

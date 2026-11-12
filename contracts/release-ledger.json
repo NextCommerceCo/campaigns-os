@@ -4236,13 +4236,40 @@
       "entry_sha256": "b8a842a6d0371aa2e48e4448c9bb0890a2dab353023a53fd9add16be3f53f674"
     },
     {
-      "id": "RL-0341",
+      "id": "RL-0346",
       "sequence": 330,
+      "date": "2026-11-12",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.68.0+agent.14",
+      "changelog_sha256": "5b2e6dce8c3d80f773474c646a2edc7c0487de19c92ee21d8f1d42912e12b5f8",
+      "agent_impact": "After handoff, when a spec page was never built and exactly one unbound page file of the same page-kit type sells exactly that page's package refs (packages[] plus the package refs its offers[] carry), spec derive writes that page's page_url to the file's route and adds no page; the page keeps its id, packages and offers. Do not hand-edit page_url for this case first: run spec derive --dry-run and read the plan. A match that is not one-to-one is held and reported as page_likely_pair; a partial overlap is still added and reported as page_likely_pair as a note. Only complete literal package values in a file count; a file with a Liquid or computed package value is added as before.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Describe the re-point of a never-built page on a unique exact package match, the page_likely_pair reason, and what counts as a literal package ref."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "spec derive reads each page file's literal package refs, so its plan can re-point a never-built page; no flag or usage text changes."
+        }
+      ],
+      "entry_sha256": "edc9a638e0994f7066ec9c4641fb738a718316d6ea34ce96aa4cd5c2919e4e38"
+    },
+    {
+      "id": "RL-0341",
+      "sequence": 331,
       "date": "2026-11-11",
       "kind": "release",
       "surface_version": "1.69.0",
       "changelog_section": "1.69.0",
-      "changelog_sha256": "e90db85eaf8f3f46c437e5c08a7694768d48ad7ba7c979c277d239ce00356683",
+      "changelog_sha256": "548af1166d1b9a4300bc275149318566dfda9212e745e5e8168deb5e68348ac0",
       "agent_impact": "The Funnel: line may now offer --adopt src/<route>; after asking the operator, run its printed command to bind this funnel to the pages' existing route instead of renaming another funnel. A bound packet carries campaign.map_public_route_slug when the Map's slug differs from the served campaign.public_route_slug; use the bound route for output and records while preserving the Map identity. Only recorded adoption with an unchanged recorded Design Source Package grants built-first treatment. Its build-vs-design checks read excluded / built_first and are never acceptable as a design match; its first QA must be the full run with test orders, separately authorized by the PM, and record baseline does not apply. doctor --built --emit-packet --map-id now fetches the saved Map and records its local spec path and any route binding. Refresh skills to 1.69.0+skills.1.",
       "compatibility": "additive",
       "migration": "Pin @nextcommerce/campaigns-os@1.69.0 and refresh installed skills to 1.69.0+skills.1 before starting a fresh session; nothing changes for a funnel that is not adopted or bound.",
@@ -4434,7 +4461,7 @@
           "summary": "Blocks built-first progress when the package no longer matches the recorded intake references."
         }
       ],
-      "entry_sha256": "20c5e4cd2655d41a1896cef34b3c4cbc86deee8351125c12b460ac6aee53b47a"
+      "entry_sha256": "911a108e817cd73077ac3acabcc49a9e1f0aaed502718eff4488370828c866d9"
     }
   ]
 }

@@ -259,7 +259,7 @@ import {
   planSpecDerive,
 } from "./spec-derive.mjs";
 import { planCampaignMirrorDerive } from "./spec-derive-campaign.mjs";
-import { disabledLiveRead, liveRefsDisabled, readLiveCampaignForPacket } from "./live-campaign-refs.mjs";
+import { disabledLiveRead, extractRenderedPackageRefs, liveRefsDisabled, readLiveCampaignForPacket } from "./live-campaign-refs.mjs";
 import {
   adminApiBaseForStore,
   normalizeStoreSubdomain,
@@ -3817,8 +3817,9 @@ function listPageKitPageFiles(outputDir, publicRouteSlug, { assetsHtmlIgnored = 
       // falls back to the filename route. The page_type and the links to
       // other pages are read too: after handoff they say which files are
       // funnel pages and how they link (#721).
-      const { permalink, page_type: pageType, next_url: nextUrl, decline_url: declineUrl, next_step: nextStep, step_number: stepNumber } = frontmatterScalars(readFileSync(fullPath, "utf8"));
-      const facts = { page_type: pageType, next_url: nextUrl, decline_url: declineUrl, next_step: nextStep, step_number: stepNumber };
+      const content = readFileSync(fullPath, "utf8");
+      const { permalink, page_type: pageType, next_url: nextUrl, decline_url: declineUrl, next_step: nextStep, step_number: stepNumber } = frontmatterScalars(content);
+      const facts = { page_type: pageType, next_url: nextUrl, decline_url: declineUrl, next_step: nextStep, step_number: stepNumber, package_refs: [...extractRenderedPackageRefs(content, { literalPackages: true })] };
       if (permalink === null) {
         const filenameRoute = pageRouteForFile(path);
         if (filenameRoute === null) continue;
