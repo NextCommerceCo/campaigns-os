@@ -8,6 +8,12 @@ Notable supported-surface changes are recorded here.
 
 - `polish capture` plans the pages `spec derive` adds after handoff, lists the pages it leaves out, and takes evidence-only captures of template-stock pages (#756).
 
+## [1.68.0+agent.11] - 2026-11-11
+
+### Fixed
+
+- `qa run` without `--currency` runs in the CampaignSpec's `campaign.currency`, a declared tag that did not fire on a build recorded as a development build reads not measured instead of blocking, and the private template family error names `PRIVATE_TEMPLATE_SOURCES_ROOT` first (#756).
+
 ## [1.68.0+agent.10] - 2026-11-11
 
 ### Fixed

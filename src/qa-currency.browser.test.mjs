@@ -254,14 +254,14 @@ function resolvedFor(server, packetPath, spec) {
   };
 }
 
-async function runQaAgainst(serverOptions, extraArgs) {
+async function runQaAgainst(serverOptions, extraArgs, spec = pricedSpec()) {
   const server = await serveFixture("checkout-selector", serverOptions);
   const outputDir = mkdtempSync(join(tmpdir(), "campaigns-os-qa-currency-order-"));
   const packetPath = join(outputDir, "campaign-runtime.build.json");
   writeFileSync(packetPath, `${JSON.stringify({ schema_version: "campaign-runtime-build-packet/v0" })}\n`);
   try {
-    const result = await runResolvedQa({ _: ["qa", "run"], ...ARGS, "output-dir": outputDir, "no-post-verdict": true, "no-live-refs": true, json: true, ...extraArgs }, resolvedFor(server, packetPath, pricedSpec()));
-    return { verdict: result.verdict, orders: server.orders, previews: server.previews };
+    const result = await runResolvedQa({ _: ["qa", "run"], ...ARGS, "output-dir": outputDir, "no-post-verdict": true, "no-live-refs": true, json: true, ...extraArgs }, resolvedFor(server, packetPath, spec));
+    return { verdict: result.verdict, orders: server.orders, previews: server.previews, loads: server.loads };
   } finally {
     await server.close();
     rmSync(outputDir, { recursive: true, force: true });
@@ -289,11 +289,37 @@ browserTest("--currency GBP: a GBP order passes its currency row, with expected 
   assert.ok(previews.length > 0 && previews.every((code) => code === "GBP"), JSON.stringify(previews));
 });
 
-browserTest("control: without --currency a USD order gets no currency row and expected totals ask for the campaign currency", async () => {
+// Without --currency the run uses the spec's campaign.currency (#756), as if
+// --currency <that code> had been passed.
+browserTest("without --currency on a USD spec: a USD order passes its currency row, expected totals ask for USD, and the entry row says the code came from the spec", async () => {
   const { verdict, previews } = await runQaAgainst({ orderCurrency: "USD" }, {});
   assert.equal(row(verdict, "browser-test-order:checkout")?.status, "pass");
-  assert.equal(verdict.assertions.some((entry) => entry.id.startsWith("browser-order-currency:")), false);
+  const currency = row(verdict, "browser-order-currency:checkout");
+  assert.equal(currency?.status, "pass");
+  assert.equal(currency?.evidence?.requested, "USD");
   assert.ok(previews.length > 0 && previews.every((code) => code === "USD"), JSON.stringify(previews));
+  assert.deepEqual(row(verdict, "http:landing")?.evidence, { currency: "USD", currency_defaulted_from_spec: true });
+});
+
+browserTest("without --currency on a USD spec: an order the store places in GBP is a blocker and the verdict is blocked", async () => {
+  const { verdict, orders } = await runQaAgainst({ orderCurrency: "GBP" }, {});
+  assert.equal(orders.length, 1);
+  assert.equal(row(verdict, "browser-test-order:checkout")?.status, "pass", "the order itself was created");
+  const currency = row(verdict, "browser-order-currency:checkout");
+  assert.equal(currency?.status, "fail");
+  assert.equal(currency?.severity, "blocker");
+  assert.deepEqual(currency?.evidence, { requested: "USD", order_currency: "GBP" });
+  assert.equal(verdict.disposition, "blocked");
+});
+
+browserTest("control: a spec with no campaign.currency and no --currency pins nothing: no currency row, no ?currency on any load", async () => {
+  const spec = pricedSpec();
+  delete spec.campaign.currency;
+  const { verdict, loads } = await runQaAgainst({ orderCurrency: "USD" }, {}, spec);
+  assert.equal(row(verdict, "browser-test-order:checkout")?.status, "pass");
+  assert.equal(verdict.assertions.some((entry) => entry.id.startsWith("browser-order-currency:")), false);
+  assert.ok(loads.length > 0);
+  assert.equal(loads.some((load) => load.currency !== null), false, JSON.stringify(loads));
 });
 
 // Through the CLI: `qa run --site` builds the topology from a _site/<slug>/
