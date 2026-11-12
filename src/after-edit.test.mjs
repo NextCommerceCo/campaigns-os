@@ -6,7 +6,11 @@ import { tmpdir } from "node:os";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { test } from "node:test";
 import { afterEditCommand, afterEditExitCode, afterEditTextLines } from "./after-edit.mjs";
-import { specFetchCommand, specDeriveWithMapWriteback, specDeriveTextLines } from "./cli.mjs";
+import { specFetchCommand, specDeriveWithMapWriteback, specDeriveTextLines, recordQaStageOutcome } from "./cli.mjs";
+import { applyQaPageScope } from "./qa-node.mjs";
+import { createVerdict } from "./qa-verdict.mjs";
+import { writeQaSidecar } from "./qa-sidecar.mjs";
+import { currentPacketInputs, inputStamps } from "./input-currency.mjs";
 import { buildManifestEntries, computeBuildFingerprint } from "./built-site-scope.mjs";
 import { recordCommand } from "./stage-record.mjs";
 import { specMaterialHash } from "./spec-identity.mjs";
@@ -76,10 +80,155 @@ async function fixture(t, { savedMap = false } = {}) {
 }
 
 const run = (f, flags = {}, options = {}) => afterEditCommand({ _: ["after-edit"], packet: f.packetPath, "no-live-refs": true, ...flags }, {
-  specFetch: specFetchCommand, specDerive: specDeriveWithMapWriteback, specDeriveTextLines, ...options,
+  specFetch: specFetchCommand, specDerive: specDeriveWithMapWriteback, specDeriveTextLines, recordQaStageOutcome, ...options,
 });
 const step = (result, name) => result.steps.find((row) => row.step === name);
 const output = (t, label, result) => t.diagnostic(`${label}\n${afterEditTextLines(result).join("\n")}`);
+
+// Browser-free stand-in for the producer: use its page-scope resolver,
+// verdict constructor and committed sidecar writer, then let after-edit call
+// the real CLI stage recorder. No assertion is made about browser execution.
+function qaStub(f, calls, { blocked = false } = {}) {
+  return async (args) => {
+    calls.push(structuredClone(args));
+    const ci = doctorCommand({ _: ["doctor"], packet: f.packetPath, ci: true, "no-live-refs": true }).ci;
+    const { scope } = applyQaPageScope([{ pages: Object.keys(PAGES).map((id) => ({ page_id: id })) }], {
+      pages: args.page, browser: args.browser, debt: ci, report: json(f.reportPath),
+    });
+    const verdict = createVerdict({
+      runId: "synthetic-page-qa", mapId: "synthetic-map", specVersion: "4.3", specHash: specMaterialHash(json(f.specPath)),
+      startedAt: "2026-11-01T00:00:00Z", completedAt: "2026-11-01T00:01:00Z", runtime: "synthetic",
+      assertions: [{ id: "http:upsell", family: "http", status: blocked ? "fail" : "pass", severity: "blocker", actual: blocked ? "HTTP 404" : "HTTP 200" }],
+    });
+    const localPath = join(f.root, "qa-output", "synthetic-map", "synthetic-page-qa.json");
+    writeJson(localPath, verdict);
+    return {
+      ok: !blocked, status: verdict.disposition, local_path: localPath,
+      qa_sidecar: writeQaSidecar({ verdict, packetPath: f.packetPath }),
+      verdict, page_scope: scope, qc_results: [], counts: blocked ? { fail: 1 } : { pass: 1 },
+    };
+  };
+}
+
+test("copy edit with --run-qa checks the changed page once and ends current (E2 a)", async (t) => withNetworkGuard(async () => {
+  const f = await fixture(t);
+  f.page("upsell", PAGES.upsell.replace("Example offer", "Revised offer"));
+  const calls = [];
+  const result = await run(f, { "run-qa": true }, { runQa: qaStub(f, calls) });
+  assert.deepEqual(calls, [{ _: ["qa", "run"], packet: f.packetPath, "no-live-refs": true, page: ["upsell"] }]);
+  assert.equal(afterEditExitCode(result), 0, afterEditTextLines(result).join("\n"));
+  assert.equal(result.stopped_at, null);
+  assert.equal(step(result, "run_qa").status, "done");
+  assert.match(step(result, "run_qa").detail, /Owed after QA:\n[\s\S]*QA is current/);
+  assert.equal(result.ci.status, "current");
+  assert.deepEqual(result.qa, { status: "ready", verdict_path: join(f.root, "qa-output", "synthetic-map", "synthetic-page-qa.json") });
+  assert.deepEqual(result.files, [".campaign-runtime/assembly-report.json", ".campaign-runtime/doctor-output.json", ".campaign-runtime/qa-verdict.json"]);
+  assert.deepEqual(json(f.reportPath).stages.qa.purchase_proof, { order_paths_executed: 3, declared_depth: "common" });
+  output(t, "E2 CASE (a)", result);
+}));
+
+test("package edit with --run-qa stops for full stages without calling QA or writing its files (E2 b)", async (t) => withNetworkGuard(async () => {
+  const f = await fixture(t);
+  f.page("upsell", PAGES.upsell.replace('data-next-package-id="12"', 'data-next-package-id="13"'));
+  const calls = [];
+  const result = await run(f, { "run-qa": true }, { runQa: qaStub(f, calls) });
+  assert.equal(calls.length, 0, "full-stage debt must never call the QA runner");
+  assert.equal(afterEditExitCode(result), 2);
+  assert.equal(result.stopped_at, "run_qa");
+  assert.equal(step(result, "run_qa").status, "stopped");
+  assert.match(step(result, "run_qa").detail, /full Polish and QA.*full QA places test orders.*project manager's go/);
+  assert.match(step(result, "run_qa").command, /polish capture .* --base-url <served-current-build-url>$/);
+  assert.equal(existsSync(join(f.root, "qa-output")), false);
+  assert.equal(existsSync(join(f.root, ".campaign-runtime", "qa-verdict.json")), false);
+  assert.deepEqual(result.files, [".campaign-runtime/assembly-report.json"]);
+  assert.equal(result.qa, undefined);
+  output(t, "E2 CASE (b)", result);
+}));
+
+test("nothing owed with --run-qa needs no run and writes nothing (E2 c)", async (t) => withNetworkGuard(async () => {
+  const f = await fixture(t);
+  const before = treeDigest(f.root);
+  const result = await run(f, { "run-qa": true }, { runQa: () => assert.fail("QA must not run") });
+  assert.equal(step(result, "run_qa").status, "not_needed");
+  assert.equal(step(result, "run_qa").detail, "QA is current.");
+  assert.equal(afterEditExitCode(result), 0);
+  assert.deepEqual(treeDigest(f.root), before);
+}));
+
+test("blocked page QA is recorded, stopped and assessed again (E2 d)", async (t) => withNetworkGuard(async () => {
+  const f = await fixture(t);
+  f.page("upsell", PAGES.upsell.replace("Example offer", "Revised offer"));
+  const calls = [];
+  const result = await run(f, { "run-qa": true }, { runQa: qaStub(f, calls, { blocked: true }) });
+  assert.equal(calls.length, 1);
+  assert.equal(afterEditExitCode(result), 2);
+  assert.equal(step(result, "run_qa").status, "stopped");
+  assert.match(step(result, "run_qa").detail, /Disposition: blocked\nCounts: 1 fail\nhttp:upsell: HTTP 404/);
+  assert.match(step(result, "run_qa").command, /qa run .* --page upsell$/);
+  const doctor = doctorCommand({ _: ["doctor"], packet: f.packetPath, ci: true, "no-live-refs": true });
+  assert.deepEqual(result.ci, doctor.ci);
+  assert.ok(step(result, "run_qa").detail.endsWith(formatDoctorCi(doctor)));
+  assert.equal(json(f.reportPath).stages.qa.status, "blocked");
+  assert.ok(result.files.includes(".campaign-runtime/qa-verdict.json"));
+}));
+
+test("page QA exceptions or throws cannot return success without current evidence", async (t) => withNetworkGuard(async () => {
+  for (const throws of [false, true]) {
+    const f = await fixture(t);
+    f.page("upsell", PAGES.upsell.replace("Example offer", "Revised offer"));
+    const result = await run(f, { "run-qa": true }, { runQa: async () => {
+      if (throws) throw new Error("Synthetic QA refusal");
+      return { ok: true, status: "ready", local_path: null };
+    } });
+    assert.equal(afterEditExitCode(result), 2);
+    assert.equal(step(result, "run_qa").status, "stopped");
+    assert.match(step(result, "run_qa").detail, /Owed after QA:/);
+    if (throws) assert.match(step(result, "run_qa").detail, /Synthetic QA refusal/);
+    assert.equal(result.ci.status, "owed");
+  }
+}));
+
+test("unknown or unavailable assessments stop --run-qa without running it", async (t) => withNetworkGuard(async () => {
+  for (const unavailable of [false, true]) {
+    const f = await fixture(t);
+    const report = json(f.reportPath);
+    delete report.stages.qa.evidence.qc_build_fingerprint;
+    writeJson(f.reportPath, report);
+    const result = await run(f, { "run-qa": true }, {
+      runQa: () => assert.fail("Unknown debt must not run QA"),
+      ...(unavailable ? { specDerive: async (...args) => {
+        const plan = await specDeriveWithMapWriteback(...args);
+        rmSync(f.packetPath);
+        return plan;
+      } } : {}),
+    });
+    assert.equal(afterEditExitCode(result), 2);
+    assert.equal(step(result, "run_qa").status, "stopped");
+    assert.equal(step(result, "run_qa").detail, step(result, "owed").detail);
+  }
+}));
+
+test("all owed pages run together, adding the browser lane for a linked asset change", async (t) => withNetworkGuard(async () => {
+  const f = await fixture(t);
+  f.page("upsell", PAGES.upsell.replace("</head>", '<link rel="stylesheet" href="../style.css"></head>'));
+  write(join(f.output, "style.css"), "body { color: black; }");
+  await recordCommand({ _: ["record", "build"], packet: f.packetPath });
+  const report = json(f.reportPath);
+  report.stages.polish.source_build_fingerprint = report.stages.assembly.build_fingerprint;
+  report.stages.qa.evidence.qc_build_fingerprint = report.stages.assembly.build_fingerprint;
+  writeJson(f.reportPath, report);
+  write(join(f.output, "style.css"), "body { color: navy; }");
+  f.page("landing", PAGES.landing.replace("Example headline", "Revised headline"));
+  const calls = [];
+  const result = await run(f, { "run-qa": true }, { runQa: qaStub(f, calls) });
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0].page, ["landing", "upsell"]);
+  assert.equal(calls[0].browser, true);
+  assert.equal(calls[0]["test-order"], undefined);
+  assert.equal(calls[0]["legacy-api-test-order"], undefined);
+  assert.equal(calls[0]["vendor-beacons"], undefined);
+  assert.equal(afterEditExitCode(result), 0, afterEditTextLines(result).join("\n"));
+}));
 
 test("page-only copy edit records the rebuilt output and owes QA on that page (a)", async (t) => withNetworkGuard(async () => {
   const f = await fixture(t);
@@ -106,6 +255,17 @@ test("page-only copy edit records the rebuilt output and owes QA on that page (a
   assert.equal(lines[4], `Owed:\n${formatDoctorCi(doctor)}`);
   assert.equal(lines[5], "Files to commit:\n- .campaign-runtime/assembly-report.json");
   assert.match(result.next, /qa run .* --page upsell$/);
+  assert.deepEqual(lines, [
+    "Spec copy: CampaignSpec copy is present.",
+    "Build: Built output is current with the source.",
+    `Record build: ${step(result, "record_build").detail}`,
+    "Spec: Spec is current.",
+    `Owed:\n${formatDoctorCi(doctor)}`,
+    "Files to commit:\n- .campaign-runtime/assembly-report.json",
+    `Next: ${result.next}`,
+  ], "without --run-qa, the complete text retains the E1 expectation");
+  assert.equal(step(result, "run_qa"), undefined);
+  assert.equal(result.qa, undefined);
   output(t, "CASE (a)", result);
 }));
 
@@ -203,7 +363,7 @@ test("unknown flags and no-write refuse before packet read (h)", async () => wit
   const noReads = { specFetch: () => assert.fail("fetch must not run"), specDerive: () => assert.fail("derive must not run") };
   await assert.rejects(afterEditCommand({ _: ["after-edit"], packet: "/not-a-packet", mystery: true }, noReads), /Unknown flag.*--mystery.*Known flags/);
   await assert.rejects(afterEditCommand({ _: ["after-edit"], packet: "/not-a-packet", "no-write": true }, noReads), /writes records.*doctor --ci.*read-only/);
-  for (const flags of [["--mystery"], ["--no-write"], ["--run-qa"], ["--packet=missing"]]) {
+  for (const flags of [["--mystery"], ["--no-write"], ["--run-qa", "yes"], ["--packet=missing"]]) {
     const result = spawnSync(process.execPath, [CLI, "after-edit", ...flags], { encoding: "utf8" });
     assert.equal(result.status, 1, result.stderr);
     assert.doesNotMatch(result.stderr, /ENOENT|Missing required --packet/);
@@ -223,6 +383,26 @@ test("CLI JSON prints one result and preserves owed and current exit codes", asy
     assert.equal(result.ci.errors, undefined);
     assert.equal(result.ci.derived, undefined);
   }
+}));
+
+test("CLI --run-qa JSON is one result, using the real QA preflight and recording its block", async (t) => withNetworkGuard(async () => {
+  const f = await fixture(t);
+  const report = json(f.reportPath);
+  Object.assign(report.stages.qa, inputStamps(currentPacketInputs({ packet: json(f.packetPath), packetPath: f.packetPath })));
+  writeJson(f.reportPath, report);
+  f.page("upsell", PAGES.upsell.replace("Example offer", "Revised offer"));
+  const child = spawnSync(process.execPath, [CLI, "after-edit", "--packet", f.packetPath, "--no-live-refs", "--run-qa", "--json"], {
+    cwd: f.root, encoding: "utf8", env: childEnv(),
+  });
+  assert.equal(child.status, 2, child.stderr || child.stdout);
+  const result = JSON.parse(child.stdout);
+  assert.ok(result.qa, afterEditTextLines(result).join("\n"));
+  assert.equal(result.qa.status, "blocked");
+  assert.equal(step(result, "run_qa").status, "stopped");
+  assert.match(step(result, "run_qa").detail, /Owed after QA:/);
+  assert.ok(existsSync(result.qa.verdict_path));
+  assert.ok(result.files.includes(".campaign-runtime/qa-verdict.json"));
+  assert.equal(json(f.reportPath).stages.qa.status, "blocked");
 }));
 
 test("unknown evidence has only the CI assessment and exits 4", async (t) => withNetworkGuard(async () => {

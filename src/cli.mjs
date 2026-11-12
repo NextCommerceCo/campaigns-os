@@ -316,7 +316,7 @@ export { derivePackagePin, localInstallStatus };
 const TEMPLATE_FAMILY_HINT_OVERRIDDEN = "TEMPLATE_FAMILY_HINT_OVERRIDDEN";
 
 const HELP = `Campaigns OS toolkit
-  campaigns-os after-edit --packet <campaign-runtime.build.json> [--yes] [--proxy-base <url>] [--no-live-refs] [--json]   # record rebuilt output, derive the spec and report evidence owed; never builds or places test orders. Exit 2 stopped, otherwise 0 current, 3 owed, 4 unknown. Writes records; use doctor --ci for a read-only assessment.
+  campaigns-os after-edit --packet <campaign-runtime.build.json> [--yes] [--proxy-base <url>] [--no-live-refs] [--run-qa] [--json]   # record rebuilt output, derive the spec and report evidence owed; --run-qa checks owed pages only. Never builds or places test orders. Exit 2 stopped, otherwise 0 current, 3 owed, 4 unknown. Writes records; use doctor --ci for a read-only assessment.
 
 Usage:
   campaigns-os help
@@ -1100,7 +1100,14 @@ async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = nul
   }
 
   if (command === "after-edit") {
-    const result = await afterEditCommand(args, { specFetch: specFetchCommand, specDerive: specDeriveWithMapWriteback, specDeriveTextLines });
+    const result = await afterEditCommand(args, {
+      specFetch: specFetchCommand, specDerive: specDeriveWithMapWriteback, specDeriveTextLines,
+      runQa: async (qaArgs) => {
+        const { runQa } = await import("./qa-node.mjs");
+        return runQa(qaArgs, { runSessionActive: Boolean(ambient?.session?.run_id) });
+      },
+      recordQaStageOutcome,
+    });
     console.log(args.json ? JSON.stringify(result, null, 2) : afterEditTextLines(result).join("\n"));
     process.exitCode = afterEditExitCode(result);
     return;
