@@ -41,7 +41,7 @@ test("--currency parses from the command line and is upper-cased; absent, there 
 });
 
 test("an invalid --currency is refused with a clear message, before anything resolves or is fetched", async () => {
-  for (const argv of [["--currency"], ["--currency", "GB"], ["--currency", "GBPX"], ["--currency", "GBP,EUR"], ["--currency", "G1P"], ["--currency", " GBP"], ["--currency", "ÉUR"], ["--currency", "£"]]) {
+  for (const argv of [["--currency"], ["--currency", "GB"], ["--currency", "GBPX"], ["--currency", "GBP,EUR"], ["--currency", "G1P"], ["--currency", " GBP"], ["--currency", "ÉUR"], ["--currency", "£"], ["--currency", "US Dollar"]]) {
     const args = parseArgs(["qa", "run", ...argv]);
     assert.throws(() => qaRunCurrency(args), (error) => {
       assert.equal(error.code, REFUSED_INVOCATION, argv.join(" "));
@@ -325,7 +325,7 @@ function resolvedFixture(packetPath) {
   };
 }
 
-async function runWith(extraArgs, { topologies: entryTopologies = null } = {}) {
+async function runWith(extraArgs, { topologies: entryTopologies = null, specCurrency = "USD" } = {}) {
   const outputDir = mkdtempSync(join(tmpdir(), "campaigns-os-qa-currency-"));
   const packetPath = join(outputDir, "campaign-runtime.build.json");
   writeFileSync(packetPath, `${JSON.stringify({ schema_version: "campaign-runtime-build-packet/v0" })}\n`);
@@ -334,12 +334,15 @@ async function runWith(extraArgs, { topologies: entryTopologies = null } = {}) {
   globalThis.fetch = async (url) => {
     fetched.push(String(url));
     if (String(url).startsWith("https://shop.example.com/")) return new Response("<!doctype html><html><head><title>Offer</title></head><body></body></html>", { status: 200 });
+    if (String(url).startsWith("https://orders.example.test/")) return new Response("{}", { status: 400 });
     throw new Error(`Unexpected fetch: ${String(url)}`);
   };
   try {
     const resolved = resolvedFixture(packetPath);
+    if (specCurrency === null) delete resolved.rawSpec.campaign.currency;
+    else resolved.rawSpec.campaign.currency = specCurrency;
     if (entryTopologies) resolved.topologies = entryTopologies;
-    const result = await runResolvedQa({ _: ["qa", "run"], "output-dir": outputDir, "no-post-verdict": true, "no-live-refs": true, json: true, ...extraArgs }, resolved);
+    const result = await runResolvedQa({ _: ["qa", "run"], "output-dir": outputDir, "no-post-verdict": true, "no-live-refs": true, "no-remit": true, json: true, ...extraArgs }, resolved);
     const persisted = JSON.parse(readFileSync(result.local_path, "utf8"));
     return { result, persisted, fetched };
   } finally {
@@ -374,8 +377,20 @@ test("--currency fetches the entry page with ?currency=<CODE> and the verdict re
   }
 });
 
-test("control: without --currency the run fetches the resolved URLs and the verdict has the same rows, with no currency detail", async () => {
-  const plain = await runWith({});
+test("without --currency a USD spec pins USD and records that the currency defaulted from the spec", async () => {
+  const { result, persisted, fetched } = await runWith({});
+  const entry = "https://shop.example.com/offer/?utm_source=newsletter&utm_campaign=spring+sale&currency=USD";
+  assert.ok(fetched.includes(entry));
+  assert.deepEqual(result.entry_urls.map((item) => item.url), [entry]);
+  for (const verdict of [result.verdict, persisted]) {
+    assert.deepEqual(verdict.assertions.find((item) => item.id === "http:landing").evidence, {
+      currency: "USD", currency_defaulted_from_spec: true,
+    });
+  }
+});
+
+test("control: a spec without currency leaves the run unpinned", async () => {
+  const plain = await runWith({}, { specCurrency: null });
   const gbp = await runWith({ currency: "GBP" });
   assert.deepEqual([...new Set(plain.fetched)].sort(), [CHECKOUT_URL, LANDING_URL].sort());
   assert.deepEqual(plain.result.entry_urls.map((entry) => entry.url), [LANDING_URL]);
@@ -390,6 +405,38 @@ test("control: without --currency the run fetches the resolved URLs and the verd
   assert.equal(plain.persisted.disposition, gbp.persisted.disposition);
 });
 
+test("a malformed spec currency without --currency leaves the run unpinned without refusing", async () => {
+  for (const currency of ["US Dollar", "", "US", "USDX", " USD", "ÉUR", 123, true]) {
+    assert.equal(qaRunCurrency({}, { campaign: { currency } }), null);
+  }
+  const { result, persisted, fetched } = await runWith({}, { specCurrency: "US Dollar" });
+  assert.deepEqual([...new Set(fetched)].sort(), [LANDING_URL, CHECKOUT_URL].sort());
+  assert.deepEqual(result.entry_urls.map((entry) => entry.url), [LANDING_URL]);
+  assert.equal(fetched.some((url) => new URL(url).searchParams.has("currency")), false);
+  assert.equal(persisted.assertions.find((entry) => entry.id === "http:landing").evidence, undefined);
+  assert.equal(persisted.disposition, "ready_with_exceptions");
+});
+
+test("an explicit malformed --currency still refuses when the spec currency is malformed", async () => {
+  const message = '--currency takes one three-letter currency code, such as GBP or EUR (got "US Dollar"). Run qa run once per currency.';
+  assert.throws(() => qaRunCurrency({ currency: "US Dollar" }, { campaign: { currency: "US Dollar" } }), (error) => {
+    assert.equal(error.code, REFUSED_INVOCATION);
+    assert.equal(error.message, message);
+    return true;
+  });
+  await assert.rejects(runWith({ currency: "US Dollar" }, { specCurrency: "US Dollar" }), (error) => error.code === REFUSED_INVOCATION && error.message === message);
+});
+
+test("a spec currency does not pin or refuse a legacy API test-order run without --currency", async () => {
+  const args = { "legacy-api-test-order": "accept", cart: "1:1", "api-key": "example-key", "campaigns-api-base": "https://orders.example.test" };
+  assert.equal(qaRunCurrency(args, { campaign: { currency: "USD" } }), null);
+  const { result, fetched, persisted } = await runWith(args);
+  assert.deepEqual(result.entry_urls.map((entry) => entry.url), [LANDING_URL]);
+  assert.ok(fetched.some((url) => url.startsWith("https://orders.example.test/")), "the legacy diagnostic was attempted without a currency refusal");
+  assert.equal(fetched.some((url) => url.includes("currency=")), false);
+  assert.equal(persisted.assertions.find((entry) => entry.id === "http:landing").evidence, undefined);
+});
+
 test("an entry URL that does not parse keeps its row status, and its http row says the currency was not applied", async () => {
   const unparseable = () => {
     const tree = topologies();
@@ -401,7 +448,7 @@ test("an entry URL that does not parse keeps its row status, and its http row sa
   assert.equal(entryPages.size, 0);
   assert.deepEqual([...notApplied.values()], [{ currency: "GBP", reason: "entry URL does not parse as an absolute URL" }]);
 
-  const plain = await runWith({}, { topologies: unparseable() });
+  const plain = await runWith({}, { topologies: unparseable(), specCurrency: null });
   const gbp = await runWith({ currency: "GBP" }, { topologies: unparseable() });
   assert.equal(gbp.fetched.some((url) => url.includes("currency=")), false);
   for (const verdict of [gbp.result.verdict, gbp.persisted]) {
@@ -466,6 +513,14 @@ test("qa run --site --currency tags the slug's entry page and records evidence.c
       assert.match(rows[0].id, /^http:/);
       assert.equal(rows[0].evidence.currency, "GBP");
     }
+    fetched.length = 0;
+    const unpinned = await runQaCli(parseArgs([
+      "qa", "run", "--site", repo, "--base-url", "https://preview.example.com", "--family", "olympus", "--slug", "acme",
+      "--output-dir", join(repo, "qa-output"), "--no-post-verdict", "--no-remit", "--no-live-refs", "--json",
+    ]));
+    assert.deepEqual(unpinned.entry_urls.map((item) => item.url), ["https://preview.example.com/acme/"]);
+    assert.equal(fetched.some((url) => url.includes("currency=")), false);
+    assert.equal(unpinned.verdict.assertions.some((item) => item.evidence?.currency || item.evidence?.currency_defaulted_from_spec), false);
   } finally {
     globalThis.fetch = originalFetch;
     console.log = originalLog;
@@ -482,7 +537,7 @@ test("a non-USD --currency on an ordering run with no --test-country warns, and 
     return lines[0] || null;
   };
   const line = warned(["--currency", "gbp", "--test-order", "common"]);
-  assert.match(line, /^\[qa:test-order\] --currency GBP with no --test-country: test orders use the default US shipping address\./);
+  assert.equal(line, "[qa:test-order] --currency GBP with no --test-country: test orders use the default US shipping address. Pass --test-country, --test-address1, --test-city, --test-province and --test-postal for the GBP market, or ignore this if a US address is intended.\n");
   assert.match(line, /--test-country, --test-address1, --test-city, --test-province and --test-postal/);
   assert.ok(warned(["--currency", "EUR", "--test-order"]), "a bare --test-order places orders");
   assert.equal(warned(["--currency", "GBP", "--test-order", "common", "--test-country", "GB"]), null);
@@ -491,6 +546,17 @@ test("a non-USD --currency on an ordering run with no --test-country warns, and 
   assert.equal(warned(["--currency", "GBP"]), null, "no orders, no address");
   assert.equal(warned(["--currency", "GBP", "--test-order", "off"]), null);
   assert.equal(warned(["--test-order", "common"]), null);
+});
+
+test("a defaulted non-USD currency warns without --test-country just as an explicit currency does", () => {
+  const spec = { campaign: { currency: "GBP" } };
+  const lines = [];
+  const write = (line) => lines.push(line);
+  assert.equal(warnCurrencyWithoutTestCountry({ "test-order": "common" }, write, spec), true);
+  assert.equal(lines[0], "[qa:test-order] the run currency GBP (from the spec's campaign.currency) with no --test-country: test orders use the default US shipping address. Pass --test-country, --test-address1, --test-city, --test-province and --test-postal for the GBP market, or ignore this if a US address is intended.\n");
+  assert.equal(warnCurrencyWithoutTestCountry({ "test-order": "common", "test-country": "GB" }, write, spec), false);
+  assert.equal(warnCurrencyWithoutTestCountry({ "test-order": "common", currency: "USD" }, write, spec), false);
+  assert.equal(lines.length, 1);
 });
 
 // --- The run currency is checked, not only requested (#713) ----------------
@@ -728,9 +794,13 @@ test("qa run --currency GBP: a campaign that prices in USD blocks the verdict (e
   assert.ok(priced.requested.every((request) => request.currency === "GBP"));
   assert.equal(priced.verdict.assertions.some((entry) => entry.id.startsWith("commercial-currency:")), false);
 
-  // Control: no --currency, the same USD answer, the campaign currency asked for, no row.
+  // Control: no --currency pins the run to the spec's USD; the matching USD answer produces no row.
   const plain = await run({}, "USD");
   assert.ok(plain.requested.every((request) => request.currency === "USD"));
   assert.equal(plain.verdict.assertions.some((entry) => entry.id.startsWith("commercial-currency:")), false);
+  // The same no-flag run is pinned to USD, so a GBP answer produces a currency blocker.
+  const defaultMismatch = await run({}, "GBP");
+  assert.ok(defaultMismatch.requested.every((request) => request.currency === "USD"));
+  assert.equal(defaultMismatch.verdict.assertions.find((entry) => entry.id === "commercial-currency:USD:GBP")?.severity, "blocker");
   assert.equal(plain.verdict.disposition, priced.verdict.disposition);
 });
