@@ -4300,6 +4300,51 @@
         }
       ],
       "entry_sha256": "5471b744df7e11dcf12f8d81d311141c8446d65d259e8524cdac559a07a9c5ac"
+    },
+    {
+      "id": "RL-0343",
+      "sequence": 332,
+      "date": "2026-11-12",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.68.0+agent.16",
+      "changelog_sha256": "9b4c27c261d2cca2741a598e20619be6695bed8f443b8853c84941077fd7562f",
+      "agent_impact": "After record build or record baseline on a funnel Polish or QA has already reviewed, read the lines under \"doctor --ci reads this build as:\" (and the ci object in --json) for what Polish and QA owe; they are doctor --ci's own reading for that build, in plain text. An advisory Polish is then not printed as stages.polish.status = required, and a baseline over current evidence prints \"Owed stages: none.\" with deploy named as the served-URL record that follows when deploy is required; any other next stage is still printed. A first build and a dry run print what they printed before. In readback, a STALE reading line in the doctor block means a later command changed what doctor reads after that doctor output was written: run doctor before relying on it; it does not change clean. On a funnel recorded before 1.62 whose rebuild owes a full QA for that reason alone, doctor --ci adds a line naming record baseline as a named person's sign-off, which tests nothing and needs a completed QA on record.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/campaigns-os-build-flow.md",
+          "surface_entry": "docs/campaigns-os-build-flow.md",
+          "summary": "Describe the ci reading record build and record baseline return and print (plain text, once a stage has reviewed a build), the baseline sign-off line and its conditions, and that a dry run is unchanged."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/readback.md",
+          "surface_entry": "docs/readback.md",
+          "summary": "Describe the STALE reading line readback prints from the retained doctor output's stale stamp, the stale and stale_reason fields, and that clean is unaffected."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Mention the baseline sign-off line in the doctor --ci description."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "record baseline's text drops the Next stage line only when the stage is deploy and the served-URL line names it; no flag or usage text changes."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/ci.mjs",
+          "surface_entry": null,
+          "summary": "doctor --ci adds one line naming record baseline after its remedy when a full QA is owed by a rebuild and the pre-1.62 reason is the only reason; remedies, the ci object, statuses and exit codes are unchanged."
+        }
+      ],
+      "entry_sha256": "70d33c7342f653e4b5e65b3dd7ac347e3c094c3d5a8160509b5f3bf72935f5c4"
     }
   ]
 }

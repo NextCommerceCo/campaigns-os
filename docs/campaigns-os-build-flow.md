@@ -56,7 +56,20 @@ live campaign. Run `doctor --packet <packet>` without that flag to see the
 offers set in the Campaigns App have moved away from the CampaignSpec; it stays a
 warning and does not change the CI status.
 Readback's `evidence_debt` uses the same assessment, showing an agent this debt
-before it edits; its separate time-based staleness assessment is not the CI signal.
+before it edits; its separate checkout-age assessment is not the CI signal.
+
+After writing, `record build` and `record baseline` return the same `ci` assessment.
+Its `status` and `exit_code` belong to `doctor --ci --json`, not to the successful
+record command, which exits 0. When either stage has a recorded build fingerprint
+or a baseline, the text introduces plain-text evidence lines with
+`doctor --ci reads this build as: <status>`, without an exit label, and includes
+`Owed stages: none.` when nothing is owed.
+Advisory Polish is reported as advisory even when the report's stored
+stage status is `required`. QA names the changed pages or owes a full run.
+The stored stage values do not change to match this presentation.
+On the first build, before either stage has reviewed a build, the text keeps
+the existing stage lines and prints no evidence block.
+A dry run has no post-write reading and keeps its existing output.
 
 ### What a change owes
 
@@ -123,6 +136,20 @@ can accept it:
 campaigns-os record build --packet <packet>
 campaigns-os record baseline --packet <packet> --accepted-by "<named person>" --reason "<why>"
 ```
+
+This needs a completed QA on record. After its existing remedy, `doctor --ci`
+adds a sentence offering this named person's sign-off only when `record build`
+has recorded the current build, that rebuild owes QA at full scope, and every
+change reason is `commerce_signature_unavailable` without a page path, with at
+least one reason. Brief or spec changes, page-only QA, unknown QA, mixed reasons
+and a rebuild not yet recorded do not receive this sentence. The sign-off
+accepts the current build as the starting point and tests nothing.
+After acceptance, the record command prints `Owed stages: none.`. If deploy is
+still required, it names deploy as the served-URL record that follows. The stage
+doctor's picker names is still printed as the next stage unless it is deploy and
+the served-URL line already names it. Its JSON
+`next_stage` still carries doctor's stage picker result; that field is separate
+from the evidence owed in `ci`.
 
 This tests nothing and places no orders. Polish and QA read `baseline_accepted`,
 which is never `completed`. What they held moves to history, so its purchase
