@@ -4114,6 +4114,33 @@
         }
       ],
       "entry_sha256": "2a39db452087e952f74ece965e217b217eba2703dea39c3bb033392f2fdfc000"
+    },
+    {
+      "id": "RL-0346",
+      "sequence": 326,
+      "date": "2026-11-12",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.68.0+agent.13",
+      "changelog_sha256": "ec45ce5146c336f62e939bc35c96051c2b22863278939e3540e587d73ef313d6",
+      "agent_impact": "After handoff, when a spec page was never built and exactly one unbound page file of the same page-kit type sells exactly that page's package refs (packages[] plus the package refs its offers[] carry), spec derive writes that page's page_url to the file's route and adds no page; the page keeps its id, packages and offers. Do not hand-edit page_url for this case first: run spec derive --dry-run and read the plan. A match that is not one-to-one is held and reported as page_likely_pair; a partial overlap is still added and reported as page_likely_pair as a note. Only complete literal package values in a file count; a file with a Liquid or computed package value is added as before.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Describe the re-point of a never-built page on a unique exact package match, the page_likely_pair reason, and what counts as a literal package ref."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "spec derive reads each page file's literal package refs, so its plan can re-point a never-built page; no flag or usage text changes."
+        }
+      ],
+      "entry_sha256": "203ea67c23529cf092d171618e428a9455b5ca46541801fca5b1e16ac1560132"
     }
   ]
 }

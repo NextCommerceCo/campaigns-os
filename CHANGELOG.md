@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.68.0+agent.13] - 2026-11-12
+
+### Fixed
+
+- `spec derive` re-points a never-built spec page at the one built page that sells exactly its packages, instead of adding a duplicate page beside it (#756).
+
 ## [1.68.0+agent.9] - 2026-11-11
 
 ### Changed
