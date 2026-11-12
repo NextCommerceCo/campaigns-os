@@ -66,11 +66,31 @@ const SHIPPING_REF_ATTRIBUTES = new Set(["data-next-shipping-id"]);
 const PACKAGE_CONFIG_KEY = /["']?packageId["']?\s*:\s*(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_-]+))/gi;
 const SHIPPING_CONFIG_KEY = /["']?shippingId["']?\s*:\s*(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_-]+))/gi;
 
-export function extractRenderedRefs(content, document = null) {
+export function extractRenderedRefs(content, document = null, { literalPackages = false } = {}) {
   const packageRefs = new Set();
   const shippingRefs = new Set();
+  let nonliteralPackage = false;
+  const source = String(content || "");
+  // Derive reads source, unlike the live check's rendered HTML. A package
+  // hidden in Liquid is not evidence of the exact set the file sells.
+  if (literalPackages) {
+    for (const [block] of source.matchAll(/\{%-?\s*(comment|raw)\s*-?%\}[\s\S]*?\{%-?\s*end\1\s*-?%\}/gi)) {
+      if (/\bdata-(?:next-)?package-id\b|["']?packageId["']?\s*:/i.test(block)) nonliteralPackage = true;
+    }
+  }
   const readConfig = (text) => {
-    for (const match of String(text || "").matchAll(PACKAGE_CONFIG_KEY)) addRenderedRef(packageRefs, match[1] || match[2] || match[3]);
+    const config = String(text || "");
+    if (literalPackages) {
+      for (const key of config.matchAll(/\b["']?packageId["']?\s*:/gi)) {
+        // A quoted id or integer must be the whole value. Identifiers,
+        // templates and expressions cannot establish an exact package set.
+        const value = config.slice(key.index + key[0].length).match(/^\s*(?:"([A-Za-z0-9_-]+)"|'([A-Za-z0-9_-]+)'|(\d+))\s*(?=$|[,};)\]])/);
+        if (value) addRenderedRef(packageRefs, value[1] || value[2] || value[3]);
+        else nonliteralPackage = true;
+      }
+    } else {
+      for (const match of config.matchAll(PACKAGE_CONFIG_KEY)) addRenderedRef(packageRefs, match[1] || match[2] || match[3]);
+    }
     for (const match of String(text || "").matchAll(SHIPPING_CONFIG_KEY)) addRenderedRef(shippingRefs, match[1] || match[2] || match[3]);
   };
   const visit = (node) => {
@@ -79,7 +99,10 @@ export function extractRenderedRefs(content, document = null) {
       if (!child.tagName) continue;
       for (const attr of child.attrs || []) {
         const name = attr.name.toLowerCase();
-        if (PACKAGE_REF_ATTRIBUTES.has(name)) addRenderedRef(packageRefs, attr.value);
+        if (PACKAGE_REF_ATTRIBUTES.has(name)) {
+          if (literalPackages && !/^[A-Za-z0-9_-]+$/.test(attr.value.trim())) nonliteralPackage = true;
+          addRenderedRef(packageRefs, attr.value);
+        }
         else if (SHIPPING_REF_ATTRIBUTES.has(name)) addRenderedRef(shippingRefs, attr.value);
         else readConfig(attr.value);
       }
@@ -89,12 +112,13 @@ export function extractRenderedRefs(content, document = null) {
       visit(child);
     }
   };
-  visit(typeof document === "function" ? document() : parseHtml(String(content || "")));
+  visit(typeof document === "function" ? document() : parseHtml(source));
+  if (nonliteralPackage) packageRefs.clear();
   return { package_refs: packageRefs, shipping_refs: shippingRefs };
 }
 
-export function extractRenderedPackageRefs(content) {
-  return extractRenderedRefs(content).package_refs;
+export function extractRenderedPackageRefs(content, options = {}) {
+  return extractRenderedRefs(content, null, options).package_refs;
 }
 
 function addRenderedRef(refs, value) {
