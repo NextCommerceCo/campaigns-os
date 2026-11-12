@@ -4095,13 +4095,34 @@
       "entry_sha256": "f43cd05d36051a9df300c4c522e829d0fe5cf12e10118904f22b1fe3101faaf2"
     },
     {
-      "id": "RL-0339",
+      "id": "RL-0340",
       "sequence": 325,
       "date": "2026-11-11",
       "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.68.0+agent.7",
-      "changelog_sha256": "21ac7d520cbf651091933d51f2a9841564fc25423bdfd75666d4c02b25911dcd",
+      "changelog_section": "1.68.0+agent.9",
+      "changelog_sha256": "948b592ac2b522c4a57cc31a4999c02491b1f264b91eab52e67697ca32a1d7cf",
+      "agent_impact": "standardize --slug <route> now limits the source audit to src/<route>/ and the files its pages include, and reads only that route's .campaign-runtime records, so findings and artifacts from other routes no longer appear. The report gains source_scope and entry_point, a finding in a shared file carries shared_files with the routes that use it, and a slug with no source pages reports source.scope_unresolved. Without --slug the report is unchanged.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/campaign-standardization-report.md",
+          "surface_entry": "docs/campaign-standardization-report.md",
+          "summary": "Describe the route-scoped source audit, shared-file attribution, the entry-point line and source.scope_unresolved."
+        }
+      ],
+      "entry_sha256": "2a39db452087e952f74ece965e217b217eba2703dea39c3bb033392f2fdfc000"
+    },
+    {
+      "id": "RL-0339",
+      "sequence": 326,
+      "date": "2026-11-11",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.68.0+agent.12",
+      "changelog_sha256": "ec0fa8147b46c5cfe0cafe11194cd124e521f5944de3115a3a42f038267b4af6",
       "agent_impact": "After spec derive and record spec add a page, polish capture no longer refuses it as neither mapped nor explicitly skipped: the page is planned and captured build-side, with its source side reported as source_html_missing. Do not hand-write skip_reason on added pages. The plan and the captures record list skipped_pages with their reasons, and captures.evidence_only holds build-side captures of template-stock pages; those never gate, compare or count toward the capturable-route rule.",
       "compatibility": "additive",
       "migration": "none",
@@ -4113,7 +4134,7 @@
           "summary": "Say that a page record spec adds after handoff is planned for capture and QA without a hand-written skip_reason."
         }
       ],
-      "entry_sha256": "1f46631f08f97d65317ea7ae8f365d425acb311909c8f34cf891fc3b869c0f27"
+      "entry_sha256": "2ff7cd796ba914f53d7371b026f41567568437f5e9eed8fdc8a1803e81119494"
     }
   ]
 }

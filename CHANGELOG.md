@@ -2,11 +2,17 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.68.0+agent.7] - 2026-11-11
+## [1.68.0+agent.12] - 2026-11-11
 
 ### Fixed
 
 - `polish capture` plans the pages `spec derive` adds after handoff, lists the pages it leaves out, and takes evidence-only captures of template-stock pages (#756).
+
+## [1.68.0+agent.9] - 2026-11-11
+
+### Changed
+
+- `standardize --slug <route>` audits only that route's source, lists the routes that share a file a finding sits in, and names the entry point to come back in through (#754).
 
 ## [1.68.0+agent.4] - 2026-11-11
 

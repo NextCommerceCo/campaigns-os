@@ -196,8 +196,12 @@ checkout bindings against the bundled contracts, and, when a built
 `_site` and a known template family exist, runs the built-output
 doctor. The flags, exit codes and the slug-resolution rules are in
 [campaign-standardization-report.md](./campaign-standardization-report.md).
-Its findings name the entry point above the campaign should re-enter
-through when repair is needed.
+With `--slug <route>`, its source findings cover that route and its transitive
+Liquid dependencies, with shared files attributed to the routes using them.
+The scoped report names the entry point the campaign should re-enter through:
+its existing Build Packet and `campaigns-os next --packet <path>` when one
+belongs to that route; otherwise **Hand-authored**, with the existing
+`doctor --built ... --slug <route>` proof command when built output exists.
 
 ## Out of the consumer's hands
 
