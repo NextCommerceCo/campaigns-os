@@ -22,8 +22,15 @@ Hand-built Page Kit funnels can now join the workflow at the route their pages a
 
 ### Fixed
 
+- Publishes `1.68.0+agent.10`: `record deploy` refuses when doctor's Polish gate is blocked, so a Polish recorded as skipped no longer earns a deploy record (#756, #760).
 - Publishes `1.68.0+agent.4`: parse5 and entities are pinned and bundled, so saved commerce-signature/v1 records stay valid across consumer installs (#744).
 - Publishes `1.68.0+agent.3`: the pack check and runtime-recipe test support npm 12's pack JSON object and dependency install-script approval behaviour (#757).
+
+## [1.68.0+agent.10] - 2026-11-11
+
+### Fixed
+
+- `record deploy` refuses when doctor's Polish gate is blocked, so a Polish recorded as skipped no longer earns a deploy record (#756).
 
 ## [1.68.0+agent.9] - 2026-11-11
 
