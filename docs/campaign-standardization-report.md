@@ -107,8 +107,7 @@ as the default extension. Cycles terminate. Variable references are counted
 in the report as unresolved, without guessing a file or adding a blocker.
 References outside `src/` are ignored. A slug must be a single path segment;
 both source and built-output scope findings state that rule for malformed
-slugs, and the built-output next action asks for one path segment (a route
-folder name).
+slugs, and both next actions ask for one path segment (a route folder name).
 If it is invalid, its `src/<route>/` folder is missing, or that folder contains
 no page files (only includes, layouts or assets, for example), the report adds
 `source.scope_unresolved` with severity and category `operator_readiness`,
