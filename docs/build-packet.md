@@ -1390,12 +1390,45 @@ on disk without writing (see docs/workflow-findings-sidecar.md).
 
 ### Several funnels in one project
 
+To bind a saved Map to pages already built at another route, use
+`prepare-build --route short --source <target>/src/short --target <target>`
+with the usual spec and template flags. Or use `--adopt src/short`: this reads
+the route from the folder name and uses that folder as the source. Relative
+`--adopt` paths resolve against the target. The folder must be a Page Kit route
+folder directly under the target's `src/`, holding HTML page files. A conflicting
+`--route` or `--source` is refused. `start` and `build` accept the same flags.
+`--adopt` also declares the design source as [built first](design-source-package.md#built-first):
+the built pages stand in for source evidence, with no design comparison.
+See the [built-first entry point](entry-points.md#built-first).
+`--public-route-slug` is an alias of `--route`, with the same recorded binding.
+The explicit route must be one normalized slug segment, using letters, digits,
+dots, underscores or hyphens and not starting with a dot.
+
+The Map keeps its own slug. The packet's `campaign.public_route_slug` is the
+bound built and served route; optional `campaign.map_public_route_slug` records
+the Map's own slug only when it differs, as one normalized slug segment (letters,
+digits, dots, underscores or hyphens, not starting with a dot). An equal value
+is treated as no binding. A difference without that recorded,
+spec-matching binding still blocks doctor, sync, derive and record spec. The
+binding is checked even when page routes have not changed. Spec page routes and
+SDK routing hints may be relative or prefixed by the Map's slug: with Map slug
+`long-campaign-name` bound to `short`, both `checkout/` and
+`/long-campaign-name/checkout/` project to `/short/checkout/`. The bare Map
+prefix projects to the bound root; `long-campaign-name-v2/x/` keeps its distinct
+first segment. A declared spec root at the Map prefix becomes `/short/`, while
+`route_root: "/"` stays root-served. The Map itself is not rewritten. The
+bound route selects `assembly.output_dir`, `_site/<route>/` and records under
+`.campaign-runtime/funnels/<route>/`; existing records for that route keep their
+layout. No page folder, packet or records are created for the Map's route.
+Existing pages at the bound output directory need no scaffold. Binding does
+not clear the design-source or later lifecycle gates.
+
 One Page Kit project can hold several funnels, each with its own public route
 slug (`campaign.public_route_slug`, the `_site/<route>/` directory). Each funnel
 keeps its own packet and its own records, so setting up, building, recording or
 running QA for one funnel never changes another funnel's files.
 
-- The first funnel set up in a project uses the layout above: the packet
+- The first funnel set up without a route binding uses the layout above: the packet
   `campaign-runtime.build.json` and its records directly under
   `.campaign-runtime/`.
 - Every later funnel gets a packet named `campaign-runtime-<route>.build.json`
@@ -1473,6 +1506,17 @@ up as another funnel and prints a `Funnel:` line saying so, with the steps to
 make it a rename instead (the JSON result carries `funnelAddedBeside`, the
 default packet's path and route).
 
+When intake had no explicit route, its chosen route has no page folder, and the
+source is an unclaimed Page Kit route folder of this target, `Funnel:` instead
+offers to bind this funnel to the source route. It names the exact re-run
+command with `--adopt src/<existing route>` and the packet and records to delete
+first. It does not offer to rename the default packet's funnel in this case.
+The JSON result carries the same route, command and cleanup paths in
+`funnelBindingOffer`. Never delete the shared `.campaign-runtime/` directory;
+when intake used project-level records, the offer lists individual files.
+`next` and readback show `Map slug "<Map route>" → bound route "<served route>"`
+alongside route identity for a bound packet.
+
 To rename the route of a project's first funnel (the one at
 `campaign-runtime.build.json`):
 
@@ -1515,6 +1559,12 @@ pages only, which `qa run --packet <packet> --page <page_id>` pays. Other doctor
 change the CI exit. It prints Markdown for a PR comment that opens with the
 kind of change it found and what that owes, or adds `ci.status`,
 `ci.exit_code`, `ci.polish`, `ci.qa` and `ci.changes` under `--json`.
+After the existing Markdown remedy, a sentence offers a named person's baseline
+sign-off only when `record build` has recorded the current build, that rebuild
+owes QA at full scope and every change reason is
+`commerce_signature_unavailable` without a page path, with at least one reason.
+It accepts the current build as the starting point, tests nothing and needs a
+completed QA on record; brief or spec changes and mixed reasons do not qualify.
 `--ci` adds no writes or network reads; pass `--no-live-refs` in CI to disable
 doctor's existing live campaign read. Without `--ci`, inspection behavior is unchanged.
 
@@ -1938,6 +1988,20 @@ do not treat it as the enforced gate; doctor/QA enforcement reads the packet
 and report proof policy fields above.
 
 ## CampaignSpec Retrieval (`--map-id`)
+
+For existing built pages with a saved Map, `campaigns-os doctor --built
+<target> --slug <route> --emit-packet <path> --map-id <id>` fetches the Map using
+the same proxy, `--proxy-base`, `--cached-spec`, cache path and symlink refusal
+as intake below. The emitted minimal packet carries `spec.map_id` and
+`spec.local_path` pointing at that cache file. If the Map's slug differs from
+the built route, `campaign.map_public_route_slug` records the Map's slug while
+`campaign.public_route_slug` stays the built route; equal slugs add no binding.
+The packet stays marked `_synthesized`: source HTML and assembly provenance are
+still absent. This joins the inspection to the saved Map; it does not record
+completed stages. A fetch failure writes no packet or cache. The same managed
+`.gitignore` handling keeps `fetched-specs/` committable. Without `--map-id`,
+`--emit-packet` writes the existing stub unchanged; without `--emit-packet`,
+`--map-id` only labels the inspection and never fetches.
 
 `campaigns-os start` / `campaigns-os prepare-build` accept the CampaignSpec via either of two routes:
 

@@ -17,6 +17,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, join, relative, sep } from "node:path";
 
 import { isFileReadFailure } from "./cart-placeholders.mjs";
+import { effectiveMapPublicRouteSlug } from "./route-identity.mjs";
 
 const HTML_EXT = ".html";
 
@@ -244,10 +245,14 @@ export function synthesizeMinimalBuildPacket({
   scope,
   family = null,
   mapId = null,
+  specPath = null,
+  mapPublicRouteSlug = null,
   baseUrl = null,
   deployTarget = "unknown",
 }) {
   const slug = scope?.slug || "";
+  const publicRouteSlug = slug || mapId || "local-campaign";
+  mapPublicRouteSlug = effectiveMapPublicRouteSlug({ campaign: { public_route_slug: publicRouteSlug, map_public_route_slug: mapPublicRouteSlug } });
   const outputDir = scope?.campaign_dir && targetRepo
     ? relative(targetRepo, scope.campaign_dir).split(sep).join("/") || "."
     : ".";
@@ -261,11 +266,13 @@ export function synthesizeMinimalBuildPacket({
       html_count: scope?.html_count || 0,
     },
     campaign: {
-      public_route_slug: slug || (mapId || "local-campaign"),
+      public_route_slug: publicRouteSlug,
+      ...(mapPublicRouteSlug ? { map_public_route_slug: mapPublicRouteSlug } : {}),
       allowed_domains_confirmed: false,
     },
     spec: {
       map_id: mapId || slug || "local-campaign",
+      ...(specPath ? { local_path: specPath } : {}),
     },
     assembly: {
       target_repo: targetRepo,

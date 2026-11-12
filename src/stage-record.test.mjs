@@ -14,7 +14,7 @@ import Ajv2020 from "ajv/dist/2020.js";
 
 import { ADAPTER_DECISION_SCALAR_VALUES } from "./adapter-decision-contract.mjs";
 import { computeBuildFingerprint } from "./built-site-scope.mjs";
-import { parseArgs, polishCaptureCommand, recordQaStageOutcome } from "./cli.mjs";
+import { parseArgs, polishCaptureCommand, recordQaStageOutcome, resultTextLines } from "./cli.mjs";
 import { currentPacketInputs } from "./input-currency.mjs";
 import { evaluateRecordedHiddenEagerMediaCheckpoint } from "./polish-node.mjs";
 import { resolveInvocationPolicy } from "./invocation.mjs";
@@ -1881,6 +1881,72 @@ function recordThroughBuild(f) {
   recordOk(f, "build");
   assert.deepEqual(stageStatuses(f, ["setup", "assembly"]), { setup: "completed", assembly: "completed" }, "setup: setup and build are recorded");
 }
+
+test("record baseline shares CI's nothing-owed line and labels deploy as the served-URL record", () => {
+  withLifecycle((f) => {
+    recordThroughBuild(f);
+    mutateJson(f.reportPath, (report) => {
+      const fingerprint = report.stages.assembly.build_fingerprint;
+      delete report.stages.assembly.commerce_signature;
+      report.stages.polish = { stage: "polish", status: "completed", source_build_fingerprint: fingerprint };
+      report.stages.qa = { stage: "qa", status: "completed", evidence: { source_build_fingerprint: fingerprint } };
+      report.stages.deploy = { stage: "deploy", status: "completed", source_build_fingerprint: fingerprint };
+    });
+    buildSite(f, " revised");
+    recordOk(f, "build");
+    const before = readJson(f.reportPath).stages.deploy;
+    assert.equal(before.status, "required", "the rebuild made the old served-URL record required");
+    const result = recordOk(f, "baseline", ["--accepted-by", "Synthetic Signatory 01", "--reason", "Accept the trial funnel as the starting point"]);
+    const expected = runJson(["doctor", "--packet", f.packetPath, "--ci", "--no-live-refs"], f.dir).json.ci;
+    assert.deepEqual(result.ci, expected, "baseline JSON carries the same post-write evidence reading as CI");
+    assert.equal(expected.status, "current");
+    assert.equal(expected.polish.status, "current");
+    assert.equal(expected.qa.status, "current");
+    const markdown = runCli(["doctor", "--packet", f.packetPath, "--ci", "--no-live-refs"], f.dir).stdout;
+    assert.ok(result.ready.includes("Owed stages: none.") && markdown.includes("Owed stages: none."));
+    assert.equal(result.next_stage, doctor(f).next.stage, "JSON keeps doctor's picker even when its checkpoint gate differs from evidence debt");
+    assert.deepEqual(readJson(f.reportPath).stages.deploy, before, "baseline does not rewrite deploy");
+    const text = resultTextLines(result).join("\n");
+    assert.match(text, /^- doctor --ci reads this build as: current$/m);
+    assert.doesNotMatch(text, /\(exit|^- - /m);
+    assert.equal(result.next_stage, "polish", "the missing checkpoint still sends this fixture to Polish");
+    assert.match(text, /^Next stage: polish \(/m);
+    assert.match(text, /Served-URL record follows: deploy/);
+  });
+});
+
+test("record baseline text drops the picker's deploy only when the served-URL line replaces it", () => {
+  const current = { status: "current", exit_code: 0, polish: { status: "current" }, qa: { status: "current" } };
+  const served = "Served-URL record follows: deploy (run campaigns-os record deploy --packet <packet> --base-url <served-current-build-url>).";
+  const base = { ok: true, status: "recorded", action: "record", stage: "baseline", written: [], ready: [served], ci: current };
+  assert.doesNotMatch(resultTextLines({ ...base, next_stage: "deploy", next_stage_reason: "served URL" }).join("\n"), /Next stage:/);
+  // A blocked or pending deploy has no served-URL line: the picker's reason stays.
+  assert.match(resultTextLines({ ...base, ready: [], next_stage: "deploy", next_stage_reason: 'Stage "deploy" is blocked (status="blocked"); unblock before continuing.' }).join("\n"), /^Next stage: deploy \(Stage "deploy" is blocked/m);
+  assert.match(resultTextLines({ ...base, next_stage: "doctor-blocked", next_stage_reason: "Doctor reported 2 blocker(s)" }).join("\n"), /^Next stage: doctor-blocked \(Doctor reported 2 blocker\(s\)\)$/m);
+  assert.match(resultTextLines({ ...base, next_stage: "polish" }).join("\n"), /^Next stage: polish$/m);
+  assert.match(resultTextLines({ ...base, stage: "build", next_stage: "deploy" }).join("\n"), /^Next stage: deploy$/m);
+});
+
+test("record baseline with a local preview and deploy required omits Next stage end to end", () => {
+  withLifecycle((f) => {
+    mutateJson(f.packetPath, (packet) => { packet.deploy.target = "local-serve"; });
+    recordThroughBuild(f);
+    mutateJson(f.reportPath, (report) => {
+      const fingerprint = report.stages.assembly.build_fingerprint;
+      delete report.stages.assembly.commerce_signature;
+      report.stages.polish = { stage: "polish", status: "completed", source_build_fingerprint: fingerprint };
+      report.stages.qa = { stage: "qa", status: "completed", evidence: { source_build_fingerprint: fingerprint } };
+      report.stages.deploy = { stage: "deploy", status: "completed", source_build_fingerprint: fingerprint };
+    });
+    buildSite(f, " revised");
+    recordOk(f, "build");
+    const result = recordOk(f, "baseline", ["--accepted-by", "Synthetic Signatory 01", "--reason", "Accept the trial funnel as the starting point"]);
+    assert.equal(readJson(f.reportPath).stages.deploy.status, "required");
+    assert.equal(result.next_stage, "deploy");
+    assert.match(resultTextLines(result).join("\n"), /Served-URL record follows: deploy/);
+    assert.doesNotMatch(resultTextLines(result).join("\n"), /Next stage:/);
+  });
+});
 
 // record deploy on the local preview, with a stand-in fetch answering every
 // built page 200, so the probe never leaves the process.

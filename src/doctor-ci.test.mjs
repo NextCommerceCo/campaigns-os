@@ -8,9 +8,10 @@ import { test } from "node:test";
 import { buildManifestEntries, computeBuildFingerprint } from "./built-site-scope.mjs";
 import { assessEvidenceDebt } from "./evidence-debt.mjs";
 import { doctorCommand } from "./doctor/inspect.mjs";
-import { doctorCiFailure, formatDoctorCi } from "./doctor/ci.mjs";
+import { assessDoctorCi, doctorCiEvidenceLines, doctorCiFailure, formatDoctorCi } from "./doctor/ci.mjs";
 import { openRunSession } from "./run-session.mjs";
 import { recordStageCommand } from "./stage-record.mjs";
+import { singleLineFragment } from "./text-safety.mjs";
 
 const cli = new URL("../bin/campaigns-os.mjs", import.meta.url).pathname;
 
@@ -99,7 +100,7 @@ test("doctor --ci page edited and rebuilt exits 3 and Markdown names page and re
   assert.match(markdown.stdout, /polish capture/);
   assert.match(markdown.stdout, /record polish.*--evidence/);
   assert.match(markdown.stdout, /qa run/);
-  const remedyCommands = [...markdown.stdout.split("Remedy:")[1].matchAll(/`(campaigns-os [^`]+)`/g)].map((match) => match[1]);
+  const remedyCommands = [...markdown.stdout.split("\n").find((line) => line.startsWith("Remedy:")).matchAll(/`(campaigns-os [^`]+)`/g)].map((match) => match[1]);
   assert.deepEqual(remedyCommands, [
     "campaigns-os record build --packet <packet>",
     "campaigns-os polish capture --packet <packet> --base-url <served-current-build-url>",
@@ -437,4 +438,73 @@ test("doctor --ci reads the evidence debt inspection assessed instead of assessi
   } });
   assert.equal(ci.ci.status, "owed");
   assert.equal(ci.ci.qa, owed.qa);
+});
+
+// A funnel recorded before 1.62 whose rebuild `record build` has recorded.
+function legacyCi(qa = {}, changes = {}) {
+  const stage = { status: "owed", scope: "full", reason: "build_fingerprint_changed",
+    change: { kind: "commerce_affecting", reasons: [{ code: "commerce_signature_unavailable" }] } };
+  const build = "b".repeat(64);
+  return assessDoctorCi({ polish: stage, qa: { ...stage, ...qa },
+    changes: { status: "known", changed_pages: [], recorded_build_fingerprint: build, current_build_fingerprint: build, ...changes } });
+}
+
+test("baseline sign-off line follows the unchanged rebuild remedy only for legacy full QA debt", () => {
+  for (const reason of ["build_fingerprint_changed", "stage_required_by_build"]) {
+    const ci = legacyCi({ reason });
+    assert.equal(Object.hasOwn(ci, "remedy"), false);
+    const lines = formatDoctorCi({ ci }).split("\n");
+    const index = lines.findIndex((line) => line.startsWith("Remedy:"));
+    assert.match(lines[index], /^Remedy: rebuild, then run/);
+    assert.equal(lines[index + 1], "This funnel was recorded before Campaigns OS 1.62, so instead of re-running the stages a named person can sign off to accept the current build as the starting point with `campaigns-os record baseline --packet <packet> --accepted-by <person> --reason <why>`; this tests nothing and needs a completed QA on record.");
+  }
+});
+
+test("Polish owed, QA current offers no baseline line", () => {
+  assert.doesNotMatch(formatDoctorCi({ ci: legacyCi({ status: "current" }) }), /record baseline/);
+});
+
+test("baseline sign-off waits for record build, which record baseline needs first", () => {
+  for (const changes of [{ current_build_fingerprint: "c".repeat(64) }, { recorded_build_fingerprint: null }]) {
+    const text = formatDoctorCi({ ci: legacyCi({}, changes) });
+    assert.match(text, /^Remedy: rebuild, then run `campaigns-os record build/m);
+    assert.doesNotMatch(text, /record baseline/, JSON.stringify(changes));
+  }
+});
+
+test("a page-only change with an advisory Polish does not call an unknown QA current", () => {
+  const polish = { status: "owed", advisory: true, reason: "stage_required_by_build", change: { kind: "page_only", reasons: [], changed_pages: [{ page_id: "landing" }] } };
+  const changes = { status: "known", changed_pages: [] };
+  const unknown = formatDoctorCi({ ci: assessDoctorCi({ polish, qa: { status: "unknown", reason: "stage_build_fingerprint_missing" }, changes }) });
+  assert.match(unknown, /^Change found: page-only\. QA is unknown; Polish is advisory\.$/m);
+  const current = formatDoctorCi({ ci: assessDoctorCi({ polish, qa: { status: "current" }, changes }) });
+  assert.match(current, /^Change found: page-only\. QA is current; Polish is advisory\.$/m);
+});
+
+test("a blank page id never prints as its list position", () => {
+  const ci = legacyCi({ browser_pages: ["", "checkout"] });
+  const lines = doctorCiEvidenceLines(ci, singleLineFragment);
+  assert.ok(lines.some((line) => line.includes("in a browser on")), "setup: the browser pages are listed");
+  assert.doesNotMatch(lines.join("\n"), /in a browser on 0\b/);
+});
+
+test("legacy browser remedy keeps the required --browser flag", () => {
+  const lines = formatDoctorCi({ ci: legacyCi({ browser_pages: ["checkout"] }) }).split("\n");
+  assert.match(lines.find((line) => line.startsWith("Remedy:")), /`campaigns-os qa run --packet <packet> --browser`/);
+});
+
+test("baseline sign-off excludes page QA, unknown QA, input changes, and mixed or malformed reasons", () => {
+  for (const qa of [
+    { scope: "pages", owed_pages: [{ page_id: "landing" }] },
+    { status: "unknown" },
+    { reason: "stage_required_by_brief" },
+    { reason: "stage_required_by_spec" },
+    { change: { reasons: [] } },
+    { change: { reasons: [{ code: "commerce_signature_unavailable", path: "checkout/index.html" }] } },
+    ...[{ code: "checkout_page" }, null, "commerce_signature_unavailable"].map((other) => ({
+      change: { reasons: [{ code: "commerce_signature_unavailable" }, other] },
+    })),
+  ]) {
+    assert.doesNotMatch(formatDoctorCi({ ci: legacyCi(qa) }), /record baseline/, JSON.stringify(qa));
+  }
 });

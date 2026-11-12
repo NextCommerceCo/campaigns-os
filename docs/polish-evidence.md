@@ -131,6 +131,17 @@ The size check covers `<img>` elements in the page, including those inside open 
 
 ### Package captures and design comparison
 
+For a package declared `built_first` by `--adopt`, the existing build captures
+also fill `source.built_first_source_evidence[]`, linked to the package's page
+surfaces at both viewports. They reference the same PNG files. The source
+folder's Page Kit templates are not rendered or compared. Source cells carry
+`built_first`; all four fidelity checks (`visual.reference`, `visual.diff`,
+`parity.element`, `design.access`) read "not applicable: built first", with
+result `excluded`, reason `built_first`, and no accept eligibility.
+Design source is the built pages ("built first"); nothing was compared to a design.
+This path never offers acceptance as a revision baseline. Other packages keep
+the source-render and comparison behavior below.
+
 After its existing page-load and readability work has finished and been recorded, `polish capture` takes full-page captures of every mapped page at desktop (1440×1200) and mobile (390×844), device pixel ratio 1, in a freshly loaded state with no scrolling or interaction. It also renders each page's source HTML from the source folder with the same browser at the same size. This visual pass uses its own browser instances, so its failures never change page-load or readability evidence.
 
 The source is served read-only from a local address, in a browser instance that can reach only that address. Requests and WebSocket connections to anything else are blocked and counted, other connections are refused by the local server, and no host name is looked up. Nothing from the source render leaves the machine.

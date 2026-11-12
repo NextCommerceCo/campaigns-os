@@ -5,7 +5,7 @@ import {
 // Built output of campaign-spec (same import shape as src/page-kit-sdk-version.mjs),
 // so build-time wiring and spec-time analysis share one edge resolver.
 import { checkoutPathFrom, declineRouteTarget, forwardRouteTarget, forwardTargetPage, isCheckoutStepPage, isPrePaymentPage } from "../campaign-spec/dist/index.js";
-import { isAbsoluteHttpUrl, normalizePageKitRoute, normalizePublicRouteSlug, stripPublicRoutePrefix } from "./route-identity.mjs";
+import { effectiveMapPublicRouteSlug, isAbsoluteHttpUrl, normalizePageKitRoute, normalizePublicRouteSlug, stripPublicRoutePrefix } from "./route-identity.mjs";
 
 const CPK_PAGE_TYPES = new Set(["product", "checkout", "upsell", "receipt"]);
 
@@ -14,6 +14,7 @@ export function createSourceHtmlIntake({
   specPages,
   htmlFiles,
   publicRouteSlug,
+  mapPublicRouteSlug = null,
   outputDir,
   buildScope = null,
   manifestPath = null,
@@ -30,7 +31,7 @@ export function createSourceHtmlIntake({
   const mappings = matched.mappings.map((mapping) => {
     const specPage = pageById.get(mapping.page_id);
     if (!specPage || !mapping.path) return mapping;
-    const pageKit = pageKitProjectionForPage(specPage, { pageById, publicRouteSlug, outputDir, specPages: specPages || [] });
+    const pageKit = pageKitProjectionForPage(specPage, { pageById, publicRouteSlug, mapPublicRouteSlug, outputDir, specPages: specPages || [] });
     projectionDecisions.push({
       id: `dec_page_kit_target_${specPage.id}`,
       stage: "prepare_build",
@@ -567,16 +568,17 @@ function addSpecHints(mapping, page) {
  * added or removed (#531, #721); every page is re-projected because a page's
  * next_url and decline_url read the routes of the pages it links to.
  */
-export function projectPageKitTargets({ specPages = [], publicRouteSlug, outputDir }) {
+export function projectPageKitTargets({ specPages = [], publicRouteSlug, mapPublicRouteSlug = null, outputDir }) {
   const pages = Array.isArray(specPages) ? specPages : [];
   const pageById = new Map(pages.map((page) => [page.id, page]));
-  return new Map(pages.map((page) => [page.id, pageKitProjectionForPage(page, { pageById, publicRouteSlug, outputDir, specPages: pages })]));
+  return new Map(pages.map((page) => [page.id, pageKitProjectionForPage(page, { pageById, publicRouteSlug, mapPublicRouteSlug, outputDir, specPages: pages })]));
 }
 
-function pageKitProjectionForPage(page, { pageById, publicRouteSlug, outputDir, specPages = [] }) {
+function pageKitProjectionForPage(page, { pageById, publicRouteSlug, mapPublicRouteSlug, outputDir, specPages = [] }) {
+  mapPublicRouteSlug = effectiveMapPublicRouteSlug({ campaign: { public_route_slug: publicRouteSlug, map_public_route_slug: mapPublicRouteSlug } });
   const specRoute = publicRouteForPage(page);
-  const relativeRoute = stripPublicRoutePrefix(specRoute, publicRouteSlug);
-  const publicRoute = rootedCampaignRoute(relativeRoute, publicRouteSlug);
+  const relativeRoute = stripPublicRoutePrefix(specRoute, publicRouteSlug, mapPublicRouteSlug);
+  const publicRoute = rootedCampaignRoute(relativeRoute, publicRouteSlug, mapPublicRouteSlug);
   const targetPath = targetPagePathForRoute(relativeRoute, page);
   const defaultRoute = defaultPublicRouteForTargetPath(targetPath, publicRouteSlug);
   const permalinkRequired = normalizeRootedRoute(publicRoute) !== normalizeRootedRoute(defaultRoute);
@@ -584,11 +586,11 @@ function pageKitProjectionForPage(page, { pageById, publicRouteSlug, outputDir, 
   const frontmatter = { page_type: pageType };
   if (permalinkRequired) frontmatter.permalink = publicRoute;
 
-  const forwardUrl = nextUrlForPage(page, pageById, publicRouteSlug);
-  const checkoutFlow = checkoutFlowFrontmatter(page, forwardUrl, { specPages, pageById, publicRouteSlug });
+  const forwardUrl = nextUrlForPage(page, pageById, publicRouteSlug, mapPublicRouteSlug);
+  const checkoutFlow = checkoutFlowFrontmatter(page, forwardUrl, { specPages, pageById, publicRouteSlug, mapPublicRouteSlug });
   if (checkoutFlow) Object.assign(frontmatter, checkoutFlow);
   else if (forwardUrl) frontmatter.next_url = forwardUrl;
-  const declineUrl = declineUrlForPage(page, pageById, publicRouteSlug);
+  const declineUrl = declineUrlForPage(page, pageById, publicRouteSlug, mapPublicRouteSlug);
   if (declineUrl && declineUrl !== forwardUrl) frontmatter.decline_url = declineUrl;
 
   return {
@@ -617,7 +619,7 @@ function pageKitProjectionForPage(page, { pageById, publicRouteSlug, outputDir, 
 //                data-next-checkout-step, a select page's checkout link.
 //   step_number  on a checkout_step only: its position among the steps of its
 //                path, from 1, for the form's data-next-step-number.
-function checkoutFlowFrontmatter(page, forwardUrl, { specPages, pageById, publicRouteSlug }) {
+function checkoutFlowFrontmatter(page, forwardUrl, { specPages, pageById, publicRouteSlug, mapPublicRouteSlug }) {
   // A path of two or more pages means the page has a resolvable forward link,
   // so forwardUrl is set; the guard keeps the pair together regardless, never
   // emitting the Checkout's destination without a next_step to navigate by.
@@ -625,7 +627,7 @@ function checkoutFlowFrontmatter(page, forwardUrl, { specPages, pageById, public
   const path = checkoutPathFrom(specPages, page);
   if (!path || path.length < 2) return null;
   const out = {};
-  const successUrl = nextUrlForPage(path[path.length - 1], pageById, publicRouteSlug);
+  const successUrl = nextUrlForPage(path[path.length - 1], pageById, publicRouteSlug, mapPublicRouteSlug);
   if (successUrl) out.next_url = successUrl;
   out.next_step = forwardUrl;
   if (isCheckoutStepPage(page)) out.step_number = checkoutStepNumber(page, specPages);
@@ -693,26 +695,26 @@ function defaultPublicRouteForTargetPath(targetPath, publicRouteSlug) {
 // declared outside its table: twelve checkout-typed pages across ten
 // certified fixtures route through next_page, and every one of them built with
 // no next_url at all.
-function nextUrlForPage(page, pageById, publicRouteSlug) {
-  return pageKitFlowUrl(forwardRouteTarget(page), pageById, publicRouteSlug);
+function nextUrlForPage(page, pageById, publicRouteSlug, mapPublicRouteSlug) {
+  return pageKitFlowUrl(forwardRouteTarget(page), pageById, publicRouteSlug, mapPublicRouteSlug);
 }
 
-function declineUrlForPage(page, pageById, publicRouteSlug) {
-  return pageKitFlowUrl(declineRouteTarget(page), pageById, publicRouteSlug);
+function declineUrlForPage(page, pageById, publicRouteSlug, mapPublicRouteSlug) {
+  return pageKitFlowUrl(declineRouteTarget(page), pageById, publicRouteSlug, mapPublicRouteSlug);
 }
 
-function pageKitFlowUrl(value, pageById, publicRouteSlug) {
+function pageKitFlowUrl(value, pageById, publicRouteSlug, mapPublicRouteSlug) {
   if (!isNonEmptyString(value)) return null;
   const raw = value.trim();
   if (raw.startsWith("#") || isAbsoluteHttpUrl(raw)) return raw;
   const referencedPage = pageById.get(raw);
   const route = referencedPage ? publicRouteForPage(referencedPage) : raw;
-  return rootedCampaignRoute(stripPublicRoutePrefix(route, publicRouteSlug), publicRouteSlug);
+  return rootedCampaignRoute(stripPublicRoutePrefix(route, publicRouteSlug, mapPublicRouteSlug), publicRouteSlug, mapPublicRouteSlug);
 }
 
-function rootedCampaignRoute(route, publicRouteSlug) {
+function rootedCampaignRoute(route, publicRouteSlug, mapPublicRouteSlug = null) {
   const slug = normalizePublicRouteSlug(publicRouteSlug);
-  const relativeRoute = stripPublicRoutePrefix(route, slug);
+  const relativeRoute = mapPublicRouteSlug ? normalizePageKitRoute(route) : stripPublicRoutePrefix(route, slug);
   return relativeRoute ? `/${slug}/${relativeRoute}` : `/${slug}/`;
 }
 

@@ -185,6 +185,10 @@ test("synthesizeMinimalBuildPacket marks itself synthetic and points at the buil
     assert.equal(packet.deploy.preview_url, "http://localhost:8080/");
     assert.deepEqual(packet.qa, {});
     assert.equal(packet.pages.length, 2);
+    assert.deepEqual(synthesizeMinimalBuildPacket({
+      schemaVersion: "campaign-runtime-build-packet/v0", targetRepo: repo, scope,
+      family: "olympus", baseUrl: "http://localhost:8080/", mapPublicRouteSlug: "acme",
+    }), packet);
   });
 });
 

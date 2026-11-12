@@ -31,6 +31,20 @@ const funnelFlowIds = async (page) => {
 
 const BASE = "https://shop.example.test/campaign/";
 
+for (const route of ["/short/a/b/checkout/", "a/b/checkout/", "/short/", "https://example.test/short/a/b/checkout/"]) {
+  test(`equal binding leaves QA URLs and edge expectations unchanged for ${route}`, () => {
+    const spec = { funnels: [{ id: "example", pages: [
+      { id: "checkout", type: "checkout", url: route, page_url: "a/b/checkout/", next_page: "/short/", sdk_hints: { meta_tags: { "next-success-url": "/short/" } } },
+      { id: "upsell", type: "upsell", page_url: "a/b/upsell/", on_accept: "receipt", on_decline: "/short/" },
+      { id: "receipt", type: "thankyou", page_url: "receipt/" },
+    ] }] };
+    const options = { baseUrl: "https://example.test/short/", publicRouteSlug: "short" };
+    const unbound = extractTopologies(spec, options);
+    assert.equal(unbound[0].pages[0].url, route);
+    assert.deepEqual(extractTopologies(spec, { ...options, mapPublicRouteSlug: "short" }), unbound);
+  });
+}
+
 function topologyFor(pages) {
   const [topology] = extractTopologies(
     { funnels: [{ id: "f", name: "F", weight: 100, pages }] },
