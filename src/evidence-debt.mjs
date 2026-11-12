@@ -26,8 +26,8 @@ export function sharedBuildFingerprint(outputDir) {
   return htmlScanMemo(JSON.stringify(["build-fingerprint", String(outputDir || "")]), () => computeBuildFingerprint(outputDir));
 }
 
-// The owed pages a page-scoped QA run must render in a browser: the change's
-// `browser_pages` (change-scope.mjs), as page ids.
+// The pages an owed QA run, page-scoped or full, must render in a browser:
+// the change's `browser_pages` (change-scope.mjs), as page ids.
 function browserOwedPages(change) {
   const paths = new Set(Array.isArray(change?.browser_pages) ? change.browser_pages : []);
   if (!paths.size || !Array.isArray(change.changed_pages)) return [];

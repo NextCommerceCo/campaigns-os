@@ -4123,7 +4123,7 @@
       "surface_version": null,
       "changelog_section": "1.68.0+agent.10",
       "changelog_sha256": "d5dfa7724e88fec9e4ef6ff0b013d5d2e76435740df05d27d5b7ec2945d70350",
-      "agent_impact": "A change whose only non-page file is a stylesheet or image built pages link directly (link rel=stylesheet, img src or srcset, picture source srcset) now reads page_only, with QA owed on those pages, instead of commerce_affecting. The change, and the build_changes entry record build keeps, then carry linked_assets (each path, with pages: the ids of the pages that link it) and browser_pages (the built paths of the checkout or upsell pages it reaches); reasons stay the commerce causes, with no new codes. When QA is page-scoped and there is such a page, evidence_debt.qa.browser_pages lists its id, and qa run, with or without --page, then needs --browser.",
+      "agent_impact": "A change whose only non-page file is a stylesheet or image built pages link directly (link rel=stylesheet, img src or srcset, picture source srcset) now reads page_only, with QA owed on those pages, instead of commerce_affecting. The change, and the build_changes entry record build keeps, then carry linked_assets (each path, with pages: the ids of the pages that link it) and browser_pages (the built paths of the checkout or upsell pages it reaches); reasons stay the commerce causes, with no new codes. When QA is owed, page-scoped or full, and there is such a page, evidence_debt.qa.browser_pages lists its id, and qa run, with or without --page, then needs --browser.",
       "compatibility": "additive",
       "migration": "none",
       "changes": [
@@ -4158,7 +4158,7 @@
           "summary": "build_changes entries can carry linked_assets and browser_pages, which do not make a change commerce."
         }
       ],
-      "entry_sha256": "9eb30cdb37fa4be41c669be530490c459be508a8a07a9d40c97bb884e75a10b0"
+      "entry_sha256": "9fffe4aa050dfcf1c8282165bdc7f050f5079905ec8f5a93ff0e3511206945f0"
     }
   ]
 }

@@ -137,7 +137,8 @@ export function formatDoctorCi(result) {
   const change = ciChangeScope(ci);
   const pageScoped = change.scope === "pages";
   const browserPages = ci.qa.status === "owed" && Array.isArray(ci.qa.browser_pages) ? ci.qa.browser_pages : [];
-  const inBrowser = browserPages.length ? `, in a browser on ${browserPages.map(code).join(", ")} (a checkout or upsell page whose linked stylesheet or image changed; no test orders)` : "";
+  // A page-scoped run places no test orders; a full run may (--test-order).
+  const inBrowser = browserPages.length ? `, in a browser on ${browserPages.map(code).join(", ")} (a checkout or upsell page whose linked stylesheet or image changed${ci.qa.scope === "pages" ? "; no test orders" : ""})` : "";
   if (pageScoped) {
     lines.push(`Change found: page-only. ${owed.length ? `It owes QA on ${ci.qa.owed_pages.map((page) => code(page.page_id)).join(", ")}${inBrowser}` : "QA is current"}; Polish is advisory.`);
   } else if (change.scope === "full") {

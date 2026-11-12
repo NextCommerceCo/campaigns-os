@@ -779,7 +779,7 @@ test("a stylesheet checkout links owes a browser QA run on checkout with no test
   assert.throws(() => scopeLinked(both, undefined), /QA owes a browser run\. Add --browser to this run\./);
   assert.equal(scopeLinked(both, undefined, { browser: true }).scope, null);
   const bothCi = ci(both).stdout;
-  assert.match(bothCi, /It owes the full Polish and QA, in a browser on `checkout`/);
+  assert.match(bothCi, /It owes the full Polish and QA, in a browser on `checkout` \(a checkout or upsell page whose linked stylesheet or image changed\)\./, "a full run may place test orders");
   assert.match(bothCi, /qa run --packet <packet> --browser`/);
   assert.match(runReadbackCommand({ _: ["readback", both.root], packet: both.packetPath }).text, /browser run owed on: checkout \(qa run --browser\)/);
 
