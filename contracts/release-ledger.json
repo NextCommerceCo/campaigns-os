@@ -4236,13 +4236,40 @@
       "entry_sha256": "b8a842a6d0371aa2e48e4448c9bb0890a2dab353023a53fd9add16be3f53f674"
     },
     {
-      "id": "RL-0347",
+      "id": "RL-0346",
       "sequence": 330,
       "date": "2026-11-12",
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.68.0+agent.14",
-      "changelog_sha256": "b895ed9511f6861fb717de476bcfcc586cd2129d37348163a5ceaca4ed6d56ad",
+      "changelog_sha256": "5b2e6dce8c3d80f773474c646a2edc7c0487de19c92ee21d8f1d42912e12b5f8",
+      "agent_impact": "After handoff, when a spec page was never built and exactly one unbound page file of the same page-kit type sells exactly that page's package refs (packages[] plus the package refs its offers[] carry), spec derive writes that page's page_url to the file's route and adds no page; the page keeps its id, packages and offers. Do not hand-edit page_url for this case first: run spec derive --dry-run and read the plan. A match that is not one-to-one is held and reported as page_likely_pair; a partial overlap is still added and reported as page_likely_pair as a note. Only complete literal package values in a file count; a file with a Liquid or computed package value is added as before.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Describe the re-point of a never-built page on a unique exact package match, the page_likely_pair reason, and what counts as a literal package ref."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "spec derive reads each page file's literal package refs, so its plan can re-point a never-built page; no flag or usage text changes."
+        }
+      ],
+      "entry_sha256": "edc9a638e0994f7066ec9c4641fb738a718316d6ea34ce96aa4cd5c2919e4e38"
+    },
+    {
+      "id": "RL-0347",
+      "sequence": 331,
+      "date": "2026-11-12",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.68.0+agent.15",
+      "changelog_sha256": "b6d4819291ec706f20772bf652f35bf44f31c4f3c5904a5978d883716fac6958",
       "agent_impact": "When doctor reads the live campaign, it now also compares the CampaignSpec mirrored package fields (prices, product fields, availability, recurring terms) and offers with it, using the same planner as spec derive. Differences are reported on the existing spec.campaign_drift warning: detail.drift (and derived.live_campaign_refs.drift) gains mirror: { counts: { price, product, availability, recurring, offers_changed, offers_missing }, rows } where rows are the spec derive change rows. drift.packages and drift.shipping_methods are always present when drift is (empty lists when only the mirror differs). The warning never changes errors, evidence debt or the doctor --ci exit code. Run spec derive --dry-run, then spec derive, to clear it.",
       "compatibility": "additive",
       "migration": "none",
@@ -4266,7 +4293,7 @@
           "summary": "Doctor keeps the live campaign body from its existing read so the mirrored fields can be compared; no new request, and the body never enters doctor output."
         }
       ],
-      "entry_sha256": "aace7f1c2d30957554f2bfffa7fdef317541cdb53789517617e4289227a5a5ff"
+      "entry_sha256": "d639c153736f85f059516e442b119274886d6e4f791ddbda07fd1820a0036b5a"
     }
   ]
 }
