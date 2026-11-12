@@ -16,6 +16,7 @@ Hand-built Page Kit funnels can now join the workflow at the route their pages a
 ### Changed
 
 - Bundled skills advance to `1.69.0+skills.1`, each one patch higher; setup, lifecycle, build, Polish and QA skills explain how to follow a `Funnel:` adoption offer after asking the operator.
+- Publishes `1.68.0+agent.15`: doctor warns when prices, product fields, recurring terms or offers the CampaignSpec states have fallen behind the live campaign, with a count by kind and `spec derive` as the fix (#764, #766).
 - Publishes `1.68.0+agent.13`: editing a stylesheet or image that built pages link directly now owes QA on those pages only, and a browser run with no test orders on a checkout or upsell page among them, instead of the full Polish and QA (#753, #762).
 - Publishes `1.68.0+agent.9`: `standardize --slug <route>` audits only that route's source, lists the routes that share a file a finding sits in, and names the entry point to come back in through (#754, #758).
 - Publishes `1.68.0+agent.2`: doctor's shared-input code is smaller and simpler, with the same output and one fewer pass over built files on packet and `--ci` runs (#730, #752).
@@ -29,6 +30,12 @@ Hand-built Page Kit funnels can now join the workflow at the route their pages a
 - Publishes `1.68.0+agent.10`: `record deploy` refuses when doctor's Polish gate is blocked, so a Polish recorded as skipped no longer earns a deploy record (#756, #760).
 - Publishes `1.68.0+agent.4`: parse5 and entities are pinned and bundled, so saved commerce-signature/v1 records stay valid across consumer installs (#744).
 - Publishes `1.68.0+agent.3`: the pack check and runtime-recipe test support npm 12's pack JSON object and dependency install-script approval behaviour (#757).
+
+## [1.68.0+agent.15] - 2026-11-12
+
+### Changed
+
+- Doctor warns when prices, product fields, recurring terms or offers the CampaignSpec states have fallen behind the live campaign, with a count by kind and `spec derive` as the fix; the warning itself does not change what is owed (#764).
 
 ## [1.68.0+agent.14] - 2026-11-12
 

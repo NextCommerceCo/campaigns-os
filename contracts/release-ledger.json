@@ -4263,13 +4263,52 @@
       "entry_sha256": "edc9a638e0994f7066ec9c4641fb738a718316d6ea34ce96aa4cd5c2919e4e38"
     },
     {
-      "id": "RL-0341",
+      "id": "RL-0347",
       "sequence": 331,
+      "date": "2026-11-12",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.68.0+agent.15",
+      "changelog_sha256": "8086fddc189d79c4a47f4f5983265491a84ed5ca4422dc9765044cd13ce9cbb7",
+      "agent_impact": "When doctor reads the live campaign, it now also compares the CampaignSpec mirrored package fields (prices, product fields, availability, recurring terms) and offers with it, using the spec derive planner, and counts only what the spec states: a field the spec leaves out (a page offer listed by ref_id alone, a package with no image) or a spec with no root offers list is not drift; a campaign offer missing from a stated offers list is. Differences go on the existing spec.campaign_drift warning, whose detail.drift gains mirror: { counts: { price, product, availability, recurring, offers_changed, offers_missing } }; derived.live_campaign_refs.drift.mirror also carries rows, the differing fields as spec derive change rows. drift.packages and drift.shipping_methods are always present when drift is. A comparison that throws is skipped. The warning never changes errors, evidence debt or the doctor --ci exit code; its remedy, spec derive --packet <packet>, rewrites the spec, which makes the build, Polish and QA owed again. The standing PR check passes --no-live-refs and so never shows it.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/campaigns-os-build-flow.md",
+          "surface_entry": "docs/campaigns-os-build-flow.md",
+          "summary": "Live-campaign changes: the standing PR check passes --no-live-refs, so run doctor without it to see the spec.campaign_drift warning."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "doctor help says it warns when the CampaignSpec mirrored prices, product fields, recurring terms or offers differ from the live campaign."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": null,
+          "summary": "The live campaign ref check folds the spec derive mirror comparison, limited to fields the spec states, into spec.campaign_drift as drift.mirror (counts on the warning, counts and change rows in derived), and skips a comparison that throws."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/inspect.mjs",
+          "surface_entry": null,
+          "summary": "Doctor keeps the live campaign body from its existing read so the mirrored fields can be compared; no new request, and only counts and the differing fields change rows reach doctor output."
+        }
+      ],
+      "entry_sha256": "5471b744df7e11dcf12f8d81d311141c8446d65d259e8524cdac559a07a9c5ac"
+    },
+    {
+      "id": "RL-0341",
+      "sequence": 332,
       "date": "2026-11-12",
       "kind": "release",
       "surface_version": "1.69.0",
       "changelog_section": "1.69.0",
-      "changelog_sha256": "d041ba79b9db172ed38defbc1ec907407ded76a837d60b00e8365e2cc719e10b",
+      "changelog_sha256": "59a3e847b7eab4c426f30bff9bd695c8c0a7a1af23f64903f1dc76ce0f6b1c51",
       "agent_impact": "The Funnel: line may now offer --adopt src/<route>; after asking the operator, run its printed command to bind this funnel to the pages' existing route instead of renaming another funnel. A bound packet carries campaign.map_public_route_slug when the Map's slug differs from the served campaign.public_route_slug; use the bound route for output and records while preserving the Map identity. Only recorded adoption with an unchanged recorded Design Source Package grants built-first treatment. Its build-vs-design checks read excluded / built_first and are never acceptable as a design match; its first QA must be the full run with test orders, separately authorized by the PM, and record baseline does not apply. doctor --built --emit-packet --map-id now fetches the saved Map and records its local spec path and any route binding. Refresh skills to 1.69.0+skills.1.",
       "compatibility": "additive",
       "migration": "Pin @nextcommerce/campaigns-os@1.69.0 and refresh installed skills to 1.69.0+skills.1 before starting a fresh session; nothing changes for a funnel that is not adopted or bound.",
@@ -4461,7 +4500,7 @@
           "summary": "Blocks built-first progress when the package no longer matches the recorded intake references."
         }
       ],
-      "entry_sha256": "32ad9e0bc6288dba352001679878b0d60782404435d2174d3aaa3d447c5ee6e2"
+      "entry_sha256": "ba4e5cfc3696ec89891df90ca4b08334e723e7524a70389c86de13379d10bcf2"
     }
   ]
 }
