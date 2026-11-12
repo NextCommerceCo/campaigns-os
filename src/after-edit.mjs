@@ -99,7 +99,11 @@ export async function afterEditCommand(args, { specFetch, specDerive, specDerive
     if (!built.length) return stop("build_current", `Built output ${output ? portable(relative(workspace.targetRepo, output)) : "_site/<slug>/"} is missing or empty; run the Page Kit build.`, buildCommand);
     const newest = Math.max(...built.map((path) => statSync(path).mtimeMs));
     const config = join(workspace.targetRepo, "_data", "campaigns.json");
-    const sources = [...filesUnder(join(workspace.targetRepo, "src", slug)), ...(existsSync(config) ? [config] : [])];
+    // The page tree is the packet's assembly.output_dir when it declares one
+    // (as spec derive reads it), else Page Kit's src/<route>/.
+    const declared = typeof workspace.packet.assembly?.output_dir === "string" ? workspace.packet.assembly.output_dir.trim() : "";
+    const pageTree = declared ? resolve(workspace.targetRepo, declared) : join(workspace.targetRepo, "src", slug);
+    const sources = [...filesUnder(pageTree), ...(existsSync(config) ? [config] : [])];
     const newer = sources.find((path) => statSync(path).mtimeMs > newest);
     if (newer) return stop("build_current", `${portable(relative(workspace.targetRepo, newer))} is newer than the newest built file; run the Page Kit build.`, buildCommand);
     current = computeBuildFingerprint(output);

@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { test } from "node:test";
 import { afterEditCommand, afterEditExitCode, afterEditTextLines } from "./after-edit.mjs";
 import { specFetchCommand, specDeriveWithMapWriteback, specDeriveTextLines, recordQaStageOutcome } from "./cli.mjs";
@@ -293,6 +293,25 @@ test("newer source stops before record build and names the build command (c)", a
   assert.equal(step(result, "record_build").status, "not_run");
   assert.deepEqual(treeDigest(f.root), before);
   output(t, "CASE (c)", result);
+}));
+
+test("newer source in a packet-declared page tree stops before record build", async (t) => withNetworkGuard(async () => {
+  const f = await fixture(t);
+  // Move the page tree off Page Kit's default and declare it on the packet.
+  const pageTree = join(f.root, "pages", "funnel");
+  mkdirSync(dirname(pageTree), { recursive: true });
+  renameSync(join(f.root, "src", SLUG), pageTree);
+  const packet = json(f.packetPath);
+  packet.assembly.output_dir = "pages/funnel";
+  writeJson(f.packetPath, packet);
+  utimesSync(join(pageTree, "upsell.html"), 3_000, 3_000);
+  const before = treeDigest(f.root);
+  const result = await run(f);
+  assert.equal(afterEditExitCode(result), 2);
+  assert.equal(result.stopped_at, "build_current");
+  assert.match(step(result, "build_current").detail, /pages\/funnel\/upsell.html is newer/);
+  assert.equal(step(result, "record_build").status, "not_run");
+  assert.deepEqual(treeDigest(f.root), before);
 }));
 
 test("missing _site stops before records (d)", async (t) => withNetworkGuard(async () => {

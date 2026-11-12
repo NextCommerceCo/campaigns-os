@@ -20,7 +20,7 @@ const REVISION_COMMANDS = [
 const STEPS = [
   "1. Before editing, run `npx --no-install campaigns-os readback .` and `npx --no-install campaigns-os next --packet campaign-runtime.build.json`. Readback's `evidence_debt` compares the build on disk with the builds Polish and QA were recorded for. Changed pages are listed against the recorded assembly build manifest; an owed stage with an empty page list still means evidence is owed.",
   "2. For pages built from a provided design, the Design Source Package is the authority, not the punch list's wording.",
-  `3. Before opening the pull request, after the final edit, build with Page Kit, run \`${REVISION_COMMANDS[0]}\`, and commit the files it lists with the change. Follow \`docs/campaigns-os-build-flow.md#after-handoff\`: add \`--run-qa\` for owed page QA; full QA places test orders and needs the project manager's go.`,
+  `3. Before opening the pull request, after the final edit, build with Page Kit, run \`${REVISION_COMMANDS[0]}\`, and commit the files it lists with the change. Follow the After handoff run sheet in \`node_modules/@nextcommerce/campaigns-os/docs/campaigns-os-build-flow.md\`: add \`--run-qa\` for owed page QA; full QA places test orders and needs the project manager's go.`,
   "4. In the pull request body, put the design reference and the preview of each changed page side by side.",
 ];
 const STANDING_CHECK = "The standing pull-request check builds once with Page Kit, then runs `npx --no-install campaigns-os doctor --ci --packet <packet> --no-live-refs` for every root Build Packet; the workflow example posts one comment with a block per funnel, report-only unless the repo opts in.";
