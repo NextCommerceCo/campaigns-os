@@ -3,7 +3,7 @@ import fs from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { afterEach, test } from "node:test";
 import Ajv from "ajv/dist/2020.js";
 import { assertNoNetworkAttempts, readJson, ROOT, runCli, writeJson } from "./qc-test-factories.mjs";
@@ -776,7 +776,14 @@ test("route binding: Funnel offers this unclaimed source route instead of the fi
   assert.match(json.json.funnelBindingOffer.command, /--adopt src\/short/);
   const offer = json.json.funnelBindingOffer;
   assert.doesNotMatch(offer.command, /--route|--source/);
-  for (const path of offer.deletePaths) rmSync(path, { recursive: true, force: true });
+  // The runtime directory is given relative to the target; delete it there,
+  // never under the test process's own directory.
+  for (const path of offer.deletePaths.map((path) => (isAbsolute(path) ? path : resolve(p.target, path)))) {
+    assert.ok(path.startsWith(p.target), path);
+    assert.ok(existsSync(path), `the offer names a path that exists: ${path}`);
+    rmSync(path, { recursive: true, force: true });
+    assert.equal(existsSync(path), false);
+  }
   const words = [...offer.command.matchAll(/'([^']*)'|"([^"]*)"|(\S+)/g)].map((match) => match[1] ?? match[2] ?? match[3]);
   const argv = words.slice(words.indexOf("prepare-build"));
   for (let replay = 0; replay < 2; replay += 1) {

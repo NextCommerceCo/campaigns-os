@@ -23,8 +23,18 @@ const synthesize = (adopted = false, extra = {}) => synthesizeHtmlFunnelDesignSo
   generatedAt: "2026-01-01T00:00:00.000Z", ...extra,
 });
 
-test("the reviewed checkpoint blocks the same adopted four-page intake on twelve missing-source reasons", async () => {
-  const previousSource = execFileSync("git", ["show", "b3fe6ea7a357d5a4737bbb5319c3a8e457e7f997:src/design-source-package.mjs"], { cwd: ROOT, encoding: "utf8" })
+// The checkpoint before built-first, pinned by commit. A shallow checkout (CI
+// on a push to main fetches depth 1) does not hold it, so the comparison is
+// skipped there, as src/polish-visual.test.mjs does for its pinned baseline.
+const REVIEWED_CHECKPOINT = "b3fe6ea7a357d5a4737bbb5319c3a8e457e7f997";
+test("the reviewed checkpoint blocks the same adopted four-page intake on twelve missing-source reasons", async (t) => {
+  try {
+    execFileSync("git", ["cat-file", "-e", `${REVIEWED_CHECKPOINT}^{commit}`], { cwd: ROOT, stdio: "ignore" });
+  } catch {
+    t.skip(`Pinned checkpoint ${REVIEWED_CHECKPOINT} is absent from this checkout, or git is unavailable`);
+    return;
+  }
+  const previousSource = execFileSync("git", ["show", `${REVIEWED_CHECKPOINT}:src/design-source-package.mjs`], { cwd: ROOT, encoding: "utf8" })
     .replace('"./design-file-reference.mjs"', JSON.stringify(new URL("./design-file-reference.mjs", import.meta.url).href));
   const previous = await import(`data:text/javascript;base64,${Buffer.from(previousSource).toString("base64")}`);
   const input = { adopted: true, generatedAt: "2026-01-01T00:00:00.000Z",
