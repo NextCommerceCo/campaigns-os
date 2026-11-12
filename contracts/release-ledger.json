@@ -4116,8 +4116,35 @@
       "entry_sha256": "2a39db452087e952f74ece965e217b217eba2703dea39c3bb033392f2fdfc000"
     },
     {
-      "id": "RL-0339",
+      "id": "RL-0337",
       "sequence": 326,
+      "date": "2026-11-11",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.68.0+agent.10",
+      "changelog_sha256": "371c32fff788b11c28230fc1749b312e0bbad09a32bbc061fa3d8b70c8dee68d",
+      "agent_impact": "record deploy now refuses, writing nothing, when doctor's Polish gate is blocked, naming the gate code (for a Polish recorded skipped: polish.evidence_missing) and its required actions. Finish Polish, or follow next, before record deploy. A gate doctor carries forward (a page-only change, or the local preview) still deploys.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "The record deploy refusal list names a blocked Polish gate beside the theme gate."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "The record deploy help line says the command is refused when doctor's theme or Polish gate is blocked."
+        }
+      ],
+      "entry_sha256": "02d755d6a3a8d9b7371265531822c2348113e08f966666fe243fff88dc7ec14a"
+    },
+    {
+      "id": "RL-0339",
+      "sequence": 327,
       "date": "2026-11-11",
       "kind": "release",
       "surface_version": null,
@@ -4134,7 +4161,7 @@
           "summary": "Say that a page record spec adds after handoff is planned for capture and QA without a hand-written skip_reason."
         }
       ],
-      "entry_sha256": "2ff7cd796ba914f53d7371b026f41567568437f5e9eed8fdc8a1803e81119494"
+      "entry_sha256": "945349ad57bffc3a1cb34759cd2e6d6e233d8d884f07507a41bab4403d0e3af3"
     }
   ]
 }

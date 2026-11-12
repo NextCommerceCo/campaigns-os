@@ -8,6 +8,12 @@ Notable supported-surface changes are recorded here.
 
 - `polish capture` plans the pages `spec derive` adds after handoff, lists the pages it leaves out, and takes evidence-only captures of template-stock pages (#756).
 
+## [1.68.0+agent.10] - 2026-11-11
+
+### Fixed
+
+- `record deploy` refuses when doctor's Polish gate is blocked, so a Polish recorded as skipped no longer earns a deploy record (#756).
+
 ## [1.68.0+agent.9] - 2026-11-11
 
 ### Changed
