@@ -708,7 +708,7 @@ test("doctor stale stamp shows its reason as one safe line and leaves clean unch
   writeFileSync(path, JSON.stringify({ ...doctor, stale: true, stale_reason: reason, stale_marked_at: "2026-06-25T00:00:00Z" }));
   const payload = targetPayload(root);
   assert.equal(payload.doctor.stale, true);
-  assert.equal(payload.doctor.stale_reason, "Build�[31m� was recorded. Re-run campaigns-os doctor (or next).");
+  assert.equal(payload.doctor.stale_reason, "Build\uFFFD[31m\uFFFD was recorded. Re-run campaigns-os doctor (or next).");
   assert.equal(payload.clean, clean);
   const line = runReadbackCommand({ _: ["readback", root] }).text.split("\n").find((line) => line.includes("STALE reading"));
   assert.equal(line, `  STALE reading: ${payload.doctor.stale_reason}`);

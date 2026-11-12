@@ -243,7 +243,7 @@ test("record ready and text flatten control characters in recorded page ids and 
   writeFileSync(f.reportPath, JSON.stringify(report));
   const result = f.recordBuild();
   compareRecordedCi(f, result);
-  const safeId = "upsell�[31m� 1", safePath = "upsell1/�� index.html";
+  const safeId = "upsell\uFFFD[31m\uFFFD 1", safePath = "upsell1/\uFFFD\uFFFD index.html";
   assert.ok(result.ready.includes(`Changed page: ${safeId} (${safePath})`));
   assert.ok(result.ready.some((line) => line.includes(`changed pages: ${safeId}`)));
   for (const line of [...result.ready, ...resultTextLines(result)]) assert.doesNotMatch(line, /[\u0000-\u001f\u007f-\u009f]/);
