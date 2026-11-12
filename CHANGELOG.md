@@ -2,11 +2,17 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.68.0+agent.11] - 2026-11-11
+## [1.68.0+agent.12] - 2026-11-11
 
 ### Changed
 
 - Editing a stylesheet or image that built pages link directly now owes QA on those pages only, and a browser run with no test orders on a checkout or upsell page among them, instead of the full Polish and QA (#753).
+
+## [1.68.0+agent.11] - 2026-11-11
+
+### Fixed
+
+- `qa run` without `--currency` runs in the CampaignSpec's `campaign.currency`, a declared tag that did not fire on a build recorded as a development build reads not measured instead of blocking, and the private template family error names `PRIVATE_TEMPLATE_SOURCES_ROOT` first (#756).
 
 ## [1.68.0+agent.10] - 2026-11-11
 

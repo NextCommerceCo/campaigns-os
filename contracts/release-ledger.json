@@ -4143,13 +4143,40 @@
       "entry_sha256": "02d755d6a3a8d9b7371265531822c2348113e08f966666fe243fff88dc7ec14a"
     },
     {
-      "id": "RL-0345",
+      "id": "RL-0338",
       "sequence": 327,
       "date": "2026-11-11",
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.68.0+agent.11",
-      "changelog_sha256": "e9f37980f04c7be44a49c376a7dcf05c693157dcfa04b606389d7d5907f2d149",
+      "changelog_sha256": "4c3518a44dd17f4e6036b7c05dc54555abdf830bf28a485ac5b353740b0400fa",
+      "agent_impact": "A qa run with a spec and no --currency now enters each funnel's entry page with ?currency=<the spec's campaign.currency> and marks evidence.currency_defaulted_from_spec on that page's http row; pass --currency to choose another. A malformed spec currency, a spec with none, --site and legacy API order runs stay unpinned. On a build recorded with build_environment development, an analytics-correctness:tag:* row that did not fire is manual_review / warn with evidence.reason development_build_gates_vendor_loaders: on a hosted preview of that build, and on a local-serve run only when the capture stayed on the loopback render (those rows used to read local_serve_development_render). A local-serve capture that landed on another host keeps its blocker. Run QA against a production build to check the tag. A tag:meta row whose observer was disarmed, oob rows and purchase-fires keep their earlier rules.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Document the spec-currency default for qa run and the development-build rule for declared tag rows."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "spec derive's analytics warnings say a declared tag is checked on a production build."
+        }
+      ],
+      "entry_sha256": "5f8f7cac9a3b15101e9558809a0a65a8f5c3530e6db8b8555d7d7db306f7a1d5"
+    },
+    {
+      "id": "RL-0345",
+      "sequence": 328,
+      "date": "2026-11-11",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.68.0+agent.12",
+      "changelog_sha256": "a82cfaa79d6f017fef64682a1e2f79c9344930c5e39632e6bf3aff646fc67e02",
       "agent_impact": "A change whose only non-page file is a stylesheet or image built pages link directly (link rel=stylesheet, img src or srcset, picture source srcset) now reads page_only, with QA owed on those pages, instead of commerce_affecting. The change, and the build_changes entry record build keeps, then carry linked_assets (each path, with pages: the ids of the pages that link it) and browser_pages (the built paths of the checkout or upsell pages it reaches); reasons stay the commerce causes, with no new codes. When QA is owed, page-scoped or full, and there is such a page, evidence_debt.qa.browser_pages lists its id, and qa run, with or without --page, then needs --browser.",
       "compatibility": "additive",
       "migration": "none",
@@ -4185,7 +4212,7 @@
           "summary": "build_changes entries can carry linked_assets and browser_pages, which do not make a change commerce."
         }
       ],
-      "entry_sha256": "29b107352ace1d88e8c429281163e96c1b787e96e5752ba43e6ca0cf4a0714bf"
+      "entry_sha256": "ae76b630febf89a3f9f56f06d12725227666a584467a0952e881fdb342c20b6f"
     }
   ]
 }
