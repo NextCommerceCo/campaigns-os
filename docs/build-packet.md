@@ -517,6 +517,11 @@ spec in step without running setup or intake again:
    [Binding a page change](#binding-a-page-change)).
 
 Then rebuild, record the build, and run Polish, deploy and QA as `next` asks.
+`polish capture` includes each added page's `page_kit` route without a source
+HTML `path` or a hand edit to the packet. It captures the build and reports the
+source side as `source_html_missing`, with the visual comparison unexercised.
+Pages carrying `skip_reason` stay outside that capture plan and are listed
+with their reasons in `captures.subject.skipped_pages`.
 Before handoff, `spec derive` lists a page file no spec page binds as
 unclaimed and adds nothing, and `record spec` refuses a page added or removed
 (`page_scope_changed`): the design source decides the pages until the first
@@ -603,6 +608,11 @@ list is read off the spec as the run leaves it. Hints are a spec projection
 the Map regenerates, so derive rewrites one only on an edge it re-points after
 handoff (below); any other stale hint is edited in the spec (or, while the Map
 is still the spec's source, fixed by re-saving the Map).
+
+After `record spec` binds an added page, its `origin: "repo"` and `page_kit`
+route also put it in the Polish capture plan and the full QA page list. It has
+no source HTML `path`: build-side evidence is captured, and the visual source
+side is reported as missing rather than compared to a design source.
 
 A routing hint that is stale is also a doctor blocker (`spec.routing_hint_stale`,
 on every read), and `record spec` refuses to bind a page change while one is

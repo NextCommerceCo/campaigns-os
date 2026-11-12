@@ -4146,6 +4146,39 @@ test("F2.3-W5: an upsell page added to a handed-off funnel's page tree is record
   });
 });
 
+test("a page added by spec derive and bound by record spec enters capture and doctor's capture checkpoint", async () => {
+  const { planPolishCapture } = await import("./polish-node.mjs");
+  await guardedLifecycle(async (f) => {
+    await handedOff(f);
+    const tree = writePageTree(f);
+    writeFileSync(join(tree, "upsell-2.html"), `---\npage_type: upsell\nnext_url: /${f.slug}/receipt/\ndecline_url: /${f.slug}/receipt/\n---\n<h1>upsell-2</h1>\n`);
+    const upsell = join(tree, "upsell.html");
+    writeFileSync(upsell, readFileSync(upsell, "utf8").replace(`next_url: /${f.slug}/receipt/`, `next_url: /${f.slug}/upsell-2/`));
+    const derive = runJson(["spec", "derive", "--packet", f.packetPath, "--no-live-refs"], f.dir);
+    assert.equal(derive.status, 0, derive.stderr);
+    assert.deepEqual(recordInputOk(f, "spec", "refreshed").pages.added, ["upsell-2"]);
+    const packet = readJson(f.packetPath);
+    const entry = packet.source_html.pages.find((page) => page.page_id === "upsell-2");
+    assert.equal(entry.origin, "repo");
+    assert.equal(entry.path, undefined);
+    assert.equal(entry.skip_reason, undefined);
+    const plan = planPolishCapture({ packet, baseUrl: "http://127.0.0.1:4173" });
+    assert.ok(plan.routes.some((route) => route.page_id === "upsell-2" && route.requested_route === `/${f.slug}/upsell-2/`));
+    const built = join(f.target, "_site", f.slug, "upsell-2");
+    mkdirSync(built, { recursive: true });
+    writeFileSync(join(built, "index.html"), '<!doctype html><h1>Added upsell</h1>');
+    recordOk(f, "build");
+    const before = evaluateRecordedHiddenEagerMediaCheckpoint({ packet, report: readJson(f.reportPath) });
+    assert.ok(!before.required_actions.some((action) => action.id === "polish.hidden_eager_media.repair_authority"));
+    await capture(f);
+    const inspected = doctorOk(f);
+    const checkpoint = inspected.derived.polish_checkpoint_gate;
+    assert.equal(checkpoint.status, "pass", JSON.stringify(checkpoint));
+    const captured = readJson(f.reportPath).stages.polish.evidence.visual_review.page_load;
+    assert.deepEqual(captured.captures.filter((cell) => cell.subject.requested_route === `/${f.slug}/upsell-2/`).map((cell) => cell.subject.viewport), ["desktop", "mobile"]);
+  });
+});
+
 test("F2.3-W5b: spec derive reads a page file's next_step and step_number from real frontmatter, so an added step is a step and a select page is a select page", async () => {
   await guardedLifecycle(async (f) => {
     await handedOff(f);

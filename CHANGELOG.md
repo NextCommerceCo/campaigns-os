@@ -8,6 +8,12 @@ Notable supported-surface changes are recorded here.
 
 - `spec derive` re-points a never-built spec page at the one built page that sells exactly its packages, instead of adding a duplicate page beside it (#756).
 
+## [1.68.0+agent.12] - 2026-11-11
+
+### Fixed
+
+- `polish capture` plans the pages `spec derive` adds after handoff, lists the pages it leaves out, and takes evidence-only captures of template-stock pages (#756).
+
 ## [1.68.0+agent.11] - 2026-11-11
 
 ### Fixed
