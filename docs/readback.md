@@ -540,9 +540,9 @@ the build a stage reviewed are on that stage instead. An owed stage carries:
 - QA only, `scope` and `owed_pages`: `pages` with the changed pages when the
   change is `page_only` (`qa run --page` pays it), `full` otherwise, `null`
   when QA is not owed.
-- QA only, `browser_pages`: present when a page-scoped QA owes a browser run,
-  the ids of the checkout or upsell pages a changed stylesheet or image
-  reaches. `qa run`, with or without `--page`, then needs `--browser`.
+- QA only, `browser_pages`: present when QA, page-scoped or full, owes a
+  browser run: the ids of the checkout or upsell pages a changed stylesheet or
+  image reaches. `qa run`, with or without `--page`, then needs `--browser`.
 - QA only, `reviewed_at`: when the completed QA the change is read from was
   checked. Absent when QA did not complete.
 - QA only, `baseline`: `{ "accepted_by", "accepted_at", "reason",

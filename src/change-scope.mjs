@@ -384,7 +384,12 @@ export function changeSince(anchor, { assembly, drift, driftClassification }) {
     for (const path of part.unmapped_files || []) unmapped.add(path);
     result.reasons.push(...(reasons || []));
     const { linked_assets: assets = [], browser_pages: buy = [] } = linkedAssetNotes(notes);
-    for (const asset of assets) linked.set(asset.path, [...new Set([...(linked.get(asset.path) || []), ...(asset.pages || [])])]);
+    for (const asset of assets) {
+      // Re-inserted so the most recent change's assets sort last, for the cap.
+      const ids = [...new Set([...(linked.get(asset.path) || []), ...(asset.pages || [])])];
+      linked.delete(asset.path);
+      linked.set(asset.path, ids);
+    }
     for (const path of buy) browser.add(path);
   };
   for (const segment of segments) {
@@ -404,7 +409,9 @@ export function changeSince(anchor, { assembly, drift, driftClassification }) {
     unmapped_files: capped([...unmapped].sort()),
     reasons: capped(result.reasons),
     ...linkedAssetNotes({
-      linked_assets: capped([...linked].map(([path, ids]) => ({ path, pages: ids }))),
+      // The cap keeps the most recently changed assets (the drift last).
+      linked_assets: capped([...linked].reverse().map(([path, ids]) => ({ path, pages: ids })))
+        .sort((a, b) => a.path.localeCompare(b.path)),
       browser_pages: [...browser].sort(),
     }),
   };

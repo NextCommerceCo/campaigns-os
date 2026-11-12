@@ -748,7 +748,7 @@ test("a stylesheet checkout links owes a browser QA run on checkout with no test
   assert.deepEqual(debt.qa.change.browser_pages, ["checkout/index.html"]);
   assert.deepEqual(f.readReport().stages.assembly.build_changes.at(-1).browser_pages, ["checkout/index.html"], "record build keeps them");
   assert.throws(() => scopeLinked(f, ["checkout"]), /checkout is a checkout or upsell page whose linked stylesheet or image changed, so it owes a browser run; add --browser\./);
-  assert.throws(() => scopeLinked(f, undefined), /QA owes a browser run\. Run campaigns-os qa run --page checkout --browser \(no test orders are placed\), or add --browser to this full run\./,
+  assert.throws(() => scopeLinked(f, undefined), /QA owes a browser run\. Run campaigns-os qa run --packet <packet> --page checkout --browser \(no test orders are placed\), or add --browser to this full run\./,
     "a full run without --browser does not drop it");
   assert.equal(scopeLinked(f, undefined, { browser: true }).scope, null, "a full run with --browser may pay it");
   assert.deepEqual(scopeLinked(f, ["checkout"], { browser: true }).scope.owed_pages, ["checkout"]);
@@ -766,6 +766,22 @@ test("a stylesheet checkout links owes a browser QA run on checkout with no test
   const validate = new Ajv2020({ strict: true, allErrors: true })
     .compile(JSON.parse(readFileSync(new URL("../schemas/campaigns-os-readback.v2.schema.json", import.meta.url), "utf8")));
   assert.ok(validate(json), JSON.stringify(validate.errors, null, 2));
+
+  // The checkout's own copy changed in the same rebuild: the change owes the
+  // full stages, and the browser run on checkout is still owed.
+  const both = linkedFixture(t);
+  both.writeFile("css/checkout.css", `${LINKED.files["css/checkout.css"]}.pay { display: block }\n`);
+  both.writePage("checkout", LINKED.pages.checkout.replace("<h1>Checkout</h1>", "<h1>Secure checkout</h1>"));
+  both.recordBuild();
+  const bothDebt = both.debt();
+  assert.equal(bothDebt.qa.scope, "full");
+  assert.deepEqual(bothDebt.qa.browser_pages, ["checkout"]);
+  assert.throws(() => scopeLinked(both, undefined), /QA owes a browser run\. Add --browser to this run\./);
+  assert.equal(scopeLinked(both, undefined, { browser: true }).scope, null);
+  const bothCi = ci(both).stdout;
+  assert.match(bothCi, /It owes the full Polish and QA, in a browser on `checkout`/);
+  assert.match(bothCi, /qa run --packet <packet> --browser`/);
+  assert.match(runReadbackCommand({ _: ["readback", both.root], packet: both.packetPath }).text, /browser run owed on: checkout \(qa run --browser\)/);
 
   const script = linkedFixture(t);
   script.writeFile("js/checkout.js", "window.checkout = 2;\n");

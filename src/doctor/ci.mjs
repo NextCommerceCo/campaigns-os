@@ -136,7 +136,7 @@ export function formatDoctorCi(result) {
   const owed = ["polish", "qa"].filter((stage) => ci[stage].status === "owed" && !ci[stage].advisory);
   const change = ciChangeScope(ci);
   const pageScoped = change.scope === "pages";
-  const browserPages = ci.qa.scope === "pages" && Array.isArray(ci.qa.browser_pages) ? ci.qa.browser_pages : [];
+  const browserPages = ci.qa.status === "owed" && Array.isArray(ci.qa.browser_pages) ? ci.qa.browser_pages : [];
   const inBrowser = browserPages.length ? `, in a browser on ${browserPages.map(code).join(", ")} (a checkout or upsell page whose linked stylesheet or image changed; no test orders)` : "";
   if (pageScoped) {
     lines.push(`Change found: page-only. ${owed.length ? `It owes QA on ${ci.qa.owed_pages.map((page) => code(page.page_id)).join(", ")}${inBrowser}` : "QA is current"}; Polish is advisory.`);
@@ -150,7 +150,7 @@ export function formatDoctorCi(result) {
     const qaPages = ci.qa.scope === "pages" ? `QA on ${ci.qa.owed_pages.map((page) => code(page.page_id)).join(", ")}` : null;
     const owes = owed.length === 2 ? (qaPages ? `the full Polish, and ${qaPages}` : "the full Polish and QA")
       : owed[0] === "polish" ? "the full Polish" : qaPages || "a full QA run";
-    lines.push(`Change found: ${found}${reasons.length ? ` (${reasons.join("; ")})` : ""}. It owes ${owes}${advisory.includes("polish") ? "; Polish is advisory" : ""}.`);
+    lines.push(`Change found: ${found}${reasons.length ? ` (${reasons.join("; ")})` : ""}. It owes ${owes}${owed.includes("qa") ? inBrowser : ""}${advisory.includes("polish") ? "; Polish is advisory" : ""}.`);
   }
   lines.push(`Owed stages: ${owed.length ? owed.map((stage) => stage === "qa" && ci.qa.scope === "pages" ? "qa (changed pages only)" : stage).join(", ") : "none"}.`);
   for (const stage of owed) {

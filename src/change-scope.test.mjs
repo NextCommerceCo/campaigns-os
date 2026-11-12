@@ -288,9 +288,15 @@ test("mapLinkedAssets maps a linked stylesheet and image to the pages that link 
     changed_pages: [page("checkout"), page("upsell1")], unmapped_files: [], reasons: [], ...sharedNotes }] };
   assert.deepEqual(changeSince("sha256:a", { assembly, drift, driftClassification: classify(linked) }), {
     kind: "page_only", since_build_fingerprint: "sha256:a", changed_pages: [page("checkout"), page("landing"), page("upsell1")], unmapped_files: [], reasons: [],
-    linked_assets: [{ path: "css/shared.css", pages: ["checkout", "upsell1"] }, { path: "css/landing.css", pages: ["landing"] }],
+    linked_assets: [{ path: "css/landing.css", pages: ["landing"] }, { path: "css/shared.css", pages: ["checkout", "upsell1"] }],
     browser_pages: ["checkout/index.html", "upsell1/index.html"],
   });
+  // Past the cap, the current change's assets are kept, not the oldest rebuild's.
+  const many = Array.from({ length: 25 }, (_, index) => ({ path: `css/old-${String(index).padStart(2, "0")}.css`, pages: ["upsell1"] }));
+  const crowded = { ...assembly, build_changes: [{ ...assembly.build_changes[0], linked_assets: many, browser_pages: [] }] };
+  const kept = changeSince("sha256:a", { assembly: crowded, drift, driftClassification: classify(linked) }).linked_assets;
+  assert.equal(kept.length, 20);
+  assert.ok(kept.some((asset) => asset.path === "css/landing.css"), JSON.stringify(kept));
   assert.deepEqual(classify([], { ...known, unmapped_files: ["css/unlinked.css"] }),
     { kind: "commerce_affecting", reasons: [{ code: "unmapped_file", path: "css/unlinked.css" }] }, "an unlinked asset stays commerce");
 });

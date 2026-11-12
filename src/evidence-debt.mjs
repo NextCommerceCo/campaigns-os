@@ -29,7 +29,8 @@ export function sharedBuildFingerprint(outputDir) {
 // The owed pages a page-scoped QA run must render in a browser: the change's
 // `browser_pages` (change-scope.mjs), as page ids.
 function browserOwedPages(change) {
-  const paths = new Set(Array.isArray(change.browser_pages) ? change.browser_pages : []);
+  const paths = new Set(Array.isArray(change?.browser_pages) ? change.browser_pages : []);
+  if (!paths.size || !Array.isArray(change.changed_pages)) return [];
   return change.changed_pages.filter((page) => paths.has(page.built_path)).map((page) => page.page_id);
 }
 
@@ -190,9 +191,10 @@ export function assessEvidenceDebt({ packet = null, packetPath = null, report = 
     if (extended && extended === qaBuild && fingerprint(qaRecord?.checked_at)) qa.reviewed_at = qaRecord.checked_at.trim();
     qa.scope = extended && qaRecord?.status !== "required" && qa.change.kind === "page_only" ? "pages" : "full";
     qa.owed_pages = qa.scope === "pages" ? qa.change.changed_pages : [];
-    // A checkout or upsell page reached only through a linked asset owes a
-    // browser run (#753); listed only when there is one, as page ids.
-    const browserPages = qa.scope === "pages" ? browserOwedPages(qa.change) : [];
+    // A checkout or upsell page a changed linked asset reaches owes a browser
+    // run (#753) at either scope: a full run owes it too. Listed only when
+    // there is one, as page ids.
+    const browserPages = browserOwedPages(qa.change);
     if (browserPages.length) qa.browser_pages = browserPages;
   } else {
     qa.change = null;
