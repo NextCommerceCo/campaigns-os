@@ -249,7 +249,8 @@ export function inspectSidecarBundle({ packetPath, requireQa = false } = {}) {
     if (!isPacket && runtimeRelativePath === null) continue;
     const artifactRelativePath = isPacket
       ? packetRelativePath
-      : join(runtimeRelativePath, artifactContract.runtime_relative_path);
+      // Repository-relative, so always "/": the contract forbids a backslash.
+      : `${runtimeRelativePath}/${artifactContract.runtime_relative_path}`;
     const path = isPacket ? absolutePacket : join(root, artifactRelativePath);
     const required = artifactContract.requirement === "required" || (artifactContract.kind === "qa_verdict" && requireQa);
     const record = {
