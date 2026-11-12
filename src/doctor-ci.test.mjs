@@ -209,14 +209,22 @@ test("doctor --ci fingerprint drift still requires recording the build alongside
   assert.match(markdown.stdout, /Remedy: rebuild, then run `campaigns-os record build/);
 });
 
-test("doctor --ci missing built output exits 4 and reports unknown reasons", (t) => {
+test("doctor --ci recorded handed-off funnel without built output is unknown, never current", (t) => {
   const f = fixture(t);
+  f.report.stages.deploy = { status: "completed", source_build_fingerprint: f.report.stages.assembly.build_fingerprint };
+  f.save();
+  assert.equal(jsonCi(f, 0).ci.status, "current", "the handed-off funnel starts with matching evidence");
   rmSync(f.output, { recursive: true });
   const payload = jsonCi(f, 4);
   assert.equal(payload.ci.status, "unknown");
-  assert.equal(payload.ci.polish.reason, "build_output_missing");
+  for (const stage of ["polish", "qa"]) {
+    assert.equal(payload.ci[stage].status, "unknown");
+    assert.equal(payload.ci[stage].reason, "build_output_missing");
+  }
+  assert.equal(payload.ci.changes.reason, "build_output_missing");
   const markdown = run(f, "--ci");
   assert.equal(markdown.status, 4);
+  assert.doesNotMatch(markdown.stdout, /Campaign evidence: current/);
   assert.match(markdown.stdout, /Unknown polish: `build_output_missing`/);
   assert.match(markdown.stdout, /Unknown qa: `build_output_missing`/);
   assert.match(markdown.stdout, /Remedy:/);

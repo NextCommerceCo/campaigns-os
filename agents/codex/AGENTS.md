@@ -38,13 +38,8 @@ A NEXT campaign is one connected commerce journey: the pages the CampaignSpec de
    Readback's `evidence_debt` compares the build on disk with the builds Polish and QA were recorded for.
    Changed pages are listed against the recorded assembly build manifest; an owed stage with an empty page list still means evidence is owed.
 2. For pages built from a provided design, the Design Source Package is the authority, not the punch list's wording.
-3. Before opening the pull request, after the final edit, rebuild, then run `npx --no-install campaigns-os record build --packet campaign-runtime.build.json`.
-   When `next` or the pull-request check says the change is page-only, run
-   `npx --no-install campaigns-os qa run --packet campaign-runtime.build.json --page <page_id>` against that build,
-   with one `--page` for each changed page it names; Polish is optional for it.
-   Otherwise run `npx --no-install campaigns-os polish capture --packet campaign-runtime.build.json --base-url <served-current-build-url>` for the whole route
-   and `npx --no-install campaigns-os record polish --packet campaign-runtime.build.json --evidence <polish-evidence.json>`, in that order,
-   and when QA is owed, run `npx --no-install campaigns-os qa run --packet campaign-runtime.build.json` against that build.
+3. Before opening the pull request, after the final edit, build with Page Kit, run `npx --no-install campaigns-os after-edit --packet <packet>`, and commit the files it lists with the change.
+   Follow `docs/campaigns-os-build-flow.md#after-handoff`: add `--run-qa` for owed page QA; full QA places test orders and needs the project manager\'s go.
 4. In the pull request body, put the design reference and the preview of each changed page side by side.
 
-The standing pull-request check is `npx --no-install campaigns-os doctor --ci --packet campaign-runtime.build.json --no-live-refs`, report-only unless the repo opts in.
+The standing pull-request check builds once with Page Kit, then runs `npx --no-install campaigns-os doctor --ci --packet <packet> --no-live-refs` for every root Build Packet; the workflow example posts one comment with a block per funnel, report-only unless the repo opts in.

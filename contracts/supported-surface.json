@@ -22,6 +22,7 @@
     "start",
     "prepare-build",
     "build",
+    "after-edit",
     "polish",
     "record",
     "checkpoint",
@@ -124,7 +125,7 @@
       "sha256": "b397b417b0456cafc03346a2e882a34c19fa0500ea92594afca2f9fa1d7f2c3b"
     },
     "contracts/effects.v1.json": {
-      "sha256": "4979649217470c1066f7efab722e56d4089f9df374bfbb5af03d2d7e5aba3c14"
+      "sha256": "d39754401025e19cc96de4876c11e3dc35e674ec638698c3450a1aa44631e050"
     },
     "schemas/campaigns-os-effects.v1.schema.json": {
       "sha256": "3eadd22169ab98bc7c2f682af2751267605170581182158d96be035b0cfe44dc"
