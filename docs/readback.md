@@ -412,6 +412,15 @@ assessment; the CLI always supplies one.
 
 ### `doctor`
 
+When the retained doctor output carries `stale: true`, the doctor block prints
+one stale line with the stamp's reason, flattened for safe terminal output.
+Without a usable reason, it says the retained doctor output is marked stale
+and to re-run `campaigns-os doctor`. JSON adds `stale: true` and `stale_reason`
+to `doctor`; an absent reason becomes an empty string. Plain `doctor` prints the
+current state and leaves the retained output as it is, so the stale line stays
+until `doctor --write` or `next` rewrites that output. Unstamped readings keep
+their existing fields, regardless of report timestamps or file mtimes.
+
 - `present` — whether a doctor output loaded. When false, `status` is `null` and
   both counts are `0`: those zeros record an absence, not an observation.
 - `status` — doctor's own status string, unreinterpreted.
@@ -611,6 +620,7 @@ failure lines up with a completed stage. This too is the readback's own layer.
 
 Doctor warnings — of either group — do not affect `clean`. Neither does a
 blocked QA verdict, a blocked assembly report, or a non-empty `skip_cascades`.
+A stale doctor reading does not change `clean`; read `doctor.stale` separately.
 
 ### What `clean` does and does not mean
 

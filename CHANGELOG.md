@@ -24,12 +24,19 @@ Hand-built Page Kit funnels can now join the workflow at the route their pages a
 
 ### Fixed
 
+- Publishes `1.68.0+agent.16`: `record build`, `record baseline`, readback and `doctor --ci` agree on what is owed: the record commands print `doctor --ci`'s reading once Polish or QA has reviewed a build, readback shows when the retained doctor reading was marked stale and why, and `doctor --ci` adds a `record baseline` sign-off line for a funnel recorded before 1.62 (#756, #767).
 - Publishes `1.68.0+agent.14`: `spec derive` re-points a never-built spec page at the one built page that sells exactly its packages, instead of adding a duplicate page beside it (#756, #765).
 - Publishes `1.68.0+agent.12`: `polish capture` plans the pages `spec derive` adds after handoff, lists the pages it leaves out, and takes evidence-only captures of template-stock pages (#756, #761).
 - Publishes `1.68.0+agent.11`: `qa run` without `--currency` runs in the CampaignSpec's `campaign.currency`, a declared tag that did not fire on a build recorded as a development build reads not measured instead of blocking, and the private template family error names `PRIVATE_TEMPLATE_SOURCES_ROOT` first (#756, #759).
 - Publishes `1.68.0+agent.10`: `record deploy` refuses when doctor's Polish gate is blocked, so a Polish recorded as skipped no longer earns a deploy record (#756, #760).
 - Publishes `1.68.0+agent.4`: parse5 and entities are pinned and bundled, so saved commerce-signature/v1 records stay valid across consumer installs (#744).
 - Publishes `1.68.0+agent.3`: the pack check and runtime-recipe test support npm 12's pack JSON object and dependency install-script approval behaviour (#757).
+
+## [1.68.0+agent.16] - 2026-11-12
+
+### Fixed
+
+- `record build`, `record baseline`, readback and `doctor --ci` agree on what is owed: the record commands print `doctor --ci`'s reading once Polish or QA has reviewed a build, readback shows when the retained doctor reading was marked stale and why, and `doctor --ci` adds a `record baseline` sign-off line for a funnel recorded before 1.62 (#756).
 
 ## [1.68.0+agent.15] - 2026-11-12
 

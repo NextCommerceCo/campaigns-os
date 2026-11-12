@@ -8949,7 +8949,14 @@ export function resultTextLines(result, { headerLines = [] } = {}) {
   if (result.action === "record") {
     lines.push(`${result.dry_run ? "Would record" : "Recorded"}: ${result.stage}`);
     for (const path of result.dry_run ? result.would_write : result.written) lines.push(`${result.dry_run ? "Would write" : "Wrote"}: ${path}${result.dry_run ? " (nothing was written)" : ""}`);
-    if (result.next_stage) lines.push(`Next stage: ${result.next_stage}${result.next_stage_reason ? ` (${result.next_stage_reason})` : ""}`);
+    // A baseline whose ready lines name deploy as the served-URL record that
+    // follows does not also print it as the next stage. Without that line,
+    // or for any other stage the picker names, the next stage is printed.
+    const servedUrlFollows = result.stage === "baseline" && result.next_stage === "deploy"
+      && (result.ready || []).some((line) => line.startsWith("Served-URL record follows: deploy"));
+    if (!servedUrlFollows && result.next_stage) {
+      lines.push(`Next stage: ${result.next_stage}${result.next_stage_reason ? ` (${result.next_stage_reason})` : ""}`);
+    }
   }
   if (result.targets?.length) {
     lines.push("Targets:");

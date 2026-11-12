@@ -4302,13 +4302,58 @@
       "entry_sha256": "5471b744df7e11dcf12f8d81d311141c8446d65d259e8524cdac559a07a9c5ac"
     },
     {
-      "id": "RL-0341",
+      "id": "RL-0343",
       "sequence": 332,
+      "date": "2026-11-12",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.68.0+agent.16",
+      "changelog_sha256": "9b4c27c261d2cca2741a598e20619be6695bed8f443b8853c84941077fd7562f",
+      "agent_impact": "After record build or record baseline on a funnel Polish or QA has already reviewed, read the lines under \"doctor --ci reads this build as:\" (and the ci object in --json) for what Polish and QA owe; they are doctor --ci's own reading for that build, in plain text. An advisory Polish is then not printed as stages.polish.status = required, and a baseline over current evidence prints \"Owed stages: none.\" with deploy named as the served-URL record that follows when deploy is required; any other next stage is still printed. A first build and a dry run print what they printed before. In readback, a STALE reading line in the doctor block means a later command changed what doctor reads after that doctor output was written: run doctor before relying on it; it does not change clean. On a funnel recorded before 1.62 whose rebuild owes a full QA for that reason alone, doctor --ci adds a line naming record baseline as a named person's sign-off, which tests nothing and needs a completed QA on record.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/campaigns-os-build-flow.md",
+          "surface_entry": "docs/campaigns-os-build-flow.md",
+          "summary": "Describe the ci reading record build and record baseline return and print (plain text, once a stage has reviewed a build), the baseline sign-off line and its conditions, and that a dry run is unchanged."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/readback.md",
+          "surface_entry": "docs/readback.md",
+          "summary": "Describe the STALE reading line readback prints from the retained doctor output's stale stamp, the stale and stale_reason fields, and that clean is unaffected."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Mention the baseline sign-off line in the doctor --ci description."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "record baseline's text drops the Next stage line only when the stage is deploy and the served-URL line names it; no flag or usage text changes."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/ci.mjs",
+          "surface_entry": null,
+          "summary": "doctor --ci adds one line naming record baseline after its remedy when a full QA is owed by a rebuild and the pre-1.62 reason is the only reason; remedies, the ci object, statuses and exit codes are unchanged."
+        }
+      ],
+      "entry_sha256": "70d33c7342f653e4b5e65b3dd7ac347e3c094c3d5a8160509b5f3bf72935f5c4"
+    },
+    {
+      "id": "RL-0341",
+      "sequence": 333,
       "date": "2026-11-12",
       "kind": "release",
       "surface_version": "1.69.0",
       "changelog_section": "1.69.0",
-      "changelog_sha256": "59a3e847b7eab4c426f30bff9bd695c8c0a7a1af23f64903f1dc76ce0f6b1c51",
+      "changelog_sha256": "fcc3f97a5c5ce57343e07890fc9d34f502d1620208c54ae826ab602b6b753b00",
       "agent_impact": "The Funnel: line may now offer --adopt src/<route>; after asking the operator, run its printed command to bind this funnel to the pages' existing route instead of renaming another funnel. A bound packet carries campaign.map_public_route_slug when the Map's slug differs from the served campaign.public_route_slug; use the bound route for output and records while preserving the Map identity. Only recorded adoption with an unchanged recorded Design Source Package grants built-first treatment. Its build-vs-design checks read excluded / built_first and are never acceptable as a design match; its first QA must be the full run with test orders, separately authorized by the PM, and record baseline does not apply. doctor --built --emit-packet --map-id now fetches the saved Map and records its local spec path and any route binding. Refresh skills to 1.69.0+skills.1.",
       "compatibility": "additive",
       "migration": "Pin @nextcommerce/campaigns-os@1.69.0 and refresh installed skills to 1.69.0+skills.1 before starting a fresh session; nothing changes for a funnel that is not adopted or bound.",
@@ -4500,7 +4545,7 @@
           "summary": "Blocks built-first progress when the package no longer matches the recorded intake references."
         }
       ],
-      "entry_sha256": "ba4e5cfc3696ec89891df90ca4b08334e723e7524a70389c86de13379d10bcf2"
+      "entry_sha256": "6227bbfa9c461f1bad64027a6c72f386f9751238f40bc84f73d18ba7b2b6e302"
     }
   ]
 }

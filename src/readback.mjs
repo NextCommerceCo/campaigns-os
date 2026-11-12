@@ -60,6 +60,7 @@ import { RUNTIME_DIR_REL_PATH, packetRuntimeRelPath } from "./campaign-workspace
 import { normalizePublicRouteSlug, effectiveMapPublicRouteSlug } from "./route-identity.mjs";
 import { BUILT_FIRST_LABEL } from "./design-source-package.mjs";
 import { readRecordedDesignSourcePackage } from "./design-source-publication.mjs";
+import { singleLineFragment } from "./text-safety.mjs";
 
 export const MAX_ARTIFACT_BYTES = 32 * 1024 * 1024;
 export const MAX_GIT_METADATA_BYTES = 64 * 1024;
@@ -1453,6 +1454,10 @@ export function computeDoctorSummary(views) {
     error_count: Array.isArray(errors) ? errors.length : 0,
     warning_count: groups["contract-static"].length + groups["repo-observed"].length,
     warning_groups: groups,
+    ...(doctor.stale === true ? {
+      stale: true,
+      stale_reason: singleLineFragment(typeof doctor.stale_reason === "string" ? doctor.stale_reason : ""),
+    } : {}),
   };
 }
 
@@ -1460,6 +1465,8 @@ function renderDoctor(views, lines) {
   const doctor = artifactData(views, "doctor");
   if (doctor === null) return;
   lines.push(`DOCTOR  [doctor output; status: ${doctor.status}]`);
+  const summary = computeDoctorSummary(views);
+  if (summary.stale) lines.push(`  STALE reading: ${summary.stale_reason || "the retained doctor output is marked stale. Re-run campaigns-os doctor."}`);
   const errors = doctor.errors;
   if (Array.isArray(errors) && errors.length) {
     lines.push(`  errors (${errors.length}):`);

@@ -1559,6 +1559,12 @@ pages only, which `qa run --packet <packet> --page <page_id>` pays. Other doctor
 change the CI exit. It prints Markdown for a PR comment that opens with the
 kind of change it found and what that owes, or adds `ci.status`,
 `ci.exit_code`, `ci.polish`, `ci.qa` and `ci.changes` under `--json`.
+After the existing Markdown remedy, a sentence offers a named person's baseline
+sign-off only when `record build` has recorded the current build, that rebuild
+owes QA at full scope and every change reason is
+`commerce_signature_unavailable` without a page path, with at least one reason.
+It accepts the current build as the starting point, tests nothing and needs a
+completed QA on record; brief or spec changes and mixed reasons do not qualify.
 `--ci` adds no writes or network reads; pass `--no-live-refs` in CI to disable
 doctor's existing live campaign read. Without `--ci`, inspection behavior is unchanged.
 
