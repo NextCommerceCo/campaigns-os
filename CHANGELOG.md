@@ -11,7 +11,6 @@ Notable supported-surface changes are recorded here.
 ### Fixed
 
 - `doctor --ci`, readback and `after-edit` read a Polish or QA whose last run on the current build was blocked as owed (reason `stage_blocked`, exit `3`). They read it as current, so a pull-request check went green after a blocked QA. A blocked page QA owes its pages again; a blocked full QA or Polish owes the full stage (#755).
-- `after-edit`'s "source is newer than the build" stop reads the page tree the packet declares in `assembly.output_dir`, not only `src/<route>/` (#755).
 
 ## [1.69.0] - 2026-11-12
 

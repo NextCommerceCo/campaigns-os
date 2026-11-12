@@ -4554,7 +4554,7 @@
       "kind": "release",
       "surface_version": "1.70.0",
       "changelog_section": "1.70.0",
-      "changelog_sha256": "9961cbebc363b9946c0336b298449b9404b8791a7141567350441b339ffbe449",
+      "changelog_sha256": "5d08a415c68991152677efe56760d828af07a5d9d6255cbe10a616ef0dbee48a",
       "agent_impact": "After any change to a handed-off funnel, build with Page Kit, then run campaigns-os after-edit --packet <packet> and commit the files it lists; this replaces the hand-run sequence of record build, spec derive and doctor --ci. Exit 2 means it stopped (for example, spec derivation needs --yes); otherwise the exit code is doctor --ci's: 0 current, 3 owed, 4 unknown. Add --run-qa only for the page QA it names. It never builds, runs Polish, runs full QA or places test orders: full QA still needs the project manager's go. It writes records; doctor --ci stays the read-only way to ask what is owed. The agent instruction files and the lifecycle skill now point here. Separately, doctor --ci, readback and after-edit now read a Polish or QA whose last run on the current build was blocked as owed (reason stage_blocked, exit 3) where they read it as current: a blocked page QA owes its pages again, a blocked full QA or Polish owes the full stage. Do not treat a blocked run as having cleared the debt.",
       "compatibility": "additive",
       "migration": "Pin @nextcommerce/campaigns-os@1.70.0 and refresh installed skills to 1.70.0+skills.1 before starting a fresh session. Re-run install-agent-context to pick up the after-edit step in the agent instruction files. Nothing changes for existing commands. A pull-request check that was green over a blocked Polish or QA on the current build now reports it owed.",
@@ -4738,9 +4738,15 @@
           "path": "src/cli.mjs",
           "surface_entry": null,
           "summary": "The after-edit command and its help line."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/ci.mjs",
+          "surface_entry": null,
+          "summary": "doctor --ci prints an owed stage whose last run on the current build was blocked as \"the last run on this build was blocked\", with the same remedy commands as any owed stage at that scope."
         }
       ],
-      "entry_sha256": "9eac8aedaeaab93d044ac60c366cd68285d2f6db1fde1b0ac70ad5c1ebf9d902"
+      "entry_sha256": "eb3a79bd45b4cdc2e782c7d332f7ddfcbd9b44975336140adeb83530e34cdf7f"
     }
   ]
 }
