@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.68.0+agent.15] - 2026-11-12
+
+### Changed
+
+- Doctor warns when prices, product fields, recurring terms or offers the CampaignSpec states have fallen behind the live campaign, with a count by kind and `spec derive` as the fix; the warning itself does not change what is owed (#764).
+
 ## [1.68.0+agent.14] - 2026-11-12
 
 ### Fixed
