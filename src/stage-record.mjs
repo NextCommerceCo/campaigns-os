@@ -43,6 +43,7 @@ import { singleLineFragment } from "./text-safety.mjs";
 import { assessEvidenceDebt } from "./evidence-debt.mjs";
 import { writeJsonAtomic } from "./doctor-sidecar.mjs";
 import { doctorPacket } from "./doctor/inspect.mjs";
+import { assessDoctorCi, doctorCiEvidenceLines } from "./doctor/ci.mjs";
 import { validateAssemblyReport } from "./doctor/checks.mjs";
 import { cmd } from "./install-invocation.mjs";
 import { refused } from "./lifecycle.mjs";
@@ -1244,7 +1245,7 @@ export function recordStageCommand(args, { now = () => new Date(), beforeLock = 
     stage, packetPath, sidecars, lockedTarget, input, dryRun, timestamp, recordedBy, afterDoctorRead, buildEnvironment, adapterDecisions, deviationReason,
   });
   const recorded = dryRun ? run() : withTargetLockSync(lockedTarget, run, { command: `record ${stage}` });
-  const { composed, facts, layer, reportPath, contextPath, after } = recorded;
+  const { composed, facts, layer, reportPath, contextPath, after, ci } = recorded;
 
   const stageKey = stage === "build" ? "assembly" : stage === "baseline" ? "qa" : stage;
   const writes = [...(composed.context ? [contextPath] : []), ...(composed.packet ? [packetPath] : []), reportPath];
@@ -1262,10 +1263,16 @@ export function recordStageCommand(args, { now = () => new Date(), beforeLock = 
     ...(stage === "build" && buildEnvironment ? [`stages.assembly.evidence.build_environment = ${buildEnvironment}`] : []),
     ...(stage === "build" && adapterDecisions ? Object.entries(adapterDecisions).map(([key, value]) => `report.adapter_decisions.${key} = ${value}`) : []),
     ...(stage === "build" ? buildChangeReadyLines(composed.report.stages.assembly) : []),
-    ...(stage === "build" ? [`stages.polish.status = ${composed.report.stages.polish.status}`] : []),
+    ...(stage === "build" && !ci?.polish.advisory ? [`stages.polish.status = ${composed.report.stages.polish.status}`] : []),
     ...(stage === "baseline" ? [`Polish and QA read baseline_accepted: ${baseline.acceptedBy} accepted build ${facts.fingerprint}. Nothing was tested, and no purchase is proven from here until a full ${cmd("qa")} run.`] : []),
     ...(stage === "build" && composed.report.stages.deploy?.required_by === "build" ? [`stages.deploy.status = ${composed.report.stages.deploy.status} (the recorded deploy probed other output; run ${cmd("record")} deploy again)`] : []),
     ...(composed.context ? ["Build Context scaffold.required = false"] : []),
+    ...(ci ? [
+      `doctor --ci reads this build as: ${ci.status}`,
+      ...doctorCiEvidenceLines(ci).slice(2).filter(Boolean).map((line) => line.replace(/^- /, "")),
+    ] : []),
+    ...(stage === "baseline" && ci?.polish.status === "current" && ci?.qa.status === "current" && composed.report.stages.deploy?.status === "required"
+      ? [`Served-URL record follows: deploy (run ${cmd("record")} deploy --packet <packet> --base-url <served-current-build-url>).`] : []),
   ];
   return {
     ok: true,
@@ -1283,6 +1290,7 @@ export function recordStageCommand(args, { now = () => new Date(), beforeLock = 
     ...(composed.context ? { scaffold: composed.context.scaffold } : {}),
     ...(stage === "polish" && input.hasRepairLoopDefect ? { repair_loop_defect: input.repairLoopDefect } : {}),
     ...(after ? { next_stage: after.next?.stage || null, next_stage_reason: after.next?.reason || null } : {}),
+    ...(ci ? { ci } : {}),
     ready,
     note: dryRun
       ? "Dry run: every check passed and nothing was written. Re-run without --dry-run to record."
@@ -1375,6 +1383,10 @@ function recordUnderLock({ stage, packetPath, sidecars, lockedTarget, input, dry
     staleReason: `${stage === "theme" ? "theme" : stage === "baseline" ? "a baseline" : `stages.${stage === "build" ? "assembly" : stage}`} was recorded after this doctor snapshot. Re-run ${cmd("doctor")} (or next) for current state.`,
     ...(dryRun ? { lock: false } : {}),
   });
-  const after = dryRun ? null : doctorPacket(packetPath, sidecars);
-  return { composed, facts, layer, reportPath, contextPath, after };
+  let ci;
+  const after = dryRun ? null : doctorPacket(packetPath, {
+    ...sidecars,
+    ...(["build", "baseline"].includes(stage) ? { onEvidenceDebt: (debt) => { ci = assessDoctorCi(debt); } } : {}),
+  });
+  return { composed, facts, layer, reportPath, contextPath, after, ci };
 }

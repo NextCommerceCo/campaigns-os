@@ -14,7 +14,7 @@ import Ajv2020 from "ajv/dist/2020.js";
 
 import { ADAPTER_DECISION_SCALAR_VALUES } from "./adapter-decision-contract.mjs";
 import { computeBuildFingerprint } from "./built-site-scope.mjs";
-import { parseArgs, polishCaptureCommand, recordQaStageOutcome } from "./cli.mjs";
+import { parseArgs, polishCaptureCommand, recordQaStageOutcome, resultTextLines } from "./cli.mjs";
 import { currentPacketInputs } from "./input-currency.mjs";
 import { evaluateRecordedHiddenEagerMediaCheckpoint } from "./polish-node.mjs";
 import { resolveInvocationPolicy } from "./invocation.mjs";
@@ -1881,6 +1881,38 @@ function recordThroughBuild(f) {
   recordOk(f, "build");
   assert.deepEqual(stageStatuses(f, ["setup", "assembly"]), { setup: "completed", assembly: "completed" }, "setup: setup and build are recorded");
 }
+
+test("record baseline shares CI's nothing-owed line and labels deploy as the served-URL record", () => {
+  withLifecycle((f) => {
+    recordThroughBuild(f);
+    mutateJson(f.reportPath, (report) => {
+      const fingerprint = report.stages.assembly.build_fingerprint;
+      delete report.stages.assembly.commerce_signature;
+      report.stages.polish = { stage: "polish", status: "completed", source_build_fingerprint: fingerprint };
+      report.stages.qa = { stage: "qa", status: "completed", evidence: { source_build_fingerprint: fingerprint } };
+      report.stages.deploy = { stage: "deploy", status: "completed", source_build_fingerprint: fingerprint };
+    });
+    buildSite(f, " revised");
+    recordOk(f, "build");
+    const before = readJson(f.reportPath).stages.deploy;
+    assert.equal(before.status, "required", "the rebuild made the old served-URL record required");
+    const result = recordOk(f, "baseline", ["--accepted-by", "Synthetic Signatory 01", "--reason", "Accept the trial funnel as the starting point"]);
+    const expected = runJson(["doctor", "--packet", f.packetPath, "--ci", "--no-live-refs"], f.dir).json.ci;
+    assert.deepEqual(result.ci, expected, "baseline JSON carries the same post-write evidence reading as CI");
+    assert.equal(expected.status, "current");
+    assert.equal(expected.polish.status, "current");
+    assert.equal(expected.qa.status, "current");
+    const markdown = runCli(["doctor", "--packet", f.packetPath, "--ci", "--no-live-refs"], f.dir).stdout;
+    assert.ok(result.ready.includes("Owed stages: none.") && markdown.includes("Owed stages: none."));
+    assert.equal(result.next_stage, doctor(f).next.stage, "JSON keeps doctor's picker even when its checkpoint gate differs from evidence debt");
+    assert.deepEqual(readJson(f.reportPath).stages.deploy, before, "baseline does not rewrite deploy");
+    const text = resultTextLines(result).join("\n");
+    assert.match(text, /^- doctor --ci reads this build as: current$/m);
+    assert.doesNotMatch(text, /\(exit|^- - /m);
+    assert.doesNotMatch(text, /Next stage:/);
+    assert.match(text, /Served-URL record follows: deploy/);
+  });
+});
 
 // record deploy on the local preview, with a stand-in fetch answering every
 // built page 200, so the probe never leaves the process.

@@ -58,7 +58,7 @@ function jsonCi(f, expectedExit) {
   const payload = JSON.parse(result.stdout);
   assert.ok(payload.ci, "--ci --json must add a ci object");
   assert.equal(payload.ci.exit_code, expectedExit);
-  const { status, exit_code, ...debt } = payload.ci;
+  const { status, exit_code, remedy, ...debt } = payload.ci;
   assert.deepEqual(debt, assessEvidenceDebt({ packet: f.packet, packetPath: f.packetPath, report: f.report }));
   return payload;
 }
@@ -102,6 +102,7 @@ test("doctor --ci page edited and rebuilt exits 3 and Markdown names page and re
   const remedyCommands = [...markdown.stdout.split("Remedy:")[1].matchAll(/`(campaigns-os [^`]+)`/g)].map((match) => match[1]);
   assert.deepEqual(remedyCommands, [
     "campaigns-os record build --packet <packet>",
+    "campaigns-os record baseline --packet <packet> --accepted-by <person> --reason <why>",
     "campaigns-os polish capture --packet <packet> --base-url <served-current-build-url>",
     "campaigns-os record polish --packet <packet> --evidence <polish-evidence.json>",
     "campaigns-os qa run --packet <packet>",

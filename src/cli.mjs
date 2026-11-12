@@ -8867,7 +8867,9 @@ export function resultTextLines(result, { headerLines = [] } = {}) {
   if (result.action === "record") {
     lines.push(`${result.dry_run ? "Would record" : "Recorded"}: ${result.stage}`);
     for (const path of result.dry_run ? result.would_write : result.written) lines.push(`${result.dry_run ? "Would write" : "Wrote"}: ${path}${result.dry_run ? " (nothing was written)" : ""}`);
-    if (result.next_stage) lines.push(`Next stage: ${result.next_stage}${result.next_stage_reason ? ` (${result.next_stage_reason})` : ""}`);
+    if (!(result.stage === "baseline" && result.ci?.polish.status === "current" && result.ci?.qa.status === "current") && result.next_stage) {
+      lines.push(`Next stage: ${result.next_stage}${result.next_stage_reason ? ` (${result.next_stage_reason})` : ""}`);
+    }
   }
   if (result.targets?.length) {
     lines.push("Targets:");

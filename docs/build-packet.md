@@ -1495,6 +1495,10 @@ pages only, which `qa run --packet <packet> --page <page_id>` pays. Other doctor
 change the CI exit. It prints Markdown for a PR comment that opens with the
 kind of change it found and what that owes, or adds `ci.status`,
 `ci.exit_code`, `ci.polish`, `ci.qa` and `ci.changes` under `--json`.
+`ci.remedy` is a single line of text, present only when the reason is
+`commerce_signature_unavailable`. It names baseline acceptance, but
+`record baseline` can still refuse for its own reasons, such as no completed
+QA on record.
 `--ci` adds no writes or network reads; pass `--no-live-refs` in CI to disable
 doctor's existing live campaign read. Without `--ci`, inspection behavior is unchanged.
 

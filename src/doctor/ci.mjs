@@ -11,7 +11,11 @@ export function assessDoctorCi(debt) {
   // Any known debt is owed; otherwise incomplete evidence remains unknown.
   const status = stages.some((stage) => stage.status === "owed") ? "owed"
     : stages.some((stage) => stage.status === "unknown") ? "unknown" : "current";
-  return { status, exit_code: DOCTOR_CI_EXIT_CODES[status], ...debt };
+  const legacyBuild = [debt.polish, debt.qa].some((stage) => stage.status === "owed"
+    && stage.change?.reasons?.some((reason) => reason.code === "commerce_signature_unavailable"));
+  return { status, exit_code: DOCTOR_CI_EXIT_CODES[status], ...debt,
+    ...(legacyBuild ? { remedy: "Remedy: run `campaigns-os record build --packet <packet>`, then `campaigns-os record baseline --packet <packet> --accepted-by <person> --reason <why>` to accept the current build as the starting point. This needs a completed QA on record and tests nothing. The other way is to rebuild, record build, and re-run `campaigns-os polish capture --packet <packet> --base-url <served-current-build-url>` for the whole route, `campaigns-os record polish --packet <packet> --evidence <polish-evidence.json>`, and a full `campaigns-os qa run --packet <packet>`." } : {}),
+  };
 }
 
 // What the change owes, from the stages it left owed: "pages" when the only
@@ -120,17 +124,8 @@ export async function withDoctorCiReport(args, invoke) {
   }
 }
 
-export function formatDoctorCi(result) {
-  const ci = result.ci;
-  if (!ci) {
-    return [
-      `## Campaign evidence: could not evaluate (exit ${result.exit_code ?? DOCTOR_CI_EXIT_CODES.usage})`, "",
-      ...(result.errors || []).map((issue) => `- ${code(issue.code)}: ${text(issue.message)}`), "",
-      result.errors?.[0]?.code === "doctor.ci.usage"
-        ? "Remedy: correct the command's flags (each value as the next argument, `--flag value`) and re-run `campaigns-os doctor --packet <packet> --ci --no-live-refs`."
-        : "Remedy: correct the packet or inspection failure and re-run `campaigns-os doctor --packet <packet> --ci --no-live-refs`.",
-    ].join("\n");
-  }
+// Shared with post-write stage records: the same debt, in CI's words.
+export function doctorCiEvidenceLines(ci) {
   const lines = [`## Campaign evidence: ${text(ci.status)} (exit ${ci.exit_code})`, ""];
   const advisory = ["polish", "qa"].filter((stage) => ci[stage].status === "owed" && ci[stage].advisory);
   const owed = ["polish", "qa"].filter((stage) => ci[stage].status === "owed" && !ci[stage].advisory);
@@ -198,7 +193,27 @@ export function formatDoctorCi(result) {
     if (ci[stage].status === "unknown") lines.push(`- Unknown ${stage}: ${code(ci[stage].reason)}`);
   }
   if (ci.changes.status === "unknown") lines.push(`- Unknown page changes: ${code(ci.changes.reason)}`);
-  if (ci.status === "owed" && pageScoped && owed.length) {
+  return lines;
+}
+
+export function formatDoctorCi(result) {
+  const ci = result.ci;
+  if (!ci) {
+    return [
+      `## Campaign evidence: could not evaluate (exit ${result.exit_code ?? DOCTOR_CI_EXIT_CODES.usage})`, "",
+      ...(result.errors || []).map((issue) => `- ${code(issue.code)}: ${text(issue.message)}`), "",
+      result.errors?.[0]?.code === "doctor.ci.usage"
+        ? "Remedy: correct the command's flags (each value as the next argument, `--flag value`) and re-run `campaigns-os doctor --packet <packet> --ci --no-live-refs`."
+        : "Remedy: correct the packet or inspection failure and re-run `campaigns-os doctor --packet <packet> --ci --no-live-refs`.",
+    ].join("\n");
+  }
+  const lines = doctorCiEvidenceLines(ci);
+  const owed = ["polish", "qa"].filter((stage) => ci[stage].status === "owed" && !ci[stage].advisory);
+  const pageScoped = ciChangeScope(ci).scope === "pages";
+  const browserPages = ci.qa.status === "owed" && Array.isArray(ci.qa.browser_pages) ? ci.qa.browser_pages : [];
+  if (ci.remedy) {
+    lines.push("", ci.remedy);
+  } else if (ci.status === "owed" && pageScoped && owed.length) {
     const pages = ci.qa.owed_pages.map((page) => ` --page ${pageArg(page.page_id)}`).join("") + (browserPages.length ? " --browser" : "");
     const recorded = ci.changes.recorded_build_fingerprint && ci.changes.recorded_build_fingerprint === ci.changes.current_build_fingerprint;
     lines.push("", `Remedy: ${recorded ? "" : "run `campaigns-os record build --packet <packet>` for the rebuilt output, then "}run \`campaigns-os qa run --packet <packet>${pages}\` against that build. Polish capture is optional for a page-only change.`);

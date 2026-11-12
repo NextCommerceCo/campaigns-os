@@ -407,6 +407,20 @@ assessment; the CLI always supplies one.
 
 ### `doctor`
 
+When the Assembly Report records a write after the retained doctor reading,
+the doctor block labels that reading stale and names
+`campaigns-os doctor --packet <packet> --write` to refresh it. The comparison
+uses the files' `generated_at` values and the report's stage `completed_at`,
+`checked_at`, `baseline_accepted_at`, `input_change.at`, and baseline
+`accepted_at` values, since report generation time does not advance on each
+stage write. It also honors the retained doctor's existing `stale` stamp.
+It never uses file mtimes. A reading at or after those recorded times, without
+a stale stamp, prints as before. This is readback's projection of the retained
+reading's age, separate from live evidence debt and the checkout-age assessment.
+In JSON, a stale reading adds `stale: true`, `stale_basis`
+(`report_recorded_at` or `doctor_stale_stamp`) and `refresh_command` to `doctor`.
+Fresh readings keep their existing fields.
+
 - `present` — whether a doctor output loaded. When false, `status` is `null` and
   both counts are `0`: those zeros record an absence, not an observation.
 - `status` — doctor's own status string, unreinterpreted.

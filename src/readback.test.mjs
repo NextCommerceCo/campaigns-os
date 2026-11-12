@@ -680,6 +680,38 @@ function writeDoctor(root, { errors = [], warnings = [], status = "ready", gener
   writeFileSync(join(sidecars, "doctor-output.json"), JSON.stringify(doctor), "utf8");
 }
 
+test("doctor reading age uses recorded report times, with equal and later readings unchanged", (t) => {
+  const root = tempRoot(t);
+  const reportAt = "2026-06-23T00:00:01.000001Z";
+  writeReport(root, { stages: { assembly: { status: "completed", completed_at: reportAt } } });
+  const expectedFresh = { present: true, status: "ready", error_count: 0, warning_count: 0,
+    warning_groups: { "contract-static": [], "repo-observed": [] } };
+  for (const generatedAt of [reportAt, "2026-06-23T00:00:02Z"]) {
+    writeDoctor(root, { generatedAt });
+    // Deliberately newer report mtime: the recorded reading still is fresh.
+    utimesSync(join(root, ".campaign-runtime", "assembly-report.json"), new Date("2026-06-24"), new Date("2026-06-24"));
+    assert.deepEqual(targetPayload(root).doctor, expectedFresh);
+    assert.doesNotMatch(runReadbackCommand({ _: ["readback", root] }).text, /STALE reading/);
+  }
+  writeDoctor(root, { generatedAt: "2026-06-23T00:00:01Z" });
+  const stale = targetPayload(root).doctor;
+  assert.equal(stale.stale, true, "one recorded microsecond later is a later report write");
+  assert.equal(stale.stale_basis, "report_recorded_at");
+  assert.match(runReadbackCommand({ _: ["readback", root] }).text, /STALE reading/);
+  assertMatchesSchema(targetPayload(root), "stale doctor payload");
+});
+
+test("doctor reading age honors the existing stale stamp when report times did not advance", (t) => {
+  const root = tempRoot(t);
+  writeReport(root);
+  writeDoctor(root, { generatedAt: "2026-06-24T00:00:00Z" });
+  const path = join(root, ".campaign-runtime", "doctor-output.json");
+  const doctor = JSON.parse(readFileSync(path, "utf8"));
+  writeFileSync(path, JSON.stringify({ ...doctor, stale: true, stale_marked_at: "2026-06-25T00:00:00Z" }));
+  assert.equal(targetPayload(root).doctor.stale_basis, "doctor_stale_stamp");
+  assert.match(runReadbackCommand({ _: ["readback", root] }).text, /retained doctor output is marked stale/);
+});
+
 function writeVerdict(root, assertions, disposition = "blocked") {
   const sidecars = join(root, ".campaign-runtime");
   mkdirSync(sidecars, { recursive: true });

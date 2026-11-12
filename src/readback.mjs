@@ -1441,12 +1441,28 @@ export function computeDoctorSummary(views) {
   }
   const groups = doctorWarningGroups(doctor);
   const errors = doctor.errors;
+  // Report generation does not advance on every stage write. Compare its
+  // recorded stage times too, and honor the existing sidecar stale stamp for
+  // writes that carry no newer timestamp. Never infer this from file mtimes.
+  const report = artifactData(views, "report");
+  const doctorAt = parseIsoInstant(doctor.generated_at);
+  const reportTimes = [report?.generated_at, report?.commerce_baseline?.accepted_at,
+    ...Object.values(report?.stages || {}).flatMap((stage) => [stage?.completed_at, stage?.checked_at, stage?.baseline_accepted_at, stage?.input_change?.at])];
+  const reportIsNewer = doctorAt && reportTimes.some((value) => {
+    const at = parseIsoInstant(value);
+    return at && at.micros > doctorAt.micros;
+  });
   return {
     present: true,
     status: doctor.status ?? null,
     error_count: Array.isArray(errors) ? errors.length : 0,
     warning_count: groups["contract-static"].length + groups["repo-observed"].length,
     warning_groups: groups,
+    ...(reportIsNewer || doctor.stale === true ? {
+      stale: true,
+      stale_basis: reportIsNewer ? "report_recorded_at" : "doctor_stale_stamp",
+      refresh_command: "campaigns-os doctor --packet <packet> --write",
+    } : {}),
   };
 }
 
@@ -1454,6 +1470,8 @@ function renderDoctor(views, lines) {
   const doctor = artifactData(views, "doctor");
   if (doctor === null) return;
   lines.push(`DOCTOR  [doctor output; status: ${doctor.status}]`);
+  const summary = computeDoctorSummary(views);
+  if (summary.stale) lines.push(`  STALE reading [readback's own layer]: ${summary.stale_basis === "report_recorded_at" ? "the Assembly Report records a later write" : "the retained doctor output is marked stale"}. Re-run ${summary.refresh_command}.`);
   const errors = doctor.errors;
   if (Array.isArray(errors) && errors.length) {
     lines.push(`  errors (${errors.length}):`);
