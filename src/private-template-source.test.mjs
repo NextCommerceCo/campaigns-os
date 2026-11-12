@@ -70,7 +70,12 @@ test("resolvePrivateTemplateSourceFragment throws loudly when allowlisted but no
     withFixtureSource(dir, {
       sources: { acme: { repo: "some-org/acme-templates", contract_path: "contracts/acme.json" } },
     }, () => {
-      assert.throws(() => resolvePrivateTemplateSourceFragment("acme"), /no checkout was found/);
+      assert.throws(() => resolvePrivateTemplateSourceFragment("acme"), (error) => {
+        assert.equal(error.code, "private_source_not_checked_out");
+        assert.match(error.message, /no checkout was found/);
+        assert.match(error.message, /Set PRIVATE_TEMPLATE_SOURCES_ROOT.*installed package.*For a source checkout of campaigns-os.*sibling directory/);
+        return true;
+      });
     });
   });
 });

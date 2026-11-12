@@ -347,7 +347,8 @@ test("D5: QA runs the same comparison over served pages and records it in the ve
   const pageUrl = "https://shop.example.com/offer/checkout/";
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url) => {
-    if (String(url) === pageUrl) return new Response('<div data-next-package-id="10"></div><input data-next-shipping-id="21">', { status: 200 });
+    // Without --currency the run enters in the spec's campaign.currency.
+    if (String(url) === `${pageUrl}?currency=USD`) return new Response('<div data-next-package-id="10"></div><input data-next-shipping-id="21">', { status: 200 });
     throw new Error(`Unexpected fetch: ${String(url)}`);
   };
   const resolved = {
