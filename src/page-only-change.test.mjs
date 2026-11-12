@@ -20,6 +20,7 @@ import { demoteStages } from "./input-refresh.mjs";
 import { __qaNodeTestHooks, applyQaPageScope } from "./qa-node.mjs";
 import { runReadbackCommand } from "./readback.mjs";
 import { recordStageCommand } from "./stage-record.mjs";
+import { singleLineFragment } from "./text-safety.mjs";
 
 const cli = new URL("../bin/campaigns-os.mjs", import.meta.url).pathname;
 const SLUG = "synthetic-campaign";
@@ -31,7 +32,7 @@ const PAGES = Object.freeze({
   receipt: `<!doctype html><html><head><meta name="next-page-type" content="receipt"></head><body><h1>Thank you</h1></body></html>\n`,
 });
 
-function fixture(t, { spec = {}, pages = PAGES, files = {} } = {}) {
+function fixture(t, { spec = {}, pages = PAGES, files = {}, reviewed = true } = {}) {
   const root = mkdtempSync(join(tmpdir(), "page-only-change-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const output = join(root, "_site", SLUG);
@@ -77,16 +78,19 @@ function fixture(t, { spec = {}, pages = PAGES, files = {} } = {}) {
     evidence: { qc_build_fingerprint: original.fingerprint, qc_results: [] },
     purchase_proof: { order_paths_executed: 3, declared_depth: "common" },
   });
+  if (!reviewed) {
+    for (const key of ["assembly", "polish", "deploy", "qa"]) report.stages[key] = { stage: key, status: "pending" };
+  }
   mkdirSync(join(root, ".campaign-runtime"), { recursive: true });
   const reportPath = join(root, ".campaign-runtime", "assembly-report.json");
   writeFileSync(reportPath, JSON.stringify(report));
   const readReport = () => JSON.parse(readFileSync(reportPath, "utf8"));
   const recordBuild = () => recordStageCommand({ _: ["record", "build"], packet: packetPath });
   // The recorded campaign: record build keeps the commerce signature of F0.
-  recordBuild();
+  const firstBuild = recordBuild();
   assert.ok(readReport().stages.assembly.commerce_signature, "setup: record build keeps a commerce signature");
   return {
-    root, output, packet, packetPath, reportPath, readReport, recordBuild, writePage, writeFile, config, writeConfig, original,
+    root, output, packet, packetPath, reportPath, readReport, recordBuild, firstBuild, writePage, writeFile, config, writeConfig, original,
     debt: () => assessEvidenceDebt({ packet, packetPath, report: readReport() }),
   };
 }
@@ -178,7 +182,8 @@ function compareRecordedCi(f, result) {
   const expectedLines = evidence.slice(0, evidence.indexOf(""));
   const actualLines = result.ready.slice(start + 1).filter((line) => !line.startsWith("Served-URL record follows:"));
   const withoutListMarker = (line) => line.replace(/^- /, "");
-  assert.deepEqual(actualLines.map(withoutListMarker), expectedLines.map(withoutListMarker), "every record evidence line is CI's line for the same state");
+  const decodeValues = (line) => line.replace(/`([^`]*)`/g, (_, value) => singleLineFragment(value.replace(/&#(\d+);/g, (_, number) => String.fromCharCode(Number(number)))));
+  assert.deepEqual(actualLines.map(withoutListMarker), expectedLines.map(decodeValues).map(withoutListMarker), "every record evidence line is CI's line after decoding Markdown values");
   const textLines = resultTextLines(result);
   for (const line of [heading, ...actualLines]) {
     assert.equal(textLines.filter((item) => item === `- ${withoutListMarker(line)}`).length, 1, `text exposes the evidence line once: ${line}`);
@@ -200,6 +205,48 @@ test("record build shares CI's advisory Polish and changed-page QA lines", (t) =
   assert.ok(result.ready.some((line) => line.startsWith("Advisory polish:")));
   assert.ok(!result.ready.includes("stages.polish.status = required"), "advisory Polish is not presented as plain required");
   assert.equal(f.readReport().stages.polish.status, "required", "the report's stage value is kept");
+  t.diagnostic(`Page-only record build:\n${resultTextLines(result).join("\n")}`);
+});
+
+test("first build has CI JSON but keeps the original ready lines without a change block", (t) => {
+  const f = fixture(t, { reviewed: false });
+  const result = f.firstBuild;
+  assert.deepEqual(result.ci, JSON.parse(ci(f, "--json").stdout).ci);
+  assert.deepEqual(result.ready, [
+    "stages.assembly.status = completed",
+    `build output fingerprint ${result.build_fingerprint} (doctor derived.build_output_fingerprint.value)`,
+    "stages.assembly.build_manifest lists 4 file(s), so a later fingerprint mismatch names the paths that differ",
+    "stages.polish.status = required",
+  ]);
+  assert.doesNotMatch(resultTextLines(result).join("\n"), /doctor --ci reads this build as:|Owed stages:/);
+  t.diagnostic(`First record build:\n${resultTextLines(result).join("\n")}`);
+});
+
+test("record text preserves @ and + in linked asset paths without Markdown entities", (t) => {
+  const path = "assets/hero@2x+wide.png";
+  const f = fixture(t, { pages: { ...PAGES, landing: PAGES.landing.replace("</body>", `<img src="../${path}"></body>`) }, files: { [path]: "synthetic image" } });
+  f.writeFile(path, "revised synthetic image");
+  const result = f.recordBuild();
+  assert.equal(result.ready.find((line) => line.startsWith("Linked asset changed:")), `Linked asset changed: ${path}, linked by landing`);
+  compareRecordedCi(f, result);
+  assert.ok(resultTextLines(result).includes(`- Linked asset changed: ${path}, linked by landing`));
+  assert.doesNotMatch(result.ready.join("\n"), /&#\d+;|`/);
+});
+
+test("record ready and text flatten control characters in recorded page ids and paths", (t) => {
+  const f = fixture(t);
+  copyEdit(f);
+  f.recordBuild();
+  const report = f.readReport();
+  const page = { page_id: "upsell\u001b[31m\u0007\r\n1", built_path: "upsell1/\u001b\u0007\r\nindex.html" };
+  report.stages.assembly.build_changes.at(-1).changed_pages = [page];
+  writeFileSync(f.reportPath, JSON.stringify(report));
+  const result = f.recordBuild();
+  compareRecordedCi(f, result);
+  const safeId = "upsell�[31m� 1", safePath = "upsell1/�� index.html";
+  assert.ok(result.ready.includes(`Changed page: ${safeId} (${safePath})`));
+  assert.ok(result.ready.some((line) => line.includes(`changed pages: ${safeId}`)));
+  for (const line of [...result.ready, ...resultTextLines(result)]) assert.doesNotMatch(line, /[\u0000-\u001f\u007f-\u009f]/);
 });
 
 test("record build control keeps current and full-stage ready lines", (t) => {
@@ -537,7 +584,7 @@ test("a page-scoped run refuses QA that an input change owes, or whose inputs ca
 
 // `record baseline`: a funnel from before markup hashes, accepted as the
 // starting point by a named person, so small checks work without a test order.
-const ACCEPTED = { "accepted-by": "Pat Rivera", reason: "Live and selling since before markup hashes" };
+const ACCEPTED = { "accepted-by": "Synthetic Signatory 01", reason: "Live and selling since before markup hashes" };
 const recordBaseline = (f, extra = {}) => recordStageCommand({ _: ["record", "baseline"], packet: f.packetPath, ...ACCEPTED, ...extra });
 
 function legacyFixture(t) {
@@ -566,21 +613,24 @@ test("record baseline control keeps an already-recorded deploy and dry-run outpu
   ], "baseline dry-run text stays byte for byte");
   const result = recordBaseline(f);
   compareRecordedCi(f, result);
+  t.diagnostic(`Record baseline:\n${resultTextLines(result).join("\n")}`);
   assert.equal(f.readReport().stages.deploy.status, "completed");
   assert.notEqual(result.next_stage, "deploy");
   assert.doesNotMatch(resultTextLines(result).join("\n"), /Served-URL record follows:/);
 });
 
-test("doctor CI's legacy remedy names baseline acceptance in Markdown and JSON", (t) => {
+test("doctor CI adds legacy baseline sign-off after its existing remedy, without a JSON remedy", (t) => {
   const f = legacyFixture(t);
   const expected = JSON.parse(ci(f, "--json").stdout).ci;
   assert.ok(expected.qa.change.reasons.some((reason) => reason.code === "commerce_signature_unavailable"));
   const remedy = ci(f).stdout.split("\n").find((line) => line.startsWith("Remedy:"));
-  assert.equal(expected.remedy, remedy, "JSON and Markdown carry the same remedy");
-  assert.match(remedy, /record baseline --packet <packet> --accepted-by <person> --reason <why>/);
-  assert.match(remedy, /accept the current build as the starting point/);
-  assert.match(remedy, /completed QA on record/);
-  assert.match(remedy, /other way is to rebuild, record build, and re-run `campaigns-os polish capture[^]*record polish[^]*a full `campaigns-os qa run/);
+  assert.equal(Object.hasOwn(expected, "remedy"), false);
+  assert.match(remedy, /^Remedy: rebuild, then run/);
+  const signoff = ci(f).stdout.split("\n").find((line) => line.startsWith("This funnel was recorded"));
+  assert.match(signoff, /record baseline --packet <packet> --accepted-by <person> --reason <why>/);
+  assert.match(signoff, /named person can sign off to accept the current build as the starting point/);
+  assert.match(signoff, /tests nothing and needs a completed QA on record/);
+  t.diagnostic(`Legacy doctor --ci:\n${ci(f).stdout}`);
 });
 
 test("doctor CI remedy control keeps the existing non-legacy full-stage remedy byte for byte", (t) => {
@@ -598,17 +648,17 @@ test("readback marks a retained doctor reading stale after record build", (t) =>
   const f = fixture(t);
   doctorCommand({ _: ["doctor"], packet: f.packetPath, write: true });
   copyEdit(f);
-  // Stage recording leaves generated_at alone, so its completed_at matters.
-  const future = new Date(Date.now() + 1000);
-  const result = recordStageCommand({ _: ["record", "build"], packet: f.packetPath }, { now: () => future });
+  const result = f.recordBuild();
   compareRecordedCi(f, result);
   const json = JSON.parse(runReadbackCommand({ _: ["readback", f.root], packet: f.packetPath, json: true }).text);
   assert.deepEqual(json.evidence_debt, { polish: result.ci.polish, qa: result.ci.qa, changes: result.ci.changes });
   assert.equal(json.doctor.stale, true);
-  assert.equal(json.doctor.stale_basis, "report_recorded_at");
-  assert.equal(json.doctor.refresh_command, "campaigns-os doctor --packet <packet> --write");
+  assert.equal(json.doctor.stale_reason, "stages.assembly was recorded after this doctor snapshot. Re-run campaigns-os doctor (or next) for current state.");
   const text = runReadbackCommand({ _: ["readback", f.root], packet: f.packetPath }).text;
-  assert.match(text, /DOCTOR[^]*STALE reading[^]*Assembly Report records a later write[^]*doctor --packet <packet> --write/);
+  assert.ok(text.includes(`  STALE reading: ${json.doctor.stale_reason}`));
+  doctorCommand({ _: ["doctor"], packet: f.packetPath, write: true });
+  assert.equal(JSON.parse(runReadbackCommand({ _: ["readback", f.root], packet: f.packetPath, json: true }).text).doctor.stale, undefined);
+  assert.doesNotMatch(runReadbackCommand({ _: ["readback", f.root], packet: f.packetPath }).text, /STALE reading/);
 });
 
 test("readback fresh doctor control preserves the doctor block after a doctor write", (t) => {
@@ -629,7 +679,7 @@ test("a baseline is its own status, keeps no purchase proof, and says what it is
   const before = f.readReport().stages.qa;
   assert.ok(before.purchase_proof);
   const result = recordBaseline(f);
-  assert.equal(result.record.accepted_by, "Pat Rivera");
+  assert.equal(result.record.accepted_by, "Synthetic Signatory 01");
   const report = f.readReport();
   for (const key of ["polish", "qa"]) {
     assert.equal(report.stages[key].status, "baseline_accepted");
@@ -640,14 +690,14 @@ test("a baseline is its own status, keeps no purchase proof, and says what it is
   assert.deepEqual(report.stages.qa.history.at(-1).purchase_proof, before.purchase_proof, "it is kept in history");
   const debt = f.debt();
   assert.equal(debt.qa.status, "current");
-  assert.equal(debt.qa.baseline.accepted_by, "Pat Rivera");
+  assert.equal(debt.qa.baseline.accepted_by, "Synthetic Signatory 01");
   assert.equal(debt.polish.status, "current");
   const { stdout, status } = ci(f);
   assert.equal(status, 0);
-  assert.match(stdout, /QA rests on a baseline Pat Rivera accepted on \d{4}-\d{2}-\d{2}, not a test\. No purchase has been tested since\./);
+  assert.match(stdout, /QA rests on a baseline Synthetic Signatory 01 accepted on \d{4}-\d{2}-\d{2}, not a test\. No purchase has been tested since\./);
   assert.ok(doctorPacket(f.packetPath).warnings.some((issue) => issue.code === "qa.baseline_accepted"));
   const readback = runReadbackCommand({ _: ["readback", f.root], json: true, packet: f.packetPath });
-  assert.equal(JSON.parse(readback.text).evidence_debt.qa.baseline.accepted_by, "Pat Rivera");
+  assert.equal(JSON.parse(readback.text).evidence_debt.qa.baseline.accepted_by, "Synthetic Signatory 01");
 });
 
 test("after a baseline a copy edit owes QA on that page, the pass stays a baseline, and it never gains purchase proof", (t) => {
@@ -659,7 +709,7 @@ test("after a baseline a copy edit owes QA on that page, the pass stays a baseli
   assert.equal(debt.qa.scope, "pages");
   assert.deepEqual(debt.qa.owed_pages.map((page) => page.page_id), ["landing"]);
   assert.equal(debt.polish.advisory, true);
-  assert.equal(debt.qa.baseline.accepted_by, "Pat Rivera", "a change owed on pages still rests on the baseline");
+  assert.equal(debt.qa.baseline.accepted_by, "Synthetic Signatory 01", "a change owed on pages still rests on the baseline");
   const base = `http://127.0.0.1:9/${SLUG}/`;
   const scoped = applyQaPageScope([{ pages: [{ page_id: "landing", url: `${base}landing/` }] }], { pages: ["landing"], baseUrl: base, debt, report: f.readReport() });
   const verdict = { run_id: "page-run", campaign_slug: "synthetic-map", disposition: "ready", completed_at: "2026-11-08T00:00:00Z", assertions: [], spec_hash: null, qc_results: [] };
@@ -679,7 +729,7 @@ test("a blocked run leaves QA resting on the baseline, and the reports keep sayi
   const qa = f.readReport().stages.qa;
   assert.equal(qa.status, "blocked");
   assert.ok(qa.baseline_accepted_at, "a run that proved nothing does not end the baseline");
-  assert.equal(f.debt().qa.baseline.accepted_by, "Pat Rivera");
+  assert.equal(f.debt().qa.baseline.accepted_by, "Synthetic Signatory 01");
   assert.ok(doctorPacket(f.packetPath).warnings.some((issue) => issue.code === "qa.baseline_accepted"));
 });
 

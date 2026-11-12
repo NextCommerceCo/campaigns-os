@@ -680,36 +680,47 @@ function writeDoctor(root, { errors = [], warnings = [], status = "ready", gener
   writeFileSync(join(sidecars, "doctor-output.json"), JSON.stringify(doctor), "utf8");
 }
 
-test("doctor reading age uses recorded report times, with equal and later readings unchanged", (t) => {
+test("unstamped doctor output stays fresh regardless of later report times and mtimes", (t) => {
   const root = tempRoot(t);
   const reportAt = "2026-06-23T00:00:01.000001Z";
   writeReport(root, { stages: { assembly: { status: "completed", completed_at: reportAt } } });
   const expectedFresh = { present: true, status: "ready", error_count: 0, warning_count: 0,
     warning_groups: { "contract-static": [], "repo-observed": [] } };
-  for (const generatedAt of [reportAt, "2026-06-23T00:00:02Z"]) {
+  for (const generatedAt of [null, "not a time", "2026-06-23T00:00:00Z", reportAt, "2026-06-23T00:00:02Z"]) {
     writeDoctor(root, { generatedAt });
-    // Deliberately newer report mtime: the recorded reading still is fresh.
+    // Neither a later report timestamp nor its mtime is a doctor stale stamp.
     utimesSync(join(root, ".campaign-runtime", "assembly-report.json"), new Date("2026-06-24"), new Date("2026-06-24"));
     assert.deepEqual(targetPayload(root).doctor, expectedFresh);
     assert.doesNotMatch(runReadbackCommand({ _: ["readback", root] }).text, /STALE reading/);
   }
-  writeDoctor(root, { generatedAt: "2026-06-23T00:00:01Z" });
-  const stale = targetPayload(root).doctor;
-  assert.equal(stale.stale, true, "one recorded microsecond later is a later report write");
-  assert.equal(stale.stale_basis, "report_recorded_at");
-  assert.match(runReadbackCommand({ _: ["readback", root] }).text, /STALE reading/);
-  assertMatchesSchema(targetPayload(root), "stale doctor payload");
 });
 
-test("doctor reading age honors the existing stale stamp when report times did not advance", (t) => {
+test("doctor stale stamp shows its reason as one safe line and leaves clean unchanged", (t) => {
   const root = tempRoot(t);
   writeReport(root);
+  writeReflog(join(root, ".git"), Math.floor(Date.parse("2026-06-22T00:00:00Z") / 1000));
   writeDoctor(root, { generatedAt: "2026-06-24T00:00:00Z" });
   const path = join(root, ".campaign-runtime", "doctor-output.json");
   const doctor = JSON.parse(readFileSync(path, "utf8"));
-  writeFileSync(path, JSON.stringify({ ...doctor, stale: true, stale_marked_at: "2026-06-25T00:00:00Z" }));
-  assert.equal(targetPayload(root).doctor.stale_basis, "doctor_stale_stamp");
-  assert.match(runReadbackCommand({ _: ["readback", root] }).text, /retained doctor output is marked stale/);
+  const clean = targetPayload(root).clean;
+  assert.equal(clean, true);
+  const reason = "Build\u001b[31m\u0007 was recorded.\r\nRe-run campaigns-os doctor (or next).";
+  writeFileSync(path, JSON.stringify({ ...doctor, stale: true, stale_reason: reason, stale_marked_at: "2026-06-25T00:00:00Z" }));
+  const payload = targetPayload(root);
+  assert.equal(payload.doctor.stale, true);
+  assert.equal(payload.doctor.stale_reason, "Build�[31m� was recorded. Re-run campaigns-os doctor (or next).");
+  assert.equal(payload.clean, clean);
+  const line = runReadbackCommand({ _: ["readback", root] }).text.split("\n").find((line) => line.includes("STALE reading"));
+  assert.equal(line, `  STALE reading: ${payload.doctor.stale_reason}`);
+  assert.doesNotMatch(line, /[\u0000-\u001f\u007f-\u009f]/);
+  const text = runReadbackCommand({ _: ["readback", root] }).text;
+  t.diagnostic(text.slice(text.indexOf("DOCTOR"), text.indexOf("\n\n", text.indexOf("DOCTOR"))));
+  assertMatchesSchema(payload, "stale doctor payload");
+  for (const stale_reason of [undefined, null, {}, " \r\n "]) {
+    writeFileSync(path, JSON.stringify({ ...doctor, stale: true, stale_reason }));
+    assert.equal(targetPayload(root).doctor.stale_reason, "");
+    assert.match(runReadbackCommand({ _: ["readback", root] }).text, /STALE reading: the retained doctor output is marked stale\. Re-run campaigns-os doctor\./);
+  }
 });
 
 function writeVerdict(root, assertions, disposition = "blocked") {

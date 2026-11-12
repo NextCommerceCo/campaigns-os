@@ -1515,11 +1515,11 @@ pages only, which `qa run --packet <packet> --page <page_id>` pays. Other doctor
 change the CI exit. It prints Markdown for a PR comment that opens with the
 kind of change it found and what that owes, or adds `ci.status`,
 `ci.exit_code`, `ci.polish`, `ci.qa` and `ci.changes` under `--json`.
-`ci.remedy` is a single line of text, present only when the reason is
-`commerce_signature_unavailable` with no page path (a funnel recorded before 1.62).
-It names baseline acceptance, but
-`record baseline` can still refuse for its own reasons, such as no completed
-QA on record.
+After the existing Markdown remedy, a sentence offers a named person's baseline
+sign-off only when a rebuild owes QA at full scope and every change reason is
+`commerce_signature_unavailable` without a page path, with at least one reason.
+It accepts the current build as the starting point, tests nothing and needs a
+completed QA on record; brief or spec changes and mixed reasons do not qualify.
 `--ci` adds no writes or network reads; pass `--no-live-refs` in CI to disable
 doctor's existing live campaign read. Without `--ci`, inspection behavior is unchanged.
 

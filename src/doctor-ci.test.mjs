@@ -58,7 +58,7 @@ function jsonCi(f, expectedExit) {
   const payload = JSON.parse(result.stdout);
   assert.ok(payload.ci, "--ci --json must add a ci object");
   assert.equal(payload.ci.exit_code, expectedExit);
-  const { status, exit_code, remedy, ...debt } = payload.ci;
+  const { status, exit_code, ...debt } = payload.ci;
   assert.deepEqual(debt, assessEvidenceDebt({ packet: f.packet, packetPath: f.packetPath, report: f.report }));
   return payload;
 }
@@ -99,10 +99,9 @@ test("doctor --ci page edited and rebuilt exits 3 and Markdown names page and re
   assert.match(markdown.stdout, /polish capture/);
   assert.match(markdown.stdout, /record polish.*--evidence/);
   assert.match(markdown.stdout, /qa run/);
-  const remedyCommands = [...markdown.stdout.split("Remedy:")[1].matchAll(/`(campaigns-os [^`]+)`/g)].map((match) => match[1]);
+  const remedyCommands = [...markdown.stdout.split("\n").find((line) => line.startsWith("Remedy:")).matchAll(/`(campaigns-os [^`]+)`/g)].map((match) => match[1]);
   assert.deepEqual(remedyCommands, [
     "campaigns-os record build --packet <packet>",
-    "campaigns-os record baseline --packet <packet> --accepted-by <person> --reason <why>",
     "campaigns-os polish capture --packet <packet> --base-url <served-current-build-url>",
     "campaigns-os record polish --packet <packet> --evidence <polish-evidence.json>",
     "campaigns-os qa run --packet <packet>",
@@ -432,11 +431,45 @@ test("doctor --ci reads the evidence debt inspection assessed instead of assessi
   assert.equal(ci.ci.qa, owed.qa);
 });
 
-test("the baseline remedy is offered only for a pathless signature reason", () => {
-  const stage = (reasons) => ({ status: "owed", change: { reasons } });
-  const debt = (reasons) => ({ polish: stage(reasons), qa: stage(reasons), changes: { status: "known" } });
-  // A funnel recorded before markup hashes existed: no path on the reason.
-  assert.match(assessDoctorCi(debt([{ code: "commerce_signature_unavailable" }])).remedy, /record baseline/);
-  // A later funnel with one unreadable page: `record baseline` refuses it.
-  assert.equal(assessDoctorCi(debt([{ code: "commerce_signature_unavailable", path: "checkout/index.html" }])).remedy, undefined);
+function legacyCi(qa = {}, polish = {}) {
+  const stage = { status: "owed", scope: "full", reason: "build_fingerprint_changed",
+    change: { kind: "commerce_affecting", reasons: [{ code: "commerce_signature_unavailable" }] } };
+  return assessDoctorCi({ polish: { ...stage, ...polish }, qa: { ...stage, ...qa },
+    changes: { status: "known", changed_pages: [] } });
+}
+
+test("baseline sign-off line follows the unchanged rebuild remedy only for legacy full QA debt", () => {
+  for (const reason of ["build_fingerprint_changed", "stage_required_by_build"]) {
+    const ci = legacyCi({ reason });
+    assert.equal(Object.hasOwn(ci, "remedy"), false);
+    const lines = formatDoctorCi({ ci }).split("\n");
+    const index = lines.findIndex((line) => line.startsWith("Remedy:"));
+    assert.match(lines[index], /^Remedy: rebuild, then run/);
+    assert.equal(lines[index + 1], "This funnel was recorded before Campaigns OS 1.62, so instead of re-running the stages a named person can sign off to accept the current build as the starting point with `campaigns-os record baseline --packet <packet> --accepted-by <person> --reason <why>`; this tests nothing and needs a completed QA on record.");
+  }
+});
+
+test("Polish owed, QA current offers no baseline line", () => {
+  assert.doesNotMatch(formatDoctorCi({ ci: legacyCi({ status: "current" }) }), /record baseline/);
+});
+
+test("legacy browser remedy keeps the required --browser flag", () => {
+  const lines = formatDoctorCi({ ci: legacyCi({ browser_pages: ["checkout"] }) }).split("\n");
+  assert.match(lines.find((line) => line.startsWith("Remedy:")), /`campaigns-os qa run --packet <packet> --browser`/);
+});
+
+test("baseline sign-off excludes page QA, unknown QA, input changes, and mixed or malformed reasons", () => {
+  for (const qa of [
+    { scope: "pages", owed_pages: [{ page_id: "landing" }] },
+    { status: "unknown" },
+    { reason: "stage_required_by_brief" },
+    { reason: "stage_required_by_spec" },
+    { change: { reasons: [] } },
+    { change: { reasons: [{ code: "commerce_signature_unavailable", path: "checkout/index.html" }] } },
+    ...[{ code: "checkout_page" }, null, "commerce_signature_unavailable"].map((other) => ({
+      change: { reasons: [{ code: "commerce_signature_unavailable" }, other] },
+    })),
+  ]) {
+    assert.doesNotMatch(formatDoctorCi({ ci: legacyCi(qa) }), /record baseline/, JSON.stringify(qa));
+  }
 });

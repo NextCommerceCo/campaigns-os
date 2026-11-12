@@ -407,19 +407,12 @@ assessment; the CLI always supplies one.
 
 ### `doctor`
 
-When the Assembly Report records a write after the retained doctor reading,
-the doctor block labels that reading stale and names
-`campaigns-os doctor --packet <packet> --write` to refresh it. The comparison
-uses the files' `generated_at` values and the report's stage `completed_at`,
-`checked_at`, `baseline_accepted_at`, `input_change.at`, and baseline
-`accepted_at` values, since report generation time does not advance on each
-stage write. It also honors the retained doctor's existing `stale` stamp.
-It never uses file mtimes. A reading at or after those recorded times, without
-a stale stamp, prints as before. This is readback's projection of the retained
-reading's age, separate from live evidence debt and the checkout-age assessment.
-In JSON, a stale reading adds `stale: true`, `stale_basis`
-(`report_recorded_at` or `doctor_stale_stamp`) and `refresh_command` to `doctor`.
-Fresh readings keep their existing fields.
+When the retained doctor output carries `stale: true`, the doctor block prints
+one stale line with the stamp's reason, flattened for safe terminal output.
+Without a usable reason, it says the retained doctor output is marked stale
+and to re-run `campaigns-os doctor`. JSON adds `stale: true` and `stale_reason`
+to `doctor`; an absent reason becomes an empty string. Unstamped readings keep
+their existing fields, regardless of report timestamps or file mtimes.
 
 - `present` — whether a doctor output loaded. When false, `status` is `null` and
   both counts are `0`: those zeros record an absence, not an observation.
@@ -620,6 +613,7 @@ failure lines up with a completed stage. This too is the readback's own layer.
 
 Doctor warnings — of either group — do not affect `clean`. Neither does a
 blocked QA verdict, a blocked assembly report, or a non-empty `skip_cascades`.
+A stale doctor reading does not change `clean`; read `doctor.stale` separately.
 
 ### What `clean` does and does not mean
 

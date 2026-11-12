@@ -42,10 +42,7 @@ Any owed stage returns 3; otherwise an unknown stage returns 4. Normal
 doctor errors remain visible but do not determine the CI exit code. Without
 `--ci`, doctor retains its usual inspection output and 0/2 result. `--json`
 adds a `ci` object containing `status`, `exit_code`, `polish`, `qa`, and
-`changes` when assessment completes. `ci.remedy` is a single line of text,
-present only when the reason is `commerce_signature_unavailable` with no page path
-(a funnel recorded before 1.62). It names baseline acceptance, but `record baseline` can still refuse for its
-own reasons, such as no completed QA on record. Without `--json`, every CI outcome prints
+`changes` when assessment completes. Without `--json`, every CI outcome prints
 an escaped Markdown report, including a "could not evaluate" report for packet
 usage errors (exit 2) or inspection failures (exit 4). Page changes are compared
 with the retained assembly manifest, so the page list may be empty if that
@@ -54,16 +51,20 @@ Without a usable manifest, page changes are unknown, but matching stage
 bindings remain current unless lifecycle-required, and differing bindings remain owed.
 The check reads recorded fingerprints, not machine-local capture files.
 Readback's `evidence_debt` uses the same assessment, showing an agent this debt
-before it edits; its separate time-based staleness assessment is not the CI signal.
+before it edits; its separate checkout-age assessment is not the CI signal.
 
 After writing, `record build` and `record baseline` return the same `ci` assessment.
 Its `status` and `exit_code` belong to `doctor --ci --json`, not to the successful
-record command, which exits 0. The text introduces the evidence lines with
+record command, which exits 0. When either stage has a recorded build fingerprint
+or a baseline, the text introduces plain-text evidence lines with
 `doctor --ci reads this build as: <status>`, without an exit label, and includes
 `Owed stages: none.` when nothing is owed.
 Advisory Polish is reported as advisory even when the report's stored
 stage status is `required`. QA names the changed pages or owes a full run.
 The stored stage values do not change to match this presentation.
+On the first build, before either stage has reviewed a build, the text keeps
+the existing stage lines and prints no evidence block.
+A dry run has no post-write reading and keeps its existing output.
 
 ### What a change owes
 
@@ -131,10 +132,12 @@ campaigns-os record build --packet <packet>
 campaigns-os record baseline --packet <packet> --accepted-by "<named person>" --reason "<why>"
 ```
 
-This needs a completed QA on record. When `commerce_signature_unavailable` with no page path is
-the reason, `doctor --ci` names this acceptance in its remedy, including the
-`ci.remedy` string in JSON. Rebuilding, recording build, and re-running Polish
-and full QA is the other way. Other reasons keep their existing remedies.
+This needs a completed QA on record. After its existing remedy, `doctor --ci`
+adds a sentence offering this named person's sign-off only when a rebuild owes
+QA at full scope and every change reason is `commerce_signature_unavailable`
+without a page path, with at least one reason. Brief or spec changes, page-only
+QA, unknown QA and mixed reasons do not receive this sentence. The sign-off
+accepts the current build as the starting point and tests nothing.
 After acceptance, the record command prints `Owed stages: none.`. If deploy is
 still required, it names deploy as the served-URL record that follows; otherwise the
 stage doctor's picker names is printed as the next stage. Its JSON

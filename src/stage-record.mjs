@@ -1245,7 +1245,10 @@ export function recordStageCommand(args, { now = () => new Date(), beforeLock = 
     stage, packetPath, sidecars, lockedTarget, input, dryRun, timestamp, recordedBy, afterDoctorRead, buildEnvironment, adapterDecisions, deviationReason,
   });
   const recorded = dryRun ? run() : withTargetLockSync(lockedTarget, run, { command: `record ${stage}` });
-  const { composed, facts, layer, reportPath, contextPath, after, ci } = recorded;
+  const { composed, facts, layer, reportPath, contextPath, after } = recorded;
+  const debt = ["build", "baseline"].includes(stage) ? after?.derived?.evidence_debt : null;
+  const ci = debt ? assessDoctorCi(debt) : null;
+  const showCi = ci && [ci.polish, ci.qa].some((assessment) => assessment.recorded_build_fingerprint || assessment.baseline);
 
   const stageKey = stage === "build" ? "assembly" : stage === "baseline" ? "qa" : stage;
   const writes = [...(composed.context ? [contextPath] : []), ...(composed.packet ? [packetPath] : []), reportPath];
@@ -1262,14 +1265,14 @@ export function recordStageCommand(args, { now = () => new Date(), beforeLock = 
     ...(stage === "build" && Array.isArray(composed.report.stages.assembly.build_manifest) ? [`stages.assembly.build_manifest lists ${composed.report.stages.assembly.build_manifest.length} file(s), so a later fingerprint mismatch names the paths that differ`] : []),
     ...(stage === "build" && buildEnvironment ? [`stages.assembly.evidence.build_environment = ${buildEnvironment}`] : []),
     ...(stage === "build" && adapterDecisions ? Object.entries(adapterDecisions).map(([key, value]) => `report.adapter_decisions.${key} = ${value}`) : []),
-    ...(stage === "build" ? buildChangeReadyLines(composed.report.stages.assembly) : []),
-    ...(stage === "build" && !ci?.polish.advisory ? [`stages.polish.status = ${composed.report.stages.polish.status}`] : []),
+    ...(stage === "build" ? buildChangeReadyLines(composed.report.stages.assembly).map((line) => singleLineFragment(line)) : []),
+    ...(stage === "build" && !(showCi && ci.polish.advisory) ? [`stages.polish.status = ${composed.report.stages.polish.status}`] : []),
     ...(stage === "baseline" ? [`Polish and QA read baseline_accepted: ${baseline.acceptedBy} accepted build ${facts.fingerprint}. Nothing was tested, and no purchase is proven from here until a full ${cmd("qa")} run.`] : []),
     ...(stage === "build" && composed.report.stages.deploy?.required_by === "build" ? [`stages.deploy.status = ${composed.report.stages.deploy.status} (the recorded deploy probed other output; run ${cmd("record")} deploy again)`] : []),
     ...(composed.context ? ["Build Context scaffold.required = false"] : []),
-    ...(ci ? [
+    ...(showCi ? [
       `doctor --ci reads this build as: ${ci.status}`,
-      ...doctorCiEvidenceLines(ci).slice(2).filter(Boolean).map((line) => line.replace(/^- /, "")),
+      ...doctorCiEvidenceLines(ci, singleLineFragment).map((line) => line.replace(/^- /, "")),
     ] : []),
     ...(stage === "baseline" && ci?.polish.status === "current" && ci?.qa.status === "current" && composed.report.stages.deploy?.status === "required"
       ? [`Served-URL record follows: deploy (run ${cmd("record")} deploy --packet <packet> --base-url <served-current-build-url>).`] : []),
@@ -1383,10 +1386,6 @@ function recordUnderLock({ stage, packetPath, sidecars, lockedTarget, input, dry
     staleReason: `${stage === "theme" ? "theme" : stage === "baseline" ? "a baseline" : `stages.${stage === "build" ? "assembly" : stage}`} was recorded after this doctor snapshot. Re-run ${cmd("doctor")} (or next) for current state.`,
     ...(dryRun ? { lock: false } : {}),
   });
-  let ci;
-  const after = dryRun ? null : doctorPacket(packetPath, {
-    ...sidecars,
-    ...(["build", "baseline"].includes(stage) ? { onEvidenceDebt: (debt) => { ci = assessDoctorCi(debt); } } : {}),
-  });
-  return { composed, facts, layer, reportPath, contextPath, after, ci };
+  const after = dryRun ? null : doctorPacket(packetPath, sidecars);
+  return { composed, facts, layer, reportPath, contextPath, after };
 }

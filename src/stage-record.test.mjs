@@ -1909,10 +1909,8 @@ test("record baseline shares CI's nothing-owed line and labels deploy as the ser
     const text = resultTextLines(result).join("\n");
     assert.match(text, /^- doctor --ci reads this build as: current$/m);
     assert.doesNotMatch(text, /\(exit|^- - /m);
-    // Only the picker's deploy is replaced by the served-URL line; any other
-    // stage it names (a blocked checkpoint, doctor blockers) is still printed.
-    if (result.next_stage === "deploy") assert.doesNotMatch(text, /Next stage:/);
-    else assert.match(text, new RegExp(`^Next stage: ${result.next_stage}`, "m"));
+    assert.equal(result.next_stage, "polish", "the missing checkpoint still sends this fixture to Polish");
+    assert.match(text, /^Next stage: polish \(/m);
     assert.match(text, /Served-URL record follows: deploy/);
   });
 });
@@ -1927,6 +1925,27 @@ test("record baseline text drops the picker's deploy only when the served-URL li
   assert.match(resultTextLines({ ...base, next_stage: "doctor-blocked", next_stage_reason: "Doctor reported 2 blocker(s)" }).join("\n"), /^Next stage: doctor-blocked \(Doctor reported 2 blocker\(s\)\)$/m);
   assert.match(resultTextLines({ ...base, next_stage: "polish" }).join("\n"), /^Next stage: polish$/m);
   assert.match(resultTextLines({ ...base, stage: "build", next_stage: "deploy" }).join("\n"), /^Next stage: deploy$/m);
+});
+
+test("record baseline with a local preview and deploy required omits Next stage end to end", () => {
+  withLifecycle((f) => {
+    mutateJson(f.packetPath, (packet) => { packet.deploy.target = "local-serve"; });
+    recordThroughBuild(f);
+    mutateJson(f.reportPath, (report) => {
+      const fingerprint = report.stages.assembly.build_fingerprint;
+      delete report.stages.assembly.commerce_signature;
+      report.stages.polish = { stage: "polish", status: "completed", source_build_fingerprint: fingerprint };
+      report.stages.qa = { stage: "qa", status: "completed", evidence: { source_build_fingerprint: fingerprint } };
+      report.stages.deploy = { stage: "deploy", status: "completed", source_build_fingerprint: fingerprint };
+    });
+    buildSite(f, " revised");
+    recordOk(f, "build");
+    const result = recordOk(f, "baseline", ["--accepted-by", "Synthetic Signatory 01", "--reason", "Accept the trial funnel as the starting point"]);
+    assert.equal(readJson(f.reportPath).stages.deploy.status, "required");
+    assert.equal(result.next_stage, "deploy");
+    assert.match(resultTextLines(result).join("\n"), /Served-URL record follows: deploy/);
+    assert.doesNotMatch(resultTextLines(result).join("\n"), /Next stage:/);
+  });
 });
 
 // record deploy on the local preview, with a stand-in fetch answering every
