@@ -655,6 +655,25 @@ position:
   `page_url` to the new route (it keeps its id; `record spec` binds that as a
   move of routes) or rename the file back. For a new page, remove the old page
   from the spec by hand and derive again.
+- A page the build never wrote can instead be re-pointed after handoff. When
+  exactly one otherwise-added file of the same page-kit type sells exactly
+  its package refs, and no other never-built page matches that file, derive
+  writes the existing page's `page_url` and legacy mirror, keeping its id,
+  packages, offers and other authored fields. The page's package set combines
+  `packages[]` refs (`ref_id`, `package_ref_id`, `package_id`, or `id`) with
+  `offers[]` package refs (`package_ref_id` and `package_id`); an offer's own
+  id or voucher `code` is not a package ref and is not compared. File refs
+  must be complete literal attribute or config values: a Liquid expression
+  (including one embedded in an attribute), config expression or continuation,
+  template literal, or package value inside a Liquid comment or raw block
+  makes the entire file's matching set empty, so it is added as usual rather
+  than re-pointed or held. The SDK has no literal offer-ref attribute, so only
+  package refs are compared. Several exact
+  matches hold the files without adding or re-pointing them and report each
+  pair as `page_likely_pair`. A partial package overlap still adds the file
+  and reports the same reason as a note. Set the right page's `page_url` by
+  hand (or remove the page that is not real), then derive again. The
+  `page_renamed` hold takes precedence.
 - Page order is not something the tree states. Where the funnel's pages carry
   an `order`, the added page's is reported as not derived.
 
@@ -708,6 +727,7 @@ the status is `partial` (exit 0; the fields it could derive are written):
 | `page_order_not_derived` | an added page was appended; its `order` is left for you |
 | `page_packages_not_derived` | an added page (any type but a thank-you page) carries no packages; author them before doctor's `CheckoutPathHasPackages` / `UpsellHasPackages` rules pass |
 | `page_renamed` | a page's file is gone and a new file of the same page-kit `page_type` appeared; read as a rename, neither the remove nor the add is applied |
+| `page_likely_pair` | a never-built page and a new file of the same page-kit type share package refs; several exact matches hold the files, while a partial overlap leaves the add in place; resolve the pair by hand |
 | `package_not_live`, `offer_not_live`, `offers_not_in_live_campaign` | a package or offer the spec carries is not in the live campaign, or the live campaign carried no offers list; nothing is changed |
 
 A placeholder id (`GTM-XXXXXXX`, a run of one digit; for a vendor also
