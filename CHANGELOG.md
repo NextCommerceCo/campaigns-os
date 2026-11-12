@@ -8,6 +8,12 @@ Notable supported-surface changes are recorded here.
 
 - `qa run` without `--currency` runs in the CampaignSpec's `campaign.currency`, a declared tag that did not fire on a build recorded as a development build reads not measured instead of blocking, and the private template family error names `PRIVATE_TEMPLATE_SOURCES_ROOT` first (#756).
 
+## [1.68.0+agent.10] - 2026-11-11
+
+### Fixed
+
+- `record deploy` refuses when doctor's Polish gate is blocked, so a Polish recorded as skipped no longer earns a deploy record (#756).
+
 ## [1.68.0+agent.9] - 2026-11-11
 
 ### Changed
