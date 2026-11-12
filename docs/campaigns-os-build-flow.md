@@ -136,8 +136,8 @@ the reason, `doctor --ci` names this acceptance in its remedy, including the
 `ci.remedy` string in JSON. Rebuilding, recording build, and re-running Polish
 and full QA is the other way. Other reasons keep their existing remedies.
 After acceptance, the record command prints `Owed stages: none.`. If deploy is
-still required, it names deploy as the served-URL record that follows; any other
-stage doctor's picker names is still printed as the next stage. Its JSON
+still required, it names deploy as the served-URL record that follows; otherwise the
+stage doctor's picker names is printed as the next stage. Its JSON
 `next_stage` still carries doctor's stage picker result; that field is separate
 from the evidence owed in `ci`.
 
