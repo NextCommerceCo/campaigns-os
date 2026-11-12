@@ -9,7 +9,7 @@ import {
   resolveBuiltSiteScope,
   routeForFile,
 } from "./built-site-scope.mjs";
-import { changeSince, classifyDrift } from "./change-scope.mjs";
+import { changeSince, classifyDrift, mapLinkedAssets } from "./change-scope.mjs";
 import { htmlScanMemo } from "./html-scan.mjs";
 import { normalizePublicRouteSlug } from "./route-identity.mjs";
 import { isFileReadFailure } from "./cart-placeholders.mjs";
@@ -24,6 +24,14 @@ const portable = (value) => value.split(sep).join("/");
 // (html-scan.mjs), where the fingerprint check and evidence debt hash one tree.
 export function sharedBuildFingerprint(outputDir) {
   return htmlScanMemo(JSON.stringify(["build-fingerprint", String(outputDir || "")]), () => computeBuildFingerprint(outputDir));
+}
+
+// The pages an owed QA run, page-scoped or full, must render in a browser:
+// the change's `browser_pages` (change-scope.mjs), as page ids.
+function browserOwedPages(change) {
+  const paths = new Set(Array.isArray(change?.browser_pages) ? change.browser_pages : []);
+  if (!paths.size || !Array.isArray(change.changed_pages)) return [];
+  return change.changed_pages.filter((page) => paths.has(page.built_path)).map((page) => page.page_id);
 }
 
 /**
@@ -108,6 +116,7 @@ export function assessEvidenceDebt({ packet = null, packetPath = null, report = 
     missing: manifestKnown ? drift.missing : [],
     changed: manifestKnown ? drift.changed : [],
   };
+  let linkedAssets = [];
   if (manifestKnown && scope?.ok) {
     const pages = new Map((scope?.pages || []).map((page) => [
       portable(relative(outputRoot, page.built_path)),
@@ -125,13 +134,32 @@ export function assessEvidenceDebt({ packet = null, packetPath = null, report = 
       if (page) changes.changed_pages.push(page);
       else changes.unmapped_files.push(path);
     }
+    // A stylesheet or image built pages link directly is a change to those
+    // pages (#753); anything else outside a page stays unmapped.
+    if (changes.unmapped_files.length) {
+      const mapped = mapLinkedAssets({ files: changes.unmapped_files, pages: scope.pages, outputRoot, siteRoot: join(targetRepo, "_site") });
+      linkedAssets = mapped.linked;
+      changes.unmapped_files = mapped.unmapped;
+    }
   }
   const driftClassification = classifyDrift({
     changes, baseline: assembly, outputRoot, targetRepo, publicRouteSlug: slug,
     pagePaths: scope?.ok ? scope.pages.map((page) => page.built_path) : [],
+    linkedAssets,
   });
+  // The pages reached through a linked asset are changed pages too: QA is
+  // owed on them, and linked_assets says which asset reached each.
+  if (linkedAssets.length) {
+    const pages = new Map(changes.changed_pages.map((page) => [page.built_path, page]));
+    for (const asset of linkedAssets) for (const page of asset.pages) if (!pages.has(page.built_path)) pages.set(page.built_path, page);
+    changes.changed_pages = [...pages.values()].sort((a, b) => a.built_path.localeCompare(b.built_path));
+  }
   changes.kind = driftClassification.kind;
   changes.reasons = driftClassification.reasons;
+  if (driftClassification.linked_assets) {
+    changes.linked_assets = driftClassification.linked_assets;
+    changes.browser_pages = driftClassification.browser_pages;
+  }
   const changeFor = (anchor) => changeSince(anchor, { assembly, drift: changes, driftClassification });
 
   // Polish reviewed the build a terminal record is bound to; once `record
@@ -163,6 +191,11 @@ export function assessEvidenceDebt({ packet = null, packetPath = null, report = 
     if (extended && extended === qaBuild && fingerprint(qaRecord?.checked_at)) qa.reviewed_at = qaRecord.checked_at.trim();
     qa.scope = extended && qaRecord?.status !== "required" && qa.change.kind === "page_only" ? "pages" : "full";
     qa.owed_pages = qa.scope === "pages" ? qa.change.changed_pages : [];
+    // A checkout or upsell page a changed linked asset reaches owes a browser
+    // run (#753) at either scope: a full run owes it too. Listed only when
+    // there is one, as page ids.
+    const browserPages = browserOwedPages(qa.change);
+    if (browserPages.length) qa.browser_pages = browserPages;
   } else {
     qa.change = null;
     qa.scope = null;

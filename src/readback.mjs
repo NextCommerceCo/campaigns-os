@@ -1316,6 +1316,8 @@ function renderEvidenceDebt(debt, lines) {
         : stage.scope === "pages" ? `owed on ${stage.owed_pages.map((page) => oneLine(page.page_id)).join(", ")} (qa run --page)` : "the full stage is owed";
       lines.push(`    change since its build: ${stage.change.kind}; ${owes}`);
       for (const page of stage.change.changed_pages) lines.push(`    changed page: ${oneLine(page.page_id)} (${oneLine(page.built_path)})`);
+      if (stage.browser_pages?.length) lines.push(`    browser run owed on: ${stage.browser_pages.map(oneLine).join(", ")} (${stage.scope === "pages" ? "qa run --page --browser" : "qa run --browser"})`);
+      for (const asset of stage.change.linked_assets || []) lines.push(`    linked asset: ${oneLine(asset.path)} (linked by ${(asset.pages || []).map(oneLine).join(", ")})`);
       for (const reason of stage.change.reasons) lines.push(`    commerce: ${oneLine(reason.code)}${reason.path ? ` (${oneLine(reason.path)})` : ""}`);
     }
   }
