@@ -584,7 +584,7 @@ test("a page-scoped run refuses QA that an input change owes, or whose inputs ca
 
 // `record baseline`: a funnel from before markup hashes, accepted as the
 // starting point by a named person, so small checks work without a test order.
-const ACCEPTED = { "accepted-by": "Synthetic Signatory 01", reason: "Live and selling since before markup hashes" };
+const ACCEPTED = { "accepted-by": "Pat Rivera", reason: "Live and selling since before markup hashes" };
 const recordBaseline = (f, extra = {}) => recordStageCommand({ _: ["record", "baseline"], packet: f.packetPath, ...ACCEPTED, ...extra });
 
 function legacyFixture(t) {
@@ -679,7 +679,7 @@ test("a baseline is its own status, keeps no purchase proof, and says what it is
   const before = f.readReport().stages.qa;
   assert.ok(before.purchase_proof);
   const result = recordBaseline(f);
-  assert.equal(result.record.accepted_by, "Synthetic Signatory 01");
+  assert.equal(result.record.accepted_by, "Pat Rivera");
   const report = f.readReport();
   for (const key of ["polish", "qa"]) {
     assert.equal(report.stages[key].status, "baseline_accepted");
@@ -690,14 +690,14 @@ test("a baseline is its own status, keeps no purchase proof, and says what it is
   assert.deepEqual(report.stages.qa.history.at(-1).purchase_proof, before.purchase_proof, "it is kept in history");
   const debt = f.debt();
   assert.equal(debt.qa.status, "current");
-  assert.equal(debt.qa.baseline.accepted_by, "Synthetic Signatory 01");
+  assert.equal(debt.qa.baseline.accepted_by, "Pat Rivera");
   assert.equal(debt.polish.status, "current");
   const { stdout, status } = ci(f);
   assert.equal(status, 0);
-  assert.match(stdout, /QA rests on a baseline Synthetic Signatory 01 accepted on \d{4}-\d{2}-\d{2}, not a test\. No purchase has been tested since\./);
+  assert.match(stdout, /QA rests on a baseline Pat Rivera accepted on \d{4}-\d{2}-\d{2}, not a test\. No purchase has been tested since\./);
   assert.ok(doctorPacket(f.packetPath).warnings.some((issue) => issue.code === "qa.baseline_accepted"));
   const readback = runReadbackCommand({ _: ["readback", f.root], json: true, packet: f.packetPath });
-  assert.equal(JSON.parse(readback.text).evidence_debt.qa.baseline.accepted_by, "Synthetic Signatory 01");
+  assert.equal(JSON.parse(readback.text).evidence_debt.qa.baseline.accepted_by, "Pat Rivera");
 });
 
 test("after a baseline a copy edit owes QA on that page, the pass stays a baseline, and it never gains purchase proof", (t) => {
@@ -709,7 +709,7 @@ test("after a baseline a copy edit owes QA on that page, the pass stays a baseli
   assert.equal(debt.qa.scope, "pages");
   assert.deepEqual(debt.qa.owed_pages.map((page) => page.page_id), ["landing"]);
   assert.equal(debt.polish.advisory, true);
-  assert.equal(debt.qa.baseline.accepted_by, "Synthetic Signatory 01", "a change owed on pages still rests on the baseline");
+  assert.equal(debt.qa.baseline.accepted_by, "Pat Rivera", "a change owed on pages still rests on the baseline");
   const base = `http://127.0.0.1:9/${SLUG}/`;
   const scoped = applyQaPageScope([{ pages: [{ page_id: "landing", url: `${base}landing/` }] }], { pages: ["landing"], baseUrl: base, debt, report: f.readReport() });
   const verdict = { run_id: "page-run", campaign_slug: "synthetic-map", disposition: "ready", completed_at: "2026-11-08T00:00:00Z", assertions: [], spec_hash: null, qc_results: [] };
@@ -729,7 +729,7 @@ test("a blocked run leaves QA resting on the baseline, and the reports keep sayi
   const qa = f.readReport().stages.qa;
   assert.equal(qa.status, "blocked");
   assert.ok(qa.baseline_accepted_at, "a run that proved nothing does not end the baseline");
-  assert.equal(f.debt().qa.baseline.accepted_by, "Synthetic Signatory 01");
+  assert.equal(f.debt().qa.baseline.accepted_by, "Pat Rivera");
   assert.ok(doctorPacket(f.packetPath).warnings.some((issue) => issue.code === "qa.baseline_accepted"));
 });
 
