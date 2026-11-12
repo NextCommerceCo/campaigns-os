@@ -50,6 +50,11 @@ manifest was already updated; old Polish/QA bindings still show debt.
 Without a usable manifest, page changes are unknown, but matching stage
 bindings remain current unless lifecycle-required, and differing bindings remain owed.
 The check reads recorded fingerprints, not machine-local capture files.
+Because it passes `--no-live-refs`, it never compares the CampaignSpec with the
+live campaign. Run `doctor --packet <packet>` without that flag to see the
+`spec.campaign_drift` warning when prices, product fields, recurring terms or
+offers set in the Campaigns App have moved away from the CampaignSpec; it stays a
+warning and does not change the CI status.
 Readback's `evidence_debt` uses the same assessment, showing an agent this debt
 before it edits; its separate checkout-age assessment is not the CI signal.
 
