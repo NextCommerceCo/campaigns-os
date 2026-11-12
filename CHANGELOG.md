@@ -8,6 +8,12 @@ Notable supported-surface changes are recorded here.
 
 - `spec derive` re-points a never-built spec page at the one built page that sells exactly its packages, instead of adding a duplicate page beside it (#756).
 
+## [1.68.0+agent.10] - 2026-11-11
+
+### Fixed
+
+- `record deploy` refuses when doctor's Polish gate is blocked, so a Polish recorded as skipped no longer earns a deploy record (#756).
+
 ## [1.68.0+agent.9] - 2026-11-11
 
 ### Changed
