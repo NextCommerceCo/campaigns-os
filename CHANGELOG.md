@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.68.0+agent.16] - 2026-11-12
+
+### Fixed
+
+- `record build`, `record baseline`, readback and `doctor --ci` agree on what is owed: the record commands print `doctor --ci`'s reading, readback marks a doctor reading older than the report as stale, and the `--ci` remedy for a funnel from before 1.62 names `record baseline` (#756).
+
 ## [1.68.0+agent.14] - 2026-11-12
 
 ### Fixed
