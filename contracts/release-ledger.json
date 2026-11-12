@@ -4566,7 +4566,7 @@
           "summary": "Package version 1.71.0."
         },
         {
-          "class": "compatibility_policy",
+          "class": "hashed_surface",
           "path": "contracts/migration-sidecar-bundle.v0.json",
           "surface_entry": "contracts/migration-sidecar-bundle.v0.json",
           "summary": "Sidecar paths are relative to the packet's runtime directory (the default, or the per-funnel directory the packet records as assembly.runtime_dir); a packet named campaign-runtime-<route>.build.json is canonical for its own route; the CI producer commands take the funnel's packet. bundle_id, schema_version and every existing key are unchanged."
@@ -4704,7 +4704,7 @@
           "summary": "The bundle usage line says --packet <packet>."
         }
       ],
-      "entry_sha256": "540c28b045ec1b046536137be64cfeca0d20e396abddf5b90ec94a3057fb58be"
+      "entry_sha256": "3cd9f3deeffd09b65710e988e4e226e9900265017b176926bc3da0074280dfaf"
     }
   ]
 }
