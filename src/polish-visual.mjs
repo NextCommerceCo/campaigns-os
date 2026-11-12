@@ -10,6 +10,9 @@ import { computeDesignSourcePackageMaterialFingerprint, BUILT_FIRST_REASON, BUIL
 import { readRecordedDesignSourcePackage } from "./design-source-publication.mjs";
 import { currentSourcePackageMaterialFingerprint } from "./polish-gate.mjs";
 import { startSourceHtmlServer, readRegularFileSync, isRegularFileSync } from "./source-html-server.mjs";
+import { resolveBuiltSiteScope } from "./built-site-scope.mjs";
+import { campaignRouteRoot, normalizePageKitRoute, stripPublicRoutePrefix, runtimeRelativeRouteForSpecValue } from "./route-identity.mjs";
+import { readJsonIfExists, resolveFromFile } from "./cli-helpers.mjs";
 import { boundedPolishDeadline, runWithPolishProducerDeadline, POLISH_PRODUCER_TIMEOUT_ERROR_CODE,
   POLISH_CAPTURE_CELL_DEADLINE_MS, POLISH_CAPTURE_STARTUP_DEADLINE_MS, POLISH_CAPTURE_CLOSE_DEADLINE_MS,
   VISUAL_CAPTURE_RUN_MS, VISUAL_DIFF_RUN_MS, VISUAL_ADDED_RUN_MS } from "./polish-deadline.mjs";
@@ -34,6 +37,7 @@ export const VISUAL_VIEWPORTS = Object.freeze([
 export const VISUAL_VOCABULARY = Object.freeze({
   side: ["build", "source_html"], state: [VISUAL_STATE],
   cell_status: ["rendered", "navigation_failed", "http_error", "probe_failed", "document_changed", "run_budget_exhausted", "producer_timeout", "probe_timeout", "browser_unavailable", "source_html_missing", "source_root_unavailable", BUILT_FIRST_REASON],
+  evidence_status: ["rendered", "navigation_failed", "http_error", "probe_failed", "document_changed", "run_budget_exhausted", "producer_timeout", "probe_timeout", "browser_unavailable", "source_html_missing", "source_root_unavailable", "not_built"],
   shot_status: ["captured", "timeout", "failed", "skipped"], dependency_status: ["available", "missing", "failed"],
   verification_level: ["decoded", "header_checked", "unverifiable"], provenance_class: ["declared_source", "self_referential", "unknown"],
   comparison_status: ["compared", "unsupported", "unavailable", "not_run"],
@@ -46,12 +50,44 @@ export const VISUAL_VOCABULARY = Object.freeze({
   part_reason: ["capture_truncated", "section_mapping_missing", "section_mapping_duplicate", "section_not_rendered", "beyond_capture_height", "band_cap_reached", "source_section_offsets_unrecorded", "no_section_keys"],
 });
 
-export function planVisualCapture(plan, viewports = plan?.viewports) {
+export function planVisualCapture(plan, viewports = plan?.viewports, { packet, packetPath, targetRepo, slug = packet?.campaign?.public_route_slug } = {}) {
   if (!plan) return null;
   if (!Array.isArray(plan.routes) || !Array.isArray(viewports)) throw new TypeError("A computed page_load plan and viewports are required");
   if (plan.routes.some((route) => !object(route)) || viewports.some((v) => !object(v)
       || !VISUAL_VIEWPORTS.some((fixed) => fixed.key === own(v, "key") && fixed.width === v.width && fixed.height === v.height))) return null;
-  return { route_scope: plan.route_scope, routes: structuredClone(plan.routes), viewports: structuredClone(viewports),
+  let built = [];
+  let spec = null;
+  if (plan.skipped_pages?.length && targetRepo && slug) {
+    try { built = resolveBuiltSiteScope(targetRepo, { slug }).pages; } catch { /* unavailable output is evidence only */ }
+    try { spec = readJsonIfExists(resolveFromFile(packetPath, packet?.spec?.local_path)); } catch { /* unreadable spec falls back to page ids */ }
+  }
+  const specPages = Array.isArray(spec?.funnels) ? spec.funnels.flatMap((funnel) => Array.isArray(funnel?.pages) ? funnel.pages : [])
+    : Array.isArray(spec?.funnel_pages) ? spec.funnel_pages : [];
+  const routeRoot = campaignRouteRoot(packet) || (slug ? `/${slug}/` : null);
+  const evidenceOnly = (plan.skipped_pages || []).flatMap((skipped) => {
+    const mapping = packet?.source_html?.pages?.find((page) => page.page_id === skipped.page_id);
+    const declared = mapping?.page_kit?.public_route;
+    const declaredRoute = typeof declared === "string" && declared.startsWith("/") && !declared.startsWith("//")
+      && !/[?#\\\s]/.test(declared) ? declared : null;
+    const pageUrl = specPages.find((page) => page?.id === skipped.page_id)?.page_url;
+    const specRoute = typeof pageUrl === "string" && pageUrl.trim() ? stripPublicRoutePrefix(pageUrl, slug) : null;
+    const reducedMatches = specRoute !== null ? built.filter((page) =>
+      runtimeRelativeRouteForSpecValue(page.route, slug) === runtimeRelativeRouteForSpecValue(specRoute, slug)) : [];
+    const output = declaredRoute
+      ? built.find((page) => normalizePageKitRoute(page.route) === stripPublicRoutePrefix(declaredRoute, slug))
+      : (specRoute !== null && (built.find((page) => normalizePageKitRoute(page.route) === normalizePageKitRoute(specRoute))
+        || (reducedMatches.length === 1 ? reducedMatches[0] : null)))
+        || built.find((page) => page.page_id === skipped.page_id);
+    const route = declaredRoute || (output && routeRoot ? `${routeRoot}${output.route ? `${output.route}/` : ""}` : null);
+    return viewports.map((viewport) => ({
+      side: "build", page_id: skipped.page_id, route, viewport: viewport.key, width: viewport.width, height: viewport.height,
+      device_scale_factor: 1, state: VISUAL_STATE, evidence_only: true, skip_reason: skipped.skip_reason,
+      url: output && route ? new URL(route, plan.routes[0].url).href : null,
+      reason: output && route ? null : "page_not_built",
+    }));
+  });
+  return { route_scope: plan.route_scope, routes: structuredClone(plan.routes), skipped_pages: structuredClone(plan.skipped_pages || []), viewports: structuredClone(viewports),
+    evidence_only: evidenceOnly,
     cells: plan.routes.flatMap((route) => viewports.flatMap((viewport) => ["build", "source_html"].map((side) => ({
       side, page_id: route.page_id, route: route.requested_route ?? route.route ?? route,
       viewport: viewport.key, width: viewport.width, height: viewport.height, device_scale_factor: 1, state: VISUAL_STATE,
@@ -130,8 +166,17 @@ async function verifyDeclared(args) {
     provenance: classifyProvenance({ ...args, path: resolved, sha256: null }) };
 }
 
-export function unavailableCapturesRecord({ plan, subject, measuredAt } = {}) {
-  return buildCapturesRecord({ subject, cells: planVisualCapture(plan).cells.map((cell) => blankCell(cell, "browser_unavailable")), measuredAt });
+export function unavailableCapturesRecord({ plan, subject, measuredAt, packet, packetPath, targetRepo } = {}) {
+  const visual = planVisualCapture(plan, plan.viewports, { packet, packetPath, targetRepo, slug: subject?.campaign_slug });
+  return buildCapturesRecord({ subject: { ...subject, skipped_pages: plan.skipped_pages || [] },
+    cells: visual.cells.map((cell) => blankCell(cell, "browser_unavailable")),
+    evidenceOnly: visual.evidence_only.map((cell) => evidenceCapture(blankCell(cell, cell.reason ? "not_built" : "browser_unavailable"))), measuredAt });
+}
+
+function evidenceCapture({ url: _url, probes: _probes, ...cell }) {
+  return { ...cell, reason: cell.reason || (cell.status !== "rendered" ? cell.status
+    : cell.actual.status !== "captured" ? `actual_${cell.actual.status}`
+    : cell.stabilized.status !== "captured" ? `stabilized_${cell.stabilized.status}` : null) };
 }
 
 // Proxy refusals are connections the per-context routes never saw (a
@@ -162,27 +207,29 @@ export async function runVisualCells({ buildAdapter, sourceAdapter, pairs, sourc
   const cells = [], poisoned = new Set();
   const remaining = () => typeof budget.remaining === "function" ? budget.remaining() : VISUAL_CAPTURE_RUN_MS;
   for (const planned of pairs.cells || pairs) {
-    const cell = blankCell(planned, "browser_unavailable");
+    const { url: _url, ...identityCell } = planned;
+    const cell = blankCell(identityCell, "browser_unavailable");
     const source = sources.get(cell.page_id);
     if (source && cell.side === "source_html") Object.assign(cell, { source_path_rel: source.path_rel, source_sha256: source.identity?.sha256 });
     const adapter = cell.side === "build" ? buildAdapter : sourceAdapter;
     if (cell.side === "source_html" && source?.input_reason === BUILT_FIRST_REASON) Object.assign(cell, {
       status: BUILT_FIRST_REASON, reason_code: BUILT_FIRST_REASON, label: BUILT_FIRST_LABEL,
     });
+    else if (cell.evidence_only && cell.reason === "page_not_built") cell.status = "not_built";
     else if (remaining() <= 0) cell.status = "run_budget_exhausted";
     else if (poisoned.has(cell.side)) cell.status = "producer_timeout";
     else if (cell.side === "source_html" && source?.input_reason) cell.status = source.input_reason;
     else if (adapter) {
       const route = pairs.routes?.find((r) => r.page_id === cell.page_id);
       const identity = { side: cell.side, page_id: cell.page_id, route: cell.route, viewport: cell.viewport };
-      const selected = probes.map((probe) => ({ ...probe,
+      const selected = (cell.evidence_only ? [] : probes).map((probe) => ({ ...probe,
         select: probe.select ? () => probe.select(identity) : undefined,
         onResult: probe.onResult ? (result) => probe.onResult(identity, result) : undefined }));
       const controller = new AbortController();
       const refusedBefore = cell.side === "source_html" ? refusalCounts(sourceRefused, sourceRefusedTotal) : null;
       try {
         const result = await runWithPolishProducerDeadline(() => adapter.renderForCompare({
-          url: cell.side === "build" ? route?.url : new URL(source.url_path, sourceOrigin).href,
+          url: cell.side === "build" ? planned.url ?? route?.url : new URL(source.url_path, sourceOrigin).href,
           viewport: { key: cell.viewport, width: cell.width, height: cell.height }, deviceScaleFactor: 1, signal: controller.signal,
           requestPolicy: cell.side === "source_html" ? { allowOrigin: sourceOrigin } : null,
           readiness: { fontsMs: VISUAL_LIMITS.readiness_fonts_ms, awaitMs: VISUAL_LIMITS.readiness_await_ms },
@@ -222,7 +269,8 @@ export async function runVisualCells({ buildAdapter, sourceAdapter, pairs, sourc
 export async function runVisualPass({ createBrowserAdapter, frozen, packet, packetPath, report, reportPath = null, targetRepo,
   headed = false, authCookie = null, probes = [], budget = {}, clock = monotonicClock,
   adapterStartupDeadlineMs, adapterCloseDeadlineMs, captureCellDeadlineMs, now = new Date(), dependencies, timers = {} } = {}) {
-  const plan = planVisualCapture(frozen.plan);
+  const plan = planVisualCapture(frozen.plan, frozen.plan?.viewports, { packet, packetPath, targetRepo,
+    slug: packet?.campaign?.public_route_slug ?? frozen.page_load.subject.campaign_slug });
   // `timers` ({ setTimer, clearTimer }) lets a test fire a deadline without wall-clock time.
   const bounded = (operation, options) => runWithPolishProducerDeadline(operation, { ...timers, ...options });
   if (!plan) return null;
@@ -234,7 +282,7 @@ export async function runVisualPass({ createBrowserAdapter, frozen, packet, pack
   const closeMs = boundedPolishDeadline(adapterCloseDeadlineMs, POLISH_CAPTURE_CLOSE_DEADLINE_MS);
   const adapters = { build: { startup: "failed", close: "not_started" }, source: { startup: "failed", close: "not_started", sealed: true } };
   const instances = {}, sources = new Map(), references = [], comparisons = [];
-  let server = null, cells = [], root = null, rootAvailable = false;
+  let server = null, cells = [], evidenceOnly = [], root = null, rootAvailable = false;
   let dsp = null, dspReason = "source_package_unavailable";
   try {
     if (typeof packet.source_html?.root === "string") root = resolve(dirname(packetPath), packet.source_html.root);
@@ -273,7 +321,8 @@ export async function runVisualPass({ createBrowserAdapter, frozen, packet, pack
     const ref = { ...await verifyDeclared({ path: mapping.path, sourceRoot: root || targetRepo, targetRepo,
       kind: "source_html", recorded: declared || {}, builtHtmlHashes, pageKitTargets }),
       page_id: route.page_id, route: route.requested_route, viewport: null, ref_id: "source_html" };
-    if (!rootAvailable) ref.input_reason = "source_root_unavailable";
+    if (mapping.origin === "repo" && !mapping.path) ref.input_reason = "source_html_missing";
+    else if (!rootAvailable) ref.input_reason = "source_root_unavailable";
     else if (!ref.identity.sha256 || ref.verification.reason) ref.input_reason = "source_html_missing";
     // Only files contained by the serving root may be rendered, including a
     // self-referential source which verification can otherwise read for QC.
@@ -284,135 +333,167 @@ export async function runVisualPass({ createBrowserAdapter, frozen, packet, pack
     sources.set(route.page_id, ref);
     const { url_path, ...persisted } = ref; references.push(persisted);
   }
-  try {
-    if (!builtFirst && rootAvailable && captureLeft() > 0) {
-      const abort = new AbortController();
-      server = await bounded(() => startSourceHtmlServer({ root, signal: abort.signal }),
-        { timeoutMs: Math.max(1, Math.min(closeMs, captureLeft())), onTimeout: () => abort.abort() });
-    }
-    for (const side of ["build", "source"]) {
-      if ((side === "source" && !server) || captureLeft() <= 0) continue;
-      let abandoned = false;
-      const promise = Promise.resolve().then(() => createBrowserAdapter({ headed,
-        authCookie: side === "build" ? authCookie : null, ...(side === "source" ? { seal: { origin: server.origin, port: server.port } } : {}) }));
-      void promise.then((late) => { if (abandoned) void bounded(() => late.close(), { timeoutMs: closeMs, unrefTimer: true }).catch(() => {}); }, () => {});
-      try {
-        instances[side] = await bounded(() => promise, {
-          timeoutMs: Math.max(1, Math.min(captureLeft(), boundedPolishDeadline(adapterStartupDeadlineMs, POLISH_CAPTURE_STARTUP_DEADLINE_MS))),
-          onTimeout: () => { abandoned = true; } });
-        adapters[side].startup = "ok";
-      } catch (error) { adapters[side].startup = timedOut(error) ? "producer_timeout" : "failed"; }
-    }
-    cells = await runVisualCells({ buildAdapter: instances.build, sourceAdapter: instances.source, pairs: plan,
-      sourceOrigin: server?.origin, sourceRefused: server?.refused, sourceRefusedTotal: server?.refusedTotal, sources, probes, clock, now, captureCellDeadlineMs, timers,
-      budget: { remaining: captureLeft }, writePng: (bytes) => writePolishPng(targetRepo, "captures", bytes) });
-  } catch {
-    // A source listener/setup failure must still yield the complete grid.
-    cells = plan.cells.map((cell) => blankCell(cell, cell.side === "source_html" ? "source_root_unavailable" : "browser_unavailable"));
-  } finally {
-    for (const side of ["build", "source"]) if (instances[side]) {
-      try { await bounded(() => instances[side].close(), { timeoutMs: Math.max(1, Math.min(closeMs, addedLeft())) }); adapters[side].close = "ok"; }
+  // Without extra captures, retain the original sequential cleanup before diff.
+  // With them, resources stay open and close concurrently within one reserved
+  // close interval, so cleanup cannot consume the planned comparisons' budget.
+  let cleanupMs = 0;
+  const closeResources = async () => {
+    const closeAdapter = async (side) => {
+      try { await bounded(() => instances[side].close(), { timeoutMs: cleanupMs || Math.max(1, Math.min(closeMs, addedLeft())) }); adapters[side].close = "ok"; }
       catch (error) { adapters[side].close = timedOut(error) ? "producer_timeout" : "failed"; }
+    };
+    const closeServer = async () => {
+      if (server) try { await bounded(() => server.close(), { timeoutMs: cleanupMs || Math.max(1, Math.min(closeMs, addedLeft())) }); } catch { /* listener closes all sockets synchronously */ }
+    };
+    if (plan.evidence_only.length) {
+      await Promise.all([...Object.keys(instances).map(closeAdapter), closeServer()]);
+    } else {
+      for (const side of ["build", "source"]) if (instances[side]) await closeAdapter(side);
+      await closeServer();
     }
-    if (server) try { await bounded(() => server.close(), { timeoutMs: Math.max(1, Math.min(closeMs, addedLeft())) }); } catch { /* listener closes all sockets synchronously */ }
-  }
-  if (builtFirst) source.built_first_source_evidence = cells.filter((cell) => cell.side === "build").map((cell) => ({
-    surface_id: dsp.surface_identity?.find((surface) => surface.mappings?.campaign_spec_page_id === cell.page_id)?.id ?? null,
-    page_id: cell.page_id, route: cell.route, viewport: cell.viewport,
-    status: cell.actual.status, png: cell.actual.png, label: BUILT_FIRST_LABEL,
-  }));
-  const diffStarted = clock.now(), diffRealStarted = performance.now();
-  const diffMs = boundedPolishDeadline(budget.diffMs, VISUAL_DIFF_RUN_MS);
-  const diffLeft = () => Math.min(diffMs - (clock.now() - diffStarted), diffMs - (performance.now() - diffRealStarted), addedLeft());
-  dependencies ||= await loadVisualDependencies();
-  const captureHashes = cells.flatMap((c) => [c.actual?.png?.sha256, c.stabilized?.png?.sha256]).filter(Boolean);
-  for (const route of plan.routes) {
-    // A route's page id is its CampaignSpec page id. Another surface's
-    // source_page_id never stands in: a page with no CampaignSpec surface has
-    // no declared image references (§3.1), only its source_html rows.
-    if (builtFirst) continue;
-    const surface = dsp?.surface_identity?.find((s) => object(s) && s.mappings?.campaign_spec_page_id === route.page_id);
-    const coverage = contribution?.mappings?.find((m) => m.surface_id === surface?.id);
-    const refs = (coverage?.screenshot_refs || []).map((id) => contribution.screenshot_refs?.find((r) => r.id === id)).filter(Boolean);
-    const counts = new Map();
-    for (const declared of refs) {
-      const viewport = declared.viewport ?? null, count = counts.get(viewport) || 0; counts.set(viewport, count + 1);
-      if (count >= 4) continue;
-      const linkedDeclared = contribution?.source_refs?.find((r) => r.id === declared.source_ref_id && r.kind === "html_file");
-      const mapping = packet.source_html.pages.find((p) => p.page_id === route.page_id);
-      const linkedSource = !linkedDeclared ? null : linkedDeclared.path === mapping.path ? sources.get(route.page_id)
-        : await verifyDeclared({ path: linkedDeclared.path, sourceRoot: root || targetRepo, targetRepo, kind: "html_file",
-          recorded: linkedDeclared, builtHtmlHashes, pageKitTargets });
-      const ref = { ...await verifyDeclared({ path: declared.path, url: declared.url, recorded: declared, sourceRoot: root || targetRepo, targetRepo,
-        decoder: dependencies.decoder, budget: { remaining: diffLeft }, buildCaptureHashes: captureHashes, linkedSource }),
-        page_id: route.page_id, route: route.requested_route, viewport, ref_id: declared.id };
-      if (!rootAvailable) ref.input_reason = "source_root_unavailable";
-      else if (dspReason) ref.input_reason = dspReason;
-      if (refs.filter((r) => r.viewport === declared.viewport).length > 4) ref.reference_cap_reached = true;
-      references.push(ref);
-    }
-  }
-  const imageSource = (png) => ({ width: png.width_px, height: png.height_px,
-    load: () => dependencies.decoder.decode(readRegularFileSync(resolve(targetRepo, png.path), { maxBytes: png.bytes, root: targetRepo, noFollow: true })) });
-  // A declared reference is read beneath the root verification accepted it
-  // under: the source root, which may sit inside or outside the target (§3.1),
-  // or for a self-referential file the target's _site or .campaign-runtime.
-  // Never the whole target repo.
-  const referenceSource = (ref) => ({ width: ref.verification.png.width_px, height: ref.verification.png.height_px, load: () => {
-    const path = resolve(targetRepo, ref.path_rel);
-    const readRoot = referenceReadRoot({ sourceRoot: root || targetRepo, targetRepo }, realpathSync(path));
-    if (!readRoot) throw Object.assign(new Error("outside_root"), { code: "outside_root" });
-    return dependencies.decoder.decode(readRegularFileSync(path, { root: readRoot }));
-  } });
-  for (const build of cells.filter((c) => c.side === "build")) {
-    const basis = cells.find((c) => c.side === "source_html" && c.route === build.route && c.viewport === build.viewport);
-    const refs = references.filter((r) => r.route === build.route && r.ref_id !== "source_html" && (r.viewport === build.viewport
-      || (build.viewport === plan.viewports[0].key && !["desktop", "mobile"].includes(r.viewport))));
-    for (const reference of [null, ...refs]) {
-      let comparison = { page_id: build.page_id, route: build.route, viewport: reference?.viewport ?? build.viewport,
-        basis: reference ? "reference" : "source_html", ref_id: reference?.ref_id ?? null,
-        build_shot: reference ? "actual" : "stabilized", basis_shot: reference ? "image" : "stabilized",
-        status: "not_run", reason: builtFirst ? BUILT_FIRST_REASON : null, page: null, bands: [], members: [], artifacts: [], limits: [], diff_options: { ...DIFF_OPTIONS } };
-      const ref = reference || references.find((r) => r.ref_id === "source_html" && r.route === build.route);
-      const context = { record: { dependencies }, build, basis, reference: ref, budgetExhausted: diffLeft() <= 0 };
-      const decision = evaluateVisualDiff(comparison, context);
-      if (["visual_diff_diagnostic", "comparison_unsupported"].includes(decision.reason_code)) {
+  };
+  try {
+    try {
+      if (!builtFirst && rootAvailable && captureLeft() > 0) {
+        const abort = new AbortController();
+        server = await bounded(() => startSourceHtmlServer({ root, signal: abort.signal }),
+          { timeoutMs: Math.max(1, Math.min(closeMs, captureLeft())), onTimeout: () => abort.abort() });
+      }
+      for (const side of ["build", "source"]) {
+        if ((side === "source" && !server) || captureLeft() <= 0) continue;
+        let abandoned = false;
+        const promise = Promise.resolve().then(() => createBrowserAdapter({ headed,
+          authCookie: side === "build" ? authCookie : null, ...(side === "source" ? { seal: { origin: server.origin, port: server.port } } : {}) }));
+        void promise.then((late) => { if (abandoned) void bounded(() => late.close(), { timeoutMs: closeMs, unrefTimer: true }).catch(() => {}); }, () => {});
         try {
-          if (diffLeft() <= 0) { comparison.status = "unavailable"; comparison.reason = "diff_budget_exhausted"; }
-          else if (build[comparison.build_shot]?.png && (reference || basis?.stabilized?.png)) {
-            const artifacts = [];
-            comparison = compareVisualPair({ build, basis, reference,
-              buildImage: imageSource(build[comparison.build_shot].png),
-              basisImage: reference ? referenceSource(ref) : imageSource(basis.stabilized.png),
-              diff: dependencies.diff, onComparison: (part) => {
-                if (diffLeft() <= 0) throw new Error("diff_budget_exhausted");
-                // Keep at most three encoded triples; ranking is independent of QC.
-                if (!part.mismatch_pixels || (!part.key && (basis?.sections?.bands?.length || build.sections?.bands?.length))) return;
-                const rank = { key: part.key ?? "page", mismatch_ratio: part.mismatch_ratio, height_delta_px: part.height_delta_px };
-                artifacts.push({ ...rank, images: [part.basis_crop, part.build_crop, part.heatmap].map((image) => {
-                  if (diffLeft() <= 0) throw new Error("diff_budget_exhausted");
-                  return encodeHeatmap(image, dependencies.decoder);
-                }) });
-                artifacts.sort((a, b) => b.mismatch_ratio - a.mismatch_ratio || Math.abs(b.height_delta_px) - Math.abs(a.height_delta_px) || a.key.localeCompare(b.key));
-                if (artifacts.length > 3) artifacts.pop();
-              } });
-            comparison.artifacts = artifacts.map((artifact) => ({ band_key: artifact.key,
-              ...Object.fromEntries(["basis_crop", "build_crop", "heatmap"].map((name, i) => [name, writePolishPng(targetRepo, "diff", artifact.images[i])])) }));
-          }
-        } catch (error) { comparison.status = "unavailable"; comparison.reason = diffFailure(error); }
-      } else { comparison.status = "unavailable"; comparison.reason = decision.reason_code;
-        if (decision.reason_code === "reference_not_usable" && ref?.verification.reason === "path_outside_source_root") comparison.reason = "path_outside_source_root";
-        if (decision.reason_code === "diff_unavailable" && diffLeft() <= 0) comparison.reason = "diff_budget_exhausted"; }
-      if (reference) comparison.viewport = reference.viewport;
-      comparisons.push(comparison);
+          instances[side] = await bounded(() => promise, {
+            timeoutMs: Math.max(1, Math.min(captureLeft(), boundedPolishDeadline(adapterStartupDeadlineMs, POLISH_CAPTURE_STARTUP_DEADLINE_MS))),
+            onTimeout: () => { abandoned = true; } });
+          adapters[side].startup = "ok";
+        } catch (error) { adapters[side].startup = timedOut(error) ? "producer_timeout" : "failed"; }
+      }
+      cells = await runVisualCells({ buildAdapter: instances.build, sourceAdapter: instances.source,
+        pairs: plan,
+        sourceOrigin: server?.origin, sourceRefused: server?.refused, sourceRefusedTotal: server?.refusedTotal, sources, probes, clock, now, captureCellDeadlineMs, timers,
+        budget: { remaining: captureLeft }, writePng: (bytes) => writePolishPng(targetRepo, "captures", bytes) });
+    } catch {
+      // A source listener/setup failure must still yield the complete grid.
+      cells = plan.cells.map((cell) => blankCell(cell, cell.side === "source_html" ? "source_root_unavailable" : "browser_unavailable"));
+      evidenceOnly = plan.evidence_only.map((cell) => evidenceCapture(blankCell(cell, cell.reason ? "not_built" : "browser_unavailable")));
     }
+    if (!plan.evidence_only.length) await closeResources();
+    else cleanupMs = Math.max(1, Math.min(closeMs, addedLeft()));
+    if (builtFirst) source.built_first_source_evidence = cells.filter((cell) => cell.side === "build").map((cell) => ({
+      surface_id: dsp.surface_identity?.find((surface) => surface.mappings?.campaign_spec_page_id === cell.page_id)?.id ?? null,
+      page_id: cell.page_id, route: cell.route, viewport: cell.viewport,
+      status: cell.actual.status, png: cell.actual.png, label: BUILT_FIRST_LABEL,
+    }));
+    const diffStarted = clock.now(), diffRealStarted = performance.now();
+    const diffMs = boundedPolishDeadline(budget.diffMs, VISUAL_DIFF_RUN_MS);
+    const diffLeft = () => Math.min(diffMs - (clock.now() - diffStarted), diffMs - (performance.now() - diffRealStarted), addedLeft() - cleanupMs);
+    dependencies ||= await loadVisualDependencies();
+    const captureHashes = cells.flatMap((c) => [c.actual?.png?.sha256, c.stabilized?.png?.sha256]).filter(Boolean);
+    for (const route of plan.routes) {
+      // A route's page id is its CampaignSpec page id. Another surface's
+      // source_page_id never stands in: a page with no CampaignSpec surface has
+      // no declared image references (§3.1), only its source_html rows.
+      if (builtFirst) continue;
+      const surface = dsp?.surface_identity?.find((s) => object(s) && s.mappings?.campaign_spec_page_id === route.page_id);
+      const coverage = contribution?.mappings?.find((m) => m.surface_id === surface?.id);
+      const refs = (coverage?.screenshot_refs || []).map((id) => contribution.screenshot_refs?.find((r) => r.id === id)).filter(Boolean);
+      const counts = new Map();
+      for (const declared of refs) {
+        const viewport = declared.viewport ?? null, count = counts.get(viewport) || 0; counts.set(viewport, count + 1);
+        if (count >= 4) continue;
+        const linkedDeclared = contribution?.source_refs?.find((r) => r.id === declared.source_ref_id && r.kind === "html_file");
+        const mapping = packet.source_html.pages.find((p) => p.page_id === route.page_id);
+        const linkedSource = !linkedDeclared ? null : linkedDeclared.path === mapping.path ? sources.get(route.page_id)
+          : await verifyDeclared({ path: linkedDeclared.path, sourceRoot: root || targetRepo, targetRepo, kind: "html_file",
+            recorded: linkedDeclared, builtHtmlHashes, pageKitTargets });
+        const ref = { ...await verifyDeclared({ path: declared.path, url: declared.url, recorded: declared, sourceRoot: root || targetRepo, targetRepo,
+          decoder: dependencies.decoder, budget: { remaining: diffLeft }, buildCaptureHashes: captureHashes, linkedSource }),
+          page_id: route.page_id, route: route.requested_route, viewport, ref_id: declared.id };
+        if (!rootAvailable) ref.input_reason = "source_root_unavailable";
+        else if (dspReason) ref.input_reason = dspReason;
+        if (refs.filter((r) => r.viewport === declared.viewport).length > 4) ref.reference_cap_reached = true;
+        references.push(ref);
+      }
+    }
+    const imageSource = (png) => ({ width: png.width_px, height: png.height_px,
+      load: () => dependencies.decoder.decode(readRegularFileSync(resolve(targetRepo, png.path), { maxBytes: png.bytes, root: targetRepo, noFollow: true })) });
+    // A declared reference is read beneath the root verification accepted it
+    // under: the source root, which may sit inside or outside the target (§3.1),
+    // or for a self-referential file the target's _site or .campaign-runtime.
+    // Never the whole target repo.
+    const referenceSource = (ref) => ({ width: ref.verification.png.width_px, height: ref.verification.png.height_px, load: () => {
+      const path = resolve(targetRepo, ref.path_rel);
+      const readRoot = referenceReadRoot({ sourceRoot: root || targetRepo, targetRepo }, realpathSync(path));
+      if (!readRoot) throw Object.assign(new Error("outside_root"), { code: "outside_root" });
+      return dependencies.decoder.decode(readRegularFileSync(path, { root: readRoot }));
+    } });
+    for (const build of cells.filter((c) => c.side === "build")) {
+      const basis = cells.find((c) => c.side === "source_html" && c.route === build.route && c.viewport === build.viewport);
+      const refs = references.filter((r) => r.route === build.route && r.ref_id !== "source_html" && (r.viewport === build.viewport
+        || (build.viewport === plan.viewports[0].key && !["desktop", "mobile"].includes(r.viewport))));
+      for (const reference of [null, ...refs]) {
+        let comparison = { page_id: build.page_id, route: build.route, viewport: reference?.viewport ?? build.viewport,
+          basis: reference ? "reference" : "source_html", ref_id: reference?.ref_id ?? null,
+          build_shot: reference ? "actual" : "stabilized", basis_shot: reference ? "image" : "stabilized",
+          status: "not_run", reason: builtFirst ? BUILT_FIRST_REASON : null, page: null, bands: [], members: [], artifacts: [], limits: [], diff_options: { ...DIFF_OPTIONS } };
+        const ref = reference || references.find((r) => r.ref_id === "source_html" && r.route === build.route);
+        const context = { record: { dependencies }, build, basis, reference: ref, budgetExhausted: diffLeft() <= 0 };
+        const decision = evaluateVisualDiff(comparison, context);
+        if (["visual_diff_diagnostic", "comparison_unsupported"].includes(decision.reason_code)) {
+          try {
+            if (diffLeft() <= 0) { comparison.status = "unavailable"; comparison.reason = "diff_budget_exhausted"; }
+            else if (build[comparison.build_shot]?.png && (reference || basis?.stabilized?.png)) {
+              const artifacts = [];
+              comparison = compareVisualPair({ build, basis, reference,
+                buildImage: imageSource(build[comparison.build_shot].png),
+                basisImage: reference ? referenceSource(ref) : imageSource(basis.stabilized.png),
+                diff: dependencies.diff, onComparison: (part) => {
+                  if (diffLeft() <= 0) throw new Error("diff_budget_exhausted");
+                  // Keep at most three encoded triples; ranking is independent of QC.
+                  if (!part.mismatch_pixels || (!part.key && (basis?.sections?.bands?.length || build.sections?.bands?.length))) return;
+                  const rank = { key: part.key ?? "page", mismatch_ratio: part.mismatch_ratio, height_delta_px: part.height_delta_px };
+                  artifacts.push({ ...rank, images: [part.basis_crop, part.build_crop, part.heatmap].map((image) => {
+                    if (diffLeft() <= 0) throw new Error("diff_budget_exhausted");
+                    return encodeHeatmap(image, dependencies.decoder);
+                  }) });
+                  artifacts.sort((a, b) => b.mismatch_ratio - a.mismatch_ratio || Math.abs(b.height_delta_px) - Math.abs(a.height_delta_px) || a.key.localeCompare(b.key));
+                  if (artifacts.length > 3) artifacts.pop();
+                } });
+              comparison.artifacts = artifacts.map((artifact) => ({ band_key: artifact.key,
+                ...Object.fromEntries(["basis_crop", "build_crop", "heatmap"].map((name, i) => [name, writePolishPng(targetRepo, "diff", artifact.images[i])])) }));
+            }
+          } catch (error) { comparison.status = "unavailable"; comparison.reason = diffFailure(error); }
+        } else { comparison.status = "unavailable"; comparison.reason = decision.reason_code;
+          if (decision.reason_code === "reference_not_usable" && ref?.verification.reason === "path_outside_source_root") comparison.reason = "path_outside_source_root";
+          if (decision.reason_code === "diff_unavailable" && diffLeft() <= 0) comparison.reason = "diff_budget_exhausted"; }
+        if (reference) comparison.viewport = reference.viewport;
+        comparisons.push(comparison);
+      }
+    }
+    // Evidence cannot spend the planned comparisons' time or the bounded cleanup
+    // of the resources they used. It shares the original capture/pass deadlines.
+    const evidenceLeft = () => Math.min(captureLeft(), addedLeft() - cleanupMs);
+    if (plan.evidence_only.length && !evidenceOnly.length) {
+      const buildTimedOut = cells.some((cell) => cell.side === "build" && cell.status === "producer_timeout");
+      evidenceOnly = buildTimedOut ? plan.evidence_only.map((cell) => evidenceCapture(blankCell(cell,
+        cell.reason ? "not_built" : evidenceLeft() <= 0 ? "run_budget_exhausted" : "producer_timeout")))
+        : (await runVisualCells({ buildAdapter: instances.build, pairs: { ...plan, cells: plan.evidence_only },
+          clock, now, captureCellDeadlineMs, timers, budget: { remaining: evidenceLeft },
+          writePng: (bytes) => writePolishPng(targetRepo, "captures", bytes) })).map(evidenceCapture);
+    }
+  } finally {
+    if (plan.evidence_only.length) await closeResources();
   }
-  return buildCapturesRecord({ subject: { ...frozen.page_load.subject, source_package_material_fingerprint: currentSourcePackageMaterialFingerprint(report) }, environment: { browser: instances.build?.browserVersion ?? instances.source?.browserVersion ?? null, device_scale_factor: 1 },
-    source, adapters, dependencies, cells: cells.map(({ probes: _probes, ...cell }) => cell), references, comparisons, measuredAt: now });
+  return buildCapturesRecord({ subject: { ...frozen.page_load.subject, ...(plan.skipped_pages.length ? { skipped_pages: plan.skipped_pages } : {}), source_package_material_fingerprint: currentSourcePackageMaterialFingerprint(report) }, environment: { browser: instances.build?.browserVersion ?? instances.source?.browserVersion ?? null, device_scale_factor: 1 },
+    source, adapters, dependencies, cells: cells.map(({ probes: _probes, ...cell }) => cell), evidenceOnly, references, comparisons, measuredAt: now });
 }
 
 export function buildCapturesRecord({ subject, buildFingerprint, sourceFingerprint = null, slug, routes = [],
-  routeScope = "all", cells = [], references = [], comparisons = [], environment = { browser: null, device_scale_factor: 1 },
+  routeScope = "all", cells = [], evidenceOnly = [], references = [], comparisons = [], environment = { browser: null, device_scale_factor: 1 },
   dependencies, adapters, source, measuredAt = new Date().toISOString() } = {}) {
   const dependencyMetadata = dependencies && Object.fromEntries(["decoder", "diff"].map((key) => {
     const dep = own(dependencies, key);
@@ -430,7 +511,7 @@ export function buildCapturesRecord({ subject, buildFingerprint, sourceFingerpri
       decoder: { status: "missing", version: null }, diff: { status: "missing", version: null } },
     adapters: adapters ?? { build: { startup: "failed", close: "not_started" }, source: { startup: "failed", close: "not_started", sealed: true } },
     source: source ?? { root_rel: null, status: "missing", server: "loopback_read_only" },
-    cells, references, comparisons: persistedComparisons, measured_at: new Date(measuredAt).toISOString() });
+    cells, ...(evidenceOnly.length ? { evidence_only: evidenceOnly } : {}), references, comparisons: persistedComparisons, measured_at: new Date(measuredAt).toISOString() });
   return { ...record, integrity: capturesIntegrity(record) };
 }
 

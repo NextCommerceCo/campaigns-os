@@ -4170,13 +4170,34 @@
       "entry_sha256": "5f8f7cac9a3b15101e9558809a0a65a8f5c3530e6db8b8555d7d7db306f7a1d5"
     },
     {
-      "id": "RL-0341",
+      "id": "RL-0339",
       "sequence": 328,
+      "date": "2026-11-11",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.68.0+agent.12",
+      "changelog_sha256": "ec0fa8147b46c5cfe0cafe11194cd124e521f5944de3115a3a42f038267b4af6",
+      "agent_impact": "After spec derive and record spec add a page, polish capture no longer refuses it as neither mapped nor explicitly skipped: the page is planned and captured build-side, with its source side reported as source_html_missing. Do not hand-write skip_reason on added pages. The plan and the captures record list skipped_pages with their reasons, and captures.evidence_only holds build-side captures of template-stock pages; those never gate, compare or count toward the capturable-route rule.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Say that a page record spec adds after handoff is planned for capture and QA without a hand-written skip_reason."
+        }
+      ],
+      "entry_sha256": "d36834a2912d242db62c66a19963d17222462e38f93337a23c54b6e7a4fc303b"
+    },
+    {
+      "id": "RL-0341",
+      "sequence": 329,
       "date": "2026-11-11",
       "kind": "release",
       "surface_version": "1.69.0",
       "changelog_section": "1.69.0",
-      "changelog_sha256": "a0379a134b7eb9865d6b6129e2a9d9f08ad66759493d399879726df20b12e324",
+      "changelog_sha256": "5b37429be795b674ec9317d0203c4e8e9f3f13d6a4505635a846424f9245f09d",
       "agent_impact": "The Funnel: line may now offer --adopt src/<route>; after asking the operator, run its printed command to bind this funnel to the pages' existing route instead of renaming another funnel. A bound packet carries campaign.map_public_route_slug when the Map's slug differs from the served campaign.public_route_slug; use the bound route for output and records while preserving the Map identity. Only recorded adoption with an unchanged recorded Design Source Package grants built-first treatment. Its build-vs-design checks read excluded / built_first and are never acceptable as a design match; its first QA must be the full run with test orders, separately authorized by the PM, and record baseline does not apply. doctor --built --emit-packet --map-id now fetches the saved Map and records its local spec path and any route binding. Refresh skills to 1.69.0+skills.1.",
       "compatibility": "additive",
       "migration": "Pin @nextcommerce/campaigns-os@1.69.0 and refresh installed skills to 1.69.0+skills.1 before starting a fresh session; nothing changes for a funnel that is not adopted or bound.",
@@ -4368,7 +4389,7 @@
           "summary": "Blocks built-first progress when the package no longer matches the recorded intake references."
         }
       ],
-      "entry_sha256": "7c7176e6c3c6c86f23317a6182a8d8c5dc96f42817f1e6b72481208f72ecb7e0"
+      "entry_sha256": "08ba1715a688cc2340f7bfb1f1ed18e5ef4904aee12a9bceb8d0623b47802966"
     }
   ]
 }

@@ -78,8 +78,12 @@ campaigns-os polish capture \
   --base-url http://127.0.0.1:4173
 ```
 
-The command derives every mapped, non-skipped Page Kit route from the packet
-and captures each at desktop `1440x1200` and mobile `390x844`. It re-reads the
+The command derives the source-mapped Page Kit routes and the routes of pages
+added after handoff (`origin: "repo"`) from the packet, excluding any page with
+a non-empty `skip_reason`. It captures each planned route at desktop
+`1440x1200` and mobile `390x844`. The captures record's `subject.skipped_pages`
+lists every excluded page's `page_id` and `skip_reason`; these pages are not
+captured by the page-load or visual plan. It re-reads the
 packet and Assembly Report after the browser pass, refuses attachment if the
 governing build, campaign, route plan, report identity, or existing `page_load`
 changed before that final read, and otherwise merges only
@@ -164,7 +168,42 @@ The comparison is a diagnostic for a reviewer: it is listed for review, it never
 
 The stored comparison figures are tamper-evident only, like other Polish captures. The images are re-checked on every read against their SHA-256 and against the pixel size recorded for them.
 
-Template-stock pages are outside the mapped capture plan and produce no visual rows.
+Pages added after handoff get build-side captures even though they have no
+source HTML. Their source cells and reference rows report `source_html_missing`;
+visual comparisons remain unexercised (`capture_unavailable` with a
+`source_html_missing` member), with no source match claimed.
+
+Template-stock pages with `skip_reason` remain outside the mapped capture plan
+and are listed in `captures.subject.skipped_pages`. After the planned routes'
+captures, reference verification and comparisons, the same visual pass takes
+build-side captures at both viewports for these pages when they resolve to built
+output in `_site/<slug>/`: first by their declared public route, else by the
+CampaignSpec route for the same page id (as written with the campaign slug prefix
+stripped, then by the last segment of the spec route and of each built route, and
+only when exactly one built page matches), else by page id. They use the same stabilization, storage and
+five-minute pass budget, using only the time left after that planned work and
+reserving one close interval for its adapters and server. With these extra cells, the
+planned diff reserves the same close interval, and the adapters and server close
+concurrently after the evidence captures. Without extra cells, cleanup stays
+between planned captures and diff. When none remains, the cells
+are listed as `run_budget_exhausted`. The separate `captures.evidence_only`
+list records each cell with `evidence_only: true`, page id, route, viewport, image identities
+and `skip_reason`. Missing output is listed with reason `page_not_built`;
+navigation failures, unavailable browsers and exhausted budgets are recorded
+with their reasons too. These captures never produce source, reference, diff
+or parity comparison rows, never qualify for accepting a design match, and
+never affect a gate, checkpoint, plan count or carry decision. Their failure
+does not block Polish or `record polish`.
+The evidence-only rows are covered by the record's integrity hash like the rest
+of the record. Their image files are not re-opened or re-hashed on read; only
+the planned captures and comparison artifacts receive those image checks.
+A SHA-256 stored in an evidence-only row is therefore the value recorded at capture.
+
+When every page has `skip_reason`, the plan still has no capturable route
+(`no_capturable_routes`). `polish capture` then measures readability on the
+built pages only, as before, and takes no evidence-only captures, because the
+visual pass runs only where the plan has a route. All-template funnels carry
+Polish forward on a local or hosted preview exactly as before.
 
 Hand-deleting `captures` reverts later reads to the legacy rule, but a new completed `record polish` still refuses. A fully reconstructed, internally consistent record can pass; the checksum is tamper evidence, not authorship proof. Pixel metrics and geometry are range-checked rather than recomputed on every read.
 
