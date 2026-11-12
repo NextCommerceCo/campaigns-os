@@ -2,7 +2,7 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.69.0] - 2026-11-11
+## [1.69.0] - 2026-11-12
 
 Hand-built Page Kit funnels can now join the workflow at the route their pages already use, keeping the saved Map's identity and labelling the built pages as their design source: "built first". This never establishes a design match, and the first QA is a full run with test orders, separately authorized by the PM; `record baseline` does not apply. To take it, pin `@nextcommerce/campaigns-os@1.69.0` and refresh installed skills to `1.69.0+skills.1`.
 

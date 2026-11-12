@@ -4265,11 +4265,11 @@
     {
       "id": "RL-0341",
       "sequence": 331,
-      "date": "2026-11-11",
+      "date": "2026-11-12",
       "kind": "release",
       "surface_version": "1.69.0",
       "changelog_section": "1.69.0",
-      "changelog_sha256": "548af1166d1b9a4300bc275149318566dfda9212e745e5e8168deb5e68348ac0",
+      "changelog_sha256": "d041ba79b9db172ed38defbc1ec907407ded76a837d60b00e8365e2cc719e10b",
       "agent_impact": "The Funnel: line may now offer --adopt src/<route>; after asking the operator, run its printed command to bind this funnel to the pages' existing route instead of renaming another funnel. A bound packet carries campaign.map_public_route_slug when the Map's slug differs from the served campaign.public_route_slug; use the bound route for output and records while preserving the Map identity. Only recorded adoption with an unchanged recorded Design Source Package grants built-first treatment. Its build-vs-design checks read excluded / built_first and are never acceptable as a design match; its first QA must be the full run with test orders, separately authorized by the PM, and record baseline does not apply. doctor --built --emit-packet --map-id now fetches the saved Map and records its local spec path and any route binding. Refresh skills to 1.69.0+skills.1.",
       "compatibility": "additive",
       "migration": "Pin @nextcommerce/campaigns-os@1.69.0 and refresh installed skills to 1.69.0+skills.1 before starting a fresh session; nothing changes for a funnel that is not adopted or bound.",
@@ -4461,7 +4461,7 @@
           "summary": "Blocks built-first progress when the package no longer matches the recorded intake references."
         }
       ],
-      "entry_sha256": "911a108e817cd73077ac3acabcc49a9e1f0aaed502718eff4488370828c866d9"
+      "entry_sha256": "32ad9e0bc6288dba352001679878b0d60782404435d2174d3aaa3d447c5ee6e2"
     }
   ]
 }
