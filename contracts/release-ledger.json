@@ -4095,13 +4095,34 @@
       "entry_sha256": "f43cd05d36051a9df300c4c522e829d0fe5cf12e10118904f22b1fe3101faaf2"
     },
     {
-      "id": "RL-0341",
+      "id": "RL-0340",
       "sequence": 325,
+      "date": "2026-11-11",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.68.0+agent.9",
+      "changelog_sha256": "948b592ac2b522c4a57cc31a4999c02491b1f264b91eab52e67697ca32a1d7cf",
+      "agent_impact": "standardize --slug <route> now limits the source audit to src/<route>/ and the files its pages include, and reads only that route's .campaign-runtime records, so findings and artifacts from other routes no longer appear. The report gains source_scope and entry_point, a finding in a shared file carries shared_files with the routes that use it, and a slug with no source pages reports source.scope_unresolved. Without --slug the report is unchanged.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/campaign-standardization-report.md",
+          "surface_entry": "docs/campaign-standardization-report.md",
+          "summary": "Describe the route-scoped source audit, shared-file attribution, the entry-point line and source.scope_unresolved."
+        }
+      ],
+      "entry_sha256": "2a39db452087e952f74ece965e217b217eba2703dea39c3bb033392f2fdfc000"
+    },
+    {
+      "id": "RL-0341",
+      "sequence": 326,
       "date": "2026-11-11",
       "kind": "release",
       "surface_version": "1.69.0",
       "changelog_section": "1.69.0",
-      "changelog_sha256": "b30af6a1a132c3624ed3fd20226b55fc36975ba669738c6f567e57e57c8b4a2e",
+      "changelog_sha256": "e15258ced7bffacfa5f7724cab79e679c92e18fc1ffd94393c1b6cb333d6dd47",
       "agent_impact": "The Funnel: line may now offer --adopt src/<route>; after asking the operator, run its printed command to bind this funnel to the pages' existing route instead of renaming another funnel. A bound packet carries campaign.map_public_route_slug when the Map's slug differs from the served campaign.public_route_slug; use the bound route for output and records while preserving the Map identity. Only recorded adoption with an unchanged recorded Design Source Package grants built-first treatment. Its build-vs-design checks read excluded / built_first and are never acceptable as a design match; its first QA must be the full run with test orders, separately authorized by the PM, and record baseline does not apply. doctor --built --emit-packet --map-id now fetches the saved Map and records its local spec path and any route binding. Refresh skills to 1.69.0+skills.1.",
       "compatibility": "additive",
       "migration": "Pin @nextcommerce/campaigns-os@1.69.0 and refresh installed skills to 1.69.0+skills.1 before starting a fresh session; nothing changes for a funnel that is not adopted or bound.",
@@ -4293,7 +4314,7 @@
           "summary": "Blocks built-first progress when the package no longer matches the recorded intake references."
         }
       ],
-      "entry_sha256": "347adf0b266ff58029abd032cd72895af3c0256435268a33fb919d61055ad42d"
+      "entry_sha256": "375ecf0b2c1f5ed8e91e68c429aff4f20102f26e78b760aea3694b88044994c4"
     }
   ]
 }
