@@ -2,11 +2,17 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.68.0+agent.8] - 2026-11-11
+## [1.68.0+agent.10] - 2026-11-11
 
 ### Changed
 
 - Editing a stylesheet or image that built pages link directly now owes QA on those pages only, and a browser run with no test orders on a checkout or upsell page among them, instead of the full Polish and QA (#753).
+
+## [1.68.0+agent.9] - 2026-11-11
+
+### Changed
+
+- `standardize --slug <route>` audits only that route's source, lists the routes that share a file a finding sits in, and names the entry point to come back in through (#754).
 
 ## [1.68.0+agent.4] - 2026-11-11
 
