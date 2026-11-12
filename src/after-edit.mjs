@@ -1,0 +1,188 @@
+import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { dirname, join, relative, resolve, sep } from "node:path";
+import { requireArg } from "./cli-helpers.mjs";
+import { resolveCampaignWorkspace } from "./campaign-workspace.mjs";
+import { computeBuildFingerprint } from "./built-site-scope.mjs";
+import { doctorCommand, readDoctorLiveCampaign } from "./doctor/inspect.mjs";
+import { doctorCiFailure, formatDoctorCi } from "./doctor/ci.mjs";
+import { recordCommand } from "./stage-record.mjs";
+import { PAGE_KIT_BUILD_SUMMARY_CAPTURE_COMMAND } from "./page-kit-build-summary.mjs";
+import { normalizePublicRouteSlug } from "./route-identity.mjs";
+import { cmd } from "./install-invocation.mjs";
+import { shellToken } from "./shell-token.mjs";
+import { refused } from "./lifecycle.mjs";
+
+const FLAGS = ["_", "packet", "yes", "proxy-base", "no-live-refs", "json"];
+const STEPS = ["spec", "build_current", "record_build", "spec_derive", "owed", "files"];
+const portable = (path) => path.split(sep).join("/");
+
+function filesUnder(root) {
+  if (!existsSync(root)) return [];
+  return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(root, entry.name);
+    return entry.isDirectory() ? filesUnder(path) : entry.isFile() ? [path] : [];
+  }).sort();
+}
+
+// Only orchestration lives here. The functions supplied by cli.mjs are the
+// standalone spec handlers; records and the CI assessment use their handlers
+// directly. No build, QA, Map write-back or subprocess is started here.
+export async function afterEditCommand(args, { specFetch, specDerive, specDeriveTextLines, fetchImpl } = {}) {
+  if (Object.hasOwn(args, "no-write")) throw refused("after-edit writes records; use doctor --ci as the read-only way to ask what is owed.");
+  const unknown = Object.keys(args).filter((key) => !FLAGS.includes(key));
+  if (unknown.length) throw refused(`Unknown flag${unknown.length > 1 ? "s" : ""} for after-edit: ${unknown.map((key) => `--${key}`).join(", ")}. Known flags: ${FLAGS.slice(1).map((key) => `--${key}`).join(", ")}.`);
+  if (args._?.length > 1) throw refused("after-edit takes no positional arguments; use --packet <campaign-runtime.build.json>.");
+  for (const key of ["yes", "no-live-refs", "json"]) {
+    if (Object.hasOwn(args, key) && args[key] !== true) throw refused(`--${key} is a boolean flag and takes no value.`);
+  }
+  if (Object.hasOwn(args, "proxy-base")) requireArg(args, "proxy-base");
+  const packetPath = resolve(requireArg(args, "packet"));
+  const result = { ok: false, action: "after-edit", packet_path: packetPath, steps: [], stopped_at: null, ci: null, files: [], next: null };
+  const base = { packet: packetPath, ...(args["proxy-base"] ? { "proxy-base": args["proxy-base"] } : {}) };
+  const live = { ...base, ...(args["no-live-refs"] ? { "no-live-refs": true } : {}) };
+  const packetFlag = `--packet ${shellToken(packetPath)}`;
+  const rerun = `${cmd("after-edit")} ${packetFlag}${args["proxy-base"] ? ` --proxy-base ${shellToken(args["proxy-base"])}` : ""}${args["no-live-refs"] ? " --no-live-refs" : ""}`;
+  const add = (step, status, detail, command) => result.steps.push({ step, status, detail, ...(command ? { command } : {}) });
+  let workspace;
+  const written = new Set();
+  const remember = (paths) => { for (const path of paths || []) written.add(resolve(path)); };
+  // Standalone writers also invalidate a retained doctor snapshot. Include
+  // that file and spec fetch's gitignore repair when their bytes change.
+  let ancillary = [];
+  const finish = () => {
+    for (const [path, before] of ancillary) {
+      const after = existsSync(path) ? readFileSync(path, "utf8") : null;
+      if (before !== after) written.add(path);
+    }
+    const root = workspace?.targetRepo || dirname(packetPath);
+    const realRoot = existsSync(root) ? realpathSync(root) : root;
+    result.files = [...new Set([...written].map((path) => portable(relative(realRoot, existsSync(path) ? realpathSync(path) : path))))].sort();
+    for (const step of STEPS.slice(0, -1)) {
+      if (!result.steps.some((row) => row.step === step)) add(step, "not_run", "An earlier step stopped the command.");
+    }
+    add("files", result.files.length ? "done" : "not_needed", result.files.length ? `Files to commit:\n${result.files.map((path) => `- ${path}`).join("\n")}` : "Files to commit: none (nothing was written).");
+    return result;
+  };
+  const stop = (step, detail, command) => {
+    result.stopped_at = step;
+    result.next = command;
+    add(step, "stopped", detail, command);
+    return finish();
+  };
+  const reason = (value) => (value.errors || []).map((issue) => issue.message).join(" ") || "The command could not continue.";
+  const fetchNext = `${cmd("spec")} fetch ${packetFlag}${args["proxy-base"] ? ` --proxy-base ${shellToken(args["proxy-base"])}` : ""}`;
+  try {
+    workspace = resolveCampaignWorkspace(packetPath, { followContextPointer: true });
+  } catch (error) {
+    // Let spec fetch supply its own packet-read refusal, too.
+    const fetched = await specFetch({ _: ["spec", "fetch"], ...base }, { fetchImpl });
+    return stop("spec", reason(fetched), fetchNext);
+  }
+  ancillary = [workspace.doctorOutPath, join(workspace.targetRepo, ".gitignore")]
+    .map((path) => [path, existsSync(path) ? readFileSync(path, "utf8") : null]);
+  const local = workspace.packet.spec?.local_path;
+  const specPath = typeof local === "string" && local.trim() ? resolve(dirname(packetPath), local) : null;
+  if (specPath && existsSync(specPath)) add("spec", "not_needed", "CampaignSpec copy is present.");
+  else {
+    const fetched = await specFetch({ _: ["spec", "fetch"], ...base }, { fetchImpl });
+    if (fetched.status === "restored") remember([fetched.spec_path]);
+    if (!fetched.ok) return stop("spec", reason(fetched), fetchNext);
+    add("spec", fetched.status === "restored" ? "done" : "not_needed", fetched.ready.join("\n"));
+  }
+
+  const slug = normalizePublicRouteSlug(workspace.packet.campaign?.public_route_slug);
+  const output = slug ? join(workspace.targetRepo, "_site", slug) : null;
+  const buildCommand = PAGE_KIT_BUILD_SUMMARY_CAPTURE_COMMAND;
+  let current;
+  try {
+    const built = output && existsSync(output) && statSync(output).isDirectory() ? filesUnder(output) : [];
+    if (!built.length) return stop("build_current", `Built output ${output ? portable(relative(workspace.targetRepo, output)) : "_site/<slug>/"} is missing or empty; run the Page Kit build.`, buildCommand);
+    const newest = Math.max(...built.map((path) => statSync(path).mtimeMs));
+    const config = join(workspace.targetRepo, "_data", "campaigns.json");
+    const sources = [...filesUnder(join(workspace.targetRepo, "src", slug)), ...(existsSync(config) ? [config] : [])];
+    const newer = sources.find((path) => statSync(path).mtimeMs > newest);
+    if (newer) return stop("build_current", `${portable(relative(workspace.targetRepo, newer))} is newer than the newest built file; run the Page Kit build.`, buildCommand);
+    current = computeBuildFingerprint(output);
+  } catch (error) {
+    return stop("build_current", error.message, buildCommand);
+  }
+  add("build_current", "not_needed", "Built output is current with the source.");
+  const recordBuildNext = `${cmd("record")} build ${packetFlag}`;
+  try {
+    const report = existsSync(workspace.reportPath) ? JSON.parse(readFileSync(workspace.reportPath, "utf8")) : null;
+    if (current.ok && report?.stages?.assembly?.build_fingerprint === current.fingerprint) add("record_build", "not_needed", "Build is already recorded.");
+    else {
+      const recorded = await recordCommand({ _: ["record", "build"], packet: packetPath });
+      remember(recorded.written);
+      add("record_build", "done", [
+        `Recorded the build (${recorded.build_fingerprint.replace(/^sha256:/, "").slice(0, 12)}).`,
+        ...recorded.ready.filter((line) => line.startsWith("stages.assembly.build_changes:")),
+      ].join("\n"));
+    }
+  } catch (error) {
+    return stop("record_build", error.message, recordBuildNext);
+  }
+
+  const deriveArgs = { _: ["spec", "derive"], ...live };
+  const deriveNext = `${cmd("spec")} derive ${packetFlag}${args["no-live-refs"] ? " --no-live-refs" : ""}${args["proxy-base"] ? ` --proxy-base ${shellToken(args["proxy-base"])}` : ""}`;
+  let deriveDetail = "";
+  let deriveCommand = deriveNext;
+  try {
+    const plan = await specDerive({ ...deriveArgs, "dry-run": true }, { fetchImpl });
+    if (!plan.ok) return stop("spec_derive", specDeriveTextLines(plan).join("\n"), deriveNext);
+    if (!plan.changes.length) add("spec_derive", "not_needed", "Spec is current.");
+    else {
+      deriveDetail = specDeriveTextLines(plan).join("\n");
+      if (!args.yes) return stop("spec_derive", `${deriveDetail}\nRe-run with --yes to write the derived spec.`, `${rerun} --yes`);
+      const derived = await specDerive(deriveArgs, { fetchImpl });
+      if (derived.written) remember([derived.spec_path]);
+      deriveDetail += `\n${specDeriveTextLines(derived).join("\n")}`;
+      if (!derived.ok) return stop("spec_derive", deriveDetail, deriveNext);
+      if (derived.next?.startsWith(`${cmd("record")} spec `)) {
+        deriveCommand = `${cmd("record")} spec ${packetFlag}`;
+        const recorded = await recordCommand({ _: ["record", "spec"], packet: packetPath });
+        remember(recorded.written);
+        deriveDetail += `\nrecord spec: ${recorded.note}${recorded.notices?.length ? `\n${recorded.notices.join("\n")}` : ""}`;
+      }
+      add("spec_derive", "done", deriveDetail);
+    }
+  } catch (error) {
+    return stop("spec_derive", `${deriveDetail}${deriveDetail ? "\n" : ""}${error.message}`, deriveCommand);
+  }
+
+  let doctor;
+  try {
+    const doctorArgs = { _: ["doctor"], ...live, ci: true };
+    const liveCampaign = await readDoctorLiveCampaign(doctorArgs, { ...(fetchImpl ? { fetchImpl } : {}) });
+    doctor = doctorCommand(doctorArgs, { liveCampaign });
+  } catch (error) {
+    doctor = doctorCiFailure(error);
+  }
+  result.ci = doctor.ci ?? null;
+  const ci = doctor.ci;
+  // A failed inspection has no assessment object; retain only its exit code
+  // here, with its errors rendered by formatDoctorCi in the owed step.
+  if (!ci) result.exit_code = doctor.exit_code;
+  result.ok = Boolean(ci);
+  if (ci?.status !== "current") {
+    if (ci?.polish.status === "owed" && !ci.polish.advisory) result.next = `${cmd("polish")} capture ${packetFlag} --base-url <served-current-build-url>`;
+    else if (ci?.qa.status === "owed") result.next = `${cmd("qa")} run ${packetFlag}${ci.qa.scope === "pages" ? ci.qa.owed_pages.map((page) => ` --page ${shellToken(page.page_id)}`).join("") : ""}${ci.qa.browser_pages?.length ? " --browser" : ""}`;
+    else result.next = `${cmd("doctor")} ${packetFlag} --ci --no-live-refs`;
+  }
+  add("owed", ci?.status === "current" ? "not_needed" : "done", formatDoctorCi(doctor));
+  return finish();
+}
+
+export function afterEditExitCode(result) {
+  return result.stopped_at ? 2 : result.ci?.exit_code ?? result.exit_code ?? 4;
+}
+
+export function afterEditTextLines(result) {
+  const labels = { spec: "Spec copy:", build_current: "Build:", record_build: "Record build:", spec_derive: "Spec:", owed: "Owed:" };
+  const lines = result.steps.filter((row) => row.status !== "not_run").map((row) => {
+    const detail = row.step === "files" ? row.detail : `${labels[row.step]}${row.step === "owed" ? "\n" : " "}${row.detail}`;
+    return `${detail}${row.status === "stopped" && row.command ? `\nNext: ${row.command}` : ""}`;
+  });
+  if (!result.stopped_at && result.next) lines.push(`Next: ${result.next}`);
+  return lines;
+}

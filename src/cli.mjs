@@ -4,6 +4,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { resolveDesignFileReferences } from "./design-file-reference.mjs";
 import { withDesignSourcePublication } from "./design-source-publication.mjs";
 import { createDemo, demoArguments } from "./demo.mjs";
+import { afterEditCommand, afterEditExitCode, afterEditTextLines } from "./after-edit.mjs";
 import { execFileSync } from "node:child_process";
 import {
   chmodSync,
@@ -315,6 +316,7 @@ export { derivePackagePin, localInstallStatus };
 const TEMPLATE_FAMILY_HINT_OVERRIDDEN = "TEMPLATE_FAMILY_HINT_OVERRIDDEN";
 
 const HELP = `Campaigns OS toolkit
+  campaigns-os after-edit --packet <campaign-runtime.build.json> [--yes] [--proxy-base <url>] [--no-live-refs] [--json]   # record rebuilt output, derive the spec and report evidence owed; never builds or places test orders. Exit 2 stopped, otherwise 0 current, 3 owed, 4 unknown. Writes records; use doctor --ci for a read-only assessment.
 
 Usage:
   campaigns-os help
@@ -1094,6 +1096,13 @@ async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = nul
     result.spec_source = resolved;
     autoStartRunSession(result, args, ambient, sessionHolder);
     printPrepareResult(result, args);
+    return;
+  }
+
+  if (command === "after-edit") {
+    const result = await afterEditCommand(args, { specFetch: specFetchCommand, specDerive: specDeriveWithMapWriteback, specDeriveTextLines });
+    console.log(args.json ? JSON.stringify(result, null, 2) : afterEditTextLines(result).join("\n"));
+    process.exitCode = afterEditExitCode(result);
     return;
   }
 

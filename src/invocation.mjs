@@ -59,6 +59,7 @@ const COMMANDS = frozen({
   start: { sweepRoot: "target" },
   "prepare-build": { sweepRoot: "target" },
   build: { sweepRoot: "target" },
+  "after-edit": {},
   doctor: { journalExemptWhen: { given: "packet", unlessBare: "write" } },
   bundle: { subcommands: ["check"] },
   standardize: {},
