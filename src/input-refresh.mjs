@@ -657,6 +657,8 @@ function planPageRebind({ spec, packet, packetPath, report, reportPath, context,
     nextPages.push(isObject(entry.page_kit) && projections.has(entry.page_id) ? { ...entry, page_kit: projections.get(entry.page_id) } : entry);
   }
   for (const id of scope.added) {
+    // Repo-origin pages bind to their built route, with no source HTML path
+    // or skip_reason: capture includes the build without a source comparison.
     nextPages.push({ page_id: id, ...(optionalString(pageById.get(id)?.type) ? { page_type: pageById.get(id).type } : {}), origin: "repo", page_kit: projections.get(id) });
   }
   const byTarget = new Map();

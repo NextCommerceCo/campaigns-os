@@ -201,6 +201,7 @@ test("polish capture plan deterministically covers every mapped non-skipped rout
   ]);
   assert.deepEqual(plan, {
     route_scope: "selected",
+    skipped_pages: [{ page_id: "omitted-upsell", skip_reason: "Not part of this selected build scope." }],
     routes: [
       {
         page_id: "checkout",
@@ -219,6 +220,24 @@ test("polish capture plan deterministically covers every mapped non-skipped rout
   });
 });
 
+test("polish capture plans source-mapped and repo-origin routes and lists explicitly skipped pages", () => {
+  const packet = packetWithPages([
+    { page_id: "landing", path: "landing.html", page_kit: { public_route: "/sample/landing/", spec_route: "landing/" } },
+    { page_id: "upsell-2", origin: "repo", page_kit: { public_route: "/sample/upsell-2/", spec_route: "upsell-2/" } },
+    { page_id: "stock", origin: "repo", skip_reason: "Template stock.", page_kit: { public_route: "/sample/stock/", spec_route: "stock/" } },
+  ]);
+  const plan = planPolishCapture({ packet, baseUrl: "http://127.0.0.1:4173" });
+  assert.deepEqual(plan, {
+    route_scope: "selected",
+    routes: [
+      { page_id: "landing", requested_route: "/sample/landing/", spec_route: "/landing/", url: "http://127.0.0.1:4173/sample/landing/" },
+      { page_id: "upsell-2", requested_route: "/sample/upsell-2/", spec_route: "/upsell-2/", url: "http://127.0.0.1:4173/sample/upsell-2/" },
+    ],
+    skipped_pages: [{ page_id: "stock", skip_reason: "Template stock." }],
+    viewports: POLISH_CAPTURE_VIEWPORTS,
+  });
+});
+
 test("polish capture rejects a non-skipped page that is not actually mapped to source output", () => {
   const packet = packetWithPages([{
     page_id: "landing",
@@ -229,6 +248,17 @@ test("polish capture rejects a non-skipped page that is not actually mapped to s
     () => planPolishCapture({ packet, baseUrl: "http://127.0.0.1:4173" }),
     /page "landing" is neither mapped nor explicitly skipped/i,
   );
+});
+
+test("polish capture still refuses a repo-origin page without a route and an all-skipped plan", () => {
+  assert.throws(() => planPolishCapture({
+    packet: packetWithPages([{ page_id: "added", origin: "repo", page_kit: {} }]),
+    baseUrl: "http://127.0.0.1:4173",
+  }), /page "added" is neither mapped nor explicitly skipped/);
+  assert.throws(() => planPolishCapture({
+    packet: packetWithPages([{ page_id: "stock", skip_reason: "Template stock." }]),
+    baseUrl: "http://127.0.0.1:4173",
+  }), { code: "no_capturable_routes" });
 });
 
 test("polish capture route planning has an exact fixed matrix cap", () => {
@@ -779,6 +809,7 @@ test("capture binding rejects governing report, packet, plan, and page_load chan
     ({ packet: value }) => { value.campaign.route_root = "/changed/"; },
     ({ packet: value }) => { value.assembly.target_repo = "changed-target"; },
     ({ plan }) => { plan.viewports[0].width = 1_441; },
+    ({ plan }) => { plan.skipped_pages.push({ page_id: "stock", skip_reason: "Template stock." }); },
   ];
 
   for (const mutate of mutations) {

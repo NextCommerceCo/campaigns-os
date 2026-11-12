@@ -4170,13 +4170,34 @@
       "entry_sha256": "5f8f7cac9a3b15101e9558809a0a65a8f5c3530e6db8b8555d7d7db306f7a1d5"
     },
     {
-      "id": "RL-0345",
+      "id": "RL-0339",
       "sequence": 328,
       "date": "2026-11-11",
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.68.0+agent.12",
-      "changelog_sha256": "a82cfaa79d6f017fef64682a1e2f79c9344930c5e39632e6bf3aff646fc67e02",
+      "changelog_sha256": "ec0fa8147b46c5cfe0cafe11194cd124e521f5944de3115a3a42f038267b4af6",
+      "agent_impact": "After spec derive and record spec add a page, polish capture no longer refuses it as neither mapped nor explicitly skipped: the page is planned and captured build-side, with its source side reported as source_html_missing. Do not hand-write skip_reason on added pages. The plan and the captures record list skipped_pages with their reasons, and captures.evidence_only holds build-side captures of template-stock pages; those never gate, compare or count toward the capturable-route rule.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Say that a page record spec adds after handoff is planned for capture and QA without a hand-written skip_reason."
+        }
+      ],
+      "entry_sha256": "d36834a2912d242db62c66a19963d17222462e38f93337a23c54b6e7a4fc303b"
+    },
+    {
+      "id": "RL-0345",
+      "sequence": 329,
+      "date": "2026-11-11",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.68.0+agent.13",
+      "changelog_sha256": "545ae9d420c7f949b009af39f56f268b66ce3e2cb323220ec97878f57aa4645b",
       "agent_impact": "A change whose only non-page file is a stylesheet or image built pages link directly (link rel=stylesheet, img src or srcset, picture source srcset) now reads page_only, with QA owed on those pages, instead of commerce_affecting. The change, and the build_changes entry record build keeps, then carry linked_assets (each path, with pages: the ids of the pages that link it) and browser_pages (the built paths of the checkout or upsell pages it reaches); reasons stay the commerce causes, with no new codes. When QA is owed, page-scoped or full, and there is such a page, evidence_debt.qa.browser_pages lists its id, and qa run, with or without --page, then needs --browser.",
       "compatibility": "additive",
       "migration": "none",
@@ -4212,7 +4233,7 @@
           "summary": "build_changes entries can carry linked_assets and browser_pages, which do not make a change commerce."
         }
       ],
-      "entry_sha256": "ae76b630febf89a3f9f56f06d12725227666a584467a0952e881fdb342c20b6f"
+      "entry_sha256": "b8a842a6d0371aa2e48e4448c9bb0890a2dab353023a53fd9add16be3f53f674"
     }
   ]
 }
