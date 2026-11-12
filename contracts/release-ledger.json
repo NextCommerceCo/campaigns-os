@@ -4560,6 +4560,30 @@
       "migration": "Pin @nextcommerce/campaigns-os@1.70.0 and refresh installed skills to 1.70.0+skills.1 before starting a fresh session. Re-run install-agent-context to pick up the after-edit step in the agent instruction files. Nothing changes for existing commands.",
       "changes": [
         {
+          "class": "documentation",
+          "path": "agents/claude/CLAUDE.md",
+          "surface_entry": null,
+          "summary": "After the final edit: build with Page Kit, run after-edit and commit the files it lists; the pull-request check runs doctor --ci for every root Build Packet."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/codex/AGENTS.md",
+          "surface_entry": null,
+          "summary": "After the final edit: build with Page Kit, run after-edit and commit the files it lists; the pull-request check runs doctor --ci for every root Build Packet."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/copilot/copilot-instructions.md",
+          "surface_entry": null,
+          "summary": "After the final edit: build with Page Kit, run after-edit and commit the files it lists; the pull-request check runs doctor --ci for every root Build Packet."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/cursor/campaigns-os.mdc",
+          "surface_entry": null,
+          "summary": "After the final edit: build with Page Kit, run after-edit and commit the files it lists; the pull-request check runs doctor --ci for every root Build Packet."
+        },
+        {
           "class": "compatibility_policy",
           "path": "compatibility.json",
           "surface_entry": "compatibility.json",
@@ -4704,7 +4728,7 @@
           "summary": "The after-edit command and its help line."
         }
       ],
-      "entry_sha256": "170e6480d3ded1ab411ab8a701a96e7d0872d06f7f7260611adf1e1243375dac"
+      "entry_sha256": "ff4edab599e0510b2d84f5f64a6203c38b749bc0c9595989d8cea793ac54d302"
     }
   ]
 }
