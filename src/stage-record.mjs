@@ -1144,8 +1144,8 @@ function assertOutputUnchanged(stage, facts) {
 }
 
 // Under the lock, the probe is checked against the packet as it is now (it
-// could have been retargeted while the probe ran), and the theme gate, which
-// blocks deploy, must not be blocked.
+// could have been retargeted while the probe ran), and doctor's theme and
+// Polish gates must not be blocked.
 function deployFacts(doctor, packet, probe, fingerprint) {
   const { url, problems } = deployPreviewUrl(packet, probe.url);
   if (problems.length) throw refuseRecord("deploy", problems);
@@ -1161,12 +1161,13 @@ function deployFacts(doctor, packet, probe, fingerprint) {
   if (probe.buildFingerprint !== undefined && probe.buildFingerprint !== fingerprint) {
     throw refuseRecord("deploy", [`The built output changed while the preview was probed (probed ${probe.buildFingerprint || "no output"}, now ${fingerprint}); run ${cmd("record")} deploy again.`]);
   }
-  const gate = doctor.derived?.theme_gate;
-  if (gate?.status === "blocked") {
-    throw refuseRecord("deploy", [
-      `${gate.code}: ${gate.reason}`,
-      ...(gate.required_actions || []).map((action) => `required action: ${action.command || action.description}`),
-    ]);
+  for (const gate of [doctor.derived?.theme_gate, doctor.derived?.polish_gate]) {
+    if (gate?.status === "blocked") {
+      throw refuseRecord("deploy", [
+        `${gate.code}: ${gate.reason}`,
+        ...(gate.required_actions || []).map((action) => `required action: ${action.command || action.description}`),
+      ]);
+    }
   }
 }
 

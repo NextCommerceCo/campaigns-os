@@ -4116,13 +4116,40 @@
       "entry_sha256": "2a39db452087e952f74ece965e217b217eba2703dea39c3bb033392f2fdfc000"
     },
     {
-      "id": "RL-0345",
+      "id": "RL-0337",
       "sequence": 326,
       "date": "2026-11-11",
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.68.0+agent.10",
-      "changelog_sha256": "d5dfa7724e88fec9e4ef6ff0b013d5d2e76435740df05d27d5b7ec2945d70350",
+      "changelog_sha256": "371c32fff788b11c28230fc1749b312e0bbad09a32bbc061fa3d8b70c8dee68d",
+      "agent_impact": "record deploy now refuses, writing nothing, when doctor's Polish gate is blocked, naming the gate code (for a Polish recorded skipped: polish.evidence_missing) and its required actions. Finish Polish, or follow next, before record deploy. A gate doctor carries forward (a page-only change, or the local preview) still deploys.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "The record deploy refusal list names a blocked Polish gate beside the theme gate."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "The record deploy help line says the command is refused when doctor's theme or Polish gate is blocked."
+        }
+      ],
+      "entry_sha256": "02d755d6a3a8d9b7371265531822c2348113e08f966666fe243fff88dc7ec14a"
+    },
+    {
+      "id": "RL-0345",
+      "sequence": 327,
+      "date": "2026-11-11",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.68.0+agent.11",
+      "changelog_sha256": "e9f37980f04c7be44a49c376a7dcf05c693157dcfa04b606389d7d5907f2d149",
       "agent_impact": "A change whose only non-page file is a stylesheet or image built pages link directly (link rel=stylesheet, img src or srcset, picture source srcset) now reads page_only, with QA owed on those pages, instead of commerce_affecting. The change, and the build_changes entry record build keeps, then carry linked_assets (each path, with pages: the ids of the pages that link it) and browser_pages (the built paths of the checkout or upsell pages it reaches); reasons stay the commerce causes, with no new codes. When QA is owed, page-scoped or full, and there is such a page, evidence_debt.qa.browser_pages lists its id, and qa run, with or without --page, then needs --browser.",
       "compatibility": "additive",
       "migration": "none",
@@ -4158,7 +4185,7 @@
           "summary": "build_changes entries can carry linked_assets and browser_pages, which do not make a change commerce."
         }
       ],
-      "entry_sha256": "9fffe4aa050dfcf1c8282165bdc7f050f5079905ec8f5a93ff0e3511206945f0"
+      "entry_sha256": "29b107352ace1d88e8c429281163e96c1b787e96e5752ba43e6ca0cf4a0714bf"
     }
   ]
 }
