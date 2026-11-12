@@ -4095,13 +4095,34 @@
       "entry_sha256": "f43cd05d36051a9df300c4c522e829d0fe5cf12e10118904f22b1fe3101faaf2"
     },
     {
-      "id": "RL-0337",
+      "id": "RL-0340",
       "sequence": 325,
       "date": "2026-11-11",
       "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.68.0+agent.5",
-      "changelog_sha256": "142eb0099aa78dc28eba7d09761a584a8c8565b21a0ea1f8563b568caba42e20",
+      "changelog_section": "1.68.0+agent.9",
+      "changelog_sha256": "948b592ac2b522c4a57cc31a4999c02491b1f264b91eab52e67697ca32a1d7cf",
+      "agent_impact": "standardize --slug <route> now limits the source audit to src/<route>/ and the files its pages include, and reads only that route's .campaign-runtime records, so findings and artifacts from other routes no longer appear. The report gains source_scope and entry_point, a finding in a shared file carries shared_files with the routes that use it, and a slug with no source pages reports source.scope_unresolved. Without --slug the report is unchanged.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/campaign-standardization-report.md",
+          "surface_entry": "docs/campaign-standardization-report.md",
+          "summary": "Describe the route-scoped source audit, shared-file attribution, the entry-point line and source.scope_unresolved."
+        }
+      ],
+      "entry_sha256": "2a39db452087e952f74ece965e217b217eba2703dea39c3bb033392f2fdfc000"
+    },
+    {
+      "id": "RL-0337",
+      "sequence": 326,
+      "date": "2026-11-11",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.68.0+agent.10",
+      "changelog_sha256": "371c32fff788b11c28230fc1749b312e0bbad09a32bbc061fa3d8b70c8dee68d",
       "agent_impact": "record deploy now refuses, writing nothing, when doctor's Polish gate is blocked, naming the gate code (for a Polish recorded skipped: polish.evidence_missing) and its required actions. Finish Polish, or follow next, before record deploy. A gate doctor carries forward (a page-only change, or the local preview) still deploys.",
       "compatibility": "compatible",
       "migration": "none",
@@ -4119,7 +4140,7 @@
           "summary": "The record deploy help line says the command is refused when doctor's theme or Polish gate is blocked."
         }
       ],
-      "entry_sha256": "30b981f8294786a41d3c2b6bc7db53942be24bdeb8b0b6a15d537f4b5460335a"
+      "entry_sha256": "02d755d6a3a8d9b7371265531822c2348113e08f966666fe243fff88dc7ec14a"
     }
   ]
 }

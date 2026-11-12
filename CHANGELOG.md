@@ -2,11 +2,17 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.68.0+agent.5] - 2026-11-11
+## [1.68.0+agent.10] - 2026-11-11
 
 ### Fixed
 
 - `record deploy` refuses when doctor's Polish gate is blocked, so a Polish recorded as skipped no longer earns a deploy record (#756).
+
+## [1.68.0+agent.9] - 2026-11-11
+
+### Changed
+
+- `standardize --slug <route>` audits only that route's source, lists the routes that share a file a finding sits in, and names the entry point to come back in through (#754).
 
 ## [1.68.0+agent.4] - 2026-11-11
 
