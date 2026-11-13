@@ -4906,6 +4906,33 @@
         }
       ],
       "entry_sha256": "cb5ad492fca9b58cbfe2a65a56b6378b232916a58d046da3f248e08cacdd800b"
+    },
+    {
+      "id": "RL-0350",
+      "sequence": 336,
+      "date": "2026-11-13",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.0+agent.1",
+      "changelog_sha256": "ee1269ac785066870fa4043e2ffdb8683064945b9c1f136443a9b639f81a0005",
+      "agent_impact": "Upgrade Playwright to 1.65.0 independently of the HTML parser. A successful upsell mutation whose body becomes unreadable on navigation now waits for correlated mutation evidence or an order read-back, just as a timed-out body does. Without evidence the accept remains unverified and requires manual review; stale checkout lines cannot supply a definitive verdict. A non-sensitive body-read outcome survives raw-body removal, so readable successful responses keep their definitive verdict and skip recovery waits. Existing saved evidence without the additive outcome field remains readable. Browser fixtures retain timeout, correlation, image-cap, redirect ambiguity and offline navigation coverage under Chromium 158.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Require the reviewed Playwright 1.65 browser adapter."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Resolve Playwright and playwright-core 1.65.0; retain parse5 and entities."
+        }
+      ],
+      "entry_sha256": "3a21fcc23e988173f2c5d07028875ff478d317b5b9ec7b1eaee512629011f0d1"
     }
   ]
 }

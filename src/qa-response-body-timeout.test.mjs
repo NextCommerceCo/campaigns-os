@@ -355,10 +355,12 @@ test("an unverified upsell result is neither re-run nor recovered, and goes to m
   assert.equal(orders[0].verification.verified, false);
 });
 
-test("a body read that ended without timing out keeps the definitive verdict and does not wait", () => {
-  const upsell = { api_response_status: 201, api_response_body_read: { timed_out: false, waited_ms: 0, bound_ms: 3000 } };
+test("a successfully read body keeps the definitive verdict and does not wait", () => {
+  const upsell = { api_response_status: 201, api_response_body_read: { outcome: "available", timed_out: false, waited_ms: 0, bound_ms: 3000 } };
   const proof = { ok: false, reason: "no new upsell line appeared after accept", expected_items: [], matched_lines: [] };
   assert.equal(hooks.acceptedUpsellStepProof(upsell, null, proof), proof);
+  const legacy = { api_response_status: 201, api_response_body_read: { timed_out: false, waited_ms: 0, bound_ms: 3000 } };
+  assert.equal(hooks.acceptedUpsellStepProof(legacy, null, proof), proof, "older evidence without an outcome must not infer a failed body read");
   const rejected = { api_response_status: 409, api_response_body_read: { timed_out: true, waited_ms: 3000, bound_ms: 3000 } };
   assert.equal(hooks.acceptedUpsellStepProof(rejected, null, proof), proof, "a non-2xx mutation is not unverified");
 });
@@ -366,8 +368,45 @@ test("a body read that ended without timing out keeps the definitive verdict and
 test("the bounded read reports whether it timed out and how long the read itself waited", async () => {
   const pending = await hooks.readJsonResponseBodyBounded({ text: () => new Promise(() => {}) }, 200);
   assert.equal(pending.timed_out, true);
+  assert.equal(pending.outcome, "timed_out");
   assert.ok(pending.waited_ms >= 190, `waited ${pending.waited_ms}ms`);
   const failed = await hooks.readJsonResponseBodyBounded({ text: async () => { throw new Error("gone"); } }, 200);
   assert.equal(failed.timed_out, false, "a failed read is not a timeout");
   assert.equal(failed.body, null);
+  assert.equal(failed.outcome, "read_failed");
+  const invalid = await hooks.readJsonResponseBodyBounded({ text: async () => "not JSON" }, 200);
+  assert.equal(invalid.outcome, "invalid_body");
+  assert.equal(invalid.timed_out, false);
+  const available = await hooks.readJsonResponseBodyBounded({ text: async () => '{"lines":[]}' }, 200);
+  assert.equal(available.outcome, "available");
+});
+
+test("an unreadable 2xx mutation cannot use stale checkout evidence as a definitive verdict", () => {
+  const upsell = { api_response_status: 201, api_response_body_read: { outcome: "read_failed", timed_out: false, waited_ms: 12, bound_ms: 3000 } };
+  for (const ok of [false, true]) {
+    const proof = hooks.acceptedUpsellStepProof(upsell, { source: "none", waited_ms: 100 }, { ok });
+    assert.equal(proof.ok, false);
+    assert.equal(proof.unverified, true);
+  }
+  const proof = { ok: false };
+  assert.equal(hooks.acceptedUpsellStepProof(upsell, { source: "order_read_back_missing_line" }, proof), proof);
+});
+
+test("successful mutation evidence survives raw-body removal without a late-evidence wait", async () => {
+  const fixture = acceptFixture();
+  const before = await checkoutEvidence(fixture);
+  const bodyRead = await hooks.readJsonResponseBodyBounded({ text: async () => JSON.stringify(fixture.orderBody([BASE_LINE, UPSELL_LINE])) }, 200);
+  fixture.upsell.api_response_order_body = bodyRead.body;
+  fixture.upsell.api_response_body_read = { outcome: bodyRead.outcome, timed_out: bodyRead.timed_out, waited_ms: bodyRead.waited_ms, bound_ms: bodyRead.bound_ms };
+  const preferredOrderBody = fixture.upsell.api_response_order_body;
+  delete fixture.upsell.api_response_order_body; // runSingleTestOrder's cleanup
+  const { refreshed, lateUpsellEvidence } = await hooks.refreshUpsellStepEvidence({
+    page: fixture.page, events: fixture.events, path: "accept", email: null, checkoutPage: { url: "http://127.0.0.1/checkout/" }, args: {},
+    step: "accept", upsell: fixture.upsell, preferredOrderBody, ...before, lateWaitMs: 200,
+  });
+  assert.equal(lateUpsellEvidence, null, "a successful body never enters the late-evidence branch");
+  assert.equal(fixture.upsell.late_evidence, undefined);
+  const proof = hooks.acceptedUpsellProof(refreshed.receipt_line_items, before.initialLineItems, [], fixture.events);
+  assert.equal(proof.ok, true);
+  assert.equal(hooks.acceptedUpsellStepProof(fixture.upsell, lateUpsellEvidence, proof), proof);
 });

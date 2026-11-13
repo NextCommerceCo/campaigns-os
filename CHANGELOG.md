@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.71.0+agent.1] - 2026-11-13
+
+### Fixed
+
+- Upgrade Playwright to 1.65 and preserve upsell verification when response bodies become unavailable on navigation (#745).
+
 ## [1.71.0] - 2026-11-13
 
 ### Fixed

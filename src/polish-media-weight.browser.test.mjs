@@ -1018,11 +1018,13 @@ browserTest("F1.3-I15 page with 513 <img> elements: oversize results in the cell
     origin.serve(path, pngFile(...OVERSIZED.natural));
   });
   const url = same.url(path);
-  assertRequestLog({ same, other }, { same: requests([route("i15"), path]) }, "setup: one image request per cell");
+  // Chromium 158 no longer coalesces these loads with Network.setCacheDisabled.
+  // Account for every element request; extra probe requests still fail.
+  assertRequestLog({ same, other }, { same: requests([route("i15"), ...Array(513).fill(path)]) }, "setup: cache-disabled Chromium requests each of the 513 images");
   eachCapture(output, "i15", (part, viewport) => {
     assert.equal(part.measurement_status, "complete", `setup (${viewport}): the capture is complete`);
     assertLedgerUrls(part, [same.url(route("i15")), url], viewport);
-    assertEntry(ledgerEntry(part, url), { request_count: 1, cache_request_count: 0 }, viewport);
+    assertEntry(ledgerEntry(part, url), { request_count: 513, cache_request_count: 0 }, viewport);
   });
   const { record, results } = await readCells(output);
   assertProbeStatus(record, route("i15"), "image_cap_reached");
@@ -1033,7 +1035,9 @@ browserTest("F1.3-I15 page with 513 <img> elements: oversize results in the cell
   // unexercised / image_cap_reached and none is accept-eligible.
   const kept = Array.from({ length: 512 }, (_, index) => [oversizeKey(rid(url), imgPath(index + 1)), "unexercised", "image_cap_reached"]);
   assertResultSet(results, bothCells(route("i15"), {
-    weight: [[doc(same, "i15"), "unexercised", "image_cap_reached"], [rid(url), "unexercised", "image_cap_reached"]],
+    // All 513 transfers count toward weight: their sum now exceeds the
+    // threshold, whose warning outranks incomplete image coverage.
+    weight: [[doc(same, "i15"), "unexercised", "image_cap_reached"], [rid(url), "warning", "image_over_threshold"]],
     oversize: kept,
     capCode: "image_cap_reached",
   }), route("i15"));
@@ -1166,8 +1170,10 @@ function inTurn(handlers) {
 const NO_STORE = ["Cache-Control: no-store"];
 
 // Challenge P1-1, browser leg. Two <img> name one URL; the second
-// (crossorigin, so the document cannot reuse the first one's response) is
-// inserted when the first loads, so the stub sees two image requests for
+// (with capture caching disabled, it makes its own request) is
+// inserted only after the first loads, so there is no in-flight request
+// to coalesce. Keep the exact count: it detects extra mode-switch requests.
+// The stub sees two image requests for
 // /img/p1.png in a known order. One request is answered 200 directly, the
 // other 302 to /img/p1-final.png. Both <img> keep currentSrc /img/p1.png.
 // `order` names which answer comes first. The ledger's /img/p1.png entry
@@ -1180,7 +1186,7 @@ async function twoChainRow(t, name, order) {
   const direct = respond("200 OK", "image/png", png(40, 30), NO_STORE);
   const redirected = respond("302 Found", null, Buffer.alloc(0), [`Location: ${finalPath}`, ...NO_STORE]);
   const image = inTurn(order === "direct-first" ? [direct, redirected] : [redirected, direct]);
-  const document = page(img(`src="${path}" width="40" height="30" onload="if(!window.second){window.second=1;document.body.insertAdjacentHTML('beforeend','<img alt=&quot;&quot; src=&quot;${path}&quot; crossorigin=&quot;anonymous&quot; width=&quot;40&quot; height=&quot;30&quot;>')}"`));
+  const document = page(img(`src="${path}" width="40" height="30" onload="if(!window.second){window.second=1;document.body.insertAdjacentHTML('beforeend','<img alt=&quot;&quot; src=&quot;${path}&quot; width=&quot;40&quot; height=&quot;30&quot;>')}"`));
   const { same, other, output } = await captureOne(t, name, ({ same: origin }) => {
     origin.serve(route(name), (socket) => {
       image.reset();
@@ -1208,7 +1214,7 @@ async function twoChainRow(t, name, order) {
   return { same, results };
 }
 
-browserTest("P1-1 one image URL requested twice, once direct and once redirected: no 1.3 result passes and both request orders read the same", async (t) => {
+browserTest("P1-1 one image URL requested directly and through a redirect: no 1.3 result passes and both request orders read the same", async (t) => {
   // Each order's full result set, with the route's own names masked so the
   // two orders compare.
   const expected = (same, name) => bothCells(route(name), {

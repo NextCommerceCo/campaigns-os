@@ -53,8 +53,11 @@ async function chromiumAvailable() {
 // A loopback server rather than route.fulfill: a fulfilled route always
 // delivers the whole body, and the defect needs a body that is still loading
 // when the page leaves.
-async function startServer() {
-  const html = await readFile(FIXTURE, "utf8");
+async function startServer(keepDocument = false) {
+  const source = await readFile(FIXTURE, "utf8");
+  // Same-document navigation leaves the fetch alive, independently of whether
+  // a browser aborts response.text() when replacing the document.
+  const html = keepDocument ? source.replace('location.href = `/thank-you/?ref_id=${ref}`', 'history.pushState({}, "", `/thank-you/?ref_id=${ref}`)') : source;
   const posts = [];
   const server = createServer((request, response) => {
     const url = new URL(request.url, "http://fixture.invalid");
@@ -88,8 +91,8 @@ if (!available) {
   test.skip("Playwright Chromium is unavailable; browser-backed upsell body-timeout proof skipped (run `npm run qa:install-browser`)", () => {});
 }
 
-browserTest("an accept that navigates before the mutation body loads completes and still reports the response", { timeout: 30000 }, async () => {
-  const server = await startServer();
+for (const keepDocument of [false, true]) browserTest(`an accept with ${keepDocument ? "a pending body and same-document navigation" : "document navigation before the body loads"} completes and reports the response`, { timeout: 30000 }, async () => {
+  const server = await startServer(keepDocument);
   const context = await (await sharedBrowser()).newContext();
   try {
     const page = await context.newPage();
@@ -113,9 +116,10 @@ browserTest("an accept that navigates before the mutation body loads completes a
     const bound = hooks.RESPONSE_BODY_READ_TIMEOUT_MS;
     const read = step.api_response_body_read;
     assert.ok(read, "the step records how the bounded body read ended");
-    assert.equal(read.timed_out, true, `the body read ended without hitting the bound after ${read.waited_ms}ms, so the pending read was not exercised`);
+    assert.ok(["timed_out", "read_failed"].includes(read.outcome), "the held body cannot have been read successfully");
+    if (keepDocument) assert.equal(read.timed_out, true, "the live document must exercise the pending read bound");
     assert.equal(read.bound_ms, bound);
-    assert.ok(read.waited_ms >= bound - 50, `the body read waited ${read.waited_ms}ms; expected the ${bound}ms bound`);
+    if (read.timed_out) assert.ok(read.waited_ms >= bound - 50, `the body read waited ${read.waited_ms}ms; expected the ${bound}ms bound`);
     assert.ok(read.waited_ms < bound + 2000, `the body read waited ${read.waited_ms}ms; the bound did not cut it off`);
     assert.ok(elapsed < 15000, `accept path took ${elapsed}ms; expected well under 15s`);
     // The anchor for post-mutation read-backs comes from the browser's own

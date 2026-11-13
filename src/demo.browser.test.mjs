@@ -61,7 +61,10 @@ test("all four offline file pages retain readable desktop/mobile styles and loca
           assert.equal(focus.outline, "solid");
           assert.ok(focus.width >= 2, `${route}: visible keyboard focus`);
         }
-        await page.locator("[data-demo-nav]").nth(3).click();
+        await Promise.all([
+          page.waitForEvent("load"),
+          page.locator("[data-demo-nav]").nth(3).click(),
+        ]);
         assert.equal(page.url(), pathToFileURL(join(target, "receipt/index.html")).href);
       }
       assert.deepEqual(network, []);

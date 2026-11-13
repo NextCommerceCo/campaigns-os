@@ -6236,7 +6236,7 @@ async function clickUpsellPath(page, path, { trace = null, clickTimeoutMs, mutat
     // How the bounded body read ended. A timed-out read means the mutation's
     // own evidence is missing, not that the upsell failed; the runner then
     // waits for a later read-back before it judges the step.
-    ...(bodyRead ? { api_response_body_read: { timed_out: bodyRead.timed_out, waited_ms: bodyRead.waited_ms, bound_ms: bodyRead.bound_ms } } : {}),
+    ...(bodyRead ? { api_response_body_read: { outcome: bodyRead.outcome, timed_out: bodyRead.timed_out, waited_ms: bodyRead.waited_ms, bound_ms: bodyRead.bound_ms } } : {}),
   };
   // The request this click made (the root of its redirect chain). Another
   // step's upsell mutation posts to the same order-upsells URL, so a late body
@@ -7676,16 +7676,20 @@ async function readJsonResponseBodyBounded(response, timeoutMs) {
   if (!(Number.isFinite(timeoutMs) && timeoutMs > 0)) timeoutMs = RESPONSE_BODY_READ_TIMEOUT_MS;
   const started = Date.now();
   const TIMED_OUT = Symbol("timed out");
+  const READ_FAILED = Symbol("read failed");
   let timer = null;
   const bounded = new Promise((resolve) => { timer = setTimeout(() => resolve(TIMED_OUT), timeoutMs); });
   const read = Promise.resolve()
     .then(() => response.text())
-    .catch(() => null);
+    .catch(() => READ_FAILED);
   try {
     const text = await Promise.race([read, bounded]);
     const timedOut = text === TIMED_OUT;
+    const body = timedOut || text === READ_FAILED ? null : parseMaybeJson(redactSensitive(text));
+    const outcome = timedOut ? "timed_out" : text === READ_FAILED ? "read_failed" : body === null || typeof body !== "object" ? "invalid_body" : "available";
     return {
-      body: timedOut ? null : parseMaybeJson(redactSensitive(text)),
+      body,
+      outcome,
       timed_out: timedOut,
       waited_ms: Date.now() - started,
       bound_ms: timeoutMs,
@@ -8689,19 +8693,24 @@ function upsellActionStepFailures(stepIndex, action, upsell, proof) {
   return failures;
 }
 
-// How long an accept whose mutation body timed out waits for other evidence
+// How long an accept whose mutation body is unavailable waits for other evidence
 // of that mutation, and the slice of the step budget kept for the read-back
 // after it. The whole step stays inside its budget (45s by default).
 const LATE_UPSELL_EVIDENCE_TIMEOUT_MS = 15000;
 const LATE_UPSELL_EVIDENCE_RESERVE_MS = 3000;
 
-function upsellBodyReadTimedOut(upsell) {
+// The raw body is removed before this runs. Keep its non-sensitive outcome
+// in the read metadata; an absent raw body is not evidence of a failed read.
+function upsellBodyUnavailable(upsell) {
   const status = Number(upsell?.api_response_status);
-  return upsell?.api_response_body_read?.timed_out === true && status >= 200 && status < 300;
+  return Boolean(upsell?.api_response_body_read)
+    && (upsell.api_response_body_read.timed_out === true
+      || ["read_failed", "invalid_body"].includes(upsell.api_response_body_read.outcome))
+    && status >= 200 && status < 300;
 }
 
-// After the bounded read gave up on a 2xx upsell mutation body, the lines the
-// runner already holds are the checkout's, from before the accept. Judging
+// After a 2xx mutation body times out or becomes unreadable on navigation,
+// the runner still holds checkout lines from before the accept. Judging
 // the upsell against them would call a slow success "no new upsell line".
 // Wait, within a bound, for evidence of this mutation captured after the
 // click: its own body landing late in the event log (the unbounded listener
@@ -8776,13 +8785,13 @@ async function waitForLateUpsellEvidence(events, { responseIndexBefore, mutation
 }
 
 // The order evidence an upsell step is judged against. An accept whose
-// mutation body read timed out first waits for later evidence of that
+// mutation body is unavailable first waits for later evidence of that
 // mutation (waitForLateUpsellEvidence), and judges from that body when one
 // arrives: the runner's last order body is the checkout's otherwise.
 async function refreshUpsellStepEvidence({ page, events, path, email, checkoutPage, args, step, upsell, preferredOrderBody = null, initialLineItems, responseIndexBefore, lateWaitMs = LATE_UPSELL_EVIDENCE_TIMEOUT_MS }) {
   let lateUpsellEvidence = null;
   let judgedBody = preferredOrderBody;
-  if (step === "accept" && upsellBodyReadTimedOut(upsell)) {
+  if (step === "accept" && upsellBodyUnavailable(upsell)) {
     lateUpsellEvidence = await waitForLateUpsellEvidence(events, {
       responseIndexBefore,
       mutationRequest: upsell[REQUEST_IDENTITY] || null,
@@ -8800,7 +8809,7 @@ async function refreshUpsellStepEvidence({ page, events, path, email, checkoutPa
 
 // The accepted-upsell proof for one step, given how its evidence arrived. A
 // failed proof stands as a failure unless the mutation answered 2xx, its body
-// read timed out, and no later evidence of it arrived: then the lines judged
+// is unavailable, and no later evidence of it arrived: then the lines judged
 // are stale, and the step is unverified rather than missing its upsell. A
 // post-click read-back without the line ("order_read_back_missing_line") is
 // such evidence, so the failure stands.
@@ -8810,14 +8819,14 @@ async function refreshUpsellStepEvidence({ page, events, path, email, checkoutPa
 // upsell, and can carry an earlier step's (whose body may have landed on the
 // same order-upsells URL meanwhile), so it is unverified too (#505).
 function acceptedUpsellStepProof(upsell, lateEvidence, proof) {
-  if (!upsellBodyReadTimedOut(upsell)) return proof;
+  if (!upsellBodyUnavailable(upsell)) return proof;
   if (lateEvidence && lateEvidence.source !== "none") return proof;
   const read = upsell.api_response_body_read;
   return {
     ...proof,
     ok: false,
     unverified: true,
-    reason: `accepted upsell unverified: the order upsell API answered HTTP ${upsell.api_response_status} but its body did not load within ${read.bound_ms}ms, and no later order read-back showed the accepted line within ${lateEvidence?.waited_ms ?? 0}ms`,
+    reason: `accepted upsell unverified: the order upsell API answered HTTP ${upsell.api_response_status} but its body ${read.timed_out ? `did not load within ${read.bound_ms}ms` : `was unavailable after ${read.waited_ms}ms`}, and no later order read-back showed the accepted line within ${lateEvidence?.waited_ms ?? 0}ms`,
     matched_lines: [],
     stale_reason: proof.ok
       ? "the order lines on hand predate this step's upsell mutation, so a match in them is not evidence of it"

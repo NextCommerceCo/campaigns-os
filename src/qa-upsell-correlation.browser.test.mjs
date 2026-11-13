@@ -47,7 +47,7 @@ async function chromiumAvailable() {
 // whether the receipt reads the order back. Every upsell mutation answers 201
 // headers at once and holds its body: the previous one's body is released
 // when the next mutation arrives, and the last one's never.
-async function serveFixture({ steps, receiptReadBack }) {
+async function serveFixture({ steps, receiptReadBack, holdMutationBody = true }) {
   const orders = [];
   const upsellPosts = [];
   const held = [];
@@ -68,6 +68,7 @@ async function serveFixture({ steps, receiptReadBack }) {
       if (previous) previous.end(`${JSON.stringify(previous.body)}\n`);
       order.lines.push({ product_title: `Add-on ${letter.toUpperCase()}`, quantity: 1, is_upsell: true, price_incl_tax: "12.00" });
       const body = structuredClone(order);
+      if (!holdMutationBody) return send(201, JSON.stringify(body), "application/json");
       setTimeout(() => {
         response.writeHead(201, { "content-type": "application/json" });
         response.write(" ");
@@ -96,7 +97,16 @@ async function serveFixture({ steps, receiptReadBack }) {
     if (url.pathname === "/shim.js") return send(200, await readFile(join(FIXTURES, "shim.js")), "text/javascript");
     if (url.pathname === "/x/checkout/") return send(200, await readFile(join(FIXTURES, "checkout.html")));
     if (/^\/x\/upsell-[a-z]\/$/.test(url.pathname)) {
-      return send(200, (await readFile(join(FIXTURES, "upsell.html"), "utf8")).replace("__STEPS__", steps.join(",")));
+      let html = (await readFile(join(FIXTURES, "upsell.html"), "utf8")).replace("__STEPS__", steps.join(","));
+      // Keep the happy response's document alive so Chromium retains its
+      // body. Held-body cases still exercise real document navigation.
+      if (!holdMutationBody) html = html
+        .replace("}).then(function (response) {", "}).then(async function (response) { var order = await response.json();")
+        .replace('location.href = "/x/receipt/?ref_id=" + encodeURIComponent(ref);', `
+          history.pushState(null, "", "/x/receipt/?ref_id=" + encodeURIComponent(ref));
+          document.body.innerHTML = '<h1>Thank you</h1><div data-next-order-items class="order-has-items">' + order.lines.map(function (line) { return '<div data-next-order-item>' + line.product_title + ' x' + line.quantity + '</div>'; }).join('') + '</div>';
+        `);
+      return send(200, html);
     }
     if (url.pathname === "/x/receipt/") {
       const order = orders.find((candidate) => candidate.ref_id === url.searchParams.get("ref_id"));
@@ -140,8 +150,8 @@ function topologies(base, steps) {
 // --analytics-settle 250: the fixtures fire no analytics tag and push no
 // dl_purchase, so the 5 s default would wait after the receipt, and again
 // for a purchase event, for nothing these cases read.
-async function runFixture({ steps, receiptReadBack, stepTimeoutMs }) {
-  const server = await serveFixture({ steps, receiptReadBack });
+async function runFixture({ steps, receiptReadBack, stepTimeoutMs, holdMutationBody = true }) {
+  const server = await serveFixture({ steps, receiptReadBack, holdMutationBody });
   const path = steps.map(() => "accept").join("-");
   try {
     const result = await runBrowserTestOrders(topologies(server.base, steps), {
@@ -164,6 +174,17 @@ if (!available) {
   test.skip("Playwright Chromium is unavailable; browser-backed upsell correlation proof skipped (run `npm run qa:install-browser`)", () => {});
 }
 
+browserTest("a readable successful mutation remains verified after raw-body removal", { timeout: 150000 }, async () => {
+  const { order, assertion } = await runFixture({ steps: ["a"], receiptReadBack: false, stepTimeoutMs: 18000, holdMutationBody: false });
+  const step = order.upsell_steps[0];
+  assert.equal(step.api_response_body_read?.outcome, "available");
+  assert.equal(step.api_response_order_body, undefined);
+  assert.equal(step.late_evidence, undefined, "a successful response must not trigger recovery waits");
+  assert.equal(step.verification.accepted_upsell_line_present, true);
+  assert.equal(assertion.status, "pass", assertion.actual);
+  assert.equal(order.verification.verified, true);
+});
+
 browserTest("an earlier upsell step's body landing during the next step's wait is not taken as that step's late body", { timeout: 150000 }, async () => {
   const { order, assertion, server } = await runFixture({ steps: ["a", "b"], receiptReadBack: true, stepTimeoutMs: 25000 });
 
@@ -171,7 +192,7 @@ browserTest("an earlier upsell step's body landing during the next step's wait i
   assert.equal(server.upsellPosts.length, 2, "each step posted the order upsell mutation once");
   const [stepA, stepB] = order.upsell_steps;
   assert.equal(stepA.api_response_body_read?.timed_out, true, "step A's body read hit the bound");
-  assert.equal(stepB.api_response_body_read?.timed_out, true, "step B's body read hit the bound");
+  assert.ok(["timed_out", "read_failed"].includes(stepB.api_response_body_read?.outcome), "step B must have no usable mutation body, rather than just an attempted read");
   // Step A's body (base line and A's line, no B line) landed while step B
   // waited. Judged as B's, it reads "no new upsell line" and fails B.
   assert.equal(stepB.late_evidence?.source, "order_read_back", `step B was judged from ${stepB.late_evidence?.source}`);
