@@ -131,7 +131,7 @@ export function resolvePrivateTemplateSourceFragment(family) {
     throw privateTemplateSourceError(
       "private_source_not_checked_out",
       `Template family "${family}" is a private family sourced from ${entry.repo}, but no checkout was found at ` +
-        `${repoDir || "(unresolved)"}. Clone ${entry.repo} as a sibling directory (or set PRIVATE_TEMPLATE_SOURCES_ROOT) to resolve it.`,
+        `${repoDir || "(unresolved)"}. Set PRIVATE_TEMPLATE_SOURCES_ROOT to the parent directory of the ${entry.repo} checkout (works with an installed package). For a source checkout of campaigns-os, cloning ${entry.repo} as a sibling directory also works.`,
     );
   }
   const fragment = readJsonFile(fragmentPath, "Private template source fragment");

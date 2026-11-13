@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-qa
-version: 1.3.59
+version: 1.3.62
 description: Run spec-aware QA from a saved Map or local-spec Build Packet and tested campaign URL after build, polish, and deploy/local evidence exist, including Playwright typed-card test-order proof.
 ---
 
-Bundle revision: 1.68.0+skills.1
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.68.0+skills.1`
+Bundle revision: 1.71.0+skills.1
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.71.0+skills.1`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -70,7 +70,7 @@ Inputs:
 - tested base URL (localhost dev URL, preview URL, or production URL)
 - assembly report
 - Test-order coverage choice (`common` default vs explicit paths vs topology-complete `full`) and SDK origin state (localhost is a Development domain; non-localhost origins need allowlist confirmation so the SDK loads)
-- Read the normalized Campaign Build Brief at `.campaign-runtime/input/campaign-build-brief.normalized.json` and the recorded decisions (`adapter_decisions`, `decisions` and `theme` in `.campaign-runtime/assembly-report.json`, and `assembly.template_decision_notes` in the Build Packet) before working on the campaign. The campaign intent summary at the top of the setup, build, Polish and QA prompts and in every `next` result is orientation, never a source of prices or commerce behaviour. For a later funnel in a multi-funnel project, read the same files under its own `assembly.runtime_dir` (`.campaign-runtime/funnels/<route>/`); the paths `next` prints are already the right ones.
+- Read the normalized Campaign Build Brief at `.campaign-runtime/input/campaign-build-brief.normalized.json` and the recorded decisions (`adapter_decisions`, `decisions` and `theme` in `.campaign-runtime/assembly-report.json`, and `assembly.template_decision_notes` in the Build Packet) before working on the campaign. The campaign intent summary at the top of the setup, build, Polish and QA prompts and in every `next` result is orientation, never a source of prices or commerce behaviour. For a later funnel or a bound first funnel, read the same files under its own `assembly.runtime_dir` (`.campaign-runtime/funnels/<route>/`); the paths `next` prints are already the right ones. `Funnel: route <route> was set up as another funnel beside <packet> (route <existing-route>)` prints rename steps if a rename was intended: delete the new packet and its directory, then re-run with the printed `--out <packet> --force`; ask first because `--force` clears recorded stage evidence. `Funnel: route <map> has no page folder; the source pages use <route>. To bind this funnel to that route, delete <paths>, then re-run: <command>` offers a binding: ask the operator, make the named deletions, then run the printed `--adopt src/<route>` command. `Funnel: Map slug "<map>" → bound route "<route>"` only confirms the binding; nothing to do, and the line does not mean a second funnel was created.
 
 Rules:
 

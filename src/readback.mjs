@@ -57,7 +57,10 @@ import { assessInputCurrency, currentPacketInputs, effectiveStageStatus } from "
 import { deriveAssemblyReportSummary } from "./stage-ledger.mjs";
 import { assessEvidenceDebt } from "./evidence-debt.mjs";
 import { RUNTIME_DIR_REL_PATH, packetRuntimeRelPath } from "./campaign-workspace.mjs";
-import { normalizePublicRouteSlug } from "./route-identity.mjs";
+import { normalizePublicRouteSlug, effectiveMapPublicRouteSlug } from "./route-identity.mjs";
+import { BUILT_FIRST_LABEL } from "./design-source-package.mjs";
+import { readRecordedDesignSourcePackage } from "./design-source-publication.mjs";
+import { singleLineFragment } from "./text-safety.mjs";
 
 export const MAX_ARTIFACT_BYTES = 32 * 1024 * 1024;
 export const MAX_GIT_METADATA_BYTES = 64 * 1024;
@@ -1209,6 +1212,9 @@ function renderIdentity(views, lines) {
     if (spec.local_spec_id) entries.push(["local_spec_id", spec.local_spec_id, "build packet"]);
     if (campaign.public_route_slug) {
       entries.push(["public_route_slug", campaign.public_route_slug, "build packet"]);
+      if (effectiveMapPublicRouteSlug(packet)) {
+        entries.push(["route binding", `Map slug "${oneLine(effectiveMapPublicRouteSlug(packet))}" → bound route "${oneLine(campaign.public_route_slug)}"`, "build packet"]);
+      }
     }
     const assembly = packet.assembly || {};
     if (assembly.template_family) entries.push(["template_family", assembly.template_family, "build packet"]);
@@ -1221,6 +1227,7 @@ function renderIdentity(views, lines) {
   if (verdict && verdict.run_id) entries.push(["qa run_id", verdict.run_id, "QA verdict"]);
   if (!entries.length) return;
   lines.push("RUN IDENTITY");
+  if (readRecordedDesignSourcePackage(packet, views.packet?.path, { report: artifactData(views, "report"), reportPath: views.report?.path }).builtFirst) lines.push(`  ${BUILT_FIRST_LABEL}`);
   for (const [field, value, source] of entries) lines.push(`  ${field} = ${value}  [${source}]`);
   lines.push("");
 }
@@ -1316,6 +1323,8 @@ function renderEvidenceDebt(debt, lines) {
         : stage.scope === "pages" ? `owed on ${stage.owed_pages.map((page) => oneLine(page.page_id)).join(", ")} (qa run --page)` : "the full stage is owed";
       lines.push(`    change since its build: ${stage.change.kind}; ${owes}`);
       for (const page of stage.change.changed_pages) lines.push(`    changed page: ${oneLine(page.page_id)} (${oneLine(page.built_path)})`);
+      if (stage.browser_pages?.length) lines.push(`    browser run owed on: ${stage.browser_pages.map(oneLine).join(", ")} (${stage.scope === "pages" ? "qa run --page --browser" : "qa run --browser"})`);
+      for (const asset of stage.change.linked_assets || []) lines.push(`    linked asset: ${oneLine(asset.path)} (linked by ${(asset.pages || []).map(oneLine).join(", ")})`);
       for (const reason of stage.change.reasons) lines.push(`    commerce: ${oneLine(reason.code)}${reason.path ? ` (${oneLine(reason.path)})` : ""}`);
     }
   }
@@ -1445,6 +1454,10 @@ export function computeDoctorSummary(views) {
     error_count: Array.isArray(errors) ? errors.length : 0,
     warning_count: groups["contract-static"].length + groups["repo-observed"].length,
     warning_groups: groups,
+    ...(doctor.stale === true ? {
+      stale: true,
+      stale_reason: singleLineFragment(typeof doctor.stale_reason === "string" ? doctor.stale_reason : ""),
+    } : {}),
   };
 }
 
@@ -1452,6 +1465,8 @@ function renderDoctor(views, lines) {
   const doctor = artifactData(views, "doctor");
   if (doctor === null) return;
   lines.push(`DOCTOR  [doctor output; status: ${doctor.status}]`);
+  const summary = computeDoctorSummary(views);
+  if (summary.stale) lines.push(`  STALE reading: ${summary.stale_reason || "the retained doctor output is marked stale. Re-run campaigns-os doctor."}`);
   const errors = doctor.errors;
   if (Array.isArray(errors) && errors.length) {
     lines.push(`  errors (${errors.length}):`);

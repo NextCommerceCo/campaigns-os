@@ -66,11 +66,31 @@ const SHIPPING_REF_ATTRIBUTES = new Set(["data-next-shipping-id"]);
 const PACKAGE_CONFIG_KEY = /["']?packageId["']?\s*:\s*(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_-]+))/gi;
 const SHIPPING_CONFIG_KEY = /["']?shippingId["']?\s*:\s*(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_-]+))/gi;
 
-export function extractRenderedRefs(content, document = null) {
+export function extractRenderedRefs(content, document = null, { literalPackages = false } = {}) {
   const packageRefs = new Set();
   const shippingRefs = new Set();
+  let nonliteralPackage = false;
+  const source = String(content || "");
+  // Derive reads source, unlike the live check's rendered HTML. A package
+  // hidden in Liquid is not evidence of the exact set the file sells.
+  if (literalPackages) {
+    for (const [block] of source.matchAll(/\{%-?\s*(comment|raw)\s*-?%\}[\s\S]*?\{%-?\s*end\1\s*-?%\}/gi)) {
+      if (/\bdata-(?:next-)?package-id\b|["']?packageId["']?\s*:/i.test(block)) nonliteralPackage = true;
+    }
+  }
   const readConfig = (text) => {
-    for (const match of String(text || "").matchAll(PACKAGE_CONFIG_KEY)) addRenderedRef(packageRefs, match[1] || match[2] || match[3]);
+    const config = String(text || "");
+    if (literalPackages) {
+      for (const key of config.matchAll(/\b["']?packageId["']?\s*:/gi)) {
+        // A quoted id or integer must be the whole value. Identifiers,
+        // templates and expressions cannot establish an exact package set.
+        const value = config.slice(key.index + key[0].length).match(/^\s*(?:"([A-Za-z0-9_-]+)"|'([A-Za-z0-9_-]+)'|(\d+))\s*(?=$|[,};)\]])/);
+        if (value) addRenderedRef(packageRefs, value[1] || value[2] || value[3]);
+        else nonliteralPackage = true;
+      }
+    } else {
+      for (const match of config.matchAll(PACKAGE_CONFIG_KEY)) addRenderedRef(packageRefs, match[1] || match[2] || match[3]);
+    }
     for (const match of String(text || "").matchAll(SHIPPING_CONFIG_KEY)) addRenderedRef(shippingRefs, match[1] || match[2] || match[3]);
   };
   const visit = (node) => {
@@ -79,7 +99,10 @@ export function extractRenderedRefs(content, document = null) {
       if (!child.tagName) continue;
       for (const attr of child.attrs || []) {
         const name = attr.name.toLowerCase();
-        if (PACKAGE_REF_ATTRIBUTES.has(name)) addRenderedRef(packageRefs, attr.value);
+        if (PACKAGE_REF_ATTRIBUTES.has(name)) {
+          if (literalPackages && !/^[A-Za-z0-9_-]+$/.test(attr.value.trim())) nonliteralPackage = true;
+          addRenderedRef(packageRefs, attr.value);
+        }
         else if (SHIPPING_REF_ATTRIBUTES.has(name)) addRenderedRef(shippingRefs, attr.value);
         else readConfig(attr.value);
       }
@@ -89,12 +112,13 @@ export function extractRenderedRefs(content, document = null) {
       visit(child);
     }
   };
-  visit(typeof document === "function" ? document() : parseHtml(String(content || "")));
+  visit(typeof document === "function" ? document() : parseHtml(source));
+  if (nonliteralPackage) packageRefs.clear();
   return { package_refs: packageRefs, shipping_refs: shippingRefs };
 }
 
-export function extractRenderedPackageRefs(content) {
-  return extractRenderedRefs(content).package_refs;
+export function extractRenderedPackageRefs(content, options = {}) {
+  return extractRenderedRefs(content, null, options).package_refs;
 }
 
 function addRenderedRef(refs, value) {
@@ -306,8 +330,10 @@ export async function readLiveCampaign({
   const refs = liveCampaignRefs(picked.campaign);
   if (!refs) return notRun("unexpected_body", "The live campaign did not carry package and shipping-method lists with a ref on every entry.", requested);
   // `spec derive` refreshes the spec's mirrored offer and package fields from
-  // the same read (#721), so it asks for the campaign body as well; doctor and
-  // QA compare refs only and never carry the body in their results.
+  // the same read (#721), and doctor compares those fields with the Map
+  // (#764), so both ask for the campaign body as well. QA never carries the
+  // body; doctor carries only the differing fields' change rows, in
+  // derived.live_campaign_refs.drift.mirror.
   return { status: "read", ...requested, ...refs, ...(includeCampaign ? { campaign: picked.campaign } : {}) };
 }
 
@@ -455,12 +481,29 @@ export function liveRefFindingMessage(finding) {
 
 export function campaignDriftMessage(drift) {
   const parts = [];
-  const side = (label, values) => { if (values.length) parts.push(`${label}: ${values.join(", ")}`); };
-  side("packages in the CampaignSpec but not the live campaign", drift.packages.map_only);
-  side("packages in the live campaign but not the CampaignSpec", drift.packages.live_only);
-  side("shipping methods in the CampaignSpec but not the live campaign", drift.shipping_methods.map_only);
-  side("shipping methods in the live campaign but not the CampaignSpec", drift.shipping_methods.live_only);
-  return `The saved CampaignSpec and the live campaign differ — ${parts.join("; ")}. Re-save the Map from the live campaign so doctor and QA compare against what checkout serves.`;
+  const side = (label, values) => { if (values?.length) parts.push(`${label}: ${values.join(", ")}`); };
+  side("packages in the CampaignSpec but not the live campaign", drift.packages?.map_only);
+  side("packages in the live campaign but not the CampaignSpec", drift.packages?.live_only);
+  side("shipping methods in the CampaignSpec but not the live campaign", drift.shipping_methods?.map_only);
+  side("shipping methods in the live campaign but not the CampaignSpec", drift.shipping_methods?.live_only);
+  const sentences = [];
+  if (parts.length) sentences.push(`The saved CampaignSpec and the live campaign differ — ${parts.join("; ")}. Re-save the Map from the live campaign so doctor and QA compare against what checkout serves.`);
+  const counts = drift.mirror?.counts;
+  if (counts) {
+    const noun = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+    const fields = [
+      counts.price && noun(counts.price, "price", "prices"),
+      counts.product && noun(counts.product, "product field", "product fields"),
+      counts.availability && noun(counts.availability, "availability field", "availability fields"),
+      counts.recurring && noun(counts.recurring, "recurring term", "recurring terms"),
+      counts.offers_changed && noun(counts.offers_changed, "offer", "offers"),
+    ].filter(Boolean);
+    const missing = counts.offers_missing ? `the campaign has ${noun(counts.offers_missing, "offer", "offers")} the CampaignSpec doesn't list` : "";
+    const list = fields.length > 1 ? `${fields.slice(0, -1).join(", ")} and ${fields.at(-1)}` : fields.join("");
+    const what = fields.length ? `the CampaignSpec differs from the live campaign on ${list}${missing ? `, and ${missing}` : ""}` : missing;
+    sentences.push(`${what.charAt(0).toUpperCase()}${what.slice(1)}. Run \`campaigns-os spec derive --packet <packet> --dry-run\` to see each change, then \`campaigns-os spec derive --packet <packet>\` to write it; a rewritten spec makes the build, Polish and QA owed again.`);
+  }
+  return sentences.join(" ");
 }
 
 export function liveRefsNotRunMessage(result) {

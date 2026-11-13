@@ -22,6 +22,7 @@ import { cmd } from "../install-invocation.mjs";
 import { shellToken } from "../shell-token.mjs";
 import { isObject, isNonEmptyString, optionalString, resolveFromFile, addIssue, filesystemPathsMatch } from "../cli-helpers.mjs";
 import { orderPathDepthDrift } from "./checks.mjs";
+import { designSourceReferenceMismatches, readRecordedDesignSourcePackage } from "../design-source-publication.mjs";
 
 // The orchestration stage contract lives in orchestration-stage-contract.mjs so
 // report producers, validators, the `next` picker and the Assembly Report's
@@ -89,18 +90,6 @@ function reportStageBlockerIssues(reportStage, fallbackCode, fallbackMessage) {
     message: blocker.message || fallbackMessage,
     detail: blocker,
   }));
-}
-
-function designSourceReferenceMismatches(expected, expectedArtifactPath, actual, actualArtifactPath) {
-  if (!isObject(expected) || !isObject(actual)) return ["reference"];
-  const mismatches = [];
-  for (const field of ["schema_version", "sha256", "material_fingerprint"]) {
-    if (expected[field] !== actual[field]) mismatches.push(field);
-  }
-  const expectedPath = resolveFromFile(expectedArtifactPath, expected.path);
-  const actualPath = resolveFromFile(actualArtifactPath, actual.path);
-  if (!filesystemPathsMatch(expectedPath, actualPath)) mismatches.push("path");
-  return mismatches;
 }
 
 function nextPrepareBuildBindingIssues({
@@ -214,6 +203,16 @@ function nextPrepareBuildBindingIssues({
       `Assembly Report Design Source Package reference does not match the current packet/context (${dspMismatches.join(", ")}).`,
       { mismatched_fields: dspMismatches },
     );
+  }
+
+  if (issues.length === 0) {
+    const currentPackage = readRecordedDesignSourcePackage(packet, packetPath, { report, reportPath });
+    if ((currentPackage.declaredBuiltFirst || isNonEmptyString(context?.intake?.adopt)) && !currentPackage.current) {
+      push("next.prepare_build.report_dsp_mismatch", "Design Source Package on disk does not match the recorded intake hash or material fingerprint. Restore the recorded package or rerun intake with the original inputs.", {
+        source: "disk",
+        mismatched_fields: designSourceReferenceMismatches(packet.design_source_package, packetPath, currentPackage.reference, packetPath),
+      });
+    }
   }
 
   return issues;
@@ -507,10 +506,10 @@ function pickNextStage(report, { errors = [], derived = null }, prepareBuildGate
       // changed pages only (#720); qa run --page pays it.
       const qaDebt = derived?.evidence_debt?.qa;
       if (qaDebt?.scope === "pages" && qaDebt.owed_pages?.length) {
-        const pages = qaDebt.owed_pages.map((page) => `--page ${page.page_id}`).join(" ");
+        const pages = qaDebt.owed_pages.map((page) => `--page ${page.page_id}`).join(" ") + (qaDebt.browser_pages?.length ? " --browser" : "");
         return { stage: "qa", reason: `QA was recorded for a different build, and the change since then is page-only: run QA on the changed pages with ${cmd("qa")} run --packet <packet> ${pages}.` };
       }
-      return { stage: "qa", reason: "QA was recorded for a different build; run QA against the current build." };
+      return { stage: "qa", reason: `QA was recorded for a different build; run QA against the current build${qaDebt?.browser_pages?.length ? ` with --browser (${qaDebt.browser_pages.join(", ")} reached by a changed stylesheet or image)` : ""}.` };
     }
     // A terminal QA status is not the same claim as purchase proof. QA finalizes
     // a verdict and records a terminal status even when no order path ran, so a
@@ -667,6 +666,9 @@ function doctorNextActions(errors, warnings, derived, { polishBlocked, polishGat
 // stages AFTER the picked one that cannot run until it clears, never the
 // picked stage itself; `command` is always present.
 function buildNextStep(errors, warnings, derived, report = null, packet = null, prepareBuildGate = prepareBuildGateIssue(report), { sidecarArgs = "" } = {}) {
+  if (prepareBuildGate?.issues?.some((issue) => issue.detail?.source === "disk")) {
+    addPrepareBuildGateErrors(errors, report, prepareBuildGate);
+  }
   const polishGate = derived.polish_gate || evaluatePolishGate({ report });
   const polishCheckpointGate = derived.polish_checkpoint_gate || null;
   const assemblyComplete = String(report?.stages?.assembly?.status || "").startsWith("completed");

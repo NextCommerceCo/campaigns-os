@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { applyQaBuildScope, specForQaScope } from "./qa-build-scope.mjs";
-import { __qaNodeTestHooks } from "./qa-node.mjs";
+import { __qaNodeTestHooks, applyQaPageScope } from "./qa-node.mjs";
 import { computeDisposition } from "./qa-verdict.mjs";
 
 const topologies = [{ funnel_id: "main", pages: ["presell", "landing", "checkout", "receipt"].map((id, order) => ({
@@ -15,6 +15,25 @@ const packet = { source_html: { pages: ["presell", "landing"].map(page_id => ({ 
 const report = { stages: { prepare_build: { declared_out_of_scope: packet.source_html.pages } } };
 const spec = { campaign: {}, build_scope: { mode: "partial" }, funnels: [{ id: "main", pages: topologies[0].pages.map(p => ({ id: p.page_id, type: p.page_type })) }] };
 const scope = options => applyQaBuildScope(topologies, { packet, report, publicRouteSlug: "demo", ...options });
+
+test("a repo-origin page added after handoff remains in the full QA page list", () => {
+  const updatedSpec = structuredClone(spec);
+  updatedSpec.funnels[0].pages.push({ id: "upsell-2", type: "upsell", page_url: "upsell-2/" });
+  const updatedPacket = structuredClone(packet);
+  updatedPacket.source_html.pages.push({ page_id: "upsell-2", origin: "repo", page_kit: {
+    public_route: "/demo/upsell-2/", spec_route: "upsell-2/", target_path: "upsell-2.html", output_path: "src/demo/upsell-2.html",
+  } });
+  const extracted = __qaNodeTestHooks.extractTopologies(updatedSpec, {
+    baseUrl: "https://preview.example.test/demo/", publicRouteSlug: "demo",
+  });
+  const buildScope = applyQaBuildScope(extracted, { packet: updatedPacket, report, publicRouteSlug: "demo" });
+  const full = applyQaPageScope(buildScope.topologies);
+  assert.equal(full.scope, null);
+  assert.deepEqual(full.topologies[0].pages.map((page) => page.page_id), ["checkout", "receipt", "upsell-2"]);
+  assert.equal(full.topologies[0].pages.at(-1).url, "https://preview.example.test/demo/upsell-2/");
+  assert.ok(!buildScope.excludedPages.some((page) => page.page_id === "upsell-2"));
+  assert.ok(specForQaScope(updatedSpec, buildScope.excludedPages).funnels[0].pages.some((page) => page.id === "upsell-2"));
+});
 
 test("recorded partial scope selects checkout entry; missing declaration stays fail-closed", () => {
   const selected = scope();

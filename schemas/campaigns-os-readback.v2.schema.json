@@ -116,6 +116,7 @@
           "enum": [
             null,
             "build_fingerprint_changed",
+            "stage_blocked",
             "stage_required_by_build",
             "stage_required_by_brief",
             "stage_required_by_spec",
@@ -127,7 +128,7 @@
             "assembly_build_fingerprint_missing",
             "stage_build_fingerprint_missing"
           ],
-          "description": "Null for current. Owed names a changed binding or the recorded required_by cause (build, brief, spec, or unspecified). Unknown names the unavailable input or fingerprint."
+          "description": "Null for current. Owed names a changed binding, a last run on the current build that was blocked (stage_blocked), or the recorded required_by cause (build, brief, spec, or unspecified). Unknown names the unavailable input or fingerprint."
         },
         "change": {
           "description": "On an owed stage, what changed since the build that stage reviewed: the rebuilds `record build` kept in stages.assembly.build_changes plus the drift on disk. Null when the stage is not owed.",

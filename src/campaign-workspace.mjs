@@ -40,9 +40,13 @@ export const FUNNEL_PACKET_PATTERN = /^campaign-runtime-.+\.build\.json$/;
 // schema allows in route_root, not starting with a dot (so never `.` or `..`).
 const ROUTE_COMPONENT = /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/;
 
+export function isRouteComponent(value) {
+  return typeof value === "string" && ROUTE_COMPONENT.test(value);
+}
+
 function routeComponent(routeSlug) {
   const slug = normalizePublicRouteSlug(routeSlug);
-  if (!ROUTE_COMPONENT.test(slug)) {
+  if (!isRouteComponent(slug)) {
     throw new Error(
       `Public route slug ${JSON.stringify(routeSlug)} cannot name a funnel's runtime directory or packet file: `
       + "use letters, digits, dots, underscores and hyphens, not starting with a dot.",
@@ -75,7 +79,7 @@ export function packetRuntimeRelPath(packet) {
   const declared = packet?.assembly?.runtime_dir;
   if (declared === undefined || declared === null || declared === RUNTIME_DIR_REL_PATH) return RUNTIME_DIR_REL_PATH;
   const slug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
-  if (typeof declared === "string" && ROUTE_COMPONENT.test(slug) && declared === `${FUNNEL_RUNTIME_PARENT_REL_PATH}/${slug}`) return declared;
+  if (typeof declared === "string" && isRouteComponent(slug) && declared === `${FUNNEL_RUNTIME_PARENT_REL_PATH}/${slug}`) return declared;
   throw new Error(
     `Build Packet assembly.runtime_dir ${JSON.stringify(declared)} is not this funnel's runtime directory: `
     + `it must be "${RUNTIME_DIR_REL_PATH}" or "${FUNNEL_RUNTIME_PARENT_REL_PATH}/<campaign.public_route_slug>"`
@@ -313,12 +317,15 @@ function projectRecordsRoute(targetRepo) {
  * Returns `{ packetPath, runtimeRelPath, scoped, addedBeside }`; `scoped` is
  * true when the packet must record `assembly.runtime_dir`, and `addedBeside`
  * names the default packet and its route when this run sets the funnel up as
- * a new one beside it (null otherwise).
+ * a new one beside it (null otherwise). A new bound route uses its own runtime
+ * directory even in an empty project. An unclaimed sourceRoute beside a route
+ * with no Page Kit pages adds a bindingOffer for intake's rerun guidance.
+ * Intake supplies sourceRoute and routeHasPages from Page Kit page discovery.
  */
-export function planFunnelWorkspace(targetRepo, routeSlug, { packetPath: explicitPacketPath = null, force = false } = {}) {
+export function planFunnelWorkspace(targetRepo, routeSlug, { packetPath: explicitPacketPath = null, force = false, routeBound = false, sourceRoute = null, routeHasPages = false } = {}) {
   const repo = resolve(targetRepo);
   const slug = normalizePublicRouteSlug(routeSlug);
-  const nameable = ROUTE_COMPONENT.test(slug);
+  const nameable = isRouteComponent(slug);
   const rootPacket = join(repo, DEFAULT_PACKET_FILENAME);
   const ownPacket = nameable ? join(repo, funnelPacketFilename(slug)) : null;
   const rootPacketState = readJsonState(rootPacket);
@@ -353,7 +360,13 @@ export function planFunnelWorkspace(targetRepo, routeSlug, { packetPath: explici
     && rootPacketState.state === "present" && rootPacketRoute !== slug
     ? { packetPath: rootPacket, route: rootPacketRoute }
     : null;
-  const plan = (runtimeRelPath) => ({ packetPath, runtimeRelPath, scoped: runtimeRelPath !== RUNTIME_DIR_REL_PATH, addedBeside });
+  const bindingOffer = !routeBound && sourceRoute && sourceRoute !== slug
+    && !routeHasPages
+    && !projectFunnelPackets(repo).some((packet) => packet.route === sourceRoute)
+    ? { route: sourceRoute } : null;
+  const plan = (runtimeRelPath) => ({ packetPath, runtimeRelPath, scoped: runtimeRelPath !== RUNTIME_DIR_REL_PATH, addedBeside,
+    ...(bindingOffer ? { bindingOffer } : {}),
+  });
 
   const owner = projectRecordsRoute(repo);
   if (existing && existingRoute === slug) {
@@ -365,6 +378,7 @@ export function planFunnelWorkspace(targetRepo, routeSlug, { packetPath: explici
     return plan(RUNTIME_DIR_REL_PATH);
   }
   const ownRuntime = nameable ? funnelRuntimeRelPath(slug) : null;
+  if (routeBound && ownRuntime) return plan(ownRuntime);
   if (ownRuntime && existsSync(join(repo, ownRuntime))) return plan(ownRuntime);
   if (owner === undefined || owner === slug) return plan(RUNTIME_DIR_REL_PATH);
   if (!ownRuntime) {

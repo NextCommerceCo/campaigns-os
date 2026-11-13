@@ -9,6 +9,7 @@ import { applyQaBuildScope, specForQaScope } from "./qa-build-scope.mjs";
 import { requiredActionText } from "./gate-actions.mjs";
 import { parseOrderPathDepthFlag } from "./proof-policy.mjs";
 import {
+  effectiveMapPublicRouteSlug,
   isAbsoluteHttpUrl,
   normalizePageKitRoute,
   normalizePublicRouteSlug,
@@ -200,7 +201,9 @@ Options:
                                   served page's shipping and package refs against the live campaign; the verdict
                                   records the check not_run with reason disabled, never a pass.
   --currency <code>               qa run: enter each funnel's entry page with ?currency=<CODE> (three letters, e.g. GBP),
-                                  keeping its existing query. The flag takes one code per run (given twice, the
+                                  keeping its existing query. Without the flag, the run uses the spec's
+                                  campaign.currency (except legacy API orders). With no spec currency, including
+                                  --site, no currency is pinned by default. The flag takes one code per run (given twice, the
                                   last one is used); the verdict records it as evidence.currency on the entry
                                   page's http:<page> row. Expected totals are calculated in the code, and a test
                                   order or calculate response in another currency is a blocker (exit 4) on its
@@ -522,11 +525,15 @@ async function resolveQaInputs(args, {
   const targetRepo = checkpointPreflight?.targetRepo || (packetPath && packet ? targetRepoFor(packetPath, packet) : null);
   const targetOutputDir = targetRepo && packet?.assembly?.output_dir ? resolve(targetRepo, packet.assembly.output_dir) : null;
   const mappingById = new Map((packet?.source_html?.pages || []).map((page) => [page.page_id, page]));
+  const mapPublicRouteSlug = effectiveMapPublicRouteSlug(packet);
   const topologies = extractTopologies(normalized, {
-    baseUrl, publicRouteSlug, templateFamily, commerceStructureContract,
+    baseUrl: mapPublicRouteSlug && analyticsCaptureTarget.route_root === "/" ? analyticsCaptureTarget.url : baseUrl,
+    publicRouteSlug, templateFamily, commerceStructureContract,
+    mapPublicRouteSlug,
     entryServingRoute: (page) => entryPageKitServingRoute(targetRepo, publicRouteSlug, page, {
       targetOutputDir,
       mapping: mappingById.get(page.id),
+      mapPublicRouteSlug,
     }),
   });
   const themeGate = resolveThemeGate({
@@ -553,6 +560,7 @@ async function resolveQaInputs(args, {
   const requestedPages = qaPageArgs(args);
   const pageScope = applyQaPageScope(buildScope.topologies, {
     pages: requestedPages,
+    browser: args.browser === true,
     baseUrl,
     debt: checkpointPreflight?.evidenceDebt || null,
     report: checkpointPreflight?.runtimeReport,
@@ -574,6 +582,7 @@ async function resolveQaInputs(args, {
     qaWaivers,
     analyticsCaptureTarget,
     localServeAnalytics,
+    buildEnvironment: recordedBuildEnvironment(checkpointPreflight?.runtimeReport),
     brandContract: brandContract.contract,
     brandContractStatus: brandContract.status,
     packetPath,
@@ -1054,8 +1063,19 @@ function refuseBadPageScope(args) {
 // inputs cannot be confirmed, owes a full run. Re-running a page-scoped
 // record for the same build is allowed too. Each requested id is a topology
 // page id or the page id of its route (the id the change lists use).
-export function applyQaPageScope(topologies, { pages, baseUrl, debt, report, qaInputCurrency = undefined } = {}) {
-  if (!pages) return { topologies, scope: null };
+export function applyQaPageScope(topologies, { pages, browser = false, baseUrl, debt, report, qaInputCurrency = undefined } = {}) {
+  if (!pages) {
+    // A full run pays a page-scoped debt too, but must not drop the browser
+    // run a checkout or upsell page owes for a changed stylesheet or image.
+    const owed = debt?.qa?.status === "owed" && Array.isArray(debt.qa.browser_pages) ? debt.qa.browser_pages : [];
+    if (owed.length && !browser) {
+      const pageRun = debt.qa.scope === "pages" && debt.qa.owed_pages?.length
+        ? `Run ${cmd("qa")} run --packet <packet> ${debt.qa.owed_pages.map((page) => `--page ${page.page_id}`).join(" ")} --browser (no test orders are placed), or add --browser to this full run.`
+        : "Add --browser to this run.";
+      throw new Error(`qa run: ${owed.join(", ")} ${owed.length > 1 ? "are checkout or upsell pages" : "is a checkout or upsell page"} whose linked stylesheet or image changed, so QA owes a browser run. ${pageRun}`);
+    }
+    return { topologies, scope: null };
+  }
   const all = topologies.flatMap((topology) => topology.pages || []);
   const idsOf = (page) => [String(page.page_id), page.url && baseUrl ? routePageIdForUrl(page.url, baseUrl) : null].filter(Boolean);
   const known = new Set(all.flatMap(idsOf));
@@ -1093,6 +1113,12 @@ export function applyQaPageScope(topologies, { pages, baseUrl, debt, report, qaI
     const uncovered = qa.owed_pages.filter((page) => !selectedRouteIds.has(page.page_id));
     if (uncovered.length) {
       throw new Error(`qa run --page: QA is owed on ${qa.owed_pages.map((page) => page.page_id).join(", ")}; add ${uncovered.map((page) => `--page ${page.page_id}`).join(" ")}.`);
+    }
+    // A checkout or upsell page reached through a changed stylesheet or
+    // image owes a browser run (#753): styling can hide a buy button.
+    const browserPages = Array.isArray(qa.browser_pages) ? qa.browser_pages : [];
+    if (browserPages.length && !browser) {
+      throw new Error(`qa run --page: ${browserPages.join(", ")} ${browserPages.length > 1 ? "are checkout or upsell pages" : "is a checkout or upsell page"} whose linked stylesheet or image changed, so it owes a browser run; add --browser. No test orders are placed.`);
     }
   }
   if (qaInputCurrency === "owed" || qaInputCurrency === "unknown") {
@@ -2334,17 +2360,25 @@ const refuseBadOrderCreationLimit = (args) => refusing(() => validatedOrderCreat
 // ASCII letters, upper-cased; anything else (no value, a list, a symbol) is
 // refused here, before anything is resolved, fetched or launched. So is a run
 // whose orders are legacy direct API orders: that request carries no
-// currency, so the order would be placed in the default one.
-function qaRunCurrency(args) {
-  if (!Object.hasOwn(args, "currency")) return null;
-  const value = args.currency;
+// currency, so the order would be placed in the default one. Without the flag,
+// use a well-formed spec campaign.currency, except on unpinned legacy runs.
+function qaRunCurrency(args, spec = null) {
+  const explicit = Object.hasOwn(args, "currency");
+  const browserMode = String(args["test-order"] || "off").toLowerCase();
+  const legacyMode = String(args["legacy-api-test-order"] || "off").toLowerCase();
+  const legacyOrders = browserMode === "off" && legacyMode !== "off";
+  // Legacy API orders cannot carry a currency; keep their existing unpinned
+  // behavior unless an explicit flag must be refused below.
+  if (!explicit && legacyOrders) return null;
+  const value = explicit ? args.currency : spec?.campaign?.currency;
   if (typeof value !== "string" || !/^[A-Za-z]{3}$/.test(value)) {
+    // Doctor reports malformed campaign.currency; it is not an operator's
+    // request to pin this run, so preserve the existing unpinned behavior.
+    if (!explicit) return null;
     const got = typeof value === "string" && value !== "" ? JSON.stringify(value) : "no value";
     throw refused(`--currency takes one three-letter currency code, such as GBP or EUR (got ${got}). Run qa run once per currency.`);
   }
-  const browserMode = String(args["test-order"] || "off").toLowerCase();
-  const legacyMode = String(args["legacy-api-test-order"] || "off").toLowerCase();
-  if (browserMode === "off" && legacyMode !== "off") {
+  if (legacyOrders) {
     throw refused("--currency is not supported with --legacy-api-test-order: the direct API order carries no currency and would be placed in the default one. Use --test-order <mode> for orders in that currency, or drop --currency.");
   }
   return value.toUpperCase();
@@ -2356,12 +2390,15 @@ function qaRunCurrency(args) {
 // likely mismatch, so it is named on stderr. Only the missing flag is judged:
 // a currency such as EUR has many markets, so an explicit --test-country is
 // taken as the operator's choice. The run is never refused.
-function warnCurrencyWithoutTestCountry(args, write = (message) => process.stderr.write(message)) {
-  const currency = qaRunCurrency(args);
+function warnCurrencyWithoutTestCountry(args, write = (message) => process.stderr.write(message), spec = null) {
+  const currency = qaRunCurrency(args, spec);
   if (!currency || currency === "USD") return false;
   if (String(args["test-order"] || "off").toLowerCase() === "off") return false;
   if (stringArg(args["test-country"])) return false;
-  write(`[qa:test-order] --currency ${currency} with no --test-country: test orders use the default US shipping address. Pass --test-country, --test-address1, --test-city, --test-province and --test-postal for the ${currency} market, or ignore this if a US address is intended.\n`);
+  const source = Object.hasOwn(args, "currency")
+    ? `--currency ${currency}`
+    : `the run currency ${currency} (from the spec's campaign.currency)`;
+  write(`[qa:test-order] ${source} with no --test-country: test orders use the default US shipping address. Pass --test-country, --test-address1, --test-city, --test-province and --test-postal for the ${currency} market, or ignore this if a US address is intended.\n`);
   return true;
 }
 
@@ -2439,12 +2476,12 @@ async function runParityQa(args) {
   });
 }
 
-async function runQa(args, options = {}) {
+export async function runQa(args, options = {}) {
   // Fail-fast before anything resolves or launches. The authoritative check
   // lives on the creation budget itself, which every browser path builds.
   refuseBadOrderCreationLimit(args);
   refuseBadPageScope(args);
-  warnCurrencyWithoutTestCountry(args);
+  qaRunCurrency(args);
   // Match dispatch: an active browser mode takes precedence over legacy API
   // diagnostics. Only the selected legacy path requires a cart and API mode.
   const browserMode = String(args["test-order"] || "off").toLowerCase();
@@ -2465,7 +2502,10 @@ async function runResolvedQa(args, resolvedInputs, { runSessionActive = false, l
   // the entry page's URL from these topologies, so it is tagged once here;
   // the validated code rides on args, under QA_RUN_CURRENCY, for the order
   // runner's own first load of each path.
-  const currency = qaRunCurrency(args);
+  const spec = resolvedInputs.rawSpec || resolvedInputs.spec;
+  const currency = qaRunCurrency(args, spec);
+  const currencyDefaultedFromSpec = !!currency && !Object.hasOwn(args, "currency");
+  warnCurrencyWithoutTestCountry(args, undefined, spec);
   if (currency) args = { ...args, [QA_RUN_CURRENCY]: currency };
   const entryCurrency = withEntryCurrency(resolvedInputs.topologies, currency);
   const resolved = currency ? { ...resolvedInputs, topologies: entryCurrency.topologies } : resolvedInputs;
@@ -2575,6 +2615,7 @@ async function runResolvedQa(args, resolvedInputs, { runSessionActive = false, l
       captureCommercial: commercialIds.has(String(page.page_id)),
       currency: entryCurrency.entryPages.has(page) ? currency : null,
       currencyNotApplied: entryCurrency.notApplied.get(page) || null,
+      currencyDefaultedFromSpec,
     }));
   const livePages = new Map();
   for (const [index, page] of pages.entries()) {
@@ -2730,18 +2771,17 @@ async function runAnalyticsOrderSequence({ args, resolved, runId, assertions, qc
   if (analyticsLeg === "run") {
     assertions.push(operations.assessReceipt(result.receiptAnalytics, { waivers: resolved.qaWaivers }));
   }
-  applyLocalServeAnalyticsReview(assertions, resolved.localServeAnalytics);
+  applyLocalServeAnalyticsReview(assertions, resolved.localServeAnalytics, resolved.buildEnvironment);
   return result.orders;
 }
 
 // #483: local proof mode (deploy.target local-serve) renders the DEVELOPMENT
 // environment on purpose, and the starter templates gate every vendor loader
-// on it. A pixel that did not fire on that render is the render's design, not
-// the campaign's defect, so fire-dependent analytics checks become manual
-// review there instead of blockers. Only a run whose capture is actually
-// served from loopback qualifies: the same packet QA'd against the PR preview
-// (--base-url <preview>) is a production render and keeps its blockers, which
-// is the follow-up every downgraded assertion names.
+// on it. Declared tag:* rows are not measured on any recorded development
+// build, including a hosted preview; they are checked on a production build.
+// Other fire-dependent checks become manual review only on a run actually
+// served from loopback: the same packet QA'd against the PR preview
+// (--base-url <preview>) keeps its other blockers.
 // The render itself must be on record, too: the exception applies only when
 // stages.assembly.evidence.build_environment says "development". A production
 // build served on localhost, or a build whose environment was never recorded,
@@ -2829,13 +2869,35 @@ function resolveLocalServeAnalytics({ packet, report, captureUrl }) {
   };
 }
 
-function applyLocalServeAnalyticsReview(assertions, localServe) {
-  if (!localServe) return;
-  const parityPassed = localServe.production_parity?.status === "pass";
+function applyLocalServeAnalyticsReview(assertions, localServe, buildEnvironment = localServe?.build_environment?.value) {
+  if (!localServe && buildEnvironment !== "development") return;
+  const parityPassed = localServe?.production_parity?.status === "pass";
   for (const [index, item] of assertions.entries()) {
     if (item?.status !== STATUS.FAIL || !FIRE_DEPENDENT_ANALYTICS_ID.test(String(item.id || ""))) continue;
     if (isCaptureErrorFailure(item)) continue;
-    if (!localServeMeasuredOnLoopback(item, assertions)) continue;
+    if (localServe && !localServeMeasuredOnLoopback(item, assertions)) continue;
+    // Declared tags are gated out of every recorded development build,
+    // including hosted previews. With a local-serve record, only the measured
+    // loopback development render qualifies. Other rows retain the local-serve rule.
+    // A disarmed observer is not a clean reading of a tag that did not fire;
+    // it remains eligible for the existing local-serve loopback rule below.
+    if (buildEnvironment === "development" && item.id.startsWith("analytics-correctness:tag:")
+      && item.evidence?.reason !== "fbq_observer_disarmed") {
+      assertions[index] = {
+        ...item,
+        status: STATUS.MANUAL_REVIEW,
+        severity: SEVERITY.WARN,
+        actual: "not measured: development build gates vendor loaders; the tag is checked on a production build",
+        evidence: {
+          ...(item.evidence || {}),
+          reason: "development_build_gates_vendor_loaders",
+          build_environment: { field: LOCAL_PROOF_BUILD_ENVIRONMENT_FIELD, value: buildEnvironment },
+          follow_up: "Re-run qa run against a production build; the tag is checked there.",
+        },
+      };
+      continue;
+    }
+    if (!localServe) continue;
     assertions[index] = {
       ...item,
       status: STATUS.MANUAL_REVIEW,
@@ -3153,6 +3215,7 @@ async function runPageChecks(page, args, {
   bindingScriptLoader = createBindingScriptLoader(),
   currency = null,
   currencyNotApplied = null,
+  currencyDefaultedFromSpec = false,
 } = {}) {
   const assertions = [];
   // --currency is recorded on the entry page's HTTP row: the persisted
@@ -3161,6 +3224,7 @@ async function runPageChecks(page, args, {
   const currencyEvidence = {
     ...(currency ? { currency } : {}),
     ...(currencyNotApplied ? { currency_not_applied: currencyNotApplied } : {}),
+    ...((currency || currencyNotApplied) && currencyDefaultedFromSpec ? { currency_defaulted_from_spec: true } : {}),
   };
   if (!page.url) {
     assertions.push(bindingAssertion(page, await observeBinding({ source: null, page, expected: bindingExpected, scriptLoader: bindingScriptLoader })));
@@ -3560,14 +3624,15 @@ function normalizeSpec(raw) {
   return { ...raw, funnels: [] };
 }
 
-function extractTopologies(spec, { baseUrl = null, publicRouteSlug = null, templateFamily = null, commerceStructureContract = null, entryServingRoute = null } = {}) {
+function extractTopologies(spec, { baseUrl = null, publicRouteSlug = null, mapPublicRouteSlug = null, templateFamily = null, commerceStructureContract = null, entryServingRoute = null } = {}) {
+  mapPublicRouteSlug = effectiveMapPublicRouteSlug({ campaign: { public_route_slug: publicRouteSlug, map_public_route_slug: mapPublicRouteSlug } });
   const pageById = new Map();
   for (const funnel of spec.funnels || []) {
     for (const page of funnel.pages || []) pageById.set(page.id, page);
   }
   const urlById = new Map();
   for (const [id, page] of pageById) {
-    urlById.set(id, resolvePageUrl(page, baseUrl, publicRouteSlug, entryServingRoute?.(page)));
+    urlById.set(id, resolvePageUrl(page, baseUrl, publicRouteSlug, entryServingRoute?.(page), mapPublicRouteSlug));
   }
   return (spec.funnels || []).map((funnel) => ({
     funnel_id: funnel.id || "default",
@@ -3584,19 +3649,19 @@ function extractTopologies(spec, { baseUrl = null, publicRouteSlug = null, templ
         label: page.label || page.id,
         url: urlById.get(page.id) || null,
         is_entry: Boolean(page.is_entry),
-        expected_meta_tags: extractExpectedMetaTags(page, { baseUrl, pageById, urlById, publicRouteSlug }),
+        expected_meta_tags: extractExpectedMetaTags(page, { baseUrl, pageById, urlById, publicRouteSlug, mapPublicRouteSlug }),
         // Same resolver as build-time wiring. This previously read
         // `next_page || success_url` and ignored on_accept entirely, so the QA
         // expectation and the built page could disagree about which declared
         // field wins on any page carrying more than one.
-        expected_next_url: resolveSibling(pageById, urlById, forwardRouteTarget(page), baseUrl, publicRouteSlug),
+        expected_next_url: resolveSibling(pageById, urlById, forwardRouteTarget(page), baseUrl, publicRouteSlug, mapPublicRouteSlug),
         // acceptRouteTarget, never `page.on_accept` raw. Reading the field
         // directly outlived its correctness: since #234 gated `on_accept` to
         // offer pages, a `select` page's inert on_accept produced an
         // expected_accept_url, so QA hunted for an accept link the built page
         // correctly does not have and flagged a correct build.
-        expected_accept_url: resolveSibling(pageById, urlById, acceptRouteTarget(page), baseUrl, publicRouteSlug),
-        expected_decline_url: resolveSibling(pageById, urlById, declineRouteTarget(page), baseUrl, publicRouteSlug),
+        expected_accept_url: resolveSibling(pageById, urlById, acceptRouteTarget(page), baseUrl, publicRouteSlug, mapPublicRouteSlug),
+        expected_decline_url: resolveSibling(pageById, urlById, declineRouteTarget(page), baseUrl, publicRouteSlug, mapPublicRouteSlug),
         // Forward fields the author declared that routing skipped because this
         // page type cannot satisfy them. Carried into the topology so QA can
         // tell "terminates on purpose" (a thank-you page, a partial-scope
@@ -3622,13 +3687,14 @@ function extractTopologies(spec, { baseUrl = null, publicRouteSlug = null, templ
   }));
 }
 
-function resolvePageUrl(page, baseUrl, publicRouteSlug = null, entryServingRoute = null) {
-  if (typeof page.url === "string" && page.url.trim()) return page.url.trim();
+function resolvePageUrl(page, baseUrl, publicRouteSlug = null, entryServingRoute = null, mapPublicRouteSlug = null) {
+  if (typeof page.url === "string" && page.url.trim() && (!mapPublicRouteSlug || isAbsoluteHttpUrl(page.url.trim()))) return page.url.trim();
   if (!baseUrl) return null;
-  const route = isRootRoutedEntryPage(page, publicRouteSlug)
+  const specRoute = mapPublicRouteSlug && typeof page.url === "string" && page.url.trim() ? page.url : page.page_url;
+  const route = isRootRoutedEntryPage(page, publicRouteSlug, mapPublicRouteSlug)
     ? entryServingRoute?.route || ""
-    : typeof page.page_url === "string" && page.page_url.trim()
-      ? runtimeRelativeRouteForSpecValue(page.page_url, publicRouteSlug)
+    : typeof specRoute === "string" && specRoute.trim()
+      ? runtimeRelativeRouteForSpecValue(specRoute, publicRouteSlug, mapPublicRouteSlug)
       : defaultRouteForType(page.type);
   if (isAbsoluteHttpUrl(route)) return route;
   try {
@@ -3645,13 +3711,14 @@ function defaultRouteForType(type) {
   return `${type || "page"}/`;
 }
 
-function resolveSibling(pageById, urlById, ref, baseUrl, publicRouteSlug = null) {
+function resolveSibling(pageById, urlById, ref, baseUrl, publicRouteSlug = null, mapPublicRouteSlug = null) {
   if (typeof ref !== "string" || !ref.trim()) return undefined;
   if (urlById.has(ref)) return urlById.get(ref) || null;
   if (isAbsoluteHttpUrl(ref)) return ref;
   if (baseUrl && (ref.startsWith("/") || ref.includes(".") || ref.endsWith("/"))) {
     try {
-      return joinBaseUrl(baseUrl, runtimeRelativeRouteForSpecValue(ref, publicRouteSlug) || ref);
+      const route = runtimeRelativeRouteForSpecValue(ref, publicRouteSlug, mapPublicRouteSlug);
+      return joinBaseUrl(baseUrl, mapPublicRouteSlug ? route : route || ref);
     } catch {
       return ref;
     }
@@ -3670,14 +3737,14 @@ function joinBaseUrl(baseUrl, route) {
   return new URL(normalizedRoute, base).toString();
 }
 
-function extractExpectedMetaTags(page, { baseUrl, pageById, urlById, publicRouteSlug } = {}) {
+function extractExpectedMetaTags(page, { baseUrl, pageById, urlById, publicRouteSlug, mapPublicRouteSlug } = {}) {
   const source = page.sdk_hints?.meta_tags;
   if (!source || typeof source !== "object") return undefined;
   const out = {};
   for (const [key, value] of Object.entries(source)) {
     if (typeof value !== "string") continue;
     if (isRoutingMetaTag(key)) {
-      const resolved = resolveSibling(pageById || new Map(), urlById || new Map(), value, baseUrl, publicRouteSlug);
+      const resolved = resolveSibling(pageById || new Map(), urlById || new Map(), value, baseUrl, publicRouteSlug, mapPublicRouteSlug);
       out[key] = stripOrigin(resolved || value);
     } else {
       out[key] = value;

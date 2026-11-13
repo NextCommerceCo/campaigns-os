@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { parse } from "yaml";
+import { buildManifestEntries, computeBuildFingerprint } from "./built-site-scope.mjs";
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 const workflow = parse(read("docs/examples/campaign-repo-evidence-check.yml"));
@@ -45,12 +46,35 @@ async function postReport(root, { exitCode = "2", existing = false } = {}) {
 
 // Run the workflow's actual shell step, with an npx shim that launches the
 // local CLI without registry access (or simulates a launcher-only failure).
-function inspectReport(t, { packet, stderrOnly } = {}) {
+function inspectReport(t, { packet, stderrOnly, funnels = [] } = {}) {
   const root = mkdtempSync(join(tmpdir(), "doctor-ci-workflow-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   if (packet !== undefined) writeFileSync(join(root, "campaign-runtime.build.json"), packet);
+  for (const { filename, slug, status } of funnels) {
+    const output = join(root, "_site", slug);
+    mkdirSync(join(output, "landing"), { recursive: true });
+    writeFileSync(join(output, "landing", "index.html"), "<main>A trial funnel</main>\n");
+    const built = computeBuildFingerprint(output);
+    assert.equal(built.ok, true);
+    const runtimeDir = `.campaign-runtime/funnels/${slug}`;
+    mkdirSync(join(root, runtimeDir), { recursive: true });
+    writeFileSync(join(root, filename), JSON.stringify({
+      schema_version: "campaign-runtime-build-packet/v0",
+      campaign: { public_route_slug: slug },
+      spec: { map_id: "synthetic-map", local_path: "missing-spec.json" },
+      assembly: { target_repo: ".", output_dir: `src/${slug}`, runtime_dir: runtimeDir },
+    }));
+    writeFileSync(join(root, runtimeDir, "assembly-report.json"), JSON.stringify({ stages: {
+      assembly: { status: "completed", build_fingerprint: built.fingerprint, build_manifest: buildManifestEntries(built) },
+      polish: { status: "completed", source_build_fingerprint: built.fingerprint },
+      qa: { status: "completed", evidence: { source_build_fingerprint: built.fingerprint } },
+    } }));
+    if (status === "owed") writeFileSync(join(output, "landing", "index.html"), "<main>A revised trial funnel</main>\n");
+    if (status === "unknown") rmSync(output, { recursive: true });
+  }
   writeFileSync(join(root, "npx"), `#!${process.execPath}
 const { spawnSync } = require('node:child_process');
+require('node:fs').appendFileSync(process.env.RUNNER_TEMP + '/doctor-invocations', JSON.stringify(process.argv.slice(4)) + '\\n');
 if (process.env.TEST_STDERR_ONLY) {
   process.stderr.write(process.env.TEST_STDERR_ONLY);
   process.exit(1);
@@ -99,9 +123,10 @@ test("stderr-only failure stays in the job log and out of the real workflow comm
   const { root, result } = inspectReport(t, { stderrOnly: payload });
   assert.equal(result.status, 1);
   assert.equal(result.stderr, payload, "stderr remains visible in the job log");
-  assert.equal(readFileSync(join(root, "campaign-evidence.md"), "utf8"), "");
+  assert.equal(readFileSync(join(root, "campaign-evidence.md"), "utf8"),
+    "### campaign-runtime.build.json\n\nCampaign evidence could not be evaluated. See the job log.\n");
   const body = await postReport(root);
-  assert.equal(body, '<!-- campaign-evidence-check -->\nCampaign evidence could not be evaluated. See the job log.');
+  assert.equal(body, '<!-- campaign-evidence-check -->\n### campaign-runtime.build.json\n\nCampaign evidence could not be evaluated. See the job log.\n');
 });
 
 test("workflow replaces the sticky all-clear when install or build fails before doctor runs", async (t) => {
@@ -152,7 +177,7 @@ test("workflow invokes doctor CI offline, reports by default and gates only on d
   const doctor = steps[doctorIndex];
   assert.match(doctor.run, /npx --no-install campaigns-os doctor --packet \S+ --ci --no-live-refs/);
   assert.equal(doctor["continue-on-error"], true);
-  assert.match(doctor.run, /status=\$\?/);
+  assert.match(doctor.run, /funnel_status=\$\?/);
   assert.match(doctor.run, /echo "exit_code=\$status" >> "\$GITHUB_OUTPUT"/);
   assert.match(doctor.run, /cat "\$RUNNER_TEMP\/campaign-evidence\.md"/);
   assert.match(doctor.run, /exit "\$status"/);
@@ -240,20 +265,50 @@ test("skipped doctor fallback overwrites an old report and missing artifacts cle
     "<!-- campaign-evidence-check -->\nCampaign evidence could not be evaluated. See the job log.");
 });
 
-test("workflow defaults an empty or unset doctor status to failure before publishing it", (t) => {
-  const root = mkdtempSync(join(tmpdir(), "doctor-ci-status-"));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
-  writeFileSync(join(root, "campaign-evidence.md"), "report");
-  const doctor = steps.find((step) => step.id === "doctor");
-  const tail = doctor.run.slice(doctor.run.indexOf("status=$?\n") + "status=$?\n".length);
-  for (const status of [undefined, "", "0", "3"]) {
-    const env = { ...process.env, RUNNER_TEMP: root, GITHUB_OUTPUT: join(root, "outputs") };
-    delete env.status;
-    if (status !== undefined) env.status = status;
-    writeFileSync(env.GITHUB_OUTPUT, "");
-    const result = spawnSync("/bin/bash", ["-e", "-c", tail], { encoding: "utf8", env });
-    const expected = status || "1";
-    assert.equal(result.status, Number(expected), result.stderr);
-    assert.equal(readFileSync(env.GITHUB_OUTPUT, "utf8"), `exit_code=${expected}\n`);
+test("single-packet workflow preserves the doctor's comment body after the packet heading", async (t) => {
+  const { root, result } = inspectReport(t, { funnels: [
+    { filename: "campaign-runtime.build.json", slug: "trial-funnel", status: "current" },
+  ] });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(readFileSync(join(root, "outputs"), "utf8"), "exit_code=0\n");
+  const rawReport = readFileSync(join(root, "campaign-funnel-evidence.md"), "utf8");
+  assert.match(rawReport, /^## Campaign evidence: current \(exit 0\)/);
+  assert.equal(await postReport(root, { exitCode: "0" }),
+    `<!-- campaign-evidence-check -->\n### campaign-runtime.build.json\n\n${rawReport}`);
+  assert.equal(readFileSync(join(root, "doctor-invocations"), "utf8").trim().split("\n").length, 1);
+});
+
+test("multi-funnel workflow checks both root packets and posts owed and current in one sticky comment", async (t) => {
+  for (const owedFirst of [false, true]) {
+    const names = ["campaign-runtime.build.json", "campaign-runtime-second.build.json"];
+    const { root, result } = inspectReport(t, { funnels: names.map((filename, index) => ({
+      filename, slug: `trial-${index}`, status: (index === 0) === owedFirst ? "owed" : "current",
+    })) });
+    assert.equal(result.status, 3, result.stderr || result.stdout);
+    assert.equal(readFileSync(join(root, "outputs"), "utf8"), "exit_code=3\n");
+    const calls = readFileSync(join(root, "doctor-invocations"), "utf8").trim().split("\n").map(JSON.parse);
+    assert.deepEqual(calls, names.map((name) => ["doctor", "--packet", name, "--ci", "--no-live-refs"]));
+    const body = await postReport(root, { exitCode: "3", existing: true });
+    const blocks = body.split(/^### /m).slice(1);
+    assert.equal(blocks.length, 2);
+    for (const [index, block] of blocks.entries()) {
+      assert.ok(block.startsWith(`${names[index]}\n\n`));
+      assert.match(block, (index === 0) === owedFirst
+        ? /Campaign evidence: owed \(exit 3\)/ : /Campaign evidence: current \(exit 0\)/);
+    }
+  }
+});
+
+test("multi-funnel workflow gives owed precedence over unknown and unknown over current without a default packet", async (t) => {
+  for (const statuses of [["unknown", "current"], ["current", "unknown"], ["unknown", "owed"], ["owed", "unknown"]]) {
+    const { root, result } = inspectReport(t, { funnels: statuses.map((status, index) => ({
+      filename: `campaign-runtime-trial-${index}.build.json`, slug: `trial-${index}`, status,
+    })) });
+    const expected = statuses.includes("owed") ? 3 : 4;
+    assert.equal(result.status, expected, result.stderr || result.stdout);
+    assert.equal(readFileSync(join(root, "outputs"), "utf8"), `exit_code=${expected}\n`);
+    const body = await postReport(root, { exitCode: String(expected) });
+    assert.equal((body.match(/^### /gm) || []).length, 2);
+    assert.doesNotMatch(body, /### campaign-runtime\.build\.json/);
   }
 });

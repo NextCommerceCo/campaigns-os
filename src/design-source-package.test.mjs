@@ -33,6 +33,27 @@ const validateSchema = new Ajv2020({ strict: true, allErrors: true }).compile(sc
 const GENERATED_AT = "2026-08-22T10:00:00.000Z";
 const NOW = Date.parse(GENERATED_AT);
 
+test("built-first readiness fields and contributions are rejected on ordinary packages by schema and validator", () => {
+  const ordinary = readyHtmlPackage();
+  const built = synthesizeHtmlFunnelDesignSourcePackage({ adopted: true, generatedAt: GENERATED_AT,
+    activePages: [{ id: "landing", type: "landing" }], mappings: [{ page_id: "landing", path: "landing.html", confidence: "high" }] });
+  for (const valid of [ordinary, built]) {
+    assert.equal(validateSchema(valid), true, JSON.stringify(validateSchema.errors));
+    assert.equal(validateDesignSourcePackage(valid, { now: NOW }).ok, true);
+  }
+  for (const change of [
+    (value) => { value.readiness.source_basis = "built_first"; },
+    (value) => { value.readiness.label = built.readiness.label; },
+    (value) => { value.contributions[0].kind = "built_first"; },
+  ]) {
+    const value = structuredClone(ordinary);
+    change(value);
+    value.material_fingerprint = computeDesignSourcePackageMaterialFingerprint(value);
+    assert.equal(validateSchema(value), false);
+    assert.equal(validateDesignSourcePackage(value, { now: NOW }).ok, false);
+  }
+});
+
 // Baseline outputs captured once from 505aada92c94cecf9106bb1fb1e818d9dadee46d.
 const baselineOutput = (name) => JSON.parse(readFileSync(resolve(ROOT, `fixtures/design-file-baseline/${name}.json`), "utf8"));
 

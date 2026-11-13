@@ -56,7 +56,7 @@ import { currentPacketInputs, inputStamps } from "./input-currency.mjs";
 const recordStamps = (seed) => inputStamps(currentPacketInputs({ packet: JSON.parse(readFileSync(seed.packetPath, "utf8")), packetPath: seed.packetPath }));
 import { createHash } from "node:crypto";
 import { execFile, execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
@@ -64,7 +64,8 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
-import { computeBuildFingerprint } from "./built-site-scope.mjs";
+import { buildManifestEntries, computeBuildFingerprint } from "./built-site-scope.mjs";
+import { recordCommand } from "./stage-record.mjs";
 import { packetRuntimeRelPath } from "./campaign-workspace.mjs";
 import { buildPageLoadCapture } from "./polish-capture.mjs";
 import { planPolishCapture } from "./polish-node.mjs";
@@ -326,6 +327,96 @@ function seedMissingFetchedSpec(seed) {
   writeJson(seed.packetPath, packet);
 }
 
+// The handed-off page-only fixture from after-edit.test.mjs, under the
+// harness's existing target and isolated HOME. Record its original build,
+// then change copy (or add a page for --yes) before the effects snapshot.
+async function seedAfterEdit(seed, { yes = false } = {}) {
+  const slug = "synthetic-campaign";
+  const pages = {
+    landing: '<html><head><meta name="next-page-type" content="product"></head><body><h1>Example headline</h1><a href="../checkout/">Order</a></body></html>',
+    checkout: '<html><head><meta name="next-page-type" content="checkout"></head><body><form data-next-checkout="form"><button type="submit">Pay</button></form></body></html>',
+    upsell: '<html><head><meta name="next-page-type" content="upsell"></head><body><h1>Example offer</h1><div data-next-package-id="12"><button data-next-upsell-action="add">Yes</button></div></body></html>',
+    receipt: '<html><head><meta name="next-page-type" content="receipt"></head><body>Thank you</body></html>',
+  };
+  seed.packetPath = join(seed.targetRepo, "campaign-runtime.build.json");
+  seed.specPath = join(seed.targetRepo, ".campaign-runtime/fetched-specs/synthetic-map.json");
+  seed.restoredSpec = {
+    schema_version: "4.3", spec_identity: { map_id: "synthetic-map", public_route_slug: slug },
+    campaign: { slug, name: "Synthetic campaign" }, global_config: { sdk_version: "0.4.40" },
+    funnels: [{ id: "main", pages: Object.keys(pages).map((id, index) => ({ id, type: id === "receipt" ? "thankyou" : id, page_url: `${id}/`, order: index + 1 })) }],
+  };
+  writeJson(seed.specPath, seed.restoredSpec);
+  writeJson(seed.packetPath, {
+    schema_version: "campaign-runtime-build-packet/v0", campaign: { public_route_slug: slug, api_key_source: "env:CAMPAIGNS_API_KEY" },
+    spec: { map_id: "synthetic-map", local_path: ".campaign-runtime/fetched-specs/synthetic-map.json" },
+    assembly: { target_repo: ".", output_dir: `src/${slug}` },
+  });
+  const config = join(seed.targetRepo, "_data/campaigns.json");
+  writeJson(config, { [slug]: { sdk_version: "0.4.40", store_name: "Synthetic Store" } });
+  utimesSync(config, 1_000, 1_000);
+  const output = join(seed.targetRepo, "_site", slug);
+  const page = (id, html) => {
+    const source = join(seed.targetRepo, "src", slug, `${id}.html`);
+    const built = join(output, id, "index.html");
+    mkdirSync(dirname(source), { recursive: true });
+    mkdirSync(dirname(built), { recursive: true });
+    writeFileSync(source, `---\npage_type: ${id === "landing" || !(id in pages) ? "product" : id}\n---\n${html}`);
+    writeFileSync(built, html);
+    utimesSync(source, 1_000, 1_000);
+    utimesSync(built, 2_000, 2_000);
+  };
+  for (const [id, html] of Object.entries(pages)) page(id, html);
+  const original = computeBuildFingerprint(output);
+  const report = {
+    schema_version: "campaign-runtime-assembly-report/v0", run_id: "synthetic-run", generated_at: "2026-11-01T00:00:00Z", status: "prepared",
+    identity: { map_id: "synthetic-map", public_route_slug: slug, campaign_directory: slug, live_url_path: `/${slug}/`, spec_hash: createHash("sha256").update(readFileSync(seed.specPath)).digest("hex"), spec_material_hash: specMaterialHash(seed.restoredSpec) },
+    inputs: { packet_path: "campaign-runtime.build.json", context_path: ".campaign-runtime/build-context.json", spec_path: ".campaign-runtime/fetched-specs/synthetic-map.json", source: { kind: "html_funnel", root: "source" }, target_repo: "." },
+    template_family: { value: "olympus", locked: true }, decisions: [], evidence: [], blockers: [], warnings: [],
+    next: { stage: "build", owner: "build", action: "Record build" }, stages: {},
+  };
+  for (const stage of ["prepare_build", "doctor", "setup", "assembly", "polish", "deploy", "qa"]) report.stages[stage] = { stage, status: "completed" };
+  Object.assign(report.stages.assembly, { build_fingerprint: original.fingerprint, build_manifest: buildManifestEntries(original) });
+  Object.assign(report.stages.polish, { source_build_fingerprint: original.fingerprint });
+  Object.assign(report.stages.qa, { ...recordStamps(seed), evidence: { qc_build_fingerprint: original.fingerprint, qc_results: [] }, purchase_proof: { order_paths_executed: 3, declared_depth: "common" } });
+  writeJson(seed.reportPath, report);
+  writeJson(join(seed.targetRepo, ".campaign-runtime/build-context.json"), { spec: { active_pages: seed.restoredSpec.funnels[0].pages }, page_map: [], scaffold: { required: false } });
+  await recordCommand({ _: ["record", "build"], packet: seed.packetPath });
+  // An unstamped retained snapshot makes record build's invalidation visible.
+  writeJson(join(seed.targetRepo, ".campaign-runtime/doctor-output.json"), { ok: true, status: "ready" });
+  if (yes) page("extra", '<html><head><meta name="next-page-type" content="product"></head><body>Extra</body></html>');
+  else page("upsell", pages.upsell.replace("Example offer", "Revised offer"));
+  rmSync(seed.specPath);
+}
+
+function afterEditSucceeded({ yes = false, qa = false, noLiveRefs = false } = {}) {
+  return (result, seed, label, receiver) => {
+    const out = JSON.parse(result.stdout);
+    assert.equal(out.action, "after-edit", label);
+    assert.equal(out.steps.find((step) => step.step === "spec").status, "done", label);
+    assert.equal(out.steps.find((step) => step.step === "record_build").status, "done", label);
+    assert.deepEqual(receiver.hits, [
+      { method: "GET", url: "/api/spec/synthetic-map" },
+      ...Array.from({ length: noLiveRefs ? 0 : yes ? 3 : 2 }, () => ({ method: "GET", url: "/api/campaign" })),
+      ...(qa && label.includes("[persisted_consent]") ? [{ method: "POST", url: "/api/qa/verdicts" }] : []),
+      ...(qa ? [{ method: "GET", url: "/api/campaign" }] : []),
+    ], `${label}: only conditional reads and the consented verdict publish are sent; no order or build request`);
+    if (yes) {
+      assert.match(out.steps.find((step) => step.step === "spec_derive").detail, /record spec: Bound/, label);
+      assert.ok(readJson(seed.specPath).funnels[0].pages.some((page) => page.id === "extra"), label);
+    }
+    if (qa) {
+      assert.equal(result.code, 2, label);
+      assert.equal(out.qa.status, "blocked", label);
+      assert.ok(existsSync(out.qa.verdict_path), label);
+      assert.equal(readJson(seed.reportPath).stages.qa.status, "blocked", label);
+      assert.deepEqual(readJson(out.qa.verdict_path).test_orders, [], label);
+    } else {
+      assert.equal(result.code, 3, label);
+      assert.equal(out.stopped_at, null, label);
+    }
+  };
+}
+
 /** A Git checkout with a manifest, which `sdk storage-check` refuses to run without. */
 function seedStorageScan(seed) {
   execFileSync("git", ["init", "-q"], { cwd: seed.targetRepo });
@@ -471,6 +562,15 @@ function seedDeployReady(seed) {
   const packet = readJson(seed.packetPath);
   packet.deploy = { ...packet.deploy, target: "local-serve" };
   writeJson(seed.packetPath, packet);
+}
+
+function seedDeployWithPolishEvidence(seed) {
+  seedDeployReady(seed);
+  execFileSync(process.execPath, [CLI, "record", "polish", "--packet", seed.packetPath, "--evidence", join(seed.dir, "polish-evidence.json"), "--json"], {
+    cwd: seed.dir,
+    stdio: "pipe",
+    env: { ...process.env, HOME: seed.home, XDG_CONFIG_HOME: join(seed.home, ".config"), CAMPAIGNS_OS_TELEMETRY: "off", CAMPAIGNS_OS_LIFECYCLE_LOG: "" },
+  });
 }
 
 /** A handed-off funnel rebuilt from a pre-1.62 record, the one kind `record baseline` accepts. */
@@ -667,6 +767,10 @@ const intake = (command, seed, extra = []) => [
  * serves the spec under every condition.
  */
 const INVOCATIONS = {
+  "after-edit": { prepare: seedAfterEdit, serveSpec: true, env: () => ({ CAMPAIGNS_API_KEY: SYNTHETIC_CAMPAIGN_KEY }), expect: afterEditSucceeded(), argv: (s, receiver) => ["after-edit", "--packet", s.packetPath, "--proxy-base", receiver, "--json"] },
+  "after-edit|--yes": { prepare: (s) => seedAfterEdit(s, { yes: true }), serveSpec: true, env: () => ({ CAMPAIGNS_API_KEY: SYNTHETIC_CAMPAIGN_KEY }), expect: afterEditSucceeded({ yes: true }), argv: (s, receiver) => ["after-edit", "--packet", s.packetPath, "--yes", "--proxy-base", receiver, "--json"] },
+  "after-edit|--no-live-refs": { prepare: seedAfterEdit, serveSpec: true, env: () => ({ CAMPAIGNS_API_KEY: SYNTHETIC_CAMPAIGN_KEY }), expect: afterEditSucceeded({ noLiveRefs: true }), argv: (s, receiver) => ["after-edit", "--packet", s.packetPath, "--no-live-refs", "--proxy-base", receiver, "--json"] },
+  "after-edit|--run-qa": { prepare: seedAfterEdit, serveSpec: true, env: () => ({ CAMPAIGNS_API_KEY: SYNTHETIC_CAMPAIGN_KEY }), expect: afterEditSucceeded({ qa: true }), argv: (s, receiver) => ["after-edit", "--packet", s.packetPath, "--run-qa", "--proxy-base", receiver, "--json"] },
   "help": { argv: () => ["help"] },
   "demo": { argv: (s) => ["demo", "--target", join(s.dir, "demo-out")], target: () => "demo-out" },
   "readback": { argv: (s) => ["readback", s.targetRepo, "--json"] },
@@ -683,7 +787,22 @@ const INVOCATIONS = {
   "doctor|--no-live-refs": { prepare: seedBuiltSite, argv: (s, receiver) => ["doctor", "--packet", s.packetPath, "--proxy-base", receiver, "--no-live-refs", "--json"] },
   "doctor|--write --no-live-refs": { prepare: seedBuiltSite, argv: (s, receiver) => ["doctor", "--packet", s.packetPath, "--write", "--proxy-base", receiver, "--no-live-refs", "--json"] },
   "doctor|--built": { prepare: seedBuiltSite, argv: (s) => ["doctor", "--built", s.targetRepo, "--family", "olympus", "--json"] },
-  "doctor|--built --emit-packet": { prepare: seedBuiltSite, argv: (s) => ["doctor", "--built", s.targetRepo, "--family", "olympus", "--emit-packet", "--json"] },
+  "doctor|--built --emit-packet": {
+    prepare: seedBuiltSite, fetchSpec: true, proxyBase: true,
+    argv: (s, receiver) => ["doctor", "--built", s.targetRepo, "--family", "olympus", "--emit-packet",
+      ...(s.fetchMapId ? ["--map-id", s.fetchMapId] : []), "--proxy-base", receiver, "--json"],
+    expect: (result, s) => {
+      assert.equal(result.code, 0, result.stderr);
+      const packet = readJson(join(s.targetRepo, ".campaign-runtime/minimal-build-packet.json"));
+      if (s.fetchMapId) {
+        assert.equal(packet.spec.map_id, s.fetchMapId);
+        assert.deepEqual(readJson(packet.spec.local_path), readJson(s.specPath));
+      } else {
+        assert.equal(existsSync(join(s.targetRepo, ".campaign-runtime/fetched-specs")), false, "without --map-id no cache is written");
+        assert.equal(Object.hasOwn(packet.spec, "local_path"), false);
+      }
+    },
+  },
   "sdk storage-check": {
     prepare: seedStorageScan,
     argv: (s) => ["sdk", "storage-check", "--target", s.targetRepo, "--target-sdk", "0.4.38", "--manifest", join(s.targetRepo, "SDK-manifest.json"), "--scope", "_data", "--json"],
@@ -735,8 +854,8 @@ const INVOCATIONS = {
   "record polish|--dry-run": { prepare: seedPolishReady, expect: recordDryRunSucceeded("polish", ["target-page-kit/.campaign-runtime/assembly-report.json"]), argv: (s) => ["record", "polish", "--packet", s.packetPath, "--evidence", join(s.dir, "polish-evidence.json"), "--dry-run", "--json"] },
   "record theme": { prepare: seedThemeReady, argv: (s) => ["record", "theme", "--packet", s.packetPath, "--json"] },
   "record theme|--dry-run": { prepare: seedThemeReady, expect: recordDryRunSucceeded("theme", ["target-page-kit/.campaign-runtime/assembly-report.json"]), argv: (s) => ["record", "theme", "--packet", s.packetPath, "--dry-run", "--json"] },
-  "record deploy": { prepare: seedDeployReady, argv: (s, receiver) => ["record", "deploy", "--packet", s.packetPath, "--base-url", `${receiver}/${readJson(s.packetPath).campaign.public_route_slug}/`, "--json"] },
-  "record deploy|--dry-run": { prepare: seedDeployReady, expect: recordDryRunSucceeded("deploy", ["build-packet.basic.json", "target-page-kit/.campaign-runtime/assembly-report.json"]), argv: (s, receiver) => ["record", "deploy", "--packet", s.packetPath, "--base-url", `${receiver}/${readJson(s.packetPath).campaign.public_route_slug}/`, "--dry-run", "--json"] },
+  "record deploy": { prepare: seedDeployWithPolishEvidence, argv: (s, receiver) => ["record", "deploy", "--packet", s.packetPath, "--base-url", `${receiver}/${readJson(s.packetPath).campaign.public_route_slug}/`, "--json"] },
+  "record deploy|--dry-run": { prepare: seedDeployWithPolishEvidence, expect: recordDryRunSucceeded("deploy", ["build-packet.basic.json", "target-page-kit/.campaign-runtime/assembly-report.json"]), argv: (s, receiver) => ["record", "deploy", "--packet", s.packetPath, "--base-url", `${receiver}/${readJson(s.packetPath).campaign.public_route_slug}/`, "--dry-run", "--json"] },
   "record baseline": { prepare: seedBaselineReady, argv: (s) => ["record", "baseline", "--packet", s.packetPath, "--accepted-by", "Pat Rivera", "--reason", "Live since before markup hashes", "--json"] },
   "record baseline|--dry-run": { prepare: seedBaselineReady, expect: recordDryRunSucceeded("baseline", ["target-page-kit/.campaign-runtime/assembly-report.json"]), argv: (s) => ["record", "baseline", "--packet", s.packetPath, "--accepted-by", "Pat Rivera", "--reason", "Live since before markup hashes", "--dry-run", "--json"] },
   "validate-assembly-report": { argv: (s) => ["validate-assembly-report", "--report", s.reportPath, "--json"] },
@@ -873,13 +992,13 @@ async function runCondition(row, invocation, condition) {
   const receiver = await startReceiver();
   const persisted = condition === "persisted_consent";
   try {
-    invocation.prepare?.(seed);
+    await invocation.prepare?.(seed);
     if (persisted && invocation.fetchSpec) {
       seed.fetchMapId = readJson(seed.packetPath).spec.map_id;
       receiver.routes.set(`/api/spec/${seed.fetchMapId}`, { ok: true, data: readJson(seed.specPath) });
     }
     if (invocation.serveSpec) {
-      receiver.routes.set(`/api/spec/${readJson(seed.packetPath).spec.map_id}`, { ok: true, data: readJson(seed.specPath) });
+      receiver.routes.set(`/api/spec/${readJson(seed.packetPath).spec.map_id}`, { ok: true, data: seed.restoredSpec ?? readJson(seed.specPath) });
     }
     if (persisted) {
       // The grant the operator would make: consent recorded on the machine for
@@ -945,7 +1064,7 @@ async function runCondition(row, invocation, condition) {
     // A row whose claim is "writes nothing" also proves a refusal, so a dry
     // run states what it must print: without this, a command the CLI refuses
     // as unknown passes the same row.
-    invocation.expect?.(result, seed, `${row.effect_test} [${condition}]`);
+    invocation.expect?.(result, seed, `${row.effect_test} [${condition}]`, receiver);
     const changed = changedPaths(before, snapshot(seed.dir));
 
     const target = invocation.target ? invocation.target(seed) : "target-page-kit";
@@ -991,6 +1110,9 @@ async function runCondition(row, invocation, condition) {
     // (3) Exactly the declared sends. An undeclared request fails; a declared
     // one this condition names must be seen.
     const urls = receiver.hits.map((hit) => hit.url);
+    if (row.effect_test === "effects: doctor --built --emit-packet" && !seed.fetchMapId) {
+      assert.deepEqual(urls, [], "doctor --built --emit-packet without --map-id sends nothing");
+    }
     for (const url of urls) {
       assert.ok(
         row.sends.some((send) => {

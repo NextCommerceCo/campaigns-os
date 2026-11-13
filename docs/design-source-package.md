@@ -18,7 +18,8 @@ current-input checks.
 - Schema file: `schemas/campaign-design-source-package.v0.schema.json`.
 - Default target-repo path:
   `.campaign-runtime/input/design-source-package.json`.
-- Current `prepare-build` producer: `source_kind: "html_funnel"`.
+- Current `prepare-build` producer: `source_kind: "html_funnel"`, or
+  `"built_first"` for `--adopt`.
 - Current source adapter remains visible in `packet.source_html`. During v0,
   `prepare-build` emits that compatibility block alongside the normalized
   package; the source-html manifest and page mappings seed the package but do
@@ -29,6 +30,46 @@ The package is strict at its top level. It contains `schema_version`,
 `surface_identity`, `contributions`, `source_gaps`, `source_todos`, `waivers`,
 `divergences`, `proposed_exceptions`, `notes`, `readiness`, and `readback`.
 Unknown top-level fields are rejected.
+
+## Built first
+
+`prepare-build --map-id <id> --adopt src/<route> --target <page-kit-dir>
+--template-family <family>` declares `source_kind: "built_first"`. The built
+pages stand in for the design source. `--route` with `--source` keeps the
+ordinary design-proof rules. There is no source-kind flag to convert an
+existing package; reconcile an existing intake rather than relabelling it.
+
+The tool grants built-first treatment only when the recorded Build Context
+contains the adoption and the package on disk still matches the intake's
+Design Source Package references in the Build Packet, Build Context and Assembly
+Report, including the exact-byte sha256 and material fingerprint. Editing a
+package to say `built_first` cannot grant that treatment. An edited or mismatched
+package gets the ordinary source-render plan, no built-first label or excluded
+comparison rows, and intake's existing package-mismatch gate blocks progress.
+`readiness.source_basis` and `readiness.label`, and contributions of kind
+`built_first`, are valid only inside a `built_first` package.
+
+Design source is the built pages ("built first"); nothing was compared to a design.
+The readiness block carries `source_basis: "built_first"` and that label, even
+when its status is ready. Missing desktop/mobile source screenshots and their
+capture TODOs do not block this kind. Coverage, other TODOs, gaps, divergences,
+proposed exceptions and the requirement for page surfaces keep their rules.
+
+`polish capture` fills the source evidence from its existing desktop 1440×1200
+and mobile 390×844 build captures. In the Polish captures record,
+`source.built_first_source_evidence[]` joins `surface_id`, `page_id`, route and
+viewport to the actual build PNG descriptor under
+`.campaign-runtime/polish/captures/`. A failed capture records its status and
+no image. This uses the same files, without copying images, changing the
+package fingerprint or making another browser pass. The Page Kit templates
+are never rendered as a design source.
+
+`visual.reference`, `visual.diff`, `parity.element` and `design.access` read
+`excluded` with reason `built_first`: "not applicable: built first". These rows
+cannot pass or be accepted as a revision baseline or design match. Doctor,
+`next` and readback show the same label. The first QA is a full `qa run`,
+including test orders; page-scoped QA cannot substitute for that first run.
+`record baseline` does not apply to a newly adopted funnel.
 
 ## Contributions and coverage
 
@@ -83,7 +124,7 @@ Each `contributions[]` record identifies one source contribution and records:
 - optional `template_reference` proof; and
 - `mappings` that join the contribution to Surface Identity.
 
-The v0 contribution kinds are `html_funnel`, `figma_frames`, `figma_sections`,
+The v0 contribution kinds are `built_first`, `html_funnel`, `figma_frames`, `figma_sections`,
 `page_kit`, `static_source`, `template_stock`, `agency_source`, and `other`.
 Trust is `native`, `structured`, `rendered`, or `opaque`.
 
@@ -366,7 +407,8 @@ When the package already exists, `prepare-build`:
 3. validates current campaign and page identity/mappings;
 4. validates current HTML source/provenance, required source refs and byte
    hashes, coverage mappings, and current template material; and
-5. requires `source_kind: "html_funnel"`.
+5. requires `source_kind: "html_funnel"`, or `"built_first"` when the intake
+   adopts the funnel's built pages with `--adopt` (see "Built first").
 
 If all checks pass, the mode is `reused`: the package bytes and modification
 time are untouched, and all three artifact references use the full hash of

@@ -1,5 +1,10 @@
 # Run-artifact readback — `campaigns-os readback`
 
+For an adopted funnel whose packet names a `built_first` Design Source
+Package, readback reads that package and adds the identity line:
+Design source is the built pages ("built first"); nothing was compared to a design.
+This label conveys source provenance, never a design match or QA verdict.
+
 `campaigns-os readback <target-repo-root>` projects a read-only view of the
 artifacts a Campaigns OS run has already emitted into a target: the Build
 Packet, the doctor output sidecar, the build context, the assembly report, a QA
@@ -407,6 +412,15 @@ assessment; the CLI always supplies one.
 
 ### `doctor`
 
+When the retained doctor output carries `stale: true`, the doctor block prints
+one stale line with the stamp's reason, flattened for safe terminal output.
+Without a usable reason, it says the retained doctor output is marked stale
+and to re-run `campaigns-os doctor`. JSON adds `stale: true` and `stale_reason`
+to `doctor`; an absent reason becomes an empty string. Plain `doctor` prints the
+current state and leaves the retained output as it is, so the stale line stays
+until `doctor --write` or `next` rewrites that output. Unstamped readings keep
+their existing fields, regardless of report timestamps or file mtimes.
+
 - `present` — whether a doctor output loaded. When false, `status` is `null` and
   both counts are `0`: those zeros record an absence, not an observation.
 - `status` — doctor's own status string, unreinterpreted.
@@ -454,7 +468,7 @@ does not rerun doctor, Polish, or QA and does not reinterpret their verdicts.
 - `recorded_build_fingerprint`: the stage's build binding, or `null`;
 - `current_build_fingerprint`: the fingerprint computed from current built
   output with `computeBuildFingerprint`, or `null`;
-- `reason`: `null` for `current`; `build_fingerprint_changed`,
+- `reason`: `null` for `current`; `build_fingerprint_changed`, `stage_blocked`,
   `stage_required_by_build`, `stage_required_by_brief`,
   `stage_required_by_spec`, or `stage_required` for `owed`; or an explicit
   reason for `unknown`.
@@ -466,7 +480,7 @@ to `source_build_fingerprint`, and the same build-binding comparison as `next`.
 It does not require uncommitted capture files to be present.
 
 `current` means the stage's binding equals the bytes on disk and the assembly
-fingerprint is available and the stage is not recorded as `required`. `owed`
+fingerprint is available and the stage is not recorded as `required` or `blocked`. `owed`
 means that binding differs from the current build, or the lifecycle recorded
 the stage as `required`, even without a stage fingerprint. Its `required_by`
 selects `stage_required_by_build`, `stage_required_by_brief`, or
@@ -479,10 +493,11 @@ explicitly `unknown`; a missing stage fingerprint does too unless the stage is
 `packet_unavailable`, `build_output_location_unknown`, `build_output_missing`,
 `build_output_unreadable`, `assembly_build_fingerprint_missing`, and
 `stage_build_fingerprint_missing`.
+`stage_blocked` means the last run on the current build was blocked, so the stage remains owed.
 When both stage and disk fingerprints are available, `matches_current_build`
 reports their equality even if a missing assembly fingerprint makes status unknown.
 `matches_current_build: true` together with `status: owed` means the lifecycle
-requires the stage again over matching evidence. Consumers decide whether
+requires the stage again over matching evidence or the last run was blocked. Consumers decide whether
 evidence is owed from `status`, never from `matches_current_build`.
 
 `changes` compares current output to **the retained assembly manifest**, using
@@ -494,9 +509,11 @@ the existing file drift machinery. It carries:
 - `extra`, `missing`, `changed`: complete file path lists from the manifest
   comparison, without the human drift summary's truncation;
 - `changed_pages`: `{ "page_id": "landing", "built_path": "landing/index.html" }`
-  entries for added, removed, or modified HTML in the built-site page map;
-- `unmapped_files`: every differing path outside that map, including shared
-  CSS, scripts and assets. These changes still make build-bound evidence owed.
+  entries for added, removed, or modified HTML in the built-site page map,
+  and for the pages that link a changed stylesheet or image directly;
+- `unmapped_files`: every other differing path outside that map: scripts,
+  files no page links directly as a stylesheet or image, and anything else.
+  These changes still make build-bound evidence owed.
 
 Paths are relative to `_site/<public_route_slug>/` and sorted; page IDs use
 `resolveBuiltSiteScope`'s route-derived identities (nested routes use hyphens).
@@ -511,7 +528,11 @@ stage bindings still follow the fingerprint comparison.
 
 `changes.kind` classifies this drift (`none`, `page_only`,
 `commerce_affecting` or `unknown`) and `changes.reasons` lists why it counts as
-commerce, each `{ "code", "path"? }`. The rule is in
+commerce, each `{ "code", "path"? }`. When a stylesheet or image the pages
+link directly changed, the change also has `linked_assets` (each `{ "path",
+"pages" }`, `pages` the ids of the pages that link it; at most 20) and
+`browser_pages` (the built paths of the checkout or upsell pages among those
+pages). Neither makes a change commerce. The rule is in
 [what a change owes](campaigns-os-build-flow.md#what-a-change-owes).
 
 The assembly baseline is explicit because it need not equal an older stage's
@@ -534,6 +555,9 @@ the build a stage reviewed are on that stage instead. An owed stage carries:
 - QA only, `scope` and `owed_pages`: `pages` with the changed pages when the
   change is `page_only` (`qa run --page` pays it), `full` otherwise, `null`
   when QA is not owed.
+- QA only, `browser_pages`: present when QA, page-scoped or full, owes a
+  browser run: the ids of the checkout or upsell pages a changed stylesheet or
+  image reaches. `qa run`, with or without `--page`, then needs `--browser`.
 - QA only, `reviewed_at`: when the completed QA the change is read from was
   checked. Absent when QA did not complete.
 - QA only, `baseline`: `{ "accepted_by", "accepted_at", "reason",
@@ -597,6 +621,7 @@ failure lines up with a completed stage. This too is the readback's own layer.
 
 Doctor warnings — of either group — do not affect `clean`. Neither does a
 blocked QA verdict, a blocked assembly report, or a non-empty `skip_cascades`.
+A stale doctor reading does not change `clean`; read `doctor.stale` separately.
 
 ### What `clean` does and does not mean
 

@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import Ajv2020 from "ajv/dist/2020.js";
 
+import { funnelPacketFilename, packetRuntimeRelPath } from "./campaign-workspace.mjs";
 import { doctorSidecarBlocked } from "./doctor-sidecar.mjs";
 import { validateVerdict } from "./qa-verdict.mjs";
 import { specHashesMatch } from "./spec-identity.mjs";
@@ -192,39 +193,71 @@ function normalizeRepositoryRelativePath(value) {
 
 export function inspectSidecarBundle({ packetPath, requireQa = false } = {}) {
   if (!packetPath || typeof packetPath !== "string") {
-    throw new Error("bundle check requires --packet <campaign-runtime.build.json>.");
+    throw new Error("bundle check requires --packet <packet>.");
   }
 
   const root = bundleRootFor(packetPath);
   const absolutePacket = resolve(packetPath);
-  const canonicalPacket = join(root, SIDECAR_BUNDLE_CONTRACT.packet_discovery.canonical_path);
+  const packetRelativePath = relative(root, absolutePacket);
+  const discovery = SIDECAR_BUNDLE_CONTRACT.packet_discovery;
   const errors = [];
   const warnings = [];
   const records = new Map();
   const artifacts = [];
 
-  if (absolutePacket !== canonicalPacket) {
-    const legacy = absolutePacket === join(root, SIDECAR_BUNDLE_CONTRACT.packet_discovery.legacy_path);
+  // Read the selected packet once, before resolving any of its sidecars. Never
+  // substitute the project's default packet for a funnel's explicit packet.
+  const packetPresent = existsSync(absolutePacket);
+  let packetRecord;
+  if (packetPresent) {
+    try { packetRecord = readJsonArtifact(absolutePacket); } catch { /* Report invalid JSON in the artifact loop. */ }
+  }
+  let funnelPacket = null;
+  try {
+    funnelPacket = funnelPacketFilename(valueAt(packetRecord?.value, discovery.canonical_funnel_route_field));
+  } catch { /* A missing or unnameable route cannot supply a canonical funnel filename. */ }
+  if (packetRelativePath !== discovery.canonical_path && packetRelativePath !== funnelPacket) {
+    const legacy = packetRelativePath === discovery.legacy_path;
+    const validForms = `${discovery.canonical_path} or ${discovery.canonical_funnel_path} for the packet's own ${discovery.canonical_funnel_route_field}`;
     errors.push(artifactFinding(
       legacy ? "bundle.packet.legacy_path" : "bundle.packet.noncanonical_path",
       "build_packet",
       legacy
-        ? `Build Packet is at the legacy sidecar path ${SIDECAR_BUNDLE_CONTRACT.packet_discovery.legacy_path}; default discovery reads only the repository root.`
-        : `Build Packet must be at repository-root ${SIDECAR_BUNDLE_CONTRACT.packet_discovery.canonical_path}.`,
+        ? `Build Packet is at the legacy sidecar path ${discovery.legacy_path}; use repository-root ${validForms}.`
+        : `Build Packet must be at repository-root ${validForms}.`,
       legacy
-        ? SIDECAR_BUNDLE_CONTRACT.packet_discovery.legacy_remedy
-        : SIDECAR_BUNDLE_CONTRACT.packet_discovery.noncanonical_remedy,
+        ? discovery.legacy_remedy
+        : discovery.noncanonical_remedy,
+    ));
+  }
+
+  let runtimeRelativePath = null;
+  try {
+    runtimeRelativePath = packetRuntimeRelPath(packetRecord?.value);
+  } catch (error) {
+    errors.push(artifactFinding(
+      "bundle.packet.runtime_dir",
+      "build_packet",
+      error.message,
+      "Restore the runtime directory recorded by prepare-build, or re-run prepare-build for this funnel.",
     ));
   }
 
   for (const artifactContract of SIDECAR_BUNDLE_CONTRACT.artifacts) {
-    const path = join(root, artifactContract.path);
+    const isPacket = artifactContract.kind === "build_packet";
+    // An invalid runtime directory must not even probe another funnel's files.
+    if (!isPacket && runtimeRelativePath === null) continue;
+    const artifactRelativePath = isPacket
+      ? packetRelativePath
+      // Repository-relative, so always "/": the contract forbids a backslash.
+      : `${runtimeRelativePath}/${artifactContract.runtime_relative_path}`;
+    const path = isPacket ? absolutePacket : join(root, artifactRelativePath);
     const required = artifactContract.requirement === "required" || (artifactContract.kind === "qa_verdict" && requireQa);
     const record = {
       kind: artifactContract.kind,
-      path: artifactContract.path,
+      path: artifactRelativePath,
       requirement: artifactContract.requirement,
-      present: existsSync(path),
+      present: isPacket ? packetPresent : existsSync(path),
       schema_version: null,
       generated_at: null,
       sha256: null,
@@ -236,11 +269,11 @@ export function inspectSidecarBundle({ packetPath, requireQa = false } = {}) {
       const finding = artifactFinding(
         `bundle.${artifactContract.kind}.missing`,
         artifactContract.kind,
-        `Missing canonical JSON artifact ${artifactContract.path}.`,
+        `Missing canonical JSON artifact ${artifactRelativePath}.`,
         artifactContract.kind === "qa_verdict"
-          ? "Run QA, or explicitly promote one named full verdict with campaigns-os qa promote; never select a verdict by mtime."
+          ? `Run QA, or explicitly promote one named full verdict with campaigns-os qa promote --packet ${packetRelativePath}; never select a verdict by mtime.`
           : artifactContract.kind === "doctor_output"
-            ? "Run campaigns-os doctor --packet campaign-runtime.build.json --write --strip-paths to refresh it."
+            ? `Run campaigns-os doctor --packet ${packetRelativePath} --write --strip-paths to refresh it.`
             : "Regenerate the bundle with Campaigns OS while preserving authored packet, context, and assembly inputs.",
       );
       (required ? errors : warnings).push(finding);
@@ -248,7 +281,8 @@ export function inspectSidecarBundle({ packetPath, requireQa = false } = {}) {
     }
 
     try {
-      const parsed = readJsonArtifact(path);
+      const parsed = isPacket ? packetRecord : readJsonArtifact(path);
+      if (!parsed) throw new Error("Build Packet is not valid JSON.");
       records.set(artifactContract.kind, parsed);
       record.schema_version = parsed.value?.schema_version ?? null;
       record.generated_at = valueAt(parsed.value, artifactContract.freshness_field) ?? null;
@@ -258,7 +292,7 @@ export function inspectSidecarBundle({ packetPath, requireQa = false } = {}) {
       errors.push(artifactFinding(
         `bundle.${artifactContract.kind}.invalid_json`,
         artifactContract.kind,
-        `${artifactContract.path} is not valid JSON.`,
+        `${artifactRelativePath} is not valid JSON.`,
         "Regenerate the artifact with its Campaigns OS producer; do not repair generated JSON by hand.",
       ));
       continue;
@@ -269,15 +303,15 @@ export function inspectSidecarBundle({ packetPath, requireQa = false } = {}) {
         `bundle.${artifactContract.kind}.schema_version`,
         artifactContract.kind,
         `Expected schema_version ${artifactContract.schema_version}; found ${record.schema_version ?? "missing"}.`,
-        `Regenerate ${artifactContract.path} with a compatible Campaigns OS release.`,
+        `Regenerate ${artifactRelativePath} with a compatible Campaigns OS release.`,
       ));
     }
     if (!timestampOk(record.generated_at)) {
       errors.push(artifactFinding(
         `bundle.${artifactContract.kind}.generated_at`,
         artifactContract.kind,
-        `${artifactContract.path} needs a strict RFC3339 UTC generated_at timestamp.`,
-        `Regenerate ${artifactContract.path}; freshness is never inferred from filesystem mtime.`,
+        `${artifactRelativePath} needs a strict RFC3339 UTC generated_at timestamp.`,
+        `Regenerate ${artifactRelativePath}; freshness is never inferred from filesystem mtime.`,
       ));
     }
     const validateSchema = schemaValidators.get(artifactContract.kind);
@@ -289,8 +323,8 @@ export function inspectSidecarBundle({ packetPath, requireQa = false } = {}) {
       errors.push(artifactFinding(
         `bundle.${artifactContract.kind}.schema`,
         artifactContract.kind,
-        `${artifactContract.path} failed ${artifactContract.schema_path}: ${details}`,
-        `Regenerate ${artifactContract.path} with its Campaigns OS producer; do not repair generated JSON by hand.`,
+        `${artifactRelativePath} failed ${artifactContract.schema_path}: ${details}`,
+        `Regenerate ${artifactRelativePath} with its Campaigns OS producer; do not repair generated JSON by hand.`,
       ));
     }
   }
@@ -301,19 +335,19 @@ export function inspectSidecarBundle({ packetPath, requireQa = false } = {}) {
   const doctor = records.get("doctor_output")?.value;
   const qaVerdict = records.get("qa_verdict")?.value;
 
-  if (context && normalizeRepositoryRelativePath(context.packet_path) !== "campaign-runtime.build.json") {
+  if (context && normalizeRepositoryRelativePath(context.packet_path) !== packetRelativePath) {
     errors.push(artifactFinding(
       "bundle.build_context.packet_path",
       "build_context",
-      "Build Context packet_path must name repository-root campaign-runtime.build.json.",
+      `Build Context packet_path must name repository-root ${packetRelativePath}.`,
       "Regenerate the Build Context with canonical repository-relative output paths.",
     ));
   }
-  if (report && normalizeRepositoryRelativePath(report.inputs?.packet_path) !== "campaign-runtime.build.json") {
+  if (report && normalizeRepositoryRelativePath(report.inputs?.packet_path) !== packetRelativePath) {
     errors.push(artifactFinding(
       "bundle.assembly_report.packet_path",
       "assembly_report",
-      "Assembly Report inputs.packet_path must name repository-root campaign-runtime.build.json.",
+      `Assembly Report inputs.packet_path must name repository-root ${packetRelativePath}.`,
       "Regenerate the Assembly Report with canonical repository-relative output paths.",
     ));
   }
@@ -322,7 +356,7 @@ export function inspectSidecarBundle({ packetPath, requireQa = false } = {}) {
       "bundle.doctor_output.stale",
       "doctor_output",
       "Doctor output is explicitly marked stale after a later mutation.",
-      "Re-run campaigns-os doctor --packet campaign-runtime.build.json --write --strip-paths.",
+      `Re-run campaigns-os doctor --packet ${packetRelativePath} --write --strip-paths.`,
     ));
   }
   // A blocked doctor run is still a conformant artifact — the sidecars agree
@@ -335,7 +369,7 @@ export function inspectSidecarBundle({ packetPath, requireQa = false } = {}) {
       "bundle.doctor_output.blocked",
       "doctor_output",
       `Doctor output records a blocked run (status ${doctor.status ?? "missing"}, ok ${doctor.ok ?? "missing"}); the campaign cannot proceed${requireQa ? ", so it cannot satisfy QA-complete handoff" : " even though the sidecars agree with each other"}.`,
-      "Resolve the doctor errors, then re-run campaigns-os doctor --packet campaign-runtime.build.json --write --strip-paths so the retained sidecar records a ready run.",
+      `Resolve the doctor errors, then re-run campaigns-os doctor --packet ${packetRelativePath} --write --strip-paths so the retained sidecar records a ready run.`,
     ));
   }
   if (qaVerdict) {
@@ -345,7 +379,7 @@ export function inspectSidecarBundle({ packetPath, requireQa = false } = {}) {
         "bundle.qa_verdict.shape",
         "qa_verdict",
         `QA Verdict sidecar failed its public shape: ${qaErrors.join("; ")}`,
-        "Re-run QA or explicitly promote a valid named full verdict with campaigns-os qa promote.",
+        `Re-run QA or explicitly promote a valid named full verdict with campaigns-os qa promote --packet ${packetRelativePath}.`,
       ));
     }
     for (const field of ["entry_urls", "page_urls", "tested_urls", "test_orders"]) {
@@ -354,7 +388,7 @@ export function inspectSidecarBundle({ packetPath, requireQa = false } = {}) {
           `bundle.qa_verdict.${field}`,
           "qa_verdict",
           `Committed QA sidecar field ${field} must be an empty array.`,
-          "Regenerate the allowlist projection with campaigns-os qa promote; do not commit a full URL/order-bearing verdict.",
+          `Regenerate the allowlist projection with campaigns-os qa promote --packet ${packetRelativePath}; do not commit a full URL/order-bearing verdict.`,
         ));
       }
     }

@@ -102,9 +102,56 @@ and the write are observed rather than taken on trust.
 packet's copy is missing, and it never replaces one. It also writes the target's
 `.gitignore` when the managed block is missing or still lists `fetched-specs/`.
 
+`doctor --built --emit-packet` is tier A: when `--map-id` is given, its row
+declares the same spec request, cache replacement and managed `.gitignore`
+handling as intake, then a minimal synthesized packet with
+`spec.map_id`, `spec.local_path` and a differing Map route binding when needed.
+`--cached-spec` reuses the copy without fetching or rewriting it. A failed fetch
+writes no packet or cache. Without `--map-id`, emission keeps the existing stub,
+sends nothing and writes no fetched-spec cache. Without `--emit-packet`,
+`--map-id` labels the inspection only and sends nothing.
+
 `record baseline` writes only the Assembly Report and sends nothing. It is tier C
 because it replaces the live Polish and QA records, so any purchase proof they
 held stops counting. History keeps them.
+
+### `after-edit`
+
+`after-edit --packet <packet>` composes the existing fetch, record, derive and
+CI assessment steps. When the saved-Map spec copy is missing, it sends one GET
+to `{proxy-base}/api/spec/{map-id}`, restores the copy and repairs the managed
+`.gitignore` block if needed. When current built output differs from its recorded
+fingerprint, it writes the Assembly Report through `record build` and stamps a
+retained doctor output stale. It never starts a build. The derive preview and CI
+assessment each read `{proxy-base}/api/campaign` when built output and a public
+Campaigns API key are available; `--no-live-refs` suppresses those reads, while
+still allowing the missing-spec fetch. `--proxy-base` chooses the proxy endpoint.
+
+`--yes` permits a planned derive to write the spec and, when its next step is
+`record spec`, the existing spec refresh writes: the Build Context, Assembly
+Report, retained doctor stale stamp, normalized brief when changed, and Build
+Packet and synthesized Design Source Package when a page rebind requires them.
+The real derive makes another live-campaign read unless `--no-live-refs` is set.
+`--run-qa` runs only the page QA the assessment owes, with current or advisory
+Polish. An attempt writes its full verdict under `{target}/qa-output/`, its
+committed sidecar beside the packet, the report's QA outcome and refreshed
+doctor output. Page and browser requests go to the tested URL; the browser lane
+can also read configured store policy URLs. QA's live-reference read follows
+the usual key and served-page conditions. A non-local verdict can be published
+to `{proxy-base}/api/qa/verdicts` under the usual consent or portal-managed
+default; local-spec verdicts stay local. The CI assessment runs again after QA.
+No test order is placed. Full Polish and QA remain a separate step needing the
+project manager's go.
+
+Every form is tier C because recording can replace or invalidate stage evidence;
+none is read-only or idempotent, and each is open-world because missing-spec
+restoration can send even with `--no-live-refs`. The standard wrapper resolves
+an ambient session and appends one lifecycle entry when a journal is selected
+(active session or `CAMPAIGNS_OS_LIFECYCLE_LOG`), including a stopped outcome;
+an argv refusal appends none. It leaves the run-session file untouched and does
+not sweep stale sessions. Composing the QA producer does not invoke `qa run`'s
+CLI progress capture, Run Record remit or session auto-closeout. `--no-write`
+is refused; use `doctor --ci` for an assessment without recording.
 
 ### The live campaign read
 
@@ -126,7 +173,7 @@ is unchanged. Each form has its own row, including `doctor --write
 `doctor --no-write --no-live-refs` has the effects of the `doctor
 --no-live-refs` row.
 
-Only `doctor`, `qa run` and `spec derive` (see `spec derive` and the live campaign, below) make this read. The other commands that run doctor
+`doctor`, `qa run` and `spec derive` (see `spec derive` and the live campaign, below) make this read, and `after-edit` composes them as described above. The other commands that run doctor
 internally make no request and record `derived.live_campaign_refs` as
 `not_run` with reason `not_read`, with no warning: `start`, `prepare-build`
 and `build` (the intake alias for prepare-build + doctor), `theme waive`,
@@ -176,8 +223,8 @@ flags that change what the invocation does to the world are listed once, in
 `vocabulary.effect_changing_flags`: `--apply`, `--browser`, `--built`, `--dry-run`,
 `--emit-packet`, `--example`, `--force`, `--from-store`, `--list`,
 `--no-live-refs`, `--no-post-verdict`, `--no-probe`, `--no-remit`, `--no-run-session`,
-`--no-write`, `--republish`, `--test-order`, `--vendor-beacons`, `--write`,
-`--write-map`. Flags that only change the output shape (`--json`, `--report`)
+`--no-write`, `--republish`, `--run-qa`, `--test-order`, `--vendor-beacons`, `--write`,
+`--write-map`, `--yes`. Flags that only change the output shape (`--json`, `--report`)
 deliberately do not.
 
 **"The help text" is every help block the CLI prints**, not one file's.

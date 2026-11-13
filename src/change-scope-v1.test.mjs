@@ -113,8 +113,7 @@ test("the installed HTML parser is the one the v1 literals were captured with", 
   assert.ok(entities, "setup: parse5's entities dependency resolves");
   const why = "commerce-signature/v1 hashes parse5's tree and entities' decoding; a parser upgrade can move recorded v1 hashes "
     + "(reading as commerce_markup_changed on a copy-only edit), so it must be reviewed against these vectors before this pin moves. "
-    + "This pin covers this repo's lockfile only: package.json declares parse5 ^8.0.1, so an npm consumer can resolve a newer 8.x, "
-    + "and whether to pin parse5 exactly or bundle it is an open decision, not part of this test";
+    + "The published package pins and bundles both dependencies so consumer resolution preserves saved v1 records; bundling adds package bytes, and parser upgrades require a reviewed compatibility decision";
   assert.equal(parse5.pkg.version, "8.0.1", `parse5 ${parse5.pkg.version} is installed: ${why}`);
   assert.equal(entities.version, "8.1.0", `entities ${entities.version} is installed: ${why}`);
 });
@@ -537,8 +536,13 @@ test("classifyDrift v1: every branch against a literal recorded baseline", () =>
   write("landing", PAGES.landing.replace("Landing headline", "A new headline"));
   assert.deepEqual(classify(known({ changed_pages: [page("landing")] })), { kind: "page_only", reasons: [] }, "a copy-only landing edit is page-only");
 
+  // #753 narrows this: a stylesheet or image a built page links directly is
+  // mapped to that page (mapLinkedAssets) before classifyDrift sees it, and
+  // reaches it as `linkedAssets`, never as an unmapped file. A stylesheet no
+  // page links still arrives here unmapped and is still commerce. The hashes
+  // are unchanged: commerce-signature/v1 never covered styling.
   assert.deepEqual(classify(known({ unmapped_files: ["assets/site.css"] })),
-    { kind: "commerce_affecting", reasons: [{ code: "unmapped_file", path: "assets/site.css" }] }, "a CSS-only asset is an unmapped file in v1");
+    { kind: "commerce_affecting", reasons: [{ code: "unmapped_file", path: "assets/site.css" }] }, "a CSS asset no page links is an unmapped file in v1");
 
   write("checkout", PAGES.checkout.replace("<h1>Checkout</h1>", "<h1>Secure checkout</h1>"));
   assert.deepEqual(classify(known({ changed_pages: [page("checkout")] })),
@@ -643,4 +647,26 @@ test("classifyDrift v1: every branch against a literal recorded baseline", () =>
   assert.deepEqual(capped.reasons.slice(1), many.slice(0, 19).map((path) => ({ code: "unmapped_file", path })), "then the first 19 unmapped files");
   const cappedSigned = classify(known({ unmapped_files: many }));
   assert.deepEqual(cappedSigned.reasons, many.slice(0, 20).map((path) => ({ code: "unmapped_file", path })), "with a signature, the first 20 unmapped files");
+}));
+
+// Captured with parse5 8.0.1 / entities 8.1.0. parse5 8.1.0 no longer
+// reconstructs the formatting element after </desc>, dropping the second
+// commerce fact. Updating old records would destroy their provenance.
+test("v1 preserves foreign-element reconstruction against a saved record", () => withTempDir((dir) => {
+  const html = '<svg><desc><b data-next-package-id="1">Old copy</desc><p>More copy';
+  const signature = "sha256:b7ef29d46fe19ce25b41a5f3082a244a30e342a62f4233823ce3753b6b9233e5";
+  assertVector("foreign element reconstruction", {
+    html: [html, html.replace("Old copy", "New copy")],
+    facts: "b[data-next-package-id]=1\nb[data-next-package-id]=1",
+    signature,
+  });
+  mkdirSync(join(dir, "_data"));
+  writeFileSync(join(dir, "_data/campaigns.json"), JSON.stringify(CONFIG));
+  const built = join(dir, "landing.html");
+  writeFileSync(built, html.replace("Old copy", "New copy"));
+  const baseline = { commerce_signature: { algorithm: "commerce-signature/v1", campaign_config: PAGES_SIGNATURE.campaign_config, pages: { "landing.html": signature } } };
+  const changed = { status: "known", extra: [], missing: [], changed_pages: [{ built_path: "landing.html", page_id: "landing", page_type: "product" }], unmapped_files: [] };
+  assert.equal(classifyDrift({ changes: changed, baseline, targetRepo: dir, publicRouteSlug: SLUG, outputRoot: dir }).kind, "page_only");
+  writeFileSync(built, html.replace('package-id="1"', 'package-id="2"'));
+  assert.equal(classifyDrift({ changes: changed, baseline, targetRepo: dir, publicRouteSlug: SLUG, outputRoot: dir }).kind, "commerce_affecting");
 }));

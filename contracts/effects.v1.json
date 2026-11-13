@@ -59,14 +59,485 @@
       "--no-run-session",
       "--no-write",
       "--republish",
+      "--run-qa",
       "--test-order",
       "--vendor-beacons",
       "--write",
-      "--write-map"
+      "--write-map",
+      "--yes"
     ],
     "preflight": "What the preflight itself may do, on a `test_scope: \"preflight\"` row, declared apart from the effects the row declares for the invocation that gets past it: `may_write` is the complete list of paths the refusal may write (no `**` — an allowance that licenses a subtree licenses the home directory the refusal must not touch) and `may_contact` the exact request paths the loopback receiver may see. The test enforces both independently of `writes`/`sends`, so a write declared for the success path cannot license the preflight to write there."
   },
   "rows": [
+    {
+      "command": "after-edit",
+      "subcommand": null,
+      "flags": [],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": true,
+        "idempotentHint": false
+      },
+      "tier": "C",
+      "writes": [
+        {
+          "path": "{target}/.campaign-runtime/fetched-specs/*.json",
+          "when": "the packet's saved-Map spec copy is missing and spec fetch restores it; an existing copy is never replaced",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.gitignore",
+          "when": "the spec copy was missing, spec fetch succeeds, and the managed ignore block needs repair",
+          "observed_in": [
+            "no_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{runtime}/assembly-report.json",
+          "when": "current built output differs from the recorded build and record build succeeds: replace stages.assembly, archive superseded evidence and invalidate dependent stages as record build does",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{runtime}/doctor-output.json",
+          "when": "a retained doctor snapshot exists and record build invalidates it",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a journal is selected by an active run session or CAMPAIGNS_OS_LIFECYCLE_LOG: append one after-edit entry after the composed steps, including a stopped outcome; an argv refusal appends none",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/spec/{map-id}",
+          "what": "one GET of the saved CampaignSpec",
+          "when": "the packet's saved-Map spec copy is missing; --no-live-refs does not suppress this restoration",
+          "requires_consent": false,
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "destination": "{proxy-base}/api/campaign",
+          "what": "read-only GETs under X-Campaign-Key: one for the derive preview, another for the real derive when --yes applies a planned change, and one per CI assessment",
+          "when": "built output exists and a public Campaigns API key resolves, --no-live-refs is absent, and the corresponding derive or assessment step is reached",
+          "requires_consent": false,
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        }
+      ],
+      "effect_test": "effects: after-edit",
+      "test_scope": "full",
+      "notes": "Composes spec fetch, record build, spec derive and doctor --ci; --yes permits planned spec writes and record spec, and --run-qa permits only owed page QA with current or advisory Polish. Never starts a build or places an order. Tier C because records can replace or invalidate earlier stage evidence. The standard wrapper reads the ambient session and appends one lifecycle entry when selected; it does not write or clear run-session.json, sweep stale sessions, capture progress, assemble a Run Record or remit one. The composed QA producer can publish its verdict but does not trigger qa run's CLI progress or session auto-closeout. --proxy-base chooses the proxy destination and is not an effect-changing vocabulary flag. Live-campaign reads are conditional and read-only."
+    },
+    {
+      "command": "after-edit",
+      "subcommand": null,
+      "flags": [
+        "--yes"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": true,
+        "idempotentHint": false
+      },
+      "tier": "C",
+      "writes": [
+        {
+          "path": "{target}/.campaign-runtime/fetched-specs/*.json",
+          "when": "the packet's saved-Map spec copy is missing and spec fetch restores it; an existing copy is never replaced",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.gitignore",
+          "when": "the spec copy was missing, spec fetch succeeds, and the managed ignore block needs repair",
+          "observed_in": [
+            "no_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{runtime}/assembly-report.json",
+          "when": "current built output differs from the recorded build and record build succeeds: replace stages.assembly, archive superseded evidence and invalidate dependent stages as record build does; with --yes and planned spec changes, record spec also rebinds identity and refreshes or invalidates stage evidence",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{runtime}/doctor-output.json",
+          "when": "a retained doctor snapshot exists and record build, spec derive or record spec invalidates it",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{runtime}/input/*",
+          "when": "--yes is given, spec derive plans and writes changes, and its next step is record spec; the refresh runs (outcome refreshed) and the brief re-derived from the brief file last saved by intake or `record brief` (or from the generated draft) differs from what is bound, or the normalized brief on disk no longer holds the re-derived brief's material — the normalized brief",
+          "observed_in": [],
+          "not_observed_reason": "the handed-off fixture has no saved brief or synthesized Design Source Package; its added page observes the packet and Build Context rebind instead"
+        },
+        {
+          "path": "{packet}",
+          "when": "--yes is given, spec derive plans and writes changes, and its next step is record spec; the active pages changed in a way record spec binds (#531, #721): a move of routes alone, or on a handed-off campaign (deploy or QA completed) a page added or removed — source_html.pages[].page_kit re-projected for every page, an added page recorded with origin repo, a removed page's entry dropped, and design_source_package's sha256 and material_fingerprint when the package is rewritten; also, without a page rebind, design_source_package alone when an earlier record spec stopped after rewriting the package and its pending provenance record vouches for the bytes on disk",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{runtime}/input/design-source-package.json",
+          "when": "--yes is given, spec derive plans and writes changes, and its next step is record spec; that page rebind changes a kept page's Surface Identity (its route, page-kit target or label) — the package prepare-build synthesized is rewritten at the same path, written first, with a pending provenance record beside it until the report records its new sha256",
+          "observed_in": [],
+          "not_observed_reason": "the handed-off fixture has no saved brief or synthesized Design Source Package; its added page observes the packet and Build Context rebind instead"
+        },
+        {
+          "path": "{runtime}/build-context.json",
+          "when": "--yes is given, spec derive plans and writes changes, and its next step is record spec; the refresh runs (outcome refreshed) — spec.hash, spec.material_hash, spec.route_masked_material_hash and the active pages' labels; the brief summary and bindings when the re-derived brief is saved; on a page rebind, spec.active_pages, page_map and design_source_package too; design_source_package when an interrupted earlier run left it naming the old package",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{spec}",
+          "when": "--yes is given, the dry-run derive plans changes, and the real derive writes those changes",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a journal is selected by an active run session or CAMPAIGNS_OS_LIFECYCLE_LOG: append one after-edit entry after the composed steps, including a stopped outcome; an argv refusal appends none",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/spec/{map-id}",
+          "what": "one GET of the saved CampaignSpec",
+          "when": "the packet's saved-Map spec copy is missing; --no-live-refs does not suppress this restoration",
+          "requires_consent": false,
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "destination": "{proxy-base}/api/campaign",
+          "what": "read-only GETs under X-Campaign-Key: one for the derive preview, another for the real derive when --yes applies a planned change, and one per CI assessment",
+          "when": "built output exists and a public Campaigns API key resolves, --no-live-refs is absent, and the corresponding derive or assessment step is reached",
+          "requires_consent": false,
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        }
+      ],
+      "effect_test": "effects: after-edit --yes",
+      "test_scope": "full",
+      "notes": "Composes spec fetch, record build, spec derive and doctor --ci; --yes permits planned spec writes and record spec, and --run-qa permits only owed page QA with current or advisory Polish. Never starts a build or places an order. Tier C because records can replace or invalidate earlier stage evidence. The standard wrapper reads the ambient session and appends one lifecycle entry when selected; it does not write or clear run-session.json, sweep stale sessions, capture progress, assemble a Run Record or remit one. The composed QA producer can publish its verdict but does not trigger qa run's CLI progress or session auto-closeout. --proxy-base chooses the proxy destination and is not an effect-changing vocabulary flag. Live-campaign reads are conditional and read-only."
+    },
+    {
+      "command": "after-edit",
+      "subcommand": null,
+      "flags": [
+        "--no-live-refs"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": true,
+        "idempotentHint": false
+      },
+      "tier": "C",
+      "writes": [
+        {
+          "path": "{target}/.campaign-runtime/fetched-specs/*.json",
+          "when": "the packet's saved-Map spec copy is missing and spec fetch restores it; an existing copy is never replaced",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.gitignore",
+          "when": "the spec copy was missing, spec fetch succeeds, and the managed ignore block needs repair",
+          "observed_in": [
+            "no_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{runtime}/assembly-report.json",
+          "when": "current built output differs from the recorded build and record build succeeds: replace stages.assembly, archive superseded evidence and invalidate dependent stages as record build does",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{runtime}/doctor-output.json",
+          "when": "a retained doctor snapshot exists and record build invalidates it",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a journal is selected by an active run session or CAMPAIGNS_OS_LIFECYCLE_LOG: append one after-edit entry after the composed steps, including a stopped outcome; an argv refusal appends none",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/spec/{map-id}",
+          "what": "one GET of the saved CampaignSpec",
+          "when": "the packet's saved-Map spec copy is missing; --no-live-refs does not suppress this restoration",
+          "requires_consent": false,
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        }
+      ],
+      "effect_test": "effects: after-edit --no-live-refs",
+      "test_scope": "full",
+      "notes": "Composes spec fetch, record build, spec derive and doctor --ci; --yes permits planned spec writes and record spec, and --run-qa permits only owed page QA with current or advisory Polish. Never starts a build or places an order. Tier C because records can replace or invalidate earlier stage evidence. The standard wrapper reads the ambient session and appends one lifecycle entry when selected; it does not write or clear run-session.json, sweep stale sessions, capture progress, assemble a Run Record or remit one. The composed QA producer can publish its verdict but does not trigger qa run's CLI progress or session auto-closeout. --proxy-base chooses the proxy destination and is not an effect-changing vocabulary flag. --no-live-refs suppresses derive and assessment live-campaign reads, but not a missing-spec fetch."
+    },
+    {
+      "command": "after-edit",
+      "subcommand": null,
+      "flags": [
+        "--run-qa"
+      ],
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": true,
+        "idempotentHint": false
+      },
+      "tier": "C",
+      "writes": [
+        {
+          "path": "{target}/.campaign-runtime/fetched-specs/*.json",
+          "when": "the packet's saved-Map spec copy is missing and spec fetch restores it; an existing copy is never replaced",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.gitignore",
+          "when": "the spec copy was missing, spec fetch succeeds, and the managed ignore block needs repair",
+          "observed_in": [
+            "no_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{runtime}/assembly-report.json",
+          "when": "current built output differs from the recorded build and record build succeeds: replace stages.assembly, archive superseded evidence and invalidate dependent stages as record build does; with --run-qa, page QA is owed, Polish is current or advisory and the QA producer returns a verdict: record the page QA outcome",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{runtime}/doctor-output.json",
+          "when": "a retained doctor snapshot exists and record build invalidates it; after page QA returns a verdict and the report accepts it, refresh the doctor snapshot",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/qa-output/**",
+          "when": "--run-qa is given, the assessment owes page QA with current or advisory Polish, and the QA producer completes an attempt, including a blocked attempt",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{packet-runtime}/qa-verdict.json",
+          "when": "--run-qa is given, page QA is owed with current or advisory Polish, and the QA producer projects its attempt to the committed sidecar",
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{lifecycle-journal}",
+          "when": "a journal is selected by an active run session or CAMPAIGNS_OS_LIFECYCLE_LOG: append one after-edit entry after the composed steps, including a stopped outcome; an argv refusal appends none",
+          "observed_in": [
+            "ambient_session",
+            "lifecycle_log"
+          ]
+        }
+      ],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/spec/{map-id}",
+          "what": "one GET of the saved CampaignSpec",
+          "when": "the packet's saved-Map spec copy is missing; --no-live-refs does not suppress this restoration",
+          "requires_consent": false,
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "destination": "{proxy-base}/api/campaign",
+          "what": "read-only GETs under X-Campaign-Key: one for the derive preview, another for the real derive when --yes applies a planned change, and one per CI assessment, plus QA's own live-reference read after a served page is read",
+          "when": "built output exists and a public Campaigns API key resolves, --no-live-refs is absent, and the corresponding derive or assessment step is reached; the assessment runs again after a QA attempt",
+          "requires_consent": false,
+          "observed_in": [
+            "no_session",
+            "ambient_session",
+            "stale_session",
+            "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "destination": "{base-url}",
+          "what": "HTTP page requests and, when linked asset changes require the browser lane, browser navigation and resource requests against the tested campaign; no test orders",
+          "when": "--run-qa is given, page QA is owed, Polish is current or advisory, and the QA gates allow the page checks",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the real QA producer is blocked at its checkpoint preflight in this offline fixture; the attempt and its committed evidence are observed"
+        },
+        {
+          "destination": "{proxy-base}/api/qa/verdicts",
+          "what": "the QA attempt verdict, published to the QA portal",
+          "when": "--run-qa produces a verdict for a non-local tested URL and the default publish decision allows it through endpoint-scoped telemetry consent or portal-managed campaign provenance; never for a local-spec packet",
+          "requires_consent": true,
+          "observed_in": [
+            "persisted_consent"
+          ]
+        },
+        {
+          "destination": "the http(s) store policy URLs the CampaignSpec configures (campaign.store_terms, campaign.store_privacy, campaign.store_returns, campaign.store_shipping, and campaign.store_contact when it is an http(s) URL), and the redirects they answer with; a mailto: campaign.store_contact is checked for presence only and is never requested",
+          "what": "GET requests that read headers only: at most 5 configured URLs, at most 6 requests per URL (the URL and up to 5 redirects), at most 30 per run",
+          "when": "--run-qa selects the browser lane for owed pages, the QA gates pass, and the CampaignSpec configures at least one http(s) store policy URL",
+          "requires_consent": false,
+          "observed_in": [],
+          "not_observed_reason": "the fixture owes a copy-only page check and is blocked at QA preflight, so it reaches no browser or store policy link"
+        }
+      ],
+      "effect_test": "effects: after-edit --run-qa",
+      "test_scope": "full",
+      "notes": "Composes spec fetch, record build, spec derive and doctor --ci; --yes permits planned spec writes and record spec, and --run-qa permits only owed page QA with current or advisory Polish. Never starts a build or places an order. Tier C because records can replace or invalidate earlier stage evidence. The standard wrapper reads the ambient session and appends one lifecycle entry when selected; it does not write or clear run-session.json, sweep stale sessions, capture progress, assemble a Run Record or remit one. The composed QA producer can publish its verdict but does not trigger qa run's CLI progress or session auto-closeout. --proxy-base chooses the proxy destination and is not an effect-changing vocabulary flag. Live-campaign reads are conditional and read-only."
+    },
     {
       "command": "help",
       "subcommand": null,
@@ -1007,19 +1478,33 @@
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
-        "openWorldHint": false,
+        "openWorldHint": true,
         "idempotentHint": true
       },
-      "tier": "B",
+      "tier": "A",
       "writes": [
         {
           "path": "{target}/.campaign-runtime/minimal-build-packet.json",
-          "when": "always — the minimal Build Packet derived from the built site is emitted (--emit-packet <path> writes it where the path names instead)",
+          "when": "spec resolution succeeds and built scope resolves; --emit-packet <path> writes the minimal packet where the path names instead",
           "observed_in": [
             "no_session",
             "ambient_session",
             "stale_session",
             "lifecycle_log",
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.campaign-runtime/fetched-specs/*.json",
+          "when": "--map-id is given without --cached-spec and the saved Map fetch succeeds; replaces an earlier copy of that Map",
+          "observed_in": [
+            "persisted_consent"
+          ]
+        },
+        {
+          "path": "{target}/.gitignore",
+          "when": "--map-id is given, spec resolution succeeds and the managed block is missing, lacks a required entry, or still lists fetched-specs/",
+          "observed_in": [
             "persisted_consent"
           ]
         },
@@ -1031,10 +1516,20 @@
           ]
         }
       ],
-      "sends": [],
+      "sends": [
+        {
+          "destination": "{proxy-base}/api/spec/{map-id}",
+          "what": "the CampaignSpec fetch",
+          "when": "--map-id is given without --cached-spec",
+          "requires_consent": false,
+          "observed_in": [
+            "persisted_consent"
+          ]
+        }
+      ],
       "effect_test": "effects: doctor --built --emit-packet",
       "test_scope": "full",
-      "notes": "--emit-packet turns the inspection into a writer: the minimal Build Packet derived from the built _site/ is written under the target's runtime directory (or to the path the flag names), so QA can run against the same campaign without a packet of its own."
+      "notes": "Emits the minimal Build Packet derived from the built _site/ under the target's runtime directory (or to the path --emit-packet names). When --map-id is given, fetches the saved Map before synchronous inspection and names the cached spec and any differing Map route binding, using the intake cache and managed ignore handling. A failed fetch writes no packet or cache. Without --map-id, emits a stub, sends nothing and writes no fetched-spec cache; --map-id without --emit-packet remains label-only and sends nothing."
     },
     {
       "command": "telemetry",
@@ -6793,7 +7288,7 @@
       ],
       "effect_test": "effects: record deploy",
       "test_scope": "full",
-      "notes": "Destructive: it replaces stages.deploy, stamped with the build fingerprint it probed, and the packet's deploy.preview_url. On a local-serve packet the requests stay on this machine: --base-url must be a loopback origin. On any other deploy target --base-url is an https origin and the served scripts and stylesheets are compared by sha256 with the built output (HTML is not compared). Refused, writing nothing but the lifecycle entry, when the URL breaks those rules or is not the campaign's route root, a built page does not answer (2xx locally, 200 hosted), a served asset is missing or differs, polish is not recorded, build or Polish is owed again after a brief or CampaignSpec change or its record does not say which content it was made against, the built output changed since build was recorded or a record build of other output lands between the probe and the write (on either deploy target), or the theme gate is blocked. The Build Context is read, not written."
+      "notes": "Destructive: it replaces stages.deploy, stamped with the build fingerprint it probed, and the packet's deploy.preview_url. On a local-serve packet the requests stay on this machine: --base-url must be a loopback origin. On any other deploy target --base-url is an https origin and the served scripts and stylesheets are compared by sha256 with the built output (HTML is not compared). Refused, writing nothing but the lifecycle entry, when the URL breaks those rules or is not the campaign's route root, a built page does not answer (2xx locally, 200 hosted), a served asset is missing or differs, polish is not recorded, build or Polish is owed again after a brief or CampaignSpec change or its record does not say which content it was made against, the built output changed since build was recorded or a record build of other output lands between the probe and the write (on either deploy target), or doctor's theme gate or Polish gate is blocked. The Build Context is read, not written."
     },
     {
       "command": "record",

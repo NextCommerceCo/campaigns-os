@@ -1,6 +1,6 @@
 {
   "name": "@nextcommerce/campaigns-os",
-  "version": "1.68.0",
+  "version": "1.71.0",
   "description": "Toolkit for agent-assisted NEXT campaign builds.",
   "license": "Apache-2.0",
   "repository": {
@@ -101,7 +101,8 @@
   "dependencies": {
     "acorn": "^8.18.0",
     "ajv": "^8.20.0",
-    "parse5": "^8.0.1",
+    "entities": "8.1.0",
+    "parse5": "8.0.1",
     "yaml": "^2.9.1"
   },
   "optionalDependencies": {
@@ -162,5 +163,9 @@
     "docs/entry-points.md",
     "docs/source-adapters.md",
     "docs/campaignspec-authoring-examples.md"
+  ],
+  "bundledDependencies": [
+    "entities",
+    "parse5"
   ]
 }

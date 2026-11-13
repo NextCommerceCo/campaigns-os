@@ -4068,13 +4068,853 @@
       "entry_sha256": "63617f16257551ed7d6643035a39e3698c634345b015cb16e0f259bc5c204200"
     },
     {
-      "id": "RL-0337",
+      "id": "RL-0336",
       "sequence": 324,
       "date": "2026-11-11",
       "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.68.0+agent.5",
-      "changelog_sha256": "cd95b9fe49ac09aa5e3730e1496a4d99ae36ebcb1a7784e089ce3cfc1b13ded7",
+      "changelog_section": "1.68.0+agent.4",
+      "changelog_sha256": "58a9295968e438203c7438421b2ad88417a804a6d152a32fd4f02c0f57782a90",
+      "agent_impact": "Pin and bundle parse5 8.0.1 and entities 8.1.0 to preserve saved commerce-signature/v1 records in registry installs as well as checkouts. parse5 8.1.0 changes foreign-element reconstruction and can classify a copy-only edit as commerce_markup_changed. The parser upgrade is deferred; no saved records or existing literal baselines are rewritten. entities is a direct dependency solely to pin and bundle the decoder, not a new package export.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Pin and bundle the v1 parser and decoder for consumer installs."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Record exact bundled parser dependencies."
+        }
+      ],
+      "entry_sha256": "f43cd05d36051a9df300c4c522e829d0fe5cf12e10118904f22b1fe3101faaf2"
+    },
+    {
+      "id": "RL-0340",
+      "sequence": 325,
+      "date": "2026-11-11",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.68.0+agent.9",
+      "changelog_sha256": "948b592ac2b522c4a57cc31a4999c02491b1f264b91eab52e67697ca32a1d7cf",
+      "agent_impact": "standardize --slug <route> now limits the source audit to src/<route>/ and the files its pages include, and reads only that route's .campaign-runtime records, so findings and artifacts from other routes no longer appear. The report gains source_scope and entry_point, a finding in a shared file carries shared_files with the routes that use it, and a slug with no source pages reports source.scope_unresolved. Without --slug the report is unchanged.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/campaign-standardization-report.md",
+          "surface_entry": "docs/campaign-standardization-report.md",
+          "summary": "Describe the route-scoped source audit, shared-file attribution, the entry-point line and source.scope_unresolved."
+        }
+      ],
+      "entry_sha256": "2a39db452087e952f74ece965e217b217eba2703dea39c3bb033392f2fdfc000"
+    },
+    {
+      "id": "RL-0337",
+      "sequence": 326,
+      "date": "2026-11-11",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.68.0+agent.10",
+      "changelog_sha256": "371c32fff788b11c28230fc1749b312e0bbad09a32bbc061fa3d8b70c8dee68d",
+      "agent_impact": "record deploy now refuses, writing nothing, when doctor's Polish gate is blocked, naming the gate code (for a Polish recorded skipped: polish.evidence_missing) and its required actions. Finish Polish, or follow next, before record deploy. A gate doctor carries forward (a page-only change, or the local preview) still deploys.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "The record deploy refusal list names a blocked Polish gate beside the theme gate."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "The record deploy help line says the command is refused when doctor's theme or Polish gate is blocked."
+        }
+      ],
+      "entry_sha256": "02d755d6a3a8d9b7371265531822c2348113e08f966666fe243fff88dc7ec14a"
+    },
+    {
+      "id": "RL-0338",
+      "sequence": 327,
+      "date": "2026-11-11",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.68.0+agent.11",
+      "changelog_sha256": "4c3518a44dd17f4e6036b7c05dc54555abdf830bf28a485ac5b353740b0400fa",
+      "agent_impact": "A qa run with a spec and no --currency now enters each funnel's entry page with ?currency=<the spec's campaign.currency> and marks evidence.currency_defaulted_from_spec on that page's http row; pass --currency to choose another. A malformed spec currency, a spec with none, --site and legacy API order runs stay unpinned. On a build recorded with build_environment development, an analytics-correctness:tag:* row that did not fire is manual_review / warn with evidence.reason development_build_gates_vendor_loaders: on a hosted preview of that build, and on a local-serve run only when the capture stayed on the loopback render (those rows used to read local_serve_development_render). A local-serve capture that landed on another host keeps its blocker. Run QA against a production build to check the tag. A tag:meta row whose observer was disarmed, oob rows and purchase-fires keep their earlier rules.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Document the spec-currency default for qa run and the development-build rule for declared tag rows."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "spec derive's analytics warnings say a declared tag is checked on a production build."
+        }
+      ],
+      "entry_sha256": "5f8f7cac9a3b15101e9558809a0a65a8f5c3530e6db8b8555d7d7db306f7a1d5"
+    },
+    {
+      "id": "RL-0339",
+      "sequence": 328,
+      "date": "2026-11-11",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.68.0+agent.12",
+      "changelog_sha256": "ec0fa8147b46c5cfe0cafe11194cd124e521f5944de3115a3a42f038267b4af6",
+      "agent_impact": "After spec derive and record spec add a page, polish capture no longer refuses it as neither mapped nor explicitly skipped: the page is planned and captured build-side, with its source side reported as source_html_missing. Do not hand-write skip_reason on added pages. The plan and the captures record list skipped_pages with their reasons, and captures.evidence_only holds build-side captures of template-stock pages; those never gate, compare or count toward the capturable-route rule.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Say that a page record spec adds after handoff is planned for capture and QA without a hand-written skip_reason."
+        }
+      ],
+      "entry_sha256": "d36834a2912d242db62c66a19963d17222462e38f93337a23c54b6e7a4fc303b"
+    },
+    {
+      "id": "RL-0345",
+      "sequence": 329,
+      "date": "2026-11-11",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.68.0+agent.13",
+      "changelog_sha256": "545ae9d420c7f949b009af39f56f268b66ce3e2cb323220ec97878f57aa4645b",
+      "agent_impact": "A change whose only non-page file is a stylesheet or image built pages link directly (link rel=stylesheet, img src or srcset, picture source srcset) now reads page_only, with QA owed on those pages, instead of commerce_affecting. The change, and the build_changes entry record build keeps, then carry linked_assets (each path, with pages: the ids of the pages that link it) and browser_pages (the built paths of the checkout or upsell pages it reaches); reasons stay the commerce causes, with no new codes. When QA is owed, page-scoped or full, and there is such a page, evidence_debt.qa.browser_pages lists its id, and qa run, with or without --page, then needs --browser.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/ci.mjs",
+          "surface_entry": null,
+          "summary": "doctor --ci names each linked stylesheet or image that changed and the pages it maps to, says which page owes a browser run, and adds --browser to its QA remedy when one does."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/next-step.mjs",
+          "surface_entry": null,
+          "summary": "next adds --browser to the page-scoped QA command when a checkout or upsell page owes a browser run."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/campaigns-os-build-flow.md",
+          "surface_entry": "docs/campaigns-os-build-flow.md",
+          "summary": "What a change owes: a stylesheet or image built pages link directly is a page-only change to those pages, and a checkout or upsell page it reaches owes a browser QA run with no test orders."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/readback.md",
+          "surface_entry": "docs/readback.md",
+          "summary": "The change and evidence debt can carry linked_assets and browser_pages, and qa.browser_pages, for a linked stylesheet or image."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "build_changes entries can carry linked_assets and browser_pages, which do not make a change commerce."
+        }
+      ],
+      "entry_sha256": "b8a842a6d0371aa2e48e4448c9bb0890a2dab353023a53fd9add16be3f53f674"
+    },
+    {
+      "id": "RL-0346",
+      "sequence": 330,
+      "date": "2026-11-12",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.68.0+agent.14",
+      "changelog_sha256": "5b2e6dce8c3d80f773474c646a2edc7c0487de19c92ee21d8f1d42912e12b5f8",
+      "agent_impact": "After handoff, when a spec page was never built and exactly one unbound page file of the same page-kit type sells exactly that page's package refs (packages[] plus the package refs its offers[] carry), spec derive writes that page's page_url to the file's route and adds no page; the page keeps its id, packages and offers. Do not hand-edit page_url for this case first: run spec derive --dry-run and read the plan. A match that is not one-to-one is held and reported as page_likely_pair; a partial overlap is still added and reported as page_likely_pair as a note. Only complete literal package values in a file count; a file with a Liquid or computed package value is added as before.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Describe the re-point of a never-built page on a unique exact package match, the page_likely_pair reason, and what counts as a literal package ref."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "spec derive reads each page file's literal package refs, so its plan can re-point a never-built page; no flag or usage text changes."
+        }
+      ],
+      "entry_sha256": "edc9a638e0994f7066ec9c4641fb738a718316d6ea34ce96aa4cd5c2919e4e38"
+    },
+    {
+      "id": "RL-0347",
+      "sequence": 331,
+      "date": "2026-11-12",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.68.0+agent.15",
+      "changelog_sha256": "8086fddc189d79c4a47f4f5983265491a84ed5ca4422dc9765044cd13ce9cbb7",
+      "agent_impact": "When doctor reads the live campaign, it now also compares the CampaignSpec mirrored package fields (prices, product fields, availability, recurring terms) and offers with it, using the spec derive planner, and counts only what the spec states: a field the spec leaves out (a page offer listed by ref_id alone, a package with no image) or a spec with no root offers list is not drift; a campaign offer missing from a stated offers list is. Differences go on the existing spec.campaign_drift warning, whose detail.drift gains mirror: { counts: { price, product, availability, recurring, offers_changed, offers_missing } }; derived.live_campaign_refs.drift.mirror also carries rows, the differing fields as spec derive change rows. drift.packages and drift.shipping_methods are always present when drift is. A comparison that throws is skipped. The warning never changes errors, evidence debt or the doctor --ci exit code; its remedy, spec derive --packet <packet>, rewrites the spec, which makes the build, Polish and QA owed again. The standing PR check passes --no-live-refs and so never shows it.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/campaigns-os-build-flow.md",
+          "surface_entry": "docs/campaigns-os-build-flow.md",
+          "summary": "Live-campaign changes: the standing PR check passes --no-live-refs, so run doctor without it to see the spec.campaign_drift warning."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "doctor help says it warns when the CampaignSpec mirrored prices, product fields, recurring terms or offers differ from the live campaign."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": null,
+          "summary": "The live campaign ref check folds the spec derive mirror comparison, limited to fields the spec states, into spec.campaign_drift as drift.mirror (counts on the warning, counts and change rows in derived), and skips a comparison that throws."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/inspect.mjs",
+          "surface_entry": null,
+          "summary": "Doctor keeps the live campaign body from its existing read so the mirrored fields can be compared; no new request, and only counts and the differing fields change rows reach doctor output."
+        }
+      ],
+      "entry_sha256": "5471b744df7e11dcf12f8d81d311141c8446d65d259e8524cdac559a07a9c5ac"
+    },
+    {
+      "id": "RL-0343",
+      "sequence": 332,
+      "date": "2026-11-12",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.68.0+agent.16",
+      "changelog_sha256": "9b4c27c261d2cca2741a598e20619be6695bed8f443b8853c84941077fd7562f",
+      "agent_impact": "After record build or record baseline on a funnel Polish or QA has already reviewed, read the lines under \"doctor --ci reads this build as:\" (and the ci object in --json) for what Polish and QA owe; they are doctor --ci's own reading for that build, in plain text. An advisory Polish is then not printed as stages.polish.status = required, and a baseline over current evidence prints \"Owed stages: none.\" with deploy named as the served-URL record that follows when deploy is required; any other next stage is still printed. A first build and a dry run print what they printed before. In readback, a STALE reading line in the doctor block means a later command changed what doctor reads after that doctor output was written: run doctor before relying on it; it does not change clean. On a funnel recorded before 1.62 whose rebuild owes a full QA for that reason alone, doctor --ci adds a line naming record baseline as a named person's sign-off, which tests nothing and needs a completed QA on record.",
+      "compatibility": "additive",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/campaigns-os-build-flow.md",
+          "surface_entry": "docs/campaigns-os-build-flow.md",
+          "summary": "Describe the ci reading record build and record baseline return and print (plain text, once a stage has reviewed a build), the baseline sign-off line and its conditions, and that a dry run is unchanged."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/readback.md",
+          "surface_entry": "docs/readback.md",
+          "summary": "Describe the STALE reading line readback prints from the retained doctor output's stale stamp, the stale and stale_reason fields, and that clean is unaffected."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Mention the baseline sign-off line in the doctor --ci description."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "record baseline's text drops the Next stage line only when the stage is deploy and the served-URL line names it; no flag or usage text changes."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/ci.mjs",
+          "surface_entry": null,
+          "summary": "doctor --ci adds one line naming record baseline after its remedy when a full QA is owed by a rebuild and the pre-1.62 reason is the only reason; remedies, the ci object, statuses and exit codes are unchanged."
+        }
+      ],
+      "entry_sha256": "70d33c7342f653e4b5e65b3dd7ac347e3c094c3d5a8160509b5f3bf72935f5c4"
+    },
+    {
+      "id": "RL-0341",
+      "sequence": 333,
+      "date": "2026-11-12",
+      "kind": "release",
+      "surface_version": "1.69.0",
+      "changelog_section": "1.69.0",
+      "changelog_sha256": "fcc3f97a5c5ce57343e07890fc9d34f502d1620208c54ae826ab602b6b753b00",
+      "agent_impact": "The Funnel: line may now offer --adopt src/<route>; after asking the operator, run its printed command to bind this funnel to the pages' existing route instead of renaming another funnel. A bound packet carries campaign.map_public_route_slug when the Map's slug differs from the served campaign.public_route_slug; use the bound route for output and records while preserving the Map identity. Only recorded adoption with an unchanged recorded Design Source Package grants built-first treatment. Its build-vs-design checks read excluded / built_first and are never acceptable as a design match; its first QA must be the full run with test orders, separately authorized by the PM, and record baseline does not apply. doctor --built --emit-packet --map-id now fetches the saved Map and records its local spec path and any route binding. Refresh skills to 1.69.0+skills.1.",
+      "compatibility": "additive",
+      "migration": "Pin @nextcommerce/campaigns-os@1.69.0 and refresh installed skills to 1.69.0+skills.1 before starting a fresh session; nothing changes for a funnel that is not adopted or bound.",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "compatibility.json",
+          "surface_entry": "compatibility.json",
+          "summary": "Version advances to 1.69.0."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/effects.v1.json",
+          "surface_entry": "contracts/effects.v1.json",
+          "summary": "The doctor --built --emit-packet row becomes tier A and declares, as conditional effects when --map-id is given, the saved-Map fetch, the fetched-spec cache write and the managed ignore; without --map-id it sends nothing, as before. The record deploy row's refusal list names doctor's Polish gate beside the theme gate, matching the command since 1.68.0+agent.10."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Advances surface_version to 1.69.0 and refreshes the two changed schema hashes and effects hash."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Documents route binding, adoption, map_public_route_slug, the Funnel offer and saved-Map built inspection."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/design-source-package.md",
+          "surface_entry": "docs/design-source-package.md",
+          "summary": "Documents built-first source evidence, recorded-adoption freshness, excluded comparisons and the first full QA."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/effects.md",
+          "surface_entry": "docs/effects.md",
+          "summary": "Documents the saved-Map fetch and local writes for doctor --built --emit-packet --map-id."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Pins installation to @nextcommerce/campaigns-os@1.69.0."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerated at surface 1.69.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/readback.md",
+          "surface_entry": "docs/readback.md",
+          "summary": "Documents the built-first source label without claiming a design match or QA verdict."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerated at surface 1.69.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Updates bundle revision examples to 1.69.0+skills.1."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "Documents surface 1.69.0 route binding, built-first source semantics and saved-Map built inspection."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Advances only the two root version entries to 1.69.0."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Version advances to 1.69.0."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaign-design-source-package.v0.schema.json",
+          "surface_entry": "schemas/campaign-design-source-package.v0.schema.json",
+          "summary": "Adds built_first source and contribution kinds, with readiness basis and label restricted to built-first packages."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaign-runtime-build-packet.v0.schema.json",
+          "surface_entry": "schemas/campaign-runtime-build-packet.v0.schema.json",
+          "summary": "Adds optional campaign.map_public_route_slug as one normalized slug segment for a differing Map route."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Advances bundle_revision to 1.69.0+skills.1 and each bundled skill by one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Advances the version and bundle revision to 1.69.0+skills.1; other text is unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Advances the version and bundle revision to 1.69.0+skills.1; other text is unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Advances the version and bundle revision to 1.69.0+skills.1; other text is unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Advances the version and bundle revision to 1.69.0+skills.1; other text is unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Advances the version and bundle revision; follows a Funnel adoption offer after asking the operator."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Advances the version and bundle revision; follows a Funnel adoption offer after asking the operator."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Advances the version and bundle revision; follows a Funnel adoption offer after asking the operator."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Advances the version and bundle revision; follows a Funnel adoption offer after asking the operator."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Advances the version and bundle revision; follows a Funnel adoption offer after asking the operator."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-sdk-bump/SKILL.md",
+          "surface_entry": null,
+          "summary": "Advances the version and bundle revision to 1.69.0+skills.1; other text is unchanged."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "Adds route binding and adoption intake, Funnel binding offers, built-first labels and saved-Map built inspection."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": null,
+          "summary": "Validates recorded route bindings and projected routing hints, labels genuine built-first sources and validates their recorded manifests."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/inspect.mjs",
+          "surface_entry": null,
+          "summary": "Carries the resolved saved-Map spec path and differing route binding into emitted minimal packets."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/next-step.mjs",
+          "surface_entry": null,
+          "summary": "Blocks built-first progress when the package no longer matches the recorded intake references."
+        }
+      ],
+      "entry_sha256": "6227bbfa9c461f1bad64027a6c72f386f9751238f40bc84f73d18ba7b2b6e302"
+    },
+    {
+      "id": "RL-0344",
+      "sequence": 334,
+      "date": "2026-11-13",
+      "kind": "release",
+      "surface_version": "1.70.0",
+      "changelog_section": "1.70.0",
+      "changelog_sha256": "5d08a415c68991152677efe56760d828af07a5d9d6255cbe10a616ef0dbee48a",
+      "agent_impact": "After any change to a handed-off funnel, build with Page Kit, then run campaigns-os after-edit --packet <packet> and commit the files it lists; this replaces the hand-run sequence of record build, spec derive and doctor --ci. Exit 2 means it stopped (for example, spec derivation needs --yes); otherwise the exit code is doctor --ci's: 0 current, 3 owed, 4 unknown. Add --run-qa only for the page QA it names. It never builds, runs Polish, runs full QA or places test orders: full QA still needs the project manager's go. It writes records; doctor --ci stays the read-only way to ask what is owed. The agent instruction files and the lifecycle skill now point here. Separately, doctor --ci, readback and after-edit now read a Polish or QA whose last run on the current build was blocked as owed (reason stage_blocked, exit 3) where they read it as current: a blocked page QA owes its pages again, a blocked full QA or Polish owes the full stage. Do not treat a blocked run as having cleared the debt.",
+      "compatibility": "additive",
+      "migration": "Pin @nextcommerce/campaigns-os@1.70.0 and refresh installed skills to 1.70.0+skills.1 before starting a fresh session. Re-run install-agent-context to pick up the after-edit step in the agent instruction files. Nothing changes for existing commands. A pull-request check that was green over a blocked Polish or QA on the current build now reports it owed.",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": "agents/claude/CLAUDE.md",
+          "surface_entry": null,
+          "summary": "After the final edit: build with Page Kit, run after-edit and commit the files it lists, following the run sheet shipped in the package; the pull-request check runs doctor --ci for every root Build Packet."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/codex/AGENTS.md",
+          "surface_entry": null,
+          "summary": "After the final edit: build with Page Kit, run after-edit and commit the files it lists, following the run sheet shipped in the package; the pull-request check runs doctor --ci for every root Build Packet."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/copilot/copilot-instructions.md",
+          "surface_entry": null,
+          "summary": "After the final edit: build with Page Kit, run after-edit and commit the files it lists, following the run sheet shipped in the package; the pull-request check runs doctor --ci for every root Build Packet."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/cursor/campaigns-os.mdc",
+          "surface_entry": null,
+          "summary": "After the final edit: build with Page Kit, run after-edit and commit the files it lists, following the run sheet shipped in the package; the pull-request check runs doctor --ci for every root Build Packet."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "compatibility.json",
+          "surface_entry": "compatibility.json",
+          "summary": "Package version 1.70.0."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/effects.v1.json",
+          "surface_entry": "contracts/effects.v1.json",
+          "summary": "Four after-edit rows: the default run, --yes, --no-live-refs and --run-qa, with the records each writes."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Surface 1.70.0: after-edit joins the CLI commands; new hashes for the effects contract, the readback schema and the surface doc."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/campaigns-os-build-flow.md",
+          "surface_entry": "docs/campaigns-os-build-flow.md",
+          "summary": "An After handoff run sheet: one command, a table of what each kind of change owes, and the per-funnel pull-request check."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/effects.md",
+          "surface_entry": "docs/effects.md",
+          "summary": "The after-edit rows and what they write."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Install command pins 1.70.0."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerated for surface 1.70.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/readback.md",
+          "surface_entry": "docs/readback.md",
+          "summary": "A stage whose last run on the current build was blocked reads owed with reason stage_blocked; current now also requires that the stage is not blocked."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerated for surface 1.70.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Bundle revision 1.70.0+skills.1."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "after-edit is listed among the CLI commands, with a paragraph on what surface 1.70.0 adds."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Package version 1.70.0."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Package version 1.70.0."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaigns-os-readback.v2.schema.json",
+          "surface_entry": "schemas/campaigns-os-readback.v2.schema.json",
+          "summary": "The stage debt reason enum gains stage_blocked."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Bundle revision 1.70.0+skills.1; every skill's patch version advances."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "One sentence: after any change to a handed-off funnel, run after-edit and follow what it reports."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-sdk-bump/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "The after-edit command and its help line."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/ci.mjs",
+          "surface_entry": null,
+          "summary": "doctor --ci prints an owed stage whose last run on the current build was blocked as \"the last run on this build was blocked\", with the same remedy commands as any owed stage at that scope."
+        }
+      ],
+      "entry_sha256": "eb3a79bd45b4cdc2e782c7d332f7ddfcbd9b44975336140adeb83530e34cdf7f"
+    },
+    {
+      "id": "RL-0349",
+      "sequence": 335,
+      "date": "2026-11-13",
+      "kind": "release",
+      "surface_version": "1.71.0",
+      "changelog_section": "1.71.0",
+      "changelog_sha256": "f9d9607214cb40b134810514520d111915aa83fb8968c37fa6768cd22b08f5f5",
+      "agent_impact": "In a project with more than one funnel, run campaigns-os bundle check --packet campaign-runtime-<route>.build.json for each later funnel: it now checks that funnel's own Build Context, Assembly Report, doctor output and QA verdict under .campaign-runtime/funnels/<route>/ and never another funnel's. The artifact paths in the result are the paths actually read. A packet whose assembly.runtime_dir is not one of the two valid shapes is reported as bundle.packet.runtime_dir and no sidecar is read. Remedies print the packet that was checked, so copy them as printed. Nothing changes for the first funnel or a single-funnel project.",
+      "compatibility": "additive",
+      "migration": "Pin @nextcommerce/campaigns-os@1.71.0 and refresh installed skills to 1.71.0+skills.1 before starting a fresh session. A consumer of the bundle contract that read fixed sidecar paths should read them relative to the packet's runtime directory, as the contract now states.",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "compatibility.json",
+          "surface_entry": "compatibility.json",
+          "summary": "Package version 1.71.0."
+        },
+        {
+          "class": "hashed_surface",
+          "path": "contracts/migration-sidecar-bundle.v0.json",
+          "surface_entry": "contracts/migration-sidecar-bundle.v0.json",
+          "summary": "Sidecar paths are relative to the packet's runtime directory (the default, or the per-funnel directory the packet records as assembly.runtime_dir); a packet named campaign-runtime-<route>.build.json is canonical for its own route; the CI producer commands take the funnel's packet. bundle_id, schema_version and every existing key are unchanged."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Surface 1.71.0: new hash for the migration sidecar bundle contract."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "bundle check validates a later funnel's packet and the sidecars under its recorded runtime directory, where it used to report the packet as non-canonical."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Install command pins 1.71.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/migration-sidecar-bundle.md",
+          "surface_entry": "docs/migration-sidecar-bundle.md",
+          "summary": "Where a later funnel's bundle lives, that bundle check --packet campaign-runtime-<route>.build.json checks it, and the per-funnel form of the CI producer."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerated for surface 1.71.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerated for surface 1.71.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Bundle revision 1.71.0+skills.1."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "The migration sidecar bundle row and a paragraph on surface 1.71.0 say the bundle is per funnel."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Package version 1.71.0."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Package version 1.71.0."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Bundle revision 1.71.0+skills.1; every skill's patch version advances."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-sdk-bump/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "The bundle usage line says --packet <packet>."
+        }
+      ],
+      "entry_sha256": "cb5ad492fca9b58cbfe2a65a56b6378b232916a58d046da3f248e08cacdd800b"
+    },
+    {
+      "id": "RL-0350",
+      "sequence": 336,
+      "date": "2026-11-13",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.0+agent.1",
+      "changelog_sha256": "ee1269ac785066870fa4043e2ffdb8683064945b9c1f136443a9b639f81a0005",
       "agent_impact": "Upgrade Playwright to 1.65.0 independently of the HTML parser. A successful upsell mutation whose body becomes unreadable on navigation now waits for correlated mutation evidence or an order read-back, just as a timed-out body does. Without evidence the accept remains unverified and requires manual review; stale checkout lines cannot supply a definitive verdict. A non-sensitive body-read outcome survives raw-body removal, so readable successful responses keep their definitive verdict and skip recovery waits. Existing saved evidence without the additive outcome field remains readable. Browser fixtures retain timeout, correlation, image-cap, redirect ambiguity and offline navigation coverage under Chromium 158.",
       "compatibility": "compatible",
       "migration": "none",
@@ -4092,7 +4932,7 @@
           "summary": "Resolve Playwright and playwright-core 1.65.0; retain parse5 and entities."
         }
       ],
-      "entry_sha256": "0777ee3c1eab5100990ded652e5a9d64982fd0019e70e54874963f62cf409d92"
+      "entry_sha256": "3a21fcc23e988173f2c5d07028875ff478d317b5b9ec7b1eaee512629011f0d1"
     }
   ]
 }

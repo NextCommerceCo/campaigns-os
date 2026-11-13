@@ -5,7 +5,9 @@ import { accessSync, constants as fsConstants, existsSync, linkSync, lstatSync, 
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { writeThemeArtifacts } from "./brand-theme.mjs";
 import { cloneJson, filesystemPathsMatch, isObject, isNonEmptyString, optionalString, portableArtifactPaths, readJson, resolveFromFile, sha256File } from "./cli-helpers.mjs";
-import { DESIGN_SOURCE_PACKAGE_REL_PATH, createDesignSourcePackageArtifactReference, hashSerializedDesignSourcePackage, serializeDesignSourcePackage, synthesizeHtmlFunnelDesignSourcePackage, validateDesignSourcePackage } from "./design-source-package.mjs";
+import { DESIGN_SOURCE_PACKAGE_REL_PATH, createDesignSourcePackageArtifactReference, hashSerializedDesignSourcePackage, isBuiltFirst, serializeDesignSourcePackage, synthesizeHtmlFunnelDesignSourcePackage, validateDesignSourcePackage } from "./design-source-package.mjs";
+import { resolveCampaignWorkspace } from "./campaign-workspace.mjs";
+import { readRegularFileSync } from "./source-html-server.mjs";
 import { stampDoctorProducer } from "./doctor-sidecar.mjs";
 import { stageWriteInputs } from "./input-currency.mjs";
 import { cmd } from "./install-invocation.mjs";
@@ -14,6 +16,55 @@ import { HOST_STRIPPED_CODE } from "./source-html-intake.mjs";
 import { archiveForForceReset, stageHistoryPresent } from "./stage-ledger.mjs";
 import { targetLockPath, withTargetLock } from "./target-lock.mjs";
 import { resolveTemplateFamilyDesignSource } from "./template-reference.mjs";
+
+export function designSourceReferenceMismatches(expected, expectedArtifactPath, actual, actualArtifactPath) {
+  if (!isObject(expected) || !isObject(actual)) return ["reference"];
+  const mismatches = [];
+  for (const field of ["schema_version", "sha256", "material_fingerprint"]) {
+    if (expected[field] !== actual[field]) mismatches.push(field);
+  }
+  const expectedPath = resolveFromFile(expectedArtifactPath, expected.path);
+  const actualPath = resolveFromFile(actualArtifactPath, actual.path);
+  if (!filesystemPathsMatch(expectedPath, actualPath)) mismatches.push("path");
+  return mismatches;
+}
+
+// A declaration in an editable package is not recorded adoption. Reuse the
+// intake's exact-byte reference and material projection, and the lifecycle
+// reference binding check, before granting any built-first treatment.
+export function readRecordedDesignSourcePackage(packet, packetPath, { report = null, reportPath = null } = {}) {
+  try {
+    const path = resolveFromFile(packetPath, packet?.design_source_package?.path);
+    if (!path) return { status: "unavailable", builtFirst: false };
+    const bytes = readRegularFileSync(path);
+    const value = JSON.parse(bytes.toString("utf8"));
+    const reference = createDesignSourcePackageArtifactReference(value, { path, serialized: bytes });
+    const matches = (record, recordPath) => designSourceReferenceMismatches(record, recordPath, reference, packetPath).length === 0;
+    const current = matches(packet.design_source_package, packetPath)
+      && value.material_fingerprint === reference.material_fingerprint;
+    const declaredBuiltFirst = isBuiltFirst(value);
+    let builtFirst = false;
+    if (current && declaredBuiltFirst) {
+      try {
+        let workspace = resolveCampaignWorkspace(packetPath, { packet, followContextPointer: true });
+        // An explicitly selected report may bind a custom intake context.
+        if (isNonEmptyString(report?.inputs?.context_path)) {
+          workspace = resolveCampaignWorkspace(packetPath, { packet, followContextPointer: true,
+            contextPath: resolve(workspace.targetRepo, report.inputs.context_path) });
+        }
+        const context = JSON.parse(readRegularFileSync(workspace.contextPath).toString("utf8"));
+        const recordedReport = report || JSON.parse(readRegularFileSync(workspace.reportPath).toString("utf8"));
+        builtFirst = isNonEmptyString(context?.intake?.adopt)
+          && filesystemPathsMatch(resolve(workspace.targetRepo, context.packet_path), packetPath)
+          && matches(context.design_source_package, workspace.contextPath)
+          && matches(recordedReport.design_source_package, report ? (reportPath || workspace.reportPath) : workspace.reportPath);
+      } catch { /* Missing adoption or lifecycle bindings never grant treatment. */ }
+    }
+    return { status: "ok", value, reference, current, declaredBuiltFirst, builtFirst };
+  } catch {
+    return { status: "unavailable", builtFirst: false };
+  }
+}
 
 // Stage keys whose seed states prepare-build itself rewrites on every run
 // (createInitialAssemblyReportStages): prepare_build is re-derived from this
@@ -517,6 +568,7 @@ function manifestPagesForResolvedMappings(pages, mappings) {
 }
 
 function createCurrentHtmlFunnelScope({
+  adopted = false,
   packagePath,
   activePages,
   mappings,
@@ -584,6 +636,7 @@ function createCurrentHtmlFunnelScope({
   }
 
   return {
+    adopted,
     activePages,
     mappings: currentMappings,
     manifest,
@@ -601,6 +654,7 @@ function createCurrentHtmlFunnelScope({
 }
 
 function prepareDesignSourcePackage({
+  adopted = false,
   path,
   activePages,
   mappings,
@@ -622,6 +676,7 @@ function prepareDesignSourcePackage({
     campaignSlug: publicRouteSlug,
   };
   const currentHtmlFunnelScope = createCurrentHtmlFunnelScope({
+    adopted,
     packagePath: path,
     activePages,
     mappings,
@@ -665,16 +720,22 @@ function prepareDesignSourcePackage({
     const existingSha256 = hashSerializedDesignSourcePackage(existingBytes);
     const synthesizedHere = Array.isArray(priorProvenance?.synthesized)
       && priorProvenance.synthesized.includes(existingSha256);
-    let problem = preparedDesignSourcePackageProblem(existingValue, currentPageScope, currentHtmlFunnelScope);
-    if (problem == null && existingValue.source_kind !== "html_funnel") {
+    let problem = adopted && existingValue.source_kind !== "built_first"
+      ? `declares source_kind ${JSON.stringify(existingValue.source_kind)}; this existing package is not built first, and --adopt cannot change its source kind.`
+      : preparedDesignSourcePackageProblem(existingValue, currentPageScope, currentHtmlFunnelScope);
+    if (problem == null && !adopted && existingValue.source_kind !== "html_funnel") {
       problem = `declares source_kind ${JSON.stringify(existingValue.source_kind)}; html_funnel prepare-build requires "html_funnel".`;
     }
     if (problem != null) {
       // A package an earlier prepare-build synthesized, unchanged since, is
       // this producer's own stale output: --force regenerates it from the
       // current inputs. Anything else is left for the operator to reconcile.
-      if (synthesizedHere && force) return { stale: true, sha256: existingSha256 };
-      const recovery = synthesizedHere
+      if (synthesizedHere && force && existingValue.source_kind === (adopted ? "built_first" : "html_funnel")) return { stale: true, sha256: existingSha256 };
+      const recovery = existingValue.source_kind !== (adopted ? "built_first" : "html_funnel") && (adopted || existingValue.source_kind === "built_first")
+        ? existingValue.source_kind === "built_first"
+          ? `This package was declared built first; rerun with --adopt src/${publicRouteSlug}. Keep the original source-kind declaration; an intake without --adopt cannot change it.`
+          : "Keep the original source-kind declaration; --adopt cannot convert an existing package."
+        : synthesizedHere
         ? "It was synthesized by an earlier prepare-build and is unchanged since, so rerun with --force to regenerate it from the current inputs "
           + "(--force also resets any stage evidence the Assembly Report carries)."
         : "prepare-build cannot show it synthesized these bytes (no Assembly Report records them as its own output, or the package changed since), so it will not overwrite it. "

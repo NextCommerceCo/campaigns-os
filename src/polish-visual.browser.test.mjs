@@ -12,7 +12,7 @@ import { main, nextStage } from "./cli.mjs";
 import { computeBuildFingerprint } from "./built-site-scope.mjs";
 import { syntheticVisualFixture } from "./polish-visual-fixtures.mjs";
 import { sha256Hex, readPngStructure } from "./png-header.mjs";
-import { computeDesignSourcePackageMaterialFingerprint } from "./design-source-package.mjs";
+import { computeDesignSourcePackageMaterialFingerprint, createDesignSourcePackageArtifactReference } from "./design-source-package.mjs";
 import { loadVisualDependencies } from "./visual-diff.mjs";
 import { startSourceHtmlServer } from "./source-html-server.mjs";
 
@@ -65,6 +65,43 @@ async function scenario(t, sourceName = "identical-source.html", buildName = "id
 const diffRows = (record) => VISUAL_QC_RULES.evaluate(record).filter((row) => row.check === "visual.diff");
 const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
 const writeJson = (path, value) => { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`); };
+browserTest("built first uses only the build browser and records both viewports as source evidence without design comparison", async (t) => {
+  const f = await scenario(t);
+  const dspPath = resolve(f.targetRepo, "dsp.json");
+  const dsp = readJson(dspPath);
+  dsp.source_kind = "built_first";
+  dsp.contributions[0].kind = "built_first";
+  dsp.material_fingerprint = computeDesignSourcePackageMaterialFingerprint(dsp);
+  writeJson(dspPath, dsp);
+  const reference = createDesignSourcePackageArtifactReference(dsp, { path: dspPath, serialized: readFileSync(dspPath) });
+  f.input.packet.design_source_package = reference;
+  f.input.report.design_source_package = reference;
+  writeJson(f.input.packetPath, f.input.packet);
+  writeJson(resolve(f.targetRepo, ".campaign-runtime/build-context.json"), {
+    packet_path: "packet.json", intake: { adopt: "src/sample" }, design_source_package: reference,
+  });
+  writeJson(resolve(f.targetRepo, ".campaign-runtime/assembly-report.json"), f.input.report);
+  // A Liquid page tree must never be used as rendered design input.
+  writeFileSync(resolve(f.sourceRoot, "page.html"), '{% include "example-private-family/page.liquid" %}');
+  const original = f.input.createBrowserAdapter;
+  let browsers = 0;
+  const record = await runVisualPass({ ...f.input, createBrowserAdapter: (options) => {
+    assert.equal(options.seal, undefined, "no source browser may start");
+    browsers++;
+    return original(options);
+  } });
+  assert.equal(browsers, 1);
+  assert.equal(record.source.status, "built_first");
+  assert.deepEqual(record.cells.filter((cell) => cell.side === "source_html").map((cell) => cell.status), ["built_first", "built_first"]);
+  assert.equal(record.source.built_first_source_evidence.length, 2);
+  for (const evidence of record.source.built_first_source_evidence) {
+    assert.equal(evidence.status, "captured");
+    assert.equal(evidence.surface_id, "page");
+    assert.deepEqual(evidence.png, record.cells.find((cell) => cell.side === "build" && cell.viewport === evidence.viewport).actual.png);
+  }
+  assert.ok(VISUAL_QC_RULES.evaluate(record).every((row) => row.result === "excluded" && row.reason_code === "built_first" && !row.accept_eligible));
+  assert.ok(record.comparisons.every((comparison) => comparison.reason === "built_first" && comparison.artifacts.length === 0));
+});
 const withoutCaptures = (report) => { const copy = structuredClone(report); delete copy.stages.polish.evidence.visual_review.captures; return copy; };
 // The gate result with captures equals the one without, field for field; only
 // screenshot_evidence (C3) may differ.
@@ -218,6 +255,49 @@ browserTest("F3C-W9: real-browser frozen records remain byte-identical after vis
   assert.ok(capture.captures.cells.every((c) => c.status === "rendered"));
   const checkpoint = evaluateRecordedHiddenEagerMediaCheckpoint({ packet: f.input.packet, report: merged });
   assert.equal(checkpoint.status, "pass");
+});
+browserTest("Template pages have build-only package evidence at both viewports, with no comparison or parity rows", async (t) => {
+  const f = await scenario(t);
+  for (const page_id of ["checkout", "upsell"]) {
+    f.input.packet.source_html.pages.push({ page_id, skip_reason: "Synthetic template stock.",
+      ...(page_id === "checkout" ? { page_kit: { public_route: "/sample/checkout/" } } : {}) });
+    mkdirSync(resolve(f.targetRepo, `_site/sample/${page_id}`), { recursive: true });
+    writeFileSync(resolve(f.targetRepo, `_site/sample/${page_id}/index.html`), fixtureBytes("identical-build.html"));
+  }
+  f.input.packet.source_html.pages.push({ page_id: "not-built", skip_reason: "Synthetic template not built." });
+  // Exercise the caller too: parity rides planned cells only and page-load,
+  // readability and media weight have already been frozen before the pass.
+  let before;
+  const project = (value) => JSON.stringify([value.plan, value.page_load, value.media_weight, value.readability]);
+  const captured = await capturePolishPageLoad({ ...f.input, baseUrl: f.baseUrl,
+    visual: { packetPath: f.input.packetPath }, onFrozen(value) { before = project(value); } });
+  assert.equal(project(captured), before);
+  const record = captured.captures;
+  assert.equal(record.cells.length, 4);
+  const evidence = record.evidence_only.filter((cell) => cell.page_id !== "not-built");
+  assert.deepEqual(evidence.map((cell) => [cell.page_id, cell.viewport]),
+    [["checkout", "desktop"], ["checkout", "mobile"], ["upsell", "desktop"], ["upsell", "mobile"]]);
+  for (const cell of evidence) {
+    assert.equal(cell.evidence_only, true); assert.equal(cell.side, "build");
+    assert.equal(cell.skip_reason, "Synthetic template stock."); assert.equal(cell.reason, null);
+    assert.equal(cell.status, "rendered");
+    assert.equal(cell.actual.status, "captured"); assert.equal(cell.stabilized.status, "captured");
+    assert.equal(cell.stabilized.treatment.mask_selectors, "visual-masks/v1");
+    for (const shot of [cell.actual, cell.stabilized]) {
+      const bytes = readFileSync(resolve(f.targetRepo, shot.png.path));
+      assert.equal(`sha256:${sha256Hex(bytes)}`, shot.png.sha256);
+      assert.equal(readPngStructure(bytes).ihdr.width_px, cell.width);
+    }
+  }
+  assert.ok(record.evidence_only.filter((cell) => cell.page_id === "not-built").every((cell) => cell.reason === "page_not_built"));
+  assert.ok(record.references.every((row) => row.page_id === "page"));
+  assert.ok(record.comparisons.every((row) => row.page_id === "page"));
+  assert.ok(VISUAL_QC_RULES.evaluate(record).every((row) => row.subject.page === "/sample/page/"));
+  assert.ok(captured.element_parity.cells.every((cell) => cell.page_id === "page"));
+  const merged = mergePolishCaptureEvidence(f.input.report, { pageLoad: captured.page_load, captures: record });
+  const without = structuredClone(merged); delete without.stages.polish.evidence.visual_review.captures;
+  assert.deepEqual(evaluateRecordedHiddenEagerMediaCheckpoint({ packet: f.input.packet, report: merged }),
+    evaluateRecordedHiddenEagerMediaCheckpoint({ packet: f.input.packet, report: without }));
 });
 browserTest("F3C-I1: unresolved data-next-await times out within five seconds and keeps shots", async (t) => {
   // One `polish capture` run: its written record carries the row, and its exit status and gate are checked.

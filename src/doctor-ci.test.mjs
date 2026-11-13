@@ -8,9 +8,10 @@ import { test } from "node:test";
 import { buildManifestEntries, computeBuildFingerprint } from "./built-site-scope.mjs";
 import { assessEvidenceDebt } from "./evidence-debt.mjs";
 import { doctorCommand } from "./doctor/inspect.mjs";
-import { doctorCiFailure, formatDoctorCi } from "./doctor/ci.mjs";
+import { assessDoctorCi, doctorCiEvidenceLines, doctorCiFailure, formatDoctorCi } from "./doctor/ci.mjs";
 import { openRunSession } from "./run-session.mjs";
 import { recordStageCommand } from "./stage-record.mjs";
+import { singleLineFragment } from "./text-safety.mjs";
 
 const cli = new URL("../bin/campaigns-os.mjs", import.meta.url).pathname;
 
@@ -99,7 +100,7 @@ test("doctor --ci page edited and rebuilt exits 3 and Markdown names page and re
   assert.match(markdown.stdout, /polish capture/);
   assert.match(markdown.stdout, /record polish.*--evidence/);
   assert.match(markdown.stdout, /qa run/);
-  const remedyCommands = [...markdown.stdout.split("Remedy:")[1].matchAll(/`(campaigns-os [^`]+)`/g)].map((match) => match[1]);
+  const remedyCommands = [...markdown.stdout.split("\n").find((line) => line.startsWith("Remedy:")).matchAll(/`(campaigns-os [^`]+)`/g)].map((match) => match[1]);
   assert.deepEqual(remedyCommands, [
     "campaigns-os record build --packet <packet>",
     "campaigns-os polish capture --packet <packet> --base-url <served-current-build-url>",
@@ -118,6 +119,106 @@ test("doctor --ci only QA bound to older build exits 3", (t) => {
   assert.equal(payload.ci.polish.status, "current");
   assert.equal(payload.ci.qa.status, "owed");
   assert.deepEqual(payload.ci.changes.changed_pages, []);
+});
+
+for (const stage of ["qa", "polish"]) {
+  test(`blocked ${stage} on the current build reads owed at full scope`, (t) => {
+    const f = fixture(t);
+    f.report.stages[stage].status = "blocked";
+    f.save();
+    const debt = assessEvidenceDebt({ packet: f.packet, packetPath: f.packetPath, report: f.report });
+    assert.equal(debt[stage].status, "owed");
+    assert.equal(debt[stage].reason, "stage_blocked");
+    assert.equal(debt[stage].matches_current_build, true);
+    if (stage === "qa") {
+      assert.equal(debt.qa.scope, "full");
+      assert.deepEqual(debt.qa.owed_pages, []);
+      assert.equal(debt.polish.status, "current");
+    } else {
+      assert.equal(debt.polish.advisory, false);
+      assert.equal(debt.qa.status, "current");
+    }
+    const payload = jsonCi(f, 3);
+    assert.equal(payload.ci.status, "owed");
+    const markdown = formatDoctorCi(payload);
+    assert.match(markdown, new RegExp(`Owed ${stage}: the last run on this build was blocked\\.`));
+    const remedy = markdown.split("\n").find((line) => line.startsWith("Remedy:"));
+    const commands = [...remedy.matchAll(/`(campaigns-os [^`]+)`/g)].map((match) => match[1]);
+    assert.deepEqual(commands, stage === "qa" ? ["campaigns-os qa run --packet <packet>"] : [
+      "campaigns-os polish capture --packet <packet> --base-url <served-current-build-url>",
+      "campaigns-os record polish --packet <packet> --evidence <polish-evidence.json>",
+    ]);
+    assert.doesNotMatch(remedy, /rebuild|record build/);
+    assert.doesNotMatch(markdown, /record baseline/);
+  });
+}
+
+test("blocked QA on an older build keeps fingerprint drift reason and full scope", (t) => {
+  const f = fixture(t);
+  const completed = assessEvidenceDebt({ packet: f.packet, packetPath: f.packetPath, report: f.report });
+  assert.equal(completed.qa.status, "current");
+  assert.equal(completed.polish.status, "current");
+  f.report.stages.qa.evidence.source_build_fingerprint = "older-build";
+  const before = assessEvidenceDebt({ packet: f.packet, packetPath: f.packetPath, report: f.report });
+  f.report.stages.qa.status = "blocked";
+  const after = assessEvidenceDebt({ packet: f.packet, packetPath: f.packetPath, report: f.report });
+  assert.equal(after.qa.status, "owed");
+  assert.equal(after.qa.reason, "build_fingerprint_changed");
+  assert.equal(after.qa.matches_current_build, false);
+  assert.equal(after.qa.scope, "full");
+  assert.equal(after.qa.scope, before.qa.scope);
+});
+
+test("blocked stages preserve unknown inputs and required stages keep their reason", (t) => {
+  const f = fixture(t);
+  const assess = (overrides = {}) => assessEvidenceDebt({ packet: f.packet, packetPath: f.packetPath, report: f.report, ...overrides });
+  for (const stage of ["polish", "qa"]) f.report.stages[stage].status = "blocked";
+  for (const overrides of [{ packet: null }, { packetPath: null }]) {
+    const debt = assess(overrides);
+    for (const stage of ["polish", "qa"]) {
+      assert.equal(debt[stage].status, "unknown");
+      assert.equal(debt[stage].reason, "packet_unavailable");
+    }
+  }
+  const original = structuredClone(f.report);
+  delete f.report.stages.polish.source_build_fingerprint;
+  delete f.report.stages.qa.evidence.source_build_fingerprint;
+  const missing = assess();
+  for (const stage of ["polish", "qa"]) {
+    assert.equal(missing[stage].status, "unknown");
+    assert.equal(missing[stage].reason, "stage_build_fingerprint_missing");
+    assert.equal(missing[stage].matches_current_build, null);
+    Object.assign(f.report.stages[stage], { status: "required", required_by: "spec", blockers: ["Previous run blocked"] });
+  }
+  const required = assess();
+  for (const stage of ["polish", "qa"]) {
+    assert.equal(required[stage].status, "owed");
+    assert.equal(required[stage].reason, "stage_required_by_spec");
+  }
+  f.report = original;
+  delete f.report.stages.assembly.build_fingerprint;
+  const noAssembly = assess();
+  for (const stage of ["polish", "qa"]) {
+    assert.equal(noAssembly[stage].status, "unknown");
+    assert.equal(noAssembly[stage].reason, "assembly_build_fingerprint_missing");
+    assert.equal(noAssembly[stage].matches_current_build, true);
+  }
+  rmSync(f.output, { recursive: true });
+  const noBuild = assess();
+  for (const stage of ["polish", "qa"]) {
+    assert.equal(noBuild[stage].status, "unknown");
+    assert.equal(noBuild[stage].reason, "build_output_missing");
+  }
+});
+
+test("skipped Polish on the current build remains current", (t) => {
+  const f = fixture(t);
+  f.report.stages.polish.status = "skipped";
+  const debt = assessEvidenceDebt({ packet: f.packet, packetPath: f.packetPath, report: f.report });
+  assert.equal(debt.polish.status, "current");
+  assert.equal(debt.polish.reason, null);
+  assert.equal(debt.polish.advisory, false);
+  assert.equal(debt.qa.status, "current");
 });
 
 test("doctor --ci rebuilt assembly cannot refresh older Polish/QA evidence", (t) => {
@@ -209,14 +310,22 @@ test("doctor --ci fingerprint drift still requires recording the build alongside
   assert.match(markdown.stdout, /Remedy: rebuild, then run `campaigns-os record build/);
 });
 
-test("doctor --ci missing built output exits 4 and reports unknown reasons", (t) => {
+test("doctor --ci recorded handed-off funnel without built output is unknown, never current", (t) => {
   const f = fixture(t);
+  f.report.stages.deploy = { status: "completed", source_build_fingerprint: f.report.stages.assembly.build_fingerprint };
+  f.save();
+  assert.equal(jsonCi(f, 0).ci.status, "current", "the handed-off funnel starts with matching evidence");
   rmSync(f.output, { recursive: true });
   const payload = jsonCi(f, 4);
   assert.equal(payload.ci.status, "unknown");
-  assert.equal(payload.ci.polish.reason, "build_output_missing");
+  for (const stage of ["polish", "qa"]) {
+    assert.equal(payload.ci[stage].status, "unknown");
+    assert.equal(payload.ci[stage].reason, "build_output_missing");
+  }
+  assert.equal(payload.ci.changes.reason, "build_output_missing");
   const markdown = run(f, "--ci");
   assert.equal(markdown.status, 4);
+  assert.doesNotMatch(markdown.stdout, /Campaign evidence: current/);
   assert.match(markdown.stdout, /Unknown polish: `build_output_missing`/);
   assert.match(markdown.stdout, /Unknown qa: `build_output_missing`/);
   assert.match(markdown.stdout, /Remedy:/);
@@ -429,4 +538,74 @@ test("doctor --ci reads the evidence debt inspection assessed instead of assessi
   } });
   assert.equal(ci.ci.status, "owed");
   assert.equal(ci.ci.qa, owed.qa);
+});
+
+// A funnel recorded before 1.62 whose rebuild `record build` has recorded.
+function legacyCi(qa = {}, changes = {}) {
+  const stage = { status: "owed", scope: "full", reason: "build_fingerprint_changed",
+    change: { kind: "commerce_affecting", reasons: [{ code: "commerce_signature_unavailable" }] } };
+  const build = "b".repeat(64);
+  return assessDoctorCi({ polish: stage, qa: { ...stage, ...qa },
+    changes: { status: "known", changed_pages: [], recorded_build_fingerprint: build, current_build_fingerprint: build, ...changes } });
+}
+
+test("baseline sign-off line follows the unchanged rebuild remedy only for legacy full QA debt", () => {
+  for (const reason of ["build_fingerprint_changed", "stage_required_by_build"]) {
+    const ci = legacyCi({ reason });
+    assert.equal(Object.hasOwn(ci, "remedy"), false);
+    const lines = formatDoctorCi({ ci }).split("\n");
+    const index = lines.findIndex((line) => line.startsWith("Remedy:"));
+    assert.match(lines[index], /^Remedy: rebuild, then run/);
+    assert.equal(lines[index + 1], "This funnel was recorded before Campaigns OS 1.62, so instead of re-running the stages a named person can sign off to accept the current build as the starting point with `campaigns-os record baseline --packet <packet> --accepted-by <person> --reason <why>`; this tests nothing and needs a completed QA on record.");
+  }
+});
+
+test("Polish owed, QA current offers no baseline line", () => {
+  assert.doesNotMatch(formatDoctorCi({ ci: legacyCi({ status: "current" }) }), /record baseline/);
+});
+
+test("baseline sign-off waits for record build, which record baseline needs first", () => {
+  for (const changes of [{ current_build_fingerprint: "c".repeat(64) }, { recorded_build_fingerprint: null }]) {
+    const text = formatDoctorCi({ ci: legacyCi({}, changes) });
+    assert.match(text, /^Remedy: rebuild, then run `campaigns-os record build/m);
+    assert.doesNotMatch(text, /record baseline/, JSON.stringify(changes));
+  }
+});
+
+test("a page-only change with an advisory Polish does not call an unknown QA current", () => {
+  const polish = { status: "owed", advisory: true, reason: "stage_required_by_build", change: { kind: "page_only", reasons: [], changed_pages: [{ page_id: "landing" }] } };
+  const changes = { status: "known", changed_pages: [] };
+  const unknown = formatDoctorCi({ ci: assessDoctorCi({ polish, qa: { status: "unknown", reason: "stage_build_fingerprint_missing" }, changes }) });
+  assert.match(unknown, /^Change found: page-only\. QA is unknown; Polish is advisory\.$/m);
+  const current = formatDoctorCi({ ci: assessDoctorCi({ polish, qa: { status: "current" }, changes }) });
+  assert.match(current, /^Change found: page-only\. QA is current; Polish is advisory\.$/m);
+});
+
+test("a blank page id never prints as its list position", () => {
+  const ci = legacyCi({ browser_pages: ["", "checkout"] });
+  const lines = doctorCiEvidenceLines(ci, singleLineFragment);
+  assert.ok(lines.some((line) => line.includes("in a browser on")), "setup: the browser pages are listed");
+  assert.doesNotMatch(lines.join("\n"), /in a browser on 0\b/);
+});
+
+test("legacy browser remedy keeps the required --browser flag", () => {
+  const lines = formatDoctorCi({ ci: legacyCi({ browser_pages: ["checkout"] }) }).split("\n");
+  assert.match(lines.find((line) => line.startsWith("Remedy:")), /`campaigns-os qa run --packet <packet> --browser`/);
+});
+
+test("baseline sign-off excludes page QA, unknown QA, input changes, and mixed or malformed reasons", () => {
+  for (const qa of [
+    { scope: "pages", owed_pages: [{ page_id: "landing" }] },
+    { status: "unknown" },
+    { reason: "stage_required_by_brief" },
+    { reason: "stage_required_by_spec" },
+    { reason: "stage_blocked" },
+    { change: { reasons: [] } },
+    { change: { reasons: [{ code: "commerce_signature_unavailable", path: "checkout/index.html" }] } },
+    ...[{ code: "checkout_page" }, null, "commerce_signature_unavailable"].map((other) => ({
+      change: { reasons: [{ code: "commerce_signature_unavailable" }, other] },
+    })),
+  ]) {
+    assert.doesNotMatch(formatDoctorCi({ ci: legacyCi(qa) }), /record baseline/, JSON.stringify(qa));
+  }
 });

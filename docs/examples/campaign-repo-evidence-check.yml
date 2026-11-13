@@ -35,14 +35,39 @@ jobs:
       - name: Inspect evidence debt
         id: doctor
         continue-on-error: true
-        # Replace the packet path with the committed packet in this repo. A
-        # project with several funnels has one packet per funnel
-        # (campaign-runtime-<route>.build.json); run doctor --ci for each.
+        # Inspect every root Build Packet after the one site build above.
         run: |
           set +e
-          # Only formatted stdout belongs in the PR comment; stderr stays in the job log.
-          npx --no-install campaigns-os doctor --packet ./campaign-runtime.build.json --ci --no-live-refs > "$RUNNER_TEMP/campaign-evidence.md"
-          status=$?
+          shopt -s nullglob
+          packets=(campaign-runtime-?*.build.json)
+          if [[ -f campaign-runtime.build.json || ${#packets[@]} -eq 0 ]]; then
+            packets=(campaign-runtime.build.json "${packets[@]}")
+          fi
+          : > "$RUNNER_TEMP/campaign-evidence.md"
+          status=0
+          for packet in "${packets[@]}"; do
+            # Only formatted stdout belongs in the PR comment; stderr stays in the job log.
+            npx --no-install campaigns-os doctor --packet "$packet" --ci --no-live-refs > "$RUNNER_TEMP/campaign-funnel-evidence.md"
+            funnel_status=$?
+            funnel_status=${funnel_status:-1}
+            if [[ -s "$RUNNER_TEMP/campaign-evidence.md" ]]; then
+              printf '\n' >> "$RUNNER_TEMP/campaign-evidence.md"
+            fi
+            # Packet filenames are data too; encode Markdown punctuation in headings.
+            node -e 'console.log("### " + process.argv[1].replace(/[^A-Za-z0-9._-]/gu, c => "&#" + c.codePointAt(0) + ";") + "\n")' "$packet" >> "$RUNNER_TEMP/campaign-evidence.md"
+            if [[ -s "$RUNNER_TEMP/campaign-funnel-evidence.md" ]]; then
+              cat "$RUNNER_TEMP/campaign-funnel-evidence.md" >> "$RUNNER_TEMP/campaign-evidence.md"
+            else
+              printf '%s\n' 'Campaign evidence could not be evaluated. See the job log.' >> "$RUNNER_TEMP/campaign-evidence.md"
+            fi
+            # Owed wins over unknown; either wins over current. Preserve other failures.
+            case "$funnel_status" in
+              3) status=3 ;;
+              4) if [[ "$status" != 3 ]]; then status=4; fi ;;
+              0) ;;
+              *) if [[ "$status" == 0 ]]; then status=$funnel_status; fi ;;
+            esac
+          done
           status=${status:-1}
           echo "exit_code=$status" >> "$GITHUB_OUTPUT"
           cat "$RUNNER_TEMP/campaign-evidence.md"

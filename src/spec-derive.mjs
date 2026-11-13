@@ -32,7 +32,7 @@ import { ANALYTICS_VENDORS, isPlaceholderVendorId, isReleasedSdkVersion } from "
 import { PAGE_KIT_CAMPAIGNS_REL_PATH } from "./page-kit-campaign-config.mjs";
 import { PAGE_KIT_STORE_PROFILE_FIELDS } from "./page-kit-store-profile.mjs";
 import { compareReleasedSdkVersions, entryInScaffoldState, resolveSpecSdkPin } from "./page-kit-sdk-version.mjs";
-import { isAbsoluteHttpUrl, normalizePageKitRoute, runtimeRelativeRouteForSpecValue, stripPublicRoutePrefix } from "./route-identity.mjs";
+import { effectiveMapPublicRouteSlug, isAbsoluteHttpUrl, normalizePageKitRoute, runtimeRelativeRouteForSpecValue, stripPublicRoutePrefix } from "./route-identity.mjs";
 import { cpkPageTypeForSpecType, publicRouteForPage } from "./source-html-intake.mjs";
 import { MIRRORED_OFFER_FIELDS, MIRRORED_PACKAGE_FIELDS, MIRRORED_PAGE_OFFER_FIELDS } from "./spec-derive-campaign.mjs";
 
@@ -285,7 +285,8 @@ export function frontmatterScalars(text, keys = PAGE_FILE_FRONTMATTER_KEYS) {
  * record spec refuses a routes-only bind while any hint is stale: one rule,
  * one owner.
  */
-export function staleRoutingHints(spec, { publicRouteSlug = "", routeByPageId = null } = {}) {
+export function staleRoutingHints(spec, { publicRouteSlug = "", mapPublicRouteSlug = null, routeByPageId = null } = {}) {
+  mapPublicRouteSlug = effectiveMapPublicRouteSlug({ campaign: { public_route_slug: publicRouteSlug, map_public_route_slug: mapPublicRouteSlug } });
   const pages = activePagesWithPaths(spec).map(({ page }) => page);
   const byId = new Map();
   for (const page of pages) if (!byId.has(page.id)) byId.set(page.id, page);
@@ -305,7 +306,10 @@ export function staleRoutingHints(spec, { publicRouteSlug = "", routeByPageId = 
         if (!byId.has(targetId)) continue;
         route = publicRouteForPage(byId.get(targetId));
       }
-      if (runtimeRelativeRouteForSpecValue(value, publicRouteSlug) === runtimeRelativeRouteForSpecValue(route, publicRouteSlug)) continue;
+      const targetRoute = mapPublicRouteSlug && routeByPageId instanceof Map
+        ? normalizePageKitRoute(route) // Derived page-tree values are already relative.
+        : runtimeRelativeRouteForSpecValue(route, publicRouteSlug, mapPublicRouteSlug);
+      if (runtimeRelativeRouteForSpecValue(value, publicRouteSlug, mapPublicRouteSlug) === targetRoute) continue;
       stale.push({ page_id: page.id, tag, value, target_page_id: targetId, derived_route: route });
     }
   }
@@ -316,12 +320,13 @@ export function staleRoutingHints(spec, { publicRouteSlug = "", routeByPageId = 
 // was: the prefix in front of its runtime-relative route ("/slug/" in
 // "/slug/receipt/", nothing in "receipt/") is kept, so a rooted hint stays
 // rooted.
-function routingHintValue(previous, route, publicRouteSlug) {
-  const relative = runtimeRelativeRouteForSpecValue(route, publicRouteSlug);
+function routingHintValue(previous, route, publicRouteSlug, mapPublicRouteSlug) {
+  const relative = mapPublicRouteSlug ? normalizePageKitRoute(route) : runtimeRelativeRouteForSpecValue(route, publicRouteSlug);
   const raw = previous.trim().replace(/[?#].*$/, "");
   const withSlash = raw.endsWith("/") ? raw : `${raw}/`;
-  const old = runtimeRelativeRouteForSpecValue(previous, publicRouteSlug);
-  const prefix = old && withSlash.endsWith(old) ? withSlash.slice(0, withSlash.length - old.length) : "";
+  const old = runtimeRelativeRouteForSpecValue(previous, publicRouteSlug, mapPublicRouteSlug);
+  const prefix = old && withSlash.endsWith(old) ? withSlash.slice(0, withSlash.length - old.length)
+    : mapPublicRouteSlug && stripPublicRoutePrefix(previous, publicRouteSlug, mapPublicRouteSlug) === "" ? withSlash : "";
   return `${prefix}${relative}`;
 }
 
@@ -336,13 +341,13 @@ function terminalSegment(route) {
 // route equals the page's current route, whose terminal segment equals the
 // current route's, or whose filename is the page id. Exactly one candidate
 // binds; none or several is reported and the page is left as it is.
-function bindPageFile(page, pageFiles, packetBindings) {
+function bindPageFile(page, pageFiles, packetBindings, publicRouteSlug, mapPublicRouteSlug) {
   const bound = packetBindings instanceof Map ? packetBindings.get(page.id) : undefined;
   if (isNonEmptyString(bound)) {
     const match = pageFiles.find((file) => file.path === bound.replace(/^\/+/, ""));
     if (match) return { file: match, via: "packet" };
   }
-  const currentRoute = publicRouteForPage(page);
+  const currentRoute = mapPublicRouteSlug ? stripPublicRoutePrefix(publicRouteForPage(page), publicRouteSlug, mapPublicRouteSlug) : publicRouteForPage(page);
   const currentTerminal = terminalSegment(currentRoute);
   const candidates = new Set();
   for (const file of pageFiles) {
@@ -422,7 +427,8 @@ const PAGE_ID_SHAPE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 //     builds to, and it is appended to the funnel's pages;
 //   - removed: a page whose file the packet's projection named
 //     (source_html.pages[].page_kit.target_path) and the tree no longer has.
-//     A page the build never wrote is still only "not found";
+//     A page the build never wrote stays "not found" unless the package
+//     binding pass identifies the file that sells exactly its packages;
 //   - routing: the added page's own frontmatter links set its routing fields,
 //     and a kept page whose link now names an added page, or whose routing
 //     named a removed one, is re-pointed at the page its link names.
@@ -430,7 +436,7 @@ const PAGE_ID_SHAPE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 // and where the funnel's pages carry an `order` the new page's is reported
 // as not derived. Before handoff nothing is added or removed; the files no
 // page binds are listed as unclaimed.
-function planPageScope({ spec, activePages, pageFiles, packetBindings, boundFiles, ambiguousFiles, notFound, derivedRouteByPageId, publicRouteSlug, handedOff }) {
+function planPageScope({ spec, activePages, pageFiles, packetBindings, boundFiles, ambiguousFiles, notFound, derivedRouteByPageId, publicRouteSlug, mapPublicRouteSlug, handedOff }) {
   const scope = { handed_off: Boolean(handedOff), added: [], removed: [], unclaimed: [], changes: [], not_derived: [] };
   const unbound = pageFiles.filter((file) => !boundFiles.has(file.path) && !ambiguousFiles.has(file.path) && file.route !== null && !file.problem && isNonEmptyString(file.page_type));
   if (!handedOff) {
@@ -505,8 +511,9 @@ function planPageScope({ spec, activePages, pageFiles, packetBindings, boundFile
   for (const { id, file } of added) finalRoutes.set(id, file.route);
   const resolveLink = (value) => {
     if (!isNonEmptyString(value) || value.trim().startsWith("#") || isAbsoluteHttpUrl(value.trim())) return null;
-    const wanted = runtimeRelativeRouteForSpecValue(value, publicRouteSlug);
-    const matches = [...finalRoutes].filter(([, route]) => runtimeRelativeRouteForSpecValue(route, publicRouteSlug) === wanted).map(([id]) => id);
+    // Frontmatter links use the served slug; finalRoutes are already relative.
+    const wanted = mapPublicRouteSlug ? stripPublicRoutePrefix(value, publicRouteSlug) : runtimeRelativeRouteForSpecValue(value, publicRouteSlug);
+    const matches = [...finalRoutes].filter(([, route]) => (mapPublicRouteSlug ? normalizePageKitRoute(route) : runtimeRelativeRouteForSpecValue(route, publicRouteSlug)) === wanted).map(([id]) => id);
     return matches.length === 1 ? matches[0] : null;
   };
   const addedIds = new Set(added.map((entry) => entry.id));
@@ -553,7 +560,7 @@ function planPageScope({ spec, activePages, pageFiles, packetBindings, boundFile
     const hintRow = (record, recordPath) => {
       const value = record?.sdk_hints?.meta_tags?.[tag];
       if (!tag || !isNonEmptyString(value) || isAbsoluteHttpUrl(value.trim()) || !finalRoutes.has(after)) return null;
-      const next = routingHintValue(value, finalRoutes.get(after), publicRouteSlug);
+      const next = routingHintValue(value, finalRoutes.get(after), publicRouteSlug, mapPublicRouteSlug);
       if (next === value) return null;
       return { field: `${pathLabel(recordPath)}.sdk_hints.meta_tags.${tag}`, page_id: page.id, path: [...recordPath, "sdk_hints", "meta_tags", tag], before: value, after: next, source: `route of page "${after}" (${source})` };
     };
@@ -601,11 +608,13 @@ function planPageScope({ spec, activePages, pageFiles, packetBindings, boundFile
 //
 // Inputs, all read by the CLI: the parsed spec; the campaigns.json `entry`
 // for the route; `pageFiles` as `{ path, basename, route, permalink }` rows for every
-// page file under the campaign's source directory (null when the directory
+// page file under the campaign's source directory, including literal
+// `package_refs` from its markup (null when the directory
 // does not exist); `packetBindings` as a Map of page id -> target file path
 // from the packet's page-kit projection; `waivedGates` as the checkpoint
 // gates an active named-human waiver currently covers.
-export function planSpecDerive({ spec, entry, pageFiles = null, packetBindings = new Map(), waivedGates = [], waiversUnknown = false, publicRouteSlug = "", handedOff = false } = {}) {
+export function planSpecDerive({ spec, entry, pageFiles = null, packetBindings = new Map(), waivedGates = [], waiversUnknown = false, publicRouteSlug = "", mapPublicRouteSlug = null, handedOff = false } = {}) {
+  mapPublicRouteSlug = effectiveMapPublicRouteSlug({ campaign: { public_route_slug: publicRouteSlug, map_public_route_slug: mapPublicRouteSlug } });
   const target = isPlainObject(entry) ? entry : {};
   const changes = [];
   const unchanged = [];
@@ -697,20 +706,73 @@ export function planSpecDerive({ spec, entry, pageFiles = null, packetBindings =
         if (isPlainObject(page) && isNonEmptyString(page.id) && !mirrorIndex.has(page.id)) mirrorIndex.set(page.id, index);
       });
     }
+    const pageBindings = new Map();
+    for (const { page, path } of activePages) {
+      if (idCounts.get(page.id) > 1) continue;
+      const binding = bindPageFile(page, pageFiles, packetBindings, publicRouteSlug, mapPublicRouteSlug);
+      pageBindings.set(page.id, binding);
+      if (binding.file) boundFiles.set(binding.file.path, page.id);
+      else if (binding.via === "ambiguous") {
+        for (const candidate of binding.candidates) ambiguousFiles.add(candidate);
+      } else notFound.push({ page, path });
+    }
+    if (handedOff) {
+      const bindings = packetBindings instanceof Map ? packetBindings : new Map();
+      // The SDK has no literal offer-ref attribute; only package refs can
+      // identify a file. Offers and every other authored field stay intact.
+      const stale = notFound.filter(({ page }) => !isNonEmptyString(bindings.get(page.id)))
+        .map(({ page }) => ({ page, refs: new Set([
+          ...(Array.isArray(page.packages) ? page.packages : [])
+            .map((entry) => entry?.ref_id ?? entry?.package_ref_id ?? entry?.package_id ?? entry?.id),
+          ...(Array.isArray(page.offers) ? page.offers : [])
+            .flatMap((entry) => [entry?.package_ref_id, entry?.package_id]),
+        ]
+          .filter((ref) => ref !== undefined && ref !== null && /^[A-Za-z0-9_-]+$/.test(String(ref).trim()))
+          .map((ref) => String(ref).trim())) }))
+        .filter(({ refs }) => refs.size);
+      if (stale.length) {
+        // Ask the existing scope planner which files would be added. Its
+        // rename hold and all add eligibility rules take precedence here.
+        const addable = new Set(planPageScope({ spec, activePages, pageFiles, packetBindings, boundFiles, ambiguousFiles, notFound, derivedRouteByPageId, publicRouteSlug, mapPublicRouteSlug, handedOff }).added.map((row) => row.file));
+        const pairs = [];
+        for (const file of pageFiles.filter((entry) => addable.has(entry.path))) {
+          const refs = new Set(file.package_refs || []);
+          for (const candidate of stale) {
+            if (file.page_type !== cpkPageTypeForSpecType(candidate.page.type) || ![...refs].some((ref) => candidate.refs.has(ref))) continue;
+            pairs.push({ file, page: candidate.page, exact: refs.size === candidate.refs.size && [...refs].every((ref) => candidate.refs.has(ref)) });
+          }
+        }
+        const exact = pairs.filter((pair) => pair.exact);
+        for (const pair of exact) {
+          const { file, page } = pair;
+          const unique = pair.exact && exact.filter((entry) => entry.page.id === page.id).length === 1 && exact.filter((entry) => entry.file.path === file.path).length === 1;
+          if (unique) {
+            pageBindings.set(page.id, { file, via: "packages" });
+            boundFiles.set(file.path, page.id);
+            notFound.splice(notFound.findIndex((entry) => entry.page.id === page.id), 1);
+          } else {
+            ambiguousFiles.add(file.path);
+            notDerived.push({ field: `page file ${file.path}`, page_id: page.id, reason: "page_likely_pair", detail: `${file.path} sells exactly the packages of never-built page "${page.id}", but the match is not one-to-one; derive neither re-points the page nor adds this file. Set the right page's page_url to ${JSON.stringify(file.route)} by hand (or remove the page that is not real), then derive again.` });
+          }
+        }
+        for (const { file, page } of pairs.filter((pair) => !pair.exact && !boundFiles.has(pair.file.path) && !ambiguousFiles.has(pair.file.path))) {
+          notDerived.push({ field: `page file ${file.path}`, page_id: page.id, reason: "page_likely_pair", detail: `${file.path} and never-built page "${page.id}" share package refs but do not sell exactly the same packages; the file is still added. If they are the same page, set the right page's page_url to ${JSON.stringify(file.route)} by hand (or remove the page that is not real), then derive again.` });
+        }
+      }
+    }
     for (const { page, path } of activePages) {
       const field = `${pathLabel(path)}.page_url`;
       if (idCounts.get(page.id) > 1) {
         notDerived.push({ field, page_id: page.id, reason: "page_id_duplicate", detail: `page id "${page.id}" appears more than once in the spec, so no single route can be derived for it; make page ids unique, then derive again.` });
         continue;
       }
-      const binding = bindPageFile(page, pageFiles, packetBindings);
+      const binding = pageBindings.get(page.id);
       if (!binding.file) {
         if (binding.via === "ambiguous") {
           for (const candidate of binding.candidates) ambiguousFiles.add(candidate);
           notDerived.push({ field, page_id: page.id, reason: "page_file_ambiguous", detail: `more than one page file could be page "${page.id}" (${binding.candidates.join(", ")}); add a permalink or rename so one file carries the route, then derive again.` });
         } else {
           const row = { field, page_id: page.id, reason: "page_file_not_found", detail: `no page file in the page tree binds to page "${page.id}" (by the packet's page-kit projection, the page's current route ${JSON.stringify(publicRouteForPage(page))}, or a file named after the page id); the page has not been built, or was renamed past recognition. Build it, or name the file after the page, then derive again.` };
-          notFound.push({ page, path, row });
           notDerived.push(row);
         }
         continue;
@@ -718,7 +780,7 @@ export function planSpecDerive({ spec, entry, pageFiles = null, packetBindings =
       boundFiles.set(binding.file.path, page.id);
       const after = binding.file.route;
       const before = Object.hasOwn(page, "page_url") ? page.page_url : undefined;
-      const source = `${binding.file.path}${binding.file.permalink ? " (permalink)" : ""}`;
+      const source = `${binding.file.path}${binding.file.permalink ? " (permalink)" : ""}${binding.via === "packages" ? " (matched by the packages it sells)" : ""}`;
       const problem = binding.file.problem || derivedRouteProblem(after);
       if (problem) {
         notDerived.push({ field, page_id: page.id, reason: "target_invalid", detail: `the permalink ${source} states for page "${page.id}" (${quoteValue(binding.file.permalink ?? after)}) ${problem}; fix the file's permalink, then derive again.` });
@@ -745,7 +807,7 @@ export function planSpecDerive({ spec, entry, pageFiles = null, packetBindings =
       // ("/slug/checkout/", "checkout") is the same route and is not
       // rewritten; a value nested differently from the tree is not.
       const sameRoute = typeof before === "string"
-        && stripPublicRoutePrefix(normalizePageKitRoute(before), publicRouteSlug) === after
+        && stripPublicRoutePrefix(normalizePageKitRoute(before), publicRouteSlug, mapPublicRouteSlug) === after
         && (before.trim() !== "" || page.is_entry === true);
       if (sameRoute) unchanged.push(row);
       else changes.push(row);
@@ -756,7 +818,7 @@ export function planSpecDerive({ spec, entry, pageFiles = null, packetBindings =
         const mirror = spec.funnel_pages[mirrorAt];
         const mirrorBefore = Object.hasOwn(mirror, "page_url") ? mirror.page_url : undefined;
         const mirrorSame = typeof mirrorBefore === "string"
-          && stripPublicRoutePrefix(normalizePageKitRoute(mirrorBefore), publicRouteSlug) === after
+          && stripPublicRoutePrefix(normalizePageKitRoute(mirrorBefore), publicRouteSlug, mapPublicRouteSlug) === after
           && (mirrorBefore.trim() !== "" || page.is_entry === true);
         if (!mirrorSame) {
           changes.push({ field: `funnel_pages[${mirrorAt}].page_url`, page_id: page.id, path: ["funnel_pages", mirrorAt, "page_url"], before: mirrorBefore, after, source: `mirror of ${field}` });
@@ -764,7 +826,7 @@ export function planSpecDerive({ spec, entry, pageFiles = null, packetBindings =
       }
     }
     // The pages the tree adds or removes (#721), matched by id.
-    pageScope = planPageScope({ spec, activePages, pageFiles, packetBindings, boundFiles, ambiguousFiles, notFound, derivedRouteByPageId, publicRouteSlug, handedOff });
+    pageScope = planPageScope({ spec, activePages, pageFiles, packetBindings, boundFiles, ambiguousFiles, notFound, derivedRouteByPageId, publicRouteSlug, mapPublicRouteSlug, handedOff });
     changes.push(...pageScope.changes);
     notDerived.push(...pageScope.not_derived);
 
@@ -784,7 +846,7 @@ export function planSpecDerive({ spec, entry, pageFiles = null, packetBindings =
       // A plan the guard would refuse is reported by the write; the hints
       // are then read off the spec as it is.
     }
-    staleHints.push(...staleRoutingHints(planned || spec, { publicRouteSlug, routeByPageId: routesAfter }));
+    staleHints.push(...staleRoutingHints(planned || spec, { publicRouteSlug, mapPublicRouteSlug, routeByPageId: routesAfter }));
   }
   // A page the tree no longer builds is reported as not found unless this run
   // removes it.

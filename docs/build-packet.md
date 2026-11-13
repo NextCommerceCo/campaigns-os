@@ -517,6 +517,11 @@ spec in step without running setup or intake again:
    [Binding a page change](#binding-a-page-change)).
 
 Then rebuild, record the build, and run Polish, deploy and QA as `next` asks.
+`polish capture` includes each added page's `page_kit` route without a source
+HTML `path` or a hand edit to the packet. It captures the build and reports the
+source side as `source_html_missing`, with the visual comparison unexercised.
+Pages carrying `skip_reason` stay outside that capture plan and are listed
+with their reasons in `captures.subject.skipped_pages`.
 Before handoff, `spec derive` lists a page file no spec page binds as
 unclaimed and adds nothing, and `record spec` refuses a page added or removed
 (`page_scope_changed`): the design source decides the pages until the first
@@ -604,6 +609,11 @@ the Map regenerates, so derive rewrites one only on an edge it re-points after
 handoff (below); any other stale hint is edited in the spec (or, while the Map
 is still the spec's source, fixed by re-saving the Map).
 
+After `record spec` binds an added page, its `origin: "repo"` and `page_kit`
+route also put it in the Polish capture plan and the full QA page list. It has
+no source HTML `path`: build-side evidence is captured, and the visual source
+side is reported as missing rather than compared to a design source.
+
 A routing hint that is stale is also a doctor blocker (`spec.routing_hint_stale`,
 on every read), and `record spec` refuses to bind a page change while one is
 (`routing_hint_stale`): the built meta tag follows the hint, so a moved upsell
@@ -655,6 +665,25 @@ position:
   `page_url` to the new route (it keeps its id; `record spec` binds that as a
   move of routes) or rename the file back. For a new page, remove the old page
   from the spec by hand and derive again.
+- A page the build never wrote can instead be re-pointed after handoff. When
+  exactly one otherwise-added file of the same page-kit type sells exactly
+  its package refs, and no other never-built page matches that file, derive
+  writes the existing page's `page_url` and legacy mirror, keeping its id,
+  packages, offers and other authored fields. The page's package set combines
+  `packages[]` refs (`ref_id`, `package_ref_id`, `package_id`, or `id`) with
+  `offers[]` package refs (`package_ref_id` and `package_id`); an offer's own
+  id or voucher `code` is not a package ref and is not compared. File refs
+  must be complete literal attribute or config values: a Liquid expression
+  (including one embedded in an attribute), config expression or continuation,
+  template literal, or package value inside a Liquid comment or raw block
+  makes the entire file's matching set empty, so it is added as usual rather
+  than re-pointed or held. The SDK has no literal offer-ref attribute, so only
+  package refs are compared. Several exact
+  matches hold the files without adding or re-pointing them and report each
+  pair as `page_likely_pair`. A partial package overlap still adds the file
+  and reports the same reason as a note. Set the right page's `page_url` by
+  hand (or remove the page that is not real), then derive again. The
+  `page_renamed` hold takes precedence.
 - Page order is not something the tree states. Where the funnel's pages carry
   an `order`, the added page's is reported as not derived.
 
@@ -708,6 +737,7 @@ the status is `partial` (exit 0; the fields it could derive are written):
 | `page_order_not_derived` | an added page was appended; its `order` is left for you |
 | `page_packages_not_derived` | an added page (any type but a thank-you page) carries no packages; author them before doctor's `CheckoutPathHasPackages` / `UpsellHasPackages` rules pass |
 | `page_renamed` | a page's file is gone and a new file of the same page-kit `page_type` appeared; read as a rename, neither the remove nor the add is applied |
+| `page_likely_pair` | a never-built page and a new file of the same page-kit type share package refs; several exact matches hold the files, while a partial overlap leaves the add in place; resolve the pair by hand |
 | `package_not_live`, `offer_not_live`, `offers_not_in_live_campaign` | a package or offer the spec carries is not in the live campaign, or the live campaign carried no offers list; nothing is changed |
 
 A placeholder id (`GTM-XXXXXXX`, a run of one digit; for a vendor also
@@ -1360,12 +1390,45 @@ on disk without writing (see docs/workflow-findings-sidecar.md).
 
 ### Several funnels in one project
 
+To bind a saved Map to pages already built at another route, use
+`prepare-build --route short --source <target>/src/short --target <target>`
+with the usual spec and template flags. Or use `--adopt src/short`: this reads
+the route from the folder name and uses that folder as the source. Relative
+`--adopt` paths resolve against the target. The folder must be a Page Kit route
+folder directly under the target's `src/`, holding HTML page files. A conflicting
+`--route` or `--source` is refused. `start` and `build` accept the same flags.
+`--adopt` also declares the design source as [built first](design-source-package.md#built-first):
+the built pages stand in for source evidence, with no design comparison.
+See the [built-first entry point](entry-points.md#built-first).
+`--public-route-slug` is an alias of `--route`, with the same recorded binding.
+The explicit route must be one normalized slug segment, using letters, digits,
+dots, underscores or hyphens and not starting with a dot.
+
+The Map keeps its own slug. The packet's `campaign.public_route_slug` is the
+bound built and served route; optional `campaign.map_public_route_slug` records
+the Map's own slug only when it differs, as one normalized slug segment (letters,
+digits, dots, underscores or hyphens, not starting with a dot). An equal value
+is treated as no binding. A difference without that recorded,
+spec-matching binding still blocks doctor, sync, derive and record spec. The
+binding is checked even when page routes have not changed. Spec page routes and
+SDK routing hints may be relative or prefixed by the Map's slug: with Map slug
+`long-campaign-name` bound to `short`, both `checkout/` and
+`/long-campaign-name/checkout/` project to `/short/checkout/`. The bare Map
+prefix projects to the bound root; `long-campaign-name-v2/x/` keeps its distinct
+first segment. A declared spec root at the Map prefix becomes `/short/`, while
+`route_root: "/"` stays root-served. The Map itself is not rewritten. The
+bound route selects `assembly.output_dir`, `_site/<route>/` and records under
+`.campaign-runtime/funnels/<route>/`; existing records for that route keep their
+layout. No page folder, packet or records are created for the Map's route.
+Existing pages at the bound output directory need no scaffold. Binding does
+not clear the design-source or later lifecycle gates.
+
 One Page Kit project can hold several funnels, each with its own public route
 slug (`campaign.public_route_slug`, the `_site/<route>/` directory). Each funnel
 keeps its own packet and its own records, so setting up, building, recording or
 running QA for one funnel never changes another funnel's files.
 
-- The first funnel set up in a project uses the layout above: the packet
+- The first funnel set up without a route binding uses the layout above: the packet
   `campaign-runtime.build.json` and its records directly under
   `.campaign-runtime/`.
 - Every later funnel gets a packet named `campaign-runtime-<route>.build.json`
@@ -1427,9 +1490,9 @@ Every command that takes `--packet` reads and writes that funnel's records:
 guess when the project holds more than one: `readback <root>` refuses with
 exit 2 and names each packet with its route, and `tooling status` reads no
 packet pin and says why. Pass `--packet` to name the funnel. In CI, run the
-evidence check once per packet. `bundle check` still validates only the
-repository-root bundle of the first funnel; a later funnel's packet reports
-`bundle.packet.noncanonical_path`.
+evidence check once per packet. `bundle check --packet
+campaign-runtime-<route>.build.json` validates that funnel's packet and the
+sidecars under its recorded `assembly.runtime_dir`.
 
 A single-funnel project set up before per-funnel records reads exactly as it
 did. Its packet records no `assembly.runtime_dir`, so every command keeps
@@ -1442,6 +1505,17 @@ rename of that one, and only the operator knows which. `prepare-build` sets it
 up as another funnel and prints a `Funnel:` line saying so, with the steps to
 make it a rename instead (the JSON result carries `funnelAddedBeside`, the
 default packet's path and route).
+
+When intake had no explicit route, its chosen route has no page folder, and the
+source is an unclaimed Page Kit route folder of this target, `Funnel:` instead
+offers to bind this funnel to the source route. It names the exact re-run
+command with `--adopt src/<existing route>` and the packet and records to delete
+first. It does not offer to rename the default packet's funnel in this case.
+The JSON result carries the same route, command and cleanup paths in
+`funnelBindingOffer`. Never delete the shared `.campaign-runtime/` directory;
+when intake used project-level records, the offer lists individual files.
+`next` and readback show `Map slug "<Map route>" → bound route "<served route>"`
+alongside route identity for a bound packet.
 
 To rename the route of a project's first funnel (the one at
 `campaign-runtime.build.json`):
@@ -1485,6 +1559,12 @@ pages only, which `qa run --packet <packet> --page <page_id>` pays. Other doctor
 change the CI exit. It prints Markdown for a PR comment that opens with the
 kind of change it found and what that owes, or adds `ci.status`,
 `ci.exit_code`, `ci.polish`, `ci.qa` and `ci.changes` under `--json`.
+After the existing Markdown remedy, a sentence offers a named person's baseline
+sign-off only when `record build` has recorded the current build, that rebuild
+owes QA at full scope and every change reason is
+`commerce_signature_unavailable` without a page path, with at least one reason.
+It accepts the current build as the starting point, tests nothing and needs a
+completed QA on record; brief or spec changes and mixed reasons do not qualify.
 `--ci` adds no writes or network reads; pass `--no-live-refs` in CI to disable
 doctor's existing live campaign read. Without `--ci`, inspection behavior is unchanged.
 
@@ -1708,7 +1788,11 @@ change from a commerce-affecting one
   "unmapped_files", "unmapped_file_count", "reasons" }`. `kind` is `page_only`,
   `commerce_affecting` or `unknown`, and `reasons` names why a change counts as
   commerce (for example `checkout_page`, `commerce_markup_changed`,
-  `campaign_config_changed`, `unmapped_file`, `page_added`). Entries no stage
+  `campaign_config_changed`, `unmapped_file`, `page_added`). An entry whose
+  rebuild changed a stylesheet or image the pages link directly also keeps
+  `linked_assets` (each `{ "path", "pages" }`, the ids of the pages that link
+  it) and `browser_pages` (the built paths of the checkout or upsell pages
+  among them); neither makes it commerce. Entries no stage
   needs any more are dropped, and at most 25 are kept; a stage that reviewed an
   older build reads its change as unknown and owes the full stage.
 
@@ -1904,6 +1988,20 @@ do not treat it as the enforced gate; doctor/QA enforcement reads the packet
 and report proof policy fields above.
 
 ## CampaignSpec Retrieval (`--map-id`)
+
+For existing built pages with a saved Map, `campaigns-os doctor --built
+<target> --slug <route> --emit-packet <path> --map-id <id>` fetches the Map using
+the same proxy, `--proxy-base`, `--cached-spec`, cache path and symlink refusal
+as intake below. The emitted minimal packet carries `spec.map_id` and
+`spec.local_path` pointing at that cache file. If the Map's slug differs from
+the built route, `campaign.map_public_route_slug` records the Map's slug while
+`campaign.public_route_slug` stays the built route; equal slugs add no binding.
+The packet stays marked `_synthesized`: source HTML and assembly provenance are
+still absent. This joins the inspection to the saved Map; it does not record
+completed stages. A fetch failure writes no packet or cache. The same managed
+`.gitignore` handling keeps `fetched-specs/` committable. Without `--map-id`,
+`--emit-packet` writes the existing stub unchanged; without `--emit-packet`,
+`--map-id` only labels the inspection and never fetches.
 
 `campaigns-os start` / `campaigns-os prepare-build` accept the CampaignSpec via either of two routes:
 
@@ -2382,7 +2480,7 @@ hand-editing `.campaign-runtime/` JSON:
 | `campaigns-os record build --packet <p> [--build-environment <development\|production>] [--adapter-decision <key>=<value>[,<key>=<value>...]]` | `stages.assembly` completed with `build_fingerprint` = doctor's `derived.build_output_fingerprint.value`, `source_package_material_fingerprint` = the report's Design Source Package material fingerprint when present, `evidence.build_environment` = the `--build-environment` value when given (kept from the last record otherwise), and the specified scalar `report.adapter_decisions`; all recordable decisions go in one comma-separated flag (a repeated flag keeps only the last list); `wrapper_policy` stays an intake choice. `stages.polish` resets to `required` (`required_by` build, `required_for` qa, `owed_since_build_fingerprint` the build Polish last reviewed) unless its evidence is bound to this exact output; `stages.assembly.commerce_signature` and `stages.assembly.build_changes` record what the rebuild changed (see "What a rebuild changed" below); a completed `stages.deploy` whose `source_build_fingerprint` names other output resets to `required` the same way, without the old probe's `outputs` and `evidence`, and its prior record is kept in `stages.deploy.history` (a deploy with no `source_build_fingerprint`, recorded before deploy stamped it, is kept) | doctor cannot compute the fingerprint (no `_site/<public_route_slug>/`), setup is still required, `stages.setup` is not terminal, or an adapter decision key/value is invalid |
 | `campaigns-os record polish --packet <p> --evidence <file>` | `stages.polish` from the file (`docs/polish-evidence.md` §7: completed, blocked or skipped), bound to doctor's current fingerprint; `report.theme.repair_loop_defect` when the file sets it | build is not recorded for the current output, the file has a shape error (named by field), or, for a completed status, the polish gate doctor evaluates would not pass on the result |
 | `campaigns-os record theme --packet <p>` | `report.theme`: status `applied`, `load_order` `after-next-core`, `css_path`, `commerce_pages` and per-page evidence read from each built commerce page's stylesheet links; any earlier theme waiver is cleared | build is not recorded for the current output, the campaign ships no commerce pages, a built commerce page that loads `next-core.css` does not load `brand-theme.css` (or `checkout-brand.css`) after it or links one missing from the built output, or no built commerce page loads `next-core.css` |
-| `campaigns-os record deploy --packet <p> --base-url <url>` | the packet's `deploy.preview_url` and `stages.deploy` completed with the URL in `outputs`, one evidence line per built page that answered (each page is requested under the URL first) and, on a hosted target, one per script or stylesheet served as built, and `source_build_fingerprint` = the recorded `stages.assembly.build_fingerprint` it probed, so a later `record build` of different output makes deploy owed again and `next` routes back to `record deploy` before QA; a byte-identical rebuild keeps it current | the URL does not name the campaign's route root; on a `local-serve` packet, the URL is not a loopback origin or a built page does not answer 2xx; on any other deploy target, the URL is not https (plain http only on a loopback host), a built page does not answer 200, or a script or stylesheet the built pages load from that origin is missing or served with other bytes (sha256) than the built output (each one named; HTML is not compared, since hosts inject markup); polish is not recorded, the built output changed since build was recorded, or the theme gate is blocked |
+| `campaigns-os record deploy --packet <p> --base-url <url>` | the packet's `deploy.preview_url` and `stages.deploy` completed with the URL in `outputs`, one evidence line per built page that answered (each page is requested under the URL first) and, on a hosted target, one per script or stylesheet served as built, and `source_build_fingerprint` = the recorded `stages.assembly.build_fingerprint` it probed, so a later `record build` of different output makes deploy owed again and `next` routes back to `record deploy` before QA; a byte-identical rebuild keeps it current | the URL does not name the campaign's route root; on a `local-serve` packet, the URL is not a loopback origin or a built page does not answer 2xx; on any other deploy target, the URL is not https (plain http only on a loopback host), a built page does not answer 200, or a script or stylesheet the built pages load from that origin is missing or served with other bytes (sha256) than the built output (each one named; HTML is not compared, since hosts inject markup); the built output changed since build was recorded, or doctor's theme or Polish gate is blocked (including skipped, blocked or still-owed Polish that doctor does not carry forward) |
 
 Each command also refuses a stage `next` has not reached: while doctor's
 prepare-build gate is set (`next` answers prepare-build) or while an earlier

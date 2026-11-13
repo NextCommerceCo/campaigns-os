@@ -18,6 +18,7 @@ import { canonicalJson } from "./polish-capture.mjs";
 import { QC_CHECK_REGISTRY } from "./qc-check-registry.mjs";
 import { QC_LEGS, QC_REASON, fingerprint12, qcResultRef } from "./qc-results.mjs";
 import { shellToken } from "./shell-token.mjs";
+import { BUILT_FIRST_REASON, BUILT_FIRST_LABEL } from "./design-source-package.mjs";
 
 export const QC_ACCEPT_SCHEMA = "campaigns-os-qc-accept/v0";
 export const QC_ACCEPT_SCOPE = "qc_accept";
@@ -603,7 +604,7 @@ export function buildQcHandoff({ results, coverage = [], accepts, now = new Date
   }
   const coverageEntries = [...grouped.values(), ...coverage]
     .map((entry) => {
-      const text = entry.text ?? QC_COVERAGE_TEXT[entry.check]?.[entry.reason_code];
+      const text = entry.reason_code === BUILT_FIRST_REASON ? `not applicable: built first. ${BUILT_FIRST_LABEL}` : entry.text ?? QC_COVERAGE_TEXT[entry.check]?.[entry.reason_code];
       return { ...entry, pages: [...entry.pages].sort(compareText), ...(text ? { text } : {}) };
     })
     .sort((a, b) => (LEG_ORDER[a.leg] ?? 9) - (LEG_ORDER[b.leg] ?? 9) || compareText(a.check, b.check) || compareText(a.reason_code, b.reason_code) || compareText(a.result, b.result));

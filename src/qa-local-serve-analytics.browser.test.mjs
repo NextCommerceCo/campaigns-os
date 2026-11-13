@@ -1,6 +1,8 @@
 // Real-browser proof for #500: the analytics-correctness inventory records the
 // page URL it actually settled on, so a localhost campaign root that redirects
-// to a production host is not mistaken for a local development render.
+// to a production host is not mistaken for a local development render. A
+// declared tag on a recorded development build reads not measured only when
+// the capture stayed on the loopback render.
 //
 // Chromium is not part of `npm ci --ignore-scripts`, so the file skips when it
 // cannot launch locally. The browser CI lane requires Chromium.
@@ -122,5 +124,5 @@ browserTest("a localhost root served in place records a loopback final URL and i
   assert.equal(capture.evidence.final_url, LOCAL_ROOT);
   const meta = (await reviewed(inventory)).find((item) => item.id === "analytics-correctness:tag:meta");
   assert.equal(meta.status, STATUS.MANUAL_REVIEW);
-  assert.equal(meta.evidence.reason, "local_serve_development_render");
+  assert.equal(meta.evidence.reason, "development_build_gates_vendor_loaders");
 });

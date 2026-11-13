@@ -218,7 +218,7 @@ const trimAsciiWhitespace = (value) => value.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+
 // run up to the next ASCII whitespace as the URL (a comma inside it stays;
 // trailing commas end the entry), then skip its descriptors up to a comma
 // outside parentheses. Descriptors are not validated.
-function srcsetUrls(value) {
+export function srcsetUrls(value) {
   const urls = [];
   let i = 0;
   for (;;) {

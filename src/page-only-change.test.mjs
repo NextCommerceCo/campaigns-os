@@ -10,14 +10,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
+import Ajv2020 from "ajv/dist/2020.js";
+
 import { buildManifestEntries, computeBuildFingerprint } from "./built-site-scope.mjs";
-import { recordQaStageOutcome } from "./cli.mjs";
-import { doctorPacket } from "./doctor/inspect.mjs";
+import { recordQaStageOutcome, resultTextLines } from "./cli.mjs";
+import { doctorCommand, doctorPacket } from "./doctor/inspect.mjs";
 import { assessEvidenceDebt } from "./evidence-debt.mjs";
 import { demoteStages } from "./input-refresh.mjs";
 import { __qaNodeTestHooks, applyQaPageScope } from "./qa-node.mjs";
 import { runReadbackCommand } from "./readback.mjs";
 import { recordStageCommand } from "./stage-record.mjs";
+import { singleLineFragment } from "./text-safety.mjs";
 
 const cli = new URL("../bin/campaigns-os.mjs", import.meta.url).pathname;
 const SLUG = "synthetic-campaign";
@@ -29,7 +32,7 @@ const PAGES = Object.freeze({
   receipt: `<!doctype html><html><head><meta name="next-page-type" content="receipt"></head><body><h1>Thank you</h1></body></html>\n`,
 });
 
-function fixture(t, { spec = {} } = {}) {
+function fixture(t, { spec = {}, pages = PAGES, files = {}, reviewed = true } = {}) {
   const root = mkdtempSync(join(tmpdir(), "page-only-change-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const output = join(root, "_site", SLUG);
@@ -37,7 +40,12 @@ function fixture(t, { spec = {} } = {}) {
     mkdirSync(join(output, page), { recursive: true });
     writeFileSync(join(output, page, "index.html"), html);
   };
-  for (const [page, html] of Object.entries(PAGES)) writePage(page, html);
+  for (const [page, html] of Object.entries(pages)) writePage(page, html);
+  const writeFile = (path, body) => {
+    mkdirSync(join(output, path, ".."), { recursive: true });
+    writeFileSync(join(output, path), body);
+  };
+  for (const [path, body] of Object.entries(files)) writeFile(path, body);
   mkdirSync(join(root, "_data"), { recursive: true });
   const config = { [SLUG]: { sdk_version: "0.4.40", store_name: "Synthetic Store" } };
   const writeConfig = () => writeFileSync(join(root, "_data", "campaigns.json"), JSON.stringify(config));
@@ -70,16 +78,19 @@ function fixture(t, { spec = {} } = {}) {
     evidence: { qc_build_fingerprint: original.fingerprint, qc_results: [] },
     purchase_proof: { order_paths_executed: 3, declared_depth: "common" },
   });
+  if (!reviewed) {
+    for (const key of ["assembly", "polish", "deploy", "qa"]) report.stages[key] = { stage: key, status: "pending" };
+  }
   mkdirSync(join(root, ".campaign-runtime"), { recursive: true });
   const reportPath = join(root, ".campaign-runtime", "assembly-report.json");
   writeFileSync(reportPath, JSON.stringify(report));
   const readReport = () => JSON.parse(readFileSync(reportPath, "utf8"));
   const recordBuild = () => recordStageCommand({ _: ["record", "build"], packet: packetPath });
   // The recorded campaign: record build keeps the commerce signature of F0.
-  recordBuild();
+  const firstBuild = recordBuild();
   assert.ok(readReport().stages.assembly.commerce_signature, "setup: record build keeps a commerce signature");
   return {
-    root, output, packet, packetPath, reportPath, readReport, recordBuild, writePage, config, writeConfig, original,
+    root, output, packet, packetPath, reportPath, readReport, recordBuild, firstBuild, writePage, writeFile, config, writeConfig, original,
     debt: () => assessEvidenceDebt({ packet, packetPath, report: readReport() }),
   };
 }
@@ -158,6 +169,114 @@ test("doctor warns when records say complete and no build is here to compare", (
 });
 
 const copyEdit = (f) => f.writePage("upsell1", PAGES.upsell1.replace("Add a second bottle", "Add a third bottle"));
+
+function compareRecordedCi(f, result) {
+  const json = ci(f, "--json");
+  const expected = JSON.parse(json.stdout).ci;
+  assert.deepEqual(result.ci, expected, "record returns the same post-write ci as doctor --ci --json");
+  const markdown = ci(f).stdout;
+  const heading = `doctor --ci reads this build as: ${expected.status}`;
+  const start = result.ready.indexOf(heading);
+  assert.notEqual(start, -1, "record attributes the reading to doctor --ci");
+  const evidence = markdown.split("\n").slice(2);
+  const expectedLines = evidence.slice(0, evidence.indexOf(""));
+  const actualLines = result.ready.slice(start + 1).filter((line) => !line.startsWith("Served-URL record follows:"));
+  const withoutListMarker = (line) => line.replace(/^- /, "");
+  const decodeValues = (line) => line.replace(/`([^`]*)`/g, (_, value) => singleLineFragment(value.replace(/&#(\d+);/g, (_, number) => String.fromCharCode(Number(number)))));
+  assert.deepEqual(actualLines.map(withoutListMarker), expectedLines.map(decodeValues).map(withoutListMarker), "every record evidence line is CI's line after decoding Markdown values");
+  const textLines = resultTextLines(result);
+  for (const line of [heading, ...actualLines]) {
+    assert.equal(textLines.filter((item) => item === `- ${withoutListMarker(line)}`).length, 1, `text exposes the evidence line once: ${line}`);
+  }
+  assert.doesNotMatch(textLines.join("\n"), /\(exit|^- - /m);
+  assert.ok(markdown.startsWith(`## Campaign evidence: ${expected.status} (exit ${expected.exit_code})\n\n`), "doctor keeps its own CI heading and exit label");
+  return { expected, markdown };
+}
+
+test("record build shares CI's advisory Polish and changed-page QA lines", (t) => {
+  const f = fixture(t);
+  copyEdit(f);
+  const result = f.recordBuild();
+  const { expected } = compareRecordedCi(f, result);
+  assert.equal(expected.polish.advisory, true);
+  assert.equal(expected.qa.scope, "pages");
+  assert.deepEqual(expected.qa.owed_pages.map((page) => page.page_id), ["upsell1"]);
+  assert.ok(result.ready.includes("Owed stages: qa (changed pages only)."));
+  assert.ok(result.ready.some((line) => line.startsWith("Advisory polish:")));
+  assert.ok(!result.ready.includes("stages.polish.status = required"), "advisory Polish is not presented as plain required");
+  assert.equal(f.readReport().stages.polish.status, "required", "the report's stage value is kept");
+  t.diagnostic(`Page-only record build:\n${resultTextLines(result).join("\n")}`);
+});
+
+test("record build after Polish and before any QA still reads Polish as advisory", (t) => {
+  const f = fixture(t);
+  const report = f.readReport();
+  report.stages.qa = { stage: "qa", status: "pending" };
+  writeFileSync(f.reportPath, JSON.stringify(report));
+  copyEdit(f);
+  const result = f.recordBuild();
+  const { expected } = compareRecordedCi(f, result);
+  assert.equal(expected.polish.advisory, true);
+  assert.equal(expected.polish.recorded_build_fingerprint, null, "the rebuild kept the reviewed build as owed_since_build_fingerprint");
+  assert.equal(expected.qa.status, "unknown");
+  assert.ok(result.ready.includes("Change found: page-only. QA is unknown; Polish is advisory."));
+  assert.ok(!result.ready.includes("stages.polish.status = required"), "advisory Polish is not presented as plain required");
+});
+
+test("first build has CI JSON but keeps the original ready lines without a change block", (t) => {
+  const f = fixture(t, { reviewed: false });
+  const result = f.firstBuild;
+  assert.deepEqual(result.ci, JSON.parse(ci(f, "--json").stdout).ci);
+  assert.deepEqual(result.ready, [
+    "stages.assembly.status = completed",
+    `build output fingerprint ${result.build_fingerprint} (doctor derived.build_output_fingerprint.value)`,
+    "stages.assembly.build_manifest lists 4 file(s), so a later fingerprint mismatch names the paths that differ",
+    "stages.polish.status = required",
+  ]);
+  assert.doesNotMatch(resultTextLines(result).join("\n"), /doctor --ci reads this build as:|Owed stages:/);
+  t.diagnostic(`First record build:\n${resultTextLines(result).join("\n")}`);
+});
+
+test("record text preserves @ and + in linked asset paths without Markdown entities", (t) => {
+  const path = "assets/hero@2x+wide.png";
+  const f = fixture(t, { pages: { ...PAGES, landing: PAGES.landing.replace("</body>", `<img src="../${path}"></body>`) }, files: { [path]: "synthetic image" } });
+  f.writeFile(path, "revised synthetic image");
+  const result = f.recordBuild();
+  assert.equal(result.ready.find((line) => line.startsWith("Linked asset changed:")), `Linked asset changed: ${path}, linked by landing`);
+  compareRecordedCi(f, result);
+  assert.ok(resultTextLines(result).includes(`- Linked asset changed: ${path}, linked by landing`));
+  assert.doesNotMatch(result.ready.join("\n"), /&#\d+;|`/);
+});
+
+test("record ready and text flatten control characters in recorded page ids and paths", (t) => {
+  const f = fixture(t);
+  copyEdit(f);
+  f.recordBuild();
+  const report = f.readReport();
+  const page = { page_id: "upsell\u001b[31m\u0007\r\n1", built_path: "upsell1/\u001b\u0007\r\nindex.html" };
+  report.stages.assembly.build_changes.at(-1).changed_pages = [page];
+  writeFileSync(f.reportPath, JSON.stringify(report));
+  const result = f.recordBuild();
+  compareRecordedCi(f, result);
+  const safeId = "upsell\uFFFD[31m\uFFFD 1", safePath = "upsell1/\uFFFD\uFFFD index.html";
+  assert.ok(result.ready.includes(`Changed page: ${safeId} (${safePath})`));
+  assert.ok(result.ready.some((line) => line.includes(`changed pages: ${safeId}`)));
+  for (const line of [...result.ready, ...resultTextLines(result)]) assert.doesNotMatch(line, /[\u0000-\u001f\u007f-\u009f]/);
+});
+
+test("record build control keeps current and full-stage ready lines", (t) => {
+  const f = fixture(t);
+  let result = f.recordBuild();
+  compareRecordedCi(f, result);
+  assert.ok(result.ready.includes("stages.polish.status = completed"));
+  assert.ok(result.ready.includes("Owed stages: none."));
+  f.writePage("checkout", PAGES.checkout.replace("<h1>Checkout</h1>", "<h1>Updated checkout</h1>"));
+  result = f.recordBuild();
+  compareRecordedCi(f, result);
+  assert.ok(result.ready.includes("stages.polish.status = required"));
+  assert.ok(result.ready.includes("Owed stages: polish, qa."));
+  assert.equal(result.ci.qa.scope, "full");
+});
 
 test("a copy edit on one upsell page owes QA on that page and Polish is advisory, before and after record build", (t) => {
   const f = fixture(t);
@@ -493,6 +612,81 @@ function legacyFixture(t) {
   return f;
 }
 
+test("record baseline control keeps an already-recorded deploy and dry-run output", (t) => {
+  const f = legacyFixture(t);
+  const preview = recordBaseline(f, { "dry-run": true });
+  assert.equal(preview.ci, undefined, "a dry run has no post-write reading");
+  assert.equal(preview.next_stage, undefined);
+  assert.doesNotMatch(preview.ready.join("\n"), /doctor --ci reads this build as:|Owed stages:|Served-URL record follows:/);
+  assert.deepEqual(resultTextLines(preview), [
+    "Status: DRY_RUN", "Would record: baseline",
+    `Would write: ${f.reportPath} (nothing was written)`, "Ready:",
+    "- stages.qa.status = baseline_accepted",
+    `- build output fingerprint ${preview.build_fingerprint} (doctor derived.build_output_fingerprint.value)`,
+    `- Polish and QA read baseline_accepted: ${ACCEPTED["accepted-by"]} accepted build ${preview.build_fingerprint}. Nothing was tested, and no purchase is proven from here until a full campaigns-os qa run.`,
+    "Dry run: every check passed and nothing was written. Re-run without --dry-run to record.",
+  ], "baseline dry-run text stays byte for byte");
+  const result = recordBaseline(f);
+  compareRecordedCi(f, result);
+  t.diagnostic(`Record baseline:\n${resultTextLines(result).join("\n")}`);
+  assert.equal(f.readReport().stages.deploy.status, "completed");
+  assert.notEqual(result.next_stage, "deploy");
+  assert.doesNotMatch(resultTextLines(result).join("\n"), /Served-URL record follows:/);
+});
+
+test("doctor CI adds legacy baseline sign-off after its existing remedy, without a JSON remedy", (t) => {
+  const f = legacyFixture(t);
+  const expected = JSON.parse(ci(f, "--json").stdout).ci;
+  assert.ok(expected.qa.change.reasons.some((reason) => reason.code === "commerce_signature_unavailable"));
+  const remedy = ci(f).stdout.split("\n").find((line) => line.startsWith("Remedy:"));
+  assert.equal(Object.hasOwn(expected, "remedy"), false);
+  assert.match(remedy, /^Remedy: rebuild, then run/);
+  const signoff = ci(f).stdout.split("\n").find((line) => line.startsWith("This funnel was recorded"));
+  assert.match(signoff, /record baseline --packet <packet> --accepted-by <person> --reason <why>/);
+  assert.match(signoff, /named person can sign off to accept the current build as the starting point/);
+  assert.match(signoff, /tests nothing and needs a completed QA on record/);
+  t.diagnostic(`Legacy doctor --ci:\n${ci(f).stdout}`);
+});
+
+test("doctor CI remedy control keeps the existing non-legacy full-stage remedy byte for byte", (t) => {
+  const f = fixture(t);
+  f.writePage("checkout", PAGES.checkout.replace("<h1>Checkout</h1>", "<h1>Updated checkout</h1>"));
+  f.recordBuild();
+  const result = JSON.parse(ci(f, "--json").stdout).ci;
+  assert.equal(result.remedy, undefined);
+  const remedy = ci(f).stdout.split("\n").find((line) => line.startsWith("Remedy:"));
+  assert.equal(remedy, "Remedy: rebuild, then run `campaigns-os record build --packet <packet>`, `campaigns-os polish capture --packet <packet> --base-url <served-current-build-url>` for the whole route, and `campaigns-os record polish --packet <packet> --evidence <polish-evidence.json>`, in that order. When QA is owed, run `campaigns-os qa run --packet <packet>` against that build.");
+  assert.doesNotMatch(remedy, /record baseline/);
+});
+
+test("readback marks a retained doctor reading stale after record build", (t) => {
+  const f = fixture(t);
+  doctorCommand({ _: ["doctor"], packet: f.packetPath, write: true });
+  copyEdit(f);
+  const result = f.recordBuild();
+  compareRecordedCi(f, result);
+  const json = JSON.parse(runReadbackCommand({ _: ["readback", f.root], packet: f.packetPath, json: true }).text);
+  assert.deepEqual(json.evidence_debt, { polish: result.ci.polish, qa: result.ci.qa, changes: result.ci.changes });
+  assert.equal(json.doctor.stale, true);
+  assert.equal(json.doctor.stale_reason, "stages.assembly was recorded after this doctor snapshot. Re-run campaigns-os doctor (or next) for current state.");
+  const text = runReadbackCommand({ _: ["readback", f.root], packet: f.packetPath }).text;
+  assert.ok(text.includes(`  STALE reading: ${json.doctor.stale_reason}`));
+  doctorCommand({ _: ["doctor"], packet: f.packetPath, write: true });
+  assert.equal(JSON.parse(runReadbackCommand({ _: ["readback", f.root], packet: f.packetPath, json: true }).text).doctor.stale, undefined);
+  assert.doesNotMatch(runReadbackCommand({ _: ["readback", f.root], packet: f.packetPath }).text, /STALE reading/);
+});
+
+test("readback fresh doctor control preserves the doctor block after a doctor write", (t) => {
+  const f = fixture(t);
+  doctorCommand({ _: ["doctor"], packet: f.packetPath, write: true });
+  const payload = JSON.parse(runReadbackCommand({ _: ["readback", f.root], packet: f.packetPath, json: true }).text);
+  assert.equal(payload.doctor.stale, undefined);
+  assert.deepEqual(Object.keys(payload.doctor), ["present", "status", "error_count", "warning_count", "warning_groups"]);
+  const text = runReadbackCommand({ _: ["readback", f.root], packet: f.packetPath }).text;
+  assert.ok(text.includes(`DOCTOR  [doctor output; status: ${payload.doctor.status}]`));
+  assert.doesNotMatch(text, /STALE reading/);
+});
+
 test("a baseline is its own status, keeps no purchase proof, and says what it is", (t) => {
   const f = legacyFixture(t);
   assert.equal(f.debt().qa.scope, "full", "before it, the first change on a pre-1.62 build owes everything");
@@ -665,3 +859,123 @@ test("a spec change after a baseline owes the stage again", (t) => {
   writeFileSync(specPath, JSON.stringify({ ...JSON.parse(readFileSync(specPath, "utf8")), edited: true }));
   assert.equal(doctorPacket(f.packetPath).derived.input_currency.stages.qa, "owed");
 });
+
+// #753: a stylesheet or image built pages link directly is a change to those
+// pages. The fixture's landing links one stylesheet, and its checkout links
+// another and a script.
+const LINKED = Object.freeze({
+  pages: {
+    ...PAGES,
+    landing: PAGES.landing.replace("</head>", '<link rel="stylesheet" href="../css/landing.css"></head>'),
+    checkout: PAGES.checkout.replace("</head>", '<link rel="stylesheet" href="../css/checkout.css"><script src="../js/checkout.js"></script></head>'),
+  },
+  files: { "css/landing.css": "h1 { margin: 0 }\n", "css/checkout.css": "button { color: green }\n", "js/checkout.js": "window.checkout = 1;\n" },
+});
+const linkedFixture = (t) => fixture(t, LINKED);
+const scopeLinked = (f, pages, extra = {}) => {
+  const base = `http://127.0.0.1:9/${SLUG}/`;
+  const topologies = [{ pages: Object.keys(PAGES).map((page) => ({ page_id: page, url: `${base}${page}/` })) }];
+  return applyQaPageScope(topologies, { pages, baseUrl: base, debt: f.debt(), report: f.readReport(), ...extra });
+};
+const passPageRun = (f, scoped, runId) => recordQaStageOutcome({ _: ["qa", "run"], packet: f.packetPath }, {
+  verdict: { run_id: runId, campaign_slug: "synthetic-map", disposition: "ready", completed_at: "2026-11-11T00:00:00Z", assertions: [], spec_hash: null, qc_results: [] },
+  page_scope: scoped.scope,
+});
+
+test("a rule appended to a stylesheet only landing links is page-only on landing, on a baseline, and so is undoing it", (t) => {
+  const f = linkedFixture(t);
+  const report = f.readReport();
+  delete report.stages.assembly.commerce_signature;
+  writeFileSync(f.reportPath, JSON.stringify(report));
+  copyEdit(f);
+  f.recordBuild();
+  recordBaseline(f);
+  for (const [step, css] of [["the edit", `${LINKED.files["css/landing.css"]}h1 { letter-spacing: 0.01em }\n`], ["undoing it", LINKED.files["css/landing.css"]]]) {
+    f.writeFile("css/landing.css", css);
+    const built = f.recordBuild();
+    assert.equal(built.record.build_changes.at(-1).kind, "page_only", step);
+    assert.ok(built.ready.some((line) => line.includes("this rebuild is page-only (changed pages: landing; linked assets: css/landing.css (linked by landing))")), `${step}: ${built.ready.join("\n")}`);
+    const debt = f.debt();
+    assert.equal(debt.qa.scope, "pages", step);
+    assert.deepEqual(debt.qa.owed_pages.map((page) => page.page_id), ["landing"], step);
+    assert.equal(debt.qa.browser_pages, undefined, `${step}: landing owes no browser run`);
+    assert.deepEqual(debt.changes.unmapped_files, []);
+    const markdown = ci(f);
+    assert.equal(markdown.status, 3, step);
+    // Undoing returns the output to the build Polish reviewed, so Polish's
+    // change is none; a Polish record build made required still reads owed
+    // then, as it does after undoing an HTML copy edit (not #753's to change).
+    if (step === "the edit") {
+      assert.equal(debt.polish.advisory, true, step);
+      assert.match(markdown.stdout, /Change found: page-only\. It owes QA on `landing`; Polish is advisory\./);
+      assert.match(markdown.stdout, /qa run --packet <packet> --page landing` against that build/);
+    } else {
+      assert.equal(debt.qa.change.kind, "page_only", step);
+      assert.match(markdown.stdout, /QA on `landing`/);
+    }
+    assert.match(markdown.stdout, /- Linked asset changed: `css\/landing\.css`, linked by `landing`/);
+    assert.equal(passPageRun(f, scopeLinked(f, ["landing"], { browser: true }), `landing-${step}`), true);
+    const qa = f.readReport().stages.qa;
+    assert.equal(qa.status, "baseline_accepted", `${step}: QA still rests on the baseline`);
+    assert.equal(f.debt().qa.status, "current", `${step}: the page run makes QA current`);
+    if (step === "the edit") assert.equal(ci(f).status, 0, step);
+  }
+});
+
+test("a stylesheet checkout links owes a browser QA run on checkout with no test orders; its script owes the full stages", (t) => {
+  const f = linkedFixture(t);
+  f.writeFile("css/checkout.css", `${LINKED.files["css/checkout.css"]}.pay { display: block }\n`);
+  f.recordBuild();
+  const debt = f.debt();
+  assert.equal(debt.qa.change.kind, "page_only");
+  assert.deepEqual(debt.qa.owed_pages.map((page) => page.page_id), ["checkout"]);
+  assert.deepEqual(debt.qa.browser_pages, ["checkout"]);
+  assert.deepEqual(debt.qa.change.reasons, [], "the notes are not commerce reasons");
+  assert.deepEqual(debt.qa.change.linked_assets, [{ path: "css/checkout.css", pages: ["checkout"] }]);
+  assert.deepEqual(debt.qa.change.browser_pages, ["checkout/index.html"]);
+  assert.deepEqual(f.readReport().stages.assembly.build_changes.at(-1).browser_pages, ["checkout/index.html"], "record build keeps them");
+  assert.throws(() => scopeLinked(f, ["checkout"]), /checkout is a checkout or upsell page whose linked stylesheet or image changed, so it owes a browser run; add --browser\./);
+  assert.throws(() => scopeLinked(f, undefined), /QA owes a browser run\. Run campaigns-os qa run --packet <packet> --page checkout --browser \(no test orders are placed\), or add --browser to this full run\./,
+    "a full run without --browser does not drop it");
+  assert.equal(scopeLinked(f, undefined, { browser: true }).scope, null, "a full run with --browser may pay it");
+  assert.deepEqual(scopeLinked(f, ["checkout"], { browser: true }).scope.owed_pages, ["checkout"]);
+  const markdown = ci(f);
+  assert.equal(markdown.status, 3);
+  assert.match(markdown.stdout, /It owes QA on `checkout`, in a browser on `checkout` \(a checkout or upsell page whose linked stylesheet or image changed; no test orders\); Polish is advisory\./);
+  assert.match(markdown.stdout, /qa run --packet <packet> --page checkout --browser` against that build/);
+  const readback = runReadbackCommand({ _: ["readback", f.root], packet: f.packetPath });
+  assert.match(readback.text, /browser run owed on: checkout \(qa run --page --browser\)/);
+  assert.match(readback.text, /linked asset: css\/checkout\.css \(linked by checkout\)/);
+  // The published readback schema accepts the payload unchanged: the notes are
+  // fields of their own, not reason codes its closed enum would reject.
+  const json = JSON.parse(runReadbackCommand({ _: ["readback", f.root], json: true, packet: f.packetPath }).text);
+  assert.deepEqual(json.evidence_debt.qa.change.linked_assets, [{ path: "css/checkout.css", pages: ["checkout"] }]);
+  const validate = new Ajv2020({ strict: true, allErrors: true })
+    .compile(JSON.parse(readFileSync(new URL("../schemas/campaigns-os-readback.v2.schema.json", import.meta.url), "utf8")));
+  assert.ok(validate(json), JSON.stringify(validate.errors, null, 2));
+
+  // The checkout's own copy changed in the same rebuild: the change owes the
+  // full stages, and the browser run on checkout is still owed.
+  const both = linkedFixture(t);
+  both.writeFile("css/checkout.css", `${LINKED.files["css/checkout.css"]}.pay { display: block }\n`);
+  both.writePage("checkout", LINKED.pages.checkout.replace("<h1>Checkout</h1>", "<h1>Secure checkout</h1>"));
+  both.recordBuild();
+  const bothDebt = both.debt();
+  assert.equal(bothDebt.qa.scope, "full");
+  assert.deepEqual(bothDebt.qa.browser_pages, ["checkout"]);
+  assert.throws(() => scopeLinked(both, undefined), /QA owes a browser run\. Add --browser to this run\./);
+  assert.equal(scopeLinked(both, undefined, { browser: true }).scope, null);
+  const bothCi = ci(both).stdout;
+  assert.match(bothCi, /It owes the full Polish and QA, in a browser on `checkout` \(a checkout or upsell page whose linked stylesheet or image changed\)\./, "a full run may place test orders");
+  assert.match(bothCi, /qa run --packet <packet> --browser`/);
+  assert.match(runReadbackCommand({ _: ["readback", both.root], packet: both.packetPath }).text, /browser run owed on: checkout \(qa run --browser\)/);
+
+  const script = linkedFixture(t);
+  script.writeFile("js/checkout.js", "window.checkout = 2;\n");
+  script.recordBuild();
+  const scriptDebt = script.debt();
+  assert.equal(scriptDebt.qa.scope, "full");
+  assert.deepEqual(scriptDebt.qa.change.reasons, [{ code: "unmapped_file", path: "js/checkout.js" }]);
+  assert.match(ci(script).stdout, /Change found: commerce-affecting \(a file outside any page changed\)\. It owes the full Polish and QA\./);
+});
+

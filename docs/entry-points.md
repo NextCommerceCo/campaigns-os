@@ -148,6 +148,35 @@ without `design_source`, no manifest, files on disk.
 - **When to use:** one-off campaigns, presell article pages with
   bespoke layouts, demos.
 
+## Built first
+
+To inspect existing built output and save a minimal packet joined to its saved
+Map, use:
+
+```bash
+campaigns-os doctor --built <page-kit-dir> --family <family> --slug <route> --emit-packet <path> --map-id <id>
+```
+
+This fetches the Map and records its cached spec path and any differing Map
+route binding. `--cached-spec` reuses the local copy; `--proxy-base` selects the
+proxy. The packet remains `_synthesized`, with no source or assembly provenance.
+Without `--map-id` it is the existing stub; `--map-id` without `--emit-packet`
+only labels the inspection and never fetches.
+
+For hand-built Page Kit pages with a saved Map, adopt their existing route:
+
+```bash
+campaigns-os prepare-build --map-id <id> --adopt src/<route> --target <page-kit-dir> --template-family <family>
+```
+
+The Map keeps its slug and the packet binds to the adopted route. Intake
+declares the Design Source Package `built_first`; no hand-made source
+screenshots are needed. `polish capture` uses its build captures as source
+evidence. Design source is the built pages ("built first"); nothing was compared to a design.
+Fidelity checks are not applicable. The first QA is a full `qa run` with test
+orders, separately authorized by the PM; `record baseline` does not apply.
+See [Built first](design-source-package.md#built-first).
+
 ## Mixed
 
 A single campaign with **per-page** entry points. Landing from
@@ -196,8 +225,12 @@ checkout bindings against the bundled contracts, and, when a built
 `_site` and a known template family exist, runs the built-output
 doctor. The flags, exit codes and the slug-resolution rules are in
 [campaign-standardization-report.md](./campaign-standardization-report.md).
-Its findings name the entry point above the campaign should re-enter
-through when repair is needed.
+With `--slug <route>`, its source findings cover that route and its transitive
+Liquid dependencies, with shared files attributed to the routes using them.
+The scoped report names the entry point the campaign should re-enter through:
+its existing Build Packet and `campaigns-os next --packet <path>` when one
+belongs to that route; otherwise **Hand-authored**, with the existing
+`doctor --built ... --slug <route>` proof command when built output exists.
 
 ## Out of the consumer's hands
 
