@@ -264,6 +264,7 @@ so a renamed command fails here as well as at the supported-surface gate.
 - `campaigns-os start`
 - `campaigns-os prepare-build`
 - `campaigns-os build`
+- `campaigns-os after-edit`
 - `campaigns-os polish`
 - `campaigns-os record`
 - `campaigns-os checkpoint`

@@ -22,7 +22,7 @@ const CONTRACT = JSON.parse(readText("contracts/effects.v1.json"));
 const ROWS = CONTRACT.rows.filter((row) => row.command !== "*refused*");
 
 const COMMAND_NAMES = [
-  "build", "bundle", "checkpoint", "demo", "doctor", "findings", "help",
+  "after-edit", "build", "bundle", "checkpoint", "demo", "doctor", "findings", "help",
   "install-agent-context", "install-skills", "login", "logout", "next", "page-kit", "polish", "prepare-build",
   "qa", "readback", "record", "run", "run-record", "sdk", "spec", "standardize", "start",
   "telemetry", "theme", "tooling", "validate-assembly-report",
@@ -60,7 +60,7 @@ function functionSource(name) {
   return CLI_SOURCE.slice(start, CLI_SOURCE.indexOf("\n}\n", start));
 }
 
-test("invocation: the declaration names exactly the 28 commands, and knownCommands() is that list", () => {
+test("invocation: the declaration names exactly the 29 commands, and knownCommands() is that list", () => {
   assert.deepEqual([...commandNames()].sort(), COMMAND_NAMES);
   assert.deepEqual(knownCommands(), commandNames());
 });
@@ -96,6 +96,16 @@ test("invocation: every readOnlyHint row resolves journal-exempt", () => {
     const args = rowArgs(row);
     assert.equal(resolveInvocationPolicy(row.command, args).journalExempt, true, `${row.effect_test} would journal`);
   }
+});
+
+test("invocation: after-edit uses the standard record and spec policy", () => {
+  const policy = policyOf(["after-edit", "--packet", "packet.json"]);
+  assert.equal(policy.class, "standard");
+  assert.equal(policy.wrapper, true);
+  assert.equal(policy.ambient, true);
+  assert.equal(policy.journalExempt, false);
+  const record = policyOf(["record", "spec", "--packet", "packet.json"]);
+  for (const key of ["class", "wrapper", "ambient", "journalExempt", "sweepRoot"]) assert.equal(policy[key], record[key]);
 });
 
 test("invocation: the --dry-run implementers are exactly the twelve, and every --dry-run row is one of them or runs inline", () => {

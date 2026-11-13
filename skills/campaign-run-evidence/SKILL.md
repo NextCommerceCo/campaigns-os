@@ -1,6 +1,6 @@
 ---
 name: campaign-run-evidence
-version: 1.0.57
+version: 1.0.58
 description: Interpret existing Campaigns OS doctor, QA and proof-depth evidence without claiming more proof than the artifacts contain.
 ---
 

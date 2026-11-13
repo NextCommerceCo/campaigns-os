@@ -37,6 +37,7 @@ test("knownCommands covers the real dispatch branches", () => {
     "start",
     "prepare-build",
     "build",
+    "after-edit",
     "standardize",
     "sdk",
     "doctor",
@@ -65,7 +66,7 @@ test("knownCommands covers the real dispatch branches", () => {
 // directory.)
 test("knownCommands is exactly the dispatch branches, nothing leaked from comments", () => {
   assert.deepEqual([...knownCommands()].sort(), [
-    "build", "bundle", "checkpoint", "demo", "doctor", "findings", "help",
+    "after-edit", "build", "bundle", "checkpoint", "demo", "doctor", "findings", "help",
     "install-agent-context", "install-skills", "login", "logout", "next", "page-kit", "polish", "prepare-build",
     "qa", "readback", "record", "run", "run-record", "sdk", "spec", "standardize", "start",
     "telemetry", "theme", "tooling", "validate-assembly-report",

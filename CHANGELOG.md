@@ -8,6 +8,16 @@ Notable supported-surface changes are recorded here.
 
 - `bundle check` reads the records of the funnel its packet names. In a project with more than one funnel it used to read the first funnel's records whatever packet it was given, and refused a later funnel's packet as non-canonical. It now reads the sidecars under the packet's recorded runtime directory, accepts `campaign-runtime-<route>.build.json` for its own route, and names the packet it checked in every remedy. A project with one funnel gets the same result as before (#756).
 
+## [1.70.0] - 2026-11-13
+
+### Added
+
+- `campaigns-os after-edit --packet <packet>`: one command to run after any change to a handed-off funnel. After a Page Kit build it records the rebuilt output, plans spec derivation (stopping for `--yes` when the spec would change), reports what Polish and QA the build owes in `doctor --ci`'s words and exit codes, and lists the files to commit. `--run-qa` runs the page QA that reading names and nothing else. It never builds, runs Polish, or places test orders. The build flow gains an After handoff run sheet, and the pull-request check example now reports every funnel in a project in one comment (#755).
+
+### Fixed
+
+- `doctor --ci`, readback and `after-edit` read a Polish or QA whose last run on the current build was blocked as owed (reason `stage_blocked`, exit `3`). They read it as current, so a pull-request check went green after a blocked QA. A blocked page QA owes its pages again; a blocked full QA or Polish owes the full stage (#755).
+
 ## [1.69.0] - 2026-11-12
 
 Hand-built Page Kit funnels can now join the workflow at the route their pages already use, keeping the saved Map's identity and labelling the built pages as their design source: "built first". This never establishes a design match, and the first QA is a full run with test orders, separately authorized by the PM; `record baseline` does not apply. To take it, pin `@nextcommerce/campaigns-os@1.69.0` and refresh installed skills to `1.69.0+skills.1`.

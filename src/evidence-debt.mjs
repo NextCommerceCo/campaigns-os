@@ -94,14 +94,15 @@ export function assessEvidenceDebt({ packet = null, packetPath = null, report = 
     // src/input-currency.mjs supplies brief/spec for input-change demotions.
     // This is lifecycle debt even when retained evidence matches the output.
     const required = stageRecord?.status === "required";
+    const blocked = stageRecord?.status === "blocked";
     const requiredReason = ["build", "brief", "spec"].includes(stageRecord?.required_by)
       ? `stage_required_by_${stageRecord.required_by}` : "stage_required";
     return {
-      status: bindingReason ? "unknown" : required ? "owed" : !recorded ? "unknown" : matches ? "current" : "owed",
+      status: bindingReason ? "unknown" : required ? "owed" : !recorded ? "unknown" : matches && !blocked ? "current" : "owed",
       matches_current_build: recorded && currentBuild ? matches : null,
       recorded_build_fingerprint: recorded,
       current_build_fingerprint: currentBuild,
-      reason: bindingReason || (required ? requiredReason : !recorded ? "stage_build_fingerprint_missing" : matches ? null : "build_fingerprint_changed"),
+      reason: bindingReason || (required ? requiredReason : !recorded ? "stage_build_fingerprint_missing" : !matches ? "build_fingerprint_changed" : blocked ? "stage_blocked" : null),
     };
   };
 
