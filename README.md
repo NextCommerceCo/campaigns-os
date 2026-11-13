@@ -81,7 +81,7 @@ Build output is not launch readiness. A complete run has build and lint evidence
 
 Before real shoppers see a campaign, confirm the production storefront URL, live payment methods, shipping markets, legal and support URLs, analytics expectations and the merchant-side configuration. Those sit outside the toolkit's proof.
 
-After launch, keep a standing pull-request check. `doctor --packet <packet> --ci --no-live-refs` reports whether Polish and QA still bind to the build on disk, and the [workflow example](https://github.com/NextCommerceCo/campaigns-os/blob/main/docs/examples/campaign-repo-evidence-check.yml) posts that report as a PR comment. See [live-campaign changes](docs/campaigns-os-build-flow.md#live-campaign-changes).
+After launch, follow the [After handoff run sheet](docs/campaigns-os-build-flow.md#after-handoff) after each change and keep a standing pull-request check. After one Page Kit build, the [workflow example](https://github.com/NextCommerceCo/campaigns-os/blob/main/docs/examples/campaign-repo-evidence-check.yml) runs `doctor --packet <packet> --ci --no-live-refs` for every root Build Packet and posts one PR comment with a block per funnel. See [live-campaign changes](docs/campaigns-os-build-flow.md#live-campaign-changes).
 
 ## Other ways to run it
 

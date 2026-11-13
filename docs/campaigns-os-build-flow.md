@@ -19,6 +19,30 @@ Pause only for missing inputs, doctor blockers, blocked deploys, out-of-scope ru
 
 ## Live-campaign changes
 
+### After handoff
+
+After any change to a handed-off funnel, build with Page Kit, run
+`campaigns-os after-edit --packet <packet>`, and commit the files it lists
+with the change. The command records the rebuilt output, plans spec derivation,
+and reports what evidence is owed. It never builds or places test orders.
+
+| Kind of change | What the command reports and what to do |
+|---|---|
+| Copy or markup on a page | When it is [page-only](#what-a-change-owes), QA is owed on the changed pages and Polish is advisory. Add `--run-qa` to check those pages. Checkout or commerce markup changes owe the full stages. |
+| Linked stylesheet or image referenced by built pages | QA is owed on the pages that link it. Add `--run-qa`; the command includes browser checks when owed. See [linked assets and their limits](#what-a-change-owes). |
+| New page | Spec derivation plans the page and stops for confirmation. Re-run with `--yes`, then author what derive lists as not derived. A new route owes full Polish and QA; follow the reported next step. |
+| Offer or package | Full Polish and QA are owed. Full QA places test orders and needs the project manager's go before running it; `after-edit` does not run those stages. |
+| SDK version bump | A rebuild after an SDK pin change is commerce-affecting and owes full Polish and QA. Review the derive plan, use `--yes` to accept it, and follow the reported next step with the project manager's go for test orders. See [what a change owes](#what-a-change-owes). |
+
+Page-only QA extends existing proof; see [what a change owes](#what-a-change-owes)
+and [accepting a funnel from before 1.62.0](#accepting-a-funnel-from-before-1620)
+for its prerequisites. Exit `2` means the command stopped; otherwise it returns
+`doctor --ci`'s exit code from the table below. Afterwards,
+`record deploy --base-url <live url>` checks that what is served is the build
+that was recorded.
+
+### Pull-request CI check
+
 Keep a standing pull-request check after launch: install locked dependencies
 with `npm ci`, build the campaign site with
 `CPK_ENV=development npx --no-install campaign-build` (the check does not read the build summary),
@@ -30,6 +54,7 @@ and does not build the site. Do not record a new build merely to clear the check
 Match the Assembly Report's build environment: the documented local-proof flow
 uses `development`; set `CPK_ENV=production` when the recorded evidence reviewed
 a production render instead. Environment differences also change fingerprints.
+The check must run after a build: without built output it reads `unknown`, not `current`.
 
 | CI status | Exit code | Meaning |
 |---|---|---|
@@ -173,8 +198,11 @@ The PR comment opens with the kind it found and what that owes, for example
 commerce-affecting change names its reasons.
 
 Copy the [workflow example](https://github.com/NextCommerceCo/campaigns-os/blob/main/docs/examples/campaign-repo-evidence-check.yml) into the
-campaign repository and adjust the packet path. It posts or updates one PR
-comment using the fixed `<!-- campaign-evidence-check -->` marker. Evidence
+campaign repository. It posts or updates one PR
+comment using the fixed `<!-- campaign-evidence-check -->` marker. It builds
+once, then checks every root Build Packet (`campaign-runtime.build.json` and
+`campaign-runtime-<route>.build.json`), with a report block headed by each packet
+file name. The combined result is owed before unknown before current. Evidence
 reports use stdout only; stderr stays in the job log. If the command produces
 no stdout, the comment points to the job log with a fixed fallback message.
 If install or build fails before doctor runs, the comment is updated with

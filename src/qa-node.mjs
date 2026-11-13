@@ -2476,7 +2476,7 @@ async function runParityQa(args) {
   });
 }
 
-async function runQa(args, options = {}) {
+export async function runQa(args, options = {}) {
   // Fail-fast before anything resolves or launches. The authoritative check
   // lives on the creation budget itself, which every browser path builds.
   refuseBadOrderCreationLimit(args);
