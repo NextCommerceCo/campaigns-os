@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.71.0] - 2026-11-13
+
+### Fixed
+
+- `bundle check` reads the records of the funnel its packet names. In a project with more than one funnel it used to read the first funnel's records whatever packet it was given, and refused a later funnel's packet as non-canonical. It now reads the sidecars under the packet's recorded runtime directory, accepts `campaign-runtime-<route>.build.json` for its own route, and names the packet it checked in every remedy. A project with one funnel gets the same result as before (#756).
+
 ## [1.70.0] - 2026-11-13
 
 ### Added

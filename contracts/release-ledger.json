@@ -4747,6 +4747,165 @@
         }
       ],
       "entry_sha256": "eb3a79bd45b4cdc2e782c7d332f7ddfcbd9b44975336140adeb83530e34cdf7f"
+    },
+    {
+      "id": "RL-0349",
+      "sequence": 335,
+      "date": "2026-11-13",
+      "kind": "release",
+      "surface_version": "1.71.0",
+      "changelog_section": "1.71.0",
+      "changelog_sha256": "f9d9607214cb40b134810514520d111915aa83fb8968c37fa6768cd22b08f5f5",
+      "agent_impact": "In a project with more than one funnel, run campaigns-os bundle check --packet campaign-runtime-<route>.build.json for each later funnel: it now checks that funnel's own Build Context, Assembly Report, doctor output and QA verdict under .campaign-runtime/funnels/<route>/ and never another funnel's. The artifact paths in the result are the paths actually read. A packet whose assembly.runtime_dir is not one of the two valid shapes is reported as bundle.packet.runtime_dir and no sidecar is read. Remedies print the packet that was checked, so copy them as printed. Nothing changes for the first funnel or a single-funnel project.",
+      "compatibility": "additive",
+      "migration": "Pin @nextcommerce/campaigns-os@1.71.0 and refresh installed skills to 1.71.0+skills.1 before starting a fresh session. A consumer of the bundle contract that read fixed sidecar paths should read them relative to the packet's runtime directory, as the contract now states.",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "compatibility.json",
+          "surface_entry": "compatibility.json",
+          "summary": "Package version 1.71.0."
+        },
+        {
+          "class": "hashed_surface",
+          "path": "contracts/migration-sidecar-bundle.v0.json",
+          "surface_entry": "contracts/migration-sidecar-bundle.v0.json",
+          "summary": "Sidecar paths are relative to the packet's runtime directory (the default, or the per-funnel directory the packet records as assembly.runtime_dir); a packet named campaign-runtime-<route>.build.json is canonical for its own route; the CI producer commands take the funnel's packet. bundle_id, schema_version and every existing key are unchanged."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "Surface 1.71.0: new hash for the migration sidecar bundle contract."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "bundle check validates a later funnel's packet and the sidecars under its recorded runtime directory, where it used to report the packet as non-canonical."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Install command pins 1.71.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/migration-sidecar-bundle.md",
+          "surface_entry": "docs/migration-sidecar-bundle.md",
+          "summary": "Where a later funnel's bundle lives, that bundle check --packet campaign-runtime-<route>.build.json checks it, and the per-funnel form of the CI producer."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerated for surface 1.71.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerated for surface 1.71.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Bundle revision 1.71.0+skills.1."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "docs/supported-surface.md",
+          "surface_entry": "docs/supported-surface.md",
+          "summary": "The migration sidecar bundle row and a paragraph on surface 1.71.0 say the bundle is per funnel."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Package version 1.71.0."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Package version 1.71.0."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Bundle revision 1.71.0+skills.1; every skill's patch version advances."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-sdk-bump/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "The bundle usage line says --packet <packet>."
+        }
+      ],
+      "entry_sha256": "cb5ad492fca9b58cbfe2a65a56b6378b232916a58d046da3f248e08cacdd800b"
     }
   ]
 }
