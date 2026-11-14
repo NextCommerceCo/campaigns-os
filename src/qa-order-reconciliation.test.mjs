@@ -422,13 +422,14 @@ test("total parity compares the displayed summary total against the order's pre-
   assert.equal(clean.status, "pass");
 });
 
-test("total parity skips with a reason when the checkout exposes no readable total", () => {
+test("total parity warns with a reason when the checkout exposes no readable total", () => {
   const { orderTotalParityAssertion, assessOrderTotalParity } = __qaBrowserTestHooks;
   const noSurface = orderTotalParityAssertion(page, "checkout", {
     verification: { total_parity: assessOrderTotalParity({ display: { total_text: null }, preUpsellTotal: 168 }) },
   });
-  assert.equal(noSurface.status, "skipped");
-  assert.match(noSurface.actual, /renders no \[data-next-display="cart\.total"\]/);
+  assert.equal(noSurface.status, "warn");
+  assert.equal(noSurface.severity, "warn");
+  assert.match(noSurface.actual, /renders no \[data-next-display="cart\.total"\] surface .*, so the order total was not compared with a displayed total$/);
 
   const unreadable = assessOrderTotalParity({ display: { total_text: "Free" }, preUpsellTotal: 168 });
   assert.equal(unreadable.comparable, false);

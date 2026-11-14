@@ -6870,7 +6870,15 @@ function orderTotalParityAssertion(page, planIdentifier, order) {
     expected: "the persisted order's pre-upsell total matches the summary total the checkout displayed at submit",
   };
   if (!parity.comparable) {
-    return assertion({ ...base, status: STATUS.SKIPPED, actual: parity.reason, evidence: parity });
+    // A comparison that did not happen is an exception the operator sees, not
+    // a skipped row the exception list leaves out.
+    return assertion({
+      ...base,
+      status: STATUS.WARN,
+      severity: SEVERITY.WARN,
+      actual: `${parity.reason}, so the order total was not compared with a displayed total`,
+      evidence: parity,
+    });
   }
   return assertion({
     ...base,

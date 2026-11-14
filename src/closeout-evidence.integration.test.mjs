@@ -11,6 +11,7 @@
 // against a hand-built expectation.
 
 import assert from "node:assert/strict";
+import { currentBuildFingerprint } from "./polish-gate.mjs";
 import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -219,6 +220,77 @@ test("QA with exceptions records the operator warning on its stage", () => {
   assert.deepEqual(readReport(fixture.reportPath).stages.qa.warnings, [
     "QA passed with explicitly attributed exceptions. Report them to the operator; do not clear or waive them, or change markup just to make them pass.",
   ]);
+});
+
+test("a narrower QA run that replaces a fuller one for the same build says so on its stage and in next", () => {
+  const fixture = target();
+  runProducer(fixture, { runId: "SYNTHRUN000000000000000001", completedAt: "2026-09-11T02:00:00.000Z", orders: 3 });
+  assert.deepEqual(readReport(fixture.reportPath).stages.qa.warnings, []);
+  runProducer(fixture, { runId: "SYNTHRUN000000000000000002", completedAt: "2026-09-11T03:00:00.000Z", orders: 1 });
+  const replaced = "This QA run replaced a fuller one for the same build: run SYNTHRUN000000000000000001 placed 3 test order path(s), this run 1. This run's verdict is now the QA proof, and the paths only the earlier run placed are not in it.";
+  const [warning] = readReport(fixture.reportPath).stages.qa.warnings;
+  assert.ok(warning?.startsWith(replaced), warning);
+  assert.match(warning, / qa run --packet <packet> --test-order common to prove them again\.$/);
+  const next = runNext(fixture.packetPath);
+  assert.equal(next.stage, "done");
+  assert.ok(next.prompt.includes(warning), next.prompt);
+
+  // A run at least as full as the one it replaces carries no such warning.
+  runProducer(fixture, { runId: "SYNTHRUN000000000000000003", completedAt: "2026-09-11T04:00:00.000Z", orders: 3 });
+  assert.deepEqual(readReport(fixture.reportPath).stages.qa.warnings, []);
+  assert.ok(!runNext(fixture.packetPath).prompt.includes("replaced a fuller one"));
+});
+
+test("the narrower-run warning suggests the replaced run's own depth, never off", () => {
+  const fixture = target({ orderPathDepth: "off" });
+  runProducer(fixture, { runId: "SYNTHRUN000000000000000001", completedAt: "2026-09-11T02:00:00.000Z", orders: 3 });
+  runProducer(fixture, { runId: "SYNTHRUN000000000000000002", completedAt: "2026-09-11T03:00:00.000Z", orders: 1 });
+  const [warning] = readReport(fixture.reportPath).stages.qa.warnings;
+  assert.match(warning, /this run 1\. .* Prove them again with a QA run that places at least 3 test order paths\.$/);
+  assert.doesNotMatch(warning, /--test-order off/);
+});
+
+test("re-recording the verdict that carries the narrower-run warning leaves the report unchanged", () => {
+  const fixture = target();
+  runProducer(fixture, { runId: "SYNTHRUN000000000000000001", completedAt: "2026-09-11T02:00:00.000Z", orders: 3 });
+  const narrower = runProducer(fixture, { runId: "SYNTHRUN000000000000000002", completedAt: "2026-09-11T03:00:00.000Z", orders: 1 });
+  assert.equal(readReport(fixture.reportPath).stages.qa.warnings.length, 1);
+  const before = readFileSync(fixture.reportPath, "utf8");
+  assert.equal(recordQaStageOutcome({ packet: fixture.packetPath, _: [] }, { verdict: narrower.verdict, local_path: narrower.localPath }), true);
+  assert.equal(readFileSync(fixture.reportPath, "utf8"), before, "re-recording the same verdict leaves the report as it was");
+});
+
+test("a narrower run after a page-scoped record is not compared with the purchase proof that record carries", () => {
+  const fixture = target();
+  runProducer(fixture, { runId: "SYNTHRUN000000000000000001", completedAt: "2026-09-11T02:00:00.000Z", orders: 3 });
+  // A page-scoped record keeps the full run's purchase proof under its own run id.
+  const report = readReport(fixture.reportPath);
+  report.stages.qa.verdict_run_id = "SYNTHRUN000000000000000009";
+  report.stages.qa.evidence.page_scope = { pages: ["checkout"], owed_pages: ["checkout"], base_build_fingerprint: `sha256:${"b".repeat(64)}` };
+  writeFileSync(fixture.reportPath, JSON.stringify(report, null, 2));
+  runProducer(fixture, { runId: "SYNTHRUN000000000000000002", completedAt: "2026-09-11T03:00:00.000Z", orders: 1 });
+  assert.deepEqual(readReport(fixture.reportPath).stages.qa.warnings, []);
+});
+
+test("a page-scoped QA run that extends a narrower record keeps the narrower-run warning", () => {
+  const fixture = target();
+  runProducer(fixture, { runId: "SYNTHRUN000000000000000001", completedAt: "2026-09-11T02:00:00.000Z", orders: 3 });
+  runProducer(fixture, { runId: "SYNTHRUN000000000000000002", completedAt: "2026-09-11T03:00:00.000Z", orders: 1 });
+  const before = readReport(fixture.reportPath);
+  const warning = before.stages.qa.warnings.find((entry) => entry.startsWith("This QA run replaced a fuller one"));
+  assert.ok(warning, "setup: the narrower run carries the warning");
+  const built = verdict({ runId: "SYNTHRUN000000000000000003", completedAt: "2026-09-11T04:00:00.000Z", orders: 0 });
+  const inputs = currentPacketInputs({ packet: JSON.parse(readFileSync(fixture.packetPath, "utf8")), packetPath: fixture.packetPath });
+  built.spec_hash = inputs.specMaterial;
+  built.source_brief_material = inputs.briefMaterial;
+  const fingerprint = currentBuildFingerprint(before);
+  const recorded = recordQaStageOutcome({ packet: fixture.packetPath, _: [] }, {
+    verdict: built,
+    local_path: join(fixture.dir, "qa-output", MAP_ID, "SYNTHRUN000000000000000002.json"),
+    page_scope: { pages: ["landing"], owed_pages: ["landing"], build_fingerprint: fingerprint, base_build_fingerprint: fingerprint },
+  });
+  assert.equal(recorded, true);
+  assert.ok(readReport(fixture.reportPath).stages.qa.warnings.includes(warning), "the page-scoped record keeps the warning of the proof it extends");
 });
 
 test("a closed Run Record for the current verdict stops next demanding a second one", () => {

@@ -782,6 +782,17 @@ export function recordQaStageOutcome(args, result) {
       }
       const evidence = qaStageGateEvidence(verdict, report, result);
       const onBaseline = Boolean(pageScope && report.stages?.qa?.baseline_accepted_at);
+      // A page-scoped run keeps the purchase proof of the record it extends, so
+      // it keeps that record's narrower-run warning too.
+      const carriedNarrower = pageScope
+        ? (Array.isArray(report.stages?.qa?.warnings) ? report.stages.qa.warnings : []).find((warning) => typeof warning === "string" && warning.startsWith(NARROWER_QA_PREFIX)) || null
+        : null;
+      const narrower = pageScope ? carriedNarrower : verdict.disposition === "blocked" ? null : narrowerQaWarning(report.stages?.qa, {
+        runId: optionalString(verdict.run_id),
+        buildFingerprint: currentBuildFingerprint(report),
+        specMaterialHash: qaStamps.source_spec_material_hash,
+        executed: summarizePurchaseProof({ verdict }).order_paths_executed,
+      });
       return settleQaBaseline(onBaseline, recordProducerStageOutcome(report, {
         stage: "qa",
         disposition: verdict.disposition,
@@ -789,9 +800,12 @@ export function recordQaStageOutcome(args, result) {
         command: `campaigns-os ${QA_RUN_PRODUCER}`,
         outputs: portableArtifactPaths([result.local_path, result.qa_sidecar?.path].filter(isNonEmptyString), workspace.targetRepo),
         blockers: verdict.disposition === "blocked" ? failed : [],
-        warnings: verdict.disposition === "ready_with_exceptions"
-          ? ["QA passed with explicitly attributed exceptions. Report them to the operator; do not clear or waive them, or change markup just to make them pass."]
-          : [],
+        warnings: [
+          ...(verdict.disposition === "ready_with_exceptions"
+            ? ["QA passed with explicitly attributed exceptions. Report them to the operator; do not clear or waive them, or change markup just to make them pass."]
+            : []),
+          ...(narrower ? [narrower] : []),
+        ],
         // The producer knows its own run id and must restate it, or the stage
         // keeps a previous run's identity beside this run's status and outputs.
         identity: { verdict_run_id: optionalString(verdict.run_id) },
@@ -844,6 +858,35 @@ export function recordQaStageOutcome(args, result) {
     process.stderr.write(`[campaigns-os] QA stage ledger update skipped: ${error.message}\n`);
     return false;
   }
+}
+
+// A run with fewer test order paths than the QA recorded for the same build
+// and spec replaces it as the current proof (its own coverage rows name what
+// it did not exercise). The QA stage warning says a fuller proof was
+// replaced, and `next` repeats it when the pipeline is otherwise complete.
+const NARROWER_QA_PREFIX = "This QA run replaced a fuller one";
+const DEPTHS_WITHOUT_ORDERS = new Set(["off", "none", "skip", "not_required", "unspecified"]);
+function narrowerQaWarning(previous, { runId, buildFingerprint, specMaterialHash, executed }) {
+  if (!isObject(previous)) return null;
+  // Re-recording the same verdict restates the warning it already carries,
+  // so the timestamp-only re-record stays unchanged.
+  if (runId && previous.verdict_run_id === runId) {
+    return (Array.isArray(previous.warnings) ? previous.warnings : []).find((warning) => typeof warning === "string" && warning.startsWith(NARROWER_QA_PREFIX)) || null;
+  }
+  if (!String(previous.status || "").startsWith("completed")) return null;
+  // A page-scoped record keeps the purchase proof of the full run it extends,
+  // placed against another build and under another run id: it names neither
+  // the run nor the build those paths belong to, so it is not compared.
+  if (isObject(previous.evidence?.page_scope)) return null;
+  if (!buildFingerprint || previous.evidence?.qc_build_fingerprint !== buildFingerprint) return null;
+  if (specMaterialHash == null || JSON.stringify(previous.source_spec_material_hash) !== JSON.stringify(specMaterialHash)) return null;
+  const before = previous.purchase_proof?.order_paths_executed;
+  if (!Number.isInteger(before) || !Number.isInteger(executed) || executed >= before) return null;
+  const depth = optionalString(previous.purchase_proof?.declared_order_path_depth);
+  const rerun = depth && !DEPTHS_WITHOUT_ORDERS.has(depth.toLowerCase())
+    ? `Run ${cmd("qa")} run --packet <packet> --test-order ${depth} to prove them again.`
+    : `Prove them again with a QA run that places at least ${before} test order paths.`;
+  return `${NARROWER_QA_PREFIX} for the same build: run ${singleLineField(previous.verdict_run_id, "(unrecorded)")} placed ${before} test order path(s), this run ${executed}. This run's verdict is now the QA proof, and the paths only the earlier run placed are not in it. ${rerun}`;
 }
 
 // QC results are written on every QA record, with the build
@@ -4848,7 +4891,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
         errors,
         warnings,
         ready,
-        prompt: `Pipeline complete. All stages in the assembly report are in a terminal status. To repeat build work, do the work and run \`${cmd("record")} build --packet <path>\`; this makes downstream stages owed as needed. \`${cmd("record")} deploy\` records the served deploy, a loopback URL for a local-serve target or an https URL for a hosted one. Run \`${cmd("qa")} run\` for QA. Then call \`${cmd("next")}\` again. If a run session is active, finish it with \`${cmd("run")} end\` so the Run Record is assembled and the session closes.${report?.stages?.qa?.status === "completed_with_warnings" ? " QA passed with exceptions; report them to the operator without clearing or waiving them or changing markup just to make them pass." : ""}${qaRestsOnBaseline(report) ? ` QA rests on a baseline ${report.commerce_baseline.accepted_by} accepted, not a test; say so when you report this campaign.` : ""}${warnings.some((issue) => issue.code === "built_output.absent") ? " The built output is not on this checkout, so these records were not compared with it; build before treating the campaign as current." : ""}`,
+        prompt: `Pipeline complete. All stages in the assembly report are in a terminal status. To repeat build work, do the work and run \`${cmd("record")} build --packet <path>\`; this makes downstream stages owed as needed. \`${cmd("record")} deploy\` records the served deploy, a loopback URL for a local-serve target or an https URL for a hosted one. Run \`${cmd("qa")} run\` for QA. Then call \`${cmd("next")}\` again. If a run session is active, finish it with \`${cmd("run")} end\` so the Run Record is assembled and the session closes.${report?.stages?.qa?.status === "completed_with_warnings" ? " QA passed with exceptions; report them to the operator without clearing or waiving them or changing markup just to make them pass." : ""}${(report?.stages?.qa?.warnings || []).filter((warning) => typeof warning === "string" && warning.startsWith(NARROWER_QA_PREFIX)).map((warning) => ` ${warning}`).join("")}${qaRestsOnBaseline(report) ? ` QA rests on a baseline ${report.commerce_baseline.accepted_by} accepted, not a test; say so when you report this campaign.` : ""}${warnings.some((issue) => issue.code === "built_output.absent") ? " The built output is not on this checkout, so these records were not compared with it; build before treating the campaign as current." : ""}`,
       });
     }
     stage = picked.stage;
