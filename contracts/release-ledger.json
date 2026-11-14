@@ -4933,6 +4933,105 @@
         }
       ],
       "entry_sha256": "3a21fcc23e988173f2c5d07028875ff478d317b5b9ec7b1eaee512629011f0d1"
+    },
+    {
+      "id": "RL-0360",
+      "sequence": 337,
+      "date": "2026-11-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.0+agent.11",
+      "changelog_sha256": "ecf553a2dc2067cdd85e560d4f1e4e85f8c0f4a1996493b5cf55bd348073aa5a",
+      "agent_impact": "Three QA results now state what they did not prove. A narrower qa run (fewer test-order paths) that replaces a fuller one for the same build leaves a warning on the QA stage and in next: run the command it names before calling the funnel proven. browser-order-total-parity is a warn exception when the checkout shows no cart total to compare: report it; do not add markup to clear it. On a --test-order tiers run, browser-test-order:tier-coverage (warn) lists tiers with no test order; quantity tiers declared only by an offer are named there and have no test-order mode, so tell the operator they were not ordered. All three are warnings: ready_with_exceptions stays a pass. Refresh installed skills to 1.71.0+skills.4.",
+      "compatibility": "compatible",
+      "migration": "Refresh installed skills to 1.71.0+skills.4 before starting a fresh session.",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "The order-total parity row warns when the checkout exposes no total to compare."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "The stated bundle revision moves to 1.71.0+skills.4."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "bundle_revision 1.71.0+skills.4; the skills this change edits move one patch up."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "browser-order-total-parity is a warn exception, not a skip, when there is no displayed total."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-sdk-bump/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "Recording a QA run with fewer order paths than the one it replaces for the same build adds a stage warning, and next's done prompt repeats it."
+        }
+      ],
+      "entry_sha256": "c64b757edd7cc203c4d8f031861b2bd4f543cd1796b977e4b382182955db64f3"
     }
   ]
 }

@@ -221,6 +221,25 @@ test("QA with exceptions records the operator warning on its stage", () => {
   ]);
 });
 
+test("a narrower QA run that replaces a fuller one for the same build says so on its stage and in next", () => {
+  const fixture = target();
+  runProducer(fixture, { runId: "SYNTHRUN000000000000000001", completedAt: "2026-09-11T02:00:00.000Z", orders: 3 });
+  assert.deepEqual(readReport(fixture.reportPath).stages.qa.warnings, []);
+  runProducer(fixture, { runId: "SYNTHRUN000000000000000002", completedAt: "2026-09-11T03:00:00.000Z", orders: 1 });
+  const replaced = "This QA run replaced a fuller one for the same build: run SYNTHRUN000000000000000001 placed 3 test order path(s), this run 1. This run's verdict is now the QA proof, and the paths only the earlier run placed are not in it.";
+  const [warning] = readReport(fixture.reportPath).stages.qa.warnings;
+  assert.ok(warning?.startsWith(replaced), warning);
+  assert.match(warning, / qa run --packet <packet> --test-order common to prove them again\.$/);
+  const next = runNext(fixture.packetPath);
+  assert.equal(next.stage, "done");
+  assert.ok(next.prompt.includes(warning), next.prompt);
+
+  // A run at least as full as the one it replaces carries no such warning.
+  runProducer(fixture, { runId: "SYNTHRUN000000000000000003", completedAt: "2026-09-11T04:00:00.000Z", orders: 3 });
+  assert.deepEqual(readReport(fixture.reportPath).stages.qa.warnings, []);
+  assert.ok(!runNext(fixture.packetPath).prompt.includes("replaced a fuller one"));
+});
+
 test("a closed Run Record for the current verdict stops next demanding a second one", () => {
   const fixture = target();
   runProducer(fixture, { runId: "SYNTHRUN000000000000000001", completedAt: "2026-09-11T02:00:00.000Z" });

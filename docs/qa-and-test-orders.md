@@ -2017,7 +2017,8 @@ same-SKU package candidates remain ambiguous unless rendered or requested
 package identity resolves them. Checkout total parity reads the standard
 `data-next-display="cart.total"` surface and the maintained Demeter
 `[data-next-cart-summary] .order-totals__value--total` surface. If neither is
-readable, total parity is explicitly skipped as unavailable rather than passed.
+readable, the total parity row is `warn`, says why the order total was not
+compared, and is listed with the verdict's exceptions rather than passed.
 
 Coupon plans stay single checkout orders in every variant: coupon proof is
 persisted-order read-back and does not need upsell traversal. Each planned

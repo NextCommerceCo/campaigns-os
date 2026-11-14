@@ -605,3 +605,36 @@ test("a run stopped for a missing checkout URL still names every offer page", as
   assert.equal(row.evidence.reason, "no_order_recorded");
   assert.deepEqual(row.evidence.not_clicked_through, ["offer", "downsell"]);
 });
+
+test("a tiers run names the quantity tiers only an offer declares, and is quiet when every tier has an order", async () => {
+  const topologies = [{ funnel_id: "main", pages: [
+    { page_id: "checkout", page_type: "checkout", url: route("checkout/"), expected_next_url: route("receipt/"),
+      packages: [{ ref_id: 1, qty: 1, name: "Widget" }, { ref_id: 2, qty: 1, is_order_bump: true, name: "Add-on" }] },
+    { page_id: "receipt", page_type: "thankyou", url: route("receipt/") },
+  ] }];
+  const quantityOffer = (ref, count) => ({ ref_id: ref, name: `Buy ${count}`, condition: { type: "count_equal", value: count }, packages: [{ package_id: 1 }] });
+  const spec = { offers: [quantityOffer(1, 1), quantityOffer(2, 2), quantityOffer(3, 3)] };
+  const placed = (ref, quantity) => ({ ref_id: `ref-${ref}-${quantity || 1}`, plan: { source: { type: "selector_tier", ref, ...(quantity ? { quantity } : {}) } } });
+  const run = async (resolved, orders, mode = "tiers") => {
+    const assertions = [];
+    await maybeRunTestOrders({ args: { "test-order": mode }, resolved, runId: "run-tiers", assertions }, {
+      async runBrowser() { return { orders, assertions: [] }; },
+    });
+    return assertions.find((entry) => entry.id === "browser-test-order:tier-coverage");
+  };
+
+  const row = await run({ topologies, spec }, [placed("1")]);
+  assert.ok(row, "a tiers run that ordered one of three quantity tiers says so");
+  assert.equal(row.status, "warn");
+  assert.equal(row.severity, "warn");
+  assert.deepEqual(row.evidence.not_ordered, ["1:2", "1:3"]);
+  assert.equal(row.actual, 'no test order in this run for 2 of 3 tier(s): 1:2 (offer "Buy 2"), 1:3 (offer "Buy 3"); 1:2, 1:3 are quantity tiers only an offer declares: the checkout page lists package 1 once and --test-order tiers orders only the tiers the page lists, so no test-order mode orders them');
+
+  assert.equal(await run({ topologies, spec }, [placed("1")], "common"), undefined, "only a tiers run claims tier coverage");
+  const rowTiers = [{ ...topologies[0], pages: [{ ...topologies[0].pages[0], packages: [
+    { ref_id: 1, qty: 1 }, { ref_id: 1, qty: 2 }, { ref_id: 1, qty: 3 },
+  ] }, topologies[0].pages[1]] }];
+  assert.equal(await run({ topologies: rowTiers, spec }, [placed("1"), placed("1", 2), placed("1", 3)]), undefined);
+  const narrowed = await run({ topologies: rowTiers, spec }, [placed("1")]);
+  assert.match(narrowed.actual, /^no test order in this run for 2 of 3 tier\(s\): 1:2, 1:3; order them with .* qa run --packet <packet> --test-order tiers --select-package 1:2,1:3$/);
+});

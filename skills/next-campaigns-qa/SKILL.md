@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-qa
-version: 1.3.62
+version: 1.3.63
 description: Run spec-aware QA from a saved Map or local-spec Build Packet and tested campaign URL after build, polish, and deploy/local evidence exist, including Playwright typed-card test-order proof.
 ---
 
-Bundle revision: 1.71.0+skills.1
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.71.0+skills.1`
+Bundle revision: 1.71.0+skills.4
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.71.0+skills.4`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -102,7 +102,7 @@ Rules:
 - When CampaignSpec declares checkout `exit_intent.enabled`, browser QA should trigger/open the pop, accept the mapped offer, and verify the code is active, totals/order summary reprice through SDK/API state, and `cart.hasCoupon("CODE")` presentation appears only after apply.
 - When CampaignSpec declares checkout `promo_code_input.enabled`, browser QA should enter the mapped `offer_code` and verify active-code state, repricing, discount row rendering, and conditional presentation. Missing promo-code input is a blocker when CampaignSpec, source design, or user instructions declared it.
 - A declared offer surface that the build never shipped is a blocker, not a silent pass. Every `--browser` run emits `browser-exit-intent-surface:<page>` and `browser-promo-code-surface:<page>` for each checkout page whose CampaignSpec declares the surface with `enabled: true`. Absent markup is `FAIL`/`BLOCKER`; a surface that renders but cannot be tied to the declared `offer_code` (or sits behind an unopened disclosure) is `MANUAL_REVIEW`/`WARN`. Exit-intent markup is looked for inside `<template>` content as well as the live document, because a correctly built pop lives nowhere else before it fires. A browser collector that threw mid-read `SKIP`s with the cause instead of blocking — it did not find nothing, it could not look.
-- Typed-card runs reconcile the persisted order against what the checkout displayed at submit, and report both halves separately from whether the order was created: `browser-order-display-parity:<plan>` fails as a blocker naming any `is_upsell: false` line whose package the checkout never rendered as selected (and any displayed package that was never charged), and `browser-order-total-parity:<plan>` fails as a blocker when the order's pre-upsell total disagrees with the displayed summary total. Both `SKIP` with a stated reason when the page gives them nothing to compare — a summary whose rows carry no `data-package-id`, or a checkout with no `[data-next-display="cart.total"]` surface. Read a skip as missing coverage, never as a pass.
+- Typed-card runs reconcile the persisted order against what the checkout displayed at submit, and report both halves separately from whether the order was created: `browser-order-display-parity:<plan>` fails as a blocker naming any `is_upsell: false` line whose package the checkout never rendered as selected (and any displayed package that was never charged), and `browser-order-total-parity:<plan>` fails as a blocker when the order's pre-upsell total disagrees with the displayed summary total. When the page gives them nothing to compare, `browser-order-display-parity` is `SKIP` with a stated reason (a summary whose rows carry no `data-package-id`) and `browser-order-total-parity` is a `warn` exception saying the order total was not compared with a displayed total (a checkout with no `[data-next-display="cart.total"]` surface): report it, do not add markup to clear it. Read a skip as missing coverage, never as a pass.
 - A `qa run --currency <CODE>` run checks the currency took: each created test order gets `browser-order-currency:<plan>`, which fails as a blocker when the order came out in any other currency (Campaign Cart falls back to the default one when the requested one is unavailable), and automatic commercial parity requests expected totals in `<CODE>`, with a `commercial-currency:<CODE>:<ANSWERED>` blocker when the calculate endpoint prices in another currency. Without `--currency` neither row is written.
 - Test orders must exercise the tested campaign through the Campaign Cart SDK, not a hand-built backend API request.
 - Use the canonical Playwright typed-card path: fill customer/shipping fields, type sandbox card data into the active hosted payment iframes, and click the real checkout submit button.

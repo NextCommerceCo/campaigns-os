@@ -781,6 +781,12 @@ export function recordQaStageOutcome(args, result) {
       }
       const evidence = qaStageGateEvidence(verdict, report, result);
       const onBaseline = Boolean(pageScope && report.stages?.qa?.baseline_accepted_at);
+      const narrower = pageScope || verdict.disposition === "blocked" ? null : narrowerQaWarning(report.stages?.qa, {
+        buildFingerprint: currentBuildFingerprint(report),
+        specMaterialHash: qaStamps.source_spec_material_hash,
+        executed: summarizePurchaseProof({ verdict }).order_paths_executed,
+        depth: optionalString(packet.qa?.proof_policy?.order_path_depth),
+      });
       return settleQaBaseline(onBaseline, recordProducerStageOutcome(report, {
         stage: "qa",
         disposition: verdict.disposition,
@@ -788,9 +794,12 @@ export function recordQaStageOutcome(args, result) {
         command: `campaigns-os ${QA_RUN_PRODUCER}`,
         outputs: portableArtifactPaths([result.local_path, result.qa_sidecar?.path].filter(isNonEmptyString), workspace.targetRepo),
         blockers: verdict.disposition === "blocked" ? failed : [],
-        warnings: verdict.disposition === "ready_with_exceptions"
-          ? ["QA passed with explicitly attributed exceptions. Report them to the operator; do not clear or waive them, or change markup just to make them pass."]
-          : [],
+        warnings: [
+          ...(verdict.disposition === "ready_with_exceptions"
+            ? ["QA passed with explicitly attributed exceptions. Report them to the operator; do not clear or waive them, or change markup just to make them pass."]
+            : []),
+          ...(narrower ? [narrower] : []),
+        ],
         // The producer knows its own run id and must restate it, or the stage
         // keeps a previous run's identity beside this run's status and outputs.
         identity: { verdict_run_id: optionalString(verdict.run_id) },
@@ -850,6 +859,20 @@ export function recordQaStageOutcome(args, result) {
 // record without qc_results reads as captured by an earlier version. The rows
 // come from the QA run's own result; readers re-derive them from the full
 // verdict's qc.* assertions.
+// A run with fewer test order paths than the QA recorded for the same build
+// and spec replaces it as the current proof (its own coverage rows name what
+// it did not exercise). The QA stage warning says a fuller proof was
+// replaced, and `next` repeats it when the pipeline is otherwise complete.
+const NARROWER_QA_PREFIX = "This QA run replaced a fuller one";
+function narrowerQaWarning(previous, { buildFingerprint, specMaterialHash, executed, depth }) {
+  if (!isObject(previous) || !String(previous.status || "").startsWith("completed")) return null;
+  if (!buildFingerprint || previous.evidence?.qc_build_fingerprint !== buildFingerprint) return null;
+  if (specMaterialHash == null || JSON.stringify(previous.source_spec_material_hash) !== JSON.stringify(specMaterialHash)) return null;
+  const before = previous.purchase_proof?.order_paths_executed;
+  if (!Number.isInteger(before) || !Number.isInteger(executed) || executed >= before) return null;
+  return `${NARROWER_QA_PREFIX} for the same build: run ${singleLineField(previous.verdict_run_id, "(unrecorded)")} placed ${before} test order path(s), this run ${executed}. This run's verdict is now the QA proof, and the paths only the earlier run placed are not in it. Run ${cmd("qa")} run --packet <packet> --test-order ${depth || "common"} to prove them again.`;
+}
+
 function qaStageGateEvidence(verdict, report, result = null) {
   const gates = {};
   const placeholderText = summarizePlaceholderTextGate(verdict);
@@ -4844,7 +4867,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
         errors,
         warnings,
         ready,
-        prompt: `Pipeline complete. All stages in the assembly report are in a terminal status. To repeat build work, do the work and run \`${cmd("record")} build --packet <path>\`; this makes downstream stages owed as needed. \`${cmd("record")} deploy\` records the served deploy, a loopback URL for a local-serve target or an https URL for a hosted one. Run \`${cmd("qa")} run\` for QA. Then call \`${cmd("next")}\` again. If a run session is active, finish it with \`${cmd("run")} end\` so the Run Record is assembled and the session closes.${report?.stages?.qa?.status === "completed_with_warnings" ? " QA passed with exceptions; report them to the operator without clearing or waiving them or changing markup just to make them pass." : ""}${qaRestsOnBaseline(report) ? ` QA rests on a baseline ${report.commerce_baseline.accepted_by} accepted, not a test; say so when you report this campaign.` : ""}${warnings.some((issue) => issue.code === "built_output.absent") ? " The built output is not on this checkout, so these records were not compared with it; build before treating the campaign as current." : ""}`,
+        prompt: `Pipeline complete. All stages in the assembly report are in a terminal status. To repeat build work, do the work and run \`${cmd("record")} build --packet <path>\`; this makes downstream stages owed as needed. \`${cmd("record")} deploy\` records the served deploy, a loopback URL for a local-serve target or an https URL for a hosted one. Run \`${cmd("qa")} run\` for QA. Then call \`${cmd("next")}\` again. If a run session is active, finish it with \`${cmd("run")} end\` so the Run Record is assembled and the session closes.${report?.stages?.qa?.status === "completed_with_warnings" ? " QA passed with exceptions; report them to the operator without clearing or waiving them or changing markup just to make them pass." : ""}${(report?.stages?.qa?.warnings || []).filter((warning) => typeof warning === "string" && warning.startsWith(NARROWER_QA_PREFIX)).map((warning) => ` ${warning}`).join("")}${qaRestsOnBaseline(report) ? ` QA rests on a baseline ${report.commerce_baseline.accepted_by} accepted, not a test; say so when you report this campaign.` : ""}${warnings.some((issue) => issue.code === "built_output.absent") ? " The built output is not on this checkout, so these records were not compared with it; build before treating the campaign as current." : ""}`,
       });
     }
     stage = picked.stage;
