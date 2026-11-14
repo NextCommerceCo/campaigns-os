@@ -67,7 +67,7 @@ test("QA cause summary explains findings with no prior evaluation", () => {
   const summary = annotateQaAssertionCauses([finding({ id: "http:checkout" })], { baseDir: base, mapId: "map-1", isFinding: isFindingAssertion });
   assert.equal(summary.comparison, "no_prior_evaluation");
   assert.match(formatCauseSummaryLine(summary), /no comparison was possible/);
-  assert.match(formatCauseBasisLine(summary), /No earlier recorded QA evaluation could be read for these findings, so every finding is labelled unknown/);
+  assert.match(formatCauseBasisLine(summary), /No earlier recorded QA evaluation could be read for these findings, so none was compared with an earlier run\./);
 });
 
 test("QA cause summary describes a mix of compared and unevaluated findings", () => {

@@ -272,7 +272,7 @@ export function formatCauseSummaryLine(summary) {
 // the labels will improve once a second run exists is simply untrue, and sends
 // them to re-run something that will fail the same way.
 const CAUSE_BASIS_SENTENCES = Object.freeze({
-  no_prior_evaluation: () => "No earlier recorded QA evaluation could be read for these findings, so every finding is labelled unknown.",
+  no_prior_evaluation: () => "No earlier recorded QA evaluation could be read for these findings, so none was compared with an earlier run.",
   no_prior_run: () => "There is no previous run for this campaign to compare against, so every finding is labelled unknown. The comparison starts working once a Run Record exists.",
   prior_run_without_qa_verdict: (id) => `Previous run ${id} exists but references no QA verdict, so there was nothing to compare against and every finding is labelled unknown.`,
   prior_run_verdict_unreadable: (id) => `Previous run ${id} exists but its QA verdict is missing or unreadable, so there was nothing to compare against and every finding is labelled unknown.`,
@@ -541,11 +541,13 @@ export function annotateQaAssertionCauses(assertions, { baseDir = null, runtimeR
   const findings = [];
   let usedEarlierEvaluation = false;
   let missingPriorEvaluation = false;
+  let comparedWithAPrior = false;
   for (const assertion of Array.isArray(assertions) ? assertions : []) {
     if (!assertion || typeof assertion !== "object" || !isFinding(assertion)) continue;
     const evaluatedPrior = lastEvaluatedQaPrior(assertion, lookup, { baseDir, runtimeRelPath, targetRepo, mapId, localSpecId, currentRunId }, isFinding);
     if (evaluatedPrior) usedEarlierEvaluation = true;
     if (evaluatedPrior === null) missingPriorEvaluation = true;
+    if (evaluatedPrior || (evaluatedPrior === undefined && prior)) comparedWithAPrior = true;
     const { cause, cause_reason } = classifyQaAssertion(assertion, {
       prior: evaluatedPrior === undefined ? prior : evaluatedPrior,
       noPriorReason: evaluatedPrior === null ? "no_prior_evaluation" : noPriorReason,
@@ -564,7 +566,9 @@ export function annotateQaAssertionCauses(assertions, { baseDir = null, runtimeR
     // the search began; a skipped row can use an earlier evaluation.
     prior_run_id: text(lookup.record?.run_id) || null,
     prior_qa_attempt_run_id: text(lookup.verdict?.run_id) || null,
-    comparison: findings.length && findings.every((finding) => finding.cause_reason === "no_prior_evaluation")
+    // No finding was compared with any earlier evaluation (some are decided
+    // before a prior is consulted, such as a test-environment cause).
+    comparison: missingPriorEvaluation && !comparedWithAPrior
       ? "no_prior_evaluation"
       : usedEarlierEvaluation || missingPriorEvaluation ? "last_evaluation"
       : lookup.verdict ? "prior_run" : noPriorReason,
