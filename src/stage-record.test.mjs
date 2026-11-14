@@ -121,6 +121,21 @@ function scaffold(f) {
   writeJson(join(f.target, "_data/campaigns.json"), { [f.spec.campaign.slug]: entry });
 }
 
+function templateSlice(f, frontmatter) {
+  scaffold(f);
+  const slice = resolve(f.target, f.packet.assembly.output_dir);
+  for (const file of ["_includes/example.html", "_layouts/example.html", "assets/css/example.css", "assets/js/example.js"]) {
+    mkdirSync(dirname(join(slice, file)), { recursive: true });
+    writeFileSync(join(slice, file), "/* example */\n");
+  }
+  for (const page of f.packet.source_html.pages) {
+    const file = resolve(f.target, page.page_kit.output_path);
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, `---\n${frontmatter(page)}\n---\n<section>Example</section>\n`);
+  }
+  return slice;
+}
+
 // What page-kit build produces: one page per CampaignSpec page at its route,
 // with whatever stylesheet links `head` gives that page.
 function buildSite(f, marker = "", head = () => "") {
@@ -1179,6 +1194,68 @@ test("record build --build-environment records stages.assembly.evidence.build_en
   });
 });
 
+test("record build derives template slice proof from scaffolded files without a hand edit", () => {
+  withLifecycle((f) => {
+    const slice = templateSlice(f, (page) => `page_type: ${page.page_kit.page_type}`);
+    recordOk(f, "setup");
+    buildSite(f);
+    const before = snapshotFiles(f);
+    assert.equal(record(f, "build", ["--dry-run"]).status, 0);
+    assert.deepEqual(snapshotFiles(f), before);
+    const packetBefore = readFileSync(f.packetPath, "utf8");
+    recordOk(f, "build");
+    const copied = readJson(f.reportPath).adapter_decisions.template_files_copied;
+    assert.equal(copied.status, "verified_existing_slice");
+    assert.deepEqual(copied.groups, copied.required_groups);
+    assert.ok(copied.paths.length > 0);
+    for (const path of copied.paths) {
+      assert.ok(path.startsWith(`${f.packet.assembly.output_dir.replace(/\/$/, "")}/`), path);
+      assert.ok(existsSync(resolve(f.target, path)), path);
+    }
+    assert.deepEqual(doctor(f).warnings.filter((issue) => issue.code.includes("template_files_copied")), []);
+    assert.equal(readFileSync(f.contextPath, "utf8"), before[0]);
+    assert.equal(readFileSync(f.packetPath, "utf8"), packetBefore);
+
+    // An old complete record cannot hide a dependency removed before a rebuild.
+    rmSync(join(slice, "assets/js/example.js"));
+    recordOk(f, "build");
+    const partial = readJson(f.reportPath).adapter_decisions.template_files_copied;
+    assert.equal(partial.status, "partial");
+    assert.equal(partial.groups.includes("assets/js"), false);
+    assert.ok(doctor(f).warnings.some((issue) => issue.code === "adapter.template_files_copied"));
+  });
+});
+
+test("record build verifies template slice pages with JSON front matter", () => {
+  withLifecycle((f) => {
+    templateSlice(f, (page) => JSON.stringify({ layout: "example", page_type: page.page_kit.page_type }, null, 2));
+    recordOk(f, "setup");
+    buildSite(f);
+    recordOk(f, "build");
+    const copied = readJson(f.reportPath).adapter_decisions.template_files_copied;
+    assert.equal(copied.status, "verified_existing_slice");
+    assert.deepEqual(copied.groups, copied.required_groups);
+    assert.deepEqual(doctor(f).warnings.filter((issue) => issue.code.includes("template_files_copied")), []);
+  });
+});
+
+test("record build leaves a page without a type out of frontmatter_vocabulary and doctor names the missing group", () => {
+  withLifecycle((f) => {
+    templateSlice(f, (page) => JSON.stringify({ layout: "example", page_type: page.page_kit.page_type }));
+    writeFileSync(resolve(f.target, f.packet.source_html.pages[0].page_kit.output_path), '---\n{ "layout": "example" }\n---\n<section>Example</section>\n');
+    recordOk(f, "setup");
+    buildSite(f);
+    recordOk(f, "build");
+    const copied = readJson(f.reportPath).adapter_decisions.template_files_copied;
+    assert.equal(copied.status, "partial");
+    assert.deepEqual(copied.required_groups.filter((group) => !copied.groups.includes(group)), ["frontmatter_vocabulary"]);
+    const warning = doctor(f).warnings.find((issue) => issue.code === "adapter.template_files_copied");
+    assert.match(warning?.message, /Missing required group\(s\): frontmatter_vocabulary\./);
+    assert.match(warning.message, /record build --packet <campaign-runtime.build.json>/);
+    assert.doesNotMatch(warning.message, /Restore the missing template files/);
+  });
+});
+
 test("record build --adapter-decision writes the report and doctor reads its value", () => {
   withLifecycle((f) => {
     scaffold(f);
@@ -1306,7 +1383,11 @@ test("record build --adapter-decision starts from context when report decisions 
     writeJson(f.reportPath, report);
     const contextDecisions = readJson(f.contextPath).adapter_decisions;
     recordOk(f, "build", ["--adapter-decision", "layout_choice=page_layout"]);
-    assert.deepEqual(readJson(f.reportPath).adapter_decisions, { ...contextDecisions, layout_choice: "page_layout" });
+    assert.deepEqual(readJson(f.reportPath).adapter_decisions, {
+      ...contextDecisions,
+      layout_choice: "page_layout",
+      template_files_copied: { ...contextDecisions.template_files_copied, status: "partial" },
+    });
   });
 });
 

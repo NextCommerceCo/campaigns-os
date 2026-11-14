@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.71.0+agent.7] - 2026-11-14
+
+### Fixed
+
+- `record build` records `adapter_decisions.template_files_copied` itself, from the template files on disk. The field had no command, so agents wrote it into the Assembly Report by hand or left it `pending` and carried doctor's warning to the handoff. `record build` now records `verified_existing_slice` when the page files declare their page type (YAML or JSON front matter) and every dependency group has files, otherwise `partial` (`not_applicable` for an `undecided` or `custom` template family), and doctor's warning names the groups that are missing. The `pending` warning is gone. Do not edit the field by hand.
+
 ## [1.71.0+agent.6] - 2026-11-14
 
 ### Fixed
