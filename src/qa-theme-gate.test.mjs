@@ -849,12 +849,13 @@ test("as-is starter QA verdict excludes palette rows and warns on placeholder ro
   const output = execFileSync(process.execPath, ["--experimental-test-module-mocks", "--input-type=module", "-e", `
     import { mock } from "node:test";
     import * as browser from ${JSON.stringify(new URL("./qa-browser.mjs", import.meta.url).href)};
-    import { mkdtempSync, rmSync } from "node:fs";
+    import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
     import { tmpdir } from "node:os";
     import { join } from "node:path";
     const rows = [
       { id: "template-residue:checkout:style:checkout_submit_button", family: "template_residue", page: "checkout", status: "fail", severity: "blocker", actual: "starter color", evidence: {} },
       { id: "template-residue:checkout:placeholder-text", family: "template_residue", page: "checkout", status: "fail", severity: "blocker", actual: "placeholder text rendered: Lorem", evidence: {} },
+      { id: "template-residue:checkout:style:missing", family: "template_residue", page: "checkout", status: "warn", severity: "warn", actual: "selector not found", evidence: {} },
     ];
     mock.module(${JSON.stringify(new URL("./qa-browser.mjs", import.meta.url).href)}, { namedExports: { ...browser, runBrowserChecks: async () => structuredClone(rows) } });
     globalThis.fetch = async () => { throw new Error("Unexpected network request"); };
@@ -875,15 +876,36 @@ test("as-is starter QA verdict excludes palette rows and warns on placeholder ro
       const stock = await __qaNodeTestHooks.runResolvedQa(args, resolved);
       resolved.packet.source_html.pages = [{ page_id: "checkout", path: "checkout.html" }];
       const designed = await __qaNodeTestHooks.runResolvedQa(args, resolved);
-      console.log(JSON.stringify([stock, designed].map((run) => run.verdict.assertions.filter((row) => row.family === "template_residue"))));
+      const { summarizePlaceholderTextGate } = await import(${JSON.stringify(new URL("./qa-verdict.mjs", import.meta.url).href)});
+      const { recordQaStageOutcome } = await import(${JSON.stringify(new URL("./cli.mjs", import.meta.url).href)});
+      const packet = JSON.parse(readFileSync(${JSON.stringify(fileURLToPath(new URL("../examples/build-packet.basic.json", import.meta.url)))}, "utf8"));
+      packet.assembly.target_repo = out;
+      const packetPath = join(out, "campaign-runtime.build.json");
+      const report = JSON.parse(readFileSync(${JSON.stringify(fileURLToPath(new URL("../examples/assembly-report.example.json", import.meta.url)))}, "utf8"));
+      report.identity.map_id = packet.spec.map_id;
+      report.identity.public_route_slug = packet.campaign.public_route_slug;
+      mkdirSync(join(out, ".campaign-runtime"), { recursive: true });
+      const reportPath = join(out, ".campaign-runtime", "assembly-report.json");
+      writeFileSync(packetPath, JSON.stringify(packet));
+      writeFileSync(reportPath, JSON.stringify(report));
+      stock.verdict.campaign_slug = packet.spec.map_id;
+      stock.verdict.public_route_slug = packet.campaign.public_route_slug;
+      const recorded = recordQaStageOutcome({ packet: packetPath }, stock);
+      const recordedGate = JSON.parse(readFileSync(reportPath, "utf8")).stages.qa.evidence?.gates?.placeholder_text_residue;
+      console.log(JSON.stringify({ stock: stock.verdict.assertions.filter((row) => row.family === "template_residue"), designed: designed.verdict.assertions.filter((row) => row.family === "template_residue"), disposition: stock.verdict.disposition, gate: summarizePlaceholderTextGate(stock.verdict), recorded, recordedGate }));
     } finally { rmSync(out, { recursive: true, force: true }); }
   `], { encoding: "utf8", env: { ...process.env, CAMPAIGNS_OS_TELEMETRY: "off" } });
-  const [stock, designed] = JSON.parse(output);
+  const { stock, designed, disposition, gate, recorded, recordedGate } = JSON.parse(output);
+  assert.equal(recorded, true);
+  assert.deepEqual(recordedGate, { status: "fail", pages_checked: 1, pages_failed: 1 });
   assert.equal(stock[0].status, "skipped");
   assert.equal(stock[0].evidence.result, "excluded");
   assert.equal(stock[0].evidence.reason_code, "template_stock");
   assert.match(stock[0].actual, /no design source or brand tokens/);
-  assert.deepEqual([stock[1].status, stock[1].severity], ["warn", "warn"]);
+  assert.deepEqual([stock[1].status, stock[1].severity], ["fail", "warn"]);
+  assert.equal(disposition, "ready_with_exceptions");
+  assert.deepEqual(gate, { status: "fail", pages_checked: 1, pages_failed: 1 });
   assert.equal(stock[1].actual, "Starter placeholder text remains because this build uses every mapped page as-is. Review the demo content before publishing.");
-  assert.ok(designed.every((row) => row.status === "fail" && row.severity === "blocker"));
+  assert.ok(designed.slice(0, 2).every((row) => row.status === "fail" && row.severity === "blocker"));
+  assert.deepEqual([stock[2].status, stock[2].severity, stock[2].actual], ["warn", "warn", "selector not found"]);
 });

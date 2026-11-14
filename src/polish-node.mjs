@@ -1,3 +1,4 @@
+import { isTemplateStockPage } from "./content-residue.mjs";
 import { campaignIdentitiesMatch, localSpecIdentityFields } from "./spec-source-identity.mjs";
 import { createHash } from "node:crypto";
 import { HIDDEN_EAGER_MEDIA_ACTIONS } from "./gate-actions.mjs";
@@ -142,7 +143,7 @@ export function planPolishCapture({ packet, baseUrl } = {}) {
       : null;
     if (!pageId) throw new Error("Every polish capture page mapping needs page_id.");
     const skipReason = nonemptyString(mapping?.skip_reason);
-    if (skipReason) {
+    if (isTemplateStockPage(mapping)) {
       skippedPages.push({ page_id: pageId, skip_reason: skipReason });
       continue;
     }
@@ -239,6 +240,7 @@ function noCapturableRoutesResult({ packet, report, now } = {}) {
   }
   return {
     ...recordedCheckpointNotApplicable(),
+    code: "polish.hidden_eager_media.no_capturable_routes",
     result: "excluded",
     reason_code: "template_stock",
     reason: TEMPLATE_STOCK_POLISH_REASON,

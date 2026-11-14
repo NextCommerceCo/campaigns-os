@@ -1,3 +1,4 @@
+import { starterPaletteIsExpected } from "./content-residue.mjs";
 import { campaignSpecIdentity, resolveCampaignIdentity, campaignIdentitiesMatch, localSpecIdentityFields } from "./spec-source-identity.mjs";
 import { withDoctorCiReport } from "./doctor/ci.mjs";
 import { createHash, randomUUID } from "node:crypto";
@@ -5085,9 +5086,10 @@ function brandContractDefectAdvisory(residueState) {
   };
 }
 
-function themeStarterPaletteAdvisory(themeGate, packetPath, residueState) {
+function themeStarterPaletteAdvisory(themeGate, packetPath, residueState, packet, contextTheme) {
   if (themeGate?.code !== "theme_gate.nothing_generatable") return null;
   if (residueState.state !== "inspected") return null;
+  if (starterPaletteIsExpected(packet, contextTheme)) return null;
   const packetArg = shellToken(packetPath || "<packet>");
   return {
     id: THEME_STARTER_PALETTE_ACTION_ID,
@@ -5282,7 +5284,7 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
   // Doctor resolved the family brand contract once and `next` hands its
   // summary in; a caller without a doctor result resolves the same way.
   const residueState = brandContract || resolveBrandContract(packet?.assembly?.template_family).summary;
-  for (const advisory of [brandContractDefectAdvisory(residueState), themeStarterPaletteAdvisory(themeGate, packetPath, residueState)]) {
+  for (const advisory of [brandContractDefectAdvisory(residueState), themeStarterPaletteAdvisory(themeGate, packetPath, residueState, packet, context?.theme)]) {
     if (advisory && THEME_STARTER_PALETTE_STAGES.has(result.stage)) {
       push(advisory.id, advisory.kind, asInvocation(advisory.command), advisory.description);
     }
@@ -6877,6 +6879,7 @@ const SAFE_POLISH_CHECKPOINT_REASONS = new Map([
   ["polish.hidden_eager_media.waived", "Hidden eager-media findings are covered by an exact named-human waiver."],
   ["polish.hidden_eager_media.pass", "Package-owned page-load evidence has no blocking hidden eager media."],
   ["polish.hidden_eager_media.not_applicable", "Package-owned page-load evidence is not applicable before completed assembly."],
+  ["polish.hidden_eager_media.no_capturable_routes", "Package-owned page-load evidence is not applicable because every mapped page is template stock."],
 ]);
 const SAFE_POLISH_CHECKPOINT_ACTIONS = new Map([
   ["polish.hidden_eager_media.capture", "campaigns-os polish capture --packet <packet> --base-url <url>"],

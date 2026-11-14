@@ -1,5 +1,5 @@
 import { QC_QA_ASSERTION_STATUS } from "./qc-results.mjs";
-import { starterUsedAsIs, STARTER_PALETTE_REASON, STARTER_PLACEHOLDER_WARNING } from "./content-residue.mjs";
+import { starterUsedAsIs, starterPaletteIsExpected, STARTER_PALETTE_REASON, STARTER_PLACEHOLDER_WARNING } from "./content-residue.mjs";
 import { campaignSpecIdentity, resolveCampaignIdentity, campaignIdentitiesMatch } from "./spec-source-identity.mjs";
 import { applyLocalPreviewToCheckpoint, applyLocalPreviewToPolishGate, applyPageOnlyChangeToCheckpoint, applyPageOnlyChangeToPolishGate, carriedForwardMessage, CARRIED_FORWARD, ensureUrlTrailingSlash, isPageOnlyCarry, normalizeQaBaseUrl, starterResidueIsExpected } from "./local-preview-policy.mjs";
 import { assessEvidenceDebt } from "./evidence-debt.mjs";
@@ -1333,9 +1333,7 @@ function polishGateAssertion(gate) {
 // same findings downgrade to warnings rather than re-blocking the run.
 function residueSeverityForThemeGate(status, { packet = null, placeholder = false, palette = false, contextTheme = null, themeCode = null } = {}) {
   if (placeholder) return starterUsedAsIs(packet) ? SEVERITY.WARN : SEVERITY.BLOCKER;
-  if (palette && status === "pass" && themeCode === "theme_gate.nothing_generatable" && starterUsedAsIs(packet)
-    && !contextTheme?.selected_source && !contextTheme?.source_files?.length
-    && !contextTheme?.mappings?.length && contextTheme?.generated?.can_generate !== true) return SEVERITY.INFO;
+  if (palette && status === "pass" && themeCode === "theme_gate.nothing_generatable" && starterPaletteIsExpected(packet, contextTheme)) return SEVERITY.INFO;
   return status === "waived" || status === "not_applicable" ? SEVERITY.WARN : SEVERITY.BLOCKER;
 }
 
@@ -2680,12 +2678,11 @@ async function runResolvedQa(args, resolvedInputs, { runSessionActive = false, l
         const placeholder = observed.id.endsWith(":placeholder-text");
         const palette = observed.id.includes(":style:");
         const severity = residueSeverityForThemeGate(gate.status, { packet: resolved.packet, placeholder, palette, contextTheme, themeCode: gate.code });
-        if (palette && severity === SEVERITY.INFO) {
+        if (palette && observed.status === STATUS.FAIL && severity === SEVERITY.INFO) {
           Object.assign(observed, QC_QA_ASSERTION_STATUS.excluded);
           observed.actual = STARTER_PALETTE_REASON;
           observed.evidence = { ...observed.evidence, result: "excluded", reason_code: "template_stock", reason: STARTER_PALETTE_REASON };
         } else if (placeholder && observed.status === STATUS.FAIL && severity === SEVERITY.WARN) {
-          observed.status = STATUS.WARN;
           observed.severity = SEVERITY.WARN;
           observed.actual = STARTER_PLACEHOLDER_WARNING;
         }

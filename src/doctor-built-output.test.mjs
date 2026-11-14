@@ -1119,7 +1119,7 @@ test("as-is starter placeholder warning says the same thing as QA", () => {
     const output = join(dir, "_site", "sample");
     mkdirSync(output, { recursive: true });
     writeFileSync(join(output, "index.html"), "<p>Lorem ipsum. [Sample]</p>");
-    const packet = { campaign: { public_route_slug: "sample" }, source_html: { pages: [{ page_id: "checkout", skip_reason: "Template stock: used as-is." }] } };
+    const packet = { campaign: { public_route_slug: "sample" }, source_html: { pages: [{ page_id: "checkout", origin: "repo", skip_reason: "Template stock: used as-is." }] } };
     const warnings = [];
     validateBuiltPlaceholderTextResidue(TEXT_RESIDUE_CONTRACT, warnings, [], { target_output_dir: output }, { packet });
     assert.equal(warnings[0].message, "Starter placeholder text remains because this build uses every mapped page as-is. Review the demo content before publishing.");

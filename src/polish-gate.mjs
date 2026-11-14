@@ -388,7 +388,7 @@ function commandMentionsBuild(stage, evidence) {
   return commands.some((entry) => /next-campaigns-build|campaigns-os\s+next\s+build/i.test(String(isObject(entry) ? entry.command || entry.name || "" : entry)));
 }
 
-function evaluateStructuredPolishGate({ report, required = false, now = Date.now(), currentOutputFingerprint = null, newEvidence = false } = {}) {
+function evaluateStructuredPolishGate({ report, required = false, now = Date.now(), currentOutputFingerprint = null, newEvidence = false, templateStock = false } = {}) {
   if (!isObject(report)) {
     return required
       ? {
@@ -498,6 +498,16 @@ function evaluateStructuredPolishGate({ report, required = false, now = Date.now
       assembly_source_package_material_fingerprint: assemblySourcePackageFingerprint,
       ...(expiredWaiver ? { expired_waiver: expiredWaiver } : {}),
       required_actions: buildRequiredActions,
+    };
+  }
+
+  // Stock pages need no fidelity evidence; Build must still match its source.
+  if (templateStock) {
+    return {
+      status: "not_applicable", code: "polish.not_applicable",
+      result: "excluded", reason_code: "template_stock", reason: TEMPLATE_STOCK_POLISH_REASON,
+      build_fingerprint: buildFingerprint, required_actions: [],
+      owned_checkpoint_id: HIDDEN_EAGER_MEDIA_SCOPE, owned_checkpoint_status: "not_applicable", owned_checkpoint_only: true,
     };
   }
 
@@ -726,17 +736,10 @@ export function evaluatePolishGate({
   newEvidence = false,
   currentOutputFingerprint = null,
 } = {}) {
-  const base = evaluateStructuredPolishGate({ report, required, now, currentOutputFingerprint, newEvidence });
-  if (!terminalAssembly(report)) return base;
-  if (hiddenEagerMediaGate?.status === "not_applicable" && hiddenEagerMediaGate?.result === "excluded"
-    && hiddenEagerMediaGate?.reason_code === "template_stock") {
-    return {
-      status: "not_applicable", code: "polish.not_applicable",
-      result: "excluded", reason_code: "template_stock", reason: TEMPLATE_STOCK_POLISH_REASON,
-      build_fingerprint: currentBuildFingerprint(report), required_actions: [],
-      owned_checkpoint_id: HIDDEN_EAGER_MEDIA_SCOPE, owned_checkpoint_status: "not_applicable", owned_checkpoint_only: true,
-    };
-  }
+  const templateStock = hiddenEagerMediaGate?.status === "not_applicable" && hiddenEagerMediaGate?.result === "excluded"
+    && hiddenEagerMediaGate?.reason_code === "template_stock";
+  const base = evaluateStructuredPolishGate({ report, required, now, currentOutputFingerprint, newEvidence, templateStock });
+  if (!terminalAssembly(report) || templateStock) return base;
 
   if (hiddenEagerMediaGate === undefined && !required) return base;
 

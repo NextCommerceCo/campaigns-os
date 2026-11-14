@@ -1601,10 +1601,13 @@ outcome of the gates doctor's static scan can only approximate:
 
 A gate that did not run on that verdict is absent, never `pass`. Doctor reads
 `gates.placeholder_text_residue` back while `stages.assembly.build_fingerprint`
-still matches `source_build_fingerprint`: a recorded pass demotes the
+still matches `source_build_fingerprint`: except on an all-template, as-is build,
+a recorded pass demotes the
 `template_contract.placeholder_text_residue` warning to a ready line and drops
 the matching `next` action; a rebuild or a failed gate brings the warning back
-(see `docs/template-family-contracts.md`). `evidence` is a QA-owned field, so
+(see `docs/template-family-contracts.md`). On an all-template, as-is build,
+starter placeholder warnings remain visible even after a recorded pass.
+`evidence` is a QA-owned field, so
 the next QA record replaces it wholesale.
 
 `next` compares the declared depth against what was exercised:

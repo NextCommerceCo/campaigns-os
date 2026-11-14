@@ -290,6 +290,25 @@ test("all-template Polish closes as excluded without captures and deploy stays o
   });
 });
 
+test("all-template stale source routes back to build and refuses deploy", async () => {
+  await guardedLifecycle(async (f) => {
+    mutateJson(f.packetPath, (packet) => {
+      packet.source_html.pages = packet.source_html.pages.map((page) => ({ page_id: page.page_id, skip_reason: "Template stock." }));
+    });
+    const args = hostedDeployArgs(f);
+    recordThroughBuild(f);
+    recordOk(f, "polish", ["--evidence", POLISH_EVIDENCE]);
+    assert.equal(nextStage(f).stage, "deploy");
+    mutateJson(f.reportPath, (report) => { report.stages.assembly.source_package_material_fingerprint = `sha256:${"0".repeat(64)}`; });
+    const stage = nextStage(f).stage;
+    const deployed = hostedDeployCli(f, args);
+    console.log(`all-template stale source: next=${stage}; record deploy exit=${deployed.status}`);
+    assert.equal(stage, "build");
+    assert.notEqual(deployed.status, 0, deployed.stdout);
+    assert.match(deployed.stderr, /polish.assembly_source_package_stale/);
+  });
+});
+
 test("all-template polish capture closes itself when a browser is unavailable", async () => {
   await withLifecycle(async (f) => {
     mutateJson(f.packetPath, (packet) => {
@@ -320,6 +339,8 @@ test("all-template polish capture closes itself when a browser is unavailable", 
     const d = doctor(f);
     assert.equal(d.derived.polish_gate.status, "not_applicable");
     assert.equal(d.derived.polish_gate.result, "excluded");
+    assert.ok(d.ready.some((line) => /checkpoint not applicable.*every mapped page is template stock/i.test(line)), JSON.stringify(d.ready));
+    assert.ok(!d.ready.some((line) => /before completed assembly/.test(line)));
     assert.ok(![...d.errors, ...d.warnings].some((issue) => issue.code === "polish.evidence_missing"));
     const { __qaNodeTestHooks } = await import("./qa-node.mjs");
     const qa = await __qaNodeTestHooks.resolveQaInputs({ _: ["qa", "run"], packet: f.packetPath });

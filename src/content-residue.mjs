@@ -21,13 +21,21 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { readHtmlScanText } from "./html-scan.mjs";
 
-// The same explicit stock mapping used by the Polish capture planner. A
-// mapped design or adopted page keeps its existing checks.
+// An explicit skip_reason is the planner's declaration of template stock.
+export function isTemplateStockPage(page) {
+  return typeof page?.skip_reason === "string" && Boolean(page.skip_reason.trim());
+}
+
 export function starterUsedAsIs(packet) {
   const pages = packet?.source_html?.pages;
-  return Array.isArray(pages) && pages.length > 0 && pages.every((page) =>
-    typeof page?.skip_reason === "string" && page.skip_reason.trim()
-    && !page.path && !page.design_source && page.origin !== "repo");
+  return Array.isArray(pages) && pages.length > 0 && pages.every(isTemplateStockPage);
+}
+
+// Palette comparisons also require the absence of campaign design or tokens.
+export function starterPaletteIsExpected(packet, contextTheme) {
+  return starterUsedAsIs(packet)
+    && !contextTheme?.selected_source && !contextTheme?.source_files?.length
+    && !contextTheme?.mappings?.length && contextTheme?.generated?.can_generate !== true;
 }
 
 export const STARTER_PLACEHOLDER_WARNING = "Starter placeholder text remains because this build uses every mapped page as-is. Review the demo content before publishing.";
