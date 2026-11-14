@@ -6,7 +6,7 @@ Notable supported-surface changes are recorded here.
 
 ### Fixed
 
-- `next`, `after-edit`, `record build` and `record deploy` now agree on what a page-only change owes. After an edit that touches only a landing page, `next` used to say Polish was required while `after-edit` and `record build` said QA on the changed page only, and `record deploy` refused or recorded depending on how the preview was carried. `next` now reads the same evidence debt as the other two, names QA on the changed page as the next step, and `record deploy` is not refused for an advisory Polish. On a funnel that has passed QA, `next` starts with the `after-edit` command to run after a source change. `after-edit` prints what is owed before any CampaignSpec derive preview, and an unapplied preview no longer says Polish and QA are owed again. A change that touches the checkout still owes the full stages.
+- `next`, `after-edit`, `record build` and `record deploy` now agree on what a page-only change owes. After an edit that touches only a landing page, `next` used to say Polish was required while `after-edit` and `record build` said QA on the changed page only, and `record deploy` refused or recorded depending on how the preview was carried. `next` now reads the same evidence debt as the other two, names QA on the changed page as the next step, and `record deploy` is not refused for an advisory Polish. On a funnel that has passed QA, `next` starts with the `after-edit` command to run after a source change. `after-edit` prints what is owed before any CampaignSpec derive preview; a preview that holds changes says that applying it with `--yes` will owe Polish and QA again. A change that touches the checkout still owes the full stages.
 
 ## [1.71.0+agent.1] - 2026-11-13
 

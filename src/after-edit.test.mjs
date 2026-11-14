@@ -296,7 +296,7 @@ test("page-only copy edit records the rebuilt output and owes QA on that page (a
   output(t, "CASE (a)", result);
 }));
 
-test("page-only edit reports debt before an unrelated derive preview", async (t) => withNetworkGuard(async () => {
+test("page-only edit reports current debt before a material derive preview and its additional debt", async (t) => withNetworkGuard(async () => {
   const f = await fixture(t);
   const configPath = join(f.root, "_data", "campaigns.json");
   const config = json(configPath);
@@ -311,9 +311,12 @@ test("page-only edit reports debt before an unrelated derive preview", async (t)
   t.diagnostic(text);
   assert.match(afterEditTextLines(result)[0], /^Owed:/);
   assert.match(text, /Owed stages: qa \(changed pages only\)/);
-  assert.doesNotMatch(text, /Polish and QA are owed again|spec.derive.build_stale/);
+  assert.match(text, /Applying this preview with --yes changes the CampaignSpec and will owe Polish and QA again\./);
   assert.equal(result.stopped_at, "spec_derive");
   assert.equal(readFileSync(f.specPath, "utf8"), before);
+  const applied = await run(f, { yes: true });
+  assert.equal(afterEditExitCode(applied), 3);
+  assert.match(afterEditTextLines(applied).join("\n"), /It owes the full Polish and QA/);
 }));
 
 test("unchanged recorded funnel writes nothing, every step is not_needed (b)", async (t) => withNetworkGuard(async () => {
@@ -382,7 +385,10 @@ test("new page previews without yes, then writes and records spec with yes (e)",
   assert.match(step(preview, "spec_derive").detail, /Pages added from the page tree: extra/);
   assert.match(preview.next, /after-edit .* --yes$/);
   assert.equal(readFileSync(f.specPath, "utf8"), before);
-  assert.equal(step(preview, "owed").status, "done");
+  assert.equal(step(preview, "owed").status, "not_run");
+  assert.equal(preview.ci, null);
+  assert.equal(JSON.parse(JSON.stringify(preview)).preview_owed, undefined);
+  assert.deepEqual(preview.steps.map((row) => row.step), ["spec", "build_current", "record_build", "spec_derive", "owed", "files"]);
   output(t, "CASE (e without --yes)", preview);
   const applied = await run(f, { yes: true });
   assert.equal(applied.stopped_at, null, afterEditTextLines(applied).join("\n"));

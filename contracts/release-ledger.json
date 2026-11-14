@@ -4941,25 +4941,25 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.71.0+agent.4",
-      "changelog_sha256": "4c33c7acc38b237700acd9908418f325dd66b5975a56fb1316a754301a150048",
-      "agent_impact": "After a page-only change (copy, an image or styling on a page before the checkout), next, after-edit, record build and record deploy give one answer: QA on the changed page, Polish advisory, no test orders. Follow next's qa run --page command; do not run a full Polish capture because an older next said Polish was required, and record deploy no longer refuses for it. On a funnel that has passed QA, the first line of next is the after-edit command: run it after any source change instead of sequencing record build, polish capture, record polish, record deploy and qa run by hand. after-edit prints what is owed first; a CampaignSpec derive preview that follows is optional unless you changed the spec. A checkout change still owes full Polish and QA with test orders.",
+      "changelog_sha256": "7e04797dfa5d469b44c103c24b277968ef680e22cdb6847d0ca61b82122fbfd1",
+      "agent_impact": "After a page-only change (copy, an image or styling on a page before the checkout), next, after-edit, record build and record deploy give one answer: QA on the changed page, Polish advisory, no test orders. Follow next's qa run --page command; do not run a full Polish capture because an older next said Polish was required, and record deploy no longer refuses for it. On a funnel that has passed QA, the first line of next is the after-edit command: run it after any source change instead of sequencing record build, polish capture, record polish, record deploy and qa run by hand. after-edit prints what is owed first. If a CampaignSpec derive preview follows and holds changes, read its warning: applying it with --yes changes the spec and owes Polish and QA again, so what is owed before and after applying differ. A checkout change still owes full Polish and QA with test orders. Polish evidence that was never captured on a local preview stays a warning, as before.",
       "compatibility": "compatible",
       "migration": "none",
       "changes": [
-        {
-          "class": "cli_surface",
-          "path": "src/cli.mjs",
-          "surface_entry": null,
-          "summary": "next reads the shared evidence debt for its stage choice, QA prompt and qa_run action, and prints the after-edit command first once QA has completed; no flag changes."
-        },
         {
           "class": "named_surface",
           "path": "docs/campaigns-os-build-flow.md",
           "surface_entry": "docs/campaigns-os-build-flow.md",
           "summary": "after-edit reports what is owed before any spec derivation preview."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "next reads the shared evidence debt for its stage choice, QA prompt and qa_run action, and prints the after-edit command first once QA has completed; no flag changes."
         }
       ],
-      "entry_sha256": "c448997061bee8f503c8fbb03f4540513bcd26f9964320db967f21a6a8fdfd1e"
+      "entry_sha256": "38fa173185135d35121a4754775e78b24aa4b0e5b22830ea381c0cc9086b3ed6"
     }
   ]
 }

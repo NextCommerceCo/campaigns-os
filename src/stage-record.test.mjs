@@ -4,7 +4,7 @@
 // would reject and stamping only the fingerprint doctor computes.
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -1472,8 +1472,18 @@ test("record deploy accepts a hosted current Polish, then carries it forward aft
 test("page-only rebuild shares debt across after-edit, next and local deploy after handoff", async (t) => {
   await guardedLifecycle(async (f) => {
     await recordThroughPolish(f);
+    for (const page of f.spec.funnels.flatMap((funnel) => funnel.pages)) {
+      const path = join(f.target, f.packet.assembly.output_dir, `${page.id}.html`);
+      writeFileSync(path, `<h1>${page.id}</h1>`);
+      utimesSync(path, 1_000, 1_000);
+    }
     await recordDeploy(f);
     await recordQa(f);
+    const deployArgs = { _: ["record", "deploy"], packet: f.packetPath, "base-url": `http://127.0.0.1:4173/${f.slug}/` };
+    t.diagnostic(`NO CHANGE | after-edit\n${runCli(["after-edit", "--packet", f.packetPath, "--no-live-refs"], f.dir).stdout}`);
+    t.diagnostic(`NO CHANGE | record build\n${resultTextLines(recordOk(f, "build")).join("\n")}`);
+    t.diagnostic(`NO CHANGE | next\n${runCli(["next", "--packet", f.packetPath, "--no-write"], f.dir).stdout}`);
+    t.diagnostic(`NO CHANGE | record deploy\n${resultTextLines(await recordCommand(deployArgs, DEPLOY_FETCH)).join("\n")}`);
     const page = join(f.target, "_site", f.slug, "landing/index.html");
     writeFileSync(page, readFileSync(page, "utf8").replace("</h1>", " Revised copy</h1>"));
     const build = recordOk(f, "build");
@@ -1482,13 +1492,15 @@ test("page-only rebuild shares debt across after-edit, next and local deploy aft
     assert.equal(after.ci.polish.advisory, true);
     assert.deepEqual(after.ci.qa.owed_pages.map((page) => page.page_id), ["landing"]);
     const inspected = doctorOk(f);
-    t.diagnostic(`record build: ${build.ready.filter((line) => /Change found:|Owed stages:/.test(line)).join("\n")}`);
+    t.diagnostic(`PAGE ONLY | record build\n${resultTextLines(build).join("\n")}`);
+    t.diagnostic(`PAGE ONLY | after-edit\n${runCli(["after-edit", "--packet", f.packetPath, "--no-live-refs"], f.dir).stdout}`);
     const next = nextOk(f);
-    t.diagnostic(`next: ${next.stage}; ${next.picked_reason}`);
+    t.diagnostic(`PAGE ONLY | next\n${runCli(["next", "--packet", f.packetPath, "--no-write"], f.dir).stdout}`);
+    assert.doesNotMatch(resultTextLines(next).join("\n"), /^- - /m);
     assert.equal(next.stage, "deploy");
     assert.match(resultTextLines(next).join("\n"), /Owed stages: qa \(changed pages only\)/);
     const args = { _: ["record", "deploy"], packet: f.packetPath, "base-url": `http://127.0.0.1:4173/${f.slug}/` };
-    await recordCommand(args, DEPLOY_FETCH);
+    t.diagnostic(`PAGE ONLY | record deploy\n${resultTextLines(await recordCommand(args, DEPLOY_FETCH)).join("\n")}`);
     const qa = nextOk(f);
     assert.equal(qa.stage, "qa");
     assert.match(qa.next_actions.find((action) => action.id === "qa_run").command, /qa run .* --page landing$/);
@@ -1497,7 +1509,15 @@ test("page-only rebuild shares debt across after-edit, next and local deploy aft
     assert.equal(inspected.derived.evidence_debt.polish.advisory, true);
     const checkout = join(f.target, "_site", f.slug, "checkout/index.html");
     writeFileSync(checkout, readFileSync(checkout, "utf8").replace("</h1>", " Revised checkout</h1>"));
-    assert.ok(recordOk(f, "build").ready.includes("Owed stages: polish, qa."));
+    const checkoutBuild = recordOk(f, "build");
+    assert.ok(checkoutBuild.ready.includes("Owed stages: polish, qa."));
+    t.diagnostic(`CHECKOUT | record build\n${resultTextLines(checkoutBuild).join("\n")}`);
+    t.diagnostic(`CHECKOUT | after-edit\n${runCli(["after-edit", "--packet", f.packetPath, "--no-live-refs"], f.dir).stdout}`);
+    t.diagnostic(`CHECKOUT | next\n${runCli(["next", "--packet", f.packetPath, "--no-write"], f.dir).stdout}`);
+    await assert.rejects(recordCommand(args, DEPLOY_FETCH), (error) => {
+      t.diagnostic(`CHECKOUT | record deploy\n${error.message}`);
+      return /polish/i.test(error.message);
+    });
     const full = runJson(["after-edit", "--packet", f.packetPath, "--no-live-refs"], f.dir).json;
     assert.equal(full.ci.qa.scope, "full");
     assert.equal(full.ci.polish.advisory, false);
@@ -1519,15 +1539,44 @@ test("next names after-edit first on a handed-off funnel after a source change",
   });
 });
 
-test("record deploy on the local preview carries a skipped Polish forward without completing Polish", async () => {
+test("record deploy on the local preview keeps skipped Polish missing after page-only rebuild", async (t) => {
   await guardedLifecycle(async (f) => {
     mutateJson(f.packetPath, (packet) => { packet.deploy = { ...packet.deploy, target: "local-serve" }; });
     recordThroughBuild(f);
+    for (const page of f.spec.funnels.flatMap((funnel) => funnel.pages)) {
+      const path = join(f.target, f.packet.assembly.output_dir, `${page.id}.html`);
+      writeFileSync(path, `<h1>${page.id}</h1>`);
+      utimesSync(path, 1_000, 1_000);
+    }
+    await recordCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": `http://127.0.0.1:4173/${f.slug}/` }, DEPLOY_FETCH);
+    t.diagnostic(`FIRST BUILD | after-edit\n${runCli(["after-edit", "--packet", f.packetPath, "--no-live-refs"], f.dir).stdout}`);
+    t.diagnostic(`FIRST BUILD | record build\n${resultTextLines(recordOk(f, "build")).join("\n")}`);
+    t.diagnostic(`FIRST BUILD | next\n${runCli(["next", "--packet", f.packetPath, "--no-write"], f.dir).stdout}`);
+    t.diagnostic(`FIRST BUILD | record deploy\n${resultTextLines(await recordCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": `http://127.0.0.1:4173/${f.slug}/` }, DEPLOY_FETCH)).join("\n")}`);
     recordOk(f, "polish", ["--evidence", writeEvidence(f, "polish-skipped.json", SKIPPED_POLISH)]);
     assert.equal(doctorOk(f).derived.polish_gate.status, "carried_forward");
     await recordCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": `http://127.0.0.1:4173/${f.slug}/` }, DEPLOY_FETCH);
     assert.equal(readJson(f.reportPath).stages.deploy.status, "completed");
     assert.equal(readJson(f.reportPath).stages.polish.status, "skipped");
+    await recordQa(f);
+    const { __qaNodeTestHooks } = await import("./qa-node.mjs");
+    const before = doctorOk(f).derived.polish_gate;
+    const beforeRow = __qaNodeTestHooks.polishGateAssertion(before);
+    assert.equal(beforeRow.status, "warn");
+    t.diagnostic(`Before edit: ${beforeRow.status}: ${beforeRow.actual}`);
+    const page = join(f.target, "_site", f.slug, "landing/index.html");
+    writeFileSync(page, readFileSync(page, "utf8").replace("</h1>", " Revised copy</h1>"));
+    const built = recordOk(f, "build");
+    assert.ok(built.ready.includes("Owed stages: qa (changed pages only)."));
+    const after = doctorOk(f).derived.polish_gate;
+    const afterRow = __qaNodeTestHooks.polishGateAssertion(after);
+    t.diagnostic(`After edit: ${afterRow.status}: ${afterRow.actual}`);
+    assert.equal(after.code, "polish.evidence_missing");
+    assert.equal(after.carried_forward.policy, "local_preview");
+    assert.equal(afterRow.status, "warn");
+    assert.match(afterRow.actual, /missing, not passed; production QA still requires it/);
+    assert.doesNotMatch(afterRow.actual, /last reviewed/);
+    assert.equal(nextOk(f).stage, "deploy");
   });
 });
 
