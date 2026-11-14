@@ -909,13 +909,13 @@ function checkoutStructureWithAddressSelectors(addressSelectors) {
     '[data-next-checkout="form"]', "[os-checkout-payment]", "[data-next-cart-summary]",
     ...addressSelectors,
   ]);
-  const checks = ["requiredVisibleSelectors", "requiredNonEmptySelectors"].flatMap((key) => contract[key].map((rule) => ({
-    name: rule.name,
-    selectors: [rule.selector],
-    status: present.has(rule.selector) ? "pass" : "fail",
-    count: present.has(rule.selector) ? 1 : 0,
-    visible_count: present.has(rule.selector) ? 1 : 0,
-  })));
+  // A rule with several selectors passes when any one of them is rendered,
+  // as the browser evaluator does.
+  const checks = ["requiredVisibleSelectors", "requiredNonEmptySelectors"].flatMap((key) => contract[key].map((rule) => {
+    const selectors = rule.selectors || [rule.selector];
+    const found = selectors.some((selector) => present.has(selector));
+    return { name: rule.name, selectors, status: found ? "pass" : "fail", count: found ? 1 : 0, visible_count: found ? 1 : 0 };
+  }));
   return __qaBrowserTestHooks.commerceStructureAssertionFromEvidence({ page_id: "checkout", page_type: "checkout" }, {
     checks,
     behaviour: { status: "pass" },
@@ -928,14 +928,38 @@ test("checkout structure accepts the SDK shipping address without shipping row m
   assert.equal(row.actual, "8/8 structure check(s) passed");
 });
 
-test("checkout structure rejects name and phone row markers without the SDK shipping address", () => {
+test("checkout structure accepts address fields bound one by one, without the SDK shipping address block", () => {
+  // A design-built or hand-built checkout: no address block, the address
+  // inputs carry the SDK field binding themselves (0.4 and 0.5 spellings).
+  for (const selector of ['[data-next-checkout-field="address1"]', '[data-next-checkout-field="line1"]', '[data-next-field="line1"]']) {
+    const row = checkoutStructureWithAddressSelectors([selector]);
+    assert.equal(row.status, "pass", `${selector}: ${row.actual}`);
+    assert.equal(row.actual, "8/8 structure check(s) passed");
+  }
+});
+
+test("checkout structure rejects name and phone row markers with neither the SDK address block nor a bound address field", () => {
   const row = checkoutStructureWithAddressSelectors(['[data-next-component="shipping-field-row"]']);
   assert.equal(row.status, "fail", row.actual);
   const missing = row.evidence.checks.filter((check) => check.status === "fail");
   assert.equal(missing.length, 1);
-  assert.deepEqual(missing[0].selectors, ['[data-next-address="shipping"]']);
+  assert.deepEqual(missing[0].selectors, [
+    '[data-next-address="shipping"]',
+    '[data-next-checkout-field="address1"]',
+    '[data-next-checkout-field="line1"]',
+    '[data-next-field="line1"]',
+  ]);
   assert.equal(missing[0].kind, "sdk_wiring");
-  assert.equal(row.actual, "7/8 structure check(s) passed; missing shipping address block");
+  assert.equal(row.actual, "7/8 structure check(s) passed; missing shipping address block or bound address field");
+});
+
+test("the address rule lists the selectors the form fill uses for address1", async () => {
+  const { checkoutFieldSelectors } = await import("./campaign-cart-05.mjs");
+  const catalog = JSON.parse(readFileSync(new URL("../contracts/commerce-surface-catalog.json", import.meta.url), "utf8"));
+  const rule = catalog.families["shop-single-step"].agentContract.qaStructure.checkout.requiredVisibleSelectors
+    .concat(catalog.families["shop-single-step"].agentContract.qaStructure.checkout.requiredNonEmptySelectors)
+    .find((entry) => entry.name === "shipping address block or bound address field");
+  assert.deepEqual(rule.selectors, ['[data-next-address="shipping"]', ...checkoutFieldSelectors("address1")]);
 });
 
 const DESIGN_OWNED_SHELL_MISSES = [
@@ -991,6 +1015,9 @@ test("only the catalog's family shell selectors are relaxable; SDK wiring select
   const wiring = [
     '[data-next-checkout="form"]',
     '[data-next-address="shipping"]',
+    '[data-next-checkout-field="address1"]',
+    '[data-next-checkout-field="line1"]',
+    '[data-next-field="line1"]',
     "[os-checkout-payment]",
     "[data-next-cart-summary]",
     "[data-next-bundle-slots-for]",
