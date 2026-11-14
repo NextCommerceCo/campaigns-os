@@ -4933,27 +4933,6 @@
         }
       ],
       "entry_sha256": "3a21fcc23e988173f2c5d07028875ff478d317b5b9ec7b1eaee512629011f0d1"
-    },
-    {
-      "id": "RL-0351",
-      "sequence": 337,
-      "date": "2026-11-14",
-      "kind": "release",
-      "surface_version": null,
-      "changelog_section": "1.71.0+agent.2",
-      "changelog_sha256": "8b34b053a962a814ee963b8194a3d98817f778e377fc0fa39f8122b276179edb",
-      "agent_impact": "qa run --browser test-order paths now wait for the page each accept or decline is declared to lead to, and browser-test-order:<path> fails when the created order carries an upsell from an offer that path declined. If you see \"the order carries upsell package(s) N from the offer this path declined\", the order is wrong for that path: do not accept the run; re-run, and if it repeats, check the offer page's decline route. A required checkout select that mounts late is waited for (up to 15 seconds) before \"Missing checkout select: <field>\" is reported. Do not patch the installed toolkit for either case.",
-      "compatibility": "compatible",
-      "migration": "none",
-      "changes": [
-        {
-          "class": "cli_surface",
-          "path": "src/qa-browser.mjs",
-          "surface_entry": null,
-          "summary": "Upsell steps wait for the declared destination; the test-order path fails on an upsell line from a declined offer; required checkout selects are waited for before the missing-select error."
-        }
-      ],
-      "entry_sha256": "638a0144769e83dea4cb95e198f0fe65b023487bfa205114a10d60312f3b3809"
     }
   ]
 }
