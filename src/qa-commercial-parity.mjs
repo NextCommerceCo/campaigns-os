@@ -12,6 +12,7 @@ import {
   PACKAGE_PRICE_NOT_FILLED,
   PACKAGE_PRICE_NOT_RENDERED,
   PACKAGE_PRICE_UNRESOLVED,
+  bundlePriceClaimCount,
   createCommercialParityReport,
   extractCommercialClaims,
   packagePriceClaimCount,
@@ -454,7 +455,7 @@ function catalogImportedAt(spec) {
 }
 
 function captureClaimCount(capture) {
-  return array(capture?.price_claims).length
+  return bundlePriceClaimCount(capture)
     + packagePriceClaimCount(capture)
     + array(capture?.recurrence_claims).length
     + array(capture?.vouchers).length;

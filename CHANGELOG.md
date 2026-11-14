@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.71.0+agent.8] - 2026-11-14
+
+### Fixed
+
+- Under `qa run --browser`, the price check compares a tiered upsell tier by tier, using the prices the page renders. It used to read the starter upsell's literal fallback (`$24.95`, `$0.00`) from the source and compare it with the sum of all tier totals, so a correct three-tier upsell read `mismatch` ("claimed 24.95, calculated 179.94"). A tier whose rendered price is wrong still reports `mismatch` against that tier's total, and an upsell whose prices were never filled reads `incomplete`. Without `--browser`, or when no rendered tier price can be read, the comparison is the earlier source-based one. Checkout pages are compared as before.
+
 ## [1.71.0+agent.7] - 2026-11-14
 
 ### Fixed

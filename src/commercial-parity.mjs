@@ -1,9 +1,9 @@
 /**
  * Dependency-free extraction and Exact-only commercial parity comparison.
  *
- * Source HTML is intentional for bundle prices: Campaign Cart replaces authored
- * placeholders after readiness, which can hide an authored mismatch in the
- * rendered DOM. package.price is the other way round: its authored text is a
+ * Checkout bundle prices retain their authored claims. Upsell bundle prices
+ * use the rendered tier when available, because their source is a placeholder.
+ * package.price is similar: its authored text is a
  * template placeholder no shopper is meant to read, so only its rendered value
  * is compared and the source merely says the claim exists.
  */
@@ -634,10 +634,19 @@ function validRenderedPackagePrice(claim) {
     && (claim.text === null || typeof claim.text === "string");
 }
 
+function validRenderedBundlePrice(claim) {
+  return record(claim) && governedPriceBinding(claim.binding)
+    && (claim.package_id === null || positiveInteger(claim.package_id) !== null)
+    && (claim.quantity === null || positiveInteger(claim.quantity) !== null)
+    && typeof claim.filled === "boolean"
+    && (claim.text === null || typeof claim.text === "string");
+}
+
 function validCaptureEnvelope(capture) {
   if (!record(capture)) return false;
   if (capture.package_price_claims !== undefined && !Array.isArray(capture.package_price_claims)) return false;
   if (capture.rendered_package_prices !== undefined && !Array.isArray(capture.rendered_package_prices)) return false;
+  if (capture.rendered_bundle_prices !== undefined && !Array.isArray(capture.rendered_bundle_prices)) return false;
   if (capture.page_id !== undefined
     && capture.page_id !== null
     && (typeof capture.page_id !== "string" || !present(capture.page_id))) return false;
@@ -655,7 +664,8 @@ function validCapture(capture) {
     && capture.recurrence_claims.every(validRecurrenceClaim)
     && capture.vouchers.every(validVoucherClaim)
     && array(capture.package_price_claims).every(validPackagePriceClaim)
-    && array(capture.rendered_package_prices).every(validRenderedPackagePrice);
+    && array(capture.rendered_package_prices).every(validRenderedPackagePrice)
+    && array(capture.rendered_bundle_prices).every(validRenderedBundlePrice);
 }
 
 function captureCandidates(capturesValue) {
@@ -680,8 +690,27 @@ function partitionCaptures(capturesValue, { countsOnly = false } = {}) {
   return { valid, invalid };
 }
 
+export function bundlePriceClaimCount(capture) {
+  return array(capture?.rendered_bundle_prices).length || array(capture?.price_claims).length;
+}
+
 function priceComparisonClaims(capture, page) {
-  const claims = array(capture?.price_claims);
+  const rendered = array(capture?.rendered_bundle_prices);
+  const claims = rendered.length ? rendered : array(capture?.price_claims);
+  if (rendered.length) {
+    const compared = [];
+    if (voucherComparisonClaims(capture, page).unresolved === 0) {
+      rendered.forEach((claim) => {
+        const rows = array(page?.rows).filter((row) => row.state === PricingState.Exact
+          && String(row.package_id) === String(claim.package_id)
+          && Number(row.quantity) === claim.quantity);
+        const truth = rows.length === 1 ? exactMoneyFact(rows[0].final) : null;
+        const value = claim.filled ? renderedMoney(claim.text) : null;
+        if (truth && value) compared.push({ binding: claim.binding, value, truth });
+      });
+    }
+    return { compared, unresolved: claims.length - compared.length };
+  }
   // A voucher on the page that the plan cannot price (no calculated pair for
   // its code) can move the shown price away from the planned total, so a
   // difference there says nothing about the page. Its price claims stay
@@ -697,7 +726,8 @@ function priceComparisonClaims(capture, page) {
   const binding = explicit
     ? (bindings.includes(explicit) ? explicit : null)
     : (bindings.length === 1 ? bindings[0] : null);
-  const compared = binding ? claims.filter((claim) => String(claim.binding) === binding) : [];
+  const compared = binding ? claims.filter((claim) => String(claim.binding) === binding)
+    .map((claim) => ({ ...claim, truth: exactMoneyFact(page.representative_total) })) : [];
   return { compared, unresolved: claims.length - compared.length };
 }
 
@@ -862,18 +892,17 @@ export function diffCommercialParity(capturesValue, journey, options = {}) {
     if (!page) return;
     const pageId = findingPage(capture, page);
     const source = present(capture.url) ? { url: String(capture.url) } : {};
-    const representative = compareMoney ? exactMoneyFact(page.representative_total) : null;
-    if (representative) {
+    if (compareMoney) {
       priceComparisonClaims(capture, page).compared.forEach((claim) => {
         const claimed = normalizeMoney(claim?.value);
-        if (!claimed || !present(claim?.binding) || moneyToCents(claimed) === representative.cents) return;
+        if (!claimed || !present(claim?.binding) || moneyToCents(claimed) === claim.truth.cents) return;
         findings.push({
           type: "price-claim-mismatch",
           page_id: pageId,
           ...source,
           binding: String(claim.binding),
           claimed,
-          calculated: representative.value,
+          calculated: claim.truth.value,
         });
       });
     }
@@ -1124,7 +1153,7 @@ export function createCommercialParityReport(capturesValue, journey, options = {
     .filter((page) => !pageKeys.has(String(page?.page_id ?? "page")))
     .map((page) => ({ page_id: present(page?.page_id) ? String(page.page_id) : null }));
   const extractedPriceClaims = matched.reduce(
-    (sum, { capture }) => sum + capture.price_claims.length + packagePriceClaimCount(capture),
+    (sum, { capture }) => sum + bundlePriceClaimCount(capture) + packagePriceClaimCount(capture),
     0,
   );
   const extractedRecurrenceClaims = matched.reduce(

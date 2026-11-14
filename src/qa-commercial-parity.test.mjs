@@ -445,6 +445,61 @@ test("package.price rows do not repeat a cause an earlier one explains, and bund
   assert.match(both.assertions.at(-1).actual, /2 price, 0 recurring, 0 voucher/);
 });
 
+async function tieredUpsellPrices(secondTier = "$59.98") {
+  const packages = [1, 2, 3].map((qty) => ({ ref_id: "7", qty }));
+  const spec = {
+    schema_version: "4.3",
+    campaign: { campaigns_api_key: "synthetic-key", currency: "USD" },
+    funnels: [{ id: "default", pages: [{ id: "upsell", type: "upsell", order: 1, enabled: true, packages }] }],
+  };
+  const capture = captureCommercialClaims({ page_id: "upsell", url: "https://shop.example.com/upsell/" }, `
+    <span data-next-display="bundle.offer.price" data-next-format="currency">$24.95</span>
+    <span data-next-display="bundle.offer.price" data-next-format="currency">$0.00</span>
+    ${packages.map(({ qty }) => `<div data-next-bundle-card data-next-bundle-id="offer-${qty}x"
+      data-next-bundle-items='[{"packageId":7,"quantity":${qty}}]'><span data-next-bundle-display="price">—</span></div>`).join("")}
+  `);
+  // Injected in the shape the browser collector returns once the SDK has
+  // filled the prices; the collector itself is covered by the browser tests
+  // in qa-package-price-display.browser.test.mjs.
+  capture.rendered_bundle_prices = [
+    { binding: "bundle.offer.price", package_id: 7, quantity: 1, filled: true, text: "$29.99" },
+    ...["$29.99", secondTier, "$89.97"].map((text, index) => ({
+      binding: `bundle.offer-${index + 1}x.price`, package_id: 7, quantity: index + 1, filled: true, text,
+    })),
+  ];
+  return runCommercialParity({
+    resolved: { rawSpec: spec, proxyBase: "https://proxy.example.com" },
+    captures: [capture],
+    fetchImpl: async (_url, options) => {
+      const { scenario } = JSON.parse(options.body);
+      const lines = scenario.lines.map((line) => ({
+        ...line, discounts: [], unit_price: "29.99", total_discount: "0.00",
+        subtotal: (29.99 * line.quantity).toFixed(2), total: (29.99 * line.quantity).toFixed(2),
+      }));
+      const total = lines.reduce((sum, line) => sum + Number(line.total), 0).toFixed(2);
+      return new Response(JSON.stringify({ ok: true, status: 200, data: {
+        lines, offer_discounts: [], voucher_discounts: [], subtotal: total, total_discount: "0.00", total, currency: "USD",
+      } }), { status: 200 });
+    },
+  });
+}
+
+test("tiered upsell compares rendered prices per tier instead of starter fallbacks against their sum", async () => {
+  const result = await tieredUpsellPrices();
+  assert.equal(result.commercial.status, "pass", JSON.stringify(result.commercial.findings));
+  assert.equal(result.commercial.compared_price_claims, 4);
+  assert.equal(result.commercial.coverage_complete, true);
+  assert.deepEqual(result.assertions, []);
+});
+
+test("tiered upsell still reports a wrong rendered tier price against that tier's total", async () => {
+  const result = await tieredUpsellPrices("$60.00");
+  assert.equal(result.commercial.status, "mismatch");
+  assert.deepEqual(result.commercial.findings.map(({ binding, claimed, calculated }) => ({ binding, claimed, calculated })), [
+    { binding: "bundle.offer-2x.price", claimed: "60.00", calculated: "59.98" },
+  ]);
+});
+
 test("a crash in the check reports like any other stop", () => {
   const { assertions, commercial } = crashedCommercialResult();
   assert.equal(commercial.status, "incomplete");
