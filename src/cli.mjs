@@ -4791,7 +4791,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
     });
   }
   const ci = debt ? assessDoctorCi(debt) : null;
-  const ciEvidence = ci && (polishReviewedBuild(report?.stages?.polish) || [ci.polish, ci.qa].some((assessment) => assessment.recorded_build_fingerprint || assessment.baseline)) ? doctorCiEvidenceLines(ci, String).map((line) => line.replace(/^- /, "")) : [];
+  const ciEvidence = ci && (polishReviewedBuild(report?.stages?.polish) || [ci.polish, ci.qa].some((assessment) => assessment.recorded_build_fingerprint || assessment.baseline)) ? doctorCiEvidenceLines(ci, singleLineFragment).map((line) => line.replace(/^- /, "")) : [];
   // ready[] stays what doctor reports, whatever evidence the stages hold. The
   // change-debt lines are held for the text output only (see resultTextLines).
   const ready = [...doctor.ready];
