@@ -257,6 +257,16 @@ browserTest("qa run --browser names the tier whose rendered price is not what ca
   ]);
 });
 
+browserTest("qa run --browser still compares a tier whose card id contains a dot", async () => {
+  const html = TIERED_UPSELL(fillTiers(["$29.99", "$60.00", "$89.97"])).replace('data-next-bundle-id="upsell-bundle-2x"', 'data-next-bundle-id="upsell.bundle.2x"');
+  const { verdict } = await qaRunOver(html, { packages: [1, 2, 3].map((qty) => ({ ref_id: "3", qty })), line: tierLine });
+  assert.equal(verdict.commercial.status, "mismatch", "the dotted tier is compared, not dropped from coverage");
+  const rows = verdict.exceptions.filter((entry) => entry.id.startsWith("price-claim-mismatch:"));
+  assert.deepEqual(rows.map((row) => [row.id, row.expected, row.actual]), [
+    ["price-claim-mismatch:upsell:bundle.upsell-bundle-2x.price", "59.98", "60.00"],
+  ]);
+});
+
 browserTest("qa run --browser leaves a tiered upsell the SDK never filled incomplete, never a pass", async () => {
   const { verdict } = await tieredRun("");
   assert.equal(verdict.commercial.status, "incomplete");

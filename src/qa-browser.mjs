@@ -3254,10 +3254,10 @@ function collectRenderedPackagePrices() {
     const item = Array.isArray(items) && items.length === 1 ? items[0] : null;
     const packageId = /^[1-9]\d*$/.test(String(item?.packageId)) ? Number(item.packageId) : null;
     const quantity = /^[1-9]\d*$/.test(String(item?.quantity)) ? Number(item.quantity) : null;
-    const binding = remote ? remote[0] : `bundle.${card?.getAttribute("data-next-bundle-id") || "unknown"}.price`;
-    // A card id with a dot cannot form a governed binding; leave that one
-    // price uncompared so it does not invalidate the page's whole capture.
-    if (!/^bundle\.[^.]+\.price$/.test(binding)) continue;
+    // A card id with a dot cannot form a governed binding. The binding is only
+    // a label for the claim, so the dots become dashes: the tier is still
+    // compared (or counted unresolved) and never drops out of coverage.
+    const binding = remote ? remote[0] : `bundle.${(card?.getAttribute("data-next-bundle-id") || "unknown").replace(/\./g, "-")}.price`;
     const filled = local || element.classList.contains("display-visible");
     const text = filled && !element.hasAttribute("data-next-multiply-quantity")
       ? element.textContent.replace(/\s+/g, " ").trim() : null;
