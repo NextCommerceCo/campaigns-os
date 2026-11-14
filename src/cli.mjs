@@ -9039,7 +9039,9 @@ export function resultTextLines(result, { headerLines = [] } = {}) {
   // `Next:` block: the operator reads what is wrong, then what clears it.
   lines.push(...doctorRequiredActionLines(result));
   // `next` only: the QC handoff, after the issues and before the stage picker.
-  if (result.qc_handoff) lines.push(...qcHandoffTextLines(result.qc_handoff));
+  if (result.qc_handoff) lines.push(...qcHandoffTextLines(result.qc_handoff, {
+    qaPassedWithExceptions: result[PROGRESS_OBSERVATION]?.report?.stages?.qa?.status === "completed_with_warnings",
+  }));
   if (result.next) {
     lines.push("Next:");
     lines.push(`- ${result.next.stage || "unknown"} (${result.next.owner || result.next.default_skill || "owner unknown"})`);

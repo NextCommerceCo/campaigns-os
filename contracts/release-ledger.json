@@ -5032,6 +5032,105 @@
         }
       ],
       "entry_sha256": "232f0b9a3482045ece4687d45e387eeaebd225b6cbe08255ab3c5d34fb9ad2ae"
+    },
+    {
+      "id": "RL-0355",
+      "sequence": 340,
+      "date": "2026-11-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.0+agent.6",
+      "changelog_sha256": "fda4d0e33bba95383e6612ce1b60ad6bae3c93e562bfde1dc6d8d508bae9327b",
+      "agent_impact": "Read four messages differently. spec.campaign_drift: a package or shipping method that is live but not in the CampaignSpec is fine when the funnel does not sell or offer it; re-save the Map only when the spec names a package or shipping method that is not live. After QA passes with exceptions, next says ready_with_exceptions is a passing proof to report to the operator; checkpoint accept is offered only for open quality-check rows, which is all it records. A finding's cause after a page-scoped QA is compared with the last recorded run that evaluated it (cause_reason no_prior_evaluation when none can be read), and the summary line says so. qa resolve on a checkout or upsell page that owes a browser run refuses under its own name and names the qa run --browser command that pays it; --browser on qa resolve does not clear the refusal. Refresh installed skills to 1.71.0+skills.2.",
+      "compatibility": "compatible",
+      "migration": "Refresh installed skills to 1.71.0+skills.2 before starting a fresh session.",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Adds the no_prior_evaluation cause reason."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "The stated bundle revision moves to 1.71.0+skills.2."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "bundle_revision 1.71.0+skills.2; the skills this change edits move one patch up."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "ready_with_exceptions is a passing proof; checkpoint accept records quality-check rows, not QA verdict exceptions."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-sdk-bump/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "next passes the QA stage status to the quality-check handoff text; qa resolve passes its own name to the page-scope error."
+        }
+      ],
+      "entry_sha256": "de13d2c3ddffaf81bc90fe8297a6c9176c3ab1f944482a2843b84c1c823a7642"
     }
   ]
 }
