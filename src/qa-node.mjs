@@ -1,3 +1,5 @@
+import { QC_QA_ASSERTION_STATUS } from "./qc-results.mjs";
+import { starterUsedAsIs, starterPaletteIsExpected, STARTER_PALETTE_REASON, STARTER_PLACEHOLDER_WARNING } from "./content-residue.mjs";
 import { campaignSpecIdentity, resolveCampaignIdentity, campaignIdentitiesMatch } from "./spec-source-identity.mjs";
 import { applyLocalPreviewToCheckpoint, applyLocalPreviewToPolishGate, applyPageOnlyChangeToCheckpoint, applyPageOnlyChangeToPolishGate, carriedForwardMessage, CARRIED_FORWARD, ensureUrlTrailingSlash, isPageOnlyCarry, normalizeQaBaseUrl, starterResidueIsExpected } from "./local-preview-policy.mjs";
 import { assessEvidenceDebt } from "./evidence-debt.mjs";
@@ -67,8 +69,9 @@ import {
   inapplicableForwardFields,
   upgradeCampaignSpec,
 } from "../campaign-spec/dist/index.js";
+import { declaredOrderBumps, declaredSelectorTiers } from "./commercial-journey.mjs";
 import { evaluateThemeGate } from "./theme-gate.mjs";
-import { findPaymentPage } from "./qa-test-order-topology.mjs";
+import { checkoutPathPages, findPaymentPage, paymentPagesForTopology } from "./qa-test-order-topology.mjs";
 import { probeRouteUrls, ROUTE_PROBE_DEFAULT_TIMEOUT_MS } from "./qa-route-probe.mjs";
 import { resolveCommerceCatalog, resolvePacketCommerceCatalogPath, resolveTemplateBrandContract } from "./private-template-source.mjs";
 import { computeBuildFingerprint, resolveBuiltSiteScope, topologiesFromBuiltSiteScope } from "./built-site-scope.mjs";
@@ -559,6 +562,7 @@ async function resolveQaInputs(args, {
   });
   const requestedPages = qaPageArgs(args);
   const pageScope = applyQaPageScope(buildScope.topologies, {
+    command: args._[1],
     pages: requestedPages,
     browser: args.browser === true,
     baseUrl,
@@ -1063,16 +1067,16 @@ function refuseBadPageScope(args) {
 // inputs cannot be confirmed, owes a full run. Re-running a page-scoped
 // record for the same build is allowed too. Each requested id is a topology
 // page id or the page id of its route (the id the change lists use).
-export function applyQaPageScope(topologies, { pages, browser = false, baseUrl, debt, report, qaInputCurrency = undefined } = {}) {
+export function applyQaPageScope(topologies, { pages, browser = false, baseUrl, debt, report, qaInputCurrency = undefined, command = "run" } = {}) {
   if (!pages) {
     // A full run pays a page-scoped debt too, but must not drop the browser
     // run a checkout or upsell page owes for a changed stylesheet or image.
     const owed = debt?.qa?.status === "owed" && Array.isArray(debt.qa.browser_pages) ? debt.qa.browser_pages : [];
-    if (owed.length && !browser) {
+    if (owed.length && (!browser || command === "resolve")) {
       const pageRun = debt.qa.scope === "pages" && debt.qa.owed_pages?.length
-        ? `Run ${cmd("qa")} run --packet <packet> ${debt.qa.owed_pages.map((page) => `--page ${page.page_id}`).join(" ")} --browser (no test orders are placed), or add --browser to this full run.`
-        : "Add --browser to this run.";
-      throw new Error(`qa run: ${owed.join(", ")} ${owed.length > 1 ? "are checkout or upsell pages" : "is a checkout or upsell page"} whose linked stylesheet or image changed, so QA owes a browser run. ${pageRun}`);
+        ? `Run ${cmd("qa")} run --packet <packet> ${debt.qa.owed_pages.map((page) => `--page ${page.page_id}`).join(" ")} --browser (no test orders are placed)${command === "resolve" ? "." : ", or add --browser to this full run."}`
+        : command === "resolve" ? `Run ${cmd("qa")} run --packet <packet> --browser.` : "Add --browser to this run.";
+      throw new Error(`qa ${command}: ${owed.join(", ")} ${owed.length > 1 ? "are checkout or upsell pages" : "is a checkout or upsell page"} whose linked stylesheet or image changed, so QA owes a browser run. ${pageRun}`);
     }
     return { topologies, scope: null };
   }
@@ -1329,7 +1333,9 @@ function polishGateAssertion(gate) {
 // Template-residue findings stay blockers while the gate is live; a waived (or
 // inapplicable) gate means the operator accepted the starter palette, so the
 // same findings downgrade to warnings rather than re-blocking the run.
-function residueSeverityForThemeGate(status) {
+function residueSeverityForThemeGate(status, { packet = null, placeholder = false, palette = false, contextTheme = null, themeCode = null } = {}) {
+  if (placeholder) return starterUsedAsIs(packet) ? SEVERITY.WARN : SEVERITY.BLOCKER;
+  if (palette && status === "pass" && themeCode === "theme_gate.nothing_generatable" && starterPaletteIsExpected(packet, contextTheme)) return SEVERITY.INFO;
   return status === "waived" || status === "not_applicable" ? SEVERITY.WARN : SEVERITY.BLOCKER;
 }
 
@@ -2356,6 +2362,16 @@ function parityReplayEvidence(bundle) {
 // validator's own.
 const refuseBadOrderCreationLimit = (args) => refusing(() => validatedOrderCreationLimit(args));
 
+// An unsplit shell variable can pass `--cart 1:1,2:1` as one argument, which
+// parses as a flag named "cart 1:1,2:1": the run would order the default cart
+// and never check the one asked for. Refused before anything is read.
+function refuseJoinedCartFlag(args) {
+  const joined = Object.keys(args).find((key) => /^(cart|select-package)\s/.test(key));
+  if (joined) {
+    throw refused(`--${joined} arrived as one argument, so qa run cannot read it. Pass --${joined.split(/\s/)[0]} and its value as two separate arguments.`);
+  }
+}
+
 // `qa run --currency <code>`: one run proves one currency. The code is three
 // ASCII letters, upper-cased; anything else (no value, a list, a symbol) is
 // refused here, before anything is resolved, fetched or launched. So is a run
@@ -2481,6 +2497,7 @@ export async function runQa(args, options = {}) {
   // lives on the creation budget itself, which every browser path builds.
   refuseBadOrderCreationLimit(args);
   refuseBadPageScope(args);
+  refuseJoinedCartFlag(args);
   qaRunCurrency(args);
   // Match dispatch: an active browser mode takes precedence over legacy API
   // diagnostics. Only the selected legacy path requires a cart and API mode.
@@ -2666,9 +2683,23 @@ async function runResolvedQa(args, resolvedInputs, { runSessionActive = false, l
       spec: resolved.spec,
       qcResults,
     });
-    // A page-binding row from the browser is the key the SDK actually sent;
-    // it takes the place of that page's static read.
+    // Only the all-stock declaration changes residue outcomes. Keep the
+    // browser measurements in evidence, including on excluded palette rows.
+    const contextTheme = loadRuntimeArtifact(resolved.packetPath, "build-context.json")?.theme;
     for (const observed of browserAssertions) {
+      if (observed.family === "template_residue") {
+        const placeholder = observed.id.endsWith(":placeholder-text");
+        const palette = observed.id.includes(":style:");
+        const severity = residueSeverityForThemeGate(gate.status, { packet: resolved.packet, placeholder, palette, contextTheme, themeCode: gate.code });
+        if (palette && observed.status === STATUS.FAIL && severity === SEVERITY.INFO) {
+          Object.assign(observed, QC_QA_ASSERTION_STATUS.excluded);
+          observed.actual = STARTER_PALETTE_REASON;
+          observed.evidence = { ...observed.evidence, result: "excluded", reason_code: "template_stock", reason: STARTER_PALETTE_REASON };
+        } else if (placeholder && observed.status === STATUS.FAIL && severity === SEVERITY.WARN) {
+          observed.severity = SEVERITY.WARN;
+          observed.actual = STARTER_PLACEHOLDER_WARNING;
+        }
+      }
       const at = observed.id.startsWith("page-binding:") ? assertions.findIndex((entry) => entry.id === observed.id) : -1;
       if (at >= 0) assertions[at] = observed;
       else assertions.push(observed);
@@ -2687,15 +2718,24 @@ async function runResolvedQa(args, resolvedInputs, { runSessionActive = false, l
   }
 
   const testOrders = await runAnalyticsOrderSequence({ args, resolved, runId, assertions, qcResults });
+  assertions.push(...testOrderCoverageExceptions({ spec: resolved.rawSpec || resolved.spec, topologies: resolved.topologies, testOrders, args }));
   if (vendorBeacons) assertions.push(vendorBeaconAssertion(vendorBeacons));
   const remainingAssertionBudget = Math.max(0, QA_VERDICT_ASSERTION_LIMIT - assertions.length);
   let commercialResult;
   try {
     commercialResult = await runCommercialParity({
       resolved,
-      captures: [...capturesByPageId.entries()].map(([pageId, capture]) => (renderedPackagePrices.has(pageId)
-        ? { ...capture, rendered_package_prices: renderedPackagePrices.get(pageId) }
-        : capture)),
+      captures: [...capturesByPageId.entries()].map(([pageId, capture]) => {
+        const rendered = renderedPackagePrices.get(pageId);
+        if (!rendered) return capture;
+        const page = commercialPlanning.pages.find((entry) => String(entry.id) === pageId);
+        return {
+          ...capture,
+          rendered_package_prices: rendered.filter((claim) => claim.binding.startsWith("package.")),
+          ...(["upsell", "downsell"].includes(page?.type)
+            ? { rendered_bundle_prices: rendered.filter((claim) => claim.binding.startsWith("bundle.")) } : {}),
+        };
+      }),
       planning: commercialPlanning,
       maxAssertions: remainingAssertionBudget,
       currency,
@@ -3470,6 +3510,60 @@ function liveCampaignRefAssertions({ pages, spec, liveCampaign }) {
   return out;
 }
 
+// What this run's test orders did not cover, as warn rows: currencies the
+// CampaignSpec lists that no order was placed in, and a checkout order bump no
+// order is shown to contain (an order whose display check passed with the
+// bump in its summary contains it; with no comparable display check there is
+// no row). Judged on this run's orders only: an
+// earlier run's orders are not part of this verdict. No row without a created order.
+function testOrderCoverageExceptions({ spec, topologies = [], testOrders = [], args = {} }) {
+  const created = (testOrders || []).filter((order) => order?.ok === true);
+  if (!created.length) return [];
+  const rows = [];
+  const listed = [...new Set((Array.isArray(spec?.campaign?.available_currencies) ? spec.campaign.available_currencies : [])
+    .filter((code) => typeof code === "string" && code.trim()).map((code) => code.trim().toUpperCase()))];
+  const tested = new Set(created.map((order) => stringArg(order?.verification?.currency)?.toUpperCase() || args[QA_RUN_CURRENCY]).filter(Boolean));
+  const untested = listed.filter((code) => !tested.has(code));
+  if (listed.length > 1 && tested.size && untested.length) {
+    rows.push(assertion({
+      id: "browser-test-order:currency-coverage",
+      family: "browser-test-order",
+      page: { page_id: "campaign" },
+      status: STATUS.WARN,
+      severity: SEVERITY.WARN,
+      expected: `a test order in each currency the CampaignSpec lists (${listed.join(", ")})`,
+      actual: `no test order in this run was placed in ${untested.join(" or ")}. Run ${cmd("qa")} run once per currency, ${untested.map((code) => `with --currency ${code}`).join(" and ")}, in place of any --currency given here.`,
+      evidence: { listed, tested: [...tested], untested },
+    }));
+  }
+  const checkout = findPaymentPage(topologies);
+  // The pages of the path the run drives to that Checkout, as `next` reads them.
+  const pathPages = checkoutPathPages((topologies || []).find((topology) => topology?.pages?.includes(checkout)), checkout);
+  const bumps = [...new Set(pathPages.flatMap((page) => declaredOrderBumps(page)))];
+  // Only a comparable display check says what an order held; a run with none
+  // makes no claim about the bump either way.
+  const shown = created.map((order) => order?.verification?.display_reconciliation).filter((entry) => entry?.comparable);
+  const ordered = new Set(shown.flatMap((entry) => (entry.ok ? entry.summary_package_ids || [] : [])).map(String));
+  const missing = shown.length ? bumps.filter((ref) => !ordered.has(ref)) : [];
+  if (missing.length) {
+    // A run that selects its own package or tiers needs only the bump added.
+    const selects = stringArg(args["select-package"]) || /^tiers/i.test(String(args["test-order"] || ""));
+    const base = selects ? null : pathPages.map((page) => declaredSelectorTiers(page)[0]?.ref).find(Boolean);
+    const cart = [base, ...missing].filter(Boolean).map((ref) => `${ref}:1`).join(",");
+    rows.push(assertion({
+      id: "browser-test-order:order-bump-coverage",
+      family: "browser-test-order",
+      page: checkout || { page_id: "checkout" },
+      status: STATUS.WARN,
+      severity: SEVERITY.WARN,
+      expected: `a test order containing the checkout add-on (order bump package ${missing.join(", ")})`,
+      actual: `no test order in this run was shown to contain order bump package ${missing.join(", ")}. Run ${cmd("qa")} run again with the same flags plus --cart ${cart}.`,
+      evidence: { order_bump_refs: bumps, untested: missing },
+    }));
+  }
+  return rows;
+}
+
 async function maybeRunTestOrders(
   { args, resolved, runId, assertions, captureAnalytics = false },
   overrides = {},
@@ -3504,6 +3598,8 @@ async function maybeRunTestOrders(
     // once in the first turn; `--test-order <mode>` has no permission flag or packet policy gate.
     const result = await operations.runBrowser(resolved.topologies, args, runId, { captureAnalytics, spec: resolved.spec });
     assertions.push(...result.assertions);
+    const tierCoverage = tierCoverageAssertion({ mode, topologies: resolved.topologies, spec: resolved.spec, orders: result.orders });
+    if (tierCoverage) assertions.push(tierCoverage);
     return {
       orders: result.orders,
       receiptAnalytics: result.receiptAnalytics || emptyReceiptAnalytics(),
@@ -3514,6 +3610,82 @@ async function maybeRunTestOrders(
   const orders = await operations.runLegacy({ args: { ...args, "test-order": legacyMode }, resolved, runId, assertions });
   // Direct API diagnostics never qualify as canonical receipt proof.
   return { orders, receiptAnalytics: emptyReceiptAnalytics(), qc_results: notRequestedRows() };
+}
+
+// `--test-order tiers` orders the tiers a checkout page lists as package rows.
+// A quantity tier only an offer declares (buy 2 or buy 3 of the one package
+// the page lists) has no row of its own, so no plan orders it. The row names
+// every tier with no placed order in this run, the way
+// browser-test-order:upsell-action-coverage names an offer page no order
+// declined. Tiers and orders are read per Checkout, as specTierPlans plans
+// them: an order on one Checkout never covers another's tier. Null outside a
+// tiers run, or when every tier has an order.
+const QUANTITY_OFFER_CONDITIONS = new Set(["count", "count_equal"]);
+export function tierCoverageAssertion({ mode, topologies = [], spec = null, orders = [] } = {}) {
+  if (!/^tiers(?::(?:checkout|common|full))?$/.test(String(mode || "").toLowerCase())) return null;
+  const identity = (ref, quantity) => (quantity > 1 ? `${ref}:${quantity}` : String(ref));
+  const primary = findPaymentPage(topologies);
+  const pageId = (page) => page?.page_id || page?.label || "checkout";
+  const placed = (Array.isArray(orders) ? orders : []).filter((order) => [order?.ref_id, order?.next_order_id].some((value) => value != null && String(value).trim() !== ""));
+  const checkouts = [];
+  for (const topology of Array.isArray(topologies) ? topologies : []) {
+    for (const payment of paymentPagesForTopology(topology)) {
+      if (checkouts.some((entry) => entry.page === payment)) continue;
+      const tiers = new Map();
+      for (const page of checkoutPathPages(topology, payment)) {
+        for (const tier of declaredSelectorTiers(page)) {
+          const id = identity(tier.ref, tier.quantity);
+          if (!tiers.has(id)) tiers.set(id, { identity: id, ref: String(tier.ref), quantity: tier.quantity, declared_by: "checkout_package" });
+        }
+      }
+      // Offer quantities are tiers only when this Checkout lists one package:
+      // with several, an offer's count spans packages and names no single tier.
+      const refs = new Set([...tiers.values()].map((tier) => tier.ref));
+      if (refs.size === 1) {
+        const [ref] = refs;
+        for (const offer of Array.isArray(spec?.offers) ? spec.offers : []) {
+          const quantity = Number(offer?.condition?.value);
+          if (!QUANTITY_OFFER_CONDITIONS.has(offer?.condition?.type) || !Number.isInteger(quantity) || quantity < 1) continue;
+          if (!(Array.isArray(offer.packages) ? offer.packages : []).some((pkg) => String(pkg?.package_id ?? "").trim() === ref)) continue;
+          const id = identity(ref, quantity);
+          if (!tiers.has(id)) tiers.set(id, { identity: id, ref, quantity, declared_by: "offer", offer: offer.name || String(offer.ref_id ?? "") || null });
+        }
+      }
+      if (!tiers.size) continue;
+      // A plan on a Checkout other than the primary names it on its source.
+      const ordered = new Set(placed
+        .map((order) => order.plan?.source)
+        .filter((source) => source?.type === "selector_tier"
+          && (source.checkout_page_id != null ? String(source.checkout_page_id) === String(pageId(payment)) : payment === primary))
+        .map((source) => identity(String(source.ref), Number(source.quantity) || 1)));
+      checkouts.push({ page: payment, tiers: [...tiers.values()].map((tier) => ({ ...tier, ordered: ordered.has(tier.identity) })) });
+    }
+  }
+  const named = checkouts.length > 1;
+  const all = checkouts.flatMap((checkout) => checkout.tiers.map((tier) => ({ ...tier, checkout_page_id: pageId(checkout.page), label: `${named ? `${pageId(checkout.page)} ` : ""}${tier.identity}` })));
+  const missing = all.filter((tier) => !tier.ordered);
+  if (!missing.length) return null;
+  const rows = [...new Set(missing.filter((tier) => tier.declared_by === "checkout_package").map((tier) => tier.identity))];
+  const offered = missing.filter((tier) => tier.declared_by === "offer");
+  const notes = [];
+  if (rows.length) notes.push(`order ${rows.length > 1 ? "them" : "it"} with ${cmd("qa")} run --packet <packet> --test-order ${String(mode).toLowerCase()} --select-package ${rows.join(",")}`);
+  if (offered.length) {
+    const many = offered.length > 1;
+    notes.push(`${offered.map((tier) => tier.label).join(", ")} ${many ? "are quantity tiers" : "is a quantity tier"} only an offer declares: the checkout lists the package once, so no --test-order tiers plan orders ${many ? "them" : "it"}; --cart <ref>:<qty> orders one only where a rendered bundle card carries the package at that quantity`);
+  }
+  return assertion({
+    id: "browser-test-order:tier-coverage",
+    family: "browser-test-order",
+    page: primary || { page_id: "checkout" },
+    status: STATUS.WARN,
+    severity: SEVERITY.WARN,
+    expected: "every tier the CampaignSpec declares for the checkout, as a package row or a quantity offer, has a test order in this run",
+    actual: `no test order in this run for ${missing.length} of ${all.length} tier(s): ${missing.map((tier) => `${tier.label}${tier.offer ? ` (offer ${JSON.stringify(tier.offer)})` : ""}`).join(", ")}; ${notes.join("; ")}`,
+    evidence: {
+      tiers: all.map(({ label, ...tier }) => tier),
+      not_ordered: missing.map((tier) => tier.label),
+    },
+  });
 }
 
 async function maybeRunLegacyApiTestOrders({ args, resolved, runId, assertions }) {
@@ -4538,6 +4710,7 @@ export const __qaNodeTestHooks = Object.freeze({
   analyticsCorrectnessDisabledAssertion,
   runAnalyticsOrderSequence,
   maybeRunTestOrders,
+  testOrderCoverageExceptions,
   finalizeQaRun,
   campaignOutputDir,
   polishBlockedAssertions,

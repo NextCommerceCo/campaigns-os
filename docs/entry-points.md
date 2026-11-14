@@ -65,9 +65,13 @@ before they are built.
 - **Swap** what CampaignSpec owns: product names and images, prices and
   discount figures, promo codes (empty a code the campaign does not
   have), the store name and support details.
-- **Fill** literal placeholder text such as `Benefit one` or
-  `Product Name` from the product. Browser QA blocks it, and filling it
-  keeps the section.
+- **Review** literal placeholder text such as `Benefit one` or
+  `Product Name`. When every mapped page uses the starter as-is, doctor
+  and browser QA warn about it. A build with a designed page keeps the
+  blocking QA check.
+- **The starter palette** is excluded from brand comparison when every
+  mapped page is starter stock and no design source or brand tokens were
+  supplied. No theme waiver is needed.
 - **The countdown** stays like the rest, with one exception. It renders
   whenever its label is non-empty. In a build with a brief payload
   (`.campaign-runtime/input/brief-payload.json`) and no

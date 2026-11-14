@@ -131,6 +131,38 @@ browserTest("SDK 0.5: the test-order form fill types into data-next-field inputs
   }
 });
 
+// The SDK reports ready, then mounts the country select 1.5 s later (or never).
+const LATE_COUNTRY = (mount) => `const country = document.querySelector('[data-next-field="country"]');
+const slot = country.parentNode;
+const anchor = country.nextSibling;
+country.remove();
+${mount ? "setTimeout(() => slot.insertBefore(country, anchor), 1500);" : ""}
+${READY}`;
+
+browserTest("SDK 0.5: the form fill waits for a required country select the SDK mounts after it reports ready", async () => {
+  const { context, page } = await open("/checkout/", withSdk(fixture("checkout"), LATE_COUNTRY(true)));
+  try {
+    await hooks.waitForSdkDisplayReady(page);
+    await hooks.fillCheckoutFields(page, {}, "qa@example.test", { actionTimeoutMs: 5000 });
+    assert.equal(await page.locator('[data-next-field="country"]').inputValue(), "US");
+  } finally {
+    await context.close();
+  }
+});
+
+browserTest("SDK 0.5: a required country select that never mounts still fails by name", async () => {
+  const { context, page } = await open("/checkout/", withSdk(fixture("checkout"), LATE_COUNTRY(false)));
+  try {
+    await hooks.waitForSdkDisplayReady(page);
+    await assert.rejects(
+      () => hooks.fillCheckoutFields(page, {}, "qa@example.test", { actionTimeoutMs: 3000 }),
+      /^Error: Missing checkout select: country$/,
+    );
+  } finally {
+    await context.close();
+  }
+});
+
 const UPSELL_SDK = `document.documentElement.setAttribute("data-next-ready", "");
 document.querySelector('[data-next-action="acceptUpsell"]').addEventListener("click", async () => {
   await fetch("/api/v1/orders/${REF}/upsells/", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });

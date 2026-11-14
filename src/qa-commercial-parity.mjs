@@ -12,6 +12,7 @@ import {
   PACKAGE_PRICE_NOT_FILLED,
   PACKAGE_PRICE_NOT_RENDERED,
   PACKAGE_PRICE_UNRESOLVED,
+  bundlePriceClaimCount,
   createCommercialParityReport,
   extractCommercialClaims,
   packagePriceClaimCount,
@@ -182,6 +183,7 @@ export function captureCommercialClaims(page, html) {
       ...extractCommercialClaims(html, {
         pageId: present(page?.page_id) ? String(page.page_id) : null,
         url: page?.url,
+        pageType: page?.page_type,
       }),
       // Every package the page renders, by the refs doctor reads, so a
       // subscription whose rebill copy yielded no claim is still seen (#533).
@@ -453,7 +455,7 @@ function catalogImportedAt(spec) {
 }
 
 function captureClaimCount(capture) {
-  return array(capture?.price_claims).length
+  return bundlePriceClaimCount(capture)
     + packagePriceClaimCount(capture)
     + array(capture?.recurrence_claims).length
     + array(capture?.vouchers).length;

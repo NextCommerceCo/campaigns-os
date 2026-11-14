@@ -13,7 +13,7 @@ import { test } from "node:test";
 import Ajv2020 from "ajv/dist/2020.js";
 
 import { buildManifestEntries, computeBuildFingerprint } from "./built-site-scope.mjs";
-import { recordQaStageOutcome, resultTextLines } from "./cli.mjs";
+import { nextStage, recordQaStageOutcome, resultTextLines } from "./cli.mjs";
 import { doctorCommand, doctorPacket } from "./doctor/inspect.mjs";
 import { assessEvidenceDebt } from "./evidence-debt.mjs";
 import { demoteStages } from "./input-refresh.mjs";
@@ -877,6 +877,23 @@ const scopeLinked = (f, pages, extra = {}) => {
   const topologies = [{ pages: Object.keys(PAGES).map((page) => ({ page_id: page, url: `${base}${page}/` })) }];
   return applyQaPageScope(topologies, { pages, baseUrl: base, debt: f.debt(), report: f.readReport(), ...extra });
 };
+
+test("qa resolve names itself and directs owed browser proof to qa run", async (t) => {
+  const f = linkedFixture(t);
+  f.writeFile("css/checkout.css", "button { color: blue }\n");
+  f.recordBuild();
+  await assert.rejects(() => __qaNodeTestHooks.resolveQaInputs({
+    _: ["qa", "resolve"], packet: f.packetPath, "base-url": `http://127.0.0.1:9/${SLUG}/`,
+  }), /^Error: qa resolve:.*Run campaigns-os qa run --packet <packet> --page checkout --browser/);
+});
+test("qa resolve --browser cannot bypass owed browser proof", async (t) => {
+  const f = linkedFixture(t);
+  f.writeFile("css/checkout.css", "button { color: blue }\n");
+  f.recordBuild();
+  await assert.rejects(() => __qaNodeTestHooks.resolveQaInputs({
+    _: ["qa", "resolve"], packet: f.packetPath, "base-url": `http://127.0.0.1:9/${SLUG}/`, browser: true,
+  }), /^Error: qa resolve:.*Run campaigns-os qa run --packet <packet> --page checkout --browser/);
+});
 const passPageRun = (f, scoped, runId) => recordQaStageOutcome({ _: ["qa", "run"], packet: f.packetPath }, {
   verdict: { run_id: runId, campaign_slug: "synthetic-map", disposition: "ready", completed_at: "2026-11-11T00:00:00Z", assertions: [], spec_hash: null, qc_results: [] },
   page_scope: scoped.scope,
@@ -979,3 +996,15 @@ test("a stylesheet checkout links owes a browser QA run on checkout with no test
   assert.match(ci(script).stdout, /Change found: commerce-affecting \(a file outside any page changed\)\. It owes the full Polish and QA\./);
 });
 
+
+test("next omits change debt before a reviewed build and prints detail rows once", (t) => {
+  const f = fixture(t, { reviewed: false });
+  const first = nextStage(null, { packet: f.packetPath, "no-write": true });
+  assert.doesNotMatch(resultTextLines(first).join("\n"), /Owed stages:/);
+  const reviewed = fixture(t);
+  copyEdit(reviewed);
+  reviewed.recordBuild();
+  const next = nextStage(null, { packet: reviewed.packetPath, "no-write": true });
+  assert.match(resultTextLines(next).join("\n"), /Owed stages: qa \(changed pages only\)/);
+  assert.doesNotMatch(resultTextLines(next).join("\n"), /^- - /m);
+});

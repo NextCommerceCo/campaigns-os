@@ -35,6 +35,7 @@ import {
   remainingActionDisposition,
   resolveTestOrderTopology,
   terminalAtUrl,
+  testOrderPathClicks,
 } from "./qa-test-order-topology.mjs";
 import {
   CART_ENTRY_CODES,
@@ -3233,6 +3234,36 @@ function collectRenderedPackagePrices() {
     const text = filled && !multiplied ? element.textContent.replace(/\s+/g, " ").trim() : null;
     claims.set(`${binding}|${packageId}|${filled}|${text}`, { binding, package_id: packageId, filled, text });
   }
+  // Bundle displays identify a tier by its card, or by the selected card in
+  // a remote selector. Keep single-package tiers tied to their exact quantity.
+  for (const element of document.querySelectorAll('[data-next-display^="bundle."], [data-next-bundle-display="price"]')) {
+    const remote = /^bundle\.([^.]+)\.price$/.exec((element.getAttribute("data-next-display") || "").trim());
+    const local = element.getAttribute("data-next-bundle-display") === "price";
+    if ((!remote && !local) || element.closest("del, s, strike")) continue;
+    if ((element.getAttribute("data-next-format") || "currency").trim().toLowerCase() !== "currency") continue;
+    if (!element.checkVisibility({ checkVisibilityCSS: true })) continue;
+    let card = local ? element.closest("[data-next-bundle-card]") : null;
+    if (remote) {
+      card = [...document.querySelectorAll("[data-next-bundle-id]")]
+        .find((node) => node.getAttribute("data-next-bundle-id") === remote[1]);
+      const selector = [...document.querySelectorAll("[data-next-bundle-selector]")]
+        .find((node) => node.getAttribute("data-next-selector-id") === remote[1]);
+      card ||= selector?.querySelector('[data-next-bundle-card][data-next-selected="true"]');
+    }
+    let items = null;
+    try { items = JSON.parse(card?.getAttribute("data-next-bundle-items") || "null"); } catch {}
+    const item = Array.isArray(items) && items.length === 1 ? items[0] : null;
+    const packageId = /^[1-9]\d*$/.test(String(item?.packageId)) ? Number(item.packageId) : null;
+    const quantity = /^[1-9]\d*$/.test(String(item?.quantity)) ? Number(item.quantity) : null;
+    // A card id with a dot cannot form a governed binding. The binding is only
+    // a label for the claim, so the dots become dashes: the tier is still
+    // compared (or counted unresolved) and never drops out of coverage.
+    const binding = remote ? remote[0] : `bundle.${(card?.getAttribute("data-next-bundle-id") || "unknown").replace(/\./g, "-")}.price`;
+    const filled = local || element.classList.contains("display-visible");
+    const text = filled && !element.hasAttribute("data-next-multiply-quantity")
+      ? element.textContent.replace(/\s+/g, " ").trim() : null;
+    claims.set(`${binding}|${packageId}|${quantity}|${filled}|${text}`, { binding, package_id: packageId, quantity, filled, text });
+  }
   return [...claims.values()];
 }
 
@@ -4238,6 +4269,7 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
     events,
     selected_packages: selectedPackages,
     requested_cart: parseCart(args.cart),
+    selected_cards: enteredViaLanding ? entry.selected_cards || [] : [],
   });
   order.verification.total_parity = assessOrderTotalParity({
     display: checkoutDisplay,
@@ -4250,9 +4282,13 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
   if (order.ok && upsellSteps.length) {
     order.upsell_steps = [];
   }
+  // The order's lines before any upsell step. A checkout bump persists with
+  // is_upsell: true, so only lines the steps added are judged against them.
+  const preUpsellLines = order.receipt_line_items.slice();
   if (!upsellSteps.length) ladder.skip("upsell_action", "path has no upsell steps");
 
-  for (let stepIndex = 0; order.ok && stepIndex < upsellSteps.length; stepIndex += 1) {
+  let pathStopped = false;
+  for (let stepIndex = 0; order.ok && !pathStopped && stepIndex < upsellSteps.length; stepIndex += 1) {
     const disposition = remainingActionDisposition(topologyPlan, safePageUrl(page), upsellSteps.slice(stepIndex));
     if (disposition.stop) {
       const terminal = disposition.terminal;
@@ -4275,7 +4311,21 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
       await waitForUpsellPageReady(page, args);
       await actionTrace.inspect();
       const responseIndexBefore = events.responses.length;
-      const upsell = await clickUpsellPath(page, step, { events, stepIndex, trace: actionTrace });
+      const upsell = await clickUpsellPath(page, step, {
+        trace: actionTrace,
+        destinationUrl: declaredStepDestination(topologyPlan, path, stepIndex),
+        // Inside the step's budget, keeping the read-back's reserve.
+        destinationTimeoutMs: Math.max(0, Math.min(
+          numberArg(args["browser-timeout"], DEFAULT_BROWSER_TIMEOUT_MS),
+          stepBudgetMs - (Date.now() - stepStartedMs) - LATE_UPSELL_EVIDENCE_RESERVE_MS,
+        )),
+        // Only a step another action follows must land on its declared page.
+        destinationRequired: stepIndex < upsellSteps.length - 1,
+      });
+      if (upsell.clicked && upsell.error) {
+        stepFailures.push(`step ${stepIndex + 1}: ${upsell.error}`);
+        pathStopped = true;
+      }
       const preferredOrderBody = upsell.api_response_order_body || null;
       delete upsell.api_response_order_body;
       order.upsell = upsell;
@@ -4324,6 +4374,9 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
       evidence: actionTrace.summary,
       formatError: actionTrace.formatError,
     });
+  }
+  if (order.ok && order.upsell_steps?.length) {
+    stepFailures.push(...declinedUpsellLineFailures(order.upsell_steps, addedLines(order.receipt_line_items, preUpsellLines), events));
   }
 
   const finalUrl = safePageUrl(page) || "";
@@ -4543,8 +4596,9 @@ async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPack
   // the matching data-next-bundle-card first, strictly, as on a checkout that
   // selects for itself; otherwise the page's pre-selected card stands.
   let cardSelection = null;
+  const selectedCards = [];
   if (control.kind === "checkout_button") {
-    cardSelection = choice.select_card ? await selectPackageCard(page, choice.select_card, []) : null;
+    cardSelection = choice.select_card ? await selectPackageCard(page, choice.select_card, selectedCards) : null;
     control.package_id = choice.select_card?.packageId || await selectedBundleCardPackage(page);
   }
   // Each bundle slot may need a variant (size, colour) before the page lets
@@ -4578,6 +4632,9 @@ async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPack
   return {
     entered: true,
     package_id: control.package_id || null,
+    // The card --select-package chose here, for the order check on checkout,
+    // which renders no selector. Not recorded in the step.
+    selected_cards: selectedCards,
     detail: `entered via ${entryPage.page_type || "entry"} page: clicked "${control.text || "(no text)"}"${control.package_id ? ` (package ${control.package_id})` : ""}, SDK navigated to checkout`,
     evidence: {
       landing_url: redactUrlQuery(entryPage.url),
@@ -5083,6 +5140,9 @@ async function gotoAndSettle(page, url, args, tracking = null, currencyLoad = nu
 async function selectRequestedCart(page, args, { selectedPackages = [], selectedCards = [] } = {}) {
   const cart = parseCart(args.cart);
   if (!cart.length) return [];
+  // A checkout reveal keeps its order bump in an inert panel until the
+  // "Add to Cart" reveal is clicked, so a toggle clicked before it does nothing.
+  await revealCheckoutForm(page);
   if (selectedPackages.length) return applyCartBesideSelection(page, cart, { selectedPackages, selectedCards });
   // A package a bundle card declares, asked for at an explicit quantity, is
   // chosen by the card whose items carry it at that quantity. The first
@@ -5118,8 +5178,8 @@ function cardCarriesPackage(candidate, ref) {
 // is applied through its own control (an order bump toggle, or a card in a
 // selector group --select-package did not choose in), never by clicking
 // another card in the chosen card's group. A ref only such a click could
-// satisfy is left unapplied and named, so the order and its reconciliation
-// stay those of the card actually selected.
+// satisfy is left unapplied and named; the order check fails on it unless
+// the chosen card sells that package.
 async function applyCartBesideSelection(page, cart, { selectedPackages, selectedCards }) {
   const chosenIdentities = new Set(selectedCards.map(packageCardIdentity));
   const strictRefs = selectedPackages.map((item) => String(item.packageId));
@@ -6171,8 +6231,13 @@ async function shopperUpsellControl(page, action) {
 
 // `clickTimeoutMs` and `mutationTimeoutMs` are UPSELL_CLICK_TIMEOUT_MS and
 // UPSELL_MUTATION_TIMEOUT_MS in every production run; only an in-process test
-// that waits one of them out passes a shorter bound.
-async function clickUpsellPath(page, path, { trace = null, clickTimeoutMs, mutationTimeoutMs } = {}) {
+// that waits one of them out passes a shorter bound. `destinationUrl` is the
+// page the funnel declares this action leads to; when it is another page, the
+// click waits (up to `destinationTimeoutMs`) until the browser is on it. Pages
+// are compared as route matching compares them (canonicalHttpUrl: query,
+// hash, trailing slash and index.html ignored). With `destinationRequired`,
+// not arriving is the step's `error` and the checkout-result wait is skipped.
+async function clickUpsellPath(page, path, { trace = null, clickTimeoutMs, mutationTimeoutMs, destinationUrl = null, destinationTimeoutMs = DEFAULT_BROWSER_TIMEOUT_MS, destinationRequired = false } = {}) {
   const clickMs = shorterBound(clickTimeoutMs, UPSELL_CLICK_TIMEOUT_MS);
   const mutationMs = shorterBound(mutationTimeoutMs, UPSELL_MUTATION_TIMEOUT_MS);
   const offerUrl = safePageUrl(page);
@@ -6182,7 +6247,8 @@ async function clickUpsellPath(page, path, { trace = null, clickTimeoutMs, mutat
   if (!await control.count().catch(() => 0)) {
     return { path, clicked: false, error: `Missing upsell control ${selector}` };
   }
-  const expectedItems = path === "accept" ? await selectedUpsellItems(page) : [];
+  // What this offer sells: what an accept buys, and what a decline turns down.
+  const expectedItems = await selectedUpsellItems(page);
   const perpetual = await scrollControlIntoView(control);
   // Armed at the click, not before the scroll, and budgeted to outlast a
   // normal attempt that times out into its forced fallback: the watch must
@@ -6219,7 +6285,18 @@ async function clickUpsellPath(page, path, { trace = null, clickTimeoutMs, mutat
   const bodyRead = mutationResponse
     ? await readJsonResponseBodyBounded(mutationResponse, RESPONSE_BODY_READ_TIMEOUT_MS)
     : null;
-  await waitForCheckoutResult(page);
+  // The offer URL itself passes waitForCheckoutResult, so a decline that
+  // navigates late would leave the next step clicking this offer again.
+  const destinationKey = canonicalHttpUrl(destinationUrl);
+  let destinationError = null;
+  if (destinationKey && destinationKey !== canonicalHttpUrl(offerUrl)) {
+    const reached = await page.waitForURL((url) => canonicalHttpUrl(url.href) === destinationKey, { timeout: Math.max(1, destinationTimeoutMs), waitUntil: "commit" })
+      .then(() => true, () => false);
+    if (!reached && destinationRequired) {
+      destinationError = `the page did not reach ${redactUrlQuery(destinationUrl)} within ${destinationTimeoutMs}ms after the ${path}; the browser was still on ${redactUrlQuery(safePageUrl(page))}`;
+    }
+  }
+  if (!destinationError) await waitForCheckoutResult(page);
   const record = {
     path,
     clicked: true,
@@ -6230,6 +6307,7 @@ async function clickUpsellPath(page, path, { trace = null, clickTimeoutMs, mutat
     api_response_status: mutationResponse?.status() || null,
     api_response_url: mutationResponse?.url() || null,
     api_response_order_body: bodyRead?.body ?? null,
+    ...(destinationError ? { error: destinationError } : {}),
     // When the mutation's response arrived (epoch ms, the browser's clock as
     // Date.now()). Only a read-back requested after this reflects the upsell.
     mutation_responded_at: mutationRespondedAt(mutationResponse),
@@ -6478,7 +6556,7 @@ function selectedBundleDeclarations(display) {
   };
 }
 
-function reconcileOrderAgainstDisplay({ lines = [], display = null, events = null, selected_packages = [], requested_cart = [] } = {}) {
+function reconcileOrderAgainstDisplay({ lines = [], display = null, events = null, selected_packages = [], requested_cart = [], selected_cards = [] } = {}) {
   if (!display) {
     return { comparable: false, reason: "checkout display evidence was not captured for this order" };
   }
@@ -6509,13 +6587,17 @@ function reconcileOrderAgainstDisplay({ lines = [], display = null, events = nul
     ...(selected_packages || []),
     ...declarations.quantities.filter((item) => !strictRefs.has(item.packageId)),
   ];
-  // Without --select-package, every explicit --cart <pkg>:<qty> is judged on
-  // its own: the order must carry that package at that quantity, whichever
-  // card, if any, declares it. Beside --select-package the order is judged
-  // against the card that flag chose; a --cart ref it left unapplied is named
-  // by selected_bundle.
-  const requestedCart = (selected_packages || []).length ? [] : (requested_cart || [])
-    .filter((item) => item?.quantityExplicit);
+  // Every explicit --cart <pkg>:<qty> is judged on its own: the order must
+  // carry that package at that quantity, whichever card, if any, declares it.
+  // Beside --select-package, a ref for a package the selected card sells is
+  // the flag conflict selected_bundle names (the order is the card's); any
+  // other ref, such as an order bump, must still reach the order. A card
+  // chosen on an entry page is not on the checkout display, so its items come
+  // from where it was chosen.
+  const enteredRefs = (selected_cards || []).flatMap((card) => (card?.items || []).map((item) => String(item?.package_id ?? "")));
+  const selectionRefs = strictRefs.size ? new Set([...strictRefs, ...declarations.refs, ...enteredRefs].filter(Boolean)) : new Set();
+  const requestedCart = (requested_cart || [])
+    .filter((item) => item?.quantityExplicit && !selectionRefs.has(String(item.packageId)));
   const requestedCartByRef = new Map(requestedCart.map((item) => [String(item.packageId), Number(item.quantity || 1)]));
   const displayed = new Set(resolved.displayed_package_ids);
   const summaryIds = new Set(resolved.summary_package_ids);
@@ -6788,7 +6870,15 @@ function orderTotalParityAssertion(page, planIdentifier, order) {
     expected: "the persisted order's pre-upsell total matches the summary total the checkout displayed at submit",
   };
   if (!parity.comparable) {
-    return assertion({ ...base, status: STATUS.SKIPPED, actual: parity.reason, evidence: parity });
+    // A comparison that did not happen is an exception the operator sees, not
+    // a skipped row the exception list leaves out.
+    return assertion({
+      ...base,
+      status: STATUS.WARN,
+      severity: SEVERITY.WARN,
+      actual: `${parity.reason}, so the order total was not compared with a displayed total`,
+      evidence: parity,
+    });
   }
   return assertion({
     ...base,
@@ -7838,6 +7928,12 @@ function requiredActionTimeout(options = {}) {
 
 async function selectByField(page, field, value, options = {}) {
   const locator = page.locator(checkoutFieldSelector(field)).first();
+  // The SDK can mount a required select (country) after it reports ready. Give
+  // it the SDK-ready allowance, inside the step's own budget, to appear.
+  if (!options.optional) {
+    const budget = Number.isFinite(options.actionTimeoutMs) && options.actionTimeoutMs > 0 ? options.actionTimeoutMs : Infinity;
+    await locator.waitFor({ state: "attached", timeout: Math.min(SDK_DISPLAY_READY_TIMEOUT_MS, budget) }).catch(() => {});
+  }
   if (!await fieldUsable(locator, options)) {
     if (options.optional) return false;
     throw new Error(`Missing checkout select: ${field}`);
@@ -8870,6 +8966,57 @@ function acceptedUpsellProof(lines, initialLines, expectedItems, events) {
   };
 }
 
+// The page a planned path declares step `stepIndex` leads to: the next offer
+// it clicks, or the terminal the path ends on. Null when the topology does not
+// declare one.
+function declaredStepDestination(topologyPlan, path, stepIndex) {
+  const clicks = testOrderPathClicks(topologyPlan, path);
+  if (clicks.length > stepIndex + 1) return clicks[stepIndex + 1].key;
+  if (clicks.length !== stepIndex + 1) return null;
+  const walked = clicks.map((click) => click.action).join("-");
+  return (topologyPlan?.terminal_paths || []).find((candidate) => candidate.path === walked)?.terminal?.url || null;
+}
+
+// The path says which offers were declined. A final order upsell line that
+// matches a declined offer's package fails the path, unless an accept on
+// another offer page explains it (a downsell of the same product). An accept
+// that landed on the declined offer, because the runner outran its decline,
+// explains nothing.
+function declinedUpsellLineFailures(steps, lines, events) {
+  const upsellLines = (lines || []).filter((line) => line.is_upsell);
+  const failures = [];
+  steps.forEach((step, index) => {
+    if (step.path !== "decline" || !step.expected_items?.length) return;
+    const offerKey = canonicalHttpUrl(step.offer_url);
+    // An accept explains a line it bought, at its quantity (as
+    // acceptedUpsellProof matches). One whose items are unknown may have
+    // bought anything.
+    const explained = (line) => steps.some((other) => other.path === "accept"
+      && canonicalHttpUrl(other.offer_url) !== offerKey
+      && (!other.expected_items?.length || other.expected_items.some((item) => (
+        Number(line.quantity || 0) === Number(item.quantity || 1) && lineMatchesExpectedUpsell(line, item, events)
+      ))));
+    const carried = step.expected_items.filter((item) => upsellLines.some((line) => !explained(line) && lineIsDeclinedItem(line, item, events)));
+    if (carried.length) {
+      failures.push(`step ${index + 1}: the order carries upsell package(s) ${carried.map((item) => item.package_id).join(", ")} from the offer this path declined (${redactUrlQuery(step.offer_url)})`);
+    }
+  });
+  return failures;
+}
+
+// lineMatchesExpectedUpsell, without its loose fallbacks: where the package and
+// the line both carry an id, the ids decide; an empty title never matches.
+function lineIsDeclinedItem(line, item, events) {
+  const meta = campaignPackageMeta(events, item.package_id);
+  const pairs = [
+    [meta?.product_sku, line.sku, normalizeLabel],
+    [meta?.product_variant_id, line.variant_id, Number],
+    [meta?.product_id, line.product_id, Number],
+  ].filter(([known, seen]) => known != null && known !== "" && seen != null && seen !== "");
+  if (pairs.length) return pairs.some(([known, seen, normalize]) => normalize(known) === normalize(seen));
+  return Boolean(normalizeLabel(line.title)) && lineMatchesExpectedUpsell(line, item, events);
+}
+
 function declinedUpsellProof(lines, initialLines, events, initialUpsellMutationCount = 0) {
   const mutationSeen = upsellMutationCount(events) > initialUpsellMutationCount;
   if (mutationSeen) return { ok: false, reason: "decline path called order upsell API" };
@@ -9123,6 +9270,7 @@ export const __qaBrowserTestHooks = Object.freeze({
   analyticsParityCaptureAssertions,
   analyticsParityRunnerFailureAssertion,
   acceptedUpsellProof,
+  declinedUpsellLineFailures,
   upsellAcceptStepFailures,
   upsellActionStepFailures,
   commerceStructureAssertionFromEvidence,

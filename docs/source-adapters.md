@@ -70,8 +70,9 @@ choices in one comma-separated flag. A repeated flag keeps only the last list.
   pages.
 - `route_rewrite_policy`: record whether CampaignSpec routes and CTAs were
   rewritten through campaign-aware routes/helpers.
-- `template_files_copied`: records the selected template family as an atomic
-  slice. A complete/verified slice covers `pages`, `_includes`, `_layouts`,
+- `template_files_copied`: `record build` verifies the selected template family
+  from files on disk as an atomic slice. A complete/verified slice covers
+  `pages`, `_includes`, `_layouts`,
   `assets/css`, `assets/js`, and `frontmatter_vocabulary`; its `paths` are
   target-repo-relative proof paths that doctor checks once assembly is complete.
 - `config_script_strategy`: records how campaign config scripts load
@@ -208,6 +209,6 @@ Template families are not single-file dependencies. If setup copies a starter
 family into a target campaign, copy the matching pages together with their
 family `_includes/`, `_layouts/`, `assets/css/`, and `assets/js/` dependencies.
 Copying only `checkout.html` and `receipt.html` can leave Liquid includes,
-layouts, CSS, or JavaScript unresolved. Record the copied or verified target
-paths in `template_files_copied.paths`; a completed report with missing paths is
-not doctor-clean.
+layouts, CSS, or JavaScript unresolved. Run
+`record build --packet <campaign-runtime.build.json>` to record the copied
+files in `template_files_copied`; do not edit the Assembly Report for this field.
