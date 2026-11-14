@@ -540,8 +540,9 @@ truth. Proven differences emit warn-severity `pricing` assertions named
 downsell page that the page does not carry (no `data-next-bundle-vouchers`,
 `data-next-bundles` bundle `vouchers` or `data-next-vouchers` naming it) is a
 `voucher-not-on-page` finding naming the page and the code: an order placed
-there will not get that offer. Those three attributes are all read as voucher
-claims. Decorative claims are ignored, and ambiguous, stale,
+there will not get that offer. On upsell and downsell pages all three
+attributes are read as voucher claims; other pages read only
+`data-next-bundle-vouchers`, as before. Decorative claims are ignored, and ambiguous, stale,
 unresolved, or malformed claims never read as a mismatch: they leave the proof
 incomplete, as above. A page showing a voucher the normalized plan cannot price
 (no calculated pair for its code, for example a live voucher on an upsell)

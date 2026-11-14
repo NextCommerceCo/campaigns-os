@@ -529,7 +529,7 @@ function extractRecurrences(nodeIndex, errors, consumeClaim) {
   return recurrences;
 }
 
-function extractVouchers(nodeIndex, errors, consumeClaim) {
+function extractVouchers(nodeIndex, errors, consumeClaim, { offerPage = false } = {}) {
   const seen = new Set();
   const vouchers = [];
   const add = (value) => {
@@ -541,14 +541,16 @@ function extractVouchers(nodeIndex, errors, consumeClaim) {
     vouchers.push({ code });
   };
   nodeIndex.nodes.forEach((node) => {
-    // The SDK's auto-render bundle config carries vouchers per bundle, and
-    // SDK 0.5 cards carry a comma-separated data-next-vouchers.
-    if (hasAttribute(node, "data-next-bundles")) {
+    // On an upsell or downsell page the SDK's auto-render bundle config can
+    // carry the offer's voucher, and SDK 0.5 cards a comma-separated
+    // data-next-vouchers. Only those pages price a carried voucher, so other
+    // pages read only data-next-bundle-vouchers.
+    if (offerPage && hasAttribute(node, "data-next-bundles")) {
       let bundles = null;
       try { bundles = JSON.parse(node.attrs["data-next-bundles"]); } catch (_error) { /* not a voucher claim */ }
       array(bundles).forEach((bundle) => array(bundle?.vouchers).forEach((value) => typeof value === "string" && add(value)));
     }
-    if (hasAttribute(node, "data-next-vouchers")) String(node.attrs["data-next-vouchers"]).split(",").forEach(add);
+    if (offerPage && hasAttribute(node, "data-next-vouchers")) String(node.attrs["data-next-vouchers"]).split(",").forEach(add);
     if (!hasAttribute(node, "data-next-bundle-vouchers")) return;
     let parsed;
     try {
@@ -585,7 +587,7 @@ export function extractCommercialClaims(html, options = {}) {
   const priceClaims = extractPrices(nodeIndex, consumeClaim);
   const packagePriceClaims = extractPackagePrices(nodeIndex, consumeClaim);
   const recurrenceClaims = extractRecurrences(nodeIndex, extractionErrors, consumeClaim);
-  const vouchers = extractVouchers(nodeIndex, extractionErrors, consumeClaim);
+  const vouchers = extractVouchers(nodeIndex, extractionErrors, consumeClaim, { offerPage: options.pageType === "upsell" || options.pageType === "downsell" });
   return {
     page_id: present(options.pageId) ? String(options.pageId) : null,
     ...(present(options.url) ? { url: String(options.url) } : {}),

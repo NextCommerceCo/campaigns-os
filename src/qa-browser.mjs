@@ -4238,6 +4238,7 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
     events,
     selected_packages: selectedPackages,
     requested_cart: parseCart(args.cart),
+    selected_cards: enteredViaLanding ? entry.selected_cards || [] : [],
   });
   order.verification.total_parity = assessOrderTotalParity({
     display: checkoutDisplay,
@@ -4543,8 +4544,9 @@ async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPack
   // the matching data-next-bundle-card first, strictly, as on a checkout that
   // selects for itself; otherwise the page's pre-selected card stands.
   let cardSelection = null;
+  const selectedCards = [];
   if (control.kind === "checkout_button") {
-    cardSelection = choice.select_card ? await selectPackageCard(page, choice.select_card, []) : null;
+    cardSelection = choice.select_card ? await selectPackageCard(page, choice.select_card, selectedCards) : null;
     control.package_id = choice.select_card?.packageId || await selectedBundleCardPackage(page);
   }
   // Each bundle slot may need a variant (size, colour) before the page lets
@@ -4578,6 +4580,9 @@ async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPack
   return {
     entered: true,
     package_id: control.package_id || null,
+    // The card --select-package chose here, for the order check on checkout,
+    // which renders no selector. Not recorded in the step.
+    selected_cards: selectedCards,
     detail: `entered via ${entryPage.page_type || "entry"} page: clicked "${control.text || "(no text)"}"${control.package_id ? ` (package ${control.package_id})` : ""}, SDK navigated to checkout`,
     evidence: {
       landing_url: redactUrlQuery(entryPage.url),
@@ -6481,7 +6486,7 @@ function selectedBundleDeclarations(display) {
   };
 }
 
-function reconcileOrderAgainstDisplay({ lines = [], display = null, events = null, selected_packages = [], requested_cart = [] } = {}) {
+function reconcileOrderAgainstDisplay({ lines = [], display = null, events = null, selected_packages = [], requested_cart = [], selected_cards = [] } = {}) {
   if (!display) {
     return { comparable: false, reason: "checkout display evidence was not captured for this order" };
   }
@@ -6516,8 +6521,11 @@ function reconcileOrderAgainstDisplay({ lines = [], display = null, events = nul
   // carry that package at that quantity, whichever card, if any, declares it.
   // Beside --select-package, a ref for a package the selected card sells is
   // the flag conflict selected_bundle names (the order is the card's); any
-  // other ref, such as an order bump, must still reach the order.
-  const selectionRefs = strictRefs.size ? new Set([...strictRefs, ...declarations.refs]) : new Set();
+  // other ref, such as an order bump, must still reach the order. A card
+  // chosen on an entry page is not on the checkout display, so its items come
+  // from where it was chosen.
+  const enteredRefs = (selected_cards || []).flatMap((card) => (card?.items || []).map((item) => String(item?.package_id ?? "")));
+  const selectionRefs = strictRefs.size ? new Set([...strictRefs, ...declarations.refs, ...enteredRefs].filter(Boolean)) : new Set();
   const requestedCart = (requested_cart || [])
     .filter((item) => item?.quantityExplicit && !selectionRefs.has(String(item.packageId)));
   const requestedCartByRef = new Map(requestedCart.map((item) => [String(item.packageId), Number(item.quantity || 1)]));
@@ -7977,13 +7985,6 @@ function resolvePrimaryTestOrderTopology(topologies = []) {
 // proof is persisted-order read-back and does not need upsell traversal.
 // The --max-test-orders flood guard applies to the expanded plan count.
 function testOrderPlans(mode, topologies = [], args = {}, options = {}) {
-  // An unsplit shell variable can pass `--cart 1:1,2:1` as one argument, which
-  // parses as a flag named "cart 1:1,2:1": the run would order the default
-  // cart and never check the one asked for.
-  const joined = Object.keys(args).find((key) => /^(cart|select-package)\s/.test(key));
-  if (joined) {
-    throw new Error(`--${joined} arrived as one argument, so qa run cannot read it. Pass --${joined.split(/\s/)[0]} and its value as two separate arguments.`);
-  }
   const normalized = String(mode || "off").toLowerCase();
   const tiersMatch = /^tiers(?::(checkout|common|full))?$/.exec(normalized);
   if (tiersMatch) return specTierPlans(topologies, args, tiersMatch[1] || "checkout", options);

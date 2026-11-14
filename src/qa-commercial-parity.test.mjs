@@ -1191,7 +1191,7 @@ test("a voucher the spec binds to an upsell page that carries no voucher is a pr
   };
   const run = (offer, html) => {
     const resolved = { rawSpec: spec(offer), spec: spec(offer), proxyBase: "https://proxy.example.test" };
-    return runCommercialParity({ resolved, captures: [captureCommercialClaims({ page_id: "upsell-1", url: "https://shop.example.com/upsell-1/" }, html)], fetchImpl });
+    return runCommercialParity({ resolved, captures: [captureCommercialClaims({ page_id: "upsell-1", page_type: "upsell", url: "https://shop.example.com/upsell-1/" }, html)], fetchImpl });
   };
   const voucherOffer = { ref_id: "o1", type: "voucher", code: "SAVE20" };
 
@@ -1225,4 +1225,26 @@ test("a voucher the spec binds to an upsell page that carries no voucher is a pr
   const automatic = await run({ ref_id: "o1", type: "offer", name: "Automatic 20% off" }, '<div data-next-package-id="3">Add the travel case</div>');
   assert.equal(automatic.commercial.status, "pass");
   assert.deepEqual(automatic.assertions, []);
+});
+
+test("on a checkout, bundle-config and SDK 0.5 card vouchers are not voucher claims: prices compare as before", async () => {
+  const spec = rawRecurringSpec();
+  const fetchImpl = async (_url, options) => {
+    const { scenario } = JSON.parse(options.body);
+    return new Response(JSON.stringify(calculateBody(scenario)), { status: 200 });
+  };
+  const rebill = '<div data-next-package-toggle><strong data-next-package-id="5">Game Club</strong> then $29.99 every 30 days</div>';
+  for (const carried of [
+    '<div data-next-bundle-selector data-next-bundles=\'[{"id":"b2","items":[{"packageId":5,"quantity":1}],"vouchers":["FREESHIP"]}]\'></div>',
+    '<div data-next-option="b2" data-next-items="5x1" data-next-vouchers="FREESHIP">Two-pack</div>',
+  ]) {
+    const result = await runCommercialParity({
+      resolved: { rawSpec: spec, spec, proxyBase: "https://proxy.example.test" },
+      captures: [captureCommercialClaims({ page_id: "page_mt104ehn_11", page_type: "checkout" }, `${rebill}${carried}`)],
+      fetchImpl,
+    });
+    assert.equal(result.commercial.status, "pass", carried);
+    assert.equal(result.commercial.extracted_voucher_claims, 0, carried);
+    assert.equal(result.commercial.compared_recurrence_claims, 1, carried);
+  }
 });

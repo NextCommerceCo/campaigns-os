@@ -66,11 +66,10 @@ import {
   forwardRouteTarget,
   inapplicableForwardFields,
   upgradeCampaignSpec,
-  CHECKOUT_FLOW_PAGE_TYPES,
 } from "../campaign-spec/dist/index.js";
 import { declaredOrderBumps, declaredSelectorTiers } from "./commercial-journey.mjs";
 import { evaluateThemeGate } from "./theme-gate.mjs";
-import { findPaymentPage } from "./qa-test-order-topology.mjs";
+import { checkoutPathPages, findPaymentPage } from "./qa-test-order-topology.mjs";
 import { probeRouteUrls, ROUTE_PROBE_DEFAULT_TIMEOUT_MS } from "./qa-route-probe.mjs";
 import { resolveCommerceCatalog, resolvePacketCommerceCatalogPath, resolveTemplateBrandContract } from "./private-template-source.mjs";
 import { computeBuildFingerprint, resolveBuiltSiteScope, topologiesFromBuiltSiteScope } from "./built-site-scope.mjs";
@@ -2358,6 +2357,16 @@ function parityReplayEvidence(bundle) {
 // validator's own.
 const refuseBadOrderCreationLimit = (args) => refusing(() => validatedOrderCreationLimit(args));
 
+// An unsplit shell variable can pass `--cart 1:1,2:1` as one argument, which
+// parses as a flag named "cart 1:1,2:1": the run would order the default cart
+// and never check the one asked for. Refused before anything is read.
+function refuseJoinedCartFlag(args) {
+  const joined = Object.keys(args).find((key) => /^(cart|select-package)\s/.test(key));
+  if (joined) {
+    throw refused(`--${joined} arrived as one argument, so qa run cannot read it. Pass --${joined.split(/\s/)[0]} and its value as two separate arguments.`);
+  }
+}
+
 // `qa run --currency <code>`: one run proves one currency. The code is three
 // ASCII letters, upper-cased; anything else (no value, a list, a symbol) is
 // refused here, before anything is resolved, fetched or launched. So is a run
@@ -2483,6 +2492,7 @@ export async function runQa(args, options = {}) {
   // lives on the creation budget itself, which every browser path builds.
   refuseBadOrderCreationLimit(args);
   refuseBadPageScope(args);
+  refuseJoinedCartFlag(args);
   qaRunCurrency(args);
   // Match dispatch: an active browser mode takes precedence over legacy API
   // diagnostics. Only the selected legacy path requires a cart and API mode.
@@ -3500,8 +3510,8 @@ function testOrderCoverageExceptions({ spec, topologies = [], testOrders = [], a
     }));
   }
   const checkout = findPaymentPage(topologies);
-  const pathPages = ((topologies || []).find((topology) => topology?.pages?.includes(checkout))?.pages || [])
-    .filter((page) => CHECKOUT_FLOW_PAGE_TYPES.includes(page?.page_type));
+  // The pages of the path the run drives to that Checkout, as `next` reads them.
+  const pathPages = checkoutPathPages((topologies || []).find((topology) => topology?.pages?.includes(checkout)), checkout);
   const bumps = [...new Set(pathPages.flatMap((page) => declaredOrderBumps(page)))];
   // Only a comparable display check says what an order held; a run with none
   // makes no claim about the bump either way.

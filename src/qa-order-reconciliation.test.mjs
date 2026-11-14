@@ -498,3 +498,52 @@ test("a spec with a checkout order bump and no order containing it gets one warn
   const unread = { ok: true, verification: { display_reconciliation: { comparable: false, reason: "checkout renders no [data-next-cart-summary] order summary to reconcile against" } } };
   assert.deepEqual(testOrderCoverageExceptions({ spec: {}, topologies, testOrders: [unread] }), []);
 });
+
+test("the order-bump row reads only the path the run drives: a bump on another split path's checkout is not reported", async () => {
+  const { __qaNodeTestHooks } = await import("./qa-node.mjs");
+  const { testOrderCoverageExceptions } = __qaNodeTestHooks;
+  const base = "https://shop.example.com";
+  const topologies = (bumpOn) => [{ pages: [
+    { page_id: "select", page_type: "select", is_entry: true, url: `${base}/select/`, expected_next_url: `${base}/checkout/`, packages: [{ ref_id: "1", qty: 1 }, ...(bumpOn === "select" ? [{ ref_id: "2", qty: 1, is_order_bump: true }] : [])] },
+    { page_id: "checkout", page_type: "checkout", url: `${base}/checkout/`, expected_next_url: `${base}/receipt/`, packages: [] },
+    { page_id: "information", page_type: "checkout_step", is_entry: true, url: `${base}/information/`, expected_next_url: `${base}/billing/`, packages: [{ ref_id: "1", qty: 1 }, ...(bumpOn === "information" ? [{ ref_id: "3", qty: 1, is_order_bump: true }] : [])] },
+    { page_id: "billing", page_type: "checkout", url: `${base}/billing/`, expected_next_url: `${base}/receipt/`, packages: [] },
+    { page_id: "receipt", page_type: "thankyou", url: `${base}/receipt/` },
+  ] }];
+  const orders = [{ ok: true, verification: { display_reconciliation: { comparable: true, ok: true, summary_package_ids: ["1"] } } }];
+
+  assert.deepEqual(testOrderCoverageExceptions({ spec: {}, topologies: topologies("information"), testOrders: orders }), [], "package 3 sits on the path the run does not drive");
+  const [row] = testOrderCoverageExceptions({ spec: {}, topologies: topologies("select"), testOrders: orders });
+  assert.match(row.actual, /order bump package 2\. .* --cart 1:1,2:1\.$/);
+});
+
+test("a card --select-package chose on an entry page: a --cart ref for another item it sells is the named conflict, not judged", () => {
+  const { reconcileOrderAgainstDisplay } = __qaBrowserTestHooks;
+  const events = { responses: [{ body: { packages: [
+    { ref_id: 4, qty: 1, product_sku: "DEMO-STAND", product_id: 104 },
+    { ref_id: 5, qty: 1, product_sku: "DEMO-LAMP", product_id: 105 },
+    { ref_id: 2, qty: 1, product_sku: "DEMO-FILTER", product_id: 102 },
+  ] } }] };
+  // The checkout renders no selector: only the summary of what the entry page put in the cart.
+  const display = {
+    summary_present: true,
+    summary_rows: [{ package_id: "4", text: "Demo Stand" }, { package_id: "5", text: "Demo Lamp" }],
+    selected_bundle_package_ids: [],
+    selected_bundle_items: [],
+    active_toggle_package_ids: [],
+  };
+  const lines = [
+    { title: "Demo Stand", quantity: 1, sku: "DEMO-STAND", product_id: 104 },
+    { title: "Demo Lamp", quantity: 1, sku: "DEMO-LAMP", product_id: 105 },
+  ];
+  const selected_packages = [{ packageId: "4", quantity: 1, quantityExplicit: true }];
+  const selected_cards = [{ bundle_id: "bundle-kit", items: [{ package_id: "4", quantity: 1 }, { package_id: "5", quantity: 1 }] }];
+  const cart = (refs) => refs.map(([packageId, quantity]) => ({ packageId, quantity, quantityExplicit: true }));
+
+  const conflict = reconcileOrderAgainstDisplay({ lines, display, events, selected_packages, selected_cards, requested_cart: cart([["5", 2]]) });
+  assert.equal(conflict.ok, true, JSON.stringify(conflict));
+
+  // A package the chosen card does not sell must still reach the order.
+  const bump = reconcileOrderAgainstDisplay({ lines, display, events, selected_packages, selected_cards, requested_cart: cart([["2", 1]]) });
+  assert.deepEqual(bump.quantity_mismatches.map((entry) => entry.package_ref_id), ["2"]);
+});

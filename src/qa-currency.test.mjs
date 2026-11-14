@@ -65,6 +65,22 @@ test("an invalid --currency is refused with a clear message, before anything res
   }
 });
 
+test("--cart or --select-package joined to its value in one argument is refused as a refusal, before anything is fetched", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => assert.fail(`no request before the arguments are valid (got ${String(url)})`);
+  try {
+    for (const [token, flag] of [["--cart 1:1,2:1", "cart"], ["--select-package 1:2", "select-package"]]) {
+      await assert.rejects(
+        runQaCli(parseArgs(["qa", "run", "--packet", join(tmpdir(), "missing-campaign-runtime.build.json"), token, "--browser", "--test-order", "common", "--no-post-verdict", "--json"])),
+        (error) => error.code === REFUSED_INVOCATION
+          && error.message === `${token} arrived as one argument, so qa run cannot read it. Pass --${flag} and its value as two separate arguments.`,
+      );
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 function captureRefusal(fn) {
   try {
     fn();

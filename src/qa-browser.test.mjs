@@ -394,15 +394,6 @@ test("operator test-order modes plan one order per path carrying the run-global 
   }
 });
 
-test("--cart and its value given as one argument (an unsplit shell variable) is refused before any order, never run as no cart", () => {
-  const { testOrderPlans } = __qaBrowserTestHooks;
-  const topo = [{ pages: [{ page_type: "checkout", url: "https://shop.example.com/checkout/" }] }];
-  // parseArgs reads the single token "--cart 1:1,2:1" as a flag named "cart 1:1,2:1".
-  assert.throws(() => testOrderPlans("common", topo, { "cart 1:1,2:1": true }), /--cart 1:1,2:1 arrived as one argument/);
-  assert.throws(() => testOrderPlans("common", topo, { "select-package 1:2": true }), /--select-package 1:2 arrived as one argument/);
-  assert.equal(testOrderPlans("common", topo, { cart: "1:1,2:1" }).length, 1);
-});
-
 test("test-order 'tiers' plans one strict-selection baseline per declared tier plus one order per declared coupon", () => {
   const { testOrderPlans, planId } = __qaBrowserTestHooks;
   const topo = [{ pages: [
