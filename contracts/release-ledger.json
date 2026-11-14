@@ -4941,8 +4941,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.71.0+agent.11",
-      "changelog_sha256": "ecf553a2dc2067cdd85e560d4f1e4e85f8c0f4a1996493b5cf55bd348073aa5a",
-      "agent_impact": "Three QA results now state what they did not prove. A narrower qa run (fewer test-order paths) that replaces a fuller one for the same build leaves a warning on the QA stage and in next: run the command it names before calling the funnel proven. browser-order-total-parity is a warn exception when the checkout shows no cart total to compare: report it; do not add markup to clear it. On a --test-order tiers run, browser-test-order:tier-coverage (warn) lists tiers with no test order; quantity tiers declared only by an offer are named there and have no test-order mode, so tell the operator they were not ordered. All three are warnings: ready_with_exceptions stays a pass. Refresh installed skills to 1.71.0+skills.4.",
+      "changelog_sha256": "c2b35fc08a4fc9ca2f39aca0b7ad2376c9125786a3268ee4503a7fc00d6952de",
+      "agent_impact": "Three QA results now state what they did not prove. A narrower qa run (fewer test-order paths) that replaces a fuller one for the same build leaves a warning on the QA stage and in next: run the command it names, or a run with at least the stated number of paths, before calling the funnel proven. browser-order-total-parity is a warn exception when the checkout shows no cart total to compare: report it; do not add markup to clear it. On a --test-order tiers run, browser-test-order:tier-coverage (warn) lists, per checkout, the tiers with no test order; quantity tiers declared only by an offer (condition count) are named there, and --cart <ref>:<qty> orders one only where a rendered bundle card carries the package at that quantity, so tell the operator they were not ordered. All three are warnings: ready_with_exceptions stays a pass. Refresh installed skills to 1.71.0+skills.4.",
       "compatibility": "compatible",
       "migration": "Refresh installed skills to 1.71.0+skills.4 before starting a fresh session.",
       "changes": [
@@ -5031,7 +5031,7 @@
           "summary": "Recording a QA run with fewer order paths than the one it replaces for the same build adds a stage warning, and next's done prompt repeats it."
         }
       ],
-      "entry_sha256": "c64b757edd7cc203c4d8f031861b2bd4f543cd1796b977e4b382182955db64f3"
+      "entry_sha256": "9f7029f000e5d599aa2a0c302d404759f9d82b7b7365e2621afad396a1efeb0e"
     }
   ]
 }

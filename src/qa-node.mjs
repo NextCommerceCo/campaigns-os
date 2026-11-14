@@ -3524,58 +3524,73 @@ async function maybeRunTestOrders(
 // the page lists) has no row of its own, so no plan orders it. The row names
 // every tier with no placed order in this run, the way
 // browser-test-order:upsell-action-coverage names an offer page no order
-// declined. Null outside a tiers run, or when every tier has an order.
+// declined. Tiers and orders are read per Checkout, as specTierPlans plans
+// them: an order on one Checkout never covers another's tier. Null outside a
+// tiers run, or when every tier has an order.
+const QUANTITY_OFFER_CONDITIONS = new Set(["count", "count_equal"]);
 export function tierCoverageAssertion({ mode, topologies = [], spec = null, orders = [] } = {}) {
   if (!/^tiers(?::(?:checkout|common|full))?$/.test(String(mode || "").toLowerCase())) return null;
   const identity = (ref, quantity) => (quantity > 1 ? `${ref}:${quantity}` : String(ref));
-  const tiers = new Map();
+  const primary = findPaymentPage(topologies);
+  const pageId = (page) => page?.page_id || page?.label || "checkout";
+  const placed = (Array.isArray(orders) ? orders : []).filter((order) => [order?.ref_id, order?.next_order_id].some((value) => value != null && String(value).trim() !== ""));
+  const checkouts = [];
   for (const topology of Array.isArray(topologies) ? topologies : []) {
     for (const payment of paymentPagesForTopology(topology)) {
+      if (checkouts.some((entry) => entry.page === payment)) continue;
+      const tiers = new Map();
       for (const page of checkoutPathPages(topology, payment)) {
         for (const tier of declaredSelectorTiers(page)) {
           const id = identity(tier.ref, tier.quantity);
           if (!tiers.has(id)) tiers.set(id, { identity: id, ref: String(tier.ref), quantity: tier.quantity, declared_by: "checkout_package" });
         }
       }
+      // Offer quantities are tiers only when this Checkout lists one package:
+      // with several, an offer's count spans packages and names no single tier.
+      const refs = new Set([...tiers.values()].map((tier) => tier.ref));
+      if (refs.size === 1) {
+        const [ref] = refs;
+        for (const offer of Array.isArray(spec?.offers) ? spec.offers : []) {
+          const quantity = Number(offer?.condition?.value);
+          if (!QUANTITY_OFFER_CONDITIONS.has(offer?.condition?.type) || !Number.isInteger(quantity) || quantity < 1) continue;
+          if (!(Array.isArray(offer.packages) ? offer.packages : []).some((pkg) => String(pkg?.package_id ?? "").trim() === ref)) continue;
+          const id = identity(ref, quantity);
+          if (!tiers.has(id)) tiers.set(id, { identity: id, ref, quantity, declared_by: "offer", offer: offer.name || String(offer.ref_id ?? "") || null });
+        }
+      }
+      if (!tiers.size) continue;
+      // A plan on a Checkout other than the primary names it on its source.
+      const ordered = new Set(placed
+        .map((order) => order.plan?.source)
+        .filter((source) => source?.type === "selector_tier"
+          && (source.checkout_page_id != null ? String(source.checkout_page_id) === String(pageId(payment)) : payment === primary))
+        .map((source) => identity(String(source.ref), Number(source.quantity) || 1)));
+      checkouts.push({ page: payment, tiers: [...tiers.values()].map((tier) => ({ ...tier, ordered: ordered.has(tier.identity) })) });
     }
   }
-  // Offer quantities are tiers only when the checkout lists one package:
-  // with several, an offer's count spans packages and names no single tier.
-  const refs = new Set([...tiers.values()].map((tier) => tier.ref));
-  if (refs.size === 1) {
-    const [ref] = refs;
-    for (const offer of Array.isArray(spec?.offers) ? spec.offers : []) {
-      const quantity = Number(offer?.condition?.value);
-      if (offer?.condition?.type !== "count_equal" || !Number.isInteger(quantity) || quantity < 1) continue;
-      if (!(Array.isArray(offer.packages) ? offer.packages : []).some((pkg) => String(pkg?.package_id ?? "").trim() === ref)) continue;
-      const id = identity(ref, quantity);
-      if (!tiers.has(id)) tiers.set(id, { identity: id, ref, quantity, declared_by: "offer", offer: offer.name || String(offer.ref_id ?? "") || null });
-    }
-  }
-  const ordered = new Set();
-  for (const order of Array.isArray(orders) ? orders : []) {
-    if (![order?.ref_id, order?.next_order_id].some((value) => value != null && String(value).trim() !== "")) continue;
-    const source = order.plan?.source;
-    if (source?.type === "selector_tier") ordered.add(identity(String(source.ref), Number(source.quantity) || 1));
-  }
-  const missing = [...tiers.values()].filter((tier) => !ordered.has(tier.identity));
+  const named = checkouts.length > 1;
+  const all = checkouts.flatMap((checkout) => checkout.tiers.map((tier) => ({ ...tier, checkout_page_id: pageId(checkout.page), label: `${named ? `${pageId(checkout.page)} ` : ""}${tier.identity}` })));
+  const missing = all.filter((tier) => !tier.ordered);
   if (!missing.length) return null;
-  const rows = missing.filter((tier) => tier.declared_by === "checkout_package").map((tier) => tier.identity);
+  const rows = [...new Set(missing.filter((tier) => tier.declared_by === "checkout_package").map((tier) => tier.identity))];
   const offered = missing.filter((tier) => tier.declared_by === "offer");
   const notes = [];
   if (rows.length) notes.push(`order ${rows.length > 1 ? "them" : "it"} with ${cmd("qa")} run --packet <packet> --test-order ${String(mode).toLowerCase()} --select-package ${rows.join(",")}`);
-  if (offered.length) notes.push(`${offered.map((tier) => tier.identity).join(", ")} ${offered.length > 1 ? "are quantity tiers" : "is a quantity tier"} only an offer declares: the checkout page lists package ${offered[0].ref} once and --test-order tiers orders only the tiers the page lists, so no test-order mode orders ${offered.length > 1 ? "them" : "it"}`);
+  if (offered.length) {
+    const many = offered.length > 1;
+    notes.push(`${offered.map((tier) => tier.label).join(", ")} ${many ? "are quantity tiers" : "is a quantity tier"} only an offer declares: the checkout lists the package once, so no --test-order tiers plan orders ${many ? "them" : "it"}; --cart <ref>:<qty> orders one only where a rendered bundle card carries the package at that quantity`);
+  }
   return assertion({
     id: "browser-test-order:tier-coverage",
     family: "browser-test-order",
-    page: findPaymentPage(topologies) || { page_id: "checkout" },
+    page: primary || { page_id: "checkout" },
     status: STATUS.WARN,
     severity: SEVERITY.WARN,
     expected: "every tier the CampaignSpec declares for the checkout, as a package row or a quantity offer, has a test order in this run",
-    actual: `no test order in this run for ${missing.length} of ${tiers.size} tier(s): ${missing.map((tier) => `${tier.identity}${tier.offer ? ` (offer ${JSON.stringify(tier.offer)})` : ""}`).join(", ")}; ${notes.join("; ")}`,
+    actual: `no test order in this run for ${missing.length} of ${all.length} tier(s): ${missing.map((tier) => `${tier.label}${tier.offer ? ` (offer ${JSON.stringify(tier.offer)})` : ""}`).join(", ")}; ${notes.join("; ")}`,
     evidence: {
-      tiers: [...tiers.values()].map((tier) => ({ ...tier, ordered: ordered.has(tier.identity) })),
-      not_ordered: missing.map((tier) => tier.identity),
+      tiers: all.map(({ label, ...tier }) => tier),
+      not_ordered: missing.map((tier) => tier.label),
     },
   });
 }

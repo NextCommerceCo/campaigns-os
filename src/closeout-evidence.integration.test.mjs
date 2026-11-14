@@ -240,6 +240,37 @@ test("a narrower QA run that replaces a fuller one for the same build says so on
   assert.ok(!runNext(fixture.packetPath).prompt.includes("replaced a fuller one"));
 });
 
+test("the narrower-run warning suggests the replaced run's own depth, never off", () => {
+  const fixture = target({ orderPathDepth: "off" });
+  runProducer(fixture, { runId: "SYNTHRUN000000000000000001", completedAt: "2026-09-11T02:00:00.000Z", orders: 3 });
+  runProducer(fixture, { runId: "SYNTHRUN000000000000000002", completedAt: "2026-09-11T03:00:00.000Z", orders: 1 });
+  const [warning] = readReport(fixture.reportPath).stages.qa.warnings;
+  assert.match(warning, /this run 1\. .* Prove them again with a QA run that places at least 3 test order paths\.$/);
+  assert.doesNotMatch(warning, /--test-order off/);
+});
+
+test("re-recording the verdict that carries the narrower-run warning leaves the report unchanged", () => {
+  const fixture = target();
+  runProducer(fixture, { runId: "SYNTHRUN000000000000000001", completedAt: "2026-09-11T02:00:00.000Z", orders: 3 });
+  const narrower = runProducer(fixture, { runId: "SYNTHRUN000000000000000002", completedAt: "2026-09-11T03:00:00.000Z", orders: 1 });
+  assert.equal(readReport(fixture.reportPath).stages.qa.warnings.length, 1);
+  const before = readFileSync(fixture.reportPath, "utf8");
+  assert.equal(recordQaStageOutcome({ packet: fixture.packetPath, _: [] }, { verdict: narrower.verdict, local_path: narrower.localPath }), true);
+  assert.equal(readFileSync(fixture.reportPath, "utf8"), before, "re-recording the same verdict leaves the report as it was");
+});
+
+test("a narrower run after a page-scoped record is not compared with the purchase proof that record carries", () => {
+  const fixture = target();
+  runProducer(fixture, { runId: "SYNTHRUN000000000000000001", completedAt: "2026-09-11T02:00:00.000Z", orders: 3 });
+  // A page-scoped record keeps the full run's purchase proof under its own run id.
+  const report = readReport(fixture.reportPath);
+  report.stages.qa.verdict_run_id = "SYNTHRUN000000000000000009";
+  report.stages.qa.evidence.page_scope = { pages: ["checkout"], owed_pages: ["checkout"], base_build_fingerprint: `sha256:${"b".repeat(64)}` };
+  writeFileSync(fixture.reportPath, JSON.stringify(report, null, 2));
+  runProducer(fixture, { runId: "SYNTHRUN000000000000000002", completedAt: "2026-09-11T03:00:00.000Z", orders: 1 });
+  assert.deepEqual(readReport(fixture.reportPath).stages.qa.warnings, []);
+});
+
 test("a closed Run Record for the current verdict stops next demanding a second one", () => {
   const fixture = target();
   runProducer(fixture, { runId: "SYNTHRUN000000000000000001", completedAt: "2026-09-11T02:00:00.000Z" });

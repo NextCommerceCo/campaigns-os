@@ -782,10 +782,10 @@ export function recordQaStageOutcome(args, result) {
       const evidence = qaStageGateEvidence(verdict, report, result);
       const onBaseline = Boolean(pageScope && report.stages?.qa?.baseline_accepted_at);
       const narrower = pageScope || verdict.disposition === "blocked" ? null : narrowerQaWarning(report.stages?.qa, {
+        runId: optionalString(verdict.run_id),
         buildFingerprint: currentBuildFingerprint(report),
         specMaterialHash: qaStamps.source_spec_material_hash,
         executed: summarizePurchaseProof({ verdict }).order_paths_executed,
-        depth: optionalString(packet.qa?.proof_policy?.order_path_depth),
       });
       return settleQaBaseline(onBaseline, recordProducerStageOutcome(report, {
         stage: "qa",
@@ -854,25 +854,40 @@ export function recordQaStageOutcome(args, result) {
   }
 }
 
-// QC results are written on every QA record, with the build
-// they were measured against, whether or not a gate outcome is recorded: a
-// record without qc_results reads as captured by an earlier version. The rows
-// come from the QA run's own result; readers re-derive them from the full
-// verdict's qc.* assertions.
 // A run with fewer test order paths than the QA recorded for the same build
 // and spec replaces it as the current proof (its own coverage rows name what
 // it did not exercise). The QA stage warning says a fuller proof was
 // replaced, and `next` repeats it when the pipeline is otherwise complete.
 const NARROWER_QA_PREFIX = "This QA run replaced a fuller one";
-function narrowerQaWarning(previous, { buildFingerprint, specMaterialHash, executed, depth }) {
-  if (!isObject(previous) || !String(previous.status || "").startsWith("completed")) return null;
+const DEPTHS_WITHOUT_ORDERS = new Set(["off", "none", "skip", "not_required", "unspecified"]);
+function narrowerQaWarning(previous, { runId, buildFingerprint, specMaterialHash, executed }) {
+  if (!isObject(previous)) return null;
+  // Re-recording the same verdict restates the warning it already carries,
+  // so the timestamp-only re-record stays unchanged.
+  if (runId && previous.verdict_run_id === runId) {
+    return (Array.isArray(previous.warnings) ? previous.warnings : []).find((warning) => typeof warning === "string" && warning.startsWith(NARROWER_QA_PREFIX)) || null;
+  }
+  if (!String(previous.status || "").startsWith("completed")) return null;
+  // A page-scoped record keeps the purchase proof of the full run it extends,
+  // placed against another build and under another run id: it names neither
+  // the run nor the build those paths belong to, so it is not compared.
+  if (isObject(previous.evidence?.page_scope)) return null;
   if (!buildFingerprint || previous.evidence?.qc_build_fingerprint !== buildFingerprint) return null;
   if (specMaterialHash == null || JSON.stringify(previous.source_spec_material_hash) !== JSON.stringify(specMaterialHash)) return null;
   const before = previous.purchase_proof?.order_paths_executed;
   if (!Number.isInteger(before) || !Number.isInteger(executed) || executed >= before) return null;
-  return `${NARROWER_QA_PREFIX} for the same build: run ${singleLineField(previous.verdict_run_id, "(unrecorded)")} placed ${before} test order path(s), this run ${executed}. This run's verdict is now the QA proof, and the paths only the earlier run placed are not in it. Run ${cmd("qa")} run --packet <packet> --test-order ${depth || "common"} to prove them again.`;
+  const depth = optionalString(previous.purchase_proof?.declared_order_path_depth);
+  const rerun = depth && !DEPTHS_WITHOUT_ORDERS.has(depth.toLowerCase())
+    ? `Run ${cmd("qa")} run --packet <packet> --test-order ${depth} to prove them again.`
+    : `Prove them again with a QA run that places at least ${before} test order paths.`;
+  return `${NARROWER_QA_PREFIX} for the same build: run ${singleLineField(previous.verdict_run_id, "(unrecorded)")} placed ${before} test order path(s), this run ${executed}. This run's verdict is now the QA proof, and the paths only the earlier run placed are not in it. ${rerun}`;
 }
 
+// QC results are written on every QA record, with the build
+// they were measured against, whether or not a gate outcome is recorded: a
+// record without qc_results reads as captured by an earlier version. The rows
+// come from the QA run's own result; readers re-derive them from the full
+// verdict's qc.* assertions.
 function qaStageGateEvidence(verdict, report, result = null) {
   const gates = {};
   const placeholderText = summarizePlaceholderTextGate(verdict);

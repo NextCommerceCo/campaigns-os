@@ -612,9 +612,9 @@ test("a tiers run names the quantity tiers only an offer declares, and is quiet 
       packages: [{ ref_id: 1, qty: 1, name: "Widget" }, { ref_id: 2, qty: 1, is_order_bump: true, name: "Add-on" }] },
     { page_id: "receipt", page_type: "thankyou", url: route("receipt/") },
   ] }];
-  const quantityOffer = (ref, count) => ({ ref_id: ref, name: `Buy ${count}`, condition: { type: "count_equal", value: count }, packages: [{ package_id: 1 }] });
+  const quantityOffer = (ref, count, type = "count", pkg = 1) => ({ ref_id: ref, name: `Buy ${count}`, condition: { type, value: count }, packages: [{ package_id: pkg }] });
   const spec = { offers: [quantityOffer(1, 1), quantityOffer(2, 2), quantityOffer(3, 3)] };
-  const placed = (ref, quantity) => ({ ref_id: `ref-${ref}-${quantity || 1}`, plan: { source: { type: "selector_tier", ref, ...(quantity ? { quantity } : {}) } } });
+  const placed = (ref, quantity, checkoutPageId) => ({ ref_id: `ref-${ref}-${quantity || 1}`, plan: { source: { type: "selector_tier", ref, ...(quantity ? { quantity } : {}), ...(checkoutPageId ? { checkout_page_id: checkoutPageId } : {}) } } });
   const run = async (resolved, orders, mode = "tiers") => {
     const assertions = [];
     await maybeRunTestOrders({ args: { "test-order": mode }, resolved, runId: "run-tiers", assertions }, {
@@ -628,7 +628,9 @@ test("a tiers run names the quantity tiers only an offer declares, and is quiet 
   assert.equal(row.status, "warn");
   assert.equal(row.severity, "warn");
   assert.deepEqual(row.evidence.not_ordered, ["1:2", "1:3"]);
-  assert.equal(row.actual, 'no test order in this run for 2 of 3 tier(s): 1:2 (offer "Buy 2"), 1:3 (offer "Buy 3"); 1:2, 1:3 are quantity tiers only an offer declares: the checkout page lists package 1 once and --test-order tiers orders only the tiers the page lists, so no test-order mode orders them');
+  assert.equal(row.actual, 'no test order in this run for 2 of 3 tier(s): 1:2 (offer "Buy 2"), 1:3 (offer "Buy 3"); 1:2, 1:3 are quantity tiers only an offer declares: the checkout lists the package once, so no --test-order tiers plan orders them; --cart <ref>:<qty> orders one only where a rendered bundle card carries the package at that quantity');
+  const connectorSpelling = await run({ topologies, spec: { offers: [quantityOffer(2, 2, "count_equal")] } }, [placed("1")]);
+  assert.deepEqual(connectorSpelling.evidence.not_ordered, ["1:2"], "the count_equal spelling names the same tier");
 
   assert.equal(await run({ topologies, spec }, [placed("1")], "common"), undefined, "only a tiers run claims tier coverage");
   const rowTiers = [{ ...topologies[0], pages: [{ ...topologies[0].pages[0], packages: [
@@ -637,4 +639,29 @@ test("a tiers run names the quantity tiers only an offer declares, and is quiet 
   assert.equal(await run({ topologies: rowTiers, spec }, [placed("1"), placed("1", 2), placed("1", 3)]), undefined);
   const narrowed = await run({ topologies: rowTiers, spec }, [placed("1")]);
   assert.match(narrowed.actual, /^no test order in this run for 2 of 3 tier\(s\): 1:2, 1:3; order them with .* qa run --packet <packet> --test-order tiers --select-package 1:2,1:3$/);
+});
+
+test("tier coverage is read per Checkout: each funnel's single package gets its offer tiers, and an order covers only its own Checkout", async () => {
+  const checkoutFunnel = (id, ref) => ({ funnel_id: id, pages: [
+    { page_id: `checkout-${id}`, page_type: "checkout", url: route(`${id}/checkout/`), expected_next_url: route(`${id}/receipt/`), packages: [{ ref_id: ref, qty: 1 }] },
+    { page_id: `receipt-${id}`, page_type: "thankyou", url: route(`${id}/receipt/`) },
+  ] });
+  const topologies = [checkoutFunnel("a", 1), checkoutFunnel("b", 1)];
+  const offer = (ref, count, pkg) => ({ ref_id: ref, name: `Buy ${count}`, condition: { type: "count", value: count }, packages: [{ package_id: pkg }] });
+  const placed = (ref, quantity, checkoutPageId) => ({ ref_id: `ref-${ref}`, plan: { source: { type: "selector_tier", ref, ...(quantity ? { quantity } : {}), ...(checkoutPageId ? { checkout_page_id: checkoutPageId } : {}) } } });
+  const run = async (resolved, orders) => {
+    const assertions = [];
+    await maybeRunTestOrders({ args: { "test-order": "tiers" }, resolved, runId: "run-tiers", assertions }, {
+      async runBrowser() { return { orders, assertions: [] }; },
+    });
+    return assertions.find((entry) => entry.id === "browser-test-order:tier-coverage");
+  };
+  // Both funnels list package 1: an order on the primary Checkout leaves the
+  // second Checkout's tier unordered.
+  const shared = await run({ topologies, spec: { offers: [] } }, [placed("1")]);
+  assert.deepEqual(shared.evidence.not_ordered, ["checkout-b 1"]);
+  // Each funnel lists a different single package, and each gets its offer tiers.
+  const distinct = [checkoutFunnel("a", 1), checkoutFunnel("b", 5)];
+  const row = await run({ topologies: distinct, spec: { offers: [offer(1, 2, 1), offer(2, 2, 5)] } }, [placed("1"), placed("5", undefined, "checkout-b")]);
+  assert.deepEqual(row.evidence.not_ordered, ["checkout-a 1:2", "checkout-b 5:2"]);
 });

@@ -6,7 +6,7 @@ Notable supported-surface changes are recorded here.
 
 ### Fixed
 
-- Three places where a QA result read as more proof than it held now say so. When a QA run with fewer test-order paths replaces a fuller one for the same build, the QA stage carries a warning and `next` repeats it with the command that proves the dropped paths again; it used to read "Pipeline complete". When the checkout shows no cart total to compare the order total with, `browser-order-total-parity` is a `warn` exception ("the order total was not compared with a displayed total"), where it used to be a skipped row that no exception list showed. On a `--test-order tiers` run, a new warn row `browser-test-order:tier-coverage` names the tiers with no test order, including quantity tiers that only an offer declares, which `tiers` does not order because the checkout page lists the package once.
+- Three places where a QA result read as more proof than it held now say so. When a QA run with fewer test-order paths replaces a fuller one for the same build, the QA stage carries a warning and `next` repeats it with the command that proves the dropped paths again; it used to read "Pipeline complete". When the checkout shows no cart total to compare the order total with, `browser-order-total-parity` is a `warn` exception ("the order total was not compared with a displayed total"), where it used to be a skipped row that no exception list showed. On a `--test-order tiers` run, a new warn row `browser-test-order:tier-coverage` names the tiers with no test order, including quantity tiers that only an offer declares, which `tiers` does not order because the checkout page lists the package once; coverage is read per checkout.
 
 ## [1.71.0+agent.1] - 2026-11-13
 
