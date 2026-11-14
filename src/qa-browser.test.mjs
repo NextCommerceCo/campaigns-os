@@ -911,7 +911,7 @@ function checkoutStructureWithAddressSelectors(addressSelectors) {
   ]);
   // A rule with several selectors passes when any one of them is rendered,
   // as the browser evaluator does.
-  const checks = ["requiredVisibleSelectors", "requiredNonEmptySelectors"].flatMap((key) => contract[key].map((rule) => {
+  const checks = ["requiredSelectors", "requiredVisibleSelectors", "requiredNonEmptySelectors"].flatMap((key) => (contract[key] || []).map((rule) => {
     const selectors = rule.selectors || [rule.selector];
     const found = selectors.some((selector) => present.has(selector));
     return { name: rule.name, selectors, status: found ? "pass" : "fail", count: found ? 1 : 0, visible_count: found ? 1 : 0 };
@@ -956,8 +956,9 @@ test("checkout structure rejects name and phone row markers with neither the SDK
 test("the address rule lists the selectors the form fill uses for address1", async () => {
   const { checkoutFieldSelectors } = await import("./campaign-cart-05.mjs");
   const catalog = JSON.parse(readFileSync(new URL("../contracts/commerce-surface-catalog.json", import.meta.url), "utf8"));
-  const rule = catalog.families["shop-single-step"].agentContract.qaStructure.checkout.requiredVisibleSelectors
-    .concat(catalog.families["shop-single-step"].agentContract.qaStructure.checkout.requiredNonEmptySelectors)
+  // Listed under requiredSelectors: existence, not visibility, because a
+  // progressive-reveal checkout hides its address inputs until a country is chosen.
+  const rule = catalog.families["shop-single-step"].agentContract.qaStructure.checkout.requiredSelectors
     .find((entry) => entry.name === "shipping address block or bound address field");
   assert.deepEqual(rule.selectors, ['[data-next-address="shipping"]', ...checkoutFieldSelectors("address1")]);
 });

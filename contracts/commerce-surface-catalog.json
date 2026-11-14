@@ -809,6 +809,17 @@
         ],
         "qaStructure": {
           "checkout": {
+            "requiredSelectors": [
+              {
+                "name": "shipping address block or bound address field",
+                "selectors": [
+                  "[data-next-address=\"shipping\"]",
+                  "[data-next-checkout-field=\"address1\"]",
+                  "[data-next-checkout-field=\"line1\"]",
+                  "[data-next-field=\"line1\"]"
+                ]
+              }
+            ],
             "description": "Rendered Olympus checkout must adopt the starter-template shell, not a custom shell with only borrowed partials.",
             "requiredVisibleSelectors": [
               {
@@ -826,15 +837,6 @@
               {
                 "name": "checkout form",
                 "selector": "[data-next-checkout=\"form\"]"
-              },
-              {
-                "name": "shipping address block or bound address field",
-                "selectors": [
-                  "[data-next-address=\"shipping\"]",
-                  "[data-next-checkout-field=\"address1\"]",
-                  "[data-next-checkout-field=\"line1\"]",
-                  "[data-next-field=\"line1\"]"
-                ]
               },
               {
                 "name": "checkout payment submit",
@@ -1239,6 +1241,17 @@
         ],
         "qaStructure": {
           "checkout": {
+            "requiredSelectors": [
+              {
+                "name": "shipping address block or bound address field",
+                "selectors": [
+                  "[data-next-address=\"shipping\"]",
+                  "[data-next-checkout-field=\"address1\"]",
+                  "[data-next-checkout-field=\"line1\"]",
+                  "[data-next-field=\"line1\"]"
+                ]
+              }
+            ],
             "description": "Rendered Apollo checkout must adopt the starter-template shell, not a custom shell with only borrowed partials.",
             "requiredVisibleSelectors": [
               {
@@ -1256,15 +1269,6 @@
               {
                 "name": "checkout form",
                 "selector": "[data-next-checkout=\"form\"]"
-              },
-              {
-                "name": "shipping address block or bound address field",
-                "selectors": [
-                  "[data-next-address=\"shipping\"]",
-                  "[data-next-checkout-field=\"address1\"]",
-                  "[data-next-checkout-field=\"line1\"]",
-                  "[data-next-field=\"line1\"]"
-                ]
               },
               {
                 "name": "checkout payment submit",
@@ -1556,6 +1560,17 @@
         ],
         "qaStructure": {
           "checkout": {
+            "requiredSelectors": [
+              {
+                "name": "shipping address block or bound address field",
+                "selectors": [
+                  "[data-next-address=\"shipping\"]",
+                  "[data-next-checkout-field=\"address1\"]",
+                  "[data-next-checkout-field=\"line1\"]",
+                  "[data-next-field=\"line1\"]"
+                ]
+              }
+            ],
             "description": "Rendered Demeter checkout must adopt the starter-template shell, not a custom shell with only borrowed partials.",
             "requiredVisibleSelectors": [
               {
@@ -1573,15 +1588,6 @@
               {
                 "name": "checkout form",
                 "selector": "[data-next-checkout=\"form\"]"
-              },
-              {
-                "name": "shipping address block or bound address field",
-                "selectors": [
-                  "[data-next-address=\"shipping\"]",
-                  "[data-next-checkout-field=\"address1\"]",
-                  "[data-next-checkout-field=\"line1\"]",
-                  "[data-next-field=\"line1\"]"
-                ]
               },
               {
                 "name": "checkout payment submit",
@@ -1864,6 +1870,17 @@
         ],
         "qaStructure": {
           "checkout": {
+            "requiredSelectors": [
+              {
+                "name": "shipping address block or bound address field",
+                "selectors": [
+                  "[data-next-address=\"shipping\"]",
+                  "[data-next-checkout-field=\"address1\"]",
+                  "[data-next-checkout-field=\"line1\"]",
+                  "[data-next-field=\"line1\"]"
+                ]
+              }
+            ],
             "description": "Rendered shop single-step checkout must adopt the starter-template shell, not a custom shell with only borrowed partials.",
             "requiredVisibleSelectors": [
               {
@@ -1881,15 +1898,6 @@
               {
                 "name": "checkout form",
                 "selector": "[data-next-checkout=\"form\"]"
-              },
-              {
-                "name": "shipping address block or bound address field",
-                "selectors": [
-                  "[data-next-address=\"shipping\"]",
-                  "[data-next-checkout-field=\"address1\"]",
-                  "[data-next-checkout-field=\"line1\"]",
-                  "[data-next-field=\"line1\"]"
-                ]
               },
               {
                 "name": "checkout payment submit",
@@ -2211,6 +2219,17 @@
         ],
         "qaStructure": {
           "checkout": {
+            "requiredSelectors": [
+              {
+                "name": "shipping address block or bound address field",
+                "selectors": [
+                  "[data-next-address=\"shipping\"]",
+                  "[data-next-checkout-field=\"address1\"]",
+                  "[data-next-checkout-field=\"line1\"]",
+                  "[data-next-field=\"line1\"]"
+                ]
+              }
+            ],
             "description": "Rendered Olympus MV single-step checkout must adopt the starter-template shell, not a custom shell with only borrowed partials.",
             "requiredVisibleSelectors": [
               {
@@ -2228,15 +2247,6 @@
               {
                 "name": "checkout form",
                 "selector": "[data-next-checkout=\"form\"]"
-              },
-              {
-                "name": "shipping address block or bound address field",
-                "selectors": [
-                  "[data-next-address=\"shipping\"]",
-                  "[data-next-checkout-field=\"address1\"]",
-                  "[data-next-checkout-field=\"line1\"]",
-                  "[data-next-field=\"line1\"]"
-                ]
               },
               {
                 "name": "checkout payment submit",
@@ -2652,6 +2662,17 @@
         ],
         "qaStructure": {
           "checkout": {
+            "requiredSelectors": [
+              {
+                "name": "shipping address block or bound address field",
+                "selectors": [
+                  "[data-next-address=\"shipping\"]",
+                  "[data-next-checkout-field=\"address1\"]",
+                  "[data-next-checkout-field=\"line1\"]",
+                  "[data-next-field=\"line1\"]"
+                ]
+              }
+            ],
             "description": "Rendered Apollo MV single-step checkout must adopt the starter-template shell, not a custom shell with only borrowed partials.",
             "requiredVisibleSelectors": [
               {
@@ -2669,15 +2690,6 @@
               {
                 "name": "checkout form",
                 "selector": "[data-next-checkout=\"form\"]"
-              },
-              {
-                "name": "shipping address block or bound address field",
-                "selectors": [
-                  "[data-next-address=\"shipping\"]",
-                  "[data-next-checkout-field=\"address1\"]",
-                  "[data-next-checkout-field=\"line1\"]",
-                  "[data-next-field=\"line1\"]"
-                ]
               },
               {
                 "name": "checkout payment submit",
@@ -3018,6 +3030,17 @@
         ],
         "qaStructure": {
           "checkout": {
+            "requiredSelectors": [
+              {
+                "name": "shipping address block or bound address field",
+                "selectors": [
+                  "[data-next-address=\"shipping\"]",
+                  "[data-next-checkout-field=\"address1\"]",
+                  "[data-next-checkout-field=\"line1\"]",
+                  "[data-next-field=\"line1\"]"
+                ]
+              }
+            ],
             "description": "Rendered Olympus MV two-step checkout must adopt the starter-template shell, not a custom shell with only borrowed partials.",
             "requiredVisibleSelectors": [
               {
@@ -3035,15 +3058,6 @@
               {
                 "name": "checkout form",
                 "selector": "[data-next-checkout=\"form\"]"
-              },
-              {
-                "name": "shipping address block or bound address field",
-                "selectors": [
-                  "[data-next-address=\"shipping\"]",
-                  "[data-next-checkout-field=\"address1\"]",
-                  "[data-next-checkout-field=\"line1\"]",
-                  "[data-next-field=\"line1\"]"
-                ]
               },
               {
                 "name": "checkout payment submit",

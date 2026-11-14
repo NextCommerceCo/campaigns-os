@@ -62,9 +62,10 @@ function replaceOnce(source, from, to) {
 // The olympus checkout contract reads the wrapper, both layout columns and the
 // SDK shipping address block, form, submit and cart summary.
 async function structureRow(mutate = (source) => source) {
-  const source = (await readFile(FIXTURE, "utf8")).replace('<form data-next-checkout="form">',
-    '<form data-next-checkout="form"><div data-next-address="shipping">Shipping address</div>');
-  html = mutate(source);
+  // The fixture has no SDK address block: its address inputs are bound one by
+  // one, which satisfies the address rule (checked for existence, since a
+  // progressive-reveal checkout hides them until a country is chosen).
+  html = mutate(await readFile(FIXTURE, "utf8"));
   const page = {
     page_id: "checkout",
     page_type: "checkout",
@@ -176,6 +177,21 @@ test("required fields hidden until a country is chosen still count as bound", as
   assert.deepEqual(failedSelectors(row), FAMILY_SHELL_SELECTORS);
   assert.equal(row.status, "warn");
   assert.equal(row.evidence.behaviour?.fields_bound?.status, "pass");
+});
+
+test("a checkout with neither the SDK address block nor a bound address input fails the address rule", async (t) => {
+  if (!await chromiumAvailable()) return t.skip("Chromium is unavailable; the browser CI lane runs this test");
+  const row = await structureRow((source) => source.replace(/data-next-checkout-field="address1"/g, 'data-unbound="address1"'));
+  assert.equal(row.status, "fail");
+  assert.ok(failedSelectors(row).includes('[data-next-address="shipping"]'), JSON.stringify(failedSelectors(row)));
+});
+
+test("the SDK address block alone satisfies the address rule", async (t) => {
+  if (!await chromiumAvailable()) return t.skip("Chromium is unavailable; the browser CI lane runs this test");
+  const row = await structureRow((source) => source
+    .replace(/data-next-checkout-field="address1"/g, 'data-unbound="address1"')
+    .replace('<form data-next-checkout="form">', '<form data-next-checkout="form"><div data-next-address="shipping"></div>'));
+  assert.ok(!failedSelectors(row).includes('[data-next-address="shipping"]'), JSON.stringify(failedSelectors(row)));
 });
 
 test("a form without data-next-checkout keeps the missing family shell a failure", async (t) => {

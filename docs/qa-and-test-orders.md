@@ -670,9 +670,11 @@ the checkout does rather than family class names. Family shell is a fixed list:
 `.checkout__layout`, `.checkout__column--left`, `.checkout__column--right` and
 the family include's `[data-next-component="shipping-field-row"]` marker in
 older catalog snapshots. The current address rule passes when the checkout
-shows either the SDK's `[data-next-address="shipping"]` block or an address
+has either the SDK's `[data-next-address="shipping"]` block or an address
 input bound one by one (`[data-next-checkout-field="address1"]`, or its SDK
-0.5 spellings); name and phone row markers do not satisfy it. When
+0.5 spellings). It checks that one exists, not that it is visible, because a
+progressive-reveal checkout hides its address inputs until a country is
+chosen. Name and phone row markers do not satisfy it. When
 family shell is all that is missing, the row is `warn` if the checkout also
 passes three behaviour checks: a `<form data-next-checkout="form">` exists;
 `email`, `fname`, `lname`, `country`, `address1`, `city`, `province` and
