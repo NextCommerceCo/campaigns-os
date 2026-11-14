@@ -13,7 +13,9 @@
 // packet's production URL stays strict. Every other check keeps its meaning.
 //
 // Doctor and QA apply this to the gates they evaluate; `next` reads doctor's
-// gates. Recording a stage (`record polish`) and the waiver commands keep the
+// gates. All-template builds are excluded by the Polish gate itself; this
+// preview policy applies to missing evidence for mapped design routes.
+// Recording a stage (`record polish`) and the waiver commands keep the
 // strict gates; `record deploy` follows next past a carried-forward polish.
 import { isLocalServePacket } from "./local-proof.mjs";
 import { isLoopbackHostname } from "./remit.mjs";
@@ -164,6 +166,7 @@ export function applyLocalPreviewToCheckpoint(gate, { packet, report, baseUrl = 
 // whatever it owns from the checkpoint was carried forward too. Advisory
 // Polish for a page-only change is never a ladder step.
 export function polishCarriedForwardForLadder(report, gate) {
+  if (gate?.status === "not_applicable" && gate?.result === "excluded" && gate?.reason_code === "template_stock") return true;
   if (gate?.status === CARRIED_FORWARD && gate.carried_forward?.policy === PAGE_ONLY_CHANGE_POLICY) return true;
   return gate?.status === CARRIED_FORWARD
     && !report?.theme?.waiver

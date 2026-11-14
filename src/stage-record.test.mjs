@@ -14,7 +14,7 @@ import Ajv2020 from "ajv/dist/2020.js";
 
 import { ADAPTER_DECISION_SCALAR_VALUES } from "./adapter-decision-contract.mjs";
 import { computeBuildFingerprint } from "./built-site-scope.mjs";
-import { parseArgs, polishCaptureCommand, recordQaStageOutcome, resultTextLines } from "./cli.mjs";
+import { parseArgs, polishCaptureCommand, formatPolishCaptureText, recordQaStageOutcome, resultTextLines } from "./cli.mjs";
 import { currentPacketInputs } from "./input-currency.mjs";
 import { evaluateRecordedHiddenEagerMediaCheckpoint } from "./polish-node.mjs";
 import { resolveInvocationPolicy } from "./invocation.mjs";
@@ -262,23 +262,22 @@ test("a packet preview URL without record deploy still leaves deploy next", asyn
   });
 });
 
-test("an all-template zero-cell capture keeps the local deploy path open", async () => {
+test("all-template Polish closes as excluded without captures and deploy stays open", async () => {
   await withLifecycle(async (f) => {
     mutateJson(f.packetPath, (packet) => {
       packet.deploy.target = "local-serve";
       packet.source_html.pages = packet.source_html.pages.map((page) => ({ page_id: page.page_id, skip_reason: "template stock" }));
     });
     recordThroughBuild(f);
-    mutateJson(f.reportPath, (report) => {
-      report.stages.polish.evidence = { visual_review: {
-        readability: buildReadabilityRecord({ buildFingerprint: report.stages.assembly.build_fingerprint, slug: f.slug, routes: [`/${f.slug}/`], cells: [] }),
-        captures: syntheticCapturesRecord(report, { targetRepo: f.target }),
-      } };
-    });
-    assert.equal(nextStage(f).stage, "deploy");
-    const polish = record(f, "polish", ["--evidence", POLISH_EVIDENCE]);
-    assert.notEqual(polish.status, 0);
-    assert.match(polish.stderr, /polish\.hidden_eager_media\.no_capturable_routes/);
+    const polish = record(f, "polish", ["--evidence", POLISH_EVIDENCE, "--json"]);
+    console.log(`all-template record polish: exit=${polish.status}; ${polish.stderr.split("\n").filter((line) => /polish\./.test(line)).join(" | ")}`);
+    assert.equal(polish.status, 0, polish.stderr);
+    const stage = readJson(f.reportPath).stages.polish;
+    assert.equal(stage.status, "skipped");
+    assert.equal(stage.evidence.result, "excluded");
+    assert.equal(stage.evidence.reason_code, "template_stock");
+    assert.match(stage.skip_reason, /Every mapped page is template stock/);
+    assert.ok(validReport(readJson(f.reportPath)), JSON.stringify(validReport.errors));
     assert.equal(nextStage(f).stage, "deploy");
     const site = await serveSite(f);
     try {
@@ -288,6 +287,69 @@ test("an all-template zero-cell capture keeps the local deploy path open", async
     } finally {
       await site.close();
     }
+  });
+});
+
+test("all-template stale source routes back to build and refuses deploy", async () => {
+  await guardedLifecycle(async (f) => {
+    mutateJson(f.packetPath, (packet) => {
+      packet.source_html.pages = packet.source_html.pages.map((page) => ({ page_id: page.page_id, skip_reason: "Template stock." }));
+    });
+    const args = hostedDeployArgs(f);
+    recordThroughBuild(f);
+    recordOk(f, "polish", ["--evidence", POLISH_EVIDENCE]);
+    assert.equal(nextStage(f).stage, "deploy");
+    mutateJson(f.reportPath, (report) => { report.stages.assembly.source_package_material_fingerprint = `sha256:${"0".repeat(64)}`; });
+    const stage = nextStage(f).stage;
+    const deployed = hostedDeployCli(f, args);
+    console.log(`all-template stale source: next=${stage}; record deploy exit=${deployed.status}`);
+    assert.equal(stage, "build");
+    assert.notEqual(deployed.status, 0, deployed.stdout);
+    assert.match(deployed.stderr, /polish.assembly_source_package_stale/);
+  });
+});
+
+test("all-template polish capture closes itself when a browser is unavailable", async () => {
+  await withLifecycle(async (f) => {
+    mutateJson(f.packetPath, (packet) => {
+      packet.source_html.pages = packet.source_html.pages.map((page) => ({ page_id: page.page_id, skip_reason: "template stock" }));
+    });
+    recordThroughBuild(f);
+    console.log(`all-template next before capture: ${nextStage(f).stage}`);
+    let browserStarts = 0;
+    const result = await polishCaptureCommand({ _: ["polish", "capture"], packet: f.packetPath, "base-url": "https://shop.example.com" }, {
+      createBrowserAdapter: async () => { browserStarts += 1; throw new Error("Synthetic browser unavailable."); },
+    });
+    console.log(`all-template polish capture: ok=${result.ok}; status=${result.status}; result=${result.result}`);
+    assert.equal(browserStarts, 1);
+    assert.equal(result.result, "excluded");
+    assert.equal(result.reason_code, "template_stock");
+    const lines = formatPolishCaptureText(result).split("\n");
+    assert.equal(lines.length, 1);
+    assert.match(lines[0], /Polish is not applicable.*Every mapped page is template stock/);
+    assert.match(lines[0], /Readability was not measured/);
+    const cli = runCli(["polish", "capture", "--packet", f.packetPath, "--base-url", "http://127.0.0.1:1"], f.dir);
+    assert.equal(cli.status, 0, cli.stderr);
+    assert.equal(cli.stdout.trim().split("\n").length, 1);
+    assert.match(cli.stdout, /Polish is not applicable.*Every mapped page is template stock/);
+    assert.match(cli.stdout, /Readability was not measured/);
+    assert.equal(readJson(f.reportPath).stages.polish.status, "skipped");
+    assert.equal(readJson(f.reportPath).stages.polish.evidence.result, "excluded");
+    assert.equal(nextStage(f).stage, "deploy");
+    const d = doctor(f);
+    assert.equal(d.derived.polish_gate.status, "not_applicable");
+    assert.equal(d.derived.polish_gate.result, "excluded");
+    assert.ok(d.ready.some((line) => /checkpoint not applicable.*every mapped page is template stock/i.test(line)), JSON.stringify(d.ready));
+    assert.ok(!d.ready.some((line) => /before completed assembly/.test(line)));
+    assert.ok(![...d.errors, ...d.warnings].some((issue) => issue.code === "polish.evidence_missing"));
+    const { __qaNodeTestHooks } = await import("./qa-node.mjs");
+    const qa = await __qaNodeTestHooks.resolveQaInputs({ _: ["qa", "run"], packet: f.packetPath });
+    assert.equal(qa.polishGate.status, "not_applicable");
+    assert.equal(__qaNodeTestHooks.polishGateAssertion(qa.polishGate).status, "skipped");
+    assert.notEqual(qa.polishGate.code, "polish.evidence_missing");
+    mutateJson(f.packetPath, (packet) => { packet.source_html.pages[0] = f.packet.source_html.pages[0]; });
+    assert.equal(nextStage(f).stage, "polish", "one designed page still owes Polish after an earlier stock exclusion");
+    assert.equal(doctor(f).derived.polish_checkpoint_gate.status, "blocked");
   });
 });
 

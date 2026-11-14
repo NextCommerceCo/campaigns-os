@@ -171,7 +171,11 @@ Two residue surfaces keep a build from silently shipping template placeholders:
   `<input placeholder="…">` hint or a `data-*` hook never trips it. Browser QA
   **fails (blocker)** on any match in rendered page text, and this blocker is
   fixed — a theme-gate waiver that softens color residue does **not** excuse
-  placeholder text. A family may override the term set.
+  placeholder text. On an all-template, as-is build, matches are warnings in
+  both doctor and QA: "Starter placeholder text remains because this build uses
+  every mapped page as-is. Review the demo content before publishing." The QA
+  row remains `fail` with severity `warn`, so the recorded gate reports the
+  finding and the verdict is `ready_with_exceptions`. A family may override the term set.
 
   The browser verdict outranks the static scan on the build it judged. `qa
   run` records the gate outcome on the Assembly Report's `stages.qa.evidence`
@@ -181,7 +185,8 @@ Two residue surfaces keep a build from silently shipping template placeholders:
   passed on this build") instead of a warning, and `next` drops the
   replace-placeholder-text action. A rebuild moves the fingerprint and the
   warning returns until QA runs again; a failed or never-run gate never
-  demotes anything.
+  demotes anything. An all-template, as-is build keeps the warning even after
+  a recorded pass.
 - **`demo_assets`** (declared per family; arrays replace on `extends`): the
   template's own demo placeholder assets. `assets` lists demo-asset paths (e.g.
   `images/1x1_1.svg`); a real asset reference to one of them surfaces as a

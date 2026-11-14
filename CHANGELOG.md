@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.71.0+agent.5] - 2026-11-14
+
+### Fixed
+
+- A funnel built from a starter as-is closes three checks itself, with a stated reason. Polish: when every mapped page is template stock there is no design route to compare, so `polish capture` says so and records the stage as skipped (`excluded`, `template_stock`); `next` moves on, `record deploy` is not refused for Polish and QA no longer warns that Polish evidence is missing. It used to keep Polish required with nothing to capture. The hidden eager-media checkpoint on such a funnel now reports `polish.hidden_eager_media.template_stock` (not applicable) where it reported `polish.hidden_eager_media.no_capturable_routes` (blocked). Theme: with no design source or brand tokens, the starter-palette comparison is reported as `excluded` with the same reason, and browser QA starts without a named theme waiver. Placeholder text: the starter's own literal placeholders warn in both doctor and QA, with one wording; QA used to block on them. A funnel with a designed page, a design source or brand tokens keeps all three checks as they were.
+
 ## [1.71.0+agent.4] - 2026-11-14
 
 ### Fixed

@@ -112,8 +112,7 @@ checks are carried forward:
 
 | Check | Local loopback preview | Hosted preview |
 | --- | --- | --- |
-| `polish.evidence_missing`, `polish.report_missing` | Carried when Polish was never recorded. | Carried only with the all-template `no_capturable_routes` checkpoint. |
-| `polish.hidden_eager_media.no_capturable_routes` | Carried when every mapped page is template stock (`skip_reason`). | Carried when every mapped page is template stock and QA uses the packet's non-loopback `deploy.preview_url`, distinct from `deploy.production_url` by origin or QA-resolved campaign route path. |
+| `polish.evidence_missing`, `polish.report_missing` | Carried when Polish was never recorded for a design route. | Blocked. |
 | `polish.hidden_eager_media.capture_malformed` | Carried only when no page-load capture was recorded at all. | Blocked. |
 | Template-residue severity | With `theme_gate.nothing_generatable`, residue findings warn. | Unchanged. |
 
@@ -121,17 +120,17 @@ A carried-forward gate has status `carried_forward`. Doctor reports it as a
 warning starting "Carried forward on the local preview" or "Carried forward on the hosted preview"; `next` moves past
 polish to deploy and QA; QA records it as a `warn` row, so the verdict is at
 best `ready_with_exceptions`. The evidence is reported as missing, never as
-passed. On a hosted all-template preview, first record an unset preview URL
-with `campaigns-os qa policy set --packet <packet> --preview-url <url>`, then
-record the deploy with `campaigns-os record deploy --packet <packet> --base-url <preview-url>`
-(on a hosted target it takes an https URL, requires every built page to answer
-200, and compares the served scripts and stylesheets with the build by sha256),
-then run `campaigns-os qa run --packet <packet> --base-url <preview-url> --browser --test-order common`. After QA records the current-build verdict, run `campaigns-os next --packet <packet>` for closeout. The hosted exception
-requires a distinct packet `deploy.preview_url`; a query or fragment on the production page does not count as distinct. QA with `--base-url` equal to
-the packet's `deploy.production_url` stays blocked. A `local-serve` packet
-served from any other host also gets strict gates. `record polish` and the
-waiver commands keep them strict. Progress
-snapshots record a carried-forward gate as `not_applicable`, because their
+passed. A `local-serve` packet served from any other host gets strict gates.
+
+When every mapped page is template stock (`skip_reason`), Polish is not
+applicable on any target. `polish capture` closes it with status `skipped`,
+evidence `result: "excluded"`, `reason_code: "template_stock"` and the reason
+that there is no design route to compare. `next` and `record deploy` move on;
+QA does not report a missing-Polish warning. Run
+`campaigns-os next --packet <packet>` for the next stage. A mapped design page
+keeps the existing Polish requirements.
+
+Progress snapshots record a carried-forward gate as `not_applicable`, because their
 schema has no carried-forward state.
 
 ### Polish advisory for a page-only change
@@ -1608,10 +1607,13 @@ outcome of the gates doctor's static scan can only approximate:
 
 A gate that did not run on that verdict is absent, never `pass`. Doctor reads
 `gates.placeholder_text_residue` back while `stages.assembly.build_fingerprint`
-still matches `source_build_fingerprint`: a recorded pass demotes the
+still matches `source_build_fingerprint`: except on an all-template, as-is build,
+a recorded pass demotes the
 `template_contract.placeholder_text_residue` warning to a ready line and drops
 the matching `next` action; a rebuild or a failed gate brings the warning back
-(see `docs/template-family-contracts.md`). `evidence` is a QA-owned field, so
+(see `docs/template-family-contracts.md`). On an all-template, as-is build,
+starter placeholder warnings remain visible even after a recorded pass.
+`evidence` is a QA-owned field, so
 the next QA record replaces it wholesale.
 
 `next` compares the declared depth against what was exercised:
