@@ -410,6 +410,25 @@ test("a checkout order bump gets its own QA command with the bump in the cart", 
   assert.ok(nextTinyPromptLines(result).some((line) => line.endsWith(bumpRun.command)), "and so does the human next output");
 });
 
+test("a spec listing more currencies gets one --currency QA command per other currency", () => {
+  const plain = runNext(target().packetPath);
+  assert.equal(action(plain, "qa_run").currency_commands, undefined, "one currency, no extra runs");
+
+  const fixture = target({
+    prefix: "closeout-evidence-currencies-",
+    mutateSpec(spec) {
+      spec.campaign = { ...spec.campaign, currency: "USD", available_currencies: ["USD", "EUR", "GBP"] };
+    },
+  });
+  const result = runNext(fixture.packetPath);
+  assert.equal(result.stage, "qa");
+  const qaRun = action(result, "qa_run");
+  assert.deepEqual(qaRun.currency_commands, [`${qaRun.command} --currency EUR`, `${qaRun.command} --currency GBP`]);
+  assert.ok(result.prompt.includes(`${qaRun.command} --currency EUR\n${qaRun.command} --currency GBP`), "the QA stage prompt names them");
+  const lines = nextTinyPromptLines(result);
+  for (const command of qaRun.currency_commands) assert.ok(lines.includes(`  - ${command}`), "and so does the human next output");
+});
+
 test("a bump marked is_order_bump alone also gets the bump-cart QA command", () => {
   const fixture = target({
     prefix: "closeout-evidence-order-bump-",

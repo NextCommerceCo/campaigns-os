@@ -1876,10 +1876,8 @@ doctor still validates each copy's shape separately. Source preparation reads
 the packet's `wrapper_policy`, which is selected at intake with
 `prepare-build --wrapper-policy` or the source-html manifest's `wrapper_policy`
 option. The record flag refuses that key, an unknown key, or a value outside
-the allowed values below. The object-valued
-`template_files_copied` has no flag: its `status`, `required_groups`, `groups`,
-and `paths` remain required proof in the report and keep their existing doctor
-checks.
+the allowed values below. `record build` also derives `template_files_copied`
+from the template files on disk. Do not edit that field in the Assembly Report.
 
 Required adapter decisions:
 
@@ -1889,7 +1887,7 @@ Required adapter decisions:
 | `source_asset_strategy` | How images/fonts/CSS/JS are moved and referenced. | `pagekit_campaign_asset_root`, `external_cdn`, `raw_passthrough`, `not_applicable`, `unknown` |
 | `commerce_shell_adoption` | Whether checkout/upsell/downsell/receipt use a template-clone-first SDK surface. | `not_required`, `template_clone_first_required`, `template_clone_first_verified`, `sdk_surfaces_preserved`, `custom_html_experimental` |
 | `route_rewrite_policy` | How page links, CTAs, and SDK routing values were rewritten from CampaignSpec routes. | `campaignspec_routes_via_campaign_link`, `pagekit_public_routes`, `raw_passthrough`, `not_applicable`, `unknown` |
-| `template_files_copied` | Whether the selected template family was copied/verified as one atomic page-kit slice. | Object-valued proof; no flag |
+| `template_files_copied` | Whether the selected template family was copied/verified as one atomic page-kit slice. | Derived from files on disk |
 | `config_script_strategy` | How campaign config scripts are loaded. | `campaign_asset`, `frontmatter_script`, `inline`, `not_required`, `unknown` |
 | `wrapper_policy` | Whether document wrappers are stripped, preserved, or not required. | Intake only: `strip_document_wrappers`, `preserve_document_wrappers`, `not_required`, `unknown` |
 | `frontmatter_policy` | How Page Kit YAML frontmatter is created or preserved. | `pagekit_yaml_frontmatter`, `raw_passthrough`, `not_required`, `unknown` |
@@ -1912,10 +1910,12 @@ context/report aid, not part of `source_html.pages[]` page binding.
 
 `template_files_copied` is intentionally group-based rather than prose-only:
 `pages`, `_includes`, `_layouts`, `assets/css`, `assets/js`, and
-`frontmatter_vocabulary`. Doctor warns when an assembly-complete report still
-shows `pending`/`partial` template copying or misses one of those groups. When
-the status is `complete` or `verified_existing_slice`, `paths` must name
-target-repo-relative proof paths and doctor verifies those paths exist.
+`frontmatter_vocabulary`. `record build` records `verified_existing_slice`
+when page files carry `page_type` frontmatter and every dependency group has
+files; otherwise it records `partial`. For an `undecided` or `custom`
+template family it records `not_applicable`. It writes target-repo-relative proof
+paths that doctor checks once assembly is complete. If files are missing,
+restore them, then run `record build --packet <campaign-runtime.build.json>`.
 
 Fresh packets also include `qa.proof_policy`, mirrored into
 `report.proof_policy`. It records browser QA requirement, typed-card depth,
@@ -2487,17 +2487,14 @@ prepare-build gate is set (`next` answers prepare-build) or while an earlier
 stage in the order below is not terminal. The exception is the one `next`
 makes: on the local preview, a polish doctor carries forward (never recorded
 for this build) does not hold `record deploy` back, as it does not hold `next`;
-polish stays owed and QA reports it. If every mapped page is template stock on
-a hosted preview, doctor carries the same missing-evidence shape forward.
-On a hosted target, record an unset hosted preview URL with
-`campaigns-os qa policy set --packet <p> --preview-url <url>`, then record the
-deploy with `campaigns-os record deploy --packet <p> --base-url <preview url>`. The hosted preview must be a non-loopback
-HTTP(S) URL whose origin or QA-resolved campaign route path differs from `deploy.production_url`;
-query and fragment text does not make the production page a preview. With the
-deploy recorded, run `campaigns-os qa run --packet <p> --base-url <preview-url>
---browser --test-order common`; after QA records a verdict for the current
-build, `campaigns-os next --packet <p>` reaches closeout. QA against the
-packet's production URL retains the strict gate.
+polish stays owed and QA reports it. When every mapped page is template stock
+(`skip_reason`), Polish is not applicable on any target: `polish capture` and
+`record polish` record `skipped` with evidence `result: "excluded"`,
+`reason_code: "template_stock"` and the reason that there is no design route to
+compare. No capture or waiver is needed; `next` and `record deploy` move on,
+and QA does not warn about missing Polish evidence. Run
+`campaigns-os next --packet <p>` for the next stage. A mapped design page keeps
+the existing Polish requirements.
 
 Each command reads the same packet, Build Context and Assembly Report `next`
 reads (`--context` / `--report` override them the same way), validates what it

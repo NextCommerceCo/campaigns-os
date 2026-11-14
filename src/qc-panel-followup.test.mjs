@@ -469,7 +469,7 @@ async function runPrintedAccept({ f, packetPath, reportPath, qcStandIns }, nextA
   assert.ok(typeof command === "string" && command.length > 0, "the handoff prints an accept command");
   assert.equal(command.includes("<packet>"), false, `the command names the packet, not a placeholder: ${command}`);
   const text = await runCli(nextArgv, { qcStandIns });
-  assert.ok(text.stdout.split("\n").some((line) => line.trim() === `Accept only with the operator's decision: ${command}`), `the text QC handoff prints the same command: ${text.stdout.slice(-800)}`);
+  assert.ok(text.stdout.split("\n").some((line) => line.trim() === `Accept these quality-check rows only with the operator's decision: ${command}`), `the text QC handoff prints the same command: ${text.stdout.slice(-800)}`);
 
   const argv = filledAcceptArgv(command);
   assert.equal(flagValue(argv, "--packet"), packetPath, "the command names the packet next was given");

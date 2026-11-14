@@ -29,7 +29,7 @@ import { fileURLToPath } from "node:url";
 import Ajv2020 from "ajv/dist/2020.js";
 
 import { BRAND_FONTS_FILENAME, BRAND_LAYER_FILENAMES } from "./brand-theme.mjs";
-import { ADAPTER_DECISION_SCALAR_VALUES } from "./adapter-decision-contract.mjs";
+import { ADAPTER_DECISION_SCALAR_VALUES, deriveTemplateFilesCopied } from "./adapter-decision-contract.mjs";
 import { buildManifestEntries, computeBuildFingerprint, resolveBuiltSiteScope } from "./built-site-scope.mjs";
 import { resolveCampaignWorkspace, targetRepoFor } from "./campaign-workspace.mjs";
 import { isObject, optionalString, portableArtifactPaths, readJsonIfExists, requireArg } from "./cli-helpers.mjs";
@@ -53,6 +53,7 @@ import {
   POLISH_PRODUCER,
   currentSourcePackageMaterialFingerprint,
   evaluatePolishGate,
+  templateStockPolishStage,
 } from "./polish-gate.mjs";
 import { evaluateRecordedHiddenEagerMediaCheckpoint } from "./polish-node.mjs";
 import { effectiveStageStatus, effectiveStatusIsTerminal, inputStamps, stageWriteInputs } from "./input-currency.mjs";
@@ -364,7 +365,12 @@ function buildChangeFacts(report, { packet, packetPath, fingerprint, now }) {
 }
 
 function composeBuild(report, { now, recordedBy, fingerprint, manifest = null, buildEnvironment = null, adapterDecisions = null, fallbackAdapterDecisions = null, inputs = {}, deviationReason = null, packet = null, packetPath = null }) {
-  const nextReport = adapterDecisions ? { ...report, adapter_decisions: { ...(report.adapter_decisions || fallbackAdapterDecisions || {}), ...adapterDecisions } } : report;
+  const decisions = report.adapter_decisions || fallbackAdapterDecisions;
+  const nextReport = decisions || adapterDecisions ? { ...report, adapter_decisions: {
+    ...(decisions || {}),
+    ...adapterDecisions,
+    template_files_copied: deriveTemplateFilesCopied({ targetRepo: targetRepoFor(packetPath, packet), outputDir: packet.assembly?.output_dir, family: packet.assembly?.template_family }),
+  } } : report;
   const sourcePackageFingerprint = currentSourcePackageMaterialFingerprint(report);
   const previousAssembly = stageObject(report, "assembly");
   const { signature, buildChanges } = buildChangeFacts(report, { packet, packetPath, fingerprint, now });
@@ -1006,6 +1012,12 @@ function composeDeploy(report, packet, { now, recordedBy, probe, fingerprint }) 
 
 // Every check a written record must pass, over exactly what would be written.
 function validateRecord(stage, { report, context, packet, fingerprint }) {
+  if (stage === "polish" && POLISH_COMPLETED_STATUSES.includes(report.stages.polish.status)) {
+    const checkpoint = evaluateRecordedHiddenEagerMediaCheckpoint({ packet, report });
+    if (checkpoint.result === "excluded" && checkpoint.reason_code === "template_stock") {
+      report.stages.polish = templateStockPolishStage(report, report.stages.polish.completed_at);
+    }
+  }
   const problems = [
     ...schemaProblems("campaign-runtime-assembly-report.v0.schema.json", report, "Assembly Report"),
     ...(context ? schemaProblems("campaign-runtime-build-context.v0.schema.json", context, "Build Context") : []),
@@ -1362,7 +1374,7 @@ function recordUnderLock({ stage, packetPath, sidecars, lockedTarget, input, dry
     const next = stage === "setup"
       ? composeSetup(report, context, { now: timestamp, recordedBy })
       : stage === "build"
-        ? composeBuild(report, { now: timestamp, recordedBy, fingerprint: facts.fingerprint, manifest: outputManifest(facts), buildEnvironment, adapterDecisions, fallbackAdapterDecisions: adapterDecisions && !report.adapter_decisions ? readJsonIfExists(contextPath)?.adapter_decisions || packet.source_html?.adapter_contract : null, inputs: recordInputs(doctor), deviationReason, packet, packetPath })
+        ? composeBuild(report, { now: timestamp, recordedBy, fingerprint: facts.fingerprint, manifest: outputManifest(facts), buildEnvironment, adapterDecisions, fallbackAdapterDecisions: !report.adapter_decisions ? readJsonIfExists(contextPath)?.adapter_decisions || packet.source_html?.adapter_contract : null, inputs: recordInputs(doctor), deviationReason, packet, packetPath })
         : stage === "theme"
           ? composeTheme(report, { now: timestamp, recordedBy, layer })
           : stage === "deploy"

@@ -764,3 +764,16 @@ test("A-C4 one route with only failed build shots fails write mode despite anoth
   assert.equal(gate.code, "polish.evidence_incomplete");
   assert.match(gate.problems.join("\n"), /no captured build screenshot for every planned route/);
 });
+
+
+test("template-stock exclusion preserves source binding blocks", () => {
+  const checkpoint = { id: "polish.hidden_eager_media", status: "not_applicable", result: "excluded", reason_code: "template_stock" };
+  const report = staleSourceReportWithWaiver(null);
+  const stale = evaluatePolishGate({ report, hiddenEagerMediaGate: checkpoint });
+  assert.equal(stale.status, "blocked");
+  assert.equal(stale.code, "polish.assembly_source_package_stale");
+  delete report.stages.assembly.source_package_material_fingerprint;
+  assert.equal(evaluatePolishGate({ report, hiddenEagerMediaGate: checkpoint }).code, "polish.assembly_source_package_fingerprint_missing");
+  report.waivers = [{ ...sourceFreshnessWaiver(), expires_at: "invalid" }];
+  assert.equal(evaluatePolishGate({ report, hiddenEagerMediaGate: checkpoint }).code, "polish.waiver_expires_at_invalid");
+});
