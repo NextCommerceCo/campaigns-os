@@ -4947,22 +4947,22 @@
       "migration": "Refresh installed skills to 1.71.0+skills.2 before starting a fresh session.",
       "changes": [
         {
-          "class": "named_surface",
-          "path": "CONTEXT.md",
-          "surface_entry": "CONTEXT.md",
-          "summary": "The Design Source owns its page-level copy, proof and claims included, and agents build it as given."
-        },
-        {
-          "class": "named_surface",
+          "class": "documentation",
           "path": "agents/claude/CLAUDE.md",
           "surface_entry": "agents/claude/CLAUDE.md",
           "summary": "The proof line adds: do not ask whether to keep it; the design and content are final; small corrections only, named in the handoff."
         },
         {
-          "class": "named_surface",
+          "class": "documentation",
           "path": "agents/codex/AGENTS.md",
           "surface_entry": "agents/codex/AGENTS.md",
           "summary": "The proof line adds: do not ask whether to keep it; the design and content are final; small corrections only, named in the handoff."
+        },
+        {
+          "class": "documentation",
+          "path": "CONTEXT.md",
+          "surface_entry": "CONTEXT.md",
+          "summary": "The Design Source owns its page-level copy, proof and claims included, and agents build it as given."
         },
         {
           "class": "named_surface",
@@ -4972,21 +4972,75 @@
         },
         {
           "class": "named_surface",
-          "path": "docs/entry-points.md",
-          "surface_entry": "docs/entry-points.md",
-          "summary": "A starter used as-is keeps its content as given; the flag-and-list rule is removed."
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "The stated bundle revision moves to 1.71.0+skills.2."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "bundle_revision 1.71.0+skills.2; the skills this change edits move one patch up."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line moves to 1.71.0+skills.2; no other text change."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line moves to 1.71.0+skills.2; no other text change."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line moves to 1.71.0+skills.2; no other text change."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line moves to 1.71.0+skills.2; no other text change."
         },
         {
           "class": "skill",
           "path": "skills/next-campaigns-build/SKILL.md",
-          "surface_entry": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
           "summary": "The proof line adds: do not ask whether to keep it; the design and content are final; small corrections only."
         },
         {
           "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line moves to 1.71.0+skills.2; no other text change."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line moves to 1.71.0+skills.2; no other text change."
+        },
+        {
+          "class": "skill",
           "path": "skills/next-campaigns-polish/SKILL.md",
-          "surface_entry": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
           "summary": "Drops the guarantee badge example from template-default defects and says not to ask whether to keep source copy."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line moves to 1.71.0+skills.2; no other text change."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-sdk-bump/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line moves to 1.71.0+skills.2; no other text change."
         },
         {
           "class": "cli_surface",
@@ -5007,7 +5061,7 @@
           "summary": "The discount-claim next action says the same."
         }
       ],
-      "entry_sha256": "cb82d98086ff8ce1101ff3a167c1fdf1f9046a806fcaba35e69cc825e57bfcf5"
+      "entry_sha256": "f84e4ae7ba7e1a5328b3229f7640fe760bf5c37862df7cc242abed87dfbf3935"
     }
   ]
 }
