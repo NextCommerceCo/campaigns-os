@@ -1495,10 +1495,14 @@ test("page-only rebuild shares debt across after-edit, next and local deploy aft
     t.diagnostic(`PAGE ONLY | record build\n${resultTextLines(build).join("\n")}`);
     t.diagnostic(`PAGE ONLY | after-edit\n${runCli(["after-edit", "--packet", f.packetPath, "--no-live-refs"], f.dir).stdout}`);
     const next = nextOk(f);
-    t.diagnostic(`PAGE ONLY | next\n${runCli(["next", "--packet", f.packetPath, "--no-write"], f.dir).stdout}`);
-    assert.doesNotMatch(resultTextLines(next).join("\n"), /^- - /m);
+    // The change-debt lines are text output only: ready[] in the JSON stays
+    // what doctor reports, so the printed text is what is asserted here.
+    const nextText = runCli(["next", "--packet", f.packetPath, "--no-write"], f.dir).stdout;
+    t.diagnostic(`PAGE ONLY | next\n${nextText}`);
+    assert.doesNotMatch(nextText, /^- - /m);
     assert.equal(next.stage, "deploy");
-    assert.match(resultTextLines(next).join("\n"), /Owed stages: qa \(changed pages only\)/);
+    assert.match(nextText, /Owed stages: qa \(changed pages only\)/);
+    assert.ok(!next.ready.some((line) => line.startsWith("Owed stages:")), "ready[] carries no change-debt line");
     const args = { _: ["record", "deploy"], packet: f.packetPath, "base-url": `http://127.0.0.1:4173/${f.slug}/` };
     t.diagnostic(`PAGE ONLY | record deploy\n${resultTextLines(await recordCommand(args, DEPLOY_FETCH)).join("\n")}`);
     const qa = nextOk(f);
@@ -1523,7 +1527,7 @@ test("page-only rebuild shares debt across after-edit, next and local deploy aft
     assert.equal(full.ci.polish.advisory, false);
     const nextFull = nextOk(f);
     assert.equal(nextFull.stage, "polish");
-    assert.match(resultTextLines(nextFull).join("\n"), /Owed stages: polish, qa/);
+    assert.match(runCli(["next", "--packet", f.packetPath, "--no-write"], f.dir).stdout, /Owed stages: polish, qa/);
   });
 });
 

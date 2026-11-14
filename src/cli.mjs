@@ -4792,7 +4792,10 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
   }
   const ci = debt ? assessDoctorCi(debt) : null;
   const ciEvidence = ci && (polishReviewedBuild(report?.stages?.polish) || [ci.polish, ci.qa].some((assessment) => assessment.recorded_build_fingerprint || assessment.baseline)) ? doctorCiEvidenceLines(ci, String).map((line) => line.replace(/^- /, "")) : [];
-  const ready = [...doctor.ready, ...ciEvidence];
+  // ready[] stays what doctor reports, whatever evidence the stages hold. The
+  // change-debt lines are held for the text output only (see resultTextLines).
+  const ready = [...doctor.ready];
+  nextChangeDebtLines = ciEvidence;
   if (!doctor.ok && !doctorHasOnlyPolishGateErrors) errors.push(...doctor.errors.map((issue) => withPacketSubstitutedIssue(issue, packetPath)));
 
   // prepare-build is upstream of every stage. While its authoritative gate is
@@ -8947,6 +8950,10 @@ const WAIVE_ACTIONS = new Set(["theme-waive", "checkpoint-waive"]);
 
 // headerLines: caller-supplied lines printed directly under Status (a bundle
 // check's readiness line); they are text-only and never enter the JSON result.
+// What `next` read as owed for the current change, printed once under Ready.
+// Kept out of ready[] so the JSON list does not vary with stage evidence.
+let nextChangeDebtLines = [];
+
 export function resultTextLines(result, { headerLines = [] } = {}) {
   const lines = [`Status: ${String(result.status || "unknown").toUpperCase()}`, ...headerLines];
   // `next` only: the campaign intent summary, directly under the status.
@@ -8992,7 +8999,7 @@ export function resultTextLines(result, { headerLines = [] } = {}) {
   }
   if (result.ready?.length) {
     lines.push("Ready:");
-    for (const item of result.ready) lines.push(`- ${item}`);
+    for (const item of [...result.ready, ...(result.next_actions ? nextChangeDebtLines : [])]) lines.push(`- ${item}`);
   }
   if (result.actions?.length) {
     lines.push("Actions:");
