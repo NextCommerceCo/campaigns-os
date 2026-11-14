@@ -4933,6 +4933,81 @@
         }
       ],
       "entry_sha256": "3a21fcc23e988173f2c5d07028875ff478d317b5b9ec7b1eaee512629011f0d1"
+    },
+    {
+      "id": "RL-0358",
+      "sequence": 337,
+      "date": "2026-11-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.0+agent.9",
+      "changelog_sha256": "b204613a43d55918e38cc255daf011111e7cf84d4c8f00d0929ff3ab46c6371f",
+      "agent_impact": "The supplied design and content are final. Build them as given: do not ask the operator whether to keep a review, guarantee, countdown, badge, discount line or other claim, and do not remove or soften one. Propose only small corrections (a typo, a figure that contradicts the campaign's own prices) and name each in the handoff. For a starter used as-is, keep demo-looking content as given and change or remove it only when the operator asks. Doctor's discount-claim remedies now say to correct only a figure that contradicts the campaign's prices. Refresh installed skills to 1.71.0+skills.2.",
+      "compatibility": "compatible",
+      "migration": "Refresh installed skills to 1.71.0+skills.2 before starting a fresh session.",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "CONTEXT.md",
+          "surface_entry": "CONTEXT.md",
+          "summary": "The Design Source owns its page-level copy, proof and claims included, and agents build it as given."
+        },
+        {
+          "class": "named_surface",
+          "path": "agents/claude/CLAUDE.md",
+          "surface_entry": "agents/claude/CLAUDE.md",
+          "summary": "The proof line adds: do not ask whether to keep it; the design and content are final; small corrections only, named in the handoff."
+        },
+        {
+          "class": "named_surface",
+          "path": "agents/codex/AGENTS.md",
+          "surface_entry": "agents/codex/AGENTS.md",
+          "summary": "The proof line adds: do not ask whether to keep it; the design and content are final; small corrections only, named in the handoff."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/campaign-build-brief.md",
+          "surface_entry": "docs/campaign-build-brief.md",
+          "summary": "The brief records copy boundaries the operator gives; the scenario lines that asked for claim approval are removed."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/entry-points.md",
+          "surface_entry": "docs/entry-points.md",
+          "summary": "A starter used as-is keeps its content as given; the flag-and-list rule is removed."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": "skills/next-campaigns-build/SKILL.md",
+          "summary": "The proof line adds: do not ask whether to keep it; the design and content are final; small corrections only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": "skills/next-campaigns-polish/SKILL.md",
+          "summary": "Drops the guarantee badge example from template-default defects and says not to ask whether to keep source copy."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "The build prompt's as-is starter rule says to keep demo-looking content as given and not to ask whether to keep it."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": null,
+          "summary": "The two discount-claim messages say to correct only a figure that contradicts the campaign's prices and name it in the handoff."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/next-step.mjs",
+          "surface_entry": null,
+          "summary": "The discount-claim next action says the same."
+        }
+      ],
+      "entry_sha256": "cb82d98086ff8ce1101ff3a167c1fdf1f9046a806fcaba35e69cc825e57bfcf5"
     }
   ]
 }

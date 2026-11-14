@@ -612,7 +612,7 @@ function doctorNextActions(errors, warnings, derived, { polishBlocked, polishGat
     actions.push("Strip the default exit-pop widget or wire CampaignSpec checkout exit_intent/promo_code_input to the SDK coupon path before QA.");
   }
   if (codes.has("template_contract.discount_claim_unverified")) {
-    actions.push("Confirm any rendered promo discount percentage claims against the build request, merchant notes, or CampaignSpec before launch.");
+    actions.push("Check any rendered promo discount percentage against the campaign's prices; correct only a figure that contradicts them, keep the rest of the copy as designed, and name each correction in the handoff.");
   }
   if (codes.has("template_contract.placeholder_text_residue")) {
     actions.push("Replace literal template placeholder text (Lorem/Placeholder/TODO/Product Name/Benefit one…four) with CampaignSpec/design copy before QA; the browser residue gate blocks on these terms.");
