@@ -4933,6 +4933,33 @@
         }
       ],
       "entry_sha256": "3a21fcc23e988173f2c5d07028875ff478d317b5b9ec7b1eaee512629011f0d1"
+    },
+    {
+      "id": "RL-0352",
+      "sequence": 337,
+      "date": "2026-11-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.0+agent.3",
+      "changelog_sha256": "4ad70955e67eb0f0eb8bc5b7bb32148715399bfa9bf9dc56ffbd4efb98b587bd",
+      "agent_impact": "Read three new QA rows as proof the run does not hold, and report them; none blocks. voucher-not-on-page:<page>:<code> (price check becomes mismatch): the spec binds that discount code to the page and the page does not carry it, so an order there will not get the offer; on a starter page set the voucher in the page's upsell offer settings, on a hand-built page add it to the offer the page sells, then rebuild and re-run. browser-test-order:currency-coverage: currencies the spec lists that had no test order in this run; next prints one qa run --currency <code> command per currency: run them before saying currencies are verified. browser-test-order:order-bump-coverage: the checkout add-on was in no test order; add the --cart it names. --cart packages that no selected card carries are now checked against the order even with --select-package, and --cart with its value as a single argument (an unsplit shell variable) is refused: pass the flag and the value as two arguments.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "next's QA step lists one qa run --currency command per currency the spec lists besides the campaign currency; no flag changes."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Describes the voucher-not-on-page finding, the currency and add-on coverage rows, --cart beside --select-package, and the reveal before --cart."
+        }
+      ],
+      "entry_sha256": "3d525c1419980c7c833ef6b294015c64127c896efcffb0b285798e3d7d6c4482"
     }
   ]
 }

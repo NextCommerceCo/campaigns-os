@@ -5083,6 +5083,9 @@ async function gotoAndSettle(page, url, args, tracking = null, currencyLoad = nu
 async function selectRequestedCart(page, args, { selectedPackages = [], selectedCards = [] } = {}) {
   const cart = parseCart(args.cart);
   if (!cart.length) return [];
+  // A checkout reveal keeps its order bump in an inert panel until the
+  // "Add to Cart" reveal is clicked, so a toggle clicked before it does nothing.
+  await revealCheckoutForm(page);
   if (selectedPackages.length) return applyCartBesideSelection(page, cart, { selectedPackages, selectedCards });
   // A package a bundle card declares, asked for at an explicit quantity, is
   // chosen by the card whose items carry it at that quantity. The first
@@ -5118,8 +5121,8 @@ function cardCarriesPackage(candidate, ref) {
 // is applied through its own control (an order bump toggle, or a card in a
 // selector group --select-package did not choose in), never by clicking
 // another card in the chosen card's group. A ref only such a click could
-// satisfy is left unapplied and named, so the order and its reconciliation
-// stay those of the card actually selected.
+// satisfy is left unapplied and named; the order check fails on it unless
+// the chosen card sells that package.
 async function applyCartBesideSelection(page, cart, { selectedPackages, selectedCards }) {
   const chosenIdentities = new Set(selectedCards.map(packageCardIdentity));
   const strictRefs = selectedPackages.map((item) => String(item.packageId));
@@ -6509,13 +6512,14 @@ function reconcileOrderAgainstDisplay({ lines = [], display = null, events = nul
     ...(selected_packages || []),
     ...declarations.quantities.filter((item) => !strictRefs.has(item.packageId)),
   ];
-  // Without --select-package, every explicit --cart <pkg>:<qty> is judged on
-  // its own: the order must carry that package at that quantity, whichever
-  // card, if any, declares it. Beside --select-package the order is judged
-  // against the card that flag chose; a --cart ref it left unapplied is named
-  // by selected_bundle.
-  const requestedCart = (selected_packages || []).length ? [] : (requested_cart || [])
-    .filter((item) => item?.quantityExplicit);
+  // Every explicit --cart <pkg>:<qty> is judged on its own: the order must
+  // carry that package at that quantity, whichever card, if any, declares it.
+  // Beside --select-package, a ref for a package the selected card sells is
+  // the flag conflict selected_bundle names (the order is the card's); any
+  // other ref, such as an order bump, must still reach the order.
+  const selectionRefs = strictRefs.size ? new Set([...strictRefs, ...declarations.refs]) : new Set();
+  const requestedCart = (requested_cart || [])
+    .filter((item) => item?.quantityExplicit && !selectionRefs.has(String(item.packageId)));
   const requestedCartByRef = new Map(requestedCart.map((item) => [String(item.packageId), Number(item.quantity || 1)]));
   const displayed = new Set(resolved.displayed_package_ids);
   const summaryIds = new Set(resolved.summary_package_ids);
@@ -7973,6 +7977,13 @@ function resolvePrimaryTestOrderTopology(topologies = []) {
 // proof is persisted-order read-back and does not need upsell traversal.
 // The --max-test-orders flood guard applies to the expanded plan count.
 function testOrderPlans(mode, topologies = [], args = {}, options = {}) {
+  // An unsplit shell variable can pass `--cart 1:1,2:1` as one argument, which
+  // parses as a flag named "cart 1:1,2:1": the run would order the default
+  // cart and never check the one asked for.
+  const joined = Object.keys(args).find((key) => /^(cart|select-package)\s/.test(key));
+  if (joined) {
+    throw new Error(`--${joined} arrived as one argument, so qa run cannot read it. Pass --${joined.split(/\s/)[0]} and its value as two separate arguments.`);
+  }
   const normalized = String(mode || "off").toLowerCase();
   const tiersMatch = /^tiers(?::(checkout|common|full))?$/.exec(normalized);
   if (tiersMatch) return specTierPlans(topologies, args, tiersMatch[1] || "checkout", options);

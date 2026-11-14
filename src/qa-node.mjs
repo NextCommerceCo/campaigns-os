@@ -66,7 +66,9 @@ import {
   forwardRouteTarget,
   inapplicableForwardFields,
   upgradeCampaignSpec,
+  CHECKOUT_FLOW_PAGE_TYPES,
 } from "../campaign-spec/dist/index.js";
+import { declaredOrderBumps, declaredSelectorTiers } from "./commercial-journey.mjs";
 import { evaluateThemeGate } from "./theme-gate.mjs";
 import { findPaymentPage } from "./qa-test-order-topology.mjs";
 import { probeRouteUrls, ROUTE_PROBE_DEFAULT_TIMEOUT_MS } from "./qa-route-probe.mjs";
@@ -2687,6 +2689,7 @@ async function runResolvedQa(args, resolvedInputs, { runSessionActive = false, l
   }
 
   const testOrders = await runAnalyticsOrderSequence({ args, resolved, runId, assertions, qcResults });
+  assertions.push(...testOrderCoverageExceptions({ spec: resolved.rawSpec || resolved.spec, topologies: resolved.topologies, testOrders, args }));
   if (vendorBeacons) assertions.push(vendorBeaconAssertion(vendorBeacons));
   const remainingAssertionBudget = Math.max(0, QA_VERDICT_ASSERTION_LIMIT - assertions.length);
   let commercialResult;
@@ -3468,6 +3471,60 @@ function liveCampaignRefAssertions({ pages, spec, liveCampaign }) {
     }));
   }
   return out;
+}
+
+// What this run's test orders did not cover, as warn rows: currencies the
+// CampaignSpec lists that no order was placed in, and a checkout order bump no
+// order is shown to contain (an order whose display check passed with the
+// bump in its summary contains it; with no comparable display check there is
+// no row). Judged on this run's orders only: an
+// earlier run's orders are not part of this verdict. No row without a created order.
+function testOrderCoverageExceptions({ spec, topologies = [], testOrders = [], args = {} }) {
+  const created = (testOrders || []).filter((order) => order?.ok === true);
+  if (!created.length) return [];
+  const rows = [];
+  const listed = [...new Set((Array.isArray(spec?.campaign?.available_currencies) ? spec.campaign.available_currencies : [])
+    .filter((code) => typeof code === "string" && code.trim()).map((code) => code.trim().toUpperCase()))];
+  const tested = new Set(created.map((order) => stringArg(order?.verification?.currency)?.toUpperCase() || args[QA_RUN_CURRENCY]).filter(Boolean));
+  const untested = listed.filter((code) => !tested.has(code));
+  if (listed.length > 1 && tested.size && untested.length) {
+    rows.push(assertion({
+      id: "browser-test-order:currency-coverage",
+      family: "browser-test-order",
+      page: { page_id: "campaign" },
+      status: STATUS.WARN,
+      severity: SEVERITY.WARN,
+      expected: `a test order in each currency the CampaignSpec lists (${listed.join(", ")})`,
+      actual: `no test order in this run was placed in ${untested.join(" or ")}. Run ${cmd("qa")} run once per currency, ${untested.map((code) => `with --currency ${code}`).join(" and ")}, in place of any --currency given here.`,
+      evidence: { listed, tested: [...tested], untested },
+    }));
+  }
+  const checkout = findPaymentPage(topologies);
+  const pathPages = ((topologies || []).find((topology) => topology?.pages?.includes(checkout))?.pages || [])
+    .filter((page) => CHECKOUT_FLOW_PAGE_TYPES.includes(page?.page_type));
+  const bumps = [...new Set(pathPages.flatMap((page) => declaredOrderBumps(page)))];
+  // Only a comparable display check says what an order held; a run with none
+  // makes no claim about the bump either way.
+  const shown = created.map((order) => order?.verification?.display_reconciliation).filter((entry) => entry?.comparable);
+  const ordered = new Set(shown.flatMap((entry) => (entry.ok ? entry.summary_package_ids || [] : [])).map(String));
+  const missing = shown.length ? bumps.filter((ref) => !ordered.has(ref)) : [];
+  if (missing.length) {
+    // A run that selects its own package or tiers needs only the bump added.
+    const selects = stringArg(args["select-package"]) || /^tiers/i.test(String(args["test-order"] || ""));
+    const base = selects ? null : pathPages.map((page) => declaredSelectorTiers(page)[0]?.ref).find(Boolean);
+    const cart = [base, ...missing].filter(Boolean).map((ref) => `${ref}:1`).join(",");
+    rows.push(assertion({
+      id: "browser-test-order:order-bump-coverage",
+      family: "browser-test-order",
+      page: checkout || { page_id: "checkout" },
+      status: STATUS.WARN,
+      severity: SEVERITY.WARN,
+      expected: `a test order containing the checkout add-on (order bump package ${missing.join(", ")})`,
+      actual: `no test order in this run was shown to contain order bump package ${missing.join(", ")}. Run ${cmd("qa")} run again with the same flags plus --cart ${cart}.`,
+      evidence: { order_bump_refs: bumps, untested: missing },
+    }));
+  }
+  return rows;
 }
 
 async function maybeRunTestOrders(
@@ -4538,6 +4595,7 @@ export const __qaNodeTestHooks = Object.freeze({
   analyticsCorrectnessDisabledAssertion,
   runAnalyticsOrderSequence,
   maybeRunTestOrders,
+  testOrderCoverageExceptions,
   finalizeQaRun,
   campaignOutputDir,
   polishBlockedAssertions,

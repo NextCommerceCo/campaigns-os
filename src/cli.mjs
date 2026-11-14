@@ -5317,7 +5317,8 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
   } else if (result.stage === "qa") {
     const url = packet.deploy?.preview_url || packet.deploy?.production_url || "<preview-url>";
     push("install_browser", "command", `${cmd("qa")} install-browser`, "Install the Playwright browser once after install/update (npm run qa:install-browser from a checkout).");
-    push("qa_run", "command", qaRunCommand(packetPath, url), "Run browser + typed-card QA and publish the verdict.");
+    const currencyRuns = otherCurrencyQaRuns(spec, packetPath, url);
+    push("qa_run", "command", qaRunCommand(packetPath, url), "Run browser + typed-card QA and publish the verdict.", currencyRuns.length ? { currency_commands: currencyRuns } : {});
     const bumpCart = checkoutOrderBumpCart(spec);
     if (bumpCart) push("qa_run_bump", "command", qaRunCommand(packetPath, url, bumpCart), `Prove the charged add-on. ${orderBumpRunReason(bumpCart)}`);
   } else if (result.stage === "done") {
@@ -5710,6 +5711,15 @@ export function checkoutOrderBumpCart(spec) {
   return null;
 }
 
+// One QA command per currency the CampaignSpec lists beside campaign.currency,
+// which the default run uses: one run proves one currency.
+function otherCurrencyQaRuns(spec, packetPath, url) {
+  const listed = Array.isArray(spec?.campaign?.available_currencies) ? spec.campaign.available_currencies : [];
+  const base = String(spec?.campaign?.currency || "").toUpperCase();
+  const codes = [...new Set(listed.filter((code) => typeof code === "string" && /^[A-Za-z]{3}$/.test(code)).map((code) => code.toUpperCase()))];
+  return codes.length > 1 ? codes.filter((code) => code !== base).map((code) => `${qaRunCommand(packetPath, url)} --currency ${code}`) : [];
+}
+
 // Why the order-bump run exists, as one sentence for the action and the prompt.
 function orderBumpRunReason(bumpCart) {
   const cart = bumpCart.base ? `base tier ${bumpCart.base} plus the bump` : "the bump";
@@ -5723,9 +5733,12 @@ function qaPrompt(packetPath, reportPath, packet, spec = null, intent, polishChe
   const url = packet.deploy?.preview_url || packet.deploy?.production_url || "<preview-url>";
   const briefPath = packet.build_brief?.normalized_path || "(missing)";
   const bumpCart = checkoutOrderBumpCart(spec);
-  const bumpCommand = bumpCart
+  const currencyRuns = otherCurrencyQaRuns(spec, packetPath, url);
+  const bumpCommand = (bumpCart
     ? `\n\nOrder bump QA command (proves the charged add-on):\n${qaRunCommand(packetPath, url, bumpCart)}\n${orderBumpRunReason(bumpCart)}`
-    : "";
+    : "") + (currencyRuns.length
+    ? `\n\nCurrency QA commands (the CampaignSpec lists more currencies; one run proves one):\n${currencyRuns.join("\n")}`
+    : "");
   return `${campaignIntentPromptHeader(intent)}Use next-campaigns-qa for this deployed campaign.
 
 ${packet.spec.local_spec_id ? "Local spec ID" : "Map ID"}: ${packet.spec.local_spec_id || packet.spec.map_id}
@@ -8828,6 +8841,8 @@ export function nextTinyPromptLines(result) {
   lines.push(`Next expected proof: browser QA + typed-card proof. Run: ${cmd("qa")} run --packet <packet> --base-url <url> --browser --test-order common`);
   const bumpRun = (result.next_actions || []).find((action) => action?.id === "qa_run_bump");
   if (bumpRun) lines.push(`That run never orders the checkout order bump. Prove the charged add-on with: ${bumpRun.command}`);
+  const currencyRuns = (result.next_actions || []).find((action) => action?.id === "qa_run")?.currency_commands || [];
+  if (currencyRuns.length) lines.push("That run proves one currency. Prove each other currency the CampaignSpec lists with:", ...currencyRuns.map((command) => `  - ${command}`));
   lines.push("Localhost on any port is a Development domain (SDK allowed, analytics suppressed). Non-localhost origins still need SDK allowlist confirmation.");
   lines.push(`Build/polish done but no QA verdict yet is a Completeness Signal, not a build failure: ${cmd("findings")} add --stage qa --kind missing_prompt --summary "..."`);
   return lines;

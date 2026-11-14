@@ -536,7 +536,12 @@ prices above, because the browser pass does not load pages in the run currency.
 Only contract-governed claims are compared, and only against `Exact` normalized
 truth. Proven differences emit warn-severity `pricing` assertions named
 `price-claim-mismatch`, `cadence-disclosure-mismatch`, or
-`voucher-not-applied`. Decorative claims are ignored, and ambiguous, stale,
+`voucher-not-applied`. A voucher the CampaignSpec binds to an upsell or
+downsell page that the page does not carry (no `data-next-bundle-vouchers`,
+`data-next-bundles` bundle `vouchers` or `data-next-vouchers` naming it) is a
+`voucher-not-on-page` finding naming the page and the code: an order placed
+there will not get that offer. Those three attributes are all read as voucher
+claims. Decorative claims are ignored, and ambiguous, stale,
 unresolved, or malformed claims never read as a mismatch: they leave the proof
 incomplete, as above. A page showing a voucher the normalized plan cannot price
 (no calculated pair for its code, for example a live voucher on an upsell)
@@ -1939,12 +1944,16 @@ Two flags target funnels the default-tier drive cannot prove:
   other ref is left unapplied and named in the `selected_bundle` detail
   (`--cart 3:1 not applied: ...`). The display-parity row reconciles the order
   against the packages and quantities every selected bundle card declares, not
-  its `data-next-bundle-id`. Without `--select-package` it also fails when an
-  explicit `--cart <ref:qty>` is not in the order at that quantity: a
+  its `data-next-bundle-id`. With or without `--select-package` it also fails
+  when an explicit `--cart <ref:qty>` is not in the order at that quantity: a
   different quantity (`--cart 1:2` that ordered one unit) or no line for the
   package at all (`--cart 1:2,3:1` on a swap-mode selector that kept only the
-  `3:1` card); beside `--select-package` it judges the order against the card
-  that flag chose.
+  `3:1` card, or an order bump `--cart` ref beside `--select-package` that
+  never reached the order). Beside `--select-package`, a `--cart` ref for a
+  package the selected card sells is not judged against the order: that
+  conflict is named in `selected_bundle`, and the order is the card's. On a checkout with an "Add to Cart" reveal
+  (`.checkout-form--reveal`), the runner clicks the reveal before it applies
+  `--cart`, so an order bump inside the revealed panel can be toggled.
 - `--apply-coupon <code>` — types the code into the rendered coupon/promo input
   (the SDK's `[data-next-checkout-field="coupon"]` or
   `input[data-next-coupon="input"]`, then hand-rolled `coupon`/`voucher`/`promo`
@@ -2354,7 +2363,19 @@ drives declares an order bump (`is_order_bump: true` or `is_upsell: true` rows),
 command, `qa_run_bump`, beside `qa_run`: the same `--test-order common` run
 with `--cart <base>:1,<bump>:1`, where the base is the first selector tier the
 checkout declares. The QA stage prompt and the human `next` output carry the
-same command.
+same command. When `campaign.available_currencies` lists more than one
+currency, the `qa_run` action carries `currency_commands`: the same run with
+`--currency <code>` for each listed currency other than `campaign.currency`,
+printed in the prompt and the human output too.
+
+A run that created test orders also says what they did not cover, as warn
+rows judged on that run's orders only: `browser-test-order:currency-coverage`
+names the listed currencies no order was placed in, and
+`browser-test-order:order-bump-coverage` names a checkout order bump no order
+was shown to contain (an order whose display-parity row passed with the bump in
+its summary contains it; a run with no comparable cart summary gets no row).
+Each row says what to run: one run per missing currency, and the `--cart` to
+add (the bump alone on a run that selects its own package or tiers).
 
 Record order numbers, `ref_id` values, and expected line-item shapes in the
 handoff. If the browser console shows an SDK module-load error but the SDK

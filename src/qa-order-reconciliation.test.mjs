@@ -212,6 +212,35 @@ test("a malformed selected card does not change how --cart refs are judged besid
   );
 });
 
+test("beside --select-package, a --cart package the order does not carry still fails the order check", () => {
+  const { reconcileOrderAgainstDisplay } = __qaBrowserTestHooks;
+  const events = { responses: [{ body: { packages: [
+    { ref_id: 1, qty: 1, product_sku: "DEMO-PURIFIER", product_id: 101 },
+    { ref_id: 2, qty: 1, product_sku: "DEMO-FILTER", product_id: 102 },
+  ] } }] };
+  const display = {
+    summary_present: true,
+    summary_rows: [{ package_id: "1", text: "1x Demo Purifier" }],
+    selected_bundle_package_ids: ["1"],
+    selected_bundle_items: [{ bundle_id: "bundle-1x", items: [{ package_id: "1", quantity: 1 }] }],
+    active_toggle_package_ids: [],
+  };
+  const lines = [{ title: "Demo Purifier", quantity: 1, sku: "DEMO-PURIFIER", product_id: 101 }];
+  const selected_packages = [{ packageId: "1", quantity: 1, quantityExplicit: true }];
+  const requested_cart = [{ packageId: "1", quantity: 1, quantityExplicit: true }, { packageId: "2", quantity: 1, quantityExplicit: true }];
+
+  const dropped = reconcileOrderAgainstDisplay({ lines, display, events, selected_packages, requested_cart });
+  assert.equal(dropped.ok, false, JSON.stringify(dropped));
+  assert.deepEqual(dropped.quantity_mismatches.map((entry) => entry.reason), [
+    "package 2 requested 1 unit(s) (1 per package × 1) but the order carries no line for it",
+  ]);
+
+  // Control: the same flags with the bump line in the order reconcile clean.
+  const bump = { title: "Demo Filter", quantity: 1, sku: "DEMO-FILTER", product_id: 102, is_upsell: true };
+  const withBump = { ...display, summary_rows: [...display.summary_rows, { package_id: "2", text: "1x Demo Filter" }], active_toggle_package_ids: ["2"] };
+  assert.equal(reconcileOrderAgainstDisplay({ lines: [...lines, bump], display: withBump, events, selected_packages, requested_cart }).ok, true);
+});
+
 test("a displayed package that was never charged is a blocker too", () => {
   const { reconcileOrderAgainstDisplay } = __qaBrowserTestHooks;
   const display = {
@@ -439,4 +468,33 @@ test("selected bundle cards widen only the charged-but-not-displayed direction",
   assert.equal(resolved.comparable, true);
   assert.deepEqual(resolved.summary_package_ids, ["2"]);
   assert.deepEqual(resolved.displayed_package_ids, ["2", "3", "4"]);
+});
+
+test("a spec with a checkout order bump and no order containing it gets one warn row; an order containing it gets none", async () => {
+  const { __qaNodeTestHooks } = await import("./qa-node.mjs");
+  const { testOrderCoverageExceptions } = __qaNodeTestHooks;
+  const topologies = [{ pages: [
+    { page_id: "checkout", page_type: "checkout", url: "https://shop.example.com/checkout/", packages: [{ ref_id: "1", qty: 1 }, { ref_id: "2", qty: 1, is_order_bump: true }] },
+    { page_id: "upsell", page_type: "upsell", url: "https://shop.example.com/upsell/", packages: [{ ref_id: "5", qty: 1, is_upsell: true }] },
+  ] }];
+  const order = (summary) => ({ ok: true, verification: { display_reconciliation: { comparable: true, ok: true, summary_package_ids: summary } } });
+
+  const rows = testOrderCoverageExceptions({ spec: {}, topologies, testOrders: [order(["1"]), order(["1"])] });
+  assert.deepEqual(rows.map((row) => [row.id, row.page, row.status, row.severity]), [["browser-test-order:order-bump-coverage", "checkout", "warn", "warn"]]);
+  assert.match(rows[0].actual, /^no test order in this run was shown to contain order bump package 2\. Run .* qa run again with the same flags plus --cart 1:1,2:1\.$/);
+
+  assert.deepEqual(testOrderCoverageExceptions({ spec: {}, topologies, testOrders: [order(["1"]), order(["1", "2"])] }), []);
+  // A display check that failed does not show the bump reached the order.
+  const failed = { ok: true, verification: { display_reconciliation: { comparable: true, ok: false, summary_package_ids: ["1", "2"] } } };
+  assert.equal(testOrderCoverageExceptions({ spec: {}, topologies, testOrders: [failed] }).length, 1);
+
+  // A run that selects its own package or tiers is told to add the bump alone.
+  for (const args of [{ "select-package": "1:2" }, { "test-order": "tiers" }]) {
+    const [row] = testOrderCoverageExceptions({ spec: {}, topologies, testOrders: [order(["1"])], args });
+    assert.match(row.actual, / plus --cart 2:1\.$/, JSON.stringify(args));
+  }
+
+  // A checkout whose summary cannot be compared says nothing about the bump.
+  const unread = { ok: true, verification: { display_reconciliation: { comparable: false, reason: "checkout renders no [data-next-cart-summary] order summary to reconcile against" } } };
+  assert.deepEqual(testOrderCoverageExceptions({ spec: {}, topologies, testOrders: [unread] }), []);
 });
