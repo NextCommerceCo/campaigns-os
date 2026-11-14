@@ -404,3 +404,113 @@ browserTest("a redirected mutation with no final response is not taken as answer
     assert.equal(step[hooks.REQUEST_IDENTITY], undefined, "no request identity to match a late body against");
   });
 });
+
+// Two offers on their own pages, each selling its own package. The decline
+// on offer A navigates only after `declineDelayMs` (never, when negative).
+// Every order upsell POST adds the posted package's line to the order.
+const OFFER_PACKAGES = Object.freeze({ a: "7", b: "8" });
+
+async function serveSlowDecline({ declineDelayMs }) {
+  const orders = [];
+  const upsellPosts = [];
+  const server = createServer(async (request, response) => {
+    const url = new URL(request.url, "http://localhost");
+    const send = (status, body, type = "text/html; charset=utf-8") => {
+      response.writeHead(status, { "content-type": type });
+      response.end(body);
+    };
+    const upsells = /^\/api\/v1\/orders\/([^/]+)\/upsells\/$/.exec(url.pathname);
+    if (request.method === "POST" && upsells) {
+      let raw = "";
+      for await (const chunk of request) raw += chunk;
+      const order = orders.find((candidate) => candidate.ref_id === upsells[1]);
+      const packageId = String(JSON.parse(raw || "{}").package_id || "");
+      const letter = Object.keys(OFFER_PACKAGES).find((key) => OFFER_PACKAGES[key] === packageId) || "x";
+      upsellPosts.push(letter);
+      order.lines.push({ product_title: `Add-on ${letter.toUpperCase()}`, quantity: 1, is_upsell: true, price_incl_tax: "12.00" });
+      return send(201, JSON.stringify(order), "application/json");
+    }
+    if (request.method === "POST" && url.pathname === "/api/v1/orders/") {
+      for await (const chunk of request) void chunk;
+      const order = {
+        ref_id: `ref-${orders.length + 1}`,
+        number: `${1000 + orders.length + 1}`,
+        is_test: true,
+        currency: "USD",
+        total_incl_tax: "19.00",
+        lines: [{ product_title: "Package 1", quantity: 1, is_upsell: false, price_incl_tax: "19.00" }],
+      };
+      orders.push(order);
+      return send(201, JSON.stringify(order), "application/json");
+    }
+    const detail = /^\/api\/v1\/orders\/([^/]+)\/$/.exec(url.pathname);
+    if (request.method === "GET" && detail) {
+      const order = orders.find((candidate) => candidate.ref_id === detail[1]);
+      return order ? send(200, JSON.stringify(order), "application/json") : send(404, "{}", "application/json");
+    }
+    if (url.pathname === "/shim.js") return send(200, await readFile(join(FIXTURES, "shim.js")), "text/javascript");
+    if (url.pathname === "/x/checkout/") return send(200, await readFile(join(FIXTURES, "checkout.html")));
+    const offer = /^\/x\/upsell-([ab])\/$/.exec(url.pathname);
+    if (offer) {
+      const letter = offer[1];
+      return send(200, (await readFile(join(FIXTURES, "offer.html"), "utf8"))
+        .replaceAll("__LETTER__", letter.toUpperCase())
+        .replaceAll("__PACKAGE__", OFFER_PACKAGES[letter])
+        .replace("__NEXT__", letter === "a" ? "/x/upsell-b/" : "/x/receipt/")
+        .replace("__DECLINE_DELAY__", String(letter === "a" ? declineDelayMs : 0)));
+    }
+    if (url.pathname === "/x/receipt/") {
+      const order = orders.find((candidate) => candidate.ref_id === url.searchParams.get("ref_id"));
+      const rows = (order?.lines || []).map((line) => `<div data-next-order-item>${line.product_title} x${line.quantity}</div>`).join("");
+      return send(200, (await readFile(join(FIXTURES, "receipt.html"), "utf8")).replace("__READ_BACK__", "yes").replace("__ROWS__", rows));
+    }
+    return send(404, "not found");
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  return {
+    base: `http://127.0.0.1:${server.address().port}`,
+    orders,
+    upsellPosts,
+    close: () => new Promise((resolve) => {
+      server.closeAllConnections?.();
+      server.close(resolve);
+    }),
+  };
+}
+
+async function runSlowDecline({ declineDelayMs }) {
+  const server = await serveSlowDecline({ declineDelayMs });
+  const path = "decline-accept";
+  try {
+    const result = await runBrowserTestOrders(topologies(server.base, ["a", "b"]), {
+      "test-order": path,
+      "step-timeout-ms": 40000,
+      "order-timeout-ms": 150000,
+      "browser-timeout": 10000,
+      "analytics-settle": 250,
+    }, `qa-upsell-slow-decline-${path}`);
+    const assertion = result.assertions.find((entry) => entry.id === `browser-test-order:${path}`);
+    return { order: result.orders[0], assertion, server };
+  } finally {
+    await server.close();
+  }
+}
+
+browserTest("decline-accept waits for the decline to reach the next offer before it accepts, so the second offer is the one bought", { timeout: 150000 }, async () => {
+  // Longer than the settle waits between steps, shorter than the page wait.
+  const { order, assertion, server } = await runSlowDecline({ declineDelayMs: 6000 });
+
+  assert.deepEqual(server.upsellPosts, ["b"], `the accept posted offer ${server.upsellPosts.join(",")}`);
+  assert.deepEqual(server.orders[0].lines.filter((line) => line.is_upsell).map((line) => line.product_title), ["Add-on B"]);
+  assert.match(order.upsell_steps[1].offer_url, /\/x\/upsell-b\//);
+  assert.equal(assertion.status, "pass", assertion.actual);
+});
+
+browserTest("an order carrying the declined offer's upsell fails the path, even when the runner accepted on the wrong page", { timeout: 150000 }, async () => {
+  // The decline never navigates, so the accept can only land on offer A.
+  const { assertion, server } = await runSlowDecline({ declineDelayMs: -1 });
+
+  assert.deepEqual(server.upsellPosts, ["a"]);
+  assert.equal(assertion.status, "fail", assertion.actual);
+  assert.match(assertion.actual, /order carries upsell package\(s\) 7 from the offer this path declined/);
+});

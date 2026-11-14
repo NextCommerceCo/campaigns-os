@@ -187,6 +187,38 @@ test("accepted upsell proof requires exact expected quantity", () => {
   assert.equal(exact.ok, true);
 });
 
+test("an order carrying a declined offer's upsell fails the path unless an accept on another offer explains it", () => {
+  const { declinedUpsellLineFailures } = __qaBrowserTestHooks;
+  const events = { responses: [{ body: { packages: [
+    { ref_id: "7", product_id: 70 },
+    { ref_id: "8", product_id: 80 },
+    { ref_id: "9", product_id: 70 },
+  ] } }] };
+  const offerA = "https://shop.example.com/upsell-a/?ref_id=R1";
+  const offerB = "https://shop.example.com/upsell-b/?ref_id=R1";
+  const lines = (productId) => [
+    { is_upsell: false, quantity: 1, product_id: 10, title: "Main" },
+    { is_upsell: true, quantity: 1, product_id: productId, title: "Add-on" },
+  ];
+
+  // decline-accept whose accept landed on the declined offer: it bought A's package.
+  const wrongPage = [
+    { path: "decline", offer_url: offerA, expected_items: [{ package_id: "7", quantity: 1 }] },
+    { path: "accept", offer_url: offerA, expected_items: [{ package_id: "7", quantity: 1 }] },
+  ];
+  assert.deepEqual(declinedUpsellLineFailures(wrongPage, lines(70), events), [
+    "step 1: the order carries upsell package(s) 7 from the offer this path declined (https://shop.example.com/upsell-a/)",
+  ]);
+
+  // The same path on the declared pages: offer B's package only.
+  const rightPage = [wrongPage[0], { path: "accept", offer_url: offerB, expected_items: [{ package_id: "8", quantity: 1 }] }];
+  assert.deepEqual(declinedUpsellLineFailures(rightPage, lines(80), events), []);
+
+  // A downsell on another page selling the declined product explains the line.
+  const downsell = [wrongPage[0], { path: "accept", offer_url: offerB, expected_items: [{ package_id: "9", quantity: 1 }] }];
+  assert.deepEqual(declinedUpsellLineFailures(downsell, lines(70), events), []);
+});
+
 test("upsell accept step: order read-back is authoritative over the live API observation", () => {
   const { upsellAcceptStepFailures } = __qaBrowserTestHooks;
   const proofOk = { ok: true, reason: null };

@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.71.0+agent.2] - 2026-11-14
+
+### Fixed
+
+- A test order on the wrong upsell no longer passes. On a path that declines one offer and accepts the next, the browser runner used to treat the current offer's URL as the result of the decline, so a slow decline left it on the first offer and the accept bought that one; `browser-test-order:<path>` still passed. The runner now waits for the page the path declares before it acts, and the path fails when the order carries an upsell line from an offer the path declined ("the order carries upsell package(s) N from the offer this path declined"). A required checkout select that the SDK mounts after it reports ready (`Missing checkout select: country`) is now waited for, within the existing readiness limit; a select that never mounts fails with the same message as before.
+
 ## [1.71.0+agent.1] - 2026-11-13
 
 ### Fixed
