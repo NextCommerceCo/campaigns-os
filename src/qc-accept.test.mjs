@@ -113,16 +113,16 @@ function assertAcceptedListed(handoff, ref) {
   );
 }
 
-test("next reports passed QA exceptions without offering checkpoint accept", async (t) => {
+test("next reports passed QA exceptions and the separate quality-check accept command", async (t) => {
   const f = campaignFixture();
   t.after(f.cleanup);
   installQaStage(f, { observations: [qaObservation({ outcome: "unreachable" })] });
   mutateReport(f, (report) => { report.stages.qa.status = "completed_with_warnings"; });
   const res = await runCli(["next", "--packet", f.packetPath, "--no-write"], { qcStandIns: { qa: qaStandIns() } });
   assert.deepEqual({
-    offersAccept: res.stdout.includes("checkpoint accept"),
+    offersAccept: res.stdout.includes("Accept these quality-check rows only with the operator's decision: campaigns-os checkpoint accept"),
     reportsPassingProof: res.stdout.includes("ready_with_exceptions is a passing QA proof; report its exceptions to the operator."),
-  }, { offersAccept: false, reportsPassingProof: true });
+  }, { offersAccept: true, reportsPassingProof: true });
 });
 
 // ---------------------------------------------------------------------------

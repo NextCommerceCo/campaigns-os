@@ -489,8 +489,9 @@ export function campaignDriftMessage(drift) {
   const sentences = [];
   if (parts.length) {
     sentences.push(`The saved CampaignSpec and the live campaign differ — ${parts.join("; ")}.`);
-    if (drift.packages?.live_only?.length) sentences.push("Packages left out of the CampaignSpec are fine when the funnel does not sell them.");
-    if (drift.packages?.map_only?.length || drift.shipping_methods?.map_only?.length || drift.shipping_methods?.live_only?.length) sentences.push("Re-save the Map from the live campaign so doctor and QA compare against what checkout serves.");
+    if (drift.packages?.live_only?.length) sentences.push("Packages in the live campaign but not the CampaignSpec are fine when the funnel does not sell them.");
+    if (drift.shipping_methods?.live_only?.length) sentences.push("Shipping methods in the live campaign but not the CampaignSpec are fine when the funnel does not offer them.");
+    if (drift.packages?.map_only?.length || drift.shipping_methods?.map_only?.length) sentences.push("For packages or shipping methods in the CampaignSpec but not the live campaign, re-save the Map from the live campaign so doctor and QA compare against what checkout serves.");
   }
   const counts = drift.mirror?.counts;
   if (counts) {

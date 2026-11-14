@@ -767,23 +767,24 @@ be read as "nothing was caused by the change".
 
 ### The comparison rule
 
-Exactly one comparison, against exactly one earlier run:
+Compare each finding with its last recorded evaluation:
 
 1. **Find the previous run.** The most recent Run Record under the Build
    Packet's `.campaign-runtime/run-records/` whose `identity.map_id` matches
    this saved Map, or whose `identity.local_spec_id` matches this local spec
-   with no Map ID. Only the first match counts — walking further back to find a
-   record that happens to carry usable evidence would compare this run against
-   a non-adjacent one and report anything introduced in between as
-   pre-existing.
+   with no Map ID. Start with this record. Missing or unreadable QA evidence
+   stays unknown; it is not a reason to skip to an older run.
 2. **Read that run's findings.** For QA, through that Run Record's **last**
    `qa_verdict` artifact reference. A run session that needed repair and
    re-test carries one reference per attempt in session order, so the first is
    typically the blocked attempt that triggered the repair; comparing against
    it would report a defect that was fixed before that run closed, and
    reintroduced now, as pre-existing. The last reference is the verdict the
-   run actually closed on. This does not widen the boundary — it is still the
-   final attempt of exactly one earlier run, never a merged view across runs.
+   run actually closed on. If that attempt skipped a finding, or omitted it
+   during a page-scoped run, walk recorded QA attempts backwards, within that
+   run and then earlier matching runs, to the last attempt that evaluated it.
+   Each finding uses one attempt; findings can use different attempts. If no
+   earlier evaluation can be read, its reason is `no_prior_evaluation`.
    When that reference is `external:qa_verdict` — the record's spelling for a
    verdict written outside the packet directory, the ordinary case whenever
    `assembly.target_repo` is not the packet's own directory — the verdict is
@@ -798,9 +799,11 @@ Exactly one comparison, against exactly one earlier run:
 3. **Classify.** Environment and upstream drift are decided first, from the
    finding itself, and win outright — a Chromium capture failure that also
    happened last time is still not the campaign's fault. Everything else is
-   compared by fingerprint: same fingerprint and same status is
-   `pre_existing`; absent, or present with a different status, is
-   `caused_by_change`.
+   compared by fingerprint against its last evaluation: same fingerprint and
+   same status is `pre_existing`; absent from a full run, or present with a
+   different status, is `caused_by_change`. A skipped row or one omitted from
+   a page-scoped run uses the per-finding fallback above. Without an earlier
+   evaluation, it is `unknown` with reason `no_prior_evaluation`.
 
 The fingerprint is the identity the artifact already uses. For a QA assertion
 that is `family | id | page` — the same identity the exceptions projection

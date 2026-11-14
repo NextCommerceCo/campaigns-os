@@ -51,10 +51,34 @@ test("a full QA compares findings against their last evaluation before a page-sc
     ],
   });
   const assertions = [{ ...unchanged }, { ...fixed }, { ...skipped }, { ...browser }];
-  annotateQaAssertionCauses(assertions, { baseDir: base, mapId: "map-1", isFinding: isFindingAssertion });
+  const summary = annotateQaAssertionCauses(assertions, { baseDir: base, mapId: "map-1", isFinding: isFindingAssertion });
+  assert.match(formatCauseSummaryLine(summary), /compared per finding with its last recorded QA evaluation/);
   assert.deepEqual(assertions.map((assertion) => assertion.cause), [
     CAUSE_CLASSES.PRE_EXISTING, CAUSE_CLASSES.CAUSED_BY_CHANGE, CAUSE_CLASSES.PRE_EXISTING, CAUSE_CLASSES.PRE_EXISTING,
   ]);
+});
+
+test("QA cause summary explains findings with no prior evaluation", () => {
+  const base = scratch();
+  writePriorRun(base, {
+    runId: "run_1757000000000_aaaaaaaa", mapId: "map-1",
+    verdict: { run_id: "qa_page", assertions: [finding({ id: "page-scope:checkout", status: "skipped" })] },
+  });
+  const summary = annotateQaAssertionCauses([finding({ id: "http:checkout" })], { baseDir: base, mapId: "map-1", isFinding: isFindingAssertion });
+  assert.equal(summary.comparison, "no_prior_evaluation");
+  assert.match(formatCauseSummaryLine(summary), /no comparison was possible/);
+  assert.match(formatCauseBasisLine(summary), /No earlier recorded QA evaluation could be read for these findings, so every finding is labelled unknown/);
+});
+
+test("QA cause summary describes a mix of compared and unevaluated findings", () => {
+  const base = scratch();
+  const current = finding({ id: "http:landing", page: "landing" });
+  writePriorRun(base, {
+    runId: "run_1757000000000_aaaaaaaa", mapId: "map-1",
+    verdict: { run_id: "qa_page", assertions: [current, finding({ id: "page-scope:checkout", status: "skipped" })] },
+  });
+  const summary = annotateQaAssertionCauses([{ ...current }, finding({ id: "http:checkout" })], { baseDir: base, mapId: "map-1", isFinding: isFindingAssertion });
+  assert.match(formatCauseSummaryLine(summary), /compared per finding with its last recorded QA evaluation; findings without a readable evaluation are unknown/);
 });
 
 /**

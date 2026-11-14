@@ -251,7 +251,9 @@ export function formatCauseSummaryLine(summary) {
     .map((cause) => `${summary.counts[cause]} ${CAUSE_CLASS_LABELS[cause]}`);
   const id = text(summary.prior_run_id);
   let compared = " (no previous run to compare against)";
-  if (summary.comparison === "prior_run" && id) {
+  if (summary.comparison === "last_evaluation") {
+    compared = " (compared per finding with its last recorded QA evaluation; findings without a readable evaluation are unknown)";
+  } else if (summary.comparison === "prior_run" && id) {
     // The QA comparison reads that record's FINAL QA attempt, which is not the
     // same artifact as the record itself. Say so, or a reader checking the
     // record by hand will look at the wrong attempt.
@@ -270,6 +272,7 @@ export function formatCauseSummaryLine(summary) {
 // the labels will improve once a second run exists is simply untrue, and sends
 // them to re-run something that will fail the same way.
 const CAUSE_BASIS_SENTENCES = Object.freeze({
+  no_prior_evaluation: () => "No earlier recorded QA evaluation could be read for these findings, so every finding is labelled unknown.",
   no_prior_run: () => "There is no previous run for this campaign to compare against, so every finding is labelled unknown. The comparison starts working once a Run Record exists.",
   prior_run_without_qa_verdict: (id) => `Previous run ${id} exists but references no QA verdict, so there was nothing to compare against and every finding is labelled unknown.`,
   prior_run_verdict_unreadable: (id) => `Previous run ${id} exists but its QA verdict is missing or unreadable, so there was nothing to compare against and every finding is labelled unknown.`,
@@ -283,7 +286,7 @@ const CAUSE_BASIS_SENTENCES = Object.freeze({
  * two commands can never explain the same state differently.
  */
 export function formatCauseBasisLine(summary) {
-  if (!summary || !summary.comparison || summary.comparison === "prior_run") return null;
+  if (!summary || !summary.comparison || summary.comparison === "prior_run" || summary.comparison === "last_evaluation") return null;
   const reason = text(summary.comparison);
   const id = text(summary.prior_run_id) || "(unidentified)";
   const sentence = CAUSE_BASIS_SENTENCES[reason];
@@ -536,9 +539,13 @@ export function annotateQaAssertionCauses(assertions, { baseDir = null, runtimeR
   const prior = lookup.verdict ? priorSetFromVerdict(lookup.verdict, { isFinding }) : null;
   const noPriorReason = lookup.reason || "no_prior_run";
   const findings = [];
+  let usedEarlierEvaluation = false;
+  let missingPriorEvaluation = false;
   for (const assertion of Array.isArray(assertions) ? assertions : []) {
     if (!assertion || typeof assertion !== "object" || !isFinding(assertion)) continue;
     const evaluatedPrior = lastEvaluatedQaPrior(assertion, lookup, { baseDir, runtimeRelPath, targetRepo, mapId, localSpecId, currentRunId }, isFinding);
+    if (evaluatedPrior) usedEarlierEvaluation = true;
+    if (evaluatedPrior === null) missingPriorEvaluation = true;
     const { cause, cause_reason } = classifyQaAssertion(assertion, {
       prior: evaluatedPrior === undefined ? prior : evaluatedPrior,
       noPriorReason: evaluatedPrior === null ? "no_prior_evaluation" : noPriorReason,
@@ -553,13 +560,14 @@ export function annotateQaAssertionCauses(assertions, { baseDir = null, runtimeR
     surface: "qa",
     total,
     counts,
-    // The RUN RECORD's id, the same identity the doctor summary reports, so
-    // "which previous run was this compared against" has one answer across
-    // both surfaces. The attempt actually read rides alongside under its own
-    // name rather than being conflated with it.
+    // The immediately previous record and its final attempt identify where
+    // the search began; a skipped row can use an earlier evaluation.
     prior_run_id: text(lookup.record?.run_id) || null,
     prior_qa_attempt_run_id: text(lookup.verdict?.run_id) || null,
-    comparison: lookup.verdict ? "prior_run" : noPriorReason,
+    comparison: findings.length && findings.every((finding) => finding.cause_reason === "no_prior_evaluation")
+      ? "no_prior_evaluation"
+      : usedEarlierEvaluation || missingPriorEvaluation ? "last_evaluation"
+      : lookup.verdict ? "prior_run" : noPriorReason,
   };
 }
 

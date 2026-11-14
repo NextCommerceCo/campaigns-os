@@ -19,13 +19,19 @@ const codes = (issues) => issues.map((issue) => issue.code);
 const PROXY_BASE = "https://proxy.example.test";
 const LIVE_URL = `${PROXY_BASE}/api/campaign`;
 
-test("package drift remedies distinguish unused live packages from missing live packages", () => {
-  const message = (packages) => campaignDriftMessage({ packages });
+test("drift remedies distinguish unused live refs from spec refs missing live", () => {
+  const unused = campaignDriftMessage({ packages: { live_only: [12] }, shipping_methods: { live_only: [21] } });
+  const missing = campaignDriftMessage({ packages: { map_only: [13] }, shipping_methods: { map_only: [22] } });
+  const mixed = campaignDriftMessage({ packages: { live_only: [12], map_only: [13] }, shipping_methods: { live_only: [21], map_only: [22] } });
   assert.deepEqual([
-    /fine when the funnel does not sell them/.test(message({ live_only: [12] })),
-    /Re-save the Map/.test(message({ live_only: [12] })),
-    /Re-save the Map/.test(message({ map_only: [12] })),
-  ], [true, false, true]);
+    /fine when the funnel does not sell them/.test(unused),
+    /fine when the funnel does not offer them/.test(unused),
+    /Re-save the Map/i.test(unused),
+    /Re-save the Map/i.test(missing),
+    /Packages in the live campaign but not the CampaignSpec are fine/.test(mixed),
+    /Shipping methods in the live campaign but not the CampaignSpec are fine/.test(mixed),
+    /For packages or shipping methods in the CampaignSpec but not the live campaign, re-save the Map/.test(mixed),
+  ], [true, true, false, true, true, true, true]);
 });
 
 // The upstream campaign retrieve body: what the proxy carries in `data`.
@@ -853,7 +859,7 @@ test("#764 mirror drift: package-id drift and field drift together keep both lis
     assert.deepEqual(drift.detail.drift.shipping_methods, { map_only: ["21"], live_only: [] });
     assert.deepEqual(drift.detail.drift.packages, { map_only: [], live_only: [] });
     assert.equal(drift.detail.drift.mirror.counts.price, 1);
-    assert.match(drift.message, /Re-save the Map from the live campaign.*The CampaignSpec differs from the live campaign on 1 price\. Run/);
+    assert.match(drift.message, /re-save the Map from the live campaign.*The CampaignSpec differs from the live campaign on 1 price\. Run/);
     assert.doesNotMatch(drift.message, /\n/);
   });
 });

@@ -4941,8 +4941,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.71.0+agent.6",
-      "changelog_sha256": "98bc5b9e3eeddd0c9c572be991722711d62655adf50f0fdaf5a802174af28cee",
-      "agent_impact": "Read four messages differently. spec.campaign_drift: a package that is live but not in the CampaignSpec is fine when the funnel does not sell it; re-save the Map only when the spec names a package or shipping method that is not live. After QA passes with exceptions, next no longer prints checkpoint accept: ready_with_exceptions is a passing proof, report its exceptions to the operator; checkpoint accept records quality-check rows only. A finding's cause after a page-scoped QA is compared with the last run that evaluated it (cause_reason no_prior_evaluation when none can be read). qa resolve names itself and --browser when a checkout or upsell page owes a browser run. Refresh installed skills to 1.71.0+skills.3.",
+      "changelog_sha256": "fda4d0e33bba95383e6612ce1b60ad6bae3c93e562bfde1dc6d8d508bae9327b",
+      "agent_impact": "Read four messages differently. spec.campaign_drift: a package or shipping method that is live but not in the CampaignSpec is fine when the funnel does not sell or offer it; re-save the Map only when the spec names a package or shipping method that is not live. After QA passes with exceptions, next says ready_with_exceptions is a passing proof to report to the operator; checkpoint accept is offered only for open quality-check rows, which is all it records. A finding's cause after a page-scoped QA is compared with the last recorded run that evaluated it (cause_reason no_prior_evaluation when none can be read), and the summary line says so. qa resolve on a checkout or upsell page that owes a browser run refuses under its own name and names the qa run --browser command that pays it; --browser on qa resolve does not clear the refusal. Refresh installed skills to 1.71.0+skills.3.",
       "compatibility": "compatible",
       "migration": "Refresh installed skills to 1.71.0+skills.3 before starting a fresh session.",
       "changes": [
@@ -5031,7 +5031,7 @@
           "summary": "next passes the QA stage status to the quality-check handoff text; qa resolve passes its own name to the page-scope error."
         }
       ],
-      "entry_sha256": "f53e28fef6c22496a2d90d7da67b5a8e0424ca2361605781ef193cc3d0d83e0e"
+      "entry_sha256": "7c1f923ab37774e25db6f8015d4f30f7d53a190ef0c8183b2fb5faad896a6bff"
     }
   ]
 }

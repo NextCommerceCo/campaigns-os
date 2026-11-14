@@ -649,6 +649,6 @@ export function qcHandoffTextLines(handoff, { qaPassedWithExceptions = false } =
   section("Inert accepts", handoff.inert_accepts, (entry) => `${entry.result_id ?? "(no result id)"}: ${entry.why}`);
   if (lines.length === 1) lines.push("  (no QC results)");
   if (qaPassedWithExceptions) lines.push("  ready_with_exceptions is a passing QA proof; report its exceptions to the operator.");
-  else if (handoff.accept_command) lines.push(`  Accept these quality-check rows only with the operator's decision: ${handoff.accept_command}`);
+  if (handoff.accept_command) lines.push(`  Accept these quality-check rows only with the operator's decision: ${handoff.accept_command}`);
   return lines;
 }
