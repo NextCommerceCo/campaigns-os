@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Offer __LETTER__</title>
+<style>body{font-family:sans-serif;margin:24px}</style>
+</head>
+<body data-next="__NEXT__" data-decline-delay="__DECLINE_DELAY__">
+<main>
+  <div data-next-upsell="offer" data-next-package-id="__PACKAGE__">
+    <h1 data-next-display="package.__PACKAGE__.name">Add-on __LETTER__</h1>
+    <button type="button" data-next-upsell-action="add">Yes, add it</button>
+    <button type="button" data-next-upsell-action="skip">No thanks</button>
+  </div>
+</main>
+<script>
+  // One offer per page. The accept posts the order upsell mutation for this
+  // page's package and moves on when it answers. The decline moves on only
+  // after data-decline-delay ms (or never, when it is negative), as a page
+  // whose decline waits on other work before it navigates.
+  var ref = new URLSearchParams(location.search).get("ref_id");
+  var next = document.body.getAttribute("data-next") + "?ref_id=" + encodeURIComponent(ref);
+  var delay = Number(document.body.getAttribute("data-decline-delay"));
+  var offer = document.querySelector("[data-next-upsell]");
+  offer.querySelector('[data-next-upsell-action="add"]').addEventListener("click", function () {
+    fetch("/api/v1/orders/" + encodeURIComponent(ref) + "/upsells/", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ package_id: offer.getAttribute("data-next-package-id") }),
+    }).then(function (response) {
+      if (response.ok) location.href = next;
+    });
+  });
+  offer.querySelector('[data-next-upsell-action="skip"]').addEventListener("click", function () {
+    if (delay >= 0) setTimeout(function () { location.href = next; }, delay);
+  });
+  // Arriving on an offer reads the order back, as the SDK does on a ?ref_id= page.
+  fetch("/api/v1/orders/" + encodeURIComponent(ref) + "/").then(function () {
+    document.documentElement.classList.add("next-display-ready");
+  });
+</script>
+</body>
+</html>

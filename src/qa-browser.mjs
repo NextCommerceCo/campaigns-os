@@ -35,6 +35,7 @@ import {
   remainingActionDisposition,
   resolveTestOrderTopology,
   terminalAtUrl,
+  testOrderPathClicks,
 } from "./qa-test-order-topology.mjs";
 import {
   CART_ENTRY_CODES,
@@ -4251,9 +4252,13 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
   if (order.ok && upsellSteps.length) {
     order.upsell_steps = [];
   }
+  // The order's lines before any upsell step. A checkout bump persists with
+  // is_upsell: true, so only lines the steps added are judged against them.
+  const preUpsellLines = order.receipt_line_items.slice();
   if (!upsellSteps.length) ladder.skip("upsell_action", "path has no upsell steps");
 
-  for (let stepIndex = 0; order.ok && stepIndex < upsellSteps.length; stepIndex += 1) {
+  let pathStopped = false;
+  for (let stepIndex = 0; order.ok && !pathStopped && stepIndex < upsellSteps.length; stepIndex += 1) {
     const disposition = remainingActionDisposition(topologyPlan, safePageUrl(page), upsellSteps.slice(stepIndex));
     if (disposition.stop) {
       const terminal = disposition.terminal;
@@ -4276,7 +4281,21 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
       await waitForUpsellPageReady(page, args);
       await actionTrace.inspect();
       const responseIndexBefore = events.responses.length;
-      const upsell = await clickUpsellPath(page, step, { events, stepIndex, trace: actionTrace });
+      const upsell = await clickUpsellPath(page, step, {
+        trace: actionTrace,
+        destinationUrl: declaredStepDestination(topologyPlan, path, stepIndex),
+        // Inside the step's budget, keeping the read-back's reserve.
+        destinationTimeoutMs: Math.max(0, Math.min(
+          numberArg(args["browser-timeout"], DEFAULT_BROWSER_TIMEOUT_MS),
+          stepBudgetMs - (Date.now() - stepStartedMs) - LATE_UPSELL_EVIDENCE_RESERVE_MS,
+        )),
+        // Only a step another action follows must land on its declared page.
+        destinationRequired: stepIndex < upsellSteps.length - 1,
+      });
+      if (upsell.clicked && upsell.error) {
+        stepFailures.push(`step ${stepIndex + 1}: ${upsell.error}`);
+        pathStopped = true;
+      }
       const preferredOrderBody = upsell.api_response_order_body || null;
       delete upsell.api_response_order_body;
       order.upsell = upsell;
@@ -4325,6 +4344,9 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
       evidence: actionTrace.summary,
       formatError: actionTrace.formatError,
     });
+  }
+  if (order.ok && order.upsell_steps?.length) {
+    stepFailures.push(...declinedUpsellLineFailures(order.upsell_steps, addedLines(order.receipt_line_items, preUpsellLines), events));
   }
 
   const finalUrl = safePageUrl(page) || "";
@@ -6179,8 +6201,13 @@ async function shopperUpsellControl(page, action) {
 
 // `clickTimeoutMs` and `mutationTimeoutMs` are UPSELL_CLICK_TIMEOUT_MS and
 // UPSELL_MUTATION_TIMEOUT_MS in every production run; only an in-process test
-// that waits one of them out passes a shorter bound.
-async function clickUpsellPath(page, path, { trace = null, clickTimeoutMs, mutationTimeoutMs } = {}) {
+// that waits one of them out passes a shorter bound. `destinationUrl` is the
+// page the funnel declares this action leads to; when it is another page, the
+// click waits (up to `destinationTimeoutMs`) until the browser is on it. Pages
+// are compared as route matching compares them (canonicalHttpUrl: query,
+// hash, trailing slash and index.html ignored). With `destinationRequired`,
+// not arriving is the step's `error` and the checkout-result wait is skipped.
+async function clickUpsellPath(page, path, { trace = null, clickTimeoutMs, mutationTimeoutMs, destinationUrl = null, destinationTimeoutMs = DEFAULT_BROWSER_TIMEOUT_MS, destinationRequired = false } = {}) {
   const clickMs = shorterBound(clickTimeoutMs, UPSELL_CLICK_TIMEOUT_MS);
   const mutationMs = shorterBound(mutationTimeoutMs, UPSELL_MUTATION_TIMEOUT_MS);
   const offerUrl = safePageUrl(page);
@@ -6190,7 +6217,8 @@ async function clickUpsellPath(page, path, { trace = null, clickTimeoutMs, mutat
   if (!await control.count().catch(() => 0)) {
     return { path, clicked: false, error: `Missing upsell control ${selector}` };
   }
-  const expectedItems = path === "accept" ? await selectedUpsellItems(page) : [];
+  // What this offer sells: what an accept buys, and what a decline turns down.
+  const expectedItems = await selectedUpsellItems(page);
   const perpetual = await scrollControlIntoView(control);
   // Armed at the click, not before the scroll, and budgeted to outlast a
   // normal attempt that times out into its forced fallback: the watch must
@@ -6227,7 +6255,18 @@ async function clickUpsellPath(page, path, { trace = null, clickTimeoutMs, mutat
   const bodyRead = mutationResponse
     ? await readJsonResponseBodyBounded(mutationResponse, RESPONSE_BODY_READ_TIMEOUT_MS)
     : null;
-  await waitForCheckoutResult(page);
+  // The offer URL itself passes waitForCheckoutResult, so a decline that
+  // navigates late would leave the next step clicking this offer again.
+  const destinationKey = canonicalHttpUrl(destinationUrl);
+  let destinationError = null;
+  if (destinationKey && destinationKey !== canonicalHttpUrl(offerUrl)) {
+    const reached = await page.waitForURL((url) => canonicalHttpUrl(url.href) === destinationKey, { timeout: Math.max(1, destinationTimeoutMs), waitUntil: "commit" })
+      .then(() => true, () => false);
+    if (!reached && destinationRequired) {
+      destinationError = `the page did not reach ${redactUrlQuery(destinationUrl)} within ${destinationTimeoutMs}ms after the ${path}; the browser was still on ${redactUrlQuery(safePageUrl(page))}`;
+    }
+  }
+  if (!destinationError) await waitForCheckoutResult(page);
   const record = {
     path,
     clicked: true,
@@ -6238,6 +6277,7 @@ async function clickUpsellPath(page, path, { trace = null, clickTimeoutMs, mutat
     api_response_status: mutationResponse?.status() || null,
     api_response_url: mutationResponse?.url() || null,
     api_response_order_body: bodyRead?.body ?? null,
+    ...(destinationError ? { error: destinationError } : {}),
     // When the mutation's response arrived (epoch ms, the browser's clock as
     // Date.now()). Only a read-back requested after this reflects the upsell.
     mutation_responded_at: mutationRespondedAt(mutationResponse),
@@ -7850,6 +7890,12 @@ function requiredActionTimeout(options = {}) {
 
 async function selectByField(page, field, value, options = {}) {
   const locator = page.locator(checkoutFieldSelector(field)).first();
+  // The SDK can mount a required select (country) after it reports ready. Give
+  // it the SDK-ready allowance, inside the step's own budget, to appear.
+  if (!options.optional) {
+    const budget = Number.isFinite(options.actionTimeoutMs) && options.actionTimeoutMs > 0 ? options.actionTimeoutMs : Infinity;
+    await locator.waitFor({ state: "attached", timeout: Math.min(SDK_DISPLAY_READY_TIMEOUT_MS, budget) }).catch(() => {});
+  }
   if (!await fieldUsable(locator, options)) {
     if (options.optional) return false;
     throw new Error(`Missing checkout select: ${field}`);
@@ -8882,6 +8928,57 @@ function acceptedUpsellProof(lines, initialLines, expectedItems, events) {
   };
 }
 
+// The page a planned path declares step `stepIndex` leads to: the next offer
+// it clicks, or the terminal the path ends on. Null when the topology does not
+// declare one.
+function declaredStepDestination(topologyPlan, path, stepIndex) {
+  const clicks = testOrderPathClicks(topologyPlan, path);
+  if (clicks.length > stepIndex + 1) return clicks[stepIndex + 1].key;
+  if (clicks.length !== stepIndex + 1) return null;
+  const walked = clicks.map((click) => click.action).join("-");
+  return (topologyPlan?.terminal_paths || []).find((candidate) => candidate.path === walked)?.terminal?.url || null;
+}
+
+// The path says which offers were declined. A final order upsell line that
+// matches a declined offer's package fails the path, unless an accept on
+// another offer page explains it (a downsell of the same product). An accept
+// that landed on the declined offer, because the runner outran its decline,
+// explains nothing.
+function declinedUpsellLineFailures(steps, lines, events) {
+  const upsellLines = (lines || []).filter((line) => line.is_upsell);
+  const failures = [];
+  steps.forEach((step, index) => {
+    if (step.path !== "decline" || !step.expected_items?.length) return;
+    const offerKey = canonicalHttpUrl(step.offer_url);
+    // An accept explains a line it bought, at its quantity (as
+    // acceptedUpsellProof matches). One whose items are unknown may have
+    // bought anything.
+    const explained = (line) => steps.some((other) => other.path === "accept"
+      && canonicalHttpUrl(other.offer_url) !== offerKey
+      && (!other.expected_items?.length || other.expected_items.some((item) => (
+        Number(line.quantity || 0) === Number(item.quantity || 1) && lineMatchesExpectedUpsell(line, item, events)
+      ))));
+    const carried = step.expected_items.filter((item) => upsellLines.some((line) => !explained(line) && lineIsDeclinedItem(line, item, events)));
+    if (carried.length) {
+      failures.push(`step ${index + 1}: the order carries upsell package(s) ${carried.map((item) => item.package_id).join(", ")} from the offer this path declined (${redactUrlQuery(step.offer_url)})`);
+    }
+  });
+  return failures;
+}
+
+// lineMatchesExpectedUpsell, without its loose fallbacks: where the package and
+// the line both carry an id, the ids decide; an empty title never matches.
+function lineIsDeclinedItem(line, item, events) {
+  const meta = campaignPackageMeta(events, item.package_id);
+  const pairs = [
+    [meta?.product_sku, line.sku, normalizeLabel],
+    [meta?.product_variant_id, line.variant_id, Number],
+    [meta?.product_id, line.product_id, Number],
+  ].filter(([known, seen]) => known != null && known !== "" && seen != null && seen !== "");
+  if (pairs.length) return pairs.some(([known, seen, normalize]) => normalize(known) === normalize(seen));
+  return Boolean(normalizeLabel(line.title)) && lineMatchesExpectedUpsell(line, item, events);
+}
+
 function declinedUpsellProof(lines, initialLines, events, initialUpsellMutationCount = 0) {
   const mutationSeen = upsellMutationCount(events) > initialUpsellMutationCount;
   if (mutationSeen) return { ok: false, reason: "decline path called order upsell API" };
@@ -9135,6 +9232,7 @@ export const __qaBrowserTestHooks = Object.freeze({
   analyticsParityCaptureAssertions,
   analyticsParityRunnerFailureAssertion,
   acceptedUpsellProof,
+  declinedUpsellLineFailures,
   upsellAcceptStepFailures,
   upsellActionStepFailures,
   commerceStructureAssertionFromEvidence,
