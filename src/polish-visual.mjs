@@ -206,6 +206,8 @@ export function pageKitOutputPaths(packet) {
 // clears [data-next-await] never loads there. The source side looks once, after
 // networkidle and fonts, and records what it sees: markers still present read
 // `timeout` exactly as a full wait would, without spending the build-side bound.
+// A source page whose own same-origin script clears its markers is read as
+// settled only when it has done so by that look.
 const SEALED_SOURCE_AWAIT_MS = 1;
 
 export async function runVisualCells({ buildAdapter, sourceAdapter, pairs, sourceOrigin, sourceRefused = null, sourceRefusedTotal = null, probes = [],
