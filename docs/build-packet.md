@@ -1876,10 +1876,8 @@ doctor still validates each copy's shape separately. Source preparation reads
 the packet's `wrapper_policy`, which is selected at intake with
 `prepare-build --wrapper-policy` or the source-html manifest's `wrapper_policy`
 option. The record flag refuses that key, an unknown key, or a value outside
-the allowed values below. The object-valued
-`template_files_copied` has no flag: its `status`, `required_groups`, `groups`,
-and `paths` remain required proof in the report and keep their existing doctor
-checks.
+the allowed values below. `record build` also derives `template_files_copied`
+from the template files on disk. Do not edit that field in the Assembly Report.
 
 Required adapter decisions:
 
@@ -1889,7 +1887,7 @@ Required adapter decisions:
 | `source_asset_strategy` | How images/fonts/CSS/JS are moved and referenced. | `pagekit_campaign_asset_root`, `external_cdn`, `raw_passthrough`, `not_applicable`, `unknown` |
 | `commerce_shell_adoption` | Whether checkout/upsell/downsell/receipt use a template-clone-first SDK surface. | `not_required`, `template_clone_first_required`, `template_clone_first_verified`, `sdk_surfaces_preserved`, `custom_html_experimental` |
 | `route_rewrite_policy` | How page links, CTAs, and SDK routing values were rewritten from CampaignSpec routes. | `campaignspec_routes_via_campaign_link`, `pagekit_public_routes`, `raw_passthrough`, `not_applicable`, `unknown` |
-| `template_files_copied` | Whether the selected template family was copied/verified as one atomic page-kit slice. | Object-valued proof; no flag |
+| `template_files_copied` | Whether the selected template family was copied/verified as one atomic page-kit slice. | Derived from files on disk |
 | `config_script_strategy` | How campaign config scripts are loaded. | `campaign_asset`, `frontmatter_script`, `inline`, `not_required`, `unknown` |
 | `wrapper_policy` | Whether document wrappers are stripped, preserved, or not required. | Intake only: `strip_document_wrappers`, `preserve_document_wrappers`, `not_required`, `unknown` |
 | `frontmatter_policy` | How Page Kit YAML frontmatter is created or preserved. | `pagekit_yaml_frontmatter`, `raw_passthrough`, `not_required`, `unknown` |
@@ -1912,10 +1910,11 @@ context/report aid, not part of `source_html.pages[]` page binding.
 
 `template_files_copied` is intentionally group-based rather than prose-only:
 `pages`, `_includes`, `_layouts`, `assets/css`, `assets/js`, and
-`frontmatter_vocabulary`. Doctor warns when an assembly-complete report still
-shows `pending`/`partial` template copying or misses one of those groups. When
-the status is `complete` or `verified_existing_slice`, `paths` must name
-target-repo-relative proof paths and doctor verifies those paths exist.
+`frontmatter_vocabulary`. `record build` records `verified_existing_slice`
+when page files carry `page_type` frontmatter and every dependency group has
+files; otherwise it records `partial`. It writes target-repo-relative proof
+paths that doctor checks once assembly is complete. If files are missing,
+restore them, then run `record build --packet <campaign-runtime.build.json>`.
 
 Fresh packets also include `qa.proof_policy`, mirrored into
 `report.proof_policy`. It records browser QA requirement, typed-card depth,

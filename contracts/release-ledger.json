@@ -4933,6 +4933,33 @@
         }
       ],
       "entry_sha256": "3a21fcc23e988173f2c5d07028875ff478d317b5b9ec7b1eaee512629011f0d1"
+    },
+    {
+      "id": "RL-0356",
+      "sequence": 337,
+      "date": "2026-11-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.0+agent.7",
+      "changelog_sha256": "017469cdf18fa1159411c7677138ed55938908f032d08dd78626ae0c7dc5f3e0",
+      "agent_impact": "Do not write adapter_decisions.template_files_copied into the Assembly Report by hand. record build derives it from the template files under the campaign's source folder: verified_existing_slice when pages, _includes, _layouts, assets/css, assets/js are present and every page declares page_type, otherwise partial. If doctor reports adapter.template_files_copied, it names the missing groups: restore them and run record build again. The field is still required by the schemas and still read by doctor and the Run Record.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "record build derives template_files_copied from the files on disk; the field has no flag and is not hand-edited."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/source-adapters.md",
+          "surface_entry": "docs/source-adapters.md",
+          "summary": "template_files_copied is verified by record build from files on disk."
+        }
+      ],
+      "entry_sha256": "7520d9784b082f11da8b543c449e7ead070613ce17d09585fdae0e0e6254c862"
     }
   ]
 }

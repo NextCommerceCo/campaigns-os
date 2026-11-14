@@ -1,5 +1,6 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
-import { relative, resolve } from "node:path";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { join, relative, resolve, sep } from "node:path";
+import { parse as parseYaml } from "yaml";
 
 export const ADAPTER_DECISION_REQUIRED_FIELDS = Object.freeze([
   "raw_html_conversion_status",
@@ -66,8 +67,7 @@ const SCRIPT_STYLE_REFERENCE_POLICIES = new Set(["frontmatter_or_campaign_asset"
 const CTA_REWRITE_POLICIES = ROUTE_REWRITE_POLICIES;
 const LAYOUT_CHOICES = new Set(["campaign_layout", "page_layout", "raw_passthrough", "not_applicable", "unknown"]);
 
-// The scalar choices record build can set; the object-valued template slice
-// stays with its existing proof fields and doctor checks.
+// The scalar choices record build can set; template slice proof is derived.
 export const ADAPTER_DECISION_SCALAR_VALUES = Object.freeze(Object.assign(Object.create(null), {
   raw_html_conversion_status: [...RAW_HTML_CONVERSION_STATUSES],
   source_asset_strategy: [...SOURCE_ASSET_STRATEGIES],
@@ -108,6 +108,40 @@ export function createAdapterDecisions({ commerceZoneFindings = [], wrapperPolic
       paths: [],
     },
   };
+}
+
+// campaign-init copies these groups together. record build verifies the files
+// that remain on disk, rather than asking the operator to describe the copy.
+export function deriveTemplateFilesCopied({ targetRepo, outputDir, family }) {
+  const proof = { status: "partial", required_groups: [...TEMPLATE_SLICE_REQUIRED_GROUPS], groups: [], paths: [] };
+  if (!isNonEmptyString(family) || ["undecided", "custom"].includes(family)) return { ...proof, status: "not_applicable" };
+  if (!isNonEmptyString(outputDir)) return proof;
+  const root = resolve(targetRepo, outputDir);
+  if (!existsSync(root) || !statSync(root).isDirectory()) return proof;
+  const inside = relative(realpathSync(targetRepo), realpathSync(root));
+  if (inside.startsWith("..") || isAbsoluteOrUncPath(inside)) return proof;
+  const files = readdirSync(root, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => relative(root, join(entry.parentPath, entry.name)).split(sep).join("/"))
+    .sort();
+  const pages = files.filter((path) => /\.html$/i.test(path) && !path.split("/").some((part) => /^[_.]/.test(part) || part === "assets"));
+  const paths = new Set();
+  for (const group of TEMPLATE_SLICE_REQUIRED_GROUPS) {
+    const matches = group === "pages" ? pages
+      : group === "frontmatter_vocabulary" ? pages.filter((path) => {
+        const frontmatter = readFileSync(resolve(root, path), "utf8").match(/^\uFEFF?---\s*\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+        try {
+          return frontmatter && isNonEmptyString(parseYaml(frontmatter[1])?.page_type);
+        } catch { return false; }
+      })
+        : files.filter((path) => path.startsWith(`${group}/`));
+    if (!matches.length || (group === "frontmatter_vocabulary" && matches.length !== pages.length)) continue;
+    proof.groups.push(group);
+    for (const path of matches) paths.add(relative(targetRepo, resolve(root, path)).split(sep).join("/"));
+  }
+  proof.paths = [...paths].sort();
+  if (proof.groups.length === proof.required_groups.length) proof.status = "verified_existing_slice";
+  return proof;
 }
 
 export function validateAdapterDecisionShape(decisions, location, warnings, ready, { addIssue }) {
@@ -265,16 +299,17 @@ function validateTemplateFilesCopied(copied, location, warnings, ready, addIssue
     return;
   }
   const status = copied.status || "missing";
+  if (status === "pending") return;
+  const groups = new Set(Array.isArray(copied.groups) ? copied.groups.map(String) : []);
+  const missing = TEMPLATE_SLICE_REQUIRED_GROUPS.filter((group) => !groups.has(group));
   if (!["complete", "verified_existing_slice", "not_applicable"].includes(status)) {
-    addIssue(warnings, "adapter.template_files_copied", `Assembly is recorded complete, but ${location}.template_files_copied.status is "${status}". Copy or verify the selected template family as one atomic slice, not individual commerce pages.`);
+    addIssue(warnings, "adapter.template_files_copied", `Assembly is recorded complete, but ${location}.template_files_copied.status is "${status}".${missing.length ? ` Missing required group(s): ${missing.join(", ")}.` : ""} Complete the required groups, then run record build --packet <campaign-runtime.build.json>.`);
     return;
   }
   if (status === "not_applicable") {
     ready.push("Template slice copying marked not_applicable");
     return;
   }
-  const groups = new Set(Array.isArray(copied.groups) ? copied.groups.map(String) : []);
-  const missing = TEMPLATE_SLICE_REQUIRED_GROUPS.filter((group) => !groups.has(group));
   if (missing.length) {
     addIssue(
       warnings,
