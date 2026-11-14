@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.71.0+agent.10] - 2026-11-14
+
+### Changed
+
+- Agent-facing wording treats the supplied design and content as final. The build prompt, the build and Polish skills, the agent context files, `docs/entry-points.md`, `docs/campaign-build-brief.md` and three doctor remedies no longer tell an agent to list demo-looking or proof content "so the operator can decide", to confirm claims, or to treat a guarantee badge as a Polish defect. An agent builds the design and a starter used as-is as given, does not ask whether to keep a claim, and proposes only small corrections (a typo, a figure that contradicts the campaign's own prices), each named in the handoff. No check, question or severity changes.
+
 ## [1.71.0+agent.9] - 2026-11-14
 
 ### Fixed

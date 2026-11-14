@@ -5251,6 +5251,147 @@
         }
       ],
       "entry_sha256": "bd4d779fa81dd88f558affe6ccbea5df606ded1f1c8f8b4a0fcec8c0067939c9"
+    },
+    {
+      "id": "RL-0358",
+      "sequence": 343,
+      "date": "2026-11-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.0+agent.10",
+      "changelog_sha256": "d7c75fb66d91b1982598bda074cc6c5df15aa3c315928247c1669bc991c3258d",
+      "agent_impact": "The supplied design and content are final. Build them as given: do not ask the operator whether to keep a review, guarantee, countdown, badge, discount line or other claim, and do not remove or soften one. Propose only small corrections (a typo, a figure that contradicts the campaign's own prices) and name each in the handoff. For a starter used as-is, keep demo-looking content as given and change or remove it only when the operator asks. Doctor's discount-claim remedies now say to correct only a figure that contradicts the campaign's prices. Refresh installed skills to 1.71.0+skills.4.",
+      "compatibility": "compatible",
+      "migration": "Refresh installed skills to 1.71.0+skills.4 before starting a fresh session.",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": "agents/claude/CLAUDE.md",
+          "surface_entry": "agents/claude/CLAUDE.md",
+          "summary": "The proof line adds: do not ask whether to keep it; the design and content are final; small corrections only, named in the handoff."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/codex/AGENTS.md",
+          "surface_entry": "agents/codex/AGENTS.md",
+          "summary": "The proof line adds: do not ask whether to keep it; the design and content are final; small corrections only, named in the handoff."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/copilot/copilot-instructions.md",
+          "surface_entry": "agents/copilot/copilot-instructions.md",
+          "summary": "The proof line adds: do not ask whether to keep it; the design and content are final; small corrections only, named in the handoff."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/cursor/campaigns-os.mdc",
+          "surface_entry": "agents/cursor/campaigns-os.mdc",
+          "summary": "The proof line adds: do not ask whether to keep it; the design and content are final; small corrections only, named in the handoff."
+        },
+        {
+          "class": "documentation",
+          "path": "CONTEXT.md",
+          "surface_entry": "CONTEXT.md",
+          "summary": "The Design Source owns its page-level copy, proof and claims included, and agents build it as given."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/campaign-build-brief.md",
+          "surface_entry": "docs/campaign-build-brief.md",
+          "summary": "The brief records copy boundaries the operator gives; the scenario lines that asked for claim approval are removed."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "The stated bundle revision moves to 1.71.0+skills.4."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "bundle_revision 1.71.0+skills.4; the skills this change edits move one patch up."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line moves to 1.71.0+skills.4; no other text change."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line moves to 1.71.0+skills.4; no other text change."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line moves to 1.71.0+skills.4; no other text change."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line moves to 1.71.0+skills.4; no other text change."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "The proof line adds: do not ask whether to keep it; the design and content are final; small corrections only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line moves to 1.71.0+skills.4; no other text change."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line moves to 1.71.0+skills.4; no other text change."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Drops the guarantee badge example from template-default defects and says not to ask whether to keep source copy."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line moves to 1.71.0+skills.4; no other text change."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-sdk-bump/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line moves to 1.71.0+skills.4; no other text change."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "The build prompt's as-is starter rule says to keep demo-looking content as given and not to ask whether to keep it."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": null,
+          "summary": "The two discount-claim messages say to correct only a figure that contradicts the campaign's prices and name it in the handoff."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/next-step.mjs",
+          "surface_entry": null,
+          "summary": "The discount-claim next action says the same."
+        }
+      ],
+      "entry_sha256": "d095fd84ead5f2baa5620ddd82ab7f7fc46c5a3ffbd1aa7dc9eb48ce1cd12f8e"
     }
   ]
 }

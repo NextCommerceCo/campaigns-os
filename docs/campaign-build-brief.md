@@ -155,9 +155,9 @@ blocks on either.
 Two content checks do block: the needs-merchant-input marker
 (`content_residue.needs_merchant_input`), and, on a brief-backed build only,
 starter countdown chrome the brief payload does not verify
-(`content_residue.unverified_urgency`). Use the brief to record which claims
-are approved and which language is forbidden (see the high-impact questions
-above).
+(`content_residue.unverified_urgency`). When the operator gives copy
+boundaries, record them in the brief (see the high-impact questions above);
+an agent does not ask for approval of the design's own claims.
 
 ## QA Policy Scope
 
@@ -186,7 +186,6 @@ Consumable subscription:
 
 - One-time and subscribe-and-save offers may coexist.
 - Pricing separates first-order savings from subscription terms.
-- Promo timers avoid false urgency when the offer is evergreen.
 
 Home goods bundle:
 
@@ -202,12 +201,8 @@ Digital or service add-on:
 
 Health/wellness product:
 
-- Claims require stricter copy boundaries.
-- The brief should list forbidden claims and approved benefit language.
-- QA should flag unapproved medical or guaranteed-outcome wording.
+- The brief records the forbidden claims and approved benefit language the operator gives, and the build follows them.
 
 High-compliance financial or regulated offer:
 
-- Promo and urgency copy defaults conservative.
-- Trust badges and claims must be source-backed.
-- Savings, guarantees, or scarcity language requires explicit approval.
+- The brief records the operator's copy boundaries, and the build follows them and the supplied design.

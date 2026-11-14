@@ -4706,7 +4706,7 @@ function validateBuiltContractResidue(contract, warnings, ready, derived, spec =
       addIssue(
         warnings,
         "template_contract.discount_claim_residue",
-        `Assembly is recorded complete, but built output claims discount percentages above the CampaignSpec maximum (${formatPercent(maxDiscount)}): ${summarizeCopyMatches(discountHits)}. Generate promo/banner/timer copy from actual offers and vouchers.`
+        `Assembly is recorded complete, but built output claims discount percentages above the CampaignSpec maximum (${formatPercent(maxDiscount)}): ${summarizeCopyMatches(discountHits)}. Correct each figure to the campaign's actual offers and vouchers, keep the rest of the copy as designed, and name each correction in the handoff.`
       );
     } else {
       ready.push(`Built target output has no promo discount claims above CampaignSpec max (${formatPercent(maxDiscount)})`);
@@ -4717,7 +4717,7 @@ function validateBuiltContractResidue(contract, warnings, ready, derived, spec =
       addIssue(
         warnings,
         "template_contract.discount_claim_unverified",
-        `Assembly is recorded complete, but built output contains promo discount percentage claims without explicit CampaignSpec percentage discount values: ${summarizeCopyMatches(discountClaims)}. Confirm the intended business logic with the build request/merchant notes or remove the claims before launch.`
+        `Assembly is recorded complete, but built output contains promo discount percentage claims without explicit CampaignSpec percentage discount values: ${summarizeCopyMatches(discountClaims)}. Check each against the campaign's prices; correct only a figure that contradicts them, keep the rest of the copy as designed, and name each correction in the handoff.`
       );
     } else {
       ready.push("Built target output has no promo discount percentage claims requiring CampaignSpec verification");
