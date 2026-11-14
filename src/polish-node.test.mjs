@@ -1,3 +1,4 @@
+import { starterUsedAsIs } from "./content-residue.mjs";
 import assert from "node:assert/strict";
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -259,6 +260,14 @@ test("polish capture still refuses a repo-origin page without a route and an all
     packet: packetWithPages([{ page_id: "stock", skip_reason: "Template stock." }]),
     baseUrl: "http://127.0.0.1:4173",
   }), { code: "no_capturable_routes" });
+});
+
+test("stock mapping means the same thing for Polish and residue checks", () => {
+  const packet = packetWithPages([{ page_id: "checkout", origin: "repo", path: "checkout.html", skip_reason: "Template stock." }]);
+  assert.throws(() => planPolishCapture({ packet, baseUrl: "https://shop.example.com" }), { code: "no_capturable_routes" });
+  assert.equal(starterUsedAsIs(packet), true);
+  delete packet.source_html.pages[0].skip_reason;
+  assert.equal(starterUsedAsIs(packet), false);
 });
 
 test("polish capture route planning has an exact fixed matrix cap", () => {

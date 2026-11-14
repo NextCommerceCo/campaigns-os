@@ -92,6 +92,13 @@ for (const stage of ["build", "polish", "deploy", "qa"]) {
   });
 }
 
+test("next does not ask for a palette waiver on an as-is starter", () => {
+  const packet = { ...BASE.packet, source_html: { pages: [{ page_id: "checkout", skip_reason: "Template stock." }] } };
+  assert.equal(advisoryFor(NOTHING_GENERATABLE, "qa", packet), undefined);
+  const context = { theme: { selected_source: { tokens: { "--brand--primary": "#123456" } } } };
+  assert.ok(buildNextActions({ ...BASE, packet, context, themeGate: NOTHING_GENERATABLE, result: { stage: "qa", divergences: [] } }).some((action) => action.id === ADVISORY_ID));
+});
+
 test("the warning is read before the QA command it is about", () => {
   const actions = actionsFor(NOTHING_GENERATABLE, "qa");
   const warningAt = actions.findIndex((action) => action.id === ADVISORY_ID);

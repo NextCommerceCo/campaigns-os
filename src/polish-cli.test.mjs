@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { hostedTemplateNeedsUsablePreview } from "./local-preview-policy.mjs";
 import {
   mkdirSync,
   mkdtempSync,
@@ -208,6 +209,50 @@ function commandArgs(f, extra = {}) {
     ...extra,
   };
 }
+
+test("all-stock polish capture records readability before closing Polish as excluded", async (t) => {
+  const f = fixture(); t.after(() => rmSync(f.dir, { recursive: true, force: true }));
+  const packet = readJson(f.packetPath);
+  packet.source_html.pages = packet.source_html.pages.map((page) => ({ page_id: page.page_id, skip_reason: "template stock" }));
+  writeJson(f.packetPath, packet);
+  const result = await polishCaptureCommand(commandArgs(f), {
+    createBrowserAdapter: async () => ({
+      async captureRoute() { assert.fail("all-stock capture must only measure readability"); },
+      async probeReadabilityRoute() { return { status: "measured", capped: false, coverage_gaps: [], elements: [] }; },
+      async close() {},
+    }),
+  });
+  const stage = readJson(f.reportPath).stages.polish;
+  assert.equal(stage.evidence.visual_review.readability?.cells.length, 2, "both built-page widths retain their readability record");
+  assert.ok(stage.evidence.visual_review.readability.cells.every((cell) => cell.cell_status === "measured"));
+  assert.equal(stage.evidence.visual_review.page_load, undefined);
+  assert.equal(stage.status, "skipped");
+  assert.equal(stage.evidence.result, "excluded");
+  assert.equal(stage.evidence.reason_code, "template_stock");
+  assert.equal(result.ok, true);
+  assert.equal(result.result, "excluded");
+  assert.equal(result.checkpoint.code, "polish.hidden_eager_media.template_stock");
+  // A closed, not-applicable checkpoint must not re-open the hosted-preview gate.
+  assert.equal(hostedTemplateNeedsUsablePreview({ deploy: { target: "netlify", preview_url: null } }, result.checkpoint), false);
+  assert.match(formatPolishCaptureText({ status: "ready", checkpoint: result.checkpoint }), /every mapped page is template stock/i);
+  assert.match(formatPolishCaptureText(result), /Polish is not applicable/);
+  assert.doesNotMatch(formatPolishCaptureText(result), /Readability was not measured/);
+});
+
+test("all-stock polish capture still closes Polish when readability throws", async (t) => {
+  const f = fixture(); t.after(() => rmSync(f.dir, { recursive: true, force: true }));
+  const packet = readJson(f.packetPath);
+  packet.source_html.pages = packet.source_html.pages.map((page) => ({ page_id: page.page_id, skip_reason: "template stock" }));
+  writeJson(f.packetPath, packet);
+  const result = await polishCaptureCommand(commandArgs(f), {
+    createBrowserAdapter: async () => ({ ...await successfulAdapter()(), async probeReadabilityRoute() {} }),
+    probeClock: { now() { throw new Error("Synthetic readability failure"); }, sleep: async () => {} },
+  });
+  assert.match(formatPolishCaptureText(result), /Readability was not measured/);
+  assert.equal(result.ok, true);
+  assert.equal(result.result, "excluded");
+  assert.equal(readJson(f.reportPath).stages.polish.status, "skipped");
+});
 
 test("record polish accepts failed evidence-only captures with the same gate and checkpoint", async (t) => {
   const f = fixture(); t.after(() => rmSync(f.dir, { recursive: true, force: true }));

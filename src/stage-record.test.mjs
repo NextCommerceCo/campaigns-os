@@ -4,7 +4,7 @@
 // would reject and stamping only the fingerprint doctor computes.
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -14,7 +14,7 @@ import Ajv2020 from "ajv/dist/2020.js";
 
 import { ADAPTER_DECISION_SCALAR_VALUES } from "./adapter-decision-contract.mjs";
 import { computeBuildFingerprint } from "./built-site-scope.mjs";
-import { parseArgs, polishCaptureCommand, recordQaStageOutcome, resultTextLines } from "./cli.mjs";
+import { parseArgs, polishCaptureCommand, formatPolishCaptureText, recordQaStageOutcome, resultTextLines } from "./cli.mjs";
 import { currentPacketInputs } from "./input-currency.mjs";
 import { evaluateRecordedHiddenEagerMediaCheckpoint } from "./polish-node.mjs";
 import { resolveInvocationPolicy } from "./invocation.mjs";
@@ -262,23 +262,22 @@ test("a packet preview URL without record deploy still leaves deploy next", asyn
   });
 });
 
-test("an all-template zero-cell capture keeps the local deploy path open", async () => {
+test("all-template Polish closes as excluded without captures and deploy stays open", async () => {
   await withLifecycle(async (f) => {
     mutateJson(f.packetPath, (packet) => {
       packet.deploy.target = "local-serve";
       packet.source_html.pages = packet.source_html.pages.map((page) => ({ page_id: page.page_id, skip_reason: "template stock" }));
     });
     recordThroughBuild(f);
-    mutateJson(f.reportPath, (report) => {
-      report.stages.polish.evidence = { visual_review: {
-        readability: buildReadabilityRecord({ buildFingerprint: report.stages.assembly.build_fingerprint, slug: f.slug, routes: [`/${f.slug}/`], cells: [] }),
-        captures: syntheticCapturesRecord(report, { targetRepo: f.target }),
-      } };
-    });
-    assert.equal(nextStage(f).stage, "deploy");
-    const polish = record(f, "polish", ["--evidence", POLISH_EVIDENCE]);
-    assert.notEqual(polish.status, 0);
-    assert.match(polish.stderr, /polish\.hidden_eager_media\.no_capturable_routes/);
+    const polish = record(f, "polish", ["--evidence", POLISH_EVIDENCE, "--json"]);
+    console.log(`all-template record polish: exit=${polish.status}; ${polish.stderr.split("\n").filter((line) => /polish\./.test(line)).join(" | ")}`);
+    assert.equal(polish.status, 0, polish.stderr);
+    const stage = readJson(f.reportPath).stages.polish;
+    assert.equal(stage.status, "skipped");
+    assert.equal(stage.evidence.result, "excluded");
+    assert.equal(stage.evidence.reason_code, "template_stock");
+    assert.match(stage.skip_reason, /Every mapped page is template stock/);
+    assert.ok(validReport(readJson(f.reportPath)), JSON.stringify(validReport.errors));
     assert.equal(nextStage(f).stage, "deploy");
     const site = await serveSite(f);
     try {
@@ -288,6 +287,69 @@ test("an all-template zero-cell capture keeps the local deploy path open", async
     } finally {
       await site.close();
     }
+  });
+});
+
+test("all-template stale source routes back to build and refuses deploy", async () => {
+  await guardedLifecycle(async (f) => {
+    mutateJson(f.packetPath, (packet) => {
+      packet.source_html.pages = packet.source_html.pages.map((page) => ({ page_id: page.page_id, skip_reason: "Template stock." }));
+    });
+    const args = hostedDeployArgs(f);
+    recordThroughBuild(f);
+    recordOk(f, "polish", ["--evidence", POLISH_EVIDENCE]);
+    assert.equal(nextStage(f).stage, "deploy");
+    mutateJson(f.reportPath, (report) => { report.stages.assembly.source_package_material_fingerprint = `sha256:${"0".repeat(64)}`; });
+    const stage = nextStage(f).stage;
+    const deployed = hostedDeployCli(f, args);
+    console.log(`all-template stale source: next=${stage}; record deploy exit=${deployed.status}`);
+    assert.equal(stage, "build");
+    assert.notEqual(deployed.status, 0, deployed.stdout);
+    assert.match(deployed.stderr, /polish.assembly_source_package_stale/);
+  });
+});
+
+test("all-template polish capture closes itself when a browser is unavailable", async () => {
+  await withLifecycle(async (f) => {
+    mutateJson(f.packetPath, (packet) => {
+      packet.source_html.pages = packet.source_html.pages.map((page) => ({ page_id: page.page_id, skip_reason: "template stock" }));
+    });
+    recordThroughBuild(f);
+    console.log(`all-template next before capture: ${nextStage(f).stage}`);
+    let browserStarts = 0;
+    const result = await polishCaptureCommand({ _: ["polish", "capture"], packet: f.packetPath, "base-url": "https://shop.example.com" }, {
+      createBrowserAdapter: async () => { browserStarts += 1; throw new Error("Synthetic browser unavailable."); },
+    });
+    console.log(`all-template polish capture: ok=${result.ok}; status=${result.status}; result=${result.result}`);
+    assert.equal(browserStarts, 1);
+    assert.equal(result.result, "excluded");
+    assert.equal(result.reason_code, "template_stock");
+    const lines = formatPolishCaptureText(result).split("\n");
+    assert.equal(lines.length, 1);
+    assert.match(lines[0], /Polish is not applicable.*Every mapped page is template stock/);
+    assert.match(lines[0], /Readability was not measured/);
+    const cli = runCli(["polish", "capture", "--packet", f.packetPath, "--base-url", "http://127.0.0.1:1"], f.dir);
+    assert.equal(cli.status, 0, cli.stderr);
+    assert.equal(cli.stdout.trim().split("\n").length, 1);
+    assert.match(cli.stdout, /Polish is not applicable.*Every mapped page is template stock/);
+    assert.match(cli.stdout, /Readability was not measured/);
+    assert.equal(readJson(f.reportPath).stages.polish.status, "skipped");
+    assert.equal(readJson(f.reportPath).stages.polish.evidence.result, "excluded");
+    assert.equal(nextStage(f).stage, "deploy");
+    const d = doctor(f);
+    assert.equal(d.derived.polish_gate.status, "not_applicable");
+    assert.equal(d.derived.polish_gate.result, "excluded");
+    assert.ok(d.ready.some((line) => /checkpoint not applicable.*every mapped page is template stock/i.test(line)), JSON.stringify(d.ready));
+    assert.ok(!d.ready.some((line) => /before completed assembly/.test(line)));
+    assert.ok(![...d.errors, ...d.warnings].some((issue) => issue.code === "polish.evidence_missing"));
+    const { __qaNodeTestHooks } = await import("./qa-node.mjs");
+    const qa = await __qaNodeTestHooks.resolveQaInputs({ _: ["qa", "run"], packet: f.packetPath });
+    assert.equal(qa.polishGate.status, "not_applicable");
+    assert.equal(__qaNodeTestHooks.polishGateAssertion(qa.polishGate).status, "skipped");
+    assert.notEqual(qa.polishGate.code, "polish.evidence_missing");
+    mutateJson(f.packetPath, (packet) => { packet.source_html.pages[0] = f.packet.source_html.pages[0]; });
+    assert.equal(nextStage(f).stage, "polish", "one designed page still owes Polish after an earlier stock exclusion");
+    assert.equal(doctor(f).derived.polish_checkpoint_gate.status, "blocked");
   });
 });
 
@@ -1469,15 +1531,118 @@ test("record deploy accepts a hosted current Polish, then carries it forward aft
   });
 });
 
-test("record deploy on the local preview carries a skipped Polish forward without completing Polish", async () => {
+test("page-only rebuild shares debt across after-edit, next and local deploy after handoff", async (t) => {
+  await guardedLifecycle(async (f) => {
+    await recordThroughPolish(f);
+    for (const page of f.spec.funnels.flatMap((funnel) => funnel.pages)) {
+      const path = join(f.target, f.packet.assembly.output_dir, `${page.id}.html`);
+      writeFileSync(path, `<h1>${page.id}</h1>`);
+      utimesSync(path, 1_000, 1_000);
+    }
+    await recordDeploy(f);
+    await recordQa(f);
+    const deployArgs = { _: ["record", "deploy"], packet: f.packetPath, "base-url": `http://127.0.0.1:4173/${f.slug}/` };
+    t.diagnostic(`NO CHANGE | after-edit\n${runCli(["after-edit", "--packet", f.packetPath, "--no-live-refs"], f.dir).stdout}`);
+    t.diagnostic(`NO CHANGE | record build\n${resultTextLines(recordOk(f, "build")).join("\n")}`);
+    t.diagnostic(`NO CHANGE | next\n${runCli(["next", "--packet", f.packetPath, "--no-write"], f.dir).stdout}`);
+    t.diagnostic(`NO CHANGE | record deploy\n${resultTextLines(await recordCommand(deployArgs, DEPLOY_FETCH)).join("\n")}`);
+    const page = join(f.target, "_site", f.slug, "landing/index.html");
+    writeFileSync(page, readFileSync(page, "utf8").replace("</h1>", " Revised copy</h1>"));
+    const build = recordOk(f, "build");
+    assert.ok(build.ready.includes("Owed stages: qa (changed pages only)."));
+    const after = runJson(["after-edit", "--packet", f.packetPath, "--no-live-refs"], f.dir).json;
+    assert.equal(after.ci.polish.advisory, true);
+    assert.deepEqual(after.ci.qa.owed_pages.map((page) => page.page_id), ["landing"]);
+    const inspected = doctorOk(f);
+    t.diagnostic(`PAGE ONLY | record build\n${resultTextLines(build).join("\n")}`);
+    t.diagnostic(`PAGE ONLY | after-edit\n${runCli(["after-edit", "--packet", f.packetPath, "--no-live-refs"], f.dir).stdout}`);
+    const next = nextOk(f);
+    // The change-debt lines are text output only: ready[] in the JSON stays
+    // what doctor reports, so the printed text is what is asserted here.
+    const nextText = runCli(["next", "--packet", f.packetPath, "--no-write"], f.dir).stdout;
+    t.diagnostic(`PAGE ONLY | next\n${nextText}`);
+    assert.doesNotMatch(nextText, /^- - /m);
+    assert.equal(next.stage, "deploy");
+    assert.match(nextText, /Owed stages: qa \(changed pages only\)/);
+    assert.ok(!next.ready.some((line) => line.startsWith("Owed stages:")), "ready[] carries no change-debt line");
+    const args = { _: ["record", "deploy"], packet: f.packetPath, "base-url": `http://127.0.0.1:4173/${f.slug}/` };
+    t.diagnostic(`PAGE ONLY | record deploy\n${resultTextLines(await recordCommand(args, DEPLOY_FETCH)).join("\n")}`);
+    const qa = nextOk(f);
+    assert.equal(qa.stage, "qa");
+    assert.match(qa.next_actions.find((action) => action.id === "qa_run").command, /qa run .* --page landing$/);
+    assert.doesNotMatch(qa.prompt, /--test-order|typed-card/);
+    assert.doesNotMatch(runCli(["next", "--packet", f.packetPath, "--no-write"], f.dir).stdout, /--test-order|typed-card/);
+    assert.equal(inspected.derived.evidence_debt.polish.advisory, true);
+    const checkout = join(f.target, "_site", f.slug, "checkout/index.html");
+    writeFileSync(checkout, readFileSync(checkout, "utf8").replace("</h1>", " Revised checkout</h1>"));
+    const checkoutBuild = recordOk(f, "build");
+    assert.ok(checkoutBuild.ready.includes("Owed stages: polish, qa."));
+    t.diagnostic(`CHECKOUT | record build\n${resultTextLines(checkoutBuild).join("\n")}`);
+    t.diagnostic(`CHECKOUT | after-edit\n${runCli(["after-edit", "--packet", f.packetPath, "--no-live-refs"], f.dir).stdout}`);
+    t.diagnostic(`CHECKOUT | next\n${runCli(["next", "--packet", f.packetPath, "--no-write"], f.dir).stdout}`);
+    await assert.rejects(recordCommand(args, DEPLOY_FETCH), (error) => {
+      t.diagnostic(`CHECKOUT | record deploy\n${error.message}`);
+      return /polish/i.test(error.message);
+    });
+    const full = runJson(["after-edit", "--packet", f.packetPath, "--no-live-refs"], f.dir).json;
+    assert.equal(full.ci.qa.scope, "full");
+    assert.equal(full.ci.polish.advisory, false);
+    const nextFull = nextOk(f);
+    assert.equal(nextFull.stage, "polish");
+    assert.match(runCli(["next", "--packet", f.packetPath, "--no-write"], f.dir).stdout, /Owed stages: polish, qa/);
+  });
+});
+
+test("next names after-edit first on a handed-off funnel after a source change", async (t) => {
+  await guardedLifecycle(async (f) => {
+    await recordThroughPolish(f);
+    await recordDeploy(f);
+    await recordQa(f);
+    writeFileSync(join(f.target, f.packet.assembly.output_dir, "landing.html"), "<h1>Revised copy</h1>");
+    const next = runCli(["next", "--packet", f.packetPath, "--no-write"], f.dir);
+    t.diagnostic(`first line: ${next.stdout.split("\n")[0]}`);
+    assert.equal(next.stdout.split("\n")[0], `After a source change, run this first: campaigns-os after-edit --packet ${f.packetPath}`);
+  });
+});
+
+test("record deploy on the local preview keeps skipped Polish missing after page-only rebuild", async (t) => {
   await guardedLifecycle(async (f) => {
     mutateJson(f.packetPath, (packet) => { packet.deploy = { ...packet.deploy, target: "local-serve" }; });
     recordThroughBuild(f);
+    for (const page of f.spec.funnels.flatMap((funnel) => funnel.pages)) {
+      const path = join(f.target, f.packet.assembly.output_dir, `${page.id}.html`);
+      writeFileSync(path, `<h1>${page.id}</h1>`);
+      utimesSync(path, 1_000, 1_000);
+    }
+    await recordCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": `http://127.0.0.1:4173/${f.slug}/` }, DEPLOY_FETCH);
+    t.diagnostic(`FIRST BUILD | after-edit\n${runCli(["after-edit", "--packet", f.packetPath, "--no-live-refs"], f.dir).stdout}`);
+    t.diagnostic(`FIRST BUILD | record build\n${resultTextLines(recordOk(f, "build")).join("\n")}`);
+    t.diagnostic(`FIRST BUILD | next\n${runCli(["next", "--packet", f.packetPath, "--no-write"], f.dir).stdout}`);
+    t.diagnostic(`FIRST BUILD | record deploy\n${resultTextLines(await recordCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": `http://127.0.0.1:4173/${f.slug}/` }, DEPLOY_FETCH)).join("\n")}`);
     recordOk(f, "polish", ["--evidence", writeEvidence(f, "polish-skipped.json", SKIPPED_POLISH)]);
     assert.equal(doctorOk(f).derived.polish_gate.status, "carried_forward");
     await recordCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": `http://127.0.0.1:4173/${f.slug}/` }, DEPLOY_FETCH);
     assert.equal(readJson(f.reportPath).stages.deploy.status, "completed");
     assert.equal(readJson(f.reportPath).stages.polish.status, "skipped");
+    await recordQa(f);
+    const { __qaNodeTestHooks } = await import("./qa-node.mjs");
+    const before = doctorOk(f).derived.polish_gate;
+    const beforeRow = __qaNodeTestHooks.polishGateAssertion(before);
+    assert.equal(beforeRow.status, "warn");
+    t.diagnostic(`Before edit: ${beforeRow.status}: ${beforeRow.actual}`);
+    const page = join(f.target, "_site", f.slug, "landing/index.html");
+    writeFileSync(page, readFileSync(page, "utf8").replace("</h1>", " Revised copy</h1>"));
+    const built = recordOk(f, "build");
+    assert.ok(built.ready.includes("Owed stages: qa (changed pages only)."));
+    const after = doctorOk(f).derived.polish_gate;
+    const afterRow = __qaNodeTestHooks.polishGateAssertion(after);
+    t.diagnostic(`After edit: ${afterRow.status}: ${afterRow.actual}`);
+    assert.equal(after.code, "polish.evidence_missing");
+    assert.equal(after.carried_forward.policy, "local_preview");
+    assert.equal(afterRow.status, "warn");
+    assert.match(afterRow.actual, /missing, not passed; production QA still requires it/);
+    assert.doesNotMatch(afterRow.actual, /last reviewed/);
+    assert.equal(nextOk(f).stage, "deploy");
   });
 });
 

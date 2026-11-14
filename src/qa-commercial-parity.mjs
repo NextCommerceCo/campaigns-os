@@ -182,6 +182,7 @@ export function captureCommercialClaims(page, html) {
       ...extractCommercialClaims(html, {
         pageId: present(page?.page_id) ? String(page.page_id) : null,
         url: page?.url,
+        pageType: page?.page_type,
       }),
       // Every package the page renders, by the refs doctor reads, so a
       // subscription whose rebill copy yielded no claim is still seen (#533).

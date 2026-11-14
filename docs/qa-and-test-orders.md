@@ -112,8 +112,7 @@ checks are carried forward:
 
 | Check | Local loopback preview | Hosted preview |
 | --- | --- | --- |
-| `polish.evidence_missing`, `polish.report_missing` | Carried when Polish was never recorded. | Carried only with the all-template `no_capturable_routes` checkpoint. |
-| `polish.hidden_eager_media.no_capturable_routes` | Carried when every mapped page is template stock (`skip_reason`). | Carried when every mapped page is template stock and QA uses the packet's non-loopback `deploy.preview_url`, distinct from `deploy.production_url` by origin or QA-resolved campaign route path. |
+| `polish.evidence_missing`, `polish.report_missing` | Carried when Polish was never recorded for a design route. | Blocked. |
 | `polish.hidden_eager_media.capture_malformed` | Carried only when no page-load capture was recorded at all. | Blocked. |
 | Template-residue severity | With `theme_gate.nothing_generatable`, residue findings warn. | Unchanged. |
 
@@ -121,17 +120,17 @@ A carried-forward gate has status `carried_forward`. Doctor reports it as a
 warning starting "Carried forward on the local preview" or "Carried forward on the hosted preview"; `next` moves past
 polish to deploy and QA; QA records it as a `warn` row, so the verdict is at
 best `ready_with_exceptions`. The evidence is reported as missing, never as
-passed. On a hosted all-template preview, first record an unset preview URL
-with `campaigns-os qa policy set --packet <packet> --preview-url <url>`, then
-record the deploy with `campaigns-os record deploy --packet <packet> --base-url <preview-url>`
-(on a hosted target it takes an https URL, requires every built page to answer
-200, and compares the served scripts and stylesheets with the build by sha256),
-then run `campaigns-os qa run --packet <packet> --base-url <preview-url> --browser --test-order common`. After QA records the current-build verdict, run `campaigns-os next --packet <packet>` for closeout. The hosted exception
-requires a distinct packet `deploy.preview_url`; a query or fragment on the production page does not count as distinct. QA with `--base-url` equal to
-the packet's `deploy.production_url` stays blocked. A `local-serve` packet
-served from any other host also gets strict gates. `record polish` and the
-waiver commands keep them strict. Progress
-snapshots record a carried-forward gate as `not_applicable`, because their
+passed. A `local-serve` packet served from any other host gets strict gates.
+
+When every mapped page is template stock (`skip_reason`), Polish is not
+applicable on any target. `polish capture` closes it with status `skipped`,
+evidence `result: "excluded"`, `reason_code: "template_stock"` and the reason
+that there is no design route to compare. `next` and `record deploy` move on;
+QA does not report a missing-Polish warning. Run
+`campaigns-os next --packet <packet>` for the next stage. A mapped design page
+keeps the existing Polish requirements.
+
+Progress snapshots record a carried-forward gate as `not_applicable`, because their
 schema has no carried-forward state.
 
 ### Polish advisory for a page-only change
@@ -536,7 +535,13 @@ prices above, because the browser pass does not load pages in the run currency.
 Only contract-governed claims are compared, and only against `Exact` normalized
 truth. Proven differences emit warn-severity `pricing` assertions named
 `price-claim-mismatch`, `cadence-disclosure-mismatch`, or
-`voucher-not-applied`. Decorative claims are ignored, and ambiguous, stale,
+`voucher-not-applied`. A voucher the CampaignSpec binds to an upsell or
+downsell page that the page does not carry (no `data-next-bundle-vouchers`,
+`data-next-bundles` bundle `vouchers` or `data-next-vouchers` naming it) is a
+`voucher-not-on-page` finding naming the page and the code: an order placed
+there will not get that offer. On upsell and downsell pages all three
+attributes are read as voucher claims; other pages read only
+`data-next-bundle-vouchers`, as before. Decorative claims are ignored, and ambiguous, stale,
 unresolved, or malformed claims never read as a mismatch: they leave the proof
 incomplete, as above. A page showing a voucher the normalized plan cannot price
 (no calculated pair for its code, for example a live voucher on an upsell)
@@ -1606,10 +1611,13 @@ outcome of the gates doctor's static scan can only approximate:
 
 A gate that did not run on that verdict is absent, never `pass`. Doctor reads
 `gates.placeholder_text_residue` back while `stages.assembly.build_fingerprint`
-still matches `source_build_fingerprint`: a recorded pass demotes the
+still matches `source_build_fingerprint`: except on an all-template, as-is build,
+a recorded pass demotes the
 `template_contract.placeholder_text_residue` warning to a ready line and drops
 the matching `next` action; a rebuild or a failed gate brings the warning back
-(see `docs/template-family-contracts.md`). `evidence` is a QA-owned field, so
+(see `docs/template-family-contracts.md`). On an all-template, as-is build,
+starter placeholder warnings remain visible even after a recorded pass.
+`evidence` is a QA-owned field, so
 the next QA record replaces it wholesale.
 
 `next` compares the declared depth against what was exercised:
@@ -1943,12 +1951,16 @@ Two flags target funnels the default-tier drive cannot prove:
   other ref is left unapplied and named in the `selected_bundle` detail
   (`--cart 3:1 not applied: ...`). The display-parity row reconciles the order
   against the packages and quantities every selected bundle card declares, not
-  its `data-next-bundle-id`. Without `--select-package` it also fails when an
-  explicit `--cart <ref:qty>` is not in the order at that quantity: a
+  its `data-next-bundle-id`. With or without `--select-package` it also fails
+  when an explicit `--cart <ref:qty>` is not in the order at that quantity: a
   different quantity (`--cart 1:2` that ordered one unit) or no line for the
   package at all (`--cart 1:2,3:1` on a swap-mode selector that kept only the
-  `3:1` card); beside `--select-package` it judges the order against the card
-  that flag chose.
+  `3:1` card, or an order bump `--cart` ref beside `--select-package` that
+  never reached the order). Beside `--select-package`, a `--cart` ref for a
+  package the selected card sells is not judged against the order: that
+  conflict is named in `selected_bundle`, and the order is the card's. On a checkout with an "Add to Cart" reveal
+  (`.checkout-form--reveal`), the runner clicks the reveal before it applies
+  `--cart`, so an order bump inside the revealed panel can be toggled.
 - `--apply-coupon <code>` — types the code into the rendered coupon/promo input
   (the SDK's `[data-next-checkout-field="coupon"]` or
   `input[data-next-coupon="input"]`, then hand-rolled `coupon`/`voucher`/`promo`
@@ -2358,7 +2370,19 @@ drives declares an order bump (`is_order_bump: true` or `is_upsell: true` rows),
 command, `qa_run_bump`, beside `qa_run`: the same `--test-order common` run
 with `--cart <base>:1,<bump>:1`, where the base is the first selector tier the
 checkout declares. The QA stage prompt and the human `next` output carry the
-same command.
+same command. When `campaign.available_currencies` lists more than one
+currency, the `qa_run` action carries `currency_commands`: the same run with
+`--currency <code>` for each listed currency other than `campaign.currency`,
+printed in the prompt and the human output too.
+
+A run that created test orders also says what they did not cover, as warn
+rows judged on that run's orders only: `browser-test-order:currency-coverage`
+names the listed currencies no order was placed in, and
+`browser-test-order:order-bump-coverage` names a checkout order bump no order
+was shown to contain (an order whose display-parity row passed with the bump in
+its summary contains it; a run with no comparable cart summary gets no row).
+Each row says what to run: one run per missing currency, and the `--cart` to
+add (the bump alone on a run that selects its own package or tiers).
 
 Record order numbers, `ref_id` values, and expected line-item shapes in the
 handoff. If the browser console shows an SDK module-load error but the SDK

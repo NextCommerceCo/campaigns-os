@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -822,4 +823,89 @@ test("scope merge is keyed on page identity, and out-of-scope pages already coun
   assert.equal(themeGateScopeSource(doctorScope, specScope), "doctor_derived_scope");
   assert.equal(mergeThemeGateScope(null, specScope), specScope);
   assert.equal(themeGateScopeSource(null, specScope), "spec_topologies");
+});
+
+
+test("as-is starter palette is excluded without a waiver", () => {
+  const packet = { source_html: { pages: [{ page_id: "checkout", skip_reason: "Template stock: used as-is." }] } };
+  assert.equal(residueSeverityForThemeGate("pass", { packet, palette: true, themeCode: "theme_gate.nothing_generatable" }), "info");
+  const designed = { source_html: { pages: [{ page_id: "checkout", path: "checkout.html" }] } };
+  assert.equal(residueSeverityForThemeGate("pass", { packet: designed, palette: true, themeCode: "theme_gate.nothing_generatable" }), "blocker");
+  assert.equal(residueSeverityForThemeGate("blocked", { packet, palette: true, themeCode: "theme_gate.nothing_generatable" }), "blocker");
+  assert.equal(residueSeverityForThemeGate("pass", { packet, palette: true, themeCode: "theme_gate.applied" }), "blocker");
+  assert.equal(residueSeverityForThemeGate("pass", { packet, palette: true, themeCode: "theme_gate.nothing_generatable", contextTheme: { selected_source: { tokens: { "--color-primary": "#123456" } } } }), "blocker");
+});
+
+test("as-is starter placeholder copy warns without softening designed copy", () => {
+  const packet = { source_html: { pages: [{ page_id: "checkout", skip_reason: "Template stock: used as-is." }] } };
+  assert.equal(residueSeverityForThemeGate("pass", { packet, placeholder: true }), "warn");
+  const designed = { source_html: { pages: [{ page_id: "checkout", path: "checkout.html" }] } };
+  assert.equal(residueSeverityForThemeGate("pass", { packet: designed, placeholder: true }), "blocker");
+  assert.equal(residueSeverityForThemeGate("waived", { packet: designed, placeholder: true }), "blocker");
+});
+
+
+test("as-is starter QA verdict excludes palette rows and warns on placeholder rows", () => {
+  const output = execFileSync(process.execPath, ["--experimental-test-module-mocks", "--input-type=module", "-e", `
+    import { mock } from "node:test";
+    import * as browser from ${JSON.stringify(new URL("./qa-browser.mjs", import.meta.url).href)};
+    import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
+    import { tmpdir } from "node:os";
+    import { join } from "node:path";
+    const rows = [
+      { id: "template-residue:checkout:style:checkout_submit_button", family: "template_residue", page: "checkout", status: "fail", severity: "blocker", actual: "starter color", evidence: {} },
+      { id: "template-residue:checkout:placeholder-text", family: "template_residue", page: "checkout", status: "fail", severity: "blocker", actual: "placeholder text rendered: Lorem", evidence: {} },
+      { id: "template-residue:checkout:style:missing", family: "template_residue", page: "checkout", status: "warn", severity: "warn", actual: "selector not found", evidence: {} },
+    ];
+    mock.module(${JSON.stringify(new URL("./qa-browser.mjs", import.meta.url).href)}, { namedExports: { ...browser, runBrowserChecks: async () => structuredClone(rows) } });
+    globalThis.fetch = async () => { throw new Error("Unexpected network request"); };
+    const { __qaNodeTestHooks } = await import(${JSON.stringify(new URL("./qa-node.mjs", import.meta.url).href)});
+    const out = mkdtempSync(join(tmpdir(), "starter-qa-"));
+    try {
+      const resolved = {
+        themeGate: { status: "pass", code: "theme_gate.nothing_generatable", reason: "No brand theme." },
+        polishGate: { status: "not_applicable", code: "polish.not_applicable", reason: "No design." },
+        checkpointGates: [], qaWaivers: {}, analyticsCaptureTarget: { url: null, source: "unresolved" },
+        brandContract: null, brandContractStatus: "not_evaluated", packetPath: null,
+        packet: { source_html: { pages: [{ page_id: "checkout", skip_reason: "Template stock." }] } },
+        mapId: "sample", publicRouteSlug: "sample", proxyBase: "https://proxy.example.com", baseUrl: "https://shop.example.com",
+        specSource: "test", portalManaged: false, spec: { campaign: {} }, rawSpec: { campaign: {} },
+        specVersion: "4.3", specHash: "sha256:sample", topologies: [],
+      };
+      const args = { _: ["qa", "run"], browser: true, "output-dir": out, "no-post-verdict": true, "no-remit": true, "no-live-refs": true };
+      const stock = await __qaNodeTestHooks.runResolvedQa(args, resolved);
+      resolved.packet.source_html.pages = [{ page_id: "checkout", path: "checkout.html" }];
+      const designed = await __qaNodeTestHooks.runResolvedQa(args, resolved);
+      const { summarizePlaceholderTextGate } = await import(${JSON.stringify(new URL("./qa-verdict.mjs", import.meta.url).href)});
+      const { recordQaStageOutcome } = await import(${JSON.stringify(new URL("./cli.mjs", import.meta.url).href)});
+      const packet = JSON.parse(readFileSync(${JSON.stringify(fileURLToPath(new URL("../examples/build-packet.basic.json", import.meta.url)))}, "utf8"));
+      packet.assembly.target_repo = out;
+      const packetPath = join(out, "campaign-runtime.build.json");
+      const report = JSON.parse(readFileSync(${JSON.stringify(fileURLToPath(new URL("../examples/assembly-report.example.json", import.meta.url)))}, "utf8"));
+      report.identity.map_id = packet.spec.map_id;
+      report.identity.public_route_slug = packet.campaign.public_route_slug;
+      mkdirSync(join(out, ".campaign-runtime"), { recursive: true });
+      const reportPath = join(out, ".campaign-runtime", "assembly-report.json");
+      writeFileSync(packetPath, JSON.stringify(packet));
+      writeFileSync(reportPath, JSON.stringify(report));
+      stock.verdict.campaign_slug = packet.spec.map_id;
+      stock.verdict.public_route_slug = packet.campaign.public_route_slug;
+      const recorded = recordQaStageOutcome({ packet: packetPath }, stock);
+      const recordedGate = JSON.parse(readFileSync(reportPath, "utf8")).stages.qa.evidence?.gates?.placeholder_text_residue;
+      console.log(JSON.stringify({ stock: stock.verdict.assertions.filter((row) => row.family === "template_residue"), designed: designed.verdict.assertions.filter((row) => row.family === "template_residue"), disposition: stock.verdict.disposition, gate: summarizePlaceholderTextGate(stock.verdict), recorded, recordedGate }));
+    } finally { rmSync(out, { recursive: true, force: true }); }
+  `], { encoding: "utf8", env: { ...process.env, CAMPAIGNS_OS_TELEMETRY: "off" } });
+  const { stock, designed, disposition, gate, recorded, recordedGate } = JSON.parse(output);
+  assert.equal(recorded, true);
+  assert.deepEqual(recordedGate, { status: "fail", pages_checked: 1, pages_failed: 1 });
+  assert.equal(stock[0].status, "skipped");
+  assert.equal(stock[0].evidence.result, "excluded");
+  assert.equal(stock[0].evidence.reason_code, "template_stock");
+  assert.match(stock[0].actual, /no design source or brand tokens/);
+  assert.deepEqual([stock[1].status, stock[1].severity], ["fail", "warn"]);
+  assert.equal(disposition, "ready_with_exceptions");
+  assert.deepEqual(gate, { status: "fail", pages_checked: 1, pages_failed: 1 });
+  assert.equal(stock[1].actual, "Starter placeholder text remains because this build uses every mapped page as-is. Review the demo content before publishing.");
+  assert.ok(designed.slice(0, 2).every((row) => row.status === "fail" && row.severity === "blocker"));
+  assert.deepEqual([stock[2].status, stock[2].severity, stock[2].actual], ["warn", "warn", "selector not found"]);
 });

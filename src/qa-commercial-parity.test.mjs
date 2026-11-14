@@ -1155,3 +1155,96 @@ test("recurring claim absent: a rendered subscription package with no extracted 
   assert.equal(oneTime.assertions.some((entry) => entry.id.startsWith("commercial_parity.recurring_claim_absent")), false);
   assert.deepEqual(oneTime.commercial.recurring_claim_absences, []);
 });
+
+test("a voucher the spec binds to an upsell page that carries no voucher is a price-check mismatch naming the page and the code", async () => {
+  const spec = (offer) => ({
+    schema_version: "4.3",
+    campaign: { campaigns_api_key: "campaign-secret", currency: "USD", offers: [offer] },
+    funnels: [{ id: "default", pages: [{
+      id: "upsell-1",
+      type: "upsell",
+      order: 2,
+      enabled: true,
+      packages: [{ ref_id: "3", qty: 1 }],
+      offers: [{ ref_id: "o1" }],
+    }] }],
+  });
+  // The server applies SAVE20 when it is sent: 49.99 without it, 29.99 with it.
+  const fetchImpl = async (_url, options) => {
+    const { scenario } = JSON.parse(options.body);
+    const voucher = (scenario.vouchers || []).includes("SAVE20");
+    const total = voucher ? "29.99" : "49.99";
+    return new Response(JSON.stringify({
+      ok: true,
+      status: 200,
+      data: {
+        lines: scenario.lines.map((line) => ({ package_id: line.package_id, quantity: line.quantity, discounts: [], subtotal: total, original_package_price: "49.99", total_discount: voucher ? "20.00" : "0.00", total })),
+        offer_discounts: [],
+        voucher_discounts: voucher ? [{ code: "SAVE20", amount: "20.00" }] : [],
+        subtotal: total,
+        total_discount: voucher ? "20.00" : "0.00",
+        total,
+        currency: "USD",
+      },
+      calculated_at: "2026-08-24T00:00:00.000Z",
+    }), { status: 200 });
+  };
+  const run = (offer, html) => {
+    const resolved = { rawSpec: spec(offer), spec: spec(offer), proxyBase: "https://proxy.example.test" };
+    return runCommercialParity({ resolved, captures: [captureCommercialClaims({ page_id: "upsell-1", page_type: "upsell", url: "https://shop.example.com/upsell-1/" }, html)], fetchImpl });
+  };
+  const voucherOffer = { ref_id: "o1", type: "voucher", code: "SAVE20" };
+
+  const unwired = await run(voucherOffer, '<div data-next-package-id="3">Add the travel case</div>');
+  assert.equal(unwired.commercial.status, "mismatch");
+  assert.equal(unwired.commercial.extracted_voucher_claims, 0);
+  assert.deepEqual(unwired.commercial.finding_counts, { "voucher-not-on-page": 1 });
+  assert.deepEqual(unwired.assertions.map((entry) => [entry.id, entry.status, entry.severity]), [["voucher-not-on-page:upsell-1:SAVE20", "warn", "warn"]]);
+  assert.match(unwired.assertions[0].actual, /page upsell-1 does not carry voucher SAVE20, so an order placed there will not get that offer/);
+  assert.doesNotMatch(unwired.assertions[0].actual, /list price/);
+
+  // Control: the page carries the code, and the server applies it.
+  const wired = await run(voucherOffer, '<div data-next-package-id="3" data-next-bundle-vouchers=\'["SAVE20"]\'>Add the travel case</div>');
+  assert.equal(wired.commercial.status, "pass");
+  assert.equal(wired.commercial.compared_voucher_claims, 1);
+  assert.deepEqual(wired.assertions, []);
+
+  // Control: the SDK's auto-render bundle config and SDK 0.5 cards carry the
+  // code too, and are read as voucher claims.
+  for (const html of [
+    '<div data-next-bundle-selector data-next-bundles=\'[{"id":"a","items":[{"packageId":3,"quantity":1}],"vouchers":["SAVE20"]}]\'></div>',
+    '<div data-next-option="a" data-next-items="3x1" data-next-vouchers="SAVE20">Add the travel case</div>',
+  ]) {
+    const carried = await run(voucherOffer, html);
+    assert.equal(carried.commercial.status, "pass", html);
+    assert.equal(carried.commercial.compared_voucher_claims, 1, html);
+    assert.deepEqual(carried.assertions, [], html);
+  }
+
+  // Control: an offer with no code binds nothing to the page.
+  const automatic = await run({ ref_id: "o1", type: "offer", name: "Automatic 20% off" }, '<div data-next-package-id="3">Add the travel case</div>');
+  assert.equal(automatic.commercial.status, "pass");
+  assert.deepEqual(automatic.assertions, []);
+});
+
+test("on a checkout, bundle-config and SDK 0.5 card vouchers are not voucher claims: prices compare as before", async () => {
+  const spec = rawRecurringSpec();
+  const fetchImpl = async (_url, options) => {
+    const { scenario } = JSON.parse(options.body);
+    return new Response(JSON.stringify(calculateBody(scenario)), { status: 200 });
+  };
+  const rebill = '<div data-next-package-toggle><strong data-next-package-id="5">Game Club</strong> then $29.99 every 30 days</div>';
+  for (const carried of [
+    '<div data-next-bundle-selector data-next-bundles=\'[{"id":"b2","items":[{"packageId":5,"quantity":1}],"vouchers":["FREESHIP"]}]\'></div>',
+    '<div data-next-option="b2" data-next-items="5x1" data-next-vouchers="FREESHIP">Two-pack</div>',
+  ]) {
+    const result = await runCommercialParity({
+      resolved: { rawSpec: spec, spec, proxyBase: "https://proxy.example.test" },
+      captures: [captureCommercialClaims({ page_id: "page_mt104ehn_11", page_type: "checkout" }, `${rebill}${carried}`)],
+      fetchImpl,
+    });
+    assert.equal(result.commercial.status, "pass", carried);
+    assert.equal(result.commercial.extracted_voucher_claims, 0, carried);
+    assert.equal(result.commercial.compared_recurrence_claims, 1, carried);
+  }
+});
