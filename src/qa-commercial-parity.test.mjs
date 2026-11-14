@@ -458,8 +458,9 @@ async function tieredUpsellPrices(secondTier = "$59.98") {
     ${packages.map(({ qty }) => `<div data-next-bundle-card data-next-bundle-id="offer-${qty}x"
       data-next-bundle-items='[{"packageId":7,"quantity":${qty}}]'><span data-next-bundle-display="price">—</span></div>`).join("")}
   `);
-  // The collector reads both the selected offer's remote display and each
-  // tier card's local display after the SDK fills them.
+  // Injected in the shape the browser collector returns once the SDK has
+  // filled the prices; the collector itself is covered by the browser tests
+  // in qa-package-price-display.browser.test.mjs.
   capture.rendered_bundle_prices = [
     { binding: "bundle.offer.price", package_id: 7, quantity: 1, filled: true, text: "$29.99" },
     ...["$29.99", secondTier, "$89.97"].map((text, index) => ({

@@ -3255,6 +3255,9 @@ function collectRenderedPackagePrices() {
     const packageId = /^[1-9]\d*$/.test(String(item?.packageId)) ? Number(item.packageId) : null;
     const quantity = /^[1-9]\d*$/.test(String(item?.quantity)) ? Number(item.quantity) : null;
     const binding = remote ? remote[0] : `bundle.${card?.getAttribute("data-next-bundle-id") || "unknown"}.price`;
+    // A card id with a dot cannot form a governed binding; leave that one
+    // price uncompared so it does not invalidate the page's whole capture.
+    if (!/^bundle\.[^.]+\.price$/.test(binding)) continue;
     const filled = local || element.classList.contains("display-visible");
     const text = filled && !element.hasAttribute("data-next-multiply-quantity")
       ? element.textContent.replace(/\s+/g, " ").trim() : null;
