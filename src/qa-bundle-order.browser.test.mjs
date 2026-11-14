@@ -70,6 +70,16 @@ document.addEventListener("click", function (event) {
 });
 </script>`;
 
+const BUMP = '<div data-next-toggle-card data-next-package-id="2" class="bump os-card">Add a spare filter (package 2)</div>';
+
+const REVEAL_SCRIPT = `<script>
+document.querySelector("[data-checkout-reveal-trigger]").addEventListener("click", function () {
+  var form = document.querySelector(".checkout-form--reveal");
+  form.classList.add("is-revealed");
+  form.querySelector("[data-checkout-reveal-panel]").removeAttribute("inert");
+});
+</script>`;
+
 // Page rewrites, one per variant the cases need.
 const VARIANTS = {
   // The starter bundle-selector partial: package id repeated on an inner node.
@@ -95,6 +105,15 @@ const VARIANTS = {
     .replace(/<div class="os-cards__vertical">[\s\S]*?\n {4}<\/div>/, PLAIN_CARDS),
   // Plain package cards in separate wrappers and no selector container.
   "plain-wrapped": (html) => html.replace(/<div data-next-bundle-selector[\s\S]*?\n {2}<\/div>\n {2}<aside/, `${WRAPPED_PLAIN_CARDS}\n  <aside`),
+  // A checkout reveal, as a starter family ships it: the order bump and the
+  // form sit in a panel that is inert and parked off-screen until the
+  // "Add to Cart" reveal button is clicked.
+  reveal: (html) => html
+    .replace(/\n {4}<div data-next-toggle-card[^\n]*<\/div>/, "")
+    .replace("<form data-fixture-checkout>", `<div class="checkout-form checkout-form--reveal"><button type="button" data-checkout-reveal-trigger>Add to Cart</button><div class="checkout-reveal__panel" data-checkout-reveal-panel inert>${BUMP}<form data-fixture-checkout>`)
+    .replace("</form>", "</form></div></div>")
+    .replace("</style>", ".checkout-form--reveal:not(.is-revealed) .checkout-reveal__panel{position:absolute;left:-99999px}</style>")
+    .replace("</body>", `${REVEAL_SCRIPT}\n</body>`),
 };
 
 const RECEIPT = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Receipt</title></head>
@@ -176,14 +195,14 @@ async function serve() {
 
 // The Campaigns API is served on the same port under a campaigns.apps host,
 // so the runner captures its packages the way it captures the SDK's call.
-async function runVariant(variant, flags) {
+async function runVariant(variant, flags, { packages } = {}) {
   const server = await serve();
   const base = `http://127.0.0.1:${server.port}`;
   const topologies = [{
     funnel_id: "default",
     funnel_name: "Default",
     pages: [
-      { page_id: "checkout", page_type: "checkout", order: 1, url: `${base}/x/${variant}/checkout/`, expected_next_url: `${base}/x/receipt/` },
+      { page_id: "checkout", page_type: "checkout", order: 1, url: `${base}/x/${variant}/checkout/`, expected_next_url: `${base}/x/receipt/`, ...(packages ? { packages } : {}) },
       { page_id: "receipt", page_type: "receipt", order: 2, url: `${base}/x/receipt/` },
     ],
   }];
@@ -279,9 +298,14 @@ browserTest("--select-package 1:2 with --cart 1:2,2:1 keeps the selected bundle 
 });
 
 // --cart beside --select-package: the card --select-package chose stays
-// selected, and a --cart ref it cannot apply without switching cards is named
-// in selected_bundle. Same package at the same quantity and a package an order
-// bump carries are covered by the case above.
+// selected, a --cart ref it cannot apply without switching cards is named in
+// selected_bundle, and an explicit ref for a package the chosen card does not
+// sell must reach the order or fail the display-parity row. A ref for the
+// package the chosen card sells, at another quantity, is that named conflict:
+// the order is the card's. Same package at the same quantity and a package an
+// order bump carries are covered by the case above. A bare ref names no
+// quantity and is not judged against the order, with or without
+// --select-package.
 browserTest("--select-package 1:2 with --cart 1:3 keeps the two-unit card and names the unapplied quantity", async () => {
   const { steps, parity, carts } = await runVariant("starter", { "select-package": "1:2", cart: "1:3" });
 
@@ -298,8 +322,8 @@ browserTest("--select-package 1:2 with --cart 3:1 in a swap-mode selector does n
   assert.deepEqual(carts, [["1:2"]], "the order is the card --select-package chose");
   assert.match(steps.selected_bundle.detail, /1:2 via \[data-next-bundle-id="bundle-2x"\]/);
   assert.match(steps.selected_bundle.detail, /--cart 3:1 not applied: only another card in the selector --select-package chose carries it/);
-  assert.equal(parity.status, "pass", parity.actual);
-  assert.deepEqual(parity.evidence.displayed_package_ids, ["1"]);
+  assert.equal(parity.status, "fail");
+  assert.deepEqual(parity.evidence.quantity_mismatches.map((entry) => entry.package_ref_id), ["3"]);
 });
 
 browserTest("plain package cards: --select-package 3 with --cart 1 does not switch to the package-1 card", async () => {
@@ -321,13 +345,14 @@ browserTest("plain package cards each in their own wrapper: --select-package 3 w
   assert.equal(parity.status, "pass", parity.actual);
 });
 
-browserTest("--select-package 1:2 with --cart for a package no card or control carries names it and keeps the selection", async () => {
+browserTest("--select-package 1:2 with --cart for a package no card or control carries names it, keeps the selection and fails the order check", async () => {
   const { steps, parity, carts } = await runVariant("starter", { "select-package": "1:2", cart: "9:1" });
 
   assert.equal(steps.selected_bundle.status, "ok", steps.selected_bundle.error);
   assert.match(steps.selected_bundle.detail, /--cart 9:1 not applied: no rendered card or control carries it/);
   assert.deepEqual(carts, [["1:2"]]);
-  assert.equal(parity.status, "pass", parity.actual);
+  assert.equal(parity.status, "fail");
+  assert.match(parity.actual, /package 9 requested at quantity 1 but the order carries no line for it/);
 });
 
 browserTest("a card declaring two items is selected by either item and reconciles every item it declares", async () => {
@@ -392,4 +417,26 @@ browserTest("control: a plain package-card checkout selects, adds the bump and r
   assert.equal(parity.status, "pass", parity.actual);
   assert.deepEqual(parity.evidence.displayed_package_ids, ["3", "2"]);
   assert.deepEqual(parity.evidence.matched_quantities, [{ package_ref_id: "3", unit_quantity: 2, purchase_multiplier: 1, persisted_quantity: 2 }]);
+});
+
+browserTest("a checkout reveal: --cart orders the bump that sits behind the \"Add to Cart\" reveal, with or without --select-package", async () => {
+  for (const flags of [{ cart: "1:1,2:1" }, { "select-package": "1:1", cart: "1:1,2:1" }]) {
+    const { steps, parity, carts } = await runVariant("reveal", flags);
+
+    assert.equal(steps.selected_bundle.status, "ok", steps.selected_bundle.error);
+    assert.equal(steps.bump_state.detail, "1 bump toggle(s), 1 active", JSON.stringify(flags));
+    assert.deepEqual(carts.map((lines) => [...lines].sort()), [["1:1", "2:1"]], JSON.stringify(flags));
+    assert.equal(parity.status, "pass", parity.actual);
+  }
+});
+
+browserTest("--test-order tiers with --cart 1:1,2:1: every tier orders its own card plus the bump and reconciles clean", async () => {
+  // The checkout declares the three tiers of package 1 and the bump, package 2.
+  const packages = [{ ref_id: "1", qty: 1 }, { ref_id: "1", qty: 2 }, { ref_id: "1", qty: 3 }, { ref_id: "2", qty: 1, is_order_bump: true }];
+  const { result, carts } = await runVariant("starter", { "test-order": "tiers", cart: "1:1,2:1" }, { packages });
+
+  assert.deepEqual(carts.map((lines) => [...lines].sort()), [["1:1", "2:1"], ["1:2", "2:1"], ["1:3", "2:1"]]);
+  const parity = result.assertions.filter((entry) => entry.id.startsWith("browser-order-display-parity:"));
+  assert.equal(parity.length, 3);
+  for (const row of parity) assert.equal(row.status, "pass", `${row.id}: ${row.actual}`);
 });
