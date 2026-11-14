@@ -23,8 +23,8 @@ Pause only for missing inputs, doctor blockers, blocked deploys, out-of-scope ru
 
 After any change to a handed-off funnel, build with Page Kit, run
 `campaigns-os after-edit --packet <packet>`, and commit the files it lists
-with the change. The command records the rebuilt output, plans spec derivation,
-and reports what evidence is owed. It never builds or places test orders.
+with the change. The command records the rebuilt output and reports what
+evidence is owed before showing any spec derivation preview. It never builds or places test orders.
 
 | Kind of change | What the command reports and what to do |
 |---|---|
