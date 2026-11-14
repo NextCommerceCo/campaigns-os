@@ -1,5 +1,5 @@
 import { campaignSpecIdentity, resolveCampaignIdentity, campaignIdentitiesMatch, localSpecIdentityFields } from "./spec-source-identity.mjs";
-import { withDoctorCiReport } from "./doctor/ci.mjs";
+import { assessDoctorCi, doctorCiEvidenceLines, withDoctorCiReport } from "./doctor/ci.mjs";
 import { createHash, randomUUID } from "node:crypto";
 import { resolveDesignFileReferences } from "./design-file-reference.mjs";
 import { withDesignSourcePublication, readRecordedDesignSourcePackage } from "./design-source-publication.mjs";
@@ -33,7 +33,7 @@ import { routeMaskedSpecMaterialHash, specMaterialHash, specHashesMatch } from "
 // The same predicate stage-ledger.mjs judges a mutator's result with, imported
 // rather than re-stated so the waive preview and the commit agree by identity.
 import { isPlainObject } from "./repo-scan.mjs";
-import { applyDerivedAssemblyReportSummary, campaignHandedOff, commitAssemblyReport, QA_GATE_PLACEHOLDER_TEXT_RESIDUE, recordProducerStageOutcome, qaRestsOnBaseline } from "./stage-ledger.mjs";
+import { applyDerivedAssemblyReportSummary, campaignHandedOff, commitAssemblyReport, QA_GATE_PLACEHOLDER_TEXT_RESIDUE, recordProducerStageOutcome, polishReviewedBuild, qaEverCompleted, qaRestsOnBaseline } from "./stage-ledger.mjs";
 import { SESSION_ENDING_DISPOSITIONS, summarizePlaceholderTextGate, summarizePurchaseProof } from "./qa-verdict.mjs";
 import { assessRunRecordCloseout, identityMatches, latestMatchingRunRecord, reasonIsRemitRecovery } from "./run-record-closeout.mjs";
 import {
@@ -1334,6 +1334,7 @@ async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = nul
     const qcRederivers = await loadQcRederivers();
     const result = nextStage(stage, args, ambient, { qcStandIns, qcRederivers });
     await observeProgress(args, result, { packageVersion: packageVersion(), resolveKey: resolveCampaignsApiKeySource });
+    if (!stage && !args.json && qaEverCompleted(result[PROGRESS_OBSERVATION]?.report)) console.log(`After a source change, run this first: ${cmd("after-edit")} --packet ${shellToken(requireArg(args, "packet"))}`);
     writeResult(result, args, result.ok ? 0 : 2);
     printNextTinyPrompt(result, args);
     return;
@@ -4680,6 +4681,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
     reportPath: args.report ? resolve(args.report) : undefined,
     ...(qcStandIns ? { qcStandIns } : {}),
   });
+  const debt = doctor.derived?.evidence_debt;
   const prepareBuildGate = doctor.derived?.prepare_build_gate || null;
   // The CampaignSpec doctor just read (spec.local_path), for the QA stage's
   // order-bump command. Best-effort: doctor reports an unreadable spec itself.
@@ -4764,7 +4766,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
     if (divergences.length) result.divergences = divergences;
     result.gates = buildNextGates({ doctor, report, themeGate, polishGate, prepareBuildGate, packetPath });
     if (doctor.derived?.input_currency) result.input_currency = doctor.derived.input_currency;
-    result.next_actions = buildNextActions({ result, packetPath, packet, themeGate, polishGate, polishCheckpointGate, prepareBuildGate, ambient, runRecordCloseout, purchaseProof, brandContract: doctor.derived?.brand_contract || null, context: readJsonIfExists(contextPath), targetRepo, spec });
+    result.next_actions = buildNextActions({ result, packetPath, packet, themeGate, polishGate, polishCheckpointGate, prepareBuildGate, ambient, runRecordCloseout, purchaseProof, debt, brandContract: doctor.derived?.brand_contract || null, context: readJsonIfExists(contextPath), targetRepo, spec });
     // The QC handoff: read from data already loaded plus the
     // full QA verdict the QA stage names. It adds nothing to errors[],
     // warnings[] or ready[], and `status` above never reads it. Its accept
@@ -4788,7 +4790,12 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
       message: `The CampaignSpec at ${doctor.derived?.spec_path} could not be read (${singleLineField(specReadError.message)}), so next cannot tell whether the checkout declares an order bump and names no order-bump QA command. Fix the spec and run next again.`,
     });
   }
+  const ci = debt ? assessDoctorCi(debt) : null;
+  const ciEvidence = ci && (polishReviewedBuild(report?.stages?.polish) || [ci.polish, ci.qa].some((assessment) => assessment.recorded_build_fingerprint || assessment.baseline)) ? doctorCiEvidenceLines(ci, singleLineFragment).map((line) => line.replace(/^- /, "")) : [];
+  // ready[] stays what doctor reports, whatever evidence the stages hold. The
+  // change-debt lines ride on the array, non-enumerable, for the text output only.
   const ready = [...doctor.ready];
+  Object.defineProperty(ready, "changeDebtLines", { value: ciEvidence, enumerable: false });
   if (!doctor.ok && !doctorHasOnlyPolishGateErrors) errors.push(...doctor.errors.map((issue) => withPacketSubstitutedIssue(issue, packetPath)));
 
   // prepare-build is upstream of every stage. While its authoritative gate is
@@ -4815,11 +4822,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
     });
   }
 
-  // Slice 3 Phase 2: when no stage was passed, self-decide. The orchestration
-  // loop is: agent calls `next`, gets a stage + prompt, does the work,
-  // updates the assembly report's stages.<name>.status, then calls `next`
-  // again. Each call re-reads state from disk so the loop is idempotent
-  // and recoverable across sessions / machines.
+  // Doctor picks from current evidence debt and recorded stages.
   let picked = null;
   if (!stage) {
     picked = doctor.next;
@@ -4886,7 +4889,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
     addPolishGateErrors(errors, polishGate, "qa");
     addPolishCheckpointGateErrors(errors, polishCheckpointGate, "qa");
     addThemeGateErrors(errors, themeGate, "qa");
-    prompt = qaPrompt(packetPath, reportPath, packet, spec, intentSummary, polishCheckpointGate);
+    prompt = debt?.qa.scope === "pages" ? ciEvidence.join("\n") : qaPrompt(packetPath, reportPath, packet, spec, intentSummary, polishCheckpointGate);
   }
   const status = errors.length ? "blocked" : readinessStatus(warnings, doctor.derived);
   const result = {
@@ -5147,7 +5150,7 @@ function divergenceInspectAction(divergences, packetPath, { packet = null, polis
 
 // Executable next actions: exact commands (or explicitly-manual steps), never
 // prose-only guidance. Ordering is the execution order an agent should follow.
-export function buildNextActions({ result, packetPath, packet, themeGate, polishGate, polishCheckpointGate, prepareBuildGate, ambient, runRecordCloseout = null, purchaseProof = null, brandContract = null, context = null, targetRepo = null, spec = null }) {
+export function buildNextActions({ result, packetPath, packet, themeGate, polishGate, polishCheckpointGate, prepareBuildGate, ambient, runRecordCloseout = null, purchaseProof = null, debt = null, brandContract = null, context = null, targetRepo = null, spec = null }) {
   const actions = [];
   const push = (id, kind, command, description, extras = {}) => actions.push({ id, kind, command, description, stage: result.stage, ...extras });
   const pushPolishCheckpointActions = () => {
@@ -5317,9 +5320,12 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
   } else if (result.stage === "qa") {
     const url = packet.deploy?.preview_url || packet.deploy?.production_url || "<preview-url>";
     push("install_browser", "command", `${cmd("qa")} install-browser`, "Install the Playwright browser once after install/update (npm run qa:install-browser from a checkout).");
-    const currencyRuns = otherCurrencyQaRuns(spec, packetPath, url);
-    push("qa_run", "command", qaRunCommand(packetPath, url), "Run browser + typed-card QA and publish the verdict.", currencyRuns.length ? { currency_commands: currencyRuns } : {});
-    const bumpCart = checkoutOrderBumpCart(spec);
+    // A page-scoped QA places no test orders, so it carries neither the
+    // per-currency runs nor the add-on run; a full QA carries both.
+    const pageScoped = debt?.qa.scope === "pages";
+    const currencyRuns = pageScoped ? [] : otherCurrencyQaRuns(spec, packetPath, url);
+    push("qa_run", "command", pageScoped ? `${cmd("qa")} run --packet ${shellToken(packetPath)}${debt.qa.owed_pages.map((page) => ` --page ${shellToken(page.page_id)}`).join("")}${debt.qa.browser_pages?.length ? " --browser" : ""}` : qaRunCommand(packetPath, url), pageScoped ? "Run QA on the changed pages; no test orders." : "Run browser + typed-card QA and publish the verdict.", currencyRuns.length ? { currency_commands: currencyRuns } : {});
+    const bumpCart = pageScoped ? null : checkoutOrderBumpCart(spec);
     if (bumpCart) push("qa_run_bump", "command", qaRunCommand(packetPath, url, bumpCart), `Prove the charged add-on. ${orderBumpRunReason(bumpCart)}`);
   } else if (result.stage === "done") {
     // #171: run-record closeout is a REQUIRED terminal action, not an
@@ -8837,8 +8843,8 @@ export function nextTinyPromptLines(result) {
     lines.push(`  - ${starterPalette.description}`);
   }
   if (result.stage !== "qa") return lines;
-  lines.push("");
-  lines.push(`Next expected proof: browser QA + typed-card proof. Run: ${cmd("qa")} run --packet <packet> --base-url <url> --browser --test-order common`);
+  const qaRun = actions.find((action) => action.id === "qa_run" && action.command?.includes(" --page "));
+  lines.push("", `Next expected proof: ${qaRun ? qaRun.description : "browser QA + typed-card proof."} Run: ${qaRun?.command || `${cmd("qa")} run --packet <packet> --base-url <url> --browser --test-order common`}`);
   const bumpRun = (result.next_actions || []).find((action) => action?.id === "qa_run_bump");
   if (bumpRun) lines.push(`That run never orders the checkout order bump. Prove the charged add-on with: ${bumpRun.command}`);
   const currencyRuns = (result.next_actions || []).find((action) => action?.id === "qa_run")?.currency_commands || [];
@@ -9007,7 +9013,7 @@ export function resultTextLines(result, { headerLines = [] } = {}) {
   }
   if (result.ready?.length) {
     lines.push("Ready:");
-    for (const item of result.ready) lines.push(`- ${item}`);
+    for (const item of [...result.ready, ...(result.ready.changeDebtLines || [])]) lines.push(`- ${item}`);
   }
   if (result.actions?.length) {
     lines.push("Actions:");

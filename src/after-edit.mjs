@@ -127,6 +127,30 @@ export async function afterEditCommand(args, { specFetch, specDerive, specDerive
     return stop("record_build", error.message, recordBuildNext);
   }
 
+  const assess = async (assessment = result) => {
+    let doctor;
+    try {
+      const doctorArgs = { _: ["doctor"], ...live, ci: true };
+      const liveCampaign = await readDoctorLiveCampaign(doctorArgs, { ...(fetchImpl ? { fetchImpl } : {}) });
+      doctor = doctorCommand(doctorArgs, { liveCampaign });
+    } catch (error) {
+      doctor = doctorCiFailure(error);
+    }
+    assessment.ci = doctor.ci ?? null;
+    assessment.next = null;
+    const ci = doctor.ci;
+    // A failed inspection has no assessment object; retain only its exit code
+    // here, with its errors rendered by formatDoctorCi in the owed step.
+    if (!ci) assessment.exit_code = doctor.exit_code;
+    assessment.ok = Boolean(ci);
+    if (ci?.status !== "current") {
+      if (ci?.polish.status === "owed" && !ci.polish.advisory) assessment.next = `${cmd("polish")} capture ${packetFlag} --base-url <served-current-build-url>`;
+      else if (ci?.qa.status === "owed") assessment.next = `${cmd("qa")} run ${packetFlag}${ci.qa.scope === "pages" ? ci.qa.owed_pages.map((page) => ` --page ${shellToken(page.page_id)}`).join("") : ""}${ci.qa.browser_pages?.length ? " --browser" : ""}`;
+      else assessment.next = `${cmd("doctor")} ${packetFlag} --ci --no-live-refs`;
+    }
+    return doctor;
+  };
+
   const deriveArgs = { _: ["spec", "derive"], ...live };
   const deriveNext = `${cmd("spec")} derive ${packetFlag}${args["no-live-refs"] ? " --no-live-refs" : ""}${args["proxy-base"] ? ` --proxy-base ${shellToken(args["proxy-base"])}` : ""}`;
   let deriveDetail = "";
@@ -136,8 +160,14 @@ export async function afterEditCommand(args, { specFetch, specDerive, specDerive
     if (!plan.ok) return stop("spec_derive", specDeriveTextLines(plan).join("\n"), deriveNext);
     if (!plan.changes.length) add("spec_derive", "not_needed", "Spec is current.");
     else {
-      deriveDetail = specDeriveTextLines(plan).join("\n");
-      if (!args.yes) return stop("spec_derive", `${deriveDetail}\nRe-run with --yes to write the derived spec.`, `${rerun} --yes`);
+      deriveDetail = specDeriveTextLines({ ...plan, warnings: plan.warnings.filter((issue) => issue.code !== "spec.derive.build_stale") }).join("\n");
+      if (!args.yes) {
+        const owed = formatDoctorCi(await assess({}));
+        const preview = stop("spec_derive", `${deriveDetail}\nApplying this preview with --yes changes the CampaignSpec and will owe Polish and QA again.\nRe-run with --yes to write the derived spec.`, `${rerun} --yes`);
+        // Text-only assessment: the unapplied preview keeps JSON steps unchanged.
+        Object.defineProperty(preview, "preview_owed", { value: owed });
+        return preview;
+      }
       const derived = await specDerive(deriveArgs, { fetchImpl });
       if (derived.written) remember([derived.spec_path]);
       deriveDetail += `\n${specDeriveTextLines(derived).join("\n")}`;
@@ -154,29 +184,6 @@ export async function afterEditCommand(args, { specFetch, specDerive, specDerive
     return stop("spec_derive", `${deriveDetail}${deriveDetail ? "\n" : ""}${error.message}`, deriveCommand);
   }
 
-  const assess = async () => {
-    let doctor;
-    try {
-      const doctorArgs = { _: ["doctor"], ...live, ci: true };
-      const liveCampaign = await readDoctorLiveCampaign(doctorArgs, { ...(fetchImpl ? { fetchImpl } : {}) });
-      doctor = doctorCommand(doctorArgs, { liveCampaign });
-    } catch (error) {
-      doctor = doctorCiFailure(error);
-    }
-    result.ci = doctor.ci ?? null;
-    result.next = null;
-    const ci = doctor.ci;
-    // A failed inspection has no assessment object; retain only its exit code
-    // here, with its errors rendered by formatDoctorCi in the owed step.
-    if (!ci) result.exit_code = doctor.exit_code;
-    result.ok = Boolean(ci);
-    if (ci?.status !== "current") {
-      if (ci?.polish.status === "owed" && !ci.polish.advisory) result.next = `${cmd("polish")} capture ${packetFlag} --base-url <served-current-build-url>`;
-      else if (ci?.qa.status === "owed") result.next = `${cmd("qa")} run ${packetFlag}${ci.qa.scope === "pages" ? ci.qa.owed_pages.map((page) => ` --page ${shellToken(page.page_id)}`).join("") : ""}${ci.qa.browser_pages?.length ? " --browser" : ""}`;
-      else result.next = `${cmd("doctor")} ${packetFlag} --ci --no-live-refs`;
-    }
-    return doctor;
-  };
   const doctor = await assess();
   add("owed", result.ci?.status === "current" ? "not_needed" : "done", formatDoctorCi(doctor));
   if (args["run-qa"]) {
@@ -226,7 +233,8 @@ export function afterEditExitCode(result) {
 
 export function afterEditTextLines(result) {
   const labels = { spec: "Spec copy:", build_current: "Build:", record_build: "Record build:", spec_derive: "Spec:", owed: "Owed:", run_qa: "Run QA:" };
-  const lines = result.steps.filter((row) => row.status !== "not_run").map((row) => {
+  const rows = result.preview_owed ? [...result.steps, { step: "owed", status: "done", detail: result.preview_owed }] : result.steps;
+  const lines = rows.filter((row) => row.status !== "not_run").sort((a, b) => Number(b.step === "owed") - Number(a.step === "owed")).map((row) => {
     const detail = row.step === "files" ? row.detail : `${labels[row.step]}${row.step === "owed" ? "\n" : " "}${row.detail}`;
     return `${detail}${row.status === "stopped" && row.command ? `\nNext: ${row.command}` : ""}`;
   });
