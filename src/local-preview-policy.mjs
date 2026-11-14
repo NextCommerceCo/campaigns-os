@@ -13,7 +13,9 @@
 // packet's production URL stays strict. Every other check keeps its meaning.
 //
 // Doctor and QA apply this to the gates they evaluate; `next` reads doctor's
-// gates. Recording a stage (`record polish`) and the waiver commands keep the
+// gates. All-template builds are excluded by the Polish gate itself; this
+// preview policy applies to missing evidence for mapped design routes.
+// Recording a stage (`record polish`) and the waiver commands keep the
 // strict gates; `record deploy` follows next past a carried-forward polish.
 import { isLocalServePacket } from "./local-proof.mjs";
 import { isLoopbackHostname } from "./remit.mjs";
@@ -141,7 +143,7 @@ export function carried(gate, policy = LOCAL_PREVIEW_POLICY, packet = null) {
       : {}),
     // A page-only carry stands on a review of an older build, so its evidence
     // is stale, except where no Polish was ever recorded.
-    carried_forward: { policy, from_status: gate.status, evidence: policy === PAGE_ONLY_CHANGE_POLICY && gate.code !== "polish.evidence_missing" ? "stale" : "missing" },
+    carried_forward: { policy, from_status: gate.carried_forward?.from_status || gate.status, evidence: policy === PAGE_ONLY_CHANGE_POLICY && gate.code !== "polish.evidence_missing" ? "stale" : "missing" },
   };
 }
 
@@ -164,6 +166,7 @@ export function applyLocalPreviewToCheckpoint(gate, { packet, report, baseUrl = 
 // whatever it owns from the checkpoint was carried forward too. Advisory
 // Polish for a page-only change is never a ladder step.
 export function polishCarriedForwardForLadder(report, gate) {
+  if (gate?.status === "not_applicable" && gate?.result === "excluded" && gate?.reason_code === "template_stock") return true;
   if (gate?.status === CARRIED_FORWARD && gate.carried_forward?.policy === PAGE_ONLY_CHANGE_POLICY) return true;
   return gate?.status === CARRIED_FORWARD
     && !report?.theme?.waiver
@@ -187,7 +190,8 @@ export function applyPageOnlyChangeToCheckpoint(gate, debt) {
 }
 
 export function applyPageOnlyChangeToPolishGate(gate, { debt, checkpointGate = null } = {}) {
-  if (gate?.status !== "blocked" || debt?.polish?.advisory !== true) return gate;
+  if (!["blocked", CARRIED_FORWARD].includes(gate?.status) || debt?.polish?.advisory !== true) return gate;
+  if (gate.code === "polish.evidence_missing" && gate.carried_forward?.policy === LOCAL_PREVIEW_POLICY && !isPageOnlyCarry(checkpointGate)) return gate;
   if (gate.owned_checkpoint_only) return isPageOnlyCarry(checkpointGate) ? carried(gate, PAGE_ONLY_CHANGE_POLICY) : gate;
   if (gate.owned_checkpoint_status === "blocked" && !isPageOnlyCarry(checkpointGate) && checkpointGate?.status !== CARRIED_FORWARD) return gate;
   return PAGE_ONLY_POLISH_CODES.has(gate.code) ? carried(gate, PAGE_ONLY_CHANGE_POLICY) : gate;

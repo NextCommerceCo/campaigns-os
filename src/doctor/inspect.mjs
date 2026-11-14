@@ -665,6 +665,8 @@ function inspectDoctorPacket(packetPath, { contextPath = undefined, reportPath =
     ready.push(`Hidden eager-media checkpoint accepted under named-human exception (${polishCheckpointGate.waiver.waived_by}).`);
   } else if (polishCheckpointGate.status === "pass") {
     ready.push("Hidden eager-media checkpoint passed: package-owned page-load evidence is complete and current.");
+  } else if (polishCheckpointGate.code === "polish.hidden_eager_media.template_stock") {
+    ready.push("Hidden eager-media checkpoint not applicable because every mapped page is template stock.");
   } else {
     ready.push("Hidden eager-media checkpoint not applicable before completed assembly.");
   }

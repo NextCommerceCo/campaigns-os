@@ -112,8 +112,7 @@ checks are carried forward:
 
 | Check | Local loopback preview | Hosted preview |
 | --- | --- | --- |
-| `polish.evidence_missing`, `polish.report_missing` | Carried when Polish was never recorded. | Carried only with the all-template `no_capturable_routes` checkpoint. |
-| `polish.hidden_eager_media.no_capturable_routes` | Carried when every mapped page is template stock (`skip_reason`). | Carried when every mapped page is template stock and QA uses the packet's non-loopback `deploy.preview_url`, distinct from `deploy.production_url` by origin or QA-resolved campaign route path. |
+| `polish.evidence_missing`, `polish.report_missing` | Carried when Polish was never recorded for a design route. | Blocked. |
 | `polish.hidden_eager_media.capture_malformed` | Carried only when no page-load capture was recorded at all. | Blocked. |
 | Template-residue severity | With `theme_gate.nothing_generatable`, residue findings warn. | Unchanged. |
 
@@ -121,17 +120,17 @@ A carried-forward gate has status `carried_forward`. Doctor reports it as a
 warning starting "Carried forward on the local preview" or "Carried forward on the hosted preview"; `next` moves past
 polish to deploy and QA; QA records it as a `warn` row, so the verdict is at
 best `ready_with_exceptions`. The evidence is reported as missing, never as
-passed. On a hosted all-template preview, first record an unset preview URL
-with `campaigns-os qa policy set --packet <packet> --preview-url <url>`, then
-record the deploy with `campaigns-os record deploy --packet <packet> --base-url <preview-url>`
-(on a hosted target it takes an https URL, requires every built page to answer
-200, and compares the served scripts and stylesheets with the build by sha256),
-then run `campaigns-os qa run --packet <packet> --base-url <preview-url> --browser --test-order common`. After QA records the current-build verdict, run `campaigns-os next --packet <packet>` for closeout. The hosted exception
-requires a distinct packet `deploy.preview_url`; a query or fragment on the production page does not count as distinct. QA with `--base-url` equal to
-the packet's `deploy.production_url` stays blocked. A `local-serve` packet
-served from any other host also gets strict gates. `record polish` and the
-waiver commands keep them strict. Progress
-snapshots record a carried-forward gate as `not_applicable`, because their
+passed. A `local-serve` packet served from any other host gets strict gates.
+
+When every mapped page is template stock (`skip_reason`), Polish is not
+applicable on any target. `polish capture` closes it with status `skipped`,
+evidence `result: "excluded"`, `reason_code: "template_stock"` and the reason
+that there is no design route to compare. `next` and `record deploy` move on;
+QA does not report a missing-Polish warning. Run
+`campaigns-os next --packet <packet>` for the next stage. A mapped design page
+keeps the existing Polish requirements.
+
+Progress snapshots record a carried-forward gate as `not_applicable`, because their
 schema has no carried-forward state.
 
 ### Polish advisory for a page-only change
@@ -536,7 +535,13 @@ prices above, because the browser pass does not load pages in the run currency.
 Only contract-governed claims are compared, and only against `Exact` normalized
 truth. Proven differences emit warn-severity `pricing` assertions named
 `price-claim-mismatch`, `cadence-disclosure-mismatch`, or
-`voucher-not-applied`. Decorative claims are ignored, and ambiguous, stale,
+`voucher-not-applied`. A voucher the CampaignSpec binds to an upsell or
+downsell page that the page does not carry (no `data-next-bundle-vouchers`,
+`data-next-bundles` bundle `vouchers` or `data-next-vouchers` naming it) is a
+`voucher-not-on-page` finding naming the page and the code: an order placed
+there will not get that offer. On upsell and downsell pages all three
+attributes are read as voucher claims; other pages read only
+`data-next-bundle-vouchers`, as before. Decorative claims are ignored, and ambiguous, stale,
 unresolved, or malformed claims never read as a mismatch: they leave the proof
 incomplete, as above. A page showing a voucher the normalized plan cannot price
 (no calculated pair for its code, for example a live voucher on an upsell)
@@ -767,23 +772,24 @@ be read as "nothing was caused by the change".
 
 ### The comparison rule
 
-Exactly one comparison, against exactly one earlier run:
+Compare each finding with its last recorded evaluation:
 
 1. **Find the previous run.** The most recent Run Record under the Build
    Packet's `.campaign-runtime/run-records/` whose `identity.map_id` matches
    this saved Map, or whose `identity.local_spec_id` matches this local spec
-   with no Map ID. Only the first match counts — walking further back to find a
-   record that happens to carry usable evidence would compare this run against
-   a non-adjacent one and report anything introduced in between as
-   pre-existing.
+   with no Map ID. Start with this record. Missing or unreadable QA evidence
+   stays unknown; it is not a reason to skip to an older run.
 2. **Read that run's findings.** For QA, through that Run Record's **last**
    `qa_verdict` artifact reference. A run session that needed repair and
    re-test carries one reference per attempt in session order, so the first is
    typically the blocked attempt that triggered the repair; comparing against
    it would report a defect that was fixed before that run closed, and
    reintroduced now, as pre-existing. The last reference is the verdict the
-   run actually closed on. This does not widen the boundary — it is still the
-   final attempt of exactly one earlier run, never a merged view across runs.
+   run actually closed on. If that attempt skipped a finding, or omitted it
+   during a page-scoped run, walk recorded QA attempts backwards, within that
+   run and then earlier matching runs, to the last attempt that evaluated it.
+   Each finding uses one attempt; findings can use different attempts. If no
+   earlier evaluation can be read, its reason is `no_prior_evaluation`.
    When that reference is `external:qa_verdict` — the record's spelling for a
    verdict written outside the packet directory, the ordinary case whenever
    `assembly.target_repo` is not the packet's own directory — the verdict is
@@ -798,9 +804,11 @@ Exactly one comparison, against exactly one earlier run:
 3. **Classify.** Environment and upstream drift are decided first, from the
    finding itself, and win outright — a Chromium capture failure that also
    happened last time is still not the campaign's fault. Everything else is
-   compared by fingerprint: same fingerprint and same status is
-   `pre_existing`; absent, or present with a different status, is
-   `caused_by_change`.
+   compared by fingerprint against its last evaluation: same fingerprint and
+   same status is `pre_existing`; absent from a full run, or present with a
+   different status, is `caused_by_change`. A skipped row or one omitted from
+   a page-scoped run uses the per-finding fallback above. Without an earlier
+   evaluation, it is `unknown` with reason `no_prior_evaluation`.
 
 The fingerprint is the identity the artifact already uses. For a QA assertion
 that is `family | id | page` — the same identity the exceptions projection
@@ -820,8 +828,9 @@ violations sharing a code are one finding to this comparison.
 | `prior_run_verdict_unreadable` | It references one by path, but the file is gone or unparseable. |
 | `prior_run_verdict_unlocated` | It references one as `external:qa_verdict`, but no verdict matching that reference could be located under the target repo's `qa-output/` — nothing there hashes to the recorded digest, the reference carries no digest, or no target repo was known to search. |
 | `prior_run_without_doctor_observations` | The previous Run Record carries no doctor observations. |
+| `no_prior_evaluation` | The previous QA run did not evaluate this row (a page-scoped run, or a skipped row), and no earlier recorded QA verdict that did evaluate it could be read. When one can be read, the row is compared with that verdict instead of the previous run. |
 
-Only the first of those means "run again and it will improve". The other four
+Only the first of those means "run again and it will improve". The others
 say a previous Run Record **does** exist and its evidence is missing or
 unreadable, which a second run will not fix on its own — so the report names
 that record rather than telling you to wait for one.
@@ -1602,10 +1611,13 @@ outcome of the gates doctor's static scan can only approximate:
 
 A gate that did not run on that verdict is absent, never `pass`. Doctor reads
 `gates.placeholder_text_residue` back while `stages.assembly.build_fingerprint`
-still matches `source_build_fingerprint`: a recorded pass demotes the
+still matches `source_build_fingerprint`: except on an all-template, as-is build,
+a recorded pass demotes the
 `template_contract.placeholder_text_residue` warning to a ready line and drops
 the matching `next` action; a rebuild or a failed gate brings the warning back
-(see `docs/template-family-contracts.md`). `evidence` is a QA-owned field, so
+(see `docs/template-family-contracts.md`). On an all-template, as-is build,
+starter placeholder warnings remain visible even after a recorded pass.
+`evidence` is a QA-owned field, so
 the next QA record replaces it wholesale.
 
 `next` compares the declared depth against what was exercised:
@@ -1939,12 +1951,16 @@ Two flags target funnels the default-tier drive cannot prove:
   other ref is left unapplied and named in the `selected_bundle` detail
   (`--cart 3:1 not applied: ...`). The display-parity row reconciles the order
   against the packages and quantities every selected bundle card declares, not
-  its `data-next-bundle-id`. Without `--select-package` it also fails when an
-  explicit `--cart <ref:qty>` is not in the order at that quantity: a
+  its `data-next-bundle-id`. With or without `--select-package` it also fails
+  when an explicit `--cart <ref:qty>` is not in the order at that quantity: a
   different quantity (`--cart 1:2` that ordered one unit) or no line for the
   package at all (`--cart 1:2,3:1` on a swap-mode selector that kept only the
-  `3:1` card); beside `--select-package` it judges the order against the card
-  that flag chose.
+  `3:1` card, or an order bump `--cart` ref beside `--select-package` that
+  never reached the order). Beside `--select-package`, a `--cart` ref for a
+  package the selected card sells is not judged against the order: that
+  conflict is named in `selected_bundle`, and the order is the card's. On a checkout with an "Add to Cart" reveal
+  (`.checkout-form--reveal`), the runner clicks the reveal before it applies
+  `--cart`, so an order bump inside the revealed panel can be toggled.
 - `--apply-coupon <code>` — types the code into the rendered coupon/promo input
   (the SDK's `[data-next-checkout-field="coupon"]` or
   `input[data-next-coupon="input"]`, then hand-rolled `coupon`/`voucher`/`promo`
@@ -2354,7 +2370,19 @@ drives declares an order bump (`is_order_bump: true` or `is_upsell: true` rows),
 command, `qa_run_bump`, beside `qa_run`: the same `--test-order common` run
 with `--cart <base>:1,<bump>:1`, where the base is the first selector tier the
 checkout declares. The QA stage prompt and the human `next` output carry the
-same command.
+same command. When `campaign.available_currencies` lists more than one
+currency, the `qa_run` action carries `currency_commands`: the same run with
+`--currency <code>` for each listed currency other than `campaign.currency`,
+printed in the prompt and the human output too.
+
+A run that created test orders also says what they did not cover, as warn
+rows judged on that run's orders only: `browser-test-order:currency-coverage`
+names the listed currencies no order was placed in, and
+`browser-test-order:order-bump-coverage` names a checkout order bump no order
+was shown to contain (an order whose display-parity row passed with the bump in
+its summary contains it; a run with no comparable cart summary gets no row).
+Each row says what to run: one run per missing currency, and the `--cart` to
+add (the bump alone on a run that selects its own package or tiers).
 
 Record order numbers, `ref_id` values, and expected line-item shapes in the
 handoff. If the browser console shows an SDK module-load error but the SDK

@@ -73,6 +73,8 @@ import {
   attestationBlockers,
   visibleText,
   BRIEF_PAYLOAD_REL_PATH,
+  starterUsedAsIs,
+  STARTER_PLACEHOLDER_WARNING,
 } from "../content-residue.mjs";
 import {
   resolveCommerceCatalog,
@@ -4458,8 +4460,8 @@ export function validateCommerceCatalog(packet, packetPath, spec, errors, warnin
     validateBuiltContractResidue(contract, warnings, ready, derived, spec);
     // H3.1/H3.2: pre-QA warnings off the family brand contract. Doctor warns
     // (the fix happens during build/polish); browser QA enforces the same
-    // placeholder-text terms as a blocker in the verdict.
-    validateBuiltPlaceholderTextResidue(brandContract, warnings, ready, derived, { report: buildState.report });
+    // placeholder-text terms as a blocker unless every mapped page is stock.
+    validateBuiltPlaceholderTextResidue(brandContract, warnings, ready, derived, { report: buildState.report, packet });
     validateBuiltDemoAssetFidelity(brandContract, warnings, ready, derived);
   } else {
     for (const value of contract.frontmatter?.demoOnlyValues || []) {
@@ -4736,7 +4738,7 @@ function validateBuiltContractResidue(contract, warnings, ready, derived, spec =
 // approximation — any remaining static hit demotes to a ready line instead of
 // a warning, so `next` stops asking for a fix QA already cleared. A rebuild
 // changes the fingerprint and the warning returns until QA runs again.
-export function validateBuiltPlaceholderTextResidue(brandContract, warnings, ready, derived, { report = null } = {}) {
+export function validateBuiltPlaceholderTextResidue(brandContract, warnings, ready, derived, { report = null, packet = null } = {}) {
   const config = placeholderTextResidueConfig(brandContract);
   if (!config) return;
   const targetOutputDir = derived.target_output_dir;
@@ -4747,14 +4749,14 @@ export function validateBuiltPlaceholderTextResidue(brandContract, warnings, rea
     return;
   }
   const terms = [...new Set(hits.map((hit) => hit.label))].join(", ");
-  if (report && qaGatePassedForCurrentBuild(report, QA_GATE_PLACEHOLDER_TEXT_RESIDUE, { buildFingerprint: currentBuildFingerprint(report), qaCurrency: derived.input_currency?.stages?.qa ?? "unknown" })) {
+  if (!starterUsedAsIs(packet) && report && qaGatePassedForCurrentBuild(report, QA_GATE_PLACEHOLDER_TEXT_RESIDUE, { buildFingerprint: currentBuildFingerprint(report), qaCurrency: derived.input_currency?.stages?.qa ?? "unknown" })) {
     ready.push(`Static scan still sees placeholder-term text (${terms}: ${summarizeCopyMatches(hits)}), but the browser residue gate passed on this build; QA's rendered-text verdict stands.`);
     return;
   }
   addIssue(
     warnings,
     "template_contract.placeholder_text_residue",
-    `Assembly is recorded complete, but built output still contains literal template placeholder text (${terms}): ${summarizeCopyMatches(hits)}. Replace with CampaignSpec/design copy; browser QA blocks on these terms.`,
+    starterUsedAsIs(packet) ? STARTER_PLACEHOLDER_WARNING : `Assembly is recorded complete, but built output still contains literal template placeholder text (${terms}): ${summarizeCopyMatches(hits)}. Replace with CampaignSpec/design copy; browser QA blocks on these terms.`,
   );
 }
 
@@ -4846,7 +4848,7 @@ export function validateBuiltContentResidue({ packet, errors, warnings, ready, d
       addIssue(
         warnings,
         "content_residue.demo_residue",
-        `Built output carries template demo/placeholder residue (${where}; e.g. "${finding.excerpt}"). Fill or blank the slot — demo values must never ship.`,
+        starterUsedAsIs(packet) ? STARTER_PLACEHOLDER_WARNING : `Built output carries template demo/placeholder residue (${where}; e.g. "${finding.excerpt}"). Fill or blank the slot — demo values must never ship.`,
       );
     }
   }

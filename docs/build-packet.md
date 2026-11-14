@@ -2487,17 +2487,14 @@ prepare-build gate is set (`next` answers prepare-build) or while an earlier
 stage in the order below is not terminal. The exception is the one `next`
 makes: on the local preview, a polish doctor carries forward (never recorded
 for this build) does not hold `record deploy` back, as it does not hold `next`;
-polish stays owed and QA reports it. If every mapped page is template stock on
-a hosted preview, doctor carries the same missing-evidence shape forward.
-On a hosted target, record an unset hosted preview URL with
-`campaigns-os qa policy set --packet <p> --preview-url <url>`, then record the
-deploy with `campaigns-os record deploy --packet <p> --base-url <preview url>`. The hosted preview must be a non-loopback
-HTTP(S) URL whose origin or QA-resolved campaign route path differs from `deploy.production_url`;
-query and fragment text does not make the production page a preview. With the
-deploy recorded, run `campaigns-os qa run --packet <p> --base-url <preview-url>
---browser --test-order common`; after QA records a verdict for the current
-build, `campaigns-os next --packet <p>` reaches closeout. QA against the
-packet's production URL retains the strict gate.
+polish stays owed and QA reports it. When every mapped page is template stock
+(`skip_reason`), Polish is not applicable on any target: `polish capture` and
+`record polish` record `skipped` with evidence `result: "excluded"`,
+`reason_code: "template_stock"` and the reason that there is no design route to
+compare. No capture or waiver is needed; `next` and `record deploy` move on,
+and QA does not warn about missing Polish evidence. Run
+`campaigns-os next --packet <p>` for the next stage. A mapped design page keeps
+the existing Polish requirements.
 
 Each command reads the same packet, Build Context and Assembly Report `next`
 reads (`--context` / `--report` override them the same way), validates what it

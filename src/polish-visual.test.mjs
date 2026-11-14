@@ -451,8 +451,7 @@ test("Template evidence extends only the visual plan, after the unchanged planne
   const stock = { ...input.packet, source_html: { ...input.packet.source_html, pages: input.packet.source_html.pages.slice(1) } };
   assert.throws(() => planPolishCapture({ packet: stock, baseUrl: "http://127.0.0.1:1234" }), {
     code: "no_capturable_routes",
-    message: "polish capture has no mapped non-skipped routes to capture: every mapped page is template stock (skip_reason), so there is no design route to compare."
-      + " On a local or hosted preview, missing polish evidence is carried forward as a warning; run `next` for the next stage.",
+    message: "Every mapped page is template stock, so there is no design route to compare.",
   });
 });
 test("Template captures and failures stay evidence only, with no visual or parity rows and unchanged gates", async (t) => {

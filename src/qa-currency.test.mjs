@@ -65,6 +65,22 @@ test("an invalid --currency is refused with a clear message, before anything res
   }
 });
 
+test("--cart or --select-package joined to its value in one argument is refused as a refusal, before anything is fetched", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => assert.fail(`no request before the arguments are valid (got ${String(url)})`);
+  try {
+    for (const [token, flag] of [["--cart 1:1,2:1", "cart"], ["--select-package 1:2", "select-package"]]) {
+      await assert.rejects(
+        runQaCli(parseArgs(["qa", "run", "--packet", join(tmpdir(), "missing-campaign-runtime.build.json"), token, "--browser", "--test-order", "common", "--no-post-verdict", "--json"])),
+        (error) => error.code === REFUSED_INVOCATION
+          && error.message === `${token} arrived as one argument, so qa run cannot read it. Pass --${flag} and its value as two separate arguments.`,
+      );
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 function captureRefusal(fn) {
   try {
     fn();
@@ -803,4 +819,25 @@ test("qa run --currency GBP: a campaign that prices in USD blocks the verdict (e
   assert.ok(defaultMismatch.requested.every((request) => request.currency === "USD"));
   assert.equal(defaultMismatch.verdict.assertions.find((entry) => entry.id === "commercial-currency:USD:GBP")?.severity, "blocker");
   assert.equal(plain.verdict.disposition, priced.verdict.disposition);
+});
+
+test("a spec listing three currencies with every order in one gets one warn row naming the other two; a one-currency spec gets none", () => {
+  const { testOrderCoverageExceptions } = __qaNodeTestHooks;
+  const spec = (currencies) => ({ campaign: { currency: "USD", available_currencies: currencies } });
+  const orders = [{ ok: true, verification: { currency: "USD" } }, { ok: true, verification: { currency: "usd" } }];
+
+  const rows = testOrderCoverageExceptions({ spec: spec(["USD", "EUR", "GBP"]), topologies: topologies(), testOrders: orders });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].id, "browser-test-order:currency-coverage");
+  assert.equal(rows[0].status, "warn");
+  assert.equal(rows[0].severity, "warn");
+  assert.match(rows[0].actual, /^no test order in this run was placed in EUR or GBP\. Run .* qa run once per currency, with --currency EUR and with --currency GBP, in place of any --currency given here\.$/);
+  assert.deepEqual(rows[0].evidence, { listed: ["USD", "EUR", "GBP"], tested: ["USD"], untested: ["EUR", "GBP"] });
+
+  // An order with no recorded currency counts in the run currency.
+  const gbpRun = testOrderCoverageExceptions({ spec: spec(["USD", "EUR", "GBP"]), topologies: topologies(), testOrders: [{ ok: true, verification: {} }], args: { [QA_RUN_CURRENCY]: "GBP" } });
+  assert.deepEqual(gbpRun[0].evidence.untested, ["USD", "EUR"]);
+
+  assert.deepEqual(testOrderCoverageExceptions({ spec: spec(["USD"]), topologies: topologies(), testOrders: orders }), []);
+  assert.deepEqual(testOrderCoverageExceptions({ spec: spec(["USD", "EUR", "GBP"]), topologies: topologies(), testOrders: [] }), [], "no order, no claim about coverage");
 });

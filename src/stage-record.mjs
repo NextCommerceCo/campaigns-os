@@ -53,6 +53,7 @@ import {
   POLISH_PRODUCER,
   currentSourcePackageMaterialFingerprint,
   evaluatePolishGate,
+  templateStockPolishStage,
 } from "./polish-gate.mjs";
 import { evaluateRecordedHiddenEagerMediaCheckpoint } from "./polish-node.mjs";
 import { effectiveStageStatus, effectiveStatusIsTerminal, inputStamps, stageWriteInputs } from "./input-currency.mjs";
@@ -1011,6 +1012,12 @@ function composeDeploy(report, packet, { now, recordedBy, probe, fingerprint }) 
 
 // Every check a written record must pass, over exactly what would be written.
 function validateRecord(stage, { report, context, packet, fingerprint }) {
+  if (stage === "polish" && POLISH_COMPLETED_STATUSES.includes(report.stages.polish.status)) {
+    const checkpoint = evaluateRecordedHiddenEagerMediaCheckpoint({ packet, report });
+    if (checkpoint.result === "excluded" && checkpoint.reason_code === "template_stock") {
+      report.stages.polish = templateStockPolishStage(report, report.stages.polish.completed_at);
+    }
+  }
   const problems = [
     ...schemaProblems("campaign-runtime-assembly-report.v0.schema.json", report, "Assembly Report"),
     ...(context ? schemaProblems("campaign-runtime-build-context.v0.schema.json", context, "Build Context") : []),
