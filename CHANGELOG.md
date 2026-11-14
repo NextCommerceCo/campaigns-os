@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.71.0+agent.3] - 2026-11-14
+
+### Fixed
+
+- A QA verdict now says which proof it does not hold. A discount code the CampaignSpec binds to an upsell or downsell page that the page does not carry is a price-check finding (`voucher-not-on-page:<page>:<code>`), so the price check reads `mismatch` where it read `pass`. When the spec lists more than one currency, one warn row (`browser-test-order:currency-coverage`) names the currencies with no test order in the run, and `next` prints one `qa run --currency <code>` command for each. When the checkout has an add-on and no test order contained it, one warn row (`browser-test-order:order-bump-coverage`) says so and names the `--cart` to add. A `--cart` package that no selected card carries must reach the order even beside `--select-package`; it used to be dropped silently. On a checkout whose form sits behind an "Add to Cart" reveal, the runner reveals the form before it applies `--cart`, so the add-on can be ordered. `--cart` and its value passed as one argument is refused instead of run with no cart. The three new rows are warnings: `ready_with_exceptions` stays a pass.
+
 ## [1.71.0+agent.2] - 2026-11-14
 
 ### Fixed
