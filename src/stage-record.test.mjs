@@ -1469,6 +1469,56 @@ test("record deploy accepts a hosted current Polish, then carries it forward aft
   });
 });
 
+test("page-only rebuild shares debt across after-edit, next and local deploy after handoff", async (t) => {
+  await guardedLifecycle(async (f) => {
+    await recordThroughPolish(f);
+    await recordDeploy(f);
+    await recordQa(f);
+    const page = join(f.target, "_site", f.slug, "landing/index.html");
+    writeFileSync(page, readFileSync(page, "utf8").replace("</h1>", " Revised copy</h1>"));
+    const build = recordOk(f, "build");
+    assert.ok(build.ready.includes("Owed stages: qa (changed pages only)."));
+    const after = runJson(["after-edit", "--packet", f.packetPath, "--no-live-refs"], f.dir).json;
+    assert.equal(after.ci.polish.advisory, true);
+    assert.deepEqual(after.ci.qa.owed_pages.map((page) => page.page_id), ["landing"]);
+    const inspected = doctorOk(f);
+    t.diagnostic(`record build: ${build.ready.filter((line) => /Change found:|Owed stages:/.test(line)).join("\n")}`);
+    const next = nextOk(f);
+    t.diagnostic(`next: ${next.stage}; ${next.picked_reason}`);
+    assert.equal(next.stage, "deploy");
+    assert.match(resultTextLines(next).join("\n"), /Owed stages: qa \(changed pages only\)/);
+    const args = { _: ["record", "deploy"], packet: f.packetPath, "base-url": `http://127.0.0.1:4173/${f.slug}/` };
+    await recordCommand(args, DEPLOY_FETCH);
+    const qa = nextOk(f);
+    assert.equal(qa.stage, "qa");
+    assert.match(qa.next_actions.find((action) => action.id === "qa_run").command, /qa run .* --page landing$/);
+    assert.doesNotMatch(qa.prompt, /--test-order|typed-card/);
+    assert.doesNotMatch(runCli(["next", "--packet", f.packetPath, "--no-write"], f.dir).stdout, /--test-order|typed-card/);
+    assert.equal(inspected.derived.evidence_debt.polish.advisory, true);
+    const checkout = join(f.target, "_site", f.slug, "checkout/index.html");
+    writeFileSync(checkout, readFileSync(checkout, "utf8").replace("</h1>", " Revised checkout</h1>"));
+    assert.ok(recordOk(f, "build").ready.includes("Owed stages: polish, qa."));
+    const full = runJson(["after-edit", "--packet", f.packetPath, "--no-live-refs"], f.dir).json;
+    assert.equal(full.ci.qa.scope, "full");
+    assert.equal(full.ci.polish.advisory, false);
+    const nextFull = nextOk(f);
+    assert.equal(nextFull.stage, "polish");
+    assert.match(resultTextLines(nextFull).join("\n"), /Owed stages: polish, qa/);
+  });
+});
+
+test("next names after-edit first on a handed-off funnel after a source change", async (t) => {
+  await guardedLifecycle(async (f) => {
+    await recordThroughPolish(f);
+    await recordDeploy(f);
+    await recordQa(f);
+    writeFileSync(join(f.target, f.packet.assembly.output_dir, "landing.html"), "<h1>Revised copy</h1>");
+    const next = runCli(["next", "--packet", f.packetPath, "--no-write"], f.dir);
+    t.diagnostic(`first line: ${next.stdout.split("\n")[0]}`);
+    assert.equal(next.stdout.split("\n")[0], `After a source change, run this first: campaigns-os after-edit --packet ${f.packetPath}`);
+  });
+});
+
 test("record deploy on the local preview carries a skipped Polish forward without completing Polish", async () => {
   await guardedLifecycle(async (f) => {
     mutateJson(f.packetPath, (packet) => { packet.deploy = { ...packet.deploy, target: "local-serve" }; });

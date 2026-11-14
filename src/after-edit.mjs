@@ -127,33 +127,6 @@ export async function afterEditCommand(args, { specFetch, specDerive, specDerive
     return stop("record_build", error.message, recordBuildNext);
   }
 
-  const deriveArgs = { _: ["spec", "derive"], ...live };
-  const deriveNext = `${cmd("spec")} derive ${packetFlag}${args["no-live-refs"] ? " --no-live-refs" : ""}${args["proxy-base"] ? ` --proxy-base ${shellToken(args["proxy-base"])}` : ""}`;
-  let deriveDetail = "";
-  let deriveCommand = deriveNext;
-  try {
-    const plan = await specDerive({ ...deriveArgs, "dry-run": true }, { fetchImpl });
-    if (!plan.ok) return stop("spec_derive", specDeriveTextLines(plan).join("\n"), deriveNext);
-    if (!plan.changes.length) add("spec_derive", "not_needed", "Spec is current.");
-    else {
-      deriveDetail = specDeriveTextLines(plan).join("\n");
-      if (!args.yes) return stop("spec_derive", `${deriveDetail}\nRe-run with --yes to write the derived spec.`, `${rerun} --yes`);
-      const derived = await specDerive(deriveArgs, { fetchImpl });
-      if (derived.written) remember([derived.spec_path]);
-      deriveDetail += `\n${specDeriveTextLines(derived).join("\n")}`;
-      if (!derived.ok) return stop("spec_derive", deriveDetail, deriveNext);
-      if (derived.next?.startsWith(`${cmd("record")} spec `)) {
-        deriveCommand = `${cmd("record")} spec ${packetFlag}`;
-        const recorded = await recordCommand({ _: ["record", "spec"], packet: packetPath });
-        remember(recorded.written);
-        deriveDetail += `\nrecord spec: ${recorded.note}${recorded.notices?.length ? `\n${recorded.notices.join("\n")}` : ""}`;
-      }
-      add("spec_derive", "done", deriveDetail);
-    }
-  } catch (error) {
-    return stop("spec_derive", `${deriveDetail}${deriveDetail ? "\n" : ""}${error.message}`, deriveCommand);
-  }
-
   const assess = async () => {
     let doctor;
     try {
@@ -177,6 +150,38 @@ export async function afterEditCommand(args, { specFetch, specDerive, specDerive
     }
     return doctor;
   };
+
+  const deriveArgs = { _: ["spec", "derive"], ...live };
+  const deriveNext = `${cmd("spec")} derive ${packetFlag}${args["no-live-refs"] ? " --no-live-refs" : ""}${args["proxy-base"] ? ` --proxy-base ${shellToken(args["proxy-base"])}` : ""}`;
+  let deriveDetail = "";
+  let deriveCommand = deriveNext;
+  try {
+    const plan = await specDerive({ ...deriveArgs, "dry-run": true }, { fetchImpl });
+    if (!plan.ok) return stop("spec_derive", specDeriveTextLines(plan).join("\n"), deriveNext);
+    if (!plan.changes.length) add("spec_derive", "not_needed", "Spec is current.");
+    else {
+      deriveDetail = specDeriveTextLines({ ...plan, warnings: plan.warnings.filter((issue) => issue.code !== "spec.derive.build_stale") }).join("\n");
+      if (!args.yes) {
+        add("owed", "done", formatDoctorCi(await assess()));
+        result.ok = false;
+        return stop("spec_derive", `${deriveDetail}\nRe-run with --yes to write the derived spec.`, `${rerun} --yes`);
+      }
+      const derived = await specDerive(deriveArgs, { fetchImpl });
+      if (derived.written) remember([derived.spec_path]);
+      deriveDetail += `\n${specDeriveTextLines(derived).join("\n")}`;
+      if (!derived.ok) return stop("spec_derive", deriveDetail, deriveNext);
+      if (derived.next?.startsWith(`${cmd("record")} spec `)) {
+        deriveCommand = `${cmd("record")} spec ${packetFlag}`;
+        const recorded = await recordCommand({ _: ["record", "spec"], packet: packetPath });
+        remember(recorded.written);
+        deriveDetail += `\nrecord spec: ${recorded.note}${recorded.notices?.length ? `\n${recorded.notices.join("\n")}` : ""}`;
+      }
+      add("spec_derive", "done", deriveDetail);
+    }
+  } catch (error) {
+    return stop("spec_derive", `${deriveDetail}${deriveDetail ? "\n" : ""}${error.message}`, deriveCommand);
+  }
+
   const doctor = await assess();
   add("owed", result.ci?.status === "current" ? "not_needed" : "done", formatDoctorCi(doctor));
   if (args["run-qa"]) {
@@ -226,7 +231,7 @@ export function afterEditExitCode(result) {
 
 export function afterEditTextLines(result) {
   const labels = { spec: "Spec copy:", build_current: "Build:", record_build: "Record build:", spec_derive: "Spec:", owed: "Owed:", run_qa: "Run QA:" };
-  const lines = result.steps.filter((row) => row.status !== "not_run").map((row) => {
+  const lines = result.steps.filter((row) => row.status !== "not_run").sort((a, b) => Number(b.step === "owed") - Number(a.step === "owed")).map((row) => {
     const detail = row.step === "files" ? row.detail : `${labels[row.step]}${row.step === "owed" ? "\n" : " "}${row.detail}`;
     return `${detail}${row.status === "stopped" && row.command ? `\nNext: ${row.command}` : ""}`;
   });

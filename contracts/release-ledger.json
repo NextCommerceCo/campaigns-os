@@ -4933,6 +4933,33 @@
         }
       ],
       "entry_sha256": "3a21fcc23e988173f2c5d07028875ff478d317b5b9ec7b1eaee512629011f0d1"
+    },
+    {
+      "id": "RL-0353",
+      "sequence": 337,
+      "date": "2026-11-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.0+agent.4",
+      "changelog_sha256": "4c33c7acc38b237700acd9908418f325dd66b5975a56fb1316a754301a150048",
+      "agent_impact": "After a page-only change (copy, an image or styling on a page before the checkout), next, after-edit, record build and record deploy give one answer: QA on the changed page, Polish advisory, no test orders. Follow next's qa run --page command; do not run a full Polish capture because an older next said Polish was required, and record deploy no longer refuses for it. On a funnel that has passed QA, the first line of next is the after-edit command: run it after any source change instead of sequencing record build, polish capture, record polish, record deploy and qa run by hand. after-edit prints what is owed first; a CampaignSpec derive preview that follows is optional unless you changed the spec. A checkout change still owes full Polish and QA with test orders.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "next reads the shared evidence debt for its stage choice, QA prompt and qa_run action, and prints the after-edit command first once QA has completed; no flag changes."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/campaigns-os-build-flow.md",
+          "surface_entry": "docs/campaigns-os-build-flow.md",
+          "summary": "after-edit reports what is owed before any spec derivation preview."
+        }
+      ],
+      "entry_sha256": "c448997061bee8f503c8fbb03f4540513bcd26f9964320db967f21a6a8fdfd1e"
     }
   ]
 }

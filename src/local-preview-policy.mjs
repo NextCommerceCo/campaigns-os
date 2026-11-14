@@ -187,10 +187,10 @@ export function applyPageOnlyChangeToCheckpoint(gate, debt) {
 }
 
 export function applyPageOnlyChangeToPolishGate(gate, { debt, checkpointGate = null } = {}) {
-  if (gate?.status !== "blocked" || debt?.polish?.advisory !== true) return gate;
+  if (!["blocked", CARRIED_FORWARD].includes(gate?.status) || debt?.polish?.advisory !== true) return gate;
   if (gate.owned_checkpoint_only) return isPageOnlyCarry(checkpointGate) ? carried(gate, PAGE_ONLY_CHANGE_POLICY) : gate;
   if (gate.owned_checkpoint_status === "blocked" && !isPageOnlyCarry(checkpointGate) && checkpointGate?.status !== CARRIED_FORWARD) return gate;
-  return PAGE_ONLY_POLISH_CODES.has(gate.code) ? carried(gate, PAGE_ONLY_CHANGE_POLICY) : gate;
+  return PAGE_ONLY_POLISH_CODES.has(gate.code) ? carried({ ...gate, status: gate.carried_forward?.from_status || gate.status }, PAGE_ONLY_CHANGE_POLICY) : gate;
 }
 
 export function applyLocalPreviewToPolishGate(gate, { packet, checkpointGate = null, baseUrl = null } = {}) {
@@ -220,7 +220,7 @@ export function starterResidueIsExpected(themeGate, { packet, baseUrl = null } =
 
 export function carriedForwardMessage(gate) {
   if (gate?.carried_forward?.policy === PAGE_ONLY_CHANGE_POLICY) {
-    return `Advisory for a page-only change: ${gate.reason} The change since Polish last reviewed this campaign touches only page copy, images or styling, so Polish is reported and not required; run it when the change needs a visual review.`;
+    return "Advisory for a page-only change: Polish evidence is not current. The change since Polish last reviewed this campaign touches only page copy, images or styling, so Polish is reported and not required; run it when the change needs a visual review.";
   }
   if (gate?.carried_forward?.policy === HOSTED_TEMPLATE_PREVIEW_POLICY) {
     return `Carried forward on the hosted preview: ${gate.reason} This evidence is missing, not passed; production QA still requires it.`;
