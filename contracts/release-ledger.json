@@ -4969,9 +4969,15 @@
           "path": "src/doctor/checks.mjs",
           "surface_entry": null,
           "summary": "Doctor's starter placeholder warning uses the wording QA uses."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/inspect.mjs",
+          "surface_entry": null,
+          "summary": "Doctor renders the hidden eager-media checkpoint on an all-template funnel as not applicable because every mapped page is template stock."
         }
       ],
-      "entry_sha256": "b784936b150141a9dc1e7f6d4de459d9ae8b17459dd84b159ef5730fdbe2b76e"
+      "entry_sha256": "39619713fefbbb7e929741276c706df94a355d7e2da8b85e661e5539b1119228"
     }
   ]
 }
