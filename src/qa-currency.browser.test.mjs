@@ -289,6 +289,19 @@ browserTest("--currency GBP: a GBP order passes its currency row, with expected 
   assert.ok(previews.length > 0 && previews.every((code) => code === "GBP"), JSON.stringify(previews));
 });
 
+browserTest("a spec listing more currencies than the run placed orders in: the verdict carries one warn row naming the others", async () => {
+  const spec = pricedSpec();
+  spec.campaign.available_currencies = ["USD", "EUR", "GBP"];
+  const { verdict } = await runQaAgainst({ orderCurrency: "USD" }, {}, spec);
+  const coverage = row(verdict, "browser-test-order:currency-coverage");
+  assert.equal(coverage?.status, "warn");
+  assert.deepEqual(coverage?.evidence?.untested, ["EUR", "GBP"]);
+  assert.ok(verdict.exceptions.some((entry) => entry.id === "browser-test-order:currency-coverage"));
+
+  const single = await runQaAgainst({ orderCurrency: "USD" }, {});
+  assert.equal(row(single.verdict, "browser-test-order:currency-coverage"), undefined);
+});
+
 // Without --currency the run uses the spec's campaign.currency (#756), as if
 // --currency <that code> had been passed.
 browserTest("without --currency on a USD spec: a USD order passes its currency row, expected totals ask for USD, and the entry row says the code came from the spec", async () => {

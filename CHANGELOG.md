@@ -2,11 +2,65 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.71.0+agent.8] - 2026-11-14
+## [1.71.0+agent.11] - 2026-11-14
 
 ### Fixed
 
 - The checkout structure check looks for the shipping address itself in every checkout family: the SDK address block (`[data-next-address="shipping"]`) or an address input bound one by one (`[data-next-checkout-field="address1"]`, or its SDK 0.5 spellings). It used to require `[data-next-component="shipping-field-row"]`, a marker that some starter families keep on their name and phone rows and others never had, so a starter checkout whose address is the SDK block reported "7/8 structure check(s) passed; missing shipping field row component" on every QA run while orders went through, and a hand-built checkout with no such marker warned the same way. A checkout with neither form of address now fails the check even when its name and phone rows carry the old marker.
+
+## [1.71.0+agent.10] - 2026-11-14
+
+### Changed
+
+- Agent-facing wording treats the supplied design and content as final. The build prompt, the build and Polish skills, the agent context files, `docs/entry-points.md`, `docs/campaign-build-brief.md` and three doctor remedies no longer tell an agent to list demo-looking or proof content "so the operator can decide", to confirm claims, or to treat a guarantee badge as a Polish defect. An agent builds the design and a starter used as-is as given, does not ask whether to keep a claim, and proposes only small corrections (a typo, a figure that contradicts the campaign's own prices), each named in the handoff. No check, question or severity changes.
+
+## [1.71.0+agent.9] - 2026-11-14
+
+### Fixed
+
+- Three places where a QA result read as more proof than it held now say so. When a QA run with fewer test-order paths replaces a fuller one for the same build, the QA stage carries a warning and `next` repeats it with the command that proves the dropped paths again; it used to read "Pipeline complete". When the checkout shows no cart total to compare the order total with, `browser-order-total-parity` is a `warn` exception ("the order total was not compared with a displayed total"), where it used to be a skipped row that no exception list showed. On a `--test-order tiers` run, a new warn row `browser-test-order:tier-coverage` names the tiers with no test order, including quantity tiers that only an offer declares, which `tiers` does not order because the checkout page lists the package once; coverage is read per checkout.
+
+## [1.71.0+agent.8] - 2026-11-14
+
+### Fixed
+
+- Under `qa run --browser`, the price check compares a tiered upsell tier by tier, using the prices the page renders. It used to read the starter upsell's literal fallback (`$24.95`, `$0.00`) from the source and compare it with the sum of all tier totals, so a correct three-tier upsell read `mismatch` ("claimed 24.95, calculated 179.94"). A tier whose rendered price is wrong still reports `mismatch` against that tier's total, and an upsell whose prices were never filled reads `incomplete`. Without `--browser`, or when no rendered tier price can be read, the comparison is the earlier source-based one. Checkout pages are compared as before.
+
+## [1.71.0+agent.7] - 2026-11-14
+
+### Fixed
+
+- `record build` records `adapter_decisions.template_files_copied` itself, from the template files on disk. The field had no command, so agents wrote it into the Assembly Report by hand or left it `pending` and carried doctor's warning to the handoff. `record build` now records `verified_existing_slice` when the page files declare their page type (YAML or JSON front matter) and every dependency group has files, otherwise `partial` (`not_applicable` for an `undecided` or `custom` template family), and doctor's warning names the groups that are missing. The `pending` warning is gone. Do not edit the field by hand.
+
+## [1.71.0+agent.6] - 2026-11-14
+
+### Fixed
+
+- Four messages now say what is true. The spec-drift warning no longer advises re-saving the Map for a package that is live but left out of the CampaignSpec (that is fine when the funnel does not sell it); the same now holds for a live shipping method the spec does not name, and the re-save advice stays only for a package or shipping method the spec names that is not live. After a QA that passed with exceptions, `next` says `ready_with_exceptions` is a passing proof to report to the operator and offers `checkpoint accept` only for open quality-check rows and says that is what it records, not QA exceptions. After a page-scoped QA, the next full run compares each finding with the last run that evaluated it, so findings the scoped run skipped are no longer labelled "caused by this change". `qa resolve` on a checkout or upsell page that owes a browser run says so under its own name (`qa resolve:`, not `qa run:`) and names the `qa run … --browser` command that pays it; `--browser` on `qa resolve` does not clear the refusal.
+
+## [1.71.0+agent.5] - 2026-11-14
+
+### Fixed
+
+- A funnel built from a starter as-is closes three checks itself, with a stated reason. Polish: when every mapped page is template stock there is no design route to compare, so `polish capture` says so and records the stage as skipped (`excluded`, `template_stock`); `next` moves on, `record deploy` is not refused for Polish and QA no longer warns that Polish evidence is missing. It used to keep Polish required with nothing to capture. The hidden eager-media checkpoint on such a funnel now reports `polish.hidden_eager_media.template_stock` (not applicable) where it reported `polish.hidden_eager_media.no_capturable_routes` (blocked). Theme: with no design source or brand tokens, the starter-palette comparison is reported as `excluded` with the same reason, and browser QA starts without a named theme waiver. Placeholder text: the starter's own literal placeholders warn in both doctor and QA, with one wording; QA used to block on them. A funnel with a designed page, a design source or brand tokens keeps all three checks as they were.
+
+## [1.71.0+agent.4] - 2026-11-14
+
+### Fixed
+
+- `next`, `after-edit`, `record build` and `record deploy` now agree on what a page-only change owes. After an edit that touches only a landing page, `next` used to say Polish was required while `after-edit` and `record build` said QA on the changed page only, and `record deploy` refused or recorded depending on how the preview was carried. `next` now reads the same evidence debt as the other two, names QA on the changed page as the next step, and `record deploy` is not refused for an advisory Polish. On a funnel that has passed QA, `next` starts with the `after-edit` command to run after a source change. `after-edit` prints what is owed before any CampaignSpec derive preview; a preview that holds changes says that applying it with `--yes` will owe Polish and QA again. A change that touches the checkout still owes the full stages.
+
+## [1.71.0+agent.3] - 2026-11-14
+
+### Fixed
+
+- A QA verdict now says which proof it does not hold. A discount code the CampaignSpec binds to an upsell or downsell page that the page does not carry is a price-check finding (`voucher-not-on-page:<page>:<code>`), so the price check reads `mismatch` where it read `pass`. When the spec lists more than one currency, one warn row (`browser-test-order:currency-coverage`) names the currencies with no test order in the run, and `next` prints one `qa run --currency <code>` command for each. When the checkout has an add-on and no test order contained it, one warn row (`browser-test-order:order-bump-coverage`) says so and names the `--cart` to add. A `--cart` package that no selected card carries must reach the order even beside `--select-package`; it used to be dropped silently. On a checkout whose form sits behind an "Add to Cart" reveal, the runner reveals the form before it applies `--cart`, so the add-on can be ordered. `--cart` and its value passed as one argument is refused instead of run with no cart. The three new rows are warnings: `ready_with_exceptions` stays a pass.
+
+## [1.71.0+agent.2] - 2026-11-14
+
+### Fixed
+
+- A test order on the wrong upsell no longer passes. On a path that declines one offer and accepts the next, the browser runner used to treat the current offer's URL as the result of the decline, so a slow decline left it on the first offer and the accept bought that one; `browser-test-order:<path>` still passed. The runner now waits for the page the path declares before it acts, and the path fails when the order carries an upsell line from an offer the path declined ("the order carries upsell package(s) N from the offer this path declined"). A required checkout select that the SDK mounts after it reports ready (`Missing checkout select: country`) is now waited for, within the existing readiness limit; a select that never mounts fails with the same message as before.
 
 ## [1.71.0+agent.1] - 2026-11-13
 

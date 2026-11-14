@@ -568,6 +568,8 @@ function templateStockFixture(t, deploy, prefix) {
     packet.source_html.pages = packet.source_html.pages.map((page) => ({ page_id: page.page_id, skip_reason: "template stock: no design source" }));
   }, prefix);
   writeReport(fixture.targetRepo, (report) => {
+    report.identity.public_route_slug = fixture.packet.campaign.public_route_slug;
+    report.identity.map_id = fixture.packet.spec.map_id;
     report.stages.assembly.evidence.build_environment = "development";
     report.stages.polish = { status: "required", required_by: "build", required_for: ["qa"] };
   });
@@ -576,75 +578,24 @@ function templateStockFixture(t, deploy, prefix) {
 
 const POLISH_MISSING_CODES = ["polish.evidence_missing", "polish.report_missing", "polish.hidden_eager_media.no_capturable_routes"];
 
-test("a template-stock build carries missing polish forward on local and hosted previews, but not production", async (t) => {
+test("template-stock Polish is excluded on the local preview and production", async (t) => {
   const { __qaNodeTestHooks } = await import("./qa-node.mjs");
-  const { computeDisposition } = await import("./qa-verdict.mjs");
-  const cases = [
-    { name: "local preview", deploy: { target: "local-serve", preview_url: "http://localhost:8080/runtime-packet-demo/" }, carried: true },
-    { name: "hosted preview", deploy: { target: "netlify", preview_url: "https://preview.example.test/runtime-packet-demo/", production_url: "https://www.example.test/runtime-packet-demo/" }, carried: true },
-    { name: "hosted preview on another origin from production site root", deploy: { target: "netlify", preview_url: "https://preview.example.test/runtime-packet-demo/", production_url: "https://www.example.test/" }, carried: true },
-    { name: "hosted preview without production URL", deploy: { target: "netlify", preview_url: "https://preview.example.test/runtime-packet-demo/", production_url: undefined }, carried: true },
-    { name: "hosted preview equal to production", deploy: { target: "netlify", preview_url: "https://preview.example.test/runtime-packet-demo/", production_url: "https://preview.example.test/runtime-packet-demo/" }, carried: false },
-    { name: "hosted preview equal to production after URL normalization", deploy: { target: "netlify", preview_url: "https://preview.example.test/runtime-packet-demo/", production_url: "https://preview.example.test/runtime-packet-demo" }, carried: false },
-    { name: "hosted preview equal to production after slug composition", deploy: { target: "netlify", preview_url: "https://www.example.test/runtime-packet-demo/", production_url: "https://www.example.test/" }, carried: false },
-    { name: "hosted production URL with a preview query", deploy: { target: "netlify", preview_url: "https://www.example.test/runtime-packet-demo/?preview=1", production_url: "https://www.example.test/runtime-packet-demo/" }, carried: false },
-    { name: "local-serve on a non-loopback host", deploy: { target: "local-serve", preview_url: "http://192.0.2.10:8080/runtime-packet-demo/" }, carried: false },
-  ];
-  for (const { name, deploy, carried } of cases) {
+  for (const deploy of [
+    { target: "local-serve", preview_url: "http://localhost:8080/runtime-packet-demo/" },
+    { target: "netlify", preview_url: "https://shop.example.com/runtime-packet-demo/", production_url: "https://shop.example.com/runtime-packet-demo/" },
+  ]) {
     const { packetPath } = templateStockFixture(t, deploy);
-    if (name === "hosted preview without production URL") {
-      assert.equal(Object.hasOwn(JSON.parse(readFileSync(packetPath, "utf8")).deploy, "production_url"), false, name);
-    }
     const doctor = doctorPacket(packetPath, { write: false });
-    const checkpoint = doctor.derived.polish_checkpoint_gate;
-    assert.equal(checkpoint.code, "polish.hidden_eager_media.no_capturable_routes", name);
-    const polishErrors = doctor.errors.filter((issue) => POLISH_MISSING_CODES.includes(issue.code));
-    const polishWarnings = doctor.warnings.filter((issue) => POLISH_MISSING_CODES.includes(issue.code));
-    if (carried) {
-      assert.equal(checkpoint.status, "carried_forward", name);
-      assert.equal(doctor.derived.polish_gate.status, "carried_forward", name);
-      assert.deepEqual(polishErrors, [], name);
-      assert.ok(polishWarnings.length >= 1 && polishWarnings.every((issue) => /^Carried forward on the (local|hosted) preview: .* missing, not passed/.test(issue.message)), JSON.stringify(polishWarnings));
-      assert.notEqual(doctor.next?.stage, "polish", name);
-      assert.equal((doctor.next?.blocked_stages || []).includes("qa"), false, name);
-    } else {
-      assert.equal(checkpoint.status, "blocked", name);
-      assert.deepEqual(checkpoint.required_actions.map((action) => action.id), [name.startsWith("hosted")
-        ? "polish.hidden_eager_media.set_hosted_preview_url"
-        : "polish.hidden_eager_media.map_design_route"], name);
-      assert.ok(polishErrors.length >= 1, `${name}: ${JSON.stringify(doctor.errors)}`);
-      assert.deepEqual(polishWarnings, [], name);
-      assert.doesNotMatch(JSON.stringify(doctor.next?.actions || []), /polish capture|checkpoint waive/, `${name}: no design route can be captured or waived`);
-    }
-
+    assert.equal(doctor.derived.polish_checkpoint_gate.status, "not_applicable");
+    assert.equal(doctor.derived.polish_checkpoint_gate.result, "excluded");
+    assert.equal(doctor.derived.polish_checkpoint_gate.reason_code, "template_stock");
+    assert.equal(doctor.derived.polish_gate.status, "not_applicable");
+    assert.ok(![...doctor.errors, ...doctor.warnings].some((issue) => POLISH_MISSING_CODES.includes(issue.code)));
     const resolved = await __qaNodeTestHooks.resolveQaInputs({ _: ["qa", "run"], packet: packetPath });
-    const qaCheckpoint = resolved.checkpointGates.find((gate) => gate.id === "polish.hidden_eager_media");
-    assert.equal(qaCheckpoint.status, carried ? "carried_forward" : "blocked", name);
-    assert.equal(resolved.polishGate.status, carried ? "carried_forward" : "blocked", name);
-    if (carried) {
-      const rows = [
-        __qaNodeTestHooks.polishGateAssertion(resolved.polishGate),
-        __qaNodeTestHooks.hiddenEagerMediaGateAssertion(qaCheckpoint),
-      ];
-      assert.deepEqual(rows.map((row) => [row.status, row.severity]), [["warn", "warn"], ["warn", "warn"]], name);
-      if (name.startsWith("hosted")) assert.doesNotMatch(JSON.stringify(rows.map((row) => row.actual)), /qa run|<packet>|<preview-url>/, name);
-      // Missing evidence is never a pass: the verdict cannot be plain ready.
-      assert.equal(computeDisposition(rows), "ready_with_exceptions", name);
-    }
-    if (name === "hosted preview") {
-      const production = await __qaNodeTestHooks.resolveQaInputs({ _: ["qa", "run"], packet: packetPath, "base-url": deploy.production_url });
-      assert.equal(production.checkpointGates.find((gate) => gate.id === "polish.hidden_eager_media").status, "blocked");
-      assert.equal(production.polishGate.status, "blocked");
-      const guidance = JSON.stringify([checkpoint.required_actions, doctor.derived.polish_gate.required_actions, doctor.warnings, doctor.next]);
-      assert.doesNotMatch(guidance, /polish capture|checkpoint waive/);
-      assert.match(guidance, /qa run --packet .* --base-url/);
-      const nextActions = buildNextActions({
-        result: { stage: "deploy" }, packetPath, packet: { deploy },
-        polishGate: doctor.derived.polish_gate,
-        polishCheckpointGate: checkpoint,
-      });
-      assert.ok(nextActions.some((action) => /record deploy --packet .* --base-url https:\/\/preview\.example\.test/.test(action.description || "")), JSON.stringify(nextActions));
-    }
+    const checkpoint = resolved.checkpointGates.find((gate) => gate.id === "polish.hidden_eager_media");
+    assert.equal(checkpoint.status, "not_applicable");
+    assert.equal(__qaNodeTestHooks.hiddenEagerMediaGateAssertion(checkpoint).status, "skipped");
+    assert.equal(resolved.polishGate.result, "excluded");
   }
 });
 
@@ -661,30 +612,15 @@ test("a hosted all-template preview hands off record deploy for the preview, the
   writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
 
   const before = doctorPacket(packetPath, { write: false });
-  assert.match(JSON.stringify([before.errors, before.next, before.derived.polish_checkpoint_gate.required_actions, before.derived.polish_gate.required_actions]), /qa policy set --packet .* --preview-url <url>/);
-  assert.doesNotMatch(JSON.stringify([before.errors, before.next, before.derived.polish_checkpoint_gate.required_actions, before.derived.polish_gate.required_actions]), /polish capture|checkpoint waive/);
-  assert.ok(before.next.actions.some((action) => action.includes(`next --packet ${packetArg}`)), "doctor must quote the hosted handoff packet path");
-  const pending = nextStage(null, { packet: packetPath, "no-write": true });
-  assert.equal(pending.stage, "polish");
-  const polish = nextStage("polish", { packet: packetPath, "no-write": true });
-  const blockedDeploy = nextStage("deploy", { packet: packetPath, "no-write": true });
-  const blockedQa = nextStage("qa", { packet: packetPath, "no-write": true });
-  for (const output of [pending, polish, blockedDeploy, blockedQa]) {
-    assert.match(JSON.stringify(output), /qa policy set --packet .* --preview-url <url>/);
-    assert.doesNotMatch(JSON.stringify(output), /polish capture|checkpoint waive/);
-    assert.ok(output.prompt.includes(`--packet ${packetArg}`), `${output.stage}: pending preview prompt must quote the packet path`);
-  }
-
-  const printedBefore = await runCli(["next", "--packet", packetPath, "--no-write", "--json"], { cwd: targetRepo });
-  const printedSetup = JSON.parse(printedBefore.stdout).next_actions.find((action) => action.command?.includes("qa policy set --packet"));
-  assert.equal(printedSetup.command, `campaigns-os qa policy set --packet ${packetArg} --preview-url <url>`);
+  assert.equal(before.derived.polish_gate.result, "excluded");
+  assert.equal(nextStage(null, { packet: packetPath, "no-write": true }).stage, "deploy");
 
   const set = await runCli(["qa", "policy", "set", "--packet", packetPath, "--preview-url", previewUrl, "--json"], { cwd: targetRepo });
   assert.equal(set.status, 0, set.stderr);
   const after = doctorPacket(packetPath, { write: false });
-  assert.equal(after.derived.polish_checkpoint_gate.status, "carried_forward");
+  assert.equal(after.derived.polish_checkpoint_gate.status, "not_applicable");
   assert.doesNotMatch(JSON.stringify(after.warnings.filter((issue) => POLISH_MISSING_CODES.includes(issue.code)).map((issue) => issue.message)), /qa run|<packet>|<preview-url>/);
-  assert.match(after.derived.polish_checkpoint_gate.required_actions[0].command, /--browser --test-order common$/);
+  assert.deepEqual(after.derived.polish_checkpoint_gate.required_actions, []);
   const pendingDeploy = nextStage(null, { packet: packetPath, "no-write": true });
   assert.equal(pendingDeploy.stage, "deploy", "a hosted preview is recorded with record deploy, as a designed one is");
   for (const output of [pendingDeploy, nextStage("polish", { packet: packetPath, "no-write": true })]) {
@@ -714,7 +650,7 @@ test("a hosted all-template preview hands off record deploy for the preview, the
     assert.equal(words[words.indexOf("--packet") + 1], packetPath, `${output.stage}: printed QA command must preserve the packet path`);
     assert.ok(words.includes("--browser") && words.includes("--test-order") && words.includes("common"), `${output.stage}: hosted QA must include browser and typed-card proof`);
   }
-  for (const output of [passedPolish, deploy, qa]) {
+  for (const output of [passedPolish, qa]) {
     assert.ok(output.prompt.includes(`--packet ${packetArg}`), `${output.stage}: prompt must quote the packet path`);
     assert.ok(output.prompt.includes(`--base-url ${previewArg}`), `${output.stage}: prompt must quote the preview URL`);
   }
@@ -747,7 +683,7 @@ test("a hosted all-template preview hands off record deploy for the preview, the
   assert.match(afterQa.prompt, /^Pipeline complete/);
 });
 
-test("hosted template stock with only a production URL still offers the preview policy command", (t) => {
+test("hosted template stock with only a production URL has no missing Polish warning", (t) => {
   const { packetPath, targetRepo } = templateStockFixture(t, {
     target: "netlify", production_url: "https://www.example.test/runtime-packet-demo/", preview_url: null,
   });
@@ -758,7 +694,8 @@ test("hosted template stock with only a production URL still offers the preview 
   Object.assign(report.stages.assembly, inputStamps(currentPacketInputs({ packet: JSON.parse(readFileSync(packetPath, "utf8")), packetPath })));
   writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
   const result = nextStage(null, { packet: packetPath, "no-write": true });
-  assert.ok(result.next_actions.some((action) => action.command?.includes("qa policy set --packet")), JSON.stringify(result.next_actions));
+  assert.equal(doctorPacket(packetPath).derived.polish_gate.result, "excluded");
+  assert.ok(!result.warnings.some((issue) => POLISH_MISSING_CODES.includes(issue.code)));
 });
 
 test("template-stock Polish guidance never recommends a capture on local or strict hosted targets", (t) => {
@@ -794,24 +731,14 @@ test("QA commands leave the placeholder bare and quote a recorded preview URL", 
   assert.equal(qaRunCommand("/tmp/p.json", "https://preview.example.test/runtime-packet-demo/?v=1&mode=qa"), "campaigns-os qa run --packet /tmp/p.json --base-url 'https://preview.example.test/runtime-packet-demo/?v=1&mode=qa' --browser --test-order common");
 });
 
-test("strict hosted template stock names a distinct preview URL in doctor and next actions", (t) => {
-  for (const previewUrl of ["https://www.example.test/runtime-packet-demo/", "http://localhost:8080/runtime-packet-demo/"]) {
-    const { packetPath } = templateStockFixture(t, {
-      target: "netlify", production_url: "https://www.example.test/", preview_url: previewUrl,
-    });
-    const doctor = doctorPacket(packetPath, { write: false });
-    assert.equal(doctor.derived.polish_checkpoint_gate.status, "blocked");
-    const doctorGuidance = JSON.stringify([doctor.derived.polish_checkpoint_gate.required_actions, doctor.next?.actions]);
-    assert.match(doctorGuidance, /qa policy set --packet .* --preview-url <url>/);
-    assert.match(doctorGuidance, /differ.*production URL/i);
-    for (const stage of [null, "polish", "deploy", "qa"]) {
-      const result = nextStage(stage, { packet: packetPath, "no-write": true });
-      const guidance = JSON.stringify(result.next_actions);
-      assert.match(guidance, /qa policy set --packet .* --preview-url <url>/, `${previewUrl}: ${stage}: ${guidance}`);
-      assert.match(guidance, /differ.*production URL/i, `${previewUrl}: ${stage}: ${guidance}`);
-      if (stage === "deploy" || stage === "qa") assert.match(result.prompt, /qa policy set --packet .* --preview-url <url>/, `${previewUrl}: ${stage} prompt: ${result.prompt.slice(0, 200)}`);
-    }
-  }
+test("template stock does not need a distinct preview URL for Polish", (t) => {
+  const { packetPath } = templateStockFixture(t, {
+    target: "netlify", production_url: "https://shop.example.com/", preview_url: "https://shop.example.com/runtime-packet-demo/",
+  });
+  const doctor = doctorPacket(packetPath, { write: false });
+  assert.equal(doctor.derived.polish_checkpoint_gate.status, "not_applicable");
+  assert.deepEqual(doctor.derived.polish_checkpoint_gate.required_actions, []);
+  assert.doesNotMatch(JSON.stringify(doctor.next?.actions), /qa policy set|polish capture|checkpoint waive/);
 });
 
 test("hosted preview does not carry missing page-load evidence for a design route", async (t) => {

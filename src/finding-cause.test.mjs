@@ -33,6 +33,54 @@ function scratch() {
   return mkdtempSync(join(tmpdir(), "campaigns-os-cause-"));
 }
 
+test("a full QA compares findings against their last evaluation before a page-scoped run", () => {
+  const base = scratch();
+  const unchanged = finding({ id: "http:checkout" });
+  const fixed = finding({ id: "http:receipt", page: "receipt" });
+  const skipped = finding({ id: "policy:availability", page: "campaign", status: "warn", severity: "warn" });
+  const browser = finding({ id: "browser-primary-cta:landing", page: "landing", status: "manual_review", severity: "warn" });
+  writePriorRunWithAttempts(base, {
+    runId: "run_1757000000000_aaaaaaaa", mapId: "map-1", attempts: [
+      { run_id: "qa_full", assertions: [unchanged, { ...fixed, status: "pass" }, skipped, browser] },
+      { run_id: "qa_page", assertions: [
+        finding({ id: "http:landing", page: "landing", status: "pass" }),
+        finding({ id: "page-scope:checkout", status: "skipped" }),
+        finding({ id: "page-scope:receipt", page: "receipt", status: "skipped" }),
+        { ...skipped, status: "skipped" },
+      ] },
+    ],
+  });
+  const assertions = [{ ...unchanged }, { ...fixed }, { ...skipped }, { ...browser }];
+  const summary = annotateQaAssertionCauses(assertions, { baseDir: base, mapId: "map-1", isFinding: isFindingAssertion });
+  assert.match(formatCauseSummaryLine(summary), /compared per finding with its last recorded QA evaluation/);
+  assert.deepEqual(assertions.map((assertion) => assertion.cause), [
+    CAUSE_CLASSES.PRE_EXISTING, CAUSE_CLASSES.CAUSED_BY_CHANGE, CAUSE_CLASSES.PRE_EXISTING, CAUSE_CLASSES.PRE_EXISTING,
+  ]);
+});
+
+test("QA cause summary explains findings with no prior evaluation", () => {
+  const base = scratch();
+  writePriorRun(base, {
+    runId: "run_1757000000000_aaaaaaaa", mapId: "map-1",
+    verdict: { run_id: "qa_page", assertions: [finding({ id: "page-scope:checkout", status: "skipped" })] },
+  });
+  const summary = annotateQaAssertionCauses([finding({ id: "http:checkout" })], { baseDir: base, mapId: "map-1", isFinding: isFindingAssertion });
+  assert.equal(summary.comparison, "no_prior_evaluation");
+  assert.match(formatCauseSummaryLine(summary), /no comparison was possible/);
+  assert.match(formatCauseBasisLine(summary), /No earlier recorded QA evaluation could be read for these findings, so none was compared with an earlier run\./);
+});
+
+test("QA cause summary describes a mix of compared and unevaluated findings", () => {
+  const base = scratch();
+  const current = finding({ id: "http:landing", page: "landing" });
+  writePriorRun(base, {
+    runId: "run_1757000000000_aaaaaaaa", mapId: "map-1",
+    verdict: { run_id: "qa_page", assertions: [current, finding({ id: "page-scope:checkout", status: "skipped" })] },
+  });
+  const summary = annotateQaAssertionCauses([{ ...current }, finding({ id: "http:checkout" })], { baseDir: base, mapId: "map-1", isFinding: isFindingAssertion });
+  assert.match(formatCauseSummaryLine(summary), /compared per finding with its last recorded QA evaluation; findings without a readable evaluation are unknown/);
+});
+
 /**
  * Write a packet-directory-shaped fixture: a Run Record under
  * .campaign-runtime/run-records/ pointing at a previous QA verdict, exactly

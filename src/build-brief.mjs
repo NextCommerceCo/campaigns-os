@@ -549,8 +549,8 @@ function draftCampaignBuildBrief({ spec, activePages, pageMappings, designFiles,
   const hasOrderBump = hasOrderBumpSignals(spec);
   // With no CampaignSpec surface to fill them, the template's banner and
   // timer stay as the starter has them ("template" for both): a starter used
-  // as-is keeps its content, with CampaignSpec's figures and any demo-looking
-  // content flagged for the operator (F-197).
+  // as-is keeps its content as given, demo-looking content included, with
+  // CampaignSpec's figures (F-197).
   const fillsTemplatePromo = templatePromoSurfaces({ spec, activePages }).length > 0;
 
   return {

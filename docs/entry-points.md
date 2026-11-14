@@ -58,18 +58,20 @@ CampaignSpec yourself, keep the template's pages, its landing page
 included. Template-stock pages still need the operator's opt-in per page
 before they are built.
 
-- **Keep** its sections, layout and copy: reviews, guarantee, as-seen-in
-  logos, benefit icons, promo banner and countdown.
+- **Keep** its sections, layout and copy as given, demo-looking content
+  included: reviews, guarantee, as-seen-in logos, benefit icons, promo
+  banner, countdown, copy written for another product. Do not ask
+  whether to keep it; change or remove it only when the operator asks.
 - **Swap** what CampaignSpec owns: product names and images, prices and
   discount figures, promo codes (empty a code the campaign does not
   have), the store name and support details.
-- **Fill** literal placeholder text such as `Benefit one` or
-  `Product Name` from the product. Browser QA blocks it, and filling it
-  keeps the section.
-- **Flag, don't remove,** content that looks like demo content: stock
-  reviews, as-seen-in logos, a demo countdown date, copy written for
-  another product. Leave it in place and list each item in the handoff
-  so the operator can decide. Remove it only when the operator asks.
+- **Review** literal placeholder text such as `Benefit one` or
+  `Product Name`. When every mapped page uses the starter as-is, doctor
+  and browser QA warn about it. A build with a designed page keeps the
+  blocking QA check.
+- **The starter palette** is excluded from brand comparison when every
+  mapped page is starter stock and no design source or brand tokens were
+  supplied. No theme waiver is needed.
 - **The countdown** stays like the rest, with one exception. It renders
   whenever its label is non-empty. In a build with a brief payload
   (`.campaign-runtime/input/brief-payload.json`) and no

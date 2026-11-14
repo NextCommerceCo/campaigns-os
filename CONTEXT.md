@@ -228,8 +228,9 @@ _Avoid_: asset-first build, page-only development
 The upstream creative/provenance input for campaign page presentation, such as
 Figma frames, prepared HTML, a figma-sections export, existing Page Kit pages, or
 agency-produced static source. Design Source owns visual composition, content
-hierarchy, imagery, page-level copy, and brand presentation intent; it does not
-own CampaignSpec commerce truth or SDK/runtime contracts.
+hierarchy, imagery, page-level copy (its proof and claims included), and brand
+presentation intent, and agents build it as given; it does not own CampaignSpec
+commerce truth or SDK/runtime contracts.
 _Avoid_: source of truth, design artifact, creative vibes
 
 **Design Source Package**:

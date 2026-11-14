@@ -1,5 +1,6 @@
+import { starterPaletteIsExpected } from "./content-residue.mjs";
 import { campaignSpecIdentity, resolveCampaignIdentity, campaignIdentitiesMatch, localSpecIdentityFields } from "./spec-source-identity.mjs";
-import { withDoctorCiReport } from "./doctor/ci.mjs";
+import { assessDoctorCi, doctorCiEvidenceLines, withDoctorCiReport } from "./doctor/ci.mjs";
 import { createHash, randomUUID } from "node:crypto";
 import { resolveDesignFileReferences } from "./design-file-reference.mjs";
 import { withDesignSourcePublication, readRecordedDesignSourcePackage } from "./design-source-publication.mjs";
@@ -33,7 +34,7 @@ import { routeMaskedSpecMaterialHash, specMaterialHash, specHashesMatch } from "
 // The same predicate stage-ledger.mjs judges a mutator's result with, imported
 // rather than re-stated so the waive preview and the commit agree by identity.
 import { isPlainObject } from "./repo-scan.mjs";
-import { applyDerivedAssemblyReportSummary, campaignHandedOff, commitAssemblyReport, QA_GATE_PLACEHOLDER_TEXT_RESIDUE, recordProducerStageOutcome, qaRestsOnBaseline } from "./stage-ledger.mjs";
+import { applyDerivedAssemblyReportSummary, campaignHandedOff, commitAssemblyReport, QA_GATE_PLACEHOLDER_TEXT_RESIDUE, recordProducerStageOutcome, polishReviewedBuild, qaEverCompleted, qaRestsOnBaseline } from "./stage-ledger.mjs";
 import { SESSION_ENDING_DISPOSITIONS, summarizePlaceholderTextGate, summarizePurchaseProof } from "./qa-verdict.mjs";
 import { assessRunRecordCloseout, identityMatches, latestMatchingRunRecord, reasonIsRemitRecovery } from "./run-record-closeout.mjs";
 import {
@@ -211,7 +212,7 @@ import {
   NEXT_STAGE_ORDER,
   stageIsTerminal,
 } from "./orchestration-stage-contract.mjs";
-import { currentBuildFingerprint } from "./polish-gate.mjs";
+import { currentBuildFingerprint, templateStockPolishStage, TEMPLATE_STOCK_POLISH_REASON } from "./polish-gate.mjs";
 import {
   assertPolishCaptureBindingUnchanged,
   capturePolishPageLoad,
@@ -781,6 +782,17 @@ export function recordQaStageOutcome(args, result) {
       }
       const evidence = qaStageGateEvidence(verdict, report, result);
       const onBaseline = Boolean(pageScope && report.stages?.qa?.baseline_accepted_at);
+      // A page-scoped run keeps the purchase proof of the record it extends, so
+      // it keeps that record's narrower-run warning too.
+      const carriedNarrower = pageScope
+        ? (Array.isArray(report.stages?.qa?.warnings) ? report.stages.qa.warnings : []).find((warning) => typeof warning === "string" && warning.startsWith(NARROWER_QA_PREFIX)) || null
+        : null;
+      const narrower = pageScope ? carriedNarrower : verdict.disposition === "blocked" ? null : narrowerQaWarning(report.stages?.qa, {
+        runId: optionalString(verdict.run_id),
+        buildFingerprint: currentBuildFingerprint(report),
+        specMaterialHash: qaStamps.source_spec_material_hash,
+        executed: summarizePurchaseProof({ verdict }).order_paths_executed,
+      });
       return settleQaBaseline(onBaseline, recordProducerStageOutcome(report, {
         stage: "qa",
         disposition: verdict.disposition,
@@ -788,9 +800,12 @@ export function recordQaStageOutcome(args, result) {
         command: `campaigns-os ${QA_RUN_PRODUCER}`,
         outputs: portableArtifactPaths([result.local_path, result.qa_sidecar?.path].filter(isNonEmptyString), workspace.targetRepo),
         blockers: verdict.disposition === "blocked" ? failed : [],
-        warnings: verdict.disposition === "ready_with_exceptions"
-          ? ["QA passed with explicitly attributed exceptions. Report them to the operator; do not clear or waive them, or change markup just to make them pass."]
-          : [],
+        warnings: [
+          ...(verdict.disposition === "ready_with_exceptions"
+            ? ["QA passed with explicitly attributed exceptions. Report them to the operator; do not clear or waive them, or change markup just to make them pass."]
+            : []),
+          ...(narrower ? [narrower] : []),
+        ],
         // The producer knows its own run id and must restate it, or the stage
         // keeps a previous run's identity beside this run's status and outputs.
         identity: { verdict_run_id: optionalString(verdict.run_id) },
@@ -843,6 +858,35 @@ export function recordQaStageOutcome(args, result) {
     process.stderr.write(`[campaigns-os] QA stage ledger update skipped: ${error.message}\n`);
     return false;
   }
+}
+
+// A run with fewer test order paths than the QA recorded for the same build
+// and spec replaces it as the current proof (its own coverage rows name what
+// it did not exercise). The QA stage warning says a fuller proof was
+// replaced, and `next` repeats it when the pipeline is otherwise complete.
+const NARROWER_QA_PREFIX = "This QA run replaced a fuller one";
+const DEPTHS_WITHOUT_ORDERS = new Set(["off", "none", "skip", "not_required", "unspecified"]);
+function narrowerQaWarning(previous, { runId, buildFingerprint, specMaterialHash, executed }) {
+  if (!isObject(previous)) return null;
+  // Re-recording the same verdict restates the warning it already carries,
+  // so the timestamp-only re-record stays unchanged.
+  if (runId && previous.verdict_run_id === runId) {
+    return (Array.isArray(previous.warnings) ? previous.warnings : []).find((warning) => typeof warning === "string" && warning.startsWith(NARROWER_QA_PREFIX)) || null;
+  }
+  if (!String(previous.status || "").startsWith("completed")) return null;
+  // A page-scoped record keeps the purchase proof of the full run it extends,
+  // placed against another build and under another run id: it names neither
+  // the run nor the build those paths belong to, so it is not compared.
+  if (isObject(previous.evidence?.page_scope)) return null;
+  if (!buildFingerprint || previous.evidence?.qc_build_fingerprint !== buildFingerprint) return null;
+  if (specMaterialHash == null || JSON.stringify(previous.source_spec_material_hash) !== JSON.stringify(specMaterialHash)) return null;
+  const before = previous.purchase_proof?.order_paths_executed;
+  if (!Number.isInteger(before) || !Number.isInteger(executed) || executed >= before) return null;
+  const depth = optionalString(previous.purchase_proof?.declared_order_path_depth);
+  const rerun = depth && !DEPTHS_WITHOUT_ORDERS.has(depth.toLowerCase())
+    ? `Run ${cmd("qa")} run --packet <packet> --test-order ${depth} to prove them again.`
+    : `Prove them again with a QA run that places at least ${before} test order paths.`;
+  return `${NARROWER_QA_PREFIX} for the same build: run ${singleLineField(previous.verdict_run_id, "(unrecorded)")} placed ${before} test order path(s), this run ${executed}. This run's verdict is now the QA proof, and the paths only the earlier run placed are not in it. ${rerun}`;
 }
 
 // QC results are written on every QA record, with the build
@@ -1334,6 +1378,7 @@ async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = nul
     const qcRederivers = await loadQcRederivers();
     const result = nextStage(stage, args, ambient, { qcStandIns, qcRederivers });
     await observeProgress(args, result, { packageVersion: packageVersion(), resolveKey: resolveCampaignsApiKeySource });
+    if (!stage && !args.json && qaEverCompleted(result[PROGRESS_OBSERVATION]?.report)) console.log(`After a source change, run this first: ${cmd("after-edit")} --packet ${shellToken(requireArg(args, "packet"))}`);
     writeResult(result, args, result.ok ? 0 : 2);
     printNextTinyPrompt(result, args);
     return;
@@ -2994,9 +3039,6 @@ export async function polishCaptureCommand(args, options = {}) {
     throw new Error(`polish capture needs an existing Assembly Report at ${reportPath}; run prepare-build/start first.`);
   }
   requireValidPolishCaptureReport(report, reportPath);
-  // A campaign whose every mapping is template stock has no page_load route
-  // to capture: its plan error is held, and the capture measures readability
-  // on the built pages only, leaving page_load and media_weight as they are.
   const { capturePolishReadability, isNoCapturableRoutesError } = await import("./polish-node.mjs");
   const planOrHeld = (currentPacket) => {
     try {
@@ -3015,28 +3057,35 @@ export async function polishCaptureCommand(args, options = {}) {
     targetRepo,
   });
 
-  let createBrowserAdapter = options.createBrowserAdapter;
-  if (typeof createBrowserAdapter !== "function") {
-    ({ createPolishBrowserAdapter: createBrowserAdapter } = await import("./polish-browser.mjs"));
+  let capture;
+  try {
+    let createBrowserAdapter = options.createBrowserAdapter;
+    if (typeof createBrowserAdapter !== "function") {
+      ({ createPolishBrowserAdapter: createBrowserAdapter } = await import("./polish-browser.mjs"));
+    }
+    // Template stock still gets readability measurements of its built pages,
+    // even though it has no design routes for page-load comparison.
+    capture = await (heldPlanError ? capturePolishReadability : capturePolishPageLoad)({
+      packet,
+      report,
+      reportPath,
+      baseUrl,
+      headed: args.headed === true,
+      authCookie: optionalString(args["auth-cookie"]),
+      createBrowserAdapter,
+      adapterStartupDeadlineMs: options.adapterStartupDeadlineMs,
+      captureCellDeadlineMs: options.captureCellDeadlineMs,
+      adapterCloseDeadlineMs: options.adapterCloseDeadlineMs,
+      probeClock: options.probeClock,
+      targetRepo,
+      visual: { packetPath, targetRepo, ...options.visual },
+      onFrozen: options.onFrozen,
+    });
+  } catch (error) {
+    if (!heldPlanError) throw error;
+    // A failed measurement cannot make design comparison apply to stock.
+    capture = {};
   }
-  const capture = await (heldPlanError ? capturePolishReadability : capturePolishPageLoad)({
-    packet,
-    report,
-    reportPath,
-    baseUrl,
-    headed: args.headed === true,
-    authCookie: optionalString(args["auth-cookie"]),
-    createBrowserAdapter,
-    adapterStartupDeadlineMs: options.adapterStartupDeadlineMs,
-    captureCellDeadlineMs: options.captureCellDeadlineMs,
-    adapterCloseDeadlineMs: options.adapterCloseDeadlineMs,
-    probeClock: options.probeClock,
-    targetRepo,
-    visual: { packetPath, targetRepo, ...options.visual },
-    onFrozen: options.onFrozen,
-  });
-  // Nothing was measured: the held plan error stands.
-  if (heldPlanError && !capture.readability) throw heldPlanError;
 
   if (typeof options.afterCapture === "function") {
     await options.afterCapture({ packetPath, reportPath, targetRepo, capture });
@@ -3049,7 +3098,7 @@ export async function polishCaptureCommand(args, options = {}) {
   let checkpoint = null;
   commitAssemblyReport(workspace, (currentReport) => {
     requireValidPolishCaptureReport(currentReport, reportPath);
-    const { plan: currentPlan } = planOrHeld(currentPacket);
+    const { plan: currentPlan, held } = planOrHeld(currentPacket);
     const currentBinding = createPolishCaptureBinding({
       packet: currentPacket,
       report: currentReport,
@@ -3071,6 +3120,10 @@ export async function polishCaptureCommand(args, options = {}) {
       packet: currentPacket,
       report: merged,
     });
+    if (heldPlanError) {
+      if (!held || checkpoint.result !== "excluded") throw new Error("Polish is not excluded for this build; run polish capture against the current build.");
+      merged.stages.polish = templateStockPolishStage(merged, new Date(options.now ?? Date.now()).toISOString());
+    }
     return merged;
   }, {
     command: "polish capture",
@@ -3078,22 +3131,12 @@ export async function polishCaptureCommand(args, options = {}) {
   });
 
   if (heldPlanError) {
-    // The readability capture completed; page_load's own outcome stays the
-    // held no_capturable_routes message, reported as a warning.
     return {
-      ok: true,
-      status: "captured_with_warnings",
-      action: "polish-capture",
-      report_path: reportPath,
-      measurement: null,
-      checkpoint,
-      observed_findings: [],
-      warnings: [{ code: heldPlanError.code, message: heldPlanError.message }],
+      ok: true, status: "not_applicable", action: "polish-capture", result: "excluded",
+      reason_code: "template_stock", reason: TEMPLATE_STOCK_POLISH_REASON, packet_path: packetPath, report_path: reportPath, checkpoint,
       capture: {
-        route_scope: null,
-        routes: [],
-        viewports: [],
         readability_routes: capture.readability?.subject?.routes ?? [],
+        readability_measured: capture.readability?.cells?.some((cell) => cell.cell_status === "measured") === true,
       },
     };
   }
@@ -4680,6 +4723,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
     reportPath: args.report ? resolve(args.report) : undefined,
     ...(qcStandIns ? { qcStandIns } : {}),
   });
+  const debt = doctor.derived?.evidence_debt;
   const prepareBuildGate = doctor.derived?.prepare_build_gate || null;
   // The CampaignSpec doctor just read (spec.local_path), for the QA stage's
   // order-bump command. Best-effort: doctor reports an unreadable spec itself.
@@ -4709,6 +4753,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
   const themeGate = doctor.derived?.theme_gate || null;
   const polishGate = doctor.derived?.polish_gate;
   const polishCheckpointGate = doctor.derived?.polish_checkpoint_gate || null;
+  if (stage === "polish" && polishGate?.result === "excluded" && polishGate?.reason_code === "template_stock") stage = null;
   // Packet 03 (INV-5 first slice): compare the ledger's self-report against
   // the repo's artifacts before any recommendation goes out. Additive:
   // `divergences[]` appears on the result only when at least one divergence
@@ -4718,7 +4763,8 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
   const divergences = prepareBuildGate?.binding_failure
     ? []
     : detectLedgerDivergence(report, packet, targetRepo, {
-      allowUnrecordedHostedPreview: polishCheckpointGate?.carried_forward?.policy === "hosted_template_preview"
+      allowUnrecordedHostedPreview: polishGate?.result === "excluded" && polishGate?.reason_code === "template_stock"
+        || polishCheckpointGate?.carried_forward?.policy === "hosted_template_preview"
         || hostedTemplateNeedsPreviewUrl(packet, polishCheckpointGate),
     });
   // Every return path runs through this finalizer so the machine-readable
@@ -4764,7 +4810,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
     if (divergences.length) result.divergences = divergences;
     result.gates = buildNextGates({ doctor, report, themeGate, polishGate, prepareBuildGate, packetPath });
     if (doctor.derived?.input_currency) result.input_currency = doctor.derived.input_currency;
-    result.next_actions = buildNextActions({ result, packetPath, packet, themeGate, polishGate, polishCheckpointGate, prepareBuildGate, ambient, runRecordCloseout, purchaseProof, brandContract: doctor.derived?.brand_contract || null, context: readJsonIfExists(contextPath), targetRepo, spec });
+    result.next_actions = buildNextActions({ result, packetPath, packet, themeGate, polishGate, polishCheckpointGate, prepareBuildGate, ambient, runRecordCloseout, purchaseProof, debt, brandContract: doctor.derived?.brand_contract || null, context: readJsonIfExists(contextPath), targetRepo, spec });
     // The QC handoff: read from data already loaded plus the
     // full QA verdict the QA stage names. It adds nothing to errors[],
     // warnings[] or ready[], and `status` above never reads it. Its accept
@@ -4788,7 +4834,12 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
       message: `The CampaignSpec at ${doctor.derived?.spec_path} could not be read (${singleLineField(specReadError.message)}), so next cannot tell whether the checkout declares an order bump and names no order-bump QA command. Fix the spec and run next again.`,
     });
   }
+  const ci = debt ? assessDoctorCi(debt) : null;
+  const ciEvidence = ci && (polishReviewedBuild(report?.stages?.polish) || [ci.polish, ci.qa].some((assessment) => assessment.recorded_build_fingerprint || assessment.baseline)) ? doctorCiEvidenceLines(ci, singleLineFragment).map((line) => line.replace(/^- /, "")) : [];
+  // ready[] stays what doctor reports, whatever evidence the stages hold. The
+  // change-debt lines ride on the array, non-enumerable, for the text output only.
   const ready = [...doctor.ready];
+  Object.defineProperty(ready, "changeDebtLines", { value: ciEvidence, enumerable: false });
   if (!doctor.ok && !doctorHasOnlyPolishGateErrors) errors.push(...doctor.errors.map((issue) => withPacketSubstitutedIssue(issue, packetPath)));
 
   // prepare-build is upstream of every stage. While its authoritative gate is
@@ -4815,11 +4866,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
     });
   }
 
-  // Slice 3 Phase 2: when no stage was passed, self-decide. The orchestration
-  // loop is: agent calls `next`, gets a stage + prompt, does the work,
-  // updates the assembly report's stages.<name>.status, then calls `next`
-  // again. Each call re-reads state from disk so the loop is idempotent
-  // and recoverable across sessions / machines.
+  // Doctor picks from current evidence debt and recorded stages.
   let picked = null;
   if (!stage) {
     picked = doctor.next;
@@ -4844,7 +4891,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
         errors,
         warnings,
         ready,
-        prompt: `Pipeline complete. All stages in the assembly report are in a terminal status. To repeat build work, do the work and run \`${cmd("record")} build --packet <path>\`; this makes downstream stages owed as needed. \`${cmd("record")} deploy\` records the served deploy, a loopback URL for a local-serve target or an https URL for a hosted one. Run \`${cmd("qa")} run\` for QA. Then call \`${cmd("next")}\` again. If a run session is active, finish it with \`${cmd("run")} end\` so the Run Record is assembled and the session closes.${report?.stages?.qa?.status === "completed_with_warnings" ? " QA passed with exceptions; report them to the operator without clearing or waiving them or changing markup just to make them pass." : ""}${qaRestsOnBaseline(report) ? ` QA rests on a baseline ${report.commerce_baseline.accepted_by} accepted, not a test; say so when you report this campaign.` : ""}${warnings.some((issue) => issue.code === "built_output.absent") ? " The built output is not on this checkout, so these records were not compared with it; build before treating the campaign as current." : ""}`,
+        prompt: `Pipeline complete. All stages in the assembly report are in a terminal status. To repeat build work, do the work and run \`${cmd("record")} build --packet <path>\`; this makes downstream stages owed as needed. \`${cmd("record")} deploy\` records the served deploy, a loopback URL for a local-serve target or an https URL for a hosted one. Run \`${cmd("qa")} run\` for QA. Then call \`${cmd("next")}\` again. If a run session is active, finish it with \`${cmd("run")} end\` so the Run Record is assembled and the session closes.${report?.stages?.qa?.status === "completed_with_warnings" ? " QA passed with exceptions; report them to the operator without clearing or waiving them or changing markup just to make them pass." : ""}${(report?.stages?.qa?.warnings || []).filter((warning) => typeof warning === "string" && warning.startsWith(NARROWER_QA_PREFIX)).map((warning) => ` ${warning}`).join("")}${qaRestsOnBaseline(report) ? ` QA rests on a baseline ${report.commerce_baseline.accepted_by} accepted, not a test; say so when you report this campaign.` : ""}${warnings.some((issue) => issue.code === "built_output.absent") ? " The built output is not on this checkout, so these records were not compared with it; build before treating the campaign as current." : ""}`,
       });
     }
     stage = picked.stage;
@@ -4886,7 +4933,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
     addPolishGateErrors(errors, polishGate, "qa");
     addPolishCheckpointGateErrors(errors, polishCheckpointGate, "qa");
     addThemeGateErrors(errors, themeGate, "qa");
-    prompt = qaPrompt(packetPath, reportPath, packet, spec, intentSummary, polishCheckpointGate);
+    prompt = debt?.qa.scope === "pages" ? ciEvidence.join("\n") : qaPrompt(packetPath, reportPath, packet, spec, intentSummary, polishCheckpointGate);
   }
   const status = errors.length ? "blocked" : readinessStatus(warnings, doctor.derived);
   const result = {
@@ -5085,9 +5132,10 @@ function brandContractDefectAdvisory(residueState) {
   };
 }
 
-function themeStarterPaletteAdvisory(themeGate, packetPath, residueState) {
+function themeStarterPaletteAdvisory(themeGate, packetPath, residueState, packet, contextTheme) {
   if (themeGate?.code !== "theme_gate.nothing_generatable") return null;
   if (residueState.state !== "inspected") return null;
+  if (starterPaletteIsExpected(packet, contextTheme)) return null;
   const packetArg = shellToken(packetPath || "<packet>");
   return {
     id: THEME_STARTER_PALETTE_ACTION_ID,
@@ -5147,7 +5195,7 @@ function divergenceInspectAction(divergences, packetPath, { packet = null, polis
 
 // Executable next actions: exact commands (or explicitly-manual steps), never
 // prose-only guidance. Ordering is the execution order an agent should follow.
-export function buildNextActions({ result, packetPath, packet, themeGate, polishGate, polishCheckpointGate, prepareBuildGate, ambient, runRecordCloseout = null, purchaseProof = null, brandContract = null, context = null, targetRepo = null, spec = null }) {
+export function buildNextActions({ result, packetPath, packet, themeGate, polishGate, polishCheckpointGate, prepareBuildGate, ambient, runRecordCloseout = null, purchaseProof = null, debt = null, brandContract = null, context = null, targetRepo = null, spec = null }) {
   const actions = [];
   const push = (id, kind, command, description, extras = {}) => actions.push({ id, kind, command, description, stage: result.stage, ...extras });
   const pushPolishCheckpointActions = () => {
@@ -5282,7 +5330,7 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
   // Doctor resolved the family brand contract once and `next` hands its
   // summary in; a caller without a doctor result resolves the same way.
   const residueState = brandContract || resolveBrandContract(packet?.assembly?.template_family).summary;
-  for (const advisory of [brandContractDefectAdvisory(residueState), themeStarterPaletteAdvisory(themeGate, packetPath, residueState)]) {
+  for (const advisory of [brandContractDefectAdvisory(residueState), themeStarterPaletteAdvisory(themeGate, packetPath, residueState, packet, context?.theme)]) {
     if (advisory && THEME_STARTER_PALETTE_STAGES.has(result.stage)) {
       push(advisory.id, advisory.kind, asInvocation(advisory.command), advisory.description);
     }
@@ -5317,8 +5365,12 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
   } else if (result.stage === "qa") {
     const url = packet.deploy?.preview_url || packet.deploy?.production_url || "<preview-url>";
     push("install_browser", "command", `${cmd("qa")} install-browser`, "Install the Playwright browser once after install/update (npm run qa:install-browser from a checkout).");
-    push("qa_run", "command", qaRunCommand(packetPath, url), "Run browser + typed-card QA and publish the verdict.");
-    const bumpCart = checkoutOrderBumpCart(spec);
+    // A page-scoped QA places no test orders, so it carries neither the
+    // per-currency runs nor the add-on run; a full QA carries both.
+    const pageScoped = debt?.qa.scope === "pages";
+    const currencyRuns = pageScoped ? [] : otherCurrencyQaRuns(spec, packetPath, url);
+    push("qa_run", "command", pageScoped ? `${cmd("qa")} run --packet ${shellToken(packetPath)}${debt.qa.owed_pages.map((page) => ` --page ${shellToken(page.page_id)}`).join("")}${debt.qa.browser_pages?.length ? " --browser" : ""}` : qaRunCommand(packetPath, url), pageScoped ? "Run QA on the changed pages; no test orders." : "Run browser + typed-card QA and publish the verdict.", currencyRuns.length ? { currency_commands: currencyRuns } : {});
+    const bumpCart = pageScoped ? null : checkoutOrderBumpCart(spec);
     if (bumpCart) push("qa_run_bump", "command", qaRunCommand(packetPath, url, bumpCart), `Prove the charged add-on. ${orderBumpRunReason(bumpCart)}`);
   } else if (result.stage === "done") {
     // #171: run-record closeout is a REQUIRED terminal action, not an
@@ -5468,7 +5520,7 @@ Rules:
 - Prepared AI/exported HTML must be converted into page-kit-ready source first: keep page-owned body markup, strip document wrappers, add YAML frontmatter, move shared CSS/assets into the campaign structure, and use Liquid helpers only for page-kit links/assets/includes. Page Kit publishes src/<slug>/assets/config.js as /<slug>/config.js and src/<slug>/assets/products/foo.png as /<slug>/products/foo.png; do not leave raw /assets/... or /<slug>/assets/... references in rendered pages.
 - Preserve prepared source HTML for landing/presell pages when it is a real standalone design.
 - For checkout/upsell/downsell/receipt, use the starter template as the SDK contract reference only: preserve required data-next controls and runtime wiring, but let the campaign/source own visual chrome, copy hierarchy, imagery, and brand layer.
-- A page whose authority is the starter template (design_authority source "template", or an opted-in template-stock page) is built as the template has it: when you write the CampaignSpec yourself keep the template's pages, landing page included; keep each page's sections, layout and copy, including reviews, guarantee, as-seen-in logos, benefit icons, promo banner and countdown. Swap what CampaignSpec owns: product names and images, prices and discount figures, promo codes (empty a code the campaign does not have), store name and support details. Fill literal placeholder text such as "Benefit one" or "Product Name" from the product instead of deleting its section. Leave content that looks like demo content (stock reviews, as-seen-in logos, a demo countdown date, copy written for another product) in place and list each item in your handoff for the operator; remove it only when the operator asks. One exception: when the build has a brief payload (.campaign-runtime/input/brief-payload.json) without offer.urgency.verified, doctor blocks a rendered countdown (content_residue.unverified_urgency), so blank the countdown label there and say so in the handoff.
+- A page whose authority is the starter template (design_authority source "template", or an opted-in template-stock page) is built as the template has it: when you write the CampaignSpec yourself keep the template's pages, landing page included; keep each page's sections, layout and copy, including reviews, guarantee, as-seen-in logos, benefit icons, promo banner and countdown. Swap what CampaignSpec owns: product names and images, prices and discount figures, promo codes (empty a code the campaign does not have), store name and support details. Fill literal placeholder text such as "Benefit one" or "Product Name" from the product instead of deleting its section. Keep content that looks like demo content (stock reviews, as-seen-in logos, a demo countdown date, copy written for another product) as given; do not ask whether to keep it, and change or remove it only when the operator asks. One exception: when the build has a brief payload (.campaign-runtime/input/brief-payload.json) without offer.urgency.verified, doctor blocks a rendered countdown (content_residue.unverified_urgency), so blank the countdown label there and say so in the handoff.
 - Read context.theme and ${runtime}/theme/theme-report.json when present. If a fresh brand-theme.css exists, copy it into the campaign assets/css folder and list it after next-core.css in checkout/upsell/downsell/receipt frontmatter styles; when theme generate also wrote brand-fonts.css (the design's own faces), copy it beside brand-theme.css and list it on the same pages; if policy is inspect_only, generate or skip explicitly before applying a new brand layer.
 - Generated brand-theme.css v0 is root-variable-only. Do not edit SDK-owned selectors, package controls, payment fields, totals, submit controls, receipt templates, route meta tags, or SDK JavaScript as part of theme application.
 - If you copy starter-template files, copy the selected family atomically with dependent pages, _includes, _layouts, assets/css, and assets/js; do not copy only checkout.html and receipt.html.
@@ -5710,6 +5762,15 @@ export function checkoutOrderBumpCart(spec) {
   return null;
 }
 
+// One QA command per currency the CampaignSpec lists beside campaign.currency,
+// which the default run uses: one run proves one currency.
+function otherCurrencyQaRuns(spec, packetPath, url) {
+  const listed = Array.isArray(spec?.campaign?.available_currencies) ? spec.campaign.available_currencies : [];
+  const base = String(spec?.campaign?.currency || "").toUpperCase();
+  const codes = [...new Set(listed.filter((code) => typeof code === "string" && /^[A-Za-z]{3}$/.test(code)).map((code) => code.toUpperCase()))];
+  return codes.length > 1 ? codes.filter((code) => code !== base).map((code) => `${qaRunCommand(packetPath, url)} --currency ${code}`) : [];
+}
+
 // Why the order-bump run exists, as one sentence for the action and the prompt.
 function orderBumpRunReason(bumpCart) {
   const cart = bumpCart.base ? `base tier ${bumpCart.base} plus the bump` : "the bump";
@@ -5723,9 +5784,12 @@ function qaPrompt(packetPath, reportPath, packet, spec = null, intent, polishChe
   const url = packet.deploy?.preview_url || packet.deploy?.production_url || "<preview-url>";
   const briefPath = packet.build_brief?.normalized_path || "(missing)";
   const bumpCart = checkoutOrderBumpCart(spec);
-  const bumpCommand = bumpCart
+  const currencyRuns = otherCurrencyQaRuns(spec, packetPath, url);
+  const bumpCommand = (bumpCart
     ? `\n\nOrder bump QA command (proves the charged add-on):\n${qaRunCommand(packetPath, url, bumpCart)}\n${orderBumpRunReason(bumpCart)}`
-    : "";
+    : "") + (currencyRuns.length
+    ? `\n\nCurrency QA commands (the CampaignSpec lists more currencies; one run proves one):\n${currencyRuns.join("\n")}`
+    : "");
   return `${campaignIntentPromptHeader(intent)}Use next-campaigns-qa for this deployed campaign.
 
 ${packet.spec.local_spec_id ? "Local spec ID" : "Map ID"}: ${packet.spec.local_spec_id || packet.spec.map_id}
@@ -6877,6 +6941,7 @@ const SAFE_POLISH_CHECKPOINT_REASONS = new Map([
   ["polish.hidden_eager_media.waived", "Hidden eager-media findings are covered by an exact named-human waiver."],
   ["polish.hidden_eager_media.pass", "Package-owned page-load evidence has no blocking hidden eager media."],
   ["polish.hidden_eager_media.not_applicable", "Package-owned page-load evidence is not applicable before completed assembly."],
+  ["polish.hidden_eager_media.template_stock", "Package-owned page-load evidence is not applicable because every mapped page is template stock."],
 ]);
 const SAFE_POLISH_CHECKPOINT_ACTIONS = new Map([
   ["polish.hidden_eager_media.capture", "campaigns-os polish capture --packet <packet> --base-url <url>"],
@@ -6920,6 +6985,10 @@ function safePolishByteCount(value) {
 }
 
 export function formatPolishCaptureText(result) {
+  if (result?.result === "excluded" && result?.reason_code === "template_stock") {
+    const readability = result.capture?.readability_measured === false ? " Readability was not measured." : "";
+    return `Polish is not applicable: ${TEMPLATE_STOCK_POLISH_REASON}${readability} Run ${cmd("next")} --packet ${shellToken(result.packet_path || "<packet>")}.`;
+  }
   const status = ["ready", "ready_with_waivers", "captured_with_warnings", "blocked"].includes(result?.status)
     ? result.status
     : "unknown";
@@ -8824,10 +8893,12 @@ export function nextTinyPromptLines(result) {
     lines.push(`  - ${starterPalette.description}`);
   }
   if (result.stage !== "qa") return lines;
-  lines.push("");
-  lines.push(`Next expected proof: browser QA + typed-card proof. Run: ${cmd("qa")} run --packet <packet> --base-url <url> --browser --test-order common`);
+  const qaRun = actions.find((action) => action.id === "qa_run" && action.command?.includes(" --page "));
+  lines.push("", `Next expected proof: ${qaRun ? qaRun.description : "browser QA + typed-card proof."} Run: ${qaRun?.command || `${cmd("qa")} run --packet <packet> --base-url <url> --browser --test-order common`}`);
   const bumpRun = (result.next_actions || []).find((action) => action?.id === "qa_run_bump");
   if (bumpRun) lines.push(`That run never orders the checkout order bump. Prove the charged add-on with: ${bumpRun.command}`);
+  const currencyRuns = (result.next_actions || []).find((action) => action?.id === "qa_run")?.currency_commands || [];
+  if (currencyRuns.length) lines.push("That run proves one currency. Prove each other currency the CampaignSpec lists with:", ...currencyRuns.map((command) => `  - ${command}`));
   lines.push("Localhost on any port is a Development domain (SDK allowed, analytics suppressed). Non-localhost origins still need SDK allowlist confirmation.");
   lines.push(`Build/polish done but no QA verdict yet is a Completeness Signal, not a build failure: ${cmd("findings")} add --stage qa --kind missing_prompt --summary "..."`);
   return lines;
@@ -8992,7 +9063,7 @@ export function resultTextLines(result, { headerLines = [] } = {}) {
   }
   if (result.ready?.length) {
     lines.push("Ready:");
-    for (const item of result.ready) lines.push(`- ${item}`);
+    for (const item of [...result.ready, ...(result.ready.changeDebtLines || [])]) lines.push(`- ${item}`);
   }
   if (result.actions?.length) {
     lines.push("Actions:");
@@ -9011,7 +9082,9 @@ export function resultTextLines(result, { headerLines = [] } = {}) {
   // `Next:` block: the operator reads what is wrong, then what clears it.
   lines.push(...doctorRequiredActionLines(result));
   // `next` only: the QC handoff, after the issues and before the stage picker.
-  if (result.qc_handoff) lines.push(...qcHandoffTextLines(result.qc_handoff));
+  if (result.qc_handoff) lines.push(...qcHandoffTextLines(result.qc_handoff, {
+    qaPassedWithExceptions: result[PROGRESS_OBSERVATION]?.report?.stages?.qa?.status === "completed_with_warnings",
+  }));
   if (result.next) {
     lines.push("Next:");
     lines.push(`- ${result.next.stage || "unknown"} (${result.next.owner || result.next.default_skill || "owner unknown"})`);

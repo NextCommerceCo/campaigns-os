@@ -437,7 +437,7 @@ test("doctor names unfinished adapter decisions after assembly is recorded compl
     assert.equal((doctor.errors || []).some((issue) => issue.code === "polish.evidence_missing"), true);
     assert.equal(warningCodes.has("adapter.raw_html_conversion_status"), true);
     assert.equal(warningCodes.has("adapter.commerce_shell_adoption"), true);
-    assert.equal(warningCodes.has("adapter.template_files_copied"), true);
+    assert.equal(warningCodes.has("adapter.template_files_copied"), false);
   });
 });
 

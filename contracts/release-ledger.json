@@ -4935,13 +4935,472 @@
       "entry_sha256": "3a21fcc23e988173f2c5d07028875ff478d317b5b9ec7b1eaee512629011f0d1"
     },
     {
-      "id": "RL-0357",
+      "id": "RL-0352",
       "sequence": 337,
       "date": "2026-11-14",
       "kind": "release",
       "surface_version": null,
-      "changelog_section": "1.71.0+agent.8",
-      "changelog_sha256": "55d223b4cca7a52c367128e87e21d5f4ce9495ce8dcf155b1c9c6ae1a421bb12",
+      "changelog_section": "1.71.0+agent.3",
+      "changelog_sha256": "4ad70955e67eb0f0eb8bc5b7bb32148715399bfa9bf9dc56ffbd4efb98b587bd",
+      "agent_impact": "Read three new QA rows as proof the run does not hold, and report them; none blocks. voucher-not-on-page:<page>:<code> (price check becomes mismatch): the spec binds that discount code to the page and the page does not carry it, so an order there will not get the offer; on a starter page set the voucher in the page's upsell offer settings, on a hand-built page add it to the offer the page sells, then rebuild and re-run. browser-test-order:currency-coverage: currencies the spec lists that had no test order in this run; next prints one qa run --currency <code> command per currency: run them before saying currencies are verified. browser-test-order:order-bump-coverage: the checkout add-on was in no test order; add the --cart it names. --cart packages that no selected card carries are now checked against the order even with --select-package, and --cart with its value as a single argument (an unsplit shell variable) is refused: pass the flag and the value as two arguments.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "next's QA step lists one qa run --currency command per currency the spec lists besides the campaign currency; no flag changes."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Describes the voucher-not-on-page finding, the currency and add-on coverage rows, --cart beside --select-package, and the reveal before --cart."
+        }
+      ],
+      "entry_sha256": "3d525c1419980c7c833ef6b294015c64127c896efcffb0b285798e3d7d6c4482"
+    },
+    {
+      "id": "RL-0353",
+      "sequence": 338,
+      "date": "2026-11-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.0+agent.4",
+      "changelog_sha256": "7e04797dfa5d469b44c103c24b277968ef680e22cdb6847d0ca61b82122fbfd1",
+      "agent_impact": "After a page-only change (copy, an image or styling on a page before the checkout), next, after-edit, record build and record deploy give one answer: QA on the changed page, Polish advisory, no test orders. Follow next's qa run --page command; do not run a full Polish capture because an older next said Polish was required, and record deploy no longer refuses for it. On a funnel that has passed QA, the first line of next is the after-edit command: run it after any source change instead of sequencing record build, polish capture, record polish, record deploy and qa run by hand. after-edit prints what is owed first. If a CampaignSpec derive preview follows and holds changes, read its warning: applying it with --yes changes the spec and owes Polish and QA again, so what is owed before and after applying differ. A checkout change still owes full Polish and QA with test orders. Polish evidence that was never captured on a local preview stays a warning, as before.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/campaigns-os-build-flow.md",
+          "surface_entry": "docs/campaigns-os-build-flow.md",
+          "summary": "after-edit reports what is owed before any spec derivation preview."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "next reads the shared evidence debt for its stage choice, QA prompt and qa_run action, and prints the after-edit command first once QA has completed; no flag changes."
+        }
+      ],
+      "entry_sha256": "63b817a4218c0c264437e32d7083b6d7b471de7f06c51c4f4b256489195222d7"
+    },
+    {
+      "id": "RL-0354",
+      "sequence": 339,
+      "date": "2026-11-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.0+agent.5",
+      "changelog_sha256": "6556b728aecb985e18ff7d6ca3733d447ff532ec3b43919cdbe1c97ff416ebb6",
+      "agent_impact": "On a funnel where every mapped page is starter stock used as-is: do not ask the operator to approve a Polish skip or to give a name for a theme waiver. polish capture reports that Polish is not applicable and records the stage; follow next. Browser QA reports the starter-palette comparison as excluded (template_stock) and starts without --theme-waive. The starter's own placeholder text is a warning in doctor and QA: list it in the handoff, and change it only when the operator asks. A funnel with any designed page, a design source or brand tokens is unchanged: Polish is owed, the theme gate applies and placeholder text blocks QA. A consumer that keyed on the checkpoint code polish.hidden_eager_media.no_capturable_routes for an all-template funnel should read polish.hidden_eager_media.template_stock (status not_applicable, result excluded, reason_code template_stock) instead; the old code is no longer produced for that case.",
+      "compatibility": "compatible",
+      "migration": "If you read the hidden eager-media checkpoint code for an all-template funnel, match polish.hidden_eager_media.template_stock in place of polish.hidden_eager_media.no_capturable_routes.",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "An all-template funnel's Polish stage is recorded as not applicable."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "QA rows for an as-is starter: palette excluded, placeholder text warn, no missing-Polish warning."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "polish capture and next treat an all-template funnel's Polish stage as not applicable; no flag changes."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": null,
+          "summary": "Doctor's starter placeholder warning uses the wording QA uses."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/inspect.mjs",
+          "surface_entry": null,
+          "summary": "Doctor renders the hidden eager-media checkpoint on an all-template funnel as not applicable because every mapped page is template stock."
+        }
+      ],
+      "entry_sha256": "232f0b9a3482045ece4687d45e387eeaebd225b6cbe08255ab3c5d34fb9ad2ae"
+    },
+    {
+      "id": "RL-0355",
+      "sequence": 340,
+      "date": "2026-11-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.0+agent.6",
+      "changelog_sha256": "fda4d0e33bba95383e6612ce1b60ad6bae3c93e562bfde1dc6d8d508bae9327b",
+      "agent_impact": "Read four messages differently. spec.campaign_drift: a package or shipping method that is live but not in the CampaignSpec is fine when the funnel does not sell or offer it; re-save the Map only when the spec names a package or shipping method that is not live. After QA passes with exceptions, next says ready_with_exceptions is a passing proof to report to the operator; checkpoint accept is offered only for open quality-check rows, which is all it records. A finding's cause after a page-scoped QA is compared with the last recorded run that evaluated it (cause_reason no_prior_evaluation when none can be read), and the summary line says so. qa resolve on a checkout or upsell page that owes a browser run refuses under its own name and names the qa run --browser command that pays it; --browser on qa resolve does not clear the refusal. Refresh installed skills to 1.71.0+skills.2.",
+      "compatibility": "compatible",
+      "migration": "Refresh installed skills to 1.71.0+skills.2 before starting a fresh session.",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Adds the no_prior_evaluation cause reason."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "The stated bundle revision moves to 1.71.0+skills.2."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "bundle_revision 1.71.0+skills.2; the skills this change edits move one patch up."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "ready_with_exceptions is a passing proof; checkpoint accept records quality-check rows, not QA verdict exceptions."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-sdk-bump/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "next passes the QA stage status to the quality-check handoff text; qa resolve passes its own name to the page-scope error."
+        }
+      ],
+      "entry_sha256": "de13d2c3ddffaf81bc90fe8297a6c9176c3ab1f944482a2843b84c1c823a7642"
+    },
+    {
+      "id": "RL-0356",
+      "sequence": 341,
+      "date": "2026-11-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.0+agent.7",
+      "changelog_sha256": "6a6f02e23e687fe2beecfe4feb8919057d13ea31c76a90775a989ec7f28c2657",
+      "agent_impact": "Do not write adapter_decisions.template_files_copied into the Assembly Report by hand. record build derives it from the template files under the campaign's source folder: verified_existing_slice when pages, _includes, _layouts, assets/css, assets/js are present and every page declares page_type, otherwise partial. If doctor reports adapter.template_files_copied, it names the missing groups: restore them and run record build again. The field is still required by the schemas and still read by doctor and the Run Record.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "record build derives template_files_copied from the files on disk; the field has no flag and is not hand-edited."
+        }
+      ],
+      "entry_sha256": "5f7ac1e32de4e2f3b7072055b7db1d712b7e430cbbf2436ff3e766957a399439"
+    },
+    {
+      "id": "RL-0360",
+      "sequence": 342,
+      "date": "2026-11-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.0+agent.9",
+      "changelog_sha256": "51263d8d1b4be5c08bf22e68e42c473f0d886f18947878063d86fa76fff3184b",
+      "agent_impact": "Three QA results now state what they did not prove. A narrower qa run (fewer test-order paths) that replaces a fuller one for the same build leaves a warning on the QA stage and in next: run the command it names, or a run with at least the stated number of paths, before calling the funnel proven. browser-order-total-parity is a warn exception when the checkout shows no cart total to compare: report it; do not add markup to clear it. On a --test-order tiers run, browser-test-order:tier-coverage (warn) lists, per checkout, the tiers with no test order; quantity tiers declared only by an offer (condition count) are named there, and --cart <ref>:<qty> orders one only where a rendered bundle card carries the package at that quantity, so tell the operator they were not ordered. All three are warnings: ready_with_exceptions stays a pass. Refresh installed skills to 1.71.0+skills.3.",
+      "compatibility": "compatible",
+      "migration": "Refresh installed skills to 1.71.0+skills.3 before starting a fresh session.",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "The order-total parity row warns when the checkout exposes no total to compare."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "The stated bundle revision moves to 1.71.0+skills.3."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "bundle_revision 1.71.0+skills.3; the skills this change edits move one patch up."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "browser-order-total-parity is a warn exception, not a skip, when there is no displayed total."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-sdk-bump/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line only."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "Recording a QA run with fewer order paths than the one it replaces for the same build adds a stage warning, and next's done prompt repeats it."
+        }
+      ],
+      "entry_sha256": "bd4d779fa81dd88f558affe6ccbea5df606ded1f1c8f8b4a0fcec8c0067939c9"
+    },
+    {
+      "id": "RL-0358",
+      "sequence": 343,
+      "date": "2026-11-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.0+agent.10",
+      "changelog_sha256": "d7c75fb66d91b1982598bda074cc6c5df15aa3c315928247c1669bc991c3258d",
+      "agent_impact": "The supplied design and content are final. Build them as given: do not ask the operator whether to keep a review, guarantee, countdown, badge, discount line or other claim, and do not remove or soften one. Propose only small corrections (a typo, a figure that contradicts the campaign's own prices) and name each in the handoff. For a starter used as-is, keep demo-looking content as given and change or remove it only when the operator asks. Doctor's discount-claim remedies now say to correct only a figure that contradicts the campaign's prices. Refresh installed skills to 1.71.0+skills.4.",
+      "compatibility": "compatible",
+      "migration": "Refresh installed skills to 1.71.0+skills.4 before starting a fresh session.",
+      "changes": [
+        {
+          "class": "documentation",
+          "path": "agents/claude/CLAUDE.md",
+          "surface_entry": "agents/claude/CLAUDE.md",
+          "summary": "The proof line adds: do not ask whether to keep it; the design and content are final; small corrections only, named in the handoff."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/codex/AGENTS.md",
+          "surface_entry": "agents/codex/AGENTS.md",
+          "summary": "The proof line adds: do not ask whether to keep it; the design and content are final; small corrections only, named in the handoff."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/copilot/copilot-instructions.md",
+          "surface_entry": "agents/copilot/copilot-instructions.md",
+          "summary": "The proof line adds: do not ask whether to keep it; the design and content are final; small corrections only, named in the handoff."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/cursor/campaigns-os.mdc",
+          "surface_entry": "agents/cursor/campaigns-os.mdc",
+          "summary": "The proof line adds: do not ask whether to keep it; the design and content are final; small corrections only, named in the handoff."
+        },
+        {
+          "class": "documentation",
+          "path": "CONTEXT.md",
+          "surface_entry": "CONTEXT.md",
+          "summary": "The Design Source owns its page-level copy, proof and claims included, and agents build it as given."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/campaign-build-brief.md",
+          "surface_entry": "docs/campaign-build-brief.md",
+          "summary": "The brief records copy boundaries the operator gives; the scenario lines that asked for claim approval are removed."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "The stated bundle revision moves to 1.71.0+skills.4."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "bundle_revision 1.71.0+skills.4; the skills this change edits move one patch up."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line moves to 1.71.0+skills.4; no other text change."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line moves to 1.71.0+skills.4; no other text change."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line moves to 1.71.0+skills.4; no other text change."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line moves to 1.71.0+skills.4; no other text change."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "The proof line adds: do not ask whether to keep it; the design and content are final; small corrections only."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line moves to 1.71.0+skills.4; no other text change."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line moves to 1.71.0+skills.4; no other text change."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Drops the guarantee badge example from template-default defects and says not to ask whether to keep source copy."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line moves to 1.71.0+skills.4; no other text change."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-sdk-bump/SKILL.md",
+          "surface_entry": null,
+          "summary": "Bundle revision line moves to 1.71.0+skills.4; no other text change."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "The build prompt's as-is starter rule says to keep demo-looking content as given and not to ask whether to keep it."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": null,
+          "summary": "The two discount-claim messages say to correct only a figure that contradicts the campaign's prices and name it in the handoff."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/next-step.mjs",
+          "surface_entry": null,
+          "summary": "The discount-claim next action says the same."
+        }
+      ],
+      "entry_sha256": "d095fd84ead5f2baa5620ddd82ab7f7fc46c5a3ffbd1aa7dc9eb48ce1cd12f8e"
+    },
+    {
+      "id": "RL-0357",
+      "sequence": 344,
+      "date": "2026-11-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.0+agent.11",
+      "changelog_sha256": "13cf4e2288980a8c4fb7059ef67793c29126392cf3cc94d88870fc3bf783bccf",
       "agent_impact": "QA's checkout structure check now looks for the shipping address itself in every checkout family, in place of [data-next-component=\"shipping-field-row\"]: either the SDK address block, [data-next-address=\"shipping\"], or an address input bound one by one ([data-next-checkout-field=\"address1\"], or its SDK 0.5 spellings). A starter checkout that renders its address through the SDK block passes 8/8 where it used to warn 7/8 with \"missing shipping field row component\", and a design-built or hand-built checkout that binds its own address inputs passes too; do not add row markers or hidden selectors to clear that warning. A checkout with neither form of address fails the check. A project whose recorded catalog still names the old marker is checked against that recorded rule until it is refreshed.",
       "compatibility": "compatible",
       "migration": "none",
@@ -4953,7 +5412,7 @@
           "summary": "The checkout structure check requires the shipping address in every family, as the SDK address block or an address input bound one by one; the older shipping-field-row marker on name and phone rows no longer satisfies it."
         }
       ],
-      "entry_sha256": "f8ff09decf4fd001e3b63907e2c7fb6bddafdfff9ece11882d6c18ec682289b5"
+      "entry_sha256": "7bdc16b925bef9f814aae14cd48d2aaaba50d1fb1742bb994fe8f4a5db7b2f64"
     }
   ]
 }
