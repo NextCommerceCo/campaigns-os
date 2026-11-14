@@ -4960,6 +4960,18 @@
         },
         {
           "class": "documentation",
+          "path": "agents/copilot/copilot-instructions.md",
+          "surface_entry": "agents/copilot/copilot-instructions.md",
+          "summary": "The proof line adds: do not ask whether to keep it; the design and content are final; small corrections only, named in the handoff."
+        },
+        {
+          "class": "documentation",
+          "path": "agents/cursor/campaigns-os.mdc",
+          "surface_entry": "agents/cursor/campaigns-os.mdc",
+          "summary": "The proof line adds: do not ask whether to keep it; the design and content are final; small corrections only, named in the handoff."
+        },
+        {
+          "class": "documentation",
           "path": "CONTEXT.md",
           "surface_entry": "CONTEXT.md",
           "summary": "The Design Source owns its page-level copy, proof and claims included, and agents build it as given."
@@ -5061,7 +5073,7 @@
           "summary": "The discount-claim next action says the same."
         }
       ],
-      "entry_sha256": "f84e4ae7ba7e1a5328b3229f7640fe760bf5c37862df7cc242abed87dfbf3935"
+      "entry_sha256": "691fdd753c54e2ffc06e52bb2b7012ca200a922c4d57669f0bf6b80903d2c1ad"
     }
   ]
 }
