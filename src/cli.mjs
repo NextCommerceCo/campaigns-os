@@ -6879,7 +6879,7 @@ const SAFE_POLISH_CHECKPOINT_REASONS = new Map([
   ["polish.hidden_eager_media.waived", "Hidden eager-media findings are covered by an exact named-human waiver."],
   ["polish.hidden_eager_media.pass", "Package-owned page-load evidence has no blocking hidden eager media."],
   ["polish.hidden_eager_media.not_applicable", "Package-owned page-load evidence is not applicable before completed assembly."],
-  ["polish.hidden_eager_media.no_capturable_routes", "Package-owned page-load evidence is not applicable because every mapped page is template stock."],
+  ["polish.hidden_eager_media.template_stock", "Package-owned page-load evidence is not applicable because every mapped page is template stock."],
 ]);
 const SAFE_POLISH_CHECKPOINT_ACTIONS = new Map([
   ["polish.hidden_eager_media.capture", "campaigns-os polish capture --packet <packet> --base-url <url>"],

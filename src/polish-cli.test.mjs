@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { hostedTemplateNeedsUsablePreview } from "./local-preview-policy.mjs";
 import {
   mkdirSync,
   mkdtempSync,
@@ -230,7 +231,9 @@ test("all-stock polish capture records readability before closing Polish as excl
   assert.equal(stage.evidence.reason_code, "template_stock");
   assert.equal(result.ok, true);
   assert.equal(result.result, "excluded");
-  assert.equal(result.checkpoint.code, "polish.hidden_eager_media.no_capturable_routes");
+  assert.equal(result.checkpoint.code, "polish.hidden_eager_media.template_stock");
+  // A closed, not-applicable checkpoint must not re-open the hosted-preview gate.
+  assert.equal(hostedTemplateNeedsUsablePreview({ deploy: { target: "netlify", preview_url: null } }, result.checkpoint), false);
   assert.match(formatPolishCaptureText({ status: "ready", checkpoint: result.checkpoint }), /every mapped page is template stock/i);
   assert.match(formatPolishCaptureText(result), /Polish is not applicable/);
   assert.doesNotMatch(formatPolishCaptureText(result), /Readability was not measured/);

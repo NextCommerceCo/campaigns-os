@@ -240,7 +240,9 @@ function noCapturableRoutesResult({ packet, report, now } = {}) {
   }
   return {
     ...recordedCheckpointNotApplicable(),
-    code: "polish.hidden_eager_media.no_capturable_routes",
+    // Its own code: the no_capturable_routes code still means blocked, missing
+    // evidence, and the hosted-preview gate keys on it.
+    code: "polish.hidden_eager_media.template_stock",
     result: "excluded",
     reason_code: "template_stock",
     reason: TEMPLATE_STOCK_POLISH_REASON,
