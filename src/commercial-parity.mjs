@@ -529,10 +529,28 @@ function extractRecurrences(nodeIndex, errors, consumeClaim) {
   return recurrences;
 }
 
-function extractVouchers(nodeIndex, errors, consumeClaim) {
+function extractVouchers(nodeIndex, errors, consumeClaim, { offerPage = false } = {}) {
   const seen = new Set();
   const vouchers = [];
+  const add = (value) => {
+    const code = value.trim();
+    const key = code.toUpperCase();
+    if (!code || seen.has(key)) return;
+    seen.add(key);
+    consumeClaim();
+    vouchers.push({ code });
+  };
   nodeIndex.nodes.forEach((node) => {
+    // On an upsell or downsell page the SDK's auto-render bundle config can
+    // carry the offer's voucher, and SDK 0.5 cards a comma-separated
+    // data-next-vouchers. Only those pages price a carried voucher, so other
+    // pages read only data-next-bundle-vouchers.
+    if (offerPage && hasAttribute(node, "data-next-bundles")) {
+      let bundles = null;
+      try { bundles = JSON.parse(node.attrs["data-next-bundles"]); } catch (_error) { /* not a voucher claim */ }
+      array(bundles).forEach((bundle) => array(bundle?.vouchers).forEach((value) => typeof value === "string" && add(value)));
+    }
+    if (offerPage && hasAttribute(node, "data-next-vouchers")) String(node.attrs["data-next-vouchers"]).split(",").forEach(add);
     if (!hasAttribute(node, "data-next-bundle-vouchers")) return;
     let parsed;
     try {
@@ -546,14 +564,7 @@ function extractVouchers(nodeIndex, errors, consumeClaim) {
       errors.push({ type: "malformed-voucher-shape" });
       return;
     }
-    parsed.forEach((value) => {
-      const code = value.trim();
-      const key = code.toUpperCase();
-      if (seen.has(key)) return;
-      seen.add(key);
-      consumeClaim();
-      vouchers.push({ code });
-    });
+    parsed.forEach(add);
   });
   return vouchers;
 }
@@ -576,7 +587,7 @@ export function extractCommercialClaims(html, options = {}) {
   const priceClaims = extractPrices(nodeIndex, consumeClaim);
   const packagePriceClaims = extractPackagePrices(nodeIndex, consumeClaim);
   const recurrenceClaims = extractRecurrences(nodeIndex, extractionErrors, consumeClaim);
-  const vouchers = extractVouchers(nodeIndex, extractionErrors, consumeClaim);
+  const vouchers = extractVouchers(nodeIndex, extractionErrors, consumeClaim, { offerPage: options.pageType === "upsell" || options.pageType === "downsell" });
   return {
     page_id: present(options.pageId) ? String(options.pageId) : null,
     ...(present(options.url) ? { url: String(options.url) } : {}),
@@ -899,6 +910,20 @@ export function diffCommercialParity(capturesValue, journey, options = {}) {
       });
     });
 
+    // A voucher the CampaignSpec binds to an upsell or downsell page reaches
+    // the order only when the page carries it, which nothing above can see
+    // when the page yields no voucher claim.
+    if (page.page_type === "upsell" || page.page_type === "downsell") {
+      const carried = new Set(array(capture.vouchers).map((voucher) => String(voucher?.code || "").trim().toUpperCase()));
+      const bound = new Set(array(page.offers)
+        .filter((offer) => offer?.calculation_evidence === CALCULATED_PAIR_EVIDENCE && present(offer?.code))
+        .map((offer) => String(offer.code)));
+      bound.forEach((code) => {
+        if (carried.has(code.toUpperCase())) return;
+        findings.push({ type: "voucher-not-on-page", page_id: pageId, ...source, code, claimed: "absent", calculated: "carried" });
+      });
+    }
+
     voucherComparisonClaims(capture, page).compared.forEach(({ voucher, status }) => {
       if (status === "Applied") return;
       const code = voucher.code;
@@ -932,7 +957,7 @@ function assertionBaseId(finding) {
   if (finding.type === "cadence-disclosure-mismatch") {
     return `${finding.type}:${component(finding.page_id)}:package-${component(finding.package_id)}`;
   }
-  if (finding.type === "voucher-not-applied") {
+  if (finding.type === "voucher-not-applied" || finding.type === "voucher-not-on-page") {
     return `${finding.type}:${component(finding.page_id)}:${component(finding.code)}`;
   }
   throw new TypeError(`Unknown commercial parity finding type: ${String(finding?.type)}`);
@@ -977,6 +1002,14 @@ function assertionForFinding(finding, id) {
       ...common,
       expected: "Applied",
       actual: "Not applied",
+      evidence: { type: finding.type, code: finding.code },
+    };
+  }
+  if (finding.type === "voucher-not-on-page") {
+    return {
+      ...common,
+      expected: `page ${finding.page_id} carries voucher ${finding.code}, which the CampaignSpec binds to it`,
+      actual: `page ${finding.page_id} does not carry voucher ${finding.code}, so an order placed there will not get that offer. On a starter page, set the voucher in the page's upsell offer settings; on a hand-built page, add the voucher to the offer the page sells. Then rebuild and re-run qa run.`,
       evidence: { type: finding.type, code: finding.code },
     };
   }

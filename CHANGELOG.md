@@ -8,6 +8,18 @@ Notable supported-surface changes are recorded here.
 
 - `next`, `after-edit`, `record build` and `record deploy` now agree on what a page-only change owes. After an edit that touches only a landing page, `next` used to say Polish was required while `after-edit` and `record build` said QA on the changed page only, and `record deploy` refused or recorded depending on how the preview was carried. `next` now reads the same evidence debt as the other two, names QA on the changed page as the next step, and `record deploy` is not refused for an advisory Polish. On a funnel that has passed QA, `next` starts with the `after-edit` command to run after a source change. `after-edit` prints what is owed before any CampaignSpec derive preview; a preview that holds changes says that applying it with `--yes` will owe Polish and QA again. A change that touches the checkout still owes the full stages.
 
+## [1.71.0+agent.3] - 2026-11-14
+
+### Fixed
+
+- A QA verdict now says which proof it does not hold. A discount code the CampaignSpec binds to an upsell or downsell page that the page does not carry is a price-check finding (`voucher-not-on-page:<page>:<code>`), so the price check reads `mismatch` where it read `pass`. When the spec lists more than one currency, one warn row (`browser-test-order:currency-coverage`) names the currencies with no test order in the run, and `next` prints one `qa run --currency <code>` command for each. When the checkout has an add-on and no test order contained it, one warn row (`browser-test-order:order-bump-coverage`) says so and names the `--cart` to add. A `--cart` package that no selected card carries must reach the order even beside `--select-package`; it used to be dropped silently. On a checkout whose form sits behind an "Add to Cart" reveal, the runner reveals the form before it applies `--cart`, so the add-on can be ordered. `--cart` and its value passed as one argument is refused instead of run with no cart. The three new rows are warnings: `ready_with_exceptions` stays a pass.
+
+## [1.71.0+agent.2] - 2026-11-14
+
+### Fixed
+
+- A test order on the wrong upsell no longer passes. On a path that declines one offer and accepts the next, the browser runner used to treat the current offer's URL as the result of the decline, so a slow decline left it on the first offer and the accept bought that one; `browser-test-order:<path>` still passed. The runner now waits for the page the path declares before it acts, and the path fails when the order carries an upsell line from an offer the path declined ("the order carries upsell package(s) N from the offer this path declined"). A required checkout select that the SDK mounts after it reports ready (`Missing checkout select: country`) is now waited for, within the existing readiness limit; a select that never mounts fails with the same message as before.
+
 ## [1.71.0+agent.1] - 2026-11-13
 
 ### Fixed
