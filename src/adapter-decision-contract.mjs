@@ -129,8 +129,10 @@ export function deriveTemplateFilesCopied({ targetRepo, outputDir, family }) {
   for (const group of TEMPLATE_SLICE_REQUIRED_GROUPS) {
     const matches = group === "pages" ? pages
       : group === "frontmatter_vocabulary" ? pages.filter((path) => {
-        const frontmatter = readFileSync(resolve(root, path), "utf8").match(/^\uFEFF?---\s*\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+        // An unreadable page counts as a page without a type: the proof stays
+        // partial and record build still completes.
         try {
+          const frontmatter = readFileSync(resolve(root, path), "utf8").match(/^\uFEFF?---\s*\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
           return frontmatter && isNonEmptyString(parseYaml(frontmatter[1])?.page_type);
         } catch { return false; }
       })

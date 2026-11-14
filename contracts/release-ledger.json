@@ -4941,7 +4941,7 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.71.0+agent.7",
-      "changelog_sha256": "017469cdf18fa1159411c7677138ed55938908f032d08dd78626ae0c7dc5f3e0",
+      "changelog_sha256": "6a6f02e23e687fe2beecfe4feb8919057d13ea31c76a90775a989ec7f28c2657",
       "agent_impact": "Do not write adapter_decisions.template_files_copied into the Assembly Report by hand. record build derives it from the template files under the campaign's source folder: verified_existing_slice when pages, _includes, _layouts, assets/css, assets/js are present and every page declares page_type, otherwise partial. If doctor reports adapter.template_files_copied, it names the missing groups: restore them and run record build again. The field is still required by the schemas and still read by doctor and the Run Record.",
       "compatibility": "compatible",
       "migration": "none",
@@ -4953,7 +4953,7 @@
           "summary": "record build derives template_files_copied from the files on disk; the field has no flag and is not hand-edited."
         }
       ],
-      "entry_sha256": "7746dc571153598aea11b5a430e7150d89215a00b46adc41221cf53fe1a3fc64"
+      "entry_sha256": "a51613c6909372733c18e06ca683157d7e5da020ba9851b8301f254378e3bd55"
     }
   ]
 }

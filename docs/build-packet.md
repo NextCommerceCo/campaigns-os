@@ -1912,7 +1912,8 @@ context/report aid, not part of `source_html.pages[]` page binding.
 `pages`, `_includes`, `_layouts`, `assets/css`, `assets/js`, and
 `frontmatter_vocabulary`. `record build` records `verified_existing_slice`
 when page files carry `page_type` frontmatter and every dependency group has
-files; otherwise it records `partial`. It writes target-repo-relative proof
+files; otherwise it records `partial`. For an `undecided` or `custom`
+template family it records `not_applicable`. It writes target-repo-relative proof
 paths that doctor checks once assembly is complete. If files are missing,
 restore them, then run `record build --packet <campaign-runtime.build.json>`.
 
