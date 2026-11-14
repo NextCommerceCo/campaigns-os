@@ -202,6 +202,12 @@ export function pageKitOutputPaths(packet) {
     || (kit?.target_path && packet?.assembly?.output_dir ? join(packet.assembly.output_dir, kit.target_path) : null)).filter(Boolean);
 }
 
+// The sealed source render refuses every external origin, so the cart SDK that
+// clears [data-next-await] never loads there. The source side looks once, after
+// networkidle and fonts, and records what it sees: markers still present read
+// `timeout` exactly as a full wait would, without spending the build-side bound.
+const SEALED_SOURCE_AWAIT_MS = 1;
+
 export async function runVisualCells({ buildAdapter, sourceAdapter, pairs, sourceOrigin, sourceRefused = null, sourceRefusedTotal = null, probes = [],
   budget = {}, clock = monotonicClock, writePng, sources = new Map(), now = new Date(), captureCellDeadlineMs, timers = {} } = {}) {
   const cells = [], poisoned = new Set();
@@ -232,7 +238,8 @@ export async function runVisualCells({ buildAdapter, sourceAdapter, pairs, sourc
           url: cell.side === "build" ? planned.url ?? route?.url : new URL(source.url_path, sourceOrigin).href,
           viewport: { key: cell.viewport, width: cell.width, height: cell.height }, deviceScaleFactor: 1, signal: controller.signal,
           requestPolicy: cell.side === "source_html" ? { allowOrigin: sourceOrigin } : null,
-          readiness: { fontsMs: VISUAL_LIMITS.readiness_fonts_ms, awaitMs: VISUAL_LIMITS.readiness_await_ms },
+          readiness: { fontsMs: VISUAL_LIMITS.readiness_fonts_ms,
+            awaitMs: cell.side === "source_html" ? SEALED_SOURCE_AWAIT_MS : VISUAL_LIMITS.readiness_await_ms },
           probes: [{ name: "visual_sections", source: visualSections.toString(), args: [], boundMs: 1500 }, ...selected],
           shots: { actual: true, stabilized: { masks: VISUAL_MASKS, animations: "disabled", caret: "hide", maskColor: "#ff00ff" } },
           maxHeightPx: VISUAL_LIMITS.capture_height_px, budget: { clock, addedRemainingMs: remaining() },
