@@ -899,6 +899,45 @@ test("commerce structure assertion passes when contract checks pass", () => {
   assert.equal(result.severity, undefined);
 });
 
+function checkoutStructureWithAddressSelectors(addressSelectors) {
+  const catalog = JSON.parse(readFileSync(new URL("../contracts/commerce-surface-catalog.json", import.meta.url), "utf8"));
+  const contract = catalog.families["shop-single-step"].agentContract.qaStructure.checkout;
+  // Synthetic rendered selector evidence: layout, form, payment and summary
+  // are present in both checkouts; only the address markup differs.
+  const present = new Set([
+    ".checkout__layout", ".checkout__column--left", ".checkout__column--right",
+    '[data-next-checkout="form"]', "[os-checkout-payment]", "[data-next-cart-summary]",
+    ...addressSelectors,
+  ]);
+  const checks = ["requiredVisibleSelectors", "requiredNonEmptySelectors"].flatMap((key) => contract[key].map((rule) => ({
+    name: rule.name,
+    selectors: [rule.selector],
+    status: present.has(rule.selector) ? "pass" : "fail",
+    count: present.has(rule.selector) ? 1 : 0,
+    visible_count: present.has(rule.selector) ? 1 : 0,
+  })));
+  return __qaBrowserTestHooks.commerceStructureAssertionFromEvidence({ page_id: "checkout", page_type: "checkout" }, {
+    checks,
+    behaviour: { status: "pass" },
+  });
+}
+
+test("checkout structure accepts the SDK shipping address without shipping row markers", () => {
+  const row = checkoutStructureWithAddressSelectors(['[data-next-address="shipping"]']);
+  assert.equal(row.status, "pass", row.actual);
+  assert.equal(row.actual, "8/8 structure check(s) passed");
+});
+
+test("checkout structure rejects name and phone row markers without the SDK shipping address", () => {
+  const row = checkoutStructureWithAddressSelectors(['[data-next-component="shipping-field-row"]']);
+  assert.equal(row.status, "fail", row.actual);
+  const missing = row.evidence.checks.filter((check) => check.status === "fail");
+  assert.equal(missing.length, 1);
+  assert.deepEqual(missing[0].selectors, ['[data-next-address="shipping"]']);
+  assert.equal(missing[0].kind, "sdk_wiring");
+  assert.equal(row.actual, "7/8 structure check(s) passed; missing shipping address block");
+});
+
 const DESIGN_OWNED_SHELL_MISSES = [
   { name: "Olympus checkout wrapper", status: "fail", selectors: [".checkout-wrapper"], count: 0, visible_count: 0 },
   { name: "left checkout column", status: "fail", selectors: [".checkout-layout__left"], count: 0, visible_count: 0 },
@@ -948,10 +987,10 @@ test("only the catalog's family shell selectors are relaxable; SDK wiring select
     ".checkout__layout",
     ".checkout__column--left",
     ".checkout__column--right",
-    '[data-next-component="shipping-field-row"]',
   ];
   const wiring = [
     '[data-next-checkout="form"]',
+    '[data-next-address="shipping"]',
     "[os-checkout-payment]",
     "[data-next-cart-summary]",
     "[data-next-bundle-slots-for]",

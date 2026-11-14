@@ -24,7 +24,6 @@ const FAMILY_SHELL_SELECTORS = [
   ".checkout-layout__left",
   ".checkout-layout__right",
   ".checkout-wrapper",
-  '[data-next-component="shipping-field-row"]',
 ];
 
 async function chromiumAvailable() {
@@ -61,9 +60,11 @@ function replaceOnce(source, from, to) {
 }
 
 // The olympus checkout contract reads the wrapper, both layout columns and the
-// shipping field row, plus the SDK form, submit and cart summary.
+// SDK shipping address block, form, submit and cart summary.
 async function structureRow(mutate = (source) => source) {
-  html = mutate(await readFile(FIXTURE, "utf8"));
+  const source = (await readFile(FIXTURE, "utf8")).replace('<form data-next-checkout="form">',
+    '<form data-next-checkout="form"><div data-next-address="shipping">Shipping address</div>');
+  html = mutate(source);
   const page = {
     page_id: "checkout",
     page_type: "checkout",
@@ -95,7 +96,7 @@ test("a design-owned checkout that works warns for the missing family shell", as
   assert.match(row.actual, /family shell is source-owned/);
 });
 
-// Each break leaves the same four shell misses and nothing else, so the
+// Each break leaves the same three shell misses and nothing else, so the
 // behaviour probe is the only thing that can keep the row a failure.
 test("an unbound required field keeps the missing family shell a failure", async (t) => {
   if (!await chromiumAvailable()) return t.skip("Chromium is unavailable; the browser CI lane runs this test");

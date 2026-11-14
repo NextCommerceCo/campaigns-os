@@ -828,8 +828,8 @@
                 "selector": "[data-next-checkout=\"form\"]"
               },
               {
-                "name": "shipping field row component",
-                "selector": "[data-next-component=\"shipping-field-row\"]"
+                "name": "shipping address block",
+                "selector": "[data-next-address=\"shipping\"]"
               },
               {
                 "name": "checkout payment submit",
@@ -1253,8 +1253,8 @@
                 "selector": "[data-next-checkout=\"form\"]"
               },
               {
-                "name": "shipping field row component",
-                "selector": "[data-next-component=\"shipping-field-row\"]"
+                "name": "shipping address block",
+                "selector": "[data-next-address=\"shipping\"]"
               },
               {
                 "name": "checkout payment submit",
@@ -1565,8 +1565,8 @@
                 "selector": "[data-next-checkout=\"form\"]"
               },
               {
-                "name": "shipping field row component",
-                "selector": "[data-next-component=\"shipping-field-row\"]"
+                "name": "shipping address block",
+                "selector": "[data-next-address=\"shipping\"]"
               },
               {
                 "name": "checkout payment submit",
@@ -1868,8 +1868,8 @@
                 "selector": "[data-next-checkout=\"form\"]"
               },
               {
-                "name": "shipping field row component",
-                "selector": "[data-next-component=\"shipping-field-row\"]"
+                "name": "shipping address block",
+                "selector": "[data-next-address=\"shipping\"]"
               },
               {
                 "name": "checkout payment submit",
@@ -2210,8 +2210,8 @@
                 "selector": "[data-next-checkout=\"form\"]"
               },
               {
-                "name": "shipping field row component",
-                "selector": "[data-next-component=\"shipping-field-row\"]"
+                "name": "shipping address block",
+                "selector": "[data-next-address=\"shipping\"]"
               },
               {
                 "name": "checkout payment submit",
@@ -2646,8 +2646,8 @@
                 "selector": "[data-next-checkout=\"form\"]"
               },
               {
-                "name": "shipping field row component",
-                "selector": "[data-next-component=\"shipping-field-row\"]"
+                "name": "shipping address block",
+                "selector": "[data-next-address=\"shipping\"]"
               },
               {
                 "name": "checkout payment submit",
@@ -3007,8 +3007,8 @@
                 "selector": "[data-next-checkout=\"form\"]"
               },
               {
-                "name": "shipping field row component",
-                "selector": "[data-next-component=\"shipping-field-row\"]"
+                "name": "shipping address block",
+                "selector": "[data-next-address=\"shipping\"]"
               },
               {
                 "name": "checkout payment submit",

@@ -668,7 +668,10 @@ The checkout wrapper and page composition are source-owned, so QA checks what
 the checkout does rather than family class names. Family shell is a fixed list:
 `.checkout-wrapper`, `.checkout-layout__left`, `.checkout-layout__right`,
 `.checkout__layout`, `.checkout__column--left`, `.checkout__column--right` and
-the family include's `[data-next-component="shipping-field-row"]` marker. When
+the family include's `[data-next-component="shipping-field-row"]` marker in
+older catalog snapshots. Current address rules require the SDK's visible
+`[data-next-address="shipping"]` block; name and phone row markers do not
+satisfy that rule. When
 family shell is all that is missing, the row is `warn` if the checkout also
 passes three behaviour checks: a `<form data-next-checkout="form">` exists;
 `email`, `fname`, `lname`, `country`, `address1`, `city`, `province` and
@@ -680,7 +683,7 @@ is chosen still counts); and a cart-summary total
 `[data-next-cart-summary] .order-totals__value--total`) is visible with text.
 If any behaviour check fails, or no checkout form is found, the row stays
 `fail`. Any other missing selector is always `fail`: the SDK selectors
-(`[data-next-checkout="form"]`, `[os-checkout-payment]`,
+(`[data-next-checkout="form"]`, `[data-next-address="shipping"]`, `[os-checkout-payment]`,
 `[data-next-cart-summary]`, `[data-next-bundle-slots-for]`) and any class the
 list does not name, such as a hosted payment field class. `evidence.behaviour` records
 the three checks and each `evidence.checks[]` entry carries `kind`

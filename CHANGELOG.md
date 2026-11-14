@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.71.0+agent.8] - 2026-11-14
+
+### Fixed
+
+- The checkout structure check looks for the SDK shipping address block (`[data-next-address="shipping"]`) in every checkout family. It used to require `[data-next-component="shipping-field-row"]`, a marker that some starter families keep on their name and phone rows and others never had, so a starter checkout whose address is the SDK block reported "7/8 structure check(s) passed; missing shipping field row component" on every QA run while orders went through. A checkout with no SDK address block now fails the check even when its name and phone rows carry the old marker.
+
 ## [1.71.0+agent.1] - 2026-11-13
 
 ### Fixed
