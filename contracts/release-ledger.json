@@ -4941,10 +4941,10 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.71.0+agent.5",
-      "changelog_sha256": "95d0437c5b4073127d93bfd1aa5ba8ea883f95a9f58eac57dda560596b92f9a6",
-      "agent_impact": "On a funnel where every mapped page is starter stock used as-is: do not ask the operator to approve a Polish skip or to give a name for a theme waiver. polish capture reports that Polish is not applicable and records the stage; follow next. Browser QA reports the starter-palette comparison as excluded (template_stock) and starts without --theme-waive. The starter's own placeholder text is a warning in doctor and QA: list it in the handoff, and change it only when the operator asks. A funnel with any designed page, a design source or brand tokens is unchanged: Polish is owed, the theme gate applies and placeholder text blocks QA.",
+      "changelog_sha256": "6556b728aecb985e18ff7d6ca3733d447ff532ec3b43919cdbe1c97ff416ebb6",
+      "agent_impact": "On a funnel where every mapped page is starter stock used as-is: do not ask the operator to approve a Polish skip or to give a name for a theme waiver. polish capture reports that Polish is not applicable and records the stage; follow next. Browser QA reports the starter-palette comparison as excluded (template_stock) and starts without --theme-waive. The starter's own placeholder text is a warning in doctor and QA: list it in the handoff, and change it only when the operator asks. A funnel with any designed page, a design source or brand tokens is unchanged: Polish is owed, the theme gate applies and placeholder text blocks QA. A consumer that keyed on the checkpoint code polish.hidden_eager_media.no_capturable_routes for an all-template funnel should read polish.hidden_eager_media.template_stock (status not_applicable, result excluded, reason_code template_stock) instead; the old code is no longer produced for that case.",
       "compatibility": "compatible",
-      "migration": "none",
+      "migration": "If you read the hidden eager-media checkpoint code for an all-template funnel, match polish.hidden_eager_media.template_stock in place of polish.hidden_eager_media.no_capturable_routes.",
       "changes": [
         {
           "class": "named_surface",
@@ -4977,7 +4977,7 @@
           "summary": "Doctor renders the hidden eager-media checkpoint on an all-template funnel as not applicable because every mapped page is template stock."
         }
       ],
-      "entry_sha256": "39619713fefbbb7e929741276c706df94a355d7e2da8b85e661e5539b1119228"
+      "entry_sha256": "25bac6c7be1fcfe828e06620d0c762a227176dd8204b03686a3ae953d7938895"
     }
   ]
 }
