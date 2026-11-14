@@ -211,7 +211,7 @@ import {
   NEXT_STAGE_ORDER,
   stageIsTerminal,
 } from "./orchestration-stage-contract.mjs";
-import { currentBuildFingerprint } from "./polish-gate.mjs";
+import { currentBuildFingerprint, templateStockPolishStage, TEMPLATE_STOCK_POLISH_REASON } from "./polish-gate.mjs";
 import {
   assertPolishCaptureBindingUnchanged,
   capturePolishPageLoad,
@@ -2994,10 +2994,7 @@ export async function polishCaptureCommand(args, options = {}) {
     throw new Error(`polish capture needs an existing Assembly Report at ${reportPath}; run prepare-build/start first.`);
   }
   requireValidPolishCaptureReport(report, reportPath);
-  // A campaign whose every mapping is template stock has no page_load route
-  // to capture: its plan error is held, and the capture measures readability
-  // on the built pages only, leaving page_load and media_weight as they are.
-  const { capturePolishReadability, isNoCapturableRoutesError } = await import("./polish-node.mjs");
+  const { isNoCapturableRoutesError } = await import("./polish-node.mjs");
   const planOrHeld = (currentPacket) => {
     try {
       return { plan: planPolishCapture({ packet: currentPacket, baseUrl }), held: null };
@@ -3015,11 +3012,32 @@ export async function polishCaptureCommand(args, options = {}) {
     targetRepo,
   });
 
+  if (heldPlanError) {
+    let checkpoint;
+    commitAssemblyReport(workspace, (currentReport) => {
+      requireValidPolishCaptureReport(currentReport, reportPath);
+      const currentPacket = readJson(packetPath);
+      const { plan: currentPlan, held } = planOrHeld(currentPacket);
+      assertPolishCaptureBindingUnchanged(initialBinding, createPolishCaptureBinding({
+        packet: currentPacket, report: currentReport, plan: currentPlan, packetPath, targetRepo,
+      }));
+      checkpoint = evaluateRecordedHiddenEagerMediaCheckpoint({ packet: currentPacket, report: currentReport });
+      if (!held || checkpoint.result !== "excluded") throw new Error("Polish is not excluded for this build; run polish capture against the current build.");
+      return { ...currentReport, stages: { ...currentReport.stages,
+        polish: templateStockPolishStage(currentReport, new Date(options.now ?? Date.now()).toISOString()),
+      } };
+    }, { command: "polish capture", staleReason: "Polish is not applicable to this template-stock build; run next for current state." });
+    return {
+      ok: true, status: "not_applicable", action: "polish-capture", result: "excluded",
+      reason_code: "template_stock", reason: TEMPLATE_STOCK_POLISH_REASON, packet_path: packetPath, report_path: reportPath, checkpoint,
+    };
+  }
+
   let createBrowserAdapter = options.createBrowserAdapter;
   if (typeof createBrowserAdapter !== "function") {
     ({ createPolishBrowserAdapter: createBrowserAdapter } = await import("./polish-browser.mjs"));
   }
-  const capture = await (heldPlanError ? capturePolishReadability : capturePolishPageLoad)({
+  const capture = await capturePolishPageLoad({
     packet,
     report,
     reportPath,
@@ -3035,8 +3053,6 @@ export async function polishCaptureCommand(args, options = {}) {
     visual: { packetPath, targetRepo, ...options.visual },
     onFrozen: options.onFrozen,
   });
-  // Nothing was measured: the held plan error stands.
-  if (heldPlanError && !capture.readability) throw heldPlanError;
 
   if (typeof options.afterCapture === "function") {
     await options.afterCapture({ packetPath, reportPath, targetRepo, capture });
@@ -3077,26 +3093,6 @@ export async function polishCaptureCommand(args, options = {}) {
     staleReason: `Package-owned polish page-load evidence changed after this doctor snapshot. Re-run ${cmd("doctor")} (or next) for current state.`,
   });
 
-  if (heldPlanError) {
-    // The readability capture completed; page_load's own outcome stays the
-    // held no_capturable_routes message, reported as a warning.
-    return {
-      ok: true,
-      status: "captured_with_warnings",
-      action: "polish-capture",
-      report_path: reportPath,
-      measurement: null,
-      checkpoint,
-      observed_findings: [],
-      warnings: [{ code: heldPlanError.code, message: heldPlanError.message }],
-      capture: {
-        route_scope: null,
-        routes: [],
-        viewports: [],
-        readability_routes: capture.readability?.subject?.routes ?? [],
-      },
-    };
-  }
   const ok = checkpoint.status === "pass" || checkpoint.status === "waived";
   return {
     ok,
@@ -4709,6 +4705,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
   const themeGate = doctor.derived?.theme_gate || null;
   const polishGate = doctor.derived?.polish_gate;
   const polishCheckpointGate = doctor.derived?.polish_checkpoint_gate || null;
+  if (stage === "polish" && polishGate?.result === "excluded" && polishGate?.reason_code === "template_stock") stage = null;
   // Packet 03 (INV-5 first slice): compare the ledger's self-report against
   // the repo's artifacts before any recommendation goes out. Additive:
   // `divergences[]` appears on the result only when at least one divergence
@@ -4718,7 +4715,8 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
   const divergences = prepareBuildGate?.binding_failure
     ? []
     : detectLedgerDivergence(report, packet, targetRepo, {
-      allowUnrecordedHostedPreview: polishCheckpointGate?.carried_forward?.policy === "hosted_template_preview"
+      allowUnrecordedHostedPreview: polishGate?.result === "excluded" && polishGate?.reason_code === "template_stock"
+        || polishCheckpointGate?.carried_forward?.policy === "hosted_template_preview"
         || hostedTemplateNeedsPreviewUrl(packet, polishCheckpointGate),
     });
   // Every return path runs through this finalizer so the machine-readable
@@ -6920,6 +6918,9 @@ function safePolishByteCount(value) {
 }
 
 export function formatPolishCaptureText(result) {
+  if (result?.result === "excluded" && result?.reason_code === "template_stock") {
+    return `Polish is not applicable: ${TEMPLATE_STOCK_POLISH_REASON} Run ${cmd("next")} --packet ${shellToken(result.packet_path || "<packet>")}.`;
+  }
   const status = ["ready", "ready_with_waivers", "captured_with_warnings", "blocked"].includes(result?.status)
     ? result.status
     : "unknown";

@@ -10,6 +10,7 @@ import {
   collectPageKitAssetPathViolations,
   validateBuildOutputFingerprint,
   validateBuiltDemoAssetFidelity,
+  validateBuiltContentResidue,
   validateBuiltPageKitAssetPaths,
   validateBuiltBumpPricing,
   validateBuiltPlaceholderTextResidue,
@@ -1109,5 +1110,33 @@ test("built_output.fingerprint_stale caps each path list and says the manifest i
     validateBuildOutputFingerprint({ packet: PACKET, errors: forged, warnings: [], ready: [], derived: { target_repo: dir }, buildState: { report: { stages: { assembly: { status: "completed", build_fingerprint: `sha256:${"a".repeat(64)}`, build_manifest: manifest } } } } });
     assert.match(forged[0].message, /no file manifest/i);
     assert.doesNotMatch(forged[0].message, /extra:/);
+  });
+});
+
+
+test("as-is starter placeholder warning says the same thing as QA", () => {
+  withTempDir((dir) => {
+    const output = join(dir, "_site", "sample");
+    mkdirSync(output, { recursive: true });
+    writeFileSync(join(output, "index.html"), "<p>Lorem ipsum. [Sample]</p>");
+    const packet = { campaign: { public_route_slug: "sample" }, source_html: { pages: [{ page_id: "checkout", skip_reason: "Template stock: used as-is." }] } };
+    const warnings = [];
+    validateBuiltPlaceholderTextResidue(TEXT_RESIDUE_CONTRACT, warnings, [], { target_output_dir: output }, { packet });
+    assert.equal(warnings[0].message, "Starter placeholder text remains because this build uses every mapped page as-is. Review the demo content before publishing.");
+    const residue = [];
+    validateBuiltContentResidue({ packet, errors: [], warnings: residue, ready: [], derived: { target_repo: dir }, buildState: { report: { stages: { assembly: { status: "completed" } } } } });
+    assert.equal(residue[0].message, warnings[0].message);
+    const fingerprint = `sha256:${"a".repeat(64)}`;
+    const afterQa = [];
+    validateBuiltPlaceholderTextResidue(TEXT_RESIDUE_CONTRACT, afterQa, [], { target_output_dir: output, input_currency: { stages: { qa: "current" } } }, {
+      packet, report: { stages: {
+        assembly: { status: "completed", build_fingerprint: fingerprint },
+        qa: { evidence: { source_build_fingerprint: fingerprint, gates: { placeholder_text_residue: { status: "pass" } } } },
+      } },
+    });
+    assert.equal(afterQa[0]?.message, warnings[0].message, "a clean page's QA pass must not hide another page's starter warning");
+    const designed = [];
+    validateBuiltPlaceholderTextResidue(TEXT_RESIDUE_CONTRACT, designed, [], { target_output_dir: output }, { packet: { source_html: { pages: [{ page_id: "checkout", path: "checkout.html" }] } } });
+    assert.match(designed[0].message, /browser QA blocks/);
   });
 });

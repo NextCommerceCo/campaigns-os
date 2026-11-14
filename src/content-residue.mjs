@@ -21,6 +21,18 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { readHtmlScanText } from "./html-scan.mjs";
 
+// The same explicit stock mapping used by the Polish capture planner. A
+// mapped design or adopted page keeps its existing checks.
+export function starterUsedAsIs(packet) {
+  const pages = packet?.source_html?.pages;
+  return Array.isArray(pages) && pages.length > 0 && pages.every((page) =>
+    typeof page?.skip_reason === "string" && page.skip_reason.trim()
+    && !page.path && !page.design_source && page.origin !== "repo");
+}
+
+export const STARTER_PLACEHOLDER_WARNING = "Starter placeholder text remains because this build uses every mapped page as-is. Review the demo content before publishing.";
+export const STARTER_PALETTE_REASON = "Every mapped page uses the starter as-is, with no design source or brand tokens supplied; the starter palette is not compared to a brand theme.";
+
 export const NEEDS_INPUT_MARKER = /NEEDS[ -]MERCHANT[ -]INPUT/i;
 
 // Countdown chrome as rendered by the starter presell templates.

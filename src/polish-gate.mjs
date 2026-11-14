@@ -14,6 +14,22 @@ export const POLISH_GATE_REQUIRED_EVIDENCE = Object.freeze([
 
 export const POLISH_PRODUCER = "next-campaigns-polish";
 
+export const TEMPLATE_STOCK_POLISH_REASON = "Every mapped page is template stock, so there is no design route to compare.";
+
+export function templateStockPolishStage(report, now = new Date().toISOString()) {
+  const previous = report.stages?.polish || {};
+  return {
+    ...previous,
+    stage: "polish",
+    status: "skipped",
+    skip_reason: TEMPLATE_STOCK_POLISH_REASON,
+    source_build_fingerprint: currentBuildFingerprint(report),
+    completed_at: now,
+    evidence: { ...previous.evidence, result: "excluded", reason_code: "template_stock", reason: TEMPLATE_STOCK_POLISH_REASON },
+    blockers: [],
+  };
+}
+
 const SUCCESS_STATUS_PREFIXES = Object.freeze(["completed"]);
 
 function isObject(value) {
@@ -712,6 +728,16 @@ export function evaluatePolishGate({
 } = {}) {
   const base = evaluateStructuredPolishGate({ report, required, now, currentOutputFingerprint, newEvidence });
   if (!terminalAssembly(report)) return base;
+  if (hiddenEagerMediaGate?.status === "not_applicable" && hiddenEagerMediaGate?.result === "excluded"
+    && hiddenEagerMediaGate?.reason_code === "template_stock") {
+    return {
+      status: "not_applicable", code: "polish.not_applicable",
+      result: "excluded", reason_code: "template_stock", reason: TEMPLATE_STOCK_POLISH_REASON,
+      build_fingerprint: currentBuildFingerprint(report), required_actions: [],
+      owned_checkpoint_id: HIDDEN_EAGER_MEDIA_SCOPE, owned_checkpoint_status: "not_applicable", owned_checkpoint_only: true,
+    };
+  }
+
   if (hiddenEagerMediaGate === undefined && !required) return base;
 
   const ownedId = HIDDEN_EAGER_MEDIA_SCOPE;

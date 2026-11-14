@@ -1,3 +1,5 @@
+import { QC_QA_ASSERTION_STATUS } from "./qc-results.mjs";
+import { starterUsedAsIs, STARTER_PALETTE_REASON, STARTER_PLACEHOLDER_WARNING } from "./content-residue.mjs";
 import { campaignSpecIdentity, resolveCampaignIdentity, campaignIdentitiesMatch } from "./spec-source-identity.mjs";
 import { applyLocalPreviewToCheckpoint, applyLocalPreviewToPolishGate, applyPageOnlyChangeToCheckpoint, applyPageOnlyChangeToPolishGate, carriedForwardMessage, CARRIED_FORWARD, ensureUrlTrailingSlash, isPageOnlyCarry, normalizeQaBaseUrl, starterResidueIsExpected } from "./local-preview-policy.mjs";
 import { assessEvidenceDebt } from "./evidence-debt.mjs";
@@ -1329,7 +1331,11 @@ function polishGateAssertion(gate) {
 // Template-residue findings stay blockers while the gate is live; a waived (or
 // inapplicable) gate means the operator accepted the starter palette, so the
 // same findings downgrade to warnings rather than re-blocking the run.
-function residueSeverityForThemeGate(status) {
+function residueSeverityForThemeGate(status, { packet = null, placeholder = false, palette = false, contextTheme = null, themeCode = null } = {}) {
+  if (placeholder) return starterUsedAsIs(packet) ? SEVERITY.WARN : SEVERITY.BLOCKER;
+  if (palette && status === "pass" && themeCode === "theme_gate.nothing_generatable" && starterUsedAsIs(packet)
+    && !contextTheme?.selected_source && !contextTheme?.source_files?.length
+    && !contextTheme?.mappings?.length && contextTheme?.generated?.can_generate !== true) return SEVERITY.INFO;
   return status === "waived" || status === "not_applicable" ? SEVERITY.WARN : SEVERITY.BLOCKER;
 }
 
@@ -2666,9 +2672,24 @@ async function runResolvedQa(args, resolvedInputs, { runSessionActive = false, l
       spec: resolved.spec,
       qcResults,
     });
-    // A page-binding row from the browser is the key the SDK actually sent;
-    // it takes the place of that page's static read.
+    // Only the all-stock declaration changes residue outcomes. Keep the
+    // browser measurements in evidence, including on excluded palette rows.
+    const contextTheme = loadRuntimeArtifact(resolved.packetPath, "build-context.json")?.theme;
     for (const observed of browserAssertions) {
+      if (observed.family === "template_residue") {
+        const placeholder = observed.id.endsWith(":placeholder-text");
+        const palette = observed.id.includes(":style:");
+        const severity = residueSeverityForThemeGate(gate.status, { packet: resolved.packet, placeholder, palette, contextTheme, themeCode: gate.code });
+        if (palette && severity === SEVERITY.INFO) {
+          Object.assign(observed, QC_QA_ASSERTION_STATUS.excluded);
+          observed.actual = STARTER_PALETTE_REASON;
+          observed.evidence = { ...observed.evidence, result: "excluded", reason_code: "template_stock", reason: STARTER_PALETTE_REASON };
+        } else if (placeholder && observed.status === STATUS.FAIL && severity === SEVERITY.WARN) {
+          observed.status = STATUS.WARN;
+          observed.severity = SEVERITY.WARN;
+          observed.actual = STARTER_PLACEHOLDER_WARNING;
+        }
+      }
       const at = observed.id.startsWith("page-binding:") ? assertions.findIndex((entry) => entry.id === observed.id) : -1;
       if (at >= 0) assertions[at] = observed;
       else assertions.push(observed);
