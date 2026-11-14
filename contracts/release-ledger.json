@@ -5392,6 +5392,27 @@
         }
       ],
       "entry_sha256": "d095fd84ead5f2baa5620ddd82ab7f7fc46c5a3ffbd1aa7dc9eb48ce1cd12f8e"
+    },
+    {
+      "id": "RL-0357",
+      "sequence": 344,
+      "date": "2026-11-14",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.0+agent.11",
+      "changelog_sha256": "13cf4e2288980a8c4fb7059ef67793c29126392cf3cc94d88870fc3bf783bccf",
+      "agent_impact": "QA's checkout structure check now looks for the shipping address itself in every checkout family, in place of [data-next-component=\"shipping-field-row\"]: either the SDK address block, [data-next-address=\"shipping\"], or an address input bound one by one ([data-next-checkout-field=\"address1\"], or its SDK 0.5 spellings). A starter checkout that renders its address through the SDK block passes 8/8 where it used to warn 7/8 with \"missing shipping field row component\", and a design-built or hand-built checkout that binds its own address inputs passes too; do not add row markers or hidden selectors to clear that warning. A checkout with neither form of address fails the check. A project whose recorded catalog still names the old marker is checked against that recorded rule until it is refreshed.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "The checkout structure check requires the shipping address in every family, as the SDK address block or an address input bound one by one; the older shipping-field-row marker on name and phone rows no longer satisfies it."
+        }
+      ],
+      "entry_sha256": "7bdc16b925bef9f814aae14cd48d2aaaba50d1fb1742bb994fe8f4a5db7b2f64"
     }
   ]
 }

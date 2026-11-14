@@ -24,7 +24,6 @@ const FAMILY_SHELL_SELECTORS = [
   ".checkout-layout__left",
   ".checkout-layout__right",
   ".checkout-wrapper",
-  '[data-next-component="shipping-field-row"]',
 ];
 
 async function chromiumAvailable() {
@@ -61,8 +60,11 @@ function replaceOnce(source, from, to) {
 }
 
 // The olympus checkout contract reads the wrapper, both layout columns and the
-// shipping field row, plus the SDK form, submit and cart summary.
+// SDK shipping address block, form, submit and cart summary.
 async function structureRow(mutate = (source) => source) {
+  // The fixture has no SDK address block: its address inputs are bound one by
+  // one, which satisfies the address rule (checked for existence, since a
+  // progressive-reveal checkout hides them until a country is chosen).
   html = mutate(await readFile(FIXTURE, "utf8"));
   const page = {
     page_id: "checkout",
@@ -95,7 +97,7 @@ test("a design-owned checkout that works warns for the missing family shell", as
   assert.match(row.actual, /family shell is source-owned/);
 });
 
-// Each break leaves the same four shell misses and nothing else, so the
+// Each break leaves the same three shell misses and nothing else, so the
 // behaviour probe is the only thing that can keep the row a failure.
 test("an unbound required field keeps the missing family shell a failure", async (t) => {
   if (!await chromiumAvailable()) return t.skip("Chromium is unavailable; the browser CI lane runs this test");
@@ -175,6 +177,21 @@ test("required fields hidden until a country is chosen still count as bound", as
   assert.deepEqual(failedSelectors(row), FAMILY_SHELL_SELECTORS);
   assert.equal(row.status, "warn");
   assert.equal(row.evidence.behaviour?.fields_bound?.status, "pass");
+});
+
+test("a checkout with neither the SDK address block nor a bound address input fails the address rule", async (t) => {
+  if (!await chromiumAvailable()) return t.skip("Chromium is unavailable; the browser CI lane runs this test");
+  const row = await structureRow((source) => source.replace(/data-next-checkout-field="address1"/g, 'data-unbound="address1"'));
+  assert.equal(row.status, "fail");
+  assert.ok(failedSelectors(row).includes('[data-next-address="shipping"]'), JSON.stringify(failedSelectors(row)));
+});
+
+test("the SDK address block alone satisfies the address rule", async (t) => {
+  if (!await chromiumAvailable()) return t.skip("Chromium is unavailable; the browser CI lane runs this test");
+  const row = await structureRow((source) => source
+    .replace(/data-next-checkout-field="address1"/g, 'data-unbound="address1"')
+    .replace('<form data-next-checkout="form">', '<form data-next-checkout="form"><div data-next-address="shipping"></div>'));
+  assert.ok(!failedSelectors(row).includes('[data-next-address="shipping"]'), JSON.stringify(failedSelectors(row)));
 });
 
 test("a form without data-next-checkout keeps the missing family shell a failure", async (t) => {
