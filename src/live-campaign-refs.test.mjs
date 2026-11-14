@@ -19,6 +19,15 @@ const codes = (issues) => issues.map((issue) => issue.code);
 const PROXY_BASE = "https://proxy.example.test";
 const LIVE_URL = `${PROXY_BASE}/api/campaign`;
 
+test("package drift remedies distinguish unused live packages from missing live packages", () => {
+  const message = (packages) => campaignDriftMessage({ packages });
+  assert.deepEqual([
+    /fine when the funnel does not sell them/.test(message({ live_only: [12] })),
+    /Re-save the Map/.test(message({ live_only: [12] })),
+    /Re-save the Map/.test(message({ map_only: [12] })),
+  ], [true, false, true]);
+});
+
 // The upstream campaign retrieve body: what the proxy carries in `data`.
 function campaign({ ref = 501, packages = [10, 17, 19, 30], shipping = [20, 21] } = {}) {
   return {

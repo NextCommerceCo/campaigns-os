@@ -559,6 +559,7 @@ async function resolveQaInputs(args, {
   });
   const requestedPages = qaPageArgs(args);
   const pageScope = applyQaPageScope(buildScope.topologies, {
+    command: args._[1],
     pages: requestedPages,
     browser: args.browser === true,
     baseUrl,
@@ -1063,16 +1064,18 @@ function refuseBadPageScope(args) {
 // inputs cannot be confirmed, owes a full run. Re-running a page-scoped
 // record for the same build is allowed too. Each requested id is a topology
 // page id or the page id of its route (the id the change lists use).
-export function applyQaPageScope(topologies, { pages, browser = false, baseUrl, debt, report, qaInputCurrency = undefined } = {}) {
+export function applyQaPageScope(topologies, { pages, browser = false, baseUrl, debt, report, qaInputCurrency = undefined, command = "run" } = {}) {
   if (!pages) {
     // A full run pays a page-scoped debt too, but must not drop the browser
     // run a checkout or upsell page owes for a changed stylesheet or image.
     const owed = debt?.qa?.status === "owed" && Array.isArray(debt.qa.browser_pages) ? debt.qa.browser_pages : [];
     if (owed.length && !browser) {
-      const pageRun = debt.qa.scope === "pages" && debt.qa.owed_pages?.length
+      const pageRun = command === "resolve"
+        ? "Add --browser to this resolve command."
+        : debt.qa.scope === "pages" && debt.qa.owed_pages?.length
         ? `Run ${cmd("qa")} run --packet <packet> ${debt.qa.owed_pages.map((page) => `--page ${page.page_id}`).join(" ")} --browser (no test orders are placed), or add --browser to this full run.`
         : "Add --browser to this run.";
-      throw new Error(`qa run: ${owed.join(", ")} ${owed.length > 1 ? "are checkout or upsell pages" : "is a checkout or upsell page"} whose linked stylesheet or image changed, so QA owes a browser run. ${pageRun}`);
+      throw new Error(`qa ${command}: ${owed.join(", ")} ${owed.length > 1 ? "are checkout or upsell pages" : "is a checkout or upsell page"} whose linked stylesheet or image changed, so QA owes a browser run. ${pageRun}`);
     }
     return { topologies, scope: null };
   }

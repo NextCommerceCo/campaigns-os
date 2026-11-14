@@ -343,16 +343,19 @@ import { readRunRecordsForTarget } from "./run-record.mjs";
  * pre-existing.
  */
 export function findPriorRunRecord({ baseDir, runtimeRelPath = undefined, mapId = null, localSpecId = null, currentRunId = null } = {}) {
-  if (!text(baseDir)) return null;
+  return priorRunRecords({ baseDir, runtimeRelPath, mapId, localSpecId, currentRunId }).next().value || null;
+}
+
+function* priorRunRecords({ baseDir, runtimeRelPath, mapId, localSpecId, currentRunId }) {
+  if (!text(baseDir)) return;
   for (const entry of readRunRecordsForTarget(baseDir, runtimeRelPath)) {
     const record = entry?.record;
     if (!record || typeof record !== "object" || Array.isArray(record)) continue;
     if (currentRunId && record.run_id === currentRunId) continue;
     if (localSpecId && !campaignIdentitiesMatch(record.identity, { local_spec_id: localSpecId })) continue;
     if (text(mapId) && text(record.identity?.map_id) !== text(mapId)) continue;
-    return record;
+    yield record;
   }
-  return null;
 }
 
 const EXTERNAL_REF_PREFIX = "external:";
@@ -453,6 +456,10 @@ export function loadPriorQaVerdict({ baseDir, runtimeRelPath = undefined, target
   const record = findPriorRunRecord({ baseDir, runtimeRelPath, mapId, localSpecId, currentRunId });
   if (!record) return { verdict: null, record: null, path: null, reason: "no_prior_run" };
   const ref = (Array.isArray(record.artifacts) ? record.artifacts : []).findLast((artifact) => artifact?.kind === "qa_verdict");
+  return loadQaVerdictRef({ baseDir, targetRepo, record, ref });
+}
+
+function loadQaVerdictRef({ baseDir, targetRepo, record, ref }) {
   const refPath = text(ref?.path);
   if (!refPath) return { verdict: null, record, path: null, reason: "prior_run_without_qa_verdict" };
   if (refPath.startsWith(EXTERNAL_REF_PREFIX)) {
@@ -465,6 +472,31 @@ export function loadPriorQaVerdict({ baseDir, runtimeRelPath = undefined, target
   const verdict = readPriorVerdictFile(path);
   if (!verdict) return { verdict: null, record, path, reason: "prior_run_verdict_unreadable" };
   return { verdict, record, path, reason: null };
+}
+
+// A skipped row, or a row omitted from a page-scoped run, was not evaluated.
+// Read earlier recorded attempts until one actually evaluated it. A full
+// run's missing rows retain the ordinary new-finding rule.
+function qaRowWasSkipped(verdict, assertion) {
+  const fingerprint = qaAssertionFingerprint(assertion);
+  const row = verdict.assertions.find((row) => qaAssertionFingerprint(row) === fingerprint);
+  if (row) return row.status === "skipped";
+  return verdict.assertions.some((row) => text(row?.id).startsWith("page-scope:") && row.status === "skipped");
+}
+
+function lastEvaluatedQaPrior(assertion, lookup, options, isFinding) {
+  if (!lookup.verdict || !qaRowWasSkipped(lookup.verdict, assertion)) return undefined;
+  let first = true;
+  for (const record of priorRunRecords(options)) {
+    const refs = (Array.isArray(record.artifacts) ? record.artifacts : []).filter((ref) => ref?.kind === "qa_verdict");
+    for (const ref of refs.reverse()) {
+      if (first) { first = false; continue; }
+      const earlier = loadQaVerdictRef({ ...options, record, ref });
+      if (!earlier.verdict) return null;
+      if (!qaRowWasSkipped(earlier.verdict, assertion)) return priorSetFromVerdict(earlier.verdict, { isFinding });
+    }
+  }
+  return null;
 }
 
 /**
@@ -506,7 +538,11 @@ export function annotateQaAssertionCauses(assertions, { baseDir = null, runtimeR
   const findings = [];
   for (const assertion of Array.isArray(assertions) ? assertions : []) {
     if (!assertion || typeof assertion !== "object" || !isFinding(assertion)) continue;
-    const { cause, cause_reason } = classifyQaAssertion(assertion, { prior, noPriorReason });
+    const evaluatedPrior = lastEvaluatedQaPrior(assertion, lookup, { baseDir, runtimeRelPath, targetRepo, mapId, localSpecId, currentRunId }, isFinding);
+    const { cause, cause_reason } = classifyQaAssertion(assertion, {
+      prior: evaluatedPrior === undefined ? prior : evaluatedPrior,
+      noPriorReason: evaluatedPrior === null ? "no_prior_evaluation" : noPriorReason,
+    });
     assertion.cause = cause;
     assertion.cause_reason = cause_reason;
     findings.push(assertion);

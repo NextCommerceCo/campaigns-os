@@ -626,7 +626,7 @@ export function buildQcHandoff({ results, coverage = [], accepts, now = new Date
 }
 
 // The "QC handoff" text section of `next`.
-export function qcHandoffTextLines(handoff) {
+export function qcHandoffTextLines(handoff, { qaPassedWithExceptions = false } = {}) {
   if (!isPlainObject(handoff)) return [];
   const lines = ["QC handoff:"];
   const section = (title, entries, format) => {
@@ -648,6 +648,7 @@ export function qcHandoffTextLines(handoff) {
   section("Accepted", handoff.accepted, (entry) => `${entry.result_ref} accepted by ${entry.accepted_by} at ${entry.accepted_at}: ${entry.reason}${members(entry)}`);
   section("Inert accepts", handoff.inert_accepts, (entry) => `${entry.result_id ?? "(no result id)"}: ${entry.why}`);
   if (lines.length === 1) lines.push("  (no QC results)");
-  if (handoff.accept_command) lines.push(`  Accept only with the operator's decision: ${handoff.accept_command}`);
+  if (qaPassedWithExceptions) lines.push("  ready_with_exceptions is a passing QA proof; report its exceptions to the operator.");
+  else if (handoff.accept_command) lines.push(`  Accept these quality-check rows only with the operator's decision: ${handoff.accept_command}`);
   return lines;
 }

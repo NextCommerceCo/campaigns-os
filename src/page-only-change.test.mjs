@@ -877,6 +877,15 @@ const scopeLinked = (f, pages, extra = {}) => {
   const topologies = [{ pages: Object.keys(PAGES).map((page) => ({ page_id: page, url: `${base}${page}/` })) }];
   return applyQaPageScope(topologies, { pages, baseUrl: base, debt: f.debt(), report: f.readReport(), ...extra });
 };
+
+test("qa resolve names itself and --browser when a checkout stylesheet changed", async (t) => {
+  const f = linkedFixture(t);
+  f.writeFile("css/checkout.css", "button { color: blue }\n");
+  f.recordBuild();
+  await assert.rejects(() => __qaNodeTestHooks.resolveQaInputs({
+    _: ["qa", "resolve"], packet: f.packetPath, "base-url": `http://127.0.0.1:9/${SLUG}/`,
+  }), /^Error: qa resolve:.*Add --browser to this resolve command\./);
+});
 const passPageRun = (f, scoped, runId) => recordQaStageOutcome({ _: ["qa", "run"], packet: f.packetPath }, {
   verdict: { run_id: runId, campaign_slug: "synthetic-map", disposition: "ready", completed_at: "2026-11-11T00:00:00Z", assertions: [], spec_hash: null, qc_results: [] },
   page_scope: scoped.scope,

@@ -820,8 +820,9 @@ violations sharing a code are one finding to this comparison.
 | `prior_run_verdict_unreadable` | It references one by path, but the file is gone or unparseable. |
 | `prior_run_verdict_unlocated` | It references one as `external:qa_verdict`, but no verdict matching that reference could be located under the target repo's `qa-output/` — nothing there hashes to the recorded digest, the reference carries no digest, or no target repo was known to search. |
 | `prior_run_without_doctor_observations` | The previous Run Record carries no doctor observations. |
+| `no_prior_evaluation` | The previous QA run did not evaluate this row (a page-scoped run, or a skipped row), and no earlier recorded QA verdict that did evaluate it could be read. When one can be read, the row is compared with that verdict instead of the previous run. |
 
-Only the first of those means "run again and it will improve". The other four
+Only the first of those means "run again and it will improve". The others
 say a previous Run Record **does** exist and its evidence is missing or
 unreadable, which a second run will not fix on its own — so the report names
 that record rather than telling you to wait for one.

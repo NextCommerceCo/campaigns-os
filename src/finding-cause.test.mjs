@@ -33,6 +33,30 @@ function scratch() {
   return mkdtempSync(join(tmpdir(), "campaigns-os-cause-"));
 }
 
+test("a full QA compares findings against their last evaluation before a page-scoped run", () => {
+  const base = scratch();
+  const unchanged = finding({ id: "http:checkout" });
+  const fixed = finding({ id: "http:receipt", page: "receipt" });
+  const skipped = finding({ id: "policy:availability", page: "campaign", status: "warn", severity: "warn" });
+  const browser = finding({ id: "browser-primary-cta:landing", page: "landing", status: "manual_review", severity: "warn" });
+  writePriorRunWithAttempts(base, {
+    runId: "run_1757000000000_aaaaaaaa", mapId: "map-1", attempts: [
+      { run_id: "qa_full", assertions: [unchanged, { ...fixed, status: "pass" }, skipped, browser] },
+      { run_id: "qa_page", assertions: [
+        finding({ id: "http:landing", page: "landing", status: "pass" }),
+        finding({ id: "page-scope:checkout", status: "skipped" }),
+        finding({ id: "page-scope:receipt", page: "receipt", status: "skipped" }),
+        { ...skipped, status: "skipped" },
+      ] },
+    ],
+  });
+  const assertions = [{ ...unchanged }, { ...fixed }, { ...skipped }, { ...browser }];
+  annotateQaAssertionCauses(assertions, { baseDir: base, mapId: "map-1", isFinding: isFindingAssertion });
+  assert.deepEqual(assertions.map((assertion) => assertion.cause), [
+    CAUSE_CLASSES.PRE_EXISTING, CAUSE_CLASSES.CAUSED_BY_CHANGE, CAUSE_CLASSES.PRE_EXISTING, CAUSE_CLASSES.PRE_EXISTING,
+  ]);
+});
+
 /**
  * Write a packet-directory-shaped fixture: a Run Record under
  * .campaign-runtime/run-records/ pointing at a previous QA verdict, exactly

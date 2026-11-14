@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.71.0+agent.6] - 2026-11-14
+
+### Fixed
+
+- Four messages now say what is true. The spec-drift warning no longer advises re-saving the Map for a package that is live but left out of the CampaignSpec (that is fine when the funnel does not sell it); the advice stays for a package or shipping method the spec names that is not live. After a QA that passed with exceptions, `next` says `ready_with_exceptions` is a passing proof to report to the operator and no longer offers `checkpoint accept`, which records quality-check rows, not QA exceptions. After a page-scoped QA, the next full run compares each finding with the last run that evaluated it, so findings the scoped run skipped are no longer labelled "caused by this change". `qa resolve` on a checkout or upsell page that owes a browser run names `qa resolve` and `--browser` in its error, not `qa run`.
+
 ## [1.71.0+agent.1] - 2026-11-13
 
 ### Fixed
