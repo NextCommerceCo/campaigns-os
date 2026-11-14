@@ -3233,6 +3233,33 @@ function collectRenderedPackagePrices() {
     const text = filled && !multiplied ? element.textContent.replace(/\s+/g, " ").trim() : null;
     claims.set(`${binding}|${packageId}|${filled}|${text}`, { binding, package_id: packageId, filled, text });
   }
+  // Bundle displays identify a tier by its card, or by the selected card in
+  // a remote selector. Keep single-package tiers tied to their exact quantity.
+  for (const element of document.querySelectorAll('[data-next-display^="bundle."], [data-next-bundle-display="price"]')) {
+    const remote = /^bundle\.([^.]+)\.price$/.exec((element.getAttribute("data-next-display") || "").trim());
+    const local = element.getAttribute("data-next-bundle-display") === "price";
+    if ((!remote && !local) || element.closest("del, s, strike")) continue;
+    if ((element.getAttribute("data-next-format") || "currency").trim().toLowerCase() !== "currency") continue;
+    if (!element.checkVisibility({ checkVisibilityCSS: true })) continue;
+    let card = local ? element.closest("[data-next-bundle-card]") : null;
+    if (remote) {
+      card = [...document.querySelectorAll("[data-next-bundle-id]")]
+        .find((node) => node.getAttribute("data-next-bundle-id") === remote[1]);
+      const selector = [...document.querySelectorAll("[data-next-bundle-selector]")]
+        .find((node) => node.getAttribute("data-next-selector-id") === remote[1]);
+      card ||= selector?.querySelector('[data-next-bundle-card][data-next-selected="true"]');
+    }
+    let items = null;
+    try { items = JSON.parse(card?.getAttribute("data-next-bundle-items") || "null"); } catch {}
+    const item = Array.isArray(items) && items.length === 1 ? items[0] : null;
+    const packageId = /^[1-9]\d*$/.test(String(item?.packageId)) ? Number(item.packageId) : null;
+    const quantity = /^[1-9]\d*$/.test(String(item?.quantity)) ? Number(item.quantity) : null;
+    const binding = remote ? remote[0] : `bundle.${card?.getAttribute("data-next-bundle-id") || "unknown"}.price`;
+    const filled = local || element.classList.contains("display-visible");
+    const text = filled && !element.hasAttribute("data-next-multiply-quantity")
+      ? element.textContent.replace(/\s+/g, " ").trim() : null;
+    claims.set(`${binding}|${packageId}|${quantity}|${filled}|${text}`, { binding, package_id: packageId, quantity, filled, text });
+  }
   return [...claims.values()];
 }
 

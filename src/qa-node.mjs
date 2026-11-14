@@ -2693,9 +2693,17 @@ async function runResolvedQa(args, resolvedInputs, { runSessionActive = false, l
   try {
     commercialResult = await runCommercialParity({
       resolved,
-      captures: [...capturesByPageId.entries()].map(([pageId, capture]) => (renderedPackagePrices.has(pageId)
-        ? { ...capture, rendered_package_prices: renderedPackagePrices.get(pageId) }
-        : capture)),
+      captures: [...capturesByPageId.entries()].map(([pageId, capture]) => {
+        const rendered = renderedPackagePrices.get(pageId);
+        if (!rendered) return capture;
+        const page = commercialPlanning.pages.find((entry) => String(entry.id) === pageId);
+        return {
+          ...capture,
+          rendered_package_prices: rendered.filter((claim) => claim.binding.startsWith("package.")),
+          ...(["upsell", "downsell"].includes(page?.type)
+            ? { rendered_bundle_prices: rendered.filter((claim) => claim.binding.startsWith("bundle.")) } : {}),
+        };
+      }),
       planning: commercialPlanning,
       maxAssertions: remainingAssertionBudget,
       currency,
