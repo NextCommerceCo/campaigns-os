@@ -410,7 +410,9 @@ browserTest("a redirected mutation with no final response is not taken as answer
 // Every order upsell POST adds the posted package's line to the order.
 const OFFER_PACKAGES = Object.freeze({ a: "7", b: "8" });
 
-async function serveSlowDecline({ declineDelayMs }) {
+// `bump` adds a checkout order bump line, persisted with is_upsell: true, for
+// the same product offer A sells.
+async function serveSlowDecline({ declineDelayMs, bump = false }) {
   const orders = [];
   const upsellPosts = [];
   const server = createServer(async (request, response) => {
@@ -438,7 +440,10 @@ async function serveSlowDecline({ declineDelayMs }) {
         is_test: true,
         currency: "USD",
         total_incl_tax: "19.00",
-        lines: [{ product_title: "Package 1", quantity: 1, is_upsell: false, price_incl_tax: "19.00" }],
+        lines: [
+          { product_title: "Package 1", quantity: 1, is_upsell: false, price_incl_tax: "19.00" },
+          ...(bump ? [{ product_title: "Add-on A", quantity: 1, is_upsell: true, price_incl_tax: "12.00" }] : []),
+        ],
       };
       orders.push(order);
       return send(201, JSON.stringify(order), "application/json");
@@ -478,15 +483,14 @@ async function serveSlowDecline({ declineDelayMs }) {
   };
 }
 
-async function runSlowDecline({ declineDelayMs }) {
-  const server = await serveSlowDecline({ declineDelayMs });
-  const path = "decline-accept";
+async function runSlowDecline({ declineDelayMs, bump = false, path = "decline-accept", browserTimeoutMs = 10000 }) {
+  const server = await serveSlowDecline({ declineDelayMs, bump });
   try {
     const result = await runBrowserTestOrders(topologies(server.base, ["a", "b"]), {
       "test-order": path,
       "step-timeout-ms": 40000,
       "order-timeout-ms": 150000,
-      "browser-timeout": 10000,
+      "browser-timeout": browserTimeoutMs,
       "analytics-settle": 250,
     }, `qa-upsell-slow-decline-${path}`);
     const assertion = result.assertions.find((entry) => entry.id === `browser-test-order:${path}`);
@@ -506,11 +510,22 @@ browserTest("decline-accept waits for the decline to reach the next offer before
   assert.equal(assertion.status, "pass", assertion.actual);
 });
 
-browserTest("an order carrying the declined offer's upsell fails the path, even when the runner accepted on the wrong page", { timeout: 150000 }, async () => {
-  // The decline never navigates, so the accept can only land on offer A.
-  const { assertion, server } = await runSlowDecline({ declineDelayMs: -1 });
+browserTest("a decline that never reaches the declared next offer fails the path by name, inside the step budget, without clicking on", { timeout: 150000 }, async () => {
+  // The page wait (60 s) is longer than the step budget (40 s): the wait must
+  // stop in time to report why, not end as a generic step timeout.
+  const started = Date.now();
+  const { assertion, server } = await runSlowDecline({ declineDelayMs: -1, browserTimeoutMs: 60000 });
 
-  assert.deepEqual(server.upsellPosts, ["a"]);
+  assert.deepEqual(server.upsellPosts, [], "the accept was not clicked on the declined offer");
   assert.equal(assertion.status, "fail", assertion.actual);
-  assert.match(assertion.actual, /order carries upsell package\(s\) 7 from the offer this path declined/);
+  assert.match(assertion.actual, /step 1: the page did not reach http:\/\/127\.0\.0\.1:\d+\/x\/upsell-b\/? within \d+ms after the decline; the browser was still on http:\/\/127\.0\.0\.1:\d+\/x\/upsell-a\//);
+  assert.doesNotMatch(assertion.actual, /timed out/);
+  assert.ok(Date.now() - started < 120000);
 });
+
+for (const path of ["decline-accept", "decline-decline"]) {
+  browserTest(`${path} passes when a checkout bump line already carries the declined offer's product`, { timeout: 150000 }, async () => {
+    const { assertion } = await runSlowDecline({ declineDelayMs: 0, bump: true, path });
+    assert.equal(assertion.status, "pass", assertion.actual);
+  });
+}

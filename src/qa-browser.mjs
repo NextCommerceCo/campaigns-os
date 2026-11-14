@@ -4251,9 +4251,13 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
   if (order.ok && upsellSteps.length) {
     order.upsell_steps = [];
   }
+  // The order's lines before any upsell step. A checkout bump persists with
+  // is_upsell: true, so only lines the steps added are judged against them.
+  const preUpsellLines = order.receipt_line_items.slice();
   if (!upsellSteps.length) ladder.skip("upsell_action", "path has no upsell steps");
 
-  for (let stepIndex = 0; order.ok && stepIndex < upsellSteps.length; stepIndex += 1) {
+  let pathStopped = false;
+  for (let stepIndex = 0; order.ok && !pathStopped && stepIndex < upsellSteps.length; stepIndex += 1) {
     const disposition = remainingActionDisposition(topologyPlan, safePageUrl(page), upsellSteps.slice(stepIndex));
     if (disposition.stop) {
       const terminal = disposition.terminal;
@@ -4279,8 +4283,18 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
       const upsell = await clickUpsellPath(page, step, {
         trace: actionTrace,
         destinationUrl: declaredStepDestination(topologyPlan, path, stepIndex),
-        destinationTimeoutMs: numberArg(args["browser-timeout"], DEFAULT_BROWSER_TIMEOUT_MS),
+        // Inside the step's budget, keeping the read-back's reserve.
+        destinationTimeoutMs: Math.max(0, Math.min(
+          numberArg(args["browser-timeout"], DEFAULT_BROWSER_TIMEOUT_MS),
+          stepBudgetMs - (Date.now() - stepStartedMs) - LATE_UPSELL_EVIDENCE_RESERVE_MS,
+        )),
+        // Only a step another action follows must land on its declared page.
+        destinationRequired: stepIndex < upsellSteps.length - 1,
       });
+      if (upsell.clicked && upsell.error) {
+        stepFailures.push(`step ${stepIndex + 1}: ${upsell.error}`);
+        pathStopped = true;
+      }
       const preferredOrderBody = upsell.api_response_order_body || null;
       delete upsell.api_response_order_body;
       order.upsell = upsell;
@@ -4331,7 +4345,7 @@ async function executeTestOrderPath({ page, events, email, ladder, checkoutPage,
     });
   }
   if (order.ok && order.upsell_steps?.length) {
-    stepFailures.push(...declinedUpsellLineFailures(order.upsell_steps, order.receipt_line_items, events));
+    stepFailures.push(...declinedUpsellLineFailures(order.upsell_steps, addedLines(order.receipt_line_items, preUpsellLines), events));
   }
 
   const finalUrl = safePageUrl(page) || "";
@@ -6181,8 +6195,11 @@ async function shopperUpsellControl(page, action) {
 // UPSELL_MUTATION_TIMEOUT_MS in every production run; only an in-process test
 // that waits one of them out passes a shorter bound. `destinationUrl` is the
 // page the funnel declares this action leads to; when it is another page, the
-// click waits (up to `destinationTimeoutMs`) until the browser is on it.
-async function clickUpsellPath(page, path, { trace = null, clickTimeoutMs, mutationTimeoutMs, destinationUrl = null, destinationTimeoutMs = DEFAULT_BROWSER_TIMEOUT_MS } = {}) {
+// click waits (up to `destinationTimeoutMs`) until the browser is on it. Pages
+// are compared as route matching compares them (canonicalHttpUrl: query,
+// hash, trailing slash and index.html ignored). With `destinationRequired`,
+// not arriving is the step's `error` and the checkout-result wait is skipped.
+async function clickUpsellPath(page, path, { trace = null, clickTimeoutMs, mutationTimeoutMs, destinationUrl = null, destinationTimeoutMs = DEFAULT_BROWSER_TIMEOUT_MS, destinationRequired = false } = {}) {
   const clickMs = shorterBound(clickTimeoutMs, UPSELL_CLICK_TIMEOUT_MS);
   const mutationMs = shorterBound(mutationTimeoutMs, UPSELL_MUTATION_TIMEOUT_MS);
   const offerUrl = safePageUrl(page);
@@ -6233,10 +6250,15 @@ async function clickUpsellPath(page, path, { trace = null, clickTimeoutMs, mutat
   // The offer URL itself passes waitForCheckoutResult, so a decline that
   // navigates late would leave the next step clicking this offer again.
   const destinationKey = canonicalHttpUrl(destinationUrl);
+  let destinationError = null;
   if (destinationKey && destinationKey !== canonicalHttpUrl(offerUrl)) {
-    await page.waitForURL((url) => canonicalHttpUrl(url.href) === destinationKey, { timeout: destinationTimeoutMs, waitUntil: "commit" }).catch(() => {});
+    const reached = await page.waitForURL((url) => canonicalHttpUrl(url.href) === destinationKey, { timeout: Math.max(1, destinationTimeoutMs), waitUntil: "commit" })
+      .then(() => true, () => false);
+    if (!reached && destinationRequired) {
+      destinationError = `the page did not reach ${redactUrlQuery(destinationUrl)} within ${destinationTimeoutMs}ms after the ${path}; the browser was still on ${redactUrlQuery(safePageUrl(page))}`;
+    }
   }
-  await waitForCheckoutResult(page);
+  if (!destinationError) await waitForCheckoutResult(page);
   const record = {
     path,
     clicked: true,
@@ -6247,6 +6269,7 @@ async function clickUpsellPath(page, path, { trace = null, clickTimeoutMs, mutat
     api_response_status: mutationResponse?.status() || null,
     api_response_url: mutationResponse?.url() || null,
     api_response_order_body: bodyRead?.body ?? null,
+    ...(destinationError ? { error: destinationError } : {}),
     // When the mutation's response arrived (epoch ms, the browser's clock as
     // Date.now()). Only a read-back requested after this reflects the upsell.
     mutation_responded_at: mutationRespondedAt(mutationResponse),
@@ -8915,15 +8938,33 @@ function declinedUpsellLineFailures(steps, lines, events) {
   steps.forEach((step, index) => {
     if (step.path !== "decline" || !step.expected_items?.length) return;
     const offerKey = canonicalHttpUrl(step.offer_url);
+    // An accept explains a line it bought, at its quantity (as
+    // acceptedUpsellProof matches). One whose items are unknown may have
+    // bought anything.
     const explained = (line) => steps.some((other) => other.path === "accept"
       && canonicalHttpUrl(other.offer_url) !== offerKey
-      && (other.expected_items || []).some((item) => lineMatchesExpectedUpsell(line, item, events)));
-    const carried = step.expected_items.filter((item) => upsellLines.some((line) => !explained(line) && lineMatchesExpectedUpsell(line, item, events)));
+      && (!other.expected_items?.length || other.expected_items.some((item) => (
+        Number(line.quantity || 0) === Number(item.quantity || 1) && lineMatchesExpectedUpsell(line, item, events)
+      ))));
+    const carried = step.expected_items.filter((item) => upsellLines.some((line) => !explained(line) && lineIsDeclinedItem(line, item, events)));
     if (carried.length) {
       failures.push(`step ${index + 1}: the order carries upsell package(s) ${carried.map((item) => item.package_id).join(", ")} from the offer this path declined (${redactUrlQuery(step.offer_url)})`);
     }
   });
   return failures;
+}
+
+// lineMatchesExpectedUpsell, without its loose fallbacks: where the package and
+// the line both carry an id, the ids decide; an empty title never matches.
+function lineIsDeclinedItem(line, item, events) {
+  const meta = campaignPackageMeta(events, item.package_id);
+  const pairs = [
+    [meta?.product_sku, line.sku, normalizeLabel],
+    [meta?.product_variant_id, line.variant_id, Number],
+    [meta?.product_id, line.product_id, Number],
+  ].filter(([known, seen]) => known != null && known !== "" && seen != null && seen !== "");
+  if (pairs.length) return pairs.some(([known, seen, normalize]) => normalize(known) === normalize(seen));
+  return Boolean(normalizeLabel(line.title)) && lineMatchesExpectedUpsell(line, item, events);
 }
 
 function declinedUpsellProof(lines, initialLines, events, initialUpsellMutationCount = 0) {
