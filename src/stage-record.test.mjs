@@ -290,7 +290,7 @@ test("all-template Polish closes as excluded without captures and deploy stays o
   });
 });
 
-test("all-template polish capture closes itself without starting a browser", async () => {
+test("all-template polish capture closes itself when a browser is unavailable", async () => {
   await withLifecycle(async (f) => {
     mutateJson(f.packetPath, (packet) => {
       packet.source_html.pages = packet.source_html.pages.map((page) => ({ page_id: page.page_id, skip_reason: "template stock" }));
@@ -299,19 +299,21 @@ test("all-template polish capture closes itself without starting a browser", asy
     console.log(`all-template next before capture: ${nextStage(f).stage}`);
     let browserStarts = 0;
     const result = await polishCaptureCommand({ _: ["polish", "capture"], packet: f.packetPath, "base-url": "https://shop.example.com" }, {
-      createBrowserAdapter: async () => { browserStarts += 1; throw new Error("No browser is needed for template stock."); },
+      createBrowserAdapter: async () => { browserStarts += 1; throw new Error("Synthetic browser unavailable."); },
     });
     console.log(`all-template polish capture: ok=${result.ok}; status=${result.status}; result=${result.result}`);
-    assert.equal(browserStarts, 0);
+    assert.equal(browserStarts, 1);
     assert.equal(result.result, "excluded");
     assert.equal(result.reason_code, "template_stock");
     const lines = formatPolishCaptureText(result).split("\n");
     assert.equal(lines.length, 1);
     assert.match(lines[0], /Polish is not applicable.*Every mapped page is template stock/);
+    assert.match(lines[0], /Readability was not measured/);
     const cli = runCli(["polish", "capture", "--packet", f.packetPath, "--base-url", "http://127.0.0.1:1"], f.dir);
     assert.equal(cli.status, 0, cli.stderr);
     assert.equal(cli.stdout.trim().split("\n").length, 1);
     assert.match(cli.stdout, /Polish is not applicable.*Every mapped page is template stock/);
+    assert.match(cli.stdout, /Readability was not measured/);
     assert.equal(readJson(f.reportPath).stages.polish.status, "skipped");
     assert.equal(readJson(f.reportPath).stages.polish.evidence.result, "excluded");
     assert.equal(nextStage(f).stage, "deploy");
