@@ -4951,15 +4951,9 @@
           "path": "docs/build-packet.md",
           "surface_entry": "docs/build-packet.md",
           "summary": "record build derives template_files_copied from the files on disk; the field has no flag and is not hand-edited."
-        },
-        {
-          "class": "named_surface",
-          "path": "docs/source-adapters.md",
-          "surface_entry": "docs/source-adapters.md",
-          "summary": "template_files_copied is verified by record build from files on disk."
         }
       ],
-      "entry_sha256": "7520d9784b082f11da8b543c449e7ead070613ce17d09585fdae0e0e6254c862"
+      "entry_sha256": "7746dc571153598aea11b5a430e7150d89215a00b46adc41221cf53fe1a3fc64"
     }
   ]
 }
