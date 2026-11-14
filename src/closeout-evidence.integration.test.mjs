@@ -11,6 +11,7 @@
 // against a hand-built expectation.
 
 import assert from "node:assert/strict";
+import { currentBuildFingerprint } from "./polish-gate.mjs";
 import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -269,6 +270,27 @@ test("a narrower run after a page-scoped record is not compared with the purchas
   writeFileSync(fixture.reportPath, JSON.stringify(report, null, 2));
   runProducer(fixture, { runId: "SYNTHRUN000000000000000002", completedAt: "2026-09-11T03:00:00.000Z", orders: 1 });
   assert.deepEqual(readReport(fixture.reportPath).stages.qa.warnings, []);
+});
+
+test("a page-scoped QA run that extends a narrower record keeps the narrower-run warning", () => {
+  const fixture = target();
+  runProducer(fixture, { runId: "SYNTHRUN000000000000000001", completedAt: "2026-09-11T02:00:00.000Z", orders: 3 });
+  runProducer(fixture, { runId: "SYNTHRUN000000000000000002", completedAt: "2026-09-11T03:00:00.000Z", orders: 1 });
+  const before = readReport(fixture.reportPath);
+  const warning = before.stages.qa.warnings.find((entry) => entry.startsWith("This QA run replaced a fuller one"));
+  assert.ok(warning, "setup: the narrower run carries the warning");
+  const built = verdict({ runId: "SYNTHRUN000000000000000003", completedAt: "2026-09-11T04:00:00.000Z", orders: 0 });
+  const inputs = currentPacketInputs({ packet: JSON.parse(readFileSync(fixture.packetPath, "utf8")), packetPath: fixture.packetPath });
+  built.spec_hash = inputs.specMaterial;
+  built.source_brief_material = inputs.briefMaterial;
+  const fingerprint = currentBuildFingerprint(before);
+  const recorded = recordQaStageOutcome({ packet: fixture.packetPath, _: [] }, {
+    verdict: built,
+    local_path: join(fixture.dir, "qa-output", MAP_ID, "SYNTHRUN000000000000000002.json"),
+    page_scope: { pages: ["landing"], owed_pages: ["landing"], build_fingerprint: fingerprint, base_build_fingerprint: fingerprint },
+  });
+  assert.equal(recorded, true);
+  assert.ok(readReport(fixture.reportPath).stages.qa.warnings.includes(warning), "the page-scoped record keeps the warning of the proof it extends");
 });
 
 test("a closed Run Record for the current verdict stops next demanding a second one", () => {

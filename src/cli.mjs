@@ -781,7 +781,12 @@ export function recordQaStageOutcome(args, result) {
       }
       const evidence = qaStageGateEvidence(verdict, report, result);
       const onBaseline = Boolean(pageScope && report.stages?.qa?.baseline_accepted_at);
-      const narrower = pageScope || verdict.disposition === "blocked" ? null : narrowerQaWarning(report.stages?.qa, {
+      // A page-scoped run keeps the purchase proof of the record it extends, so
+      // it keeps that record's narrower-run warning too.
+      const carriedNarrower = pageScope
+        ? (Array.isArray(report.stages?.qa?.warnings) ? report.stages.qa.warnings : []).find((warning) => typeof warning === "string" && warning.startsWith(NARROWER_QA_PREFIX)) || null
+        : null;
+      const narrower = pageScope ? carriedNarrower : verdict.disposition === "blocked" ? null : narrowerQaWarning(report.stages?.qa, {
         runId: optionalString(verdict.run_id),
         buildFingerprint: currentBuildFingerprint(report),
         specMaterialHash: qaStamps.source_spec_material_hash,
