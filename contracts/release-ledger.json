@@ -4947,6 +4947,18 @@
       "migration": "none",
       "changes": [
         {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "An all-template funnel's Polish stage is recorded as not applicable."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "QA rows for an as-is starter: palette excluded, placeholder text warn, no missing-Polish warning."
+        },
+        {
           "class": "cli_surface",
           "path": "src/cli.mjs",
           "surface_entry": null,
@@ -4957,33 +4969,9 @@
           "path": "src/doctor/checks.mjs",
           "surface_entry": null,
           "summary": "Doctor's starter placeholder warning uses the wording QA uses."
-        },
-        {
-          "class": "named_surface",
-          "path": "docs/build-packet.md",
-          "surface_entry": "docs/build-packet.md",
-          "summary": "An all-template funnel's Polish stage is recorded as not applicable."
-        },
-        {
-          "class": "named_surface",
-          "path": "docs/entry-points.md",
-          "surface_entry": "docs/entry-points.md",
-          "summary": "Starter placeholder text warns on an as-is build; the starter palette needs no theme waiver."
-        },
-        {
-          "class": "named_surface",
-          "path": "docs/polish-evidence.md",
-          "surface_entry": "docs/polish-evidence.md",
-          "summary": "Polish is excluded with reason template_stock when every mapped page is template stock."
-        },
-        {
-          "class": "named_surface",
-          "path": "docs/qa-and-test-orders.md",
-          "surface_entry": "docs/qa-and-test-orders.md",
-          "summary": "QA rows for an as-is starter: palette excluded, placeholder text warn, no missing-Polish warning."
         }
       ],
-      "entry_sha256": "7944067d81c071b46d698bf6c8c3efd192501c1e46c49e991000474c88227351"
+      "entry_sha256": "b784936b150141a9dc1e7f6d4de459d9ae8b17459dd84b159ef5730fdbe2b76e"
     }
   ]
 }
