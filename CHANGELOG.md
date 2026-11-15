@@ -2,6 +2,27 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.71.1] - 2026-11-15
+
+This release packages the twelve `1.71.0+agent` sections below, the fixes from the fifth simulated build batch. For a campaign, what changes is that QA results stop reading as more proof than they hold and stop failing correct pages: a test order that bought the wrong upsell fails, a correct tiered upsell or an SDK address block no longer reads as a mismatch or a missing field, and new warn rows name the currencies, tiers and add-ons no test order covered. `next`, `after-edit`, `record build` and `record deploy` agree on what an edit owes, a starter used as-is closes Polish and theme with a stated reason, and `record build` writes `adapter_decisions.template_files_copied` itself. Agent wording treats the supplied design and content as final. No command, flag, schema or contract changes, so nothing a consumer reads breaks. To take it, pin `@nextcommerce/campaigns-os@1.71.1` and refresh the installed skills to `1.71.1+skills.1`.
+
+### Changed
+
+- Publishes `1.71.0+agent.10`: agent-facing wording treats the supplied design and content as final; an agent no longer lists claims or proof content for the operator to decide on, and proposes only small corrections, each named in the handoff. No check, question or severity changes (#775).
+
+### Fixed
+
+- Publishes `1.71.0+agent.2`: a test order on a decline-then-accept path waits for the page the path declares, and fails when the order carries an upsell from the declined offer (#776).
+- Publishes `1.71.0+agent.3` and `1.71.0+agent.9`: a QA verdict names the proof it lacks. A spec voucher missing from its upsell page is a price mismatch; warn rows `browser-test-order:currency-coverage`, `order-bump-coverage` and `tier-coverage` name what no test order covered; a QA run with fewer paths than the one it replaces carries a warning; and an order total with no displayed total to compare is a `warn` exception (#783, #782).
+- Publishes `1.71.0+agent.4`: `next`, `after-edit`, `record build` and `record deploy` agree that a page-only edit owes QA on the changed page (#779).
+- Publishes `1.71.0+agent.5`: a funnel built from a starter as-is records Polish as skipped (`template_stock`) and closes the theme and hidden-media checks with a stated reason (#780).
+- Publishes `1.71.0+agent.6`: the spec-drift, `ready_with_exceptions` and page-scoped QA messages say what is true (#778).
+- Publishes `1.71.0+agent.7`: `record build` records `adapter_decisions.template_files_copied` from the template files on disk; do not edit the field by hand (#781).
+- Publishes `1.71.0+agent.8`: under `qa run --browser`, a tiered upsell's price check compares each tier with the price the page renders (#777).
+- Publishes `1.71.0+agent.11`: the checkout structure check accepts the SDK address block or a bound address input in place of `shipping-field-row` (#774).
+- Publishes `1.71.0+agent.12`: `polish capture` looks once for `[data-next-await]` on the sealed source render instead of waiting 5 seconds per cell; outcomes are unchanged (#784).
+- Publishes `1.71.0+agent.1`: Playwright 1.65, with upsell verification kept when response bodies become unavailable on navigation (#745).
+
 ## [1.71.0+agent.12] - 2026-11-14
 
 ### Fixed
