@@ -314,6 +314,22 @@ browserTest("F3C-I1: unresolved data-next-await times out within five seconds an
   }
   unchangedProgression(cli);
 });
+browserTest("F3C-I1b: the sealed source side records an unresolved data-next-await without waiting for it", async (t) => {
+  const f = await scenario(t, "await.html", "identical-build.html");
+  const record = await runVisualPass(f.input);
+  const sources = record.cells.filter((c) => c.side === "source_html");
+  assert.equal(sources.length, 2);
+  assert.ok(sources.every((c) => c.status === "rendered" && c.actual.status === "captured" && c.stabilized.status === "captured"));
+  assert.ok(sources.every((c) => c.readiness.await.status === "timeout" && c.readiness.await.remaining_count === 1));
+  // Nothing on the sealed side loads the script that clears the marker: the read is a single look, not a 5 s wait.
+  assert.ok(sources.every((c) => c.readiness.await.waited_ms < 1000), JSON.stringify(sources.map((c) => c.readiness.await)));
+  assert.ok(record.cells.filter((c) => c.side === "build").every((c) => c.readiness.await.status === "not_present"));
+  const rows = diffRows(record); assert.equal(rows.length, 2);
+  for (const row of rows) {
+    assert.deepEqual([row.result, row.reason_code], ["unexercised", "readiness_incomplete"]);
+    assert.deepEqual(row.members.map((m) => [m.key, m.reason_code]), [["source_html", "await_timeout"]]);
+  }
+});
 browserTest("F3C-I2: stalled loopback font exposes fonts_timeout within three seconds", async (t) => {
   const f = await scenario(t, "identical-source.html", "identical-build.html", { stallFont: true });
   const record = await runVisualPass(f.input);

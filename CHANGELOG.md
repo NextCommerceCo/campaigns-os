@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.71.0+agent.12] - 2026-11-14
+
+### Fixed
+
+- `polish capture` no longer waits up to 5 seconds per cell for `[data-next-await]` markers on the sealed source render. That render refuses every external origin, so the cart SDK that clears the markers never loads there and the wait always ran to its limit. The source side now looks once after network idle and fonts and records what it sees: markers still present read `timeout` as before, and the comparison and element-parity cells for that route and viewport are still refused as `readiness_incomplete`. The build side keeps its 5 second wait. On a six-page design funnel with commerce pages this removes 8 source-side waits, about 40 seconds per capture, with the same outcomes.
+
 ## [1.71.0+agent.11] - 2026-11-14
 
 ### Fixed

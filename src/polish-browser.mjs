@@ -1357,7 +1357,8 @@ export async function createPolishBrowserAdapter({
         const fontsMs = boundedPolishDeadline(readiness.fontsMs, VISUAL_READINESS_FONTS_MS);
         const awaitMs = boundedPolishDeadline(readiness.awaitMs, VISUAL_READINESS_AWAIT_MS);
         for (const [name, ms] of [["fonts", fontsMs], ["await", awaitMs]]) {
-          const observed = await read({ name: `ready_${name}`, source: visualReady, args: [name, ms], boundMs: ms + 100 }, true);
+          // The read itself gets a probe's bound at least, so a one-look wait is not ended by its own setup.
+          const observed = await read({ name: `ready_${name}`, source: visualReady, args: [name, ms], boundMs: Math.max(ms + 100, 1500) }, true);
           if (observed.status === "measured") result.readiness[name] = observed.value;
           else result.readiness[name].waited_ms = Math.min(ms, observed.elapsed_ms);
         }

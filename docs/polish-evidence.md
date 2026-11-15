@@ -146,7 +146,7 @@ After its existing page-load and readability work has finished and been recorded
 
 The source is served read-only from a local address, in a browser instance that can reach only that address. Requests and WebSocket connections to anything else are blocked and counted, other connections are refused by the local server, and no host name is looked up. Nothing from the source render leaves the machine.
 
-Each render waits for web fonts (up to 3 seconds) and for `[data-next-await]` elements to clear (up to 5 seconds) before either capture. The first capture is unchanged. The second differs only by its stabilization treatment: it stops animations and transitions, hides the caret, and masks SDK timers and prices. Timeouts are recorded, never hidden.
+Each render waits for web fonts (up to 3 seconds) before either capture. The build render also waits for `[data-next-await]` elements to clear (up to 5 seconds). The sealed source render does not wait for them: it blocks external origins, so the cart SDK that clears them never loads there. It looks once after network idle and fonts, and elements still present are recorded as a timeout. The first capture is unchanged. The second differs only by its stabilization treatment: it stops animations and transitions, hides the caret, and masks SDK timers and prices. Timeouts are recorded, never hidden.
 
 Images are stored under `.campaign-runtime/polish/captures/` and `.campaign-runtime/polish/diff/`, named by their SHA-256. Each folder gets its own `.gitignore` the first time an image is written, so the images stay out of the repository even in a campaign set up by an earlier version. Old images are not deleted.
 
