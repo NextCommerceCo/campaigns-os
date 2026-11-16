@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.71.1+agent.1] - 2026-11-16
+
+### Fixed
+
+- QA's upsell and checkout bundle price checks match the SDK's bundle price displays whatever their case: `[data-next-bundle-display*='price' i]`. The SDK names its bundle prices in camelCase (`unitPrice`, `originalUnitPrice`), and the check matched `price` case-sensitively, so an upsell whose tier cards show only `unitPrice` read "0 visible price row(s)" and `pricing.upsell_price_visible:<page>` blocked a correct page with no waiver. The checkout bundle card check already ignored case. A hidden, zero-size or empty bundle-display node still does not count.
+
 ## [1.71.1] - 2026-11-15
 
 This release packages the twelve `1.71.0+agent` sections below, the fixes from the fifth simulated build batch. For a campaign, what changes is that QA results stop reading as more proof than they hold and stop failing correct pages: a test order that bought the wrong upsell fails, a correct tiered upsell or an SDK address block no longer reads as a mismatch or a missing field, and new warn rows name the currencies, tiers and add-ons no test order covered. `next`, `after-edit`, `record build` and `record deploy` agree on what an edit owes, a starter used as-is closes Polish and theme with a stated reason, and `record build` writes `adapter_decisions.template_files_copied` itself. Agent wording treats the supplied design and content as final. No command, flag, schema or contract changes, so nothing a consumer reads breaks. To take it, pin `@nextcommerce/campaigns-os@1.71.1` and refresh the installed skills to `1.71.1+skills.1`.

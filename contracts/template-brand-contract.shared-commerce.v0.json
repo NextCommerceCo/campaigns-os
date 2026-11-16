@@ -137,7 +137,7 @@
     "surfaces": {
       "checkout_bundle": {
         "default_mode": "compare_at_current",
-        "price_row_selectors": [".price-wrapper", ".cart-price", "[data-next-bundle-display*='price']", "[data-next-display*='price']"]
+        "price_row_selectors": [".price-wrapper", ".cart-price", "[data-next-bundle-display*='price' i]", "[data-next-display*='price']"]
       },
       "bump": {
         "default_mode": "full_price",

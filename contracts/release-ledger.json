@@ -5542,6 +5542,27 @@
         }
       ],
       "entry_sha256": "f947a03b8e98366eae2493605c397ea51ef523118657364796e67d44d22234cc"
+    },
+    {
+      "id": "RL-0362",
+      "sequence": 346,
+      "date": "2026-11-16",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.1+agent.1",
+      "changelog_sha256": "137c6885233040ad9c2b9c55c167ac6835e62e22c004540af3bdaa6d8ae7cef8",
+      "agent_impact": "QA's upsell and checkout bundle price checks count the SDK's bundle price displays whatever their case ([data-next-bundle-display*='price' i]). An upsell whose tier cards show only data-next-bundle-display=\"unitPrice\" now passes pricing.upsell_price_visible:<page> where it used to block with 0 visible price rows; do not add a price row the design does not have to clear it. Hidden, zero-size or empty bundle-display nodes still do not count.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "The upsell and checkout bundle price checks match the SDK's bundle-display price nodes case-insensitively, so unitPrice counts."
+        }
+      ],
+      "entry_sha256": "99489d92f78d2137fc278281569e6c5d6f7e88174f5103bb176f35977f7008a2"
     }
   ]
 }

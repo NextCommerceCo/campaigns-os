@@ -3280,7 +3280,7 @@ async function readRenderedPackagePrices(browserPage, { timeoutMs = DEFAULT_SETT
 // well as data-next-display (#532). A contract surface that lists price rows
 // also counts that attribute; an empty list stays empty so a contract that
 // declares no rows keeps skipping the count.
-const SDK_BUNDLE_PRICE_DISPLAY_SELECTOR = "[data-next-bundle-display*='price']";
+const SDK_BUNDLE_PRICE_DISPLAY_SELECTOR = "[data-next-bundle-display*='price' i]";
 
 function withSdkPriceDisplaySelectors(selectors) {
   const list = Array.isArray(selectors) ? selectors : [];
