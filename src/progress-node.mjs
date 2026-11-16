@@ -17,9 +17,9 @@ export const PROGRESS_ENDPOINT = '/api/progress';
 export const PROGRESS_GATE_LIMIT = 16;
 const accepted = (value,values,fallback='unknown')=>values.includes(value)?value:fallback;
 // A next action that is a variant of a fixed action projects onto it: the
-// order-bump QA run is a QA run. Without this, the closed v0 vocabulary would
+// per-currency QA run is a QA run. Without this, the closed v0 vocabulary would
 // read it as unknown and mark a ready QA continuation blocked.
-const PROGRESS_ACTION_ALIASES = new Map([['qa_run_bump','qa_run'],['refresh_inputs','recheck']]);
+const PROGRESS_ACTION_ALIASES = new Map([['qa_run_currency','qa_run'],['refresh_inputs','recheck']]);
 const hash = value=>typeof value==='string'&&/^(?:sha256:)?[0-9a-f]{64}$/i.test(value)?`sha256:${value.replace(/^sha256:/i,'').toLowerCase()}`:null;
 const id = value=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,64}$/.test(value)?value:null;
 const digest = value=>`sha256:${createHash('sha256').update(value).digest('hex')}`;

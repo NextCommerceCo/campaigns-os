@@ -2,6 +2,14 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.71.1+agent.2] - 2026-11-16
+
+### Fixed
+
+- `browser-test-order:currency-coverage` judges the build, not one run. A currency counts as covered when a created test order in it exists for the current build, in this run or in an earlier QA run the QA stage recorded against the same build fingerprint. Before, each `qa run --currency <code>` replaced the stored verdict with a run that warned about every other currency, so following the row's advice never cleared it.
+- `next` lists the currency runs still owed as `qa_run_currency` actions, one per currency, each the `qa_run` command plus `--currency <code>`. At the QA stage they cover every listed currency other than `campaign.currency`; once QA is done they name each listed currency this build has no test order in, so a change that rebuilds the campaign no longer ends at `done` with only one currency proved. QA stays done. The `currency_commands` field on `qa_run` is gone; read the actions instead.
+- When the checkout QA drives declares an order bump, the first proof command carries `--cart <base>:1,<bump>:1`: `next`'s `qa_run` action, its "Next expected proof" line, the QA stage prompt, and `qa resolve`'s "Next expected proof". One run now proves the charged add-on, so the separate `qa_run_bump` action is gone.
+
 ## [1.71.1] - 2026-11-15
 
 This release packages the twelve `1.71.0+agent` sections below, the fixes from the fifth simulated build batch. For a campaign, what changes is that QA results stop reading as more proof than they hold and stop failing correct pages: a test order that bought the wrong upsell fails, a correct tiered upsell or an SDK address block no longer reads as a mismatch or a missing field, and new warn rows name the currencies, tiers and add-ons no test order covered. `next`, `after-edit`, `record build` and `record deploy` agree on what an edit owes, a starter used as-is closes Polish and theme with a stated reason, and `record build` writes `adapter_decisions.template_files_copied` itself. Agent wording treats the supplied design and content as final. No command, flag, schema or contract changes, so nothing a consumer reads breaks. To take it, pin `@nextcommerce/campaigns-os@1.71.1` and refresh the installed skills to `1.71.1+skills.1`.

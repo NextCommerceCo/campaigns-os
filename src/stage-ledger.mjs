@@ -99,8 +99,10 @@ function sameJson(a, b) {
 }
 
 // The closed field list a history entry copies from the record it archives,
-// beside archived_at, archived_by and reason_code. History is display only:
-// no reader takes completion or currency from it.
+// beside archived_at, archived_by and reason_code. No reader takes completion
+// or input currency from history. One reader takes test-order currencies from
+// QA history: the QA records of the current build name the verdicts whose
+// orders count toward the currency-coverage row (testOrderCurrenciesForBuild).
 const HISTORY_ENTRY_FIELDS = Object.freeze([
   "status", "completed_at", "recorded_by", "performed_by",
   "build_fingerprint", "source_build_fingerprint", "source_package_material_fingerprint",

@@ -323,6 +323,30 @@ export function readQaFullVerdict({ stage, targetRepo, packetPath = null, report
   }
 }
 
+// The currencies of the test orders created by every QA run the QA stage
+// records against the current build: its live record and the records its
+// history keeps, each verdict read through readQaFullVerdict. A run judged
+// another build, or whose verdict cannot be read back under the run id its
+// record names, contributes nothing. `qa run` adds these to its own orders
+// for the currency-coverage row, and `next` lists the currencies still owed
+// from the same set, so one run per currency clears the row.
+export function testOrderCurrenciesForBuild({ report, targetRepo, packetPath = null, reportPath = null }) {
+  const currencies = new Set();
+  const build = currentBuildFingerprint(report);
+  const qa = report?.stages?.qa;
+  if (!build || !isPlainObject(qa)) return currencies;
+  for (const record of [qa, ...(Array.isArray(qa.history) ? qa.history : [])]) {
+    if (!isPlainObject(record) || record.evidence?.qc_build_fingerprint !== build || !isNonEmptyString(record.verdict_run_id)) continue;
+    const verdict = readQaFullVerdict({ stage: record, targetRepo, packetPath, reportPath });
+    if (verdict?.run_id !== record.verdict_run_id) continue;
+    for (const order of Array.isArray(verdict.test_orders) ? verdict.test_orders : []) {
+      const code = order?.ok === true && order.verification?.currency;
+      if (isNonEmptyString(code)) currencies.add(code.trim().toUpperCase());
+    }
+  }
+  return currencies;
+}
+
 function readPacketForGuard(packetPath) {
   try {
     const parsed = JSON.parse(readFileSync(packetPath, "utf8"));
