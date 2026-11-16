@@ -19,6 +19,7 @@ import {
   normalizeStoreProfileValue,
   PAGE_KIT_STORE_PROFILE_FIELDS,
   storeProfileSpecValueProblem,
+  storeProfileUrlShape,
 } from "./page-kit-store-profile.mjs";
 import { resolveSpecSdkPin, sdkPinWriteDecision } from "./page-kit-sdk-version.mjs";
 
@@ -61,7 +62,7 @@ export function planPageKitSync({ spec, entry, waivedGates = [] } = {}) {
     spec_invalid_type: (field, raw) => `CampaignSpec campaign.${field} is ${Array.isArray(raw) ? "an array" : `a ${raw === null ? "null" : typeof raw}`}, not a string; doctor blocks on it as spec_invalid_type. Fix the spec, then sync again.`,
     control_characters: (field) => `CampaignSpec campaign.${field} contains control characters; remove them, then sync again.`,
     demo_residue: (field, raw) => `CampaignSpec campaign.${field} is itself the starter demo value ${JSON.stringify(raw)}; doctor blocks on demo residue without a waiver. Replace it in the spec, then sync again.`,
-    not_http_url: (field, raw) => `CampaignSpec campaign.${field} ${JSON.stringify(raw)} is not an http(s) URL${field === "store_contact" ? " or mailto: address" : ""}; templates place it in an href, so no other scheme is written. Fix the spec, then sync again.`,
+    not_http_url: (field, raw) => `CampaignSpec campaign.${field} ${JSON.stringify(raw)} is not a value it accepts: it ${storeProfileUrlShape(field, raw)}. Templates place it in an href, so no other scheme is written. Fix the spec, then sync again.`,
     not_tel_uri: (field, raw) => `CampaignSpec campaign.${field} ${JSON.stringify(raw)} is not a tel: URI of digits, spaces, dashes, parens and dots (e.g. "tel:+18005551234"). Fix the spec, then sync again.`,
   };
 

@@ -152,6 +152,17 @@ export function storeProfileSpecValueProblem(field, value) {
   return null;
 }
 
+// What a URL field accepts, for a remedy naming a not_http_url value. A bare
+// email in store_contact is the common miss: templates render the field as a
+// contact link, so the address is written as a mailto: URI (F-237).
+export function storeProfileUrlShape(field, value) {
+  if (field !== "store_contact") return "takes an http(s) URL";
+  const email = typeof value === "string" ? value.trim() : "";
+  return /^[^\s@:/]+@[^\s@:/]+\.[^\s@:/]+$/.test(email)
+    ? `takes an http(s) URL or a mailto: address; write this email as ${JSON.stringify(`mailto:${email}`)}`
+    : "takes an http(s) URL or a mailto: address";
+}
+
 // The edit a blocked row needs when sync cannot make it: a target-side
 // defect with no spec value behind it (a demo or malformed target value in a
 // field the spec does not carry) is corrected in the target, or the field is
@@ -172,7 +183,11 @@ function repairDescriptionForUnsyncableRows(rows, subject, authoritativeEmptyFie
     parts.push(`Remove or correct ${where}.${specEmpty.map((row) => row.field).join(", ")} by hand: the CampaignSpec sets campaign.${specEmpty.map((row) => row.field).join(", campaign.")} to "" (none), but page-kit sync blanks only a recognised starter demo value, so it did not apply the "" over this non-demo target value.`);
   }
   if (specSide.length) {
-    parts.push(`Repair the CampaignSpec Store Profile field(s) ${specSide.map((row) => `${row.field} (${storeProfileSpecValueProblem(row.field, row.spec)})`).join(", ")}: page-kit sync writes only a well-shaped, non-demo spec value over the target. Fix the spec, then run page-kit sync.`);
+    const shapes = specSide
+      .filter((row) => storeProfileSpecValueProblem(row.field, row.spec) === "not_http_url")
+      .map((row) => ` ${row.field} ${storeProfileUrlShape(row.field, row.spec)}.`)
+      .join("");
+    parts.push(`Repair the CampaignSpec Store Profile field(s) ${specSide.map((row) => `${row.field} (${storeProfileSpecValueProblem(row.field, row.spec)})`).join(", ")}: page-kit sync writes only a well-shaped, non-demo spec value over the target.${shapes} Fix the spec, then run page-kit sync.`);
   }
   return `${parts.join(" ")} Then re-run doctor.`;
 }

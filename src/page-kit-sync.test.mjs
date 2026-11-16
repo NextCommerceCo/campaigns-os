@@ -1125,6 +1125,25 @@ test("planPageKitSync refuses spec values a template would put into an href unes
   assert.equal(typed.required_actions.find((action) => action.id === "repair_target").kind, "edit");
 });
 
+// F-237: store_contact takes an http(s) URL or a mailto: address. A bare
+// email is refused (templates put the field in an href), and the remedy says
+// which shape to write instead of only naming not_http_url.
+test("a bare email in store_contact is refused with a remedy that names the mailto: form", () => {
+  const spec = { campaign: { ...SPEC.campaign, store_contact: "support@acmeglow.example" }, global_config: { sdk_version: "0.4.36" } };
+  const plan = planPageKitSync({ spec, entry: SCAFFOLD_ENTRY });
+  const row = plan.not_synced.find((entry) => entry.field === "store_contact");
+  assert.equal(row.reason, "not_http_url");
+  assert.match(row.detail, /mailto:support@acmeglow\.example/);
+  const targetLoad = { status: "ok", public_route_slug: "acme-glow", target_path: "_data/campaigns.json", entry: SCAFFOLD_ENTRY };
+  const gate = evaluatePageKitStoreProfile({ specCampaign: spec.campaign, targetLoad });
+  const repair = gate.required_actions.find((action) => action.id === "repair_target");
+  assert.match(repair.description, /store_contact \(not_http_url\)/);
+  assert.match(repair.description, /store_contact takes an http\(s\) URL or a mailto: address; write this email as "mailto:support@acmeglow\.example"\./);
+  // The mailto: form it names is accepted.
+  const fixed = planPageKitSync({ spec: { ...spec, campaign: { ...spec.campaign, store_contact: "mailto:support@acmeglow.example" } }, entry: SCAFFOLD_ENTRY });
+  assert.equal(fixed.not_synced.some((entry) => entry.field === "store_contact"), false);
+});
+
 test("page-kit sync rejects --dry-run with a value instead of writing", () => {
   const { dir, packetPath, campaignsPath } = fixture();
   try {

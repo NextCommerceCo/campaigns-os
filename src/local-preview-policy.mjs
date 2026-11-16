@@ -122,12 +122,6 @@ export function hostedTemplateNeedsUsablePreview(packet, gate) {
     && !isHostedTemplatePreview(packet);
 }
 
-export function hostedTemplateNeedsPreviewUrl(packet, gate) {
-  return gate?.code === NO_CAPTURABLE_ROUTES_CODE
-    && packet?.deploy?.target && packet.deploy.target !== "local-serve"
-    && !packet.deploy.preview_url;
-}
-
 function pageLoadRecorded(report) {
   return report?.stages?.polish?.evidence?.visual_review?.page_load != null;
 }

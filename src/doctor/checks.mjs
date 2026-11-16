@@ -544,7 +544,7 @@ const PACKET_DOCTOR_CHECKS = createDoctorCheckRegistry([
   {
     id: "market_copy",
     phase: "copy",
-    run: ({ spec, warnings, ready, derived }) => validateMarketSensitiveCopy(spec, warnings, ready, derived),
+    run: ({ packet, spec, warnings, ready, derived }) => validateMarketSensitiveCopy(spec, warnings, ready, derived, packet),
   },
   {
     id: "source_html.adapter_contract",
@@ -1476,6 +1476,16 @@ function validateTargetAnalyticsVendors(spec, warnings, ready, buildState) {
   }
 }
 
+// available_shipping_countries arrives as country-code strings or as
+// { code, label } objects (the spec schema accepts both); either way the code
+// is the country. String() on an object reads "[object Object]" (F-238).
+function shippingCountryCodes(countries) {
+  if (!Array.isArray(countries)) return [];
+  return countries
+    .map((country) => String(isObject(country) ? country.code ?? "" : country).trim())
+    .filter(Boolean);
+}
+
 function validateSpecShippingCountries(spec, warnings, ready) {
   const countries = spec?.campaign?.available_shipping_countries;
   if (countries === "all" || (Array.isArray(countries) && countries.length === 0)) {
@@ -1483,7 +1493,7 @@ function validateSpecShippingCountries(spec, warnings, ready) {
     return;
   }
   if (Array.isArray(countries)) {
-    ready.push(`CampaignSpec shipping countries: ${countries.join(", ")}`);
+    ready.push(`CampaignSpec shipping countries: ${shippingCountryCodes(countries).join(", ")}`);
     return;
   }
   if (countries == null) {
@@ -3332,21 +3342,34 @@ function isRuntimeRootedRoutingMeta(value, publicRouteSlug, routeRoot = null) {
   return route === prefix || route.startsWith(`${prefix}/`);
 }
 
-export function validateMarketSensitiveCopy(spec, warnings, ready, derived) {
-  return withHtmlScanSnapshot(() => scanMarketSensitiveCopy(spec, warnings, ready, derived), { reuse: true });
+export function validateMarketSensitiveCopy(spec, warnings, ready, derived, packet = null) {
+  return withHtmlScanSnapshot(() => scanMarketSensitiveCopy(spec, warnings, ready, derived, packet), { reuse: true });
 }
 
-function scanMarketSensitiveCopy(spec, warnings, ready, derived) {
+// Once _site/<public_route_slug>/ holds built HTML, the copy checks read only
+// that: it is what the pages render, with includes resolved and conditional
+// blocks applied. The Page Kit source tree also carries starter _includes the
+// pages never render, and their copy is not on any page (F-238). Before the
+// build, the source and target trees are all there is to read.
+function builtCopyScanRoot(packet, derived) {
+  const slug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
+  if (!slug || !isNonEmptyString(derived?.target_repo)) return null;
+  const root = join(derived.target_repo, "_site", slug);
+  return collectHtmlFiles(root).length ? { label: `_site/${slug}`, root } : null;
+}
+
+function scanMarketSensitiveCopy(spec, warnings, ready, derived, packet) {
   const scope = deriveMarketScope(spec);
   const currencyScope = deriveCurrencyCopyScope(spec);
   const storePhone = firstNonEmptyString(spec?.campaign?.store_phone, spec?.campaign?.phone);
   if (!scope.needsCopyReview && !currencyScope.needsCopyReview && !storePhone) return;
 
-  const scanRoots = [];
-  if (derived.source_root && existsSync(derived.source_root) && statSync(derived.source_root).isDirectory()) {
+  const builtRoot = builtCopyScanRoot(packet, derived);
+  const scanRoots = builtRoot ? [builtRoot] : [];
+  if (!builtRoot && derived.source_root && existsSync(derived.source_root) && statSync(derived.source_root).isDirectory()) {
     scanRoots.push({ label: "source", root: derived.source_root });
   }
-  if (derived.target_output_dir && existsSync(derived.target_output_dir) && statSync(derived.target_output_dir).isDirectory()) {
+  if (!builtRoot && derived.target_output_dir && existsSync(derived.target_output_dir) && statSync(derived.target_output_dir).isDirectory()) {
     scanRoots.push({ label: "target", root: derived.target_output_dir });
   }
 
@@ -3373,8 +3396,8 @@ function scanMarketSensitiveCopy(spec, warnings, ready, derived) {
     // (empty) output directory existing — an empty target means the build has
     // not run yet, so source warnings must still stand.
     const targetScanRoot = scanRoots.find((scanRoot) => scanRoot.label === "target");
-    const hasBuiltTarget = Boolean(targetScanRoot) && collectHtmlFiles(targetScanRoot.root).length > 0;
-    const targetMatches = currencyMatches.filter((match) => match.surface === "target");
+    const hasBuiltTarget = Boolean(builtRoot) || (Boolean(targetScanRoot) && collectHtmlFiles(targetScanRoot.root).length > 0);
+    const targetMatches = builtRoot ? currencyMatches : currencyMatches.filter((match) => match.surface === "target");
     const reportableMatches = hasBuiltTarget ? targetMatches : currencyMatches;
     if (!currencyMatches.length) {
       ready.push(`Hardcoded currency scan found no obvious static $ amounts (${currencyScope.reasons.join(", ")}).`);
@@ -3419,7 +3442,7 @@ function deriveMarketScope(spec) {
   ])];
   const additionalCurrencies = currencies.filter((currency) => currency && currency !== defaultCurrency);
   const countries = campaign.available_shipping_countries;
-  const countryList = Array.isArray(countries) ? countries.map((country) => String(country).trim()).filter(Boolean) : [];
+  const countryList = shippingCountryCodes(countries);
   const nonUsCountries = countryList.filter((country) => !isUsCountryCode(country));
   const marketMode = String(campaign.market_mode || campaign.marketMode || campaign.market_scope || spec?.market_mode || "").trim();
   const reasons = [];
