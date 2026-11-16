@@ -30,6 +30,7 @@ import { sameFile } from "./fs-identity.mjs";
 import { buildPolishCaptureIntegrity, canonicalJson, captureOrigin, mediaFetchedResources } from "./polish-capture.mjs";
 import { currentBuildFingerprint, currentSourcePackageMaterialFingerprint } from "./polish-gate.mjs";
 import { sidecarPathForPacket } from "./qa-sidecar.mjs";
+import { qaRecordsForBuild } from "./stage-ledger.mjs";
 import { QA_ASSERTION_FAMILY_VOCABULARY, QA_SCHEMA_VERSION, SEVERITY, STATUS } from "./qa-verdict.mjs";
 import { QC_CHECK_REGISTRY, loadedQcRederivers, qcChecksForLeg, qcChecksForRecord } from "./qc-check-registry.mjs";
 import { readPngStructure } from "./png-header.mjs";
@@ -324,23 +325,24 @@ export function readQaFullVerdict({ stage, targetRepo, packetPath = null, report
 }
 
 // The currencies of the test orders created by every QA run the QA stage
-// records against the current build: its live record and the records its
-// history keeps, each verdict read through readQaFullVerdict. A run judged
-// another build, or whose verdict cannot be read back under the run id its
-// record names, contributes nothing. `qa run` adds these to its own orders
-// for the currency-coverage row, and `next` lists the currencies still owed
-// from the same set, so one run per currency clears the row.
+// records against the current build (stage-ledger qaRecordsForBuild: the live
+// record and the records its history keeps), each verdict read through
+// readQaFullVerdict. A run whose verdict cannot be read back under the run id
+// its record names contributes nothing. An order with no recorded currency
+// counts in its run's currency, the one the run's browser-order-currency row
+// names, as the current run's own orders do. `qa run` adds these to its own
+// orders for the currency-coverage row, and `next` lists the currencies still
+// owed from the same set, so one run per currency clears the row.
 export function testOrderCurrenciesForBuild({ report, targetRepo, packetPath = null, reportPath = null }) {
   const currencies = new Set();
-  const build = currentBuildFingerprint(report);
-  const qa = report?.stages?.qa;
-  if (!build || !isPlainObject(qa)) return currencies;
-  for (const record of [qa, ...(Array.isArray(qa.history) ? qa.history : [])]) {
-    if (!isPlainObject(record) || record.evidence?.qc_build_fingerprint !== build || !isNonEmptyString(record.verdict_run_id)) continue;
+  for (const record of qaRecordsForBuild(report, currentBuildFingerprint(report))) {
     const verdict = readQaFullVerdict({ stage: record, targetRepo, packetPath, reportPath });
     if (verdict?.run_id !== record.verdict_run_id) continue;
+    const runCurrency = (Array.isArray(verdict.assertions) ? verdict.assertions : [])
+      .find((assertion) => typeof assertion?.id === "string" && assertion.id.startsWith("browser-order-currency:"))?.evidence?.requested;
     for (const order of Array.isArray(verdict.test_orders) ? verdict.test_orders : []) {
-      const code = order?.ok === true && order.verification?.currency;
+      if (order?.ok !== true) continue;
+      const code = isNonEmptyString(order.verification?.currency) ? order.verification.currency : runCurrency;
       if (isNonEmptyString(code)) currencies.add(code.trim().toUpperCase());
     }
   }

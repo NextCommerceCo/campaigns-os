@@ -100,9 +100,9 @@ function sameJson(a, b) {
 
 // The closed field list a history entry copies from the record it archives,
 // beside archived_at, archived_by and reason_code. No reader takes completion
-// or input currency from history. One reader takes test-order currencies from
-// QA history: the QA records of the current build name the verdicts whose
-// orders count toward the currency-coverage row (testOrderCurrenciesForBuild).
+// or input currency from history. qaRecordsForBuild hands one reader the QA
+// records of a build, whose verdicts' test-order currencies count toward the
+// currency-coverage row (qc-results testOrderCurrenciesForBuild).
 const HISTORY_ENTRY_FIELDS = Object.freeze([
   "status", "completed_at", "recorded_by", "performed_by",
   "build_fingerprint", "source_build_fingerprint", "source_package_material_fingerprint",
@@ -610,9 +610,26 @@ export function qaGateEvidence(report, gate) {
   };
 }
 
+// The build a QA record (the live record or a history entry) was recorded against.
+function qaRecordBuildFingerprint(record) {
+  return optionalString(record?.evidence?.qc_build_fingerprint)
+    || optionalString(record?.evidence?.source_build_fingerprint);
+}
+
 export function qaRecordedBuildFingerprint(report) {
-  return optionalString(report?.stages?.qa?.evidence?.qc_build_fingerprint)
-    || optionalString(report?.stages?.qa?.evidence?.source_build_fingerprint);
+  return qaRecordBuildFingerprint(report?.stages?.qa);
+}
+
+// The QA records recorded against `buildFingerprint` that name a verdict: the
+// live record and the replaced records its history keeps, newest first. Not
+// proof of completion: the currency-coverage reader takes only the test-order
+// currencies of the verdicts they name (qc-results testOrderCurrenciesForBuild).
+export function qaRecordsForBuild(report, buildFingerprint) {
+  const build = optionalString(buildFingerprint);
+  const qa = report?.stages?.qa;
+  if (!build || !isPlainObject(qa)) return [];
+  const history = Array.isArray(qa.history) ? qa.history.filter(isPlainObject).reverse() : [];
+  return [qa, ...history].filter((record) => qaRecordBuildFingerprint(record) === build && optionalString(record.verdict_run_id));
 }
 
 // #720: the build whose completed QA a page-scoped run extends. A completed

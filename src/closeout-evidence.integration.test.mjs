@@ -462,6 +462,26 @@ test("next names the --currency runs this build still owes after QA is done, and
   assert.deepEqual([...testOrderCurrenciesForBuild({ report, targetRepo: join(fixture.dir, "target-page-kit"), packetPath: fixture.packetPath, reportPath: fixture.reportPath })].sort(), ["EUR", "GBP", "USD"]);
 });
 
+// The two record shapes the coverage reader must still read: a record that
+// names its build only as evidence.source_build_fingerprint (written before
+// qc_build_fingerprint existed), and an order whose body echoed no currency,
+// which counts in its run's currency as the current run's orders do.
+test("build currencies read a record bound by source_build_fingerprint and an order counted in its run currency", () => {
+  const fixture = target({ prefix: "closeout-evidence-currency-shapes-" });
+  const targetRepo = join(fixture.dir, "target-page-kit");
+  runProducer(fixture, { runId: "SYNTHRUN000000000000000001", completedAt: "2026-09-11T02:00:00.000Z", currency: "USD", inTarget: true });
+  runProducer(fixture, {
+    runId: "SYNTHRUN000000000000000002",
+    completedAt: "2026-09-11T03:00:00.000Z",
+    inTarget: true,
+    assertions: [{ id: "browser-order-currency:accept", family: "browser-test-order", page: "checkout", status: "fail", severity: "blocker", evidence: { requested: "EUR", order_currency: null } }],
+  });
+  const report = readReport(fixture.reportPath);
+  const [older] = report.stages.qa.history;
+  older.evidence = { source_build_fingerprint: older.evidence.qc_build_fingerprint };
+  assert.deepEqual([...testOrderCurrenciesForBuild({ report, targetRepo, packetPath: fixture.packetPath, reportPath: fixture.reportPath })].sort(), ["EUR", "USD"]);
+});
+
 test("a bump marked is_order_bump alone is also in the first QA command's cart", () => {
   const fixture = target({
     prefix: "closeout-evidence-order-bump-",
