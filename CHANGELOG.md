@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.71.1+agent.5] - 2026-11-16
+
+### Changed
+
+- `docs/qa-and-test-orders.md` says what `browser-test-order:tier-coverage` covers: it appears only on a `--test-order tiers` run and names checkout tiers (package rows and offer-only quantity tiers) with no order in that run. A `common` or `full` run never carries it, and upsell tiers are never listed; their prices are checked tier by tier under `--browser` instead. No behaviour changes.
+
 ## [1.71.1+agent.4] - 2026-11-16
 
 ### Fixed
