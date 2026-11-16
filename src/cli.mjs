@@ -399,7 +399,7 @@ Usage:
     A refused invocation writes no file of its own. One effect still precedes argument refusal: \`start\`, \`prepare-build\`, \`build\`, \`run start\` and \`run end\` close out a STALE run session at the root they are about to act on (Run Record assembled and remitted under the usual consent, session file cleared) before argv is refused — a declared effect of those commands. --no-write suppresses that closeout too, so a --no-write invocation leaves the target byte-identical; a --flag=value token, which every command refuses, skips it as well.
   campaigns-os telemetry status|on [--proxy-base <url>] [--json]   # machine-level Run Telemetry consent (gates remit only; capture is always local). \`on\` records consent for ONE endpoint: the canonical NEXT endpoint by default, or the --proxy-base you name (a loopback or staging receiver); \`status\` reports the stored scope and checks it against the canonical endpoint or the --proxy-base you name
   campaigns-os telemetry off [--json]                                  # turn remit off for every endpoint (takes no --proxy-base)
-  campaigns-os telemetry list [--packet <json> | --admin-key-env <VAR>] [--since <ISO>] [--package <v>] [--surface <s>] [--trusted] [--limit <n>] [--proxy-base <url>] [--trust-proxy-base] [--json]   # read stored Run Records: tenant scope via the packet's campaign key, or cross-tenant via the ops admin key (default env CAMPAIGN_OPS_ADMIN_KEY). --proxy-base must be https unless it is a loopback host (allowed over http, with a warning that the credential is in clear).
+  campaigns-os telemetry list [--packet <json> | --admin-key-env <VAR>] [--since <ISO>] [--package <v>] [--surface <s>] [--limit <n>] [--proxy-base <url>] [--trust-proxy-base] [--json]   # read stored Run Records: tenant scope via the packet's campaign key, or cross-tenant via the ops admin key (default env CAMPAIGN_OPS_ADMIN_KEY). --proxy-base must be https unless it is a loopback host (allowed over http, with a warning that the credential is in clear).
   campaigns-os run start [--packet <json>] [--run-id <id>] [--lifecycle-journal <path>] [--force] [--json]   # begin an ambient run session: one run_id + journal auto-shared by every command, no per-command flags; with --packet the session lives in the packet's target repo, whatever the cwd
   campaigns-os run status [--json]                                 # active session + incomplete stages + deviation count + exact next command; read-only — it never sweeps and never journals
   campaigns-os run end [--packet <json>] [--no-remit] [--no-write] [--proxy-base <url>] [--json]   # assemble the aggregated Run Record for the session, then clear it (also closes out a stale session at cwd); --proxy-base is handed to run-record, so the session record remits to that receiver under the consent scoped to it
@@ -8645,6 +8645,12 @@ const TELEMETRY_LIST_MAX_BODY_BYTES = 4_000_000; // the receiver caps a listing 
 
 export async function telemetryList(args, { fetchImpl = globalThis.fetch } = {}) {
   if (typeof fetchImpl !== "function") throw refused("Global fetch is not available. Upgrade to Node 18+.");
+  // The listing carries no trust stamp: toolkit
+  // remits are anonymous, so a trusted filter could only return all or none.
+  // Refused rather than ignored, so a caller asking for trusted rows is not
+  // handed every anonymous one. A record's own stamp stays on
+  // GET /api/runs/:run_id.
+  if (Object.hasOwn(args, "trusted")) throw refused("telemetry list: --trusted was removed; Run Record listings no longer carry a trust stamp. Drop the flag. A single record's trust stamp is on GET /api/runs/:run_id.");
   // Same transport gate the remit rail uses: https, or a loopback host with a
   // loud warning that the credential is in clear. Anything else is refused
   // here, before a credential is attached to a request and before the packet
@@ -8691,7 +8697,6 @@ export async function telemetryList(args, { fetchImpl = globalThis.fetch } = {})
   if (optionalString(args.since)) query.set("since", args.since);
   if (optionalString(args.package)) query.set("package", args.package);
   if (optionalString(args.surface)) query.set("surface", args.surface);
-  if (args.trusted === true || args.trusted === "true") query.set("trusted", "true");
   const url = `${proxyBase}${DEFAULT_RUNS_ENDPOINT}${query.size ? `?${query}` : ""}`;
   const response = await fetchImpl(url, { headers, signal: AbortSignal.timeout(TELEMETRY_LIST_TIMEOUT_MS) });
   const text = await boundedResponseText(response, { maxBodyBytes: TELEMETRY_LIST_MAX_BODY_BYTES, timeoutMs: TELEMETRY_LIST_TIMEOUT_MS });
@@ -8721,7 +8726,7 @@ export async function telemetryList(args, { fetchImpl = globalThis.fetch } = {})
     return;
   }
   for (const run of runs) {
-    console.log(`  ${String(run.received_at || "").slice(0, 19).padEnd(19)}  ${String(run.run_id || "").padEnd(30)}  ${String(run.package_version || "-").padEnd(14)}  ${String(run.primary_surface || "-").padEnd(12)}  ${run.trusted === true ? "trusted" : "anon"}  ${run.campaign_key_hash ? "scoped" : "unscoped"}`);
+    console.log(`  ${String(run.received_at || "").slice(0, 19).padEnd(19)}  ${String(run.run_id || "").padEnd(30)}  ${String(run.package_version || "-").padEnd(14)}  ${String(run.primary_surface || "-").padEnd(12)}  ${run.campaign_key_hash ? "scoped" : "unscoped"}`);
   }
 }
 
