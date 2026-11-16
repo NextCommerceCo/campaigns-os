@@ -1313,6 +1313,7 @@ function renderEvidenceDebt(debt, lines) {
   for (const name of ["polish", "qa"]) {
     const stage = debt[name];
     const explanation = stage.status === "current" ? "recorded build matches the current build"
+      : stage.advisory ? "advisory: the change since its review is page-only, so it is reported and not required"
       : stage.status === "owed" ? "evidence is owed for the current build"
         : `evidence currency is unknown (${stage.reason}); absence of proof is not no debt`;
     lines.push(`  ${name}: ${stage.status} — ${explanation}`);
