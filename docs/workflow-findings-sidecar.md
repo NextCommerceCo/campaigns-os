@@ -361,6 +361,9 @@ remit(path, payload, proxyBase)   // mirrors qa-node.mjs postVerdict
 - **Readable back** — `campaigns-os telemetry list --packet <json>` lists the
   tenant scope; `campaigns-os telemetry list` with `CAMPAIGN_OPS_ADMIN_KEY` set
   (or `--admin-key-env <VAR>`) lists cross-tenant, unscoped records included.
+  Filters are `--since`, `--package` and `--surface`. Listing rows carry no
+  trust stamp, so there is no trusted filter or column: `--trusted` is refused
+  before any request. A single record's stamp is on `GET /api/runs/:run_id`.
   A 2xx is a listing only when its body carries `runs[]`: any other body (a
   maintenance page, an intermediary's HTML) is an error naming the status and
   an excerpt, and exits non-zero, rather than "showing 0 of 0 returned".

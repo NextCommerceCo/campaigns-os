@@ -446,7 +446,7 @@ test("CLI: a fresh (non-stale) session is never swept by run start", () => {
 
 test("CLI: telemetry list uses the admin key from env for the cross-tenant listing", async () => {
   await withTempDirAsync(async (dir) => {
-    const runs = [{ run_id: "run_a", received_at: "2026-09-10T01:02:03.000Z", package_version: "0.1.0-alpha.0", primary_surface: "doctor", trusted: false, campaign_key_hash: null }];
+    const runs = [{ run_id: "run_a", received_at: "2026-09-10T01:02:03.000Z", package_version: "0.1.0-alpha.0", primary_surface: "doctor", campaign_key_hash: null }];
     await withServer(() => ({ status: 200, body: { ok: true, scope: "admin", count: 1, total: 1, truncated: false, runs } }), async (base, requests) => {
       const env = { ...isolatedEnv(dir), CAMPAIGN_OPS_ADMIN_KEY: "admin_secret" };
       const run = await runCliAsync(dir, ["telemetry", "list", "--proxy-base", base, "--since", "2026-09-01T00:00:00Z", "--json"], env);
@@ -463,6 +463,24 @@ test("CLI: telemetry list uses the admin key from env for the cross-tenant listi
       const human = await runCliAsync(dir, ["telemetry", "list", "--proxy-base", base], env);
       assert.equal(human.status, 0, human.stderr);
       assert.match(human.stdout, /run_a .* unscoped/);
+    });
+  });
+});
+
+test("CLI: telemetry list refuses --trusted before any request, and rows carry no trust column", async () => {
+  await withTempDirAsync(async (dir) => {
+    const runs = [{ run_id: "run_b", received_at: "2026-11-16T01:02:03.000Z", package_version: "1.71.2", primary_surface: "doctor", campaign_key_hash: "h" }];
+    await withServer(() => ({ status: 200, body: { ok: true, scope: "admin", count: 1, total: 1, truncated: false, runs } }), async (base, requests) => {
+      const env = { ...isolatedEnv(dir), CAMPAIGN_OPS_ADMIN_KEY: "admin_secret" };
+      const refusedRun = await runCliAsync(dir, ["telemetry", "list", "--proxy-base", base, "--trusted"], env);
+      assert.notEqual(refusedRun.status, 0);
+      assert.match(refusedRun.stderr, /--trusted was removed/);
+      assert.equal(requests.length, 0);
+      const human = await runCliAsync(dir, ["telemetry", "list", "--proxy-base", base], env);
+      assert.equal(human.status, 0, human.stderr);
+      assert.match(human.stdout, /run_b .* scoped/);
+      assert.doesNotMatch(human.stdout, /\banon\b|\btrusted\b/);
+      assert.equal(requests[0].url, "/api/runs");
     });
   });
 });

@@ -5800,6 +5800,33 @@
         }
       ],
       "entry_sha256": "935cf5298e7b24d25a5d5c8273504ad99e518ff31307b91f5e0dde4c4b10411b"
+    },
+    {
+      "id": "RL-0368",
+      "sequence": 352,
+      "date": "2026-11-16",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.2+agent.1",
+      "changelog_sha256": "8e36b2ef7a77e5eceeb88f9e80ad744022d3dc49aa23762164db79be2f55d0d3",
+      "agent_impact": "campaigns-os telemetry list no longer takes --trusted and its table no longer prints a trusted/anon column. Run Record listing rows carry no trusted, trust_level or verified_at, and the receiver answers any trusted= query with 400 trusted_filter_removed, so the CLI refuses --trusted before sending anything. telemetry list --json passes rows through as the receiver sends them. A single record's trust stamp stays on GET /api/runs/:run_id, and QA verdict trust (qa promote's untrusted refusal, verdict_untrusted) is unchanged.",
+      "compatibility": "breaking",
+      "migration": "Drop --trusted from any telemetry list call; it now exits non-zero. Read a record's trust stamp from GET /api/runs/:run_id if needed.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "telemetry list removes --trusted (now refused before the request) and the trusted/anon column from its table output."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/workflow-findings-sidecar.md",
+          "surface_entry": "docs/workflow-findings-sidecar.md",
+          "summary": "Names telemetry list's filters and says listing rows carry no trust stamp."
+        }
+      ],
+      "entry_sha256": "3653339677318dea8ee95b3a2ac97bab9ff6b403affc624323c4612466c28085"
     }
   ]
 }

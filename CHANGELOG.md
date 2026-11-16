@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.71.2+agent.1] - 2026-11-16
+
+### Removed
+
+- `telemetry list` drops `--trusted` and the trusted/anon column, because Run Record listings no longer carry a trust stamp; `--trusted` is now refused before any request.
+
 ## [1.71.2] - 2026-11-16
 
 This release packages the five `1.71.1+agent` sections below, the fixes from the sixth simulated build batch. For a campaign, what changes is that QA stops blocking a correct upsell whose prices the SDK renders as `unitPrice`, one QA run proves the checkout add-on, and currency coverage is judged across the build, so running once per currency clears it and `next` names the currencies a rebuilt campaign still owes. `record build`, `readback`, doctor and `next` agree that Polish is advisory after a page-only change. `after-edit` no longer proposes a subscription interval for one-time packages or a spec rewrite for a copy edit; a preview URL given at `start` no longer stalls `next`; and doctor's copy checks read the built pages. No command, flag, schema or contract changes. One output change for `next --json` readers: the `qa_run_bump` action and the `currency_commands` field on `qa_run` are gone. The add-on cart is now in `qa_run` itself, and owed currencies are `qa_run_currency` actions. To take it, pin `@nextcommerce/campaigns-os@1.71.2` and refresh the installed skills to `1.71.2+skills.1`.
