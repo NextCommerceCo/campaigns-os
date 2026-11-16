@@ -265,12 +265,33 @@ export function frontmatterScalars(text, keys = PAGE_FILE_FRONTMATTER_KEYS) {
   const normalized = String(text ?? "").replace(/^\uFEFF/, "").replace(/\r\n/g, "\n");
   const block = normalized.match(/^---\n([\s\S]*?)\n---/);
   if (!block) return values;
+  // A block written as a JSON object is a YAML flow mapping to page-kit's
+  // reader, so its permalink is honoured; read the same keys from it.
+  const object = jsonFrontmatter(block[1]);
+  if (object) {
+    for (const key of keys) {
+      const value = object[key];
+      if (typeof value === "string") values[key] = value.trim() || null;
+      else if (typeof value === "number") values[key] = String(value);
+    }
+    return values;
+  }
   for (const line of block[1].split("\n")) {
     const match = line.match(/^([A-Za-z_][A-Za-z0-9_]*):\s*(.*?)\s*$/);
     if (!match || !Object.hasOwn(values, match[1]) || values[match[1]] !== null) continue;
     values[match[1]] = normalizePermalinkValue(match[2]);
   }
   return values;
+}
+
+function jsonFrontmatter(text) {
+  if (!text.trim().startsWith("{")) return null;
+  try {
+    const parsed = JSON.parse(text);
+    return isPlainObject(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 /**

@@ -575,7 +575,7 @@ network paths. The repo-derived fields:
 | Spec field | Repo authority |
 |---|---|
 | `global_config.sdk_version`, and `runtime.sdk_version` when the spec declares the alias (so the two never conflict) | `_data/campaigns.json[public_route_slug].sdk_version` |
-| `funnels[].pages[].page_url` (the legacy `funnel_pages[].page_url` mirror, when present, is reconciled to the same route on every run) | the page tree under `assembly.output_dir` (default `src/<public_route_slug>/`), read by page-kit's own rule: the file's basename alone (`checkout.html` → `checkout/` wherever it sits; `index.html` → the entry route; a nested `index.html` collides with the root and is not read), or a frontmatter `permalink` in the `/<slug>/<route>/` form prepare-build writes (page-kit serves a permalink verbatim, so any other spelling is a repo defect, refused) |
+| `funnels[].pages[].page_url` (the legacy `funnel_pages[].page_url` mirror, when present, is reconciled to the same route on every run) | the page tree under `assembly.output_dir` (default `src/<public_route_slug>/`), read by page-kit's own rule: the file's basename alone (`checkout.html` → `checkout/` wherever it sits; `index.html` → the entry route; a nested `index.html` collides with the root and is not read), or a frontmatter `permalink` (in a YAML block or one written as a JSON object) in the `/<slug>/<route>/` form prepare-build writes (page-kit serves a permalink verbatim, so any other spelling is a repo defect, refused) |
 | `analytics.providers.gtm.containerId` | `_data/campaigns.json[public_route_slug].gtm_id` |
 | `analytics.providers.facebook.pixelId` | `_data/campaigns.json[public_route_slug].fb_pixel_id` |
 | `analytics.vendors.<vendor>.id`, for each starter-template vendor adapter: `ga4`, `axon`, `taboola`, `triplewhale`, `tiktok`, `northbeam`, `snap`, `pinterest` | the vendor's id key in the same entry: `ga4_id`, `axon_event_key`, `taboola_account_id`, `triplewhale_name`, `tiktok_pixel_id`, `northbeam_client_id`, `snap_pixel_id`, `pinterest_tag_id` |
@@ -2486,8 +2486,8 @@ Each command also refuses a stage `next` has not reached: while doctor's
 prepare-build gate is set (`next` answers prepare-build) or while an earlier
 stage in the order below is not terminal. The exception is the one `next`
 makes: on the local preview, a polish doctor carries forward (never recorded
-for this build) does not hold `record deploy` back, as it does not hold `next`;
-polish stays owed and QA reports it. When every mapped page is template stock
+for this build, whether or not `polish capture` ran) does not hold `record deploy`
+back, as it does not hold `next`; polish stays owed and QA reports it. When every mapped page is template stock
 (`skip_reason`), Polish is not applicable on any target: `polish capture` and
 `record polish` record `skipped` with evidence `result: "excluded"`,
 `reason_code: "template_stock"` and the reason that there is no design route to

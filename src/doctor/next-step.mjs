@@ -473,8 +473,8 @@ function pickNextStage(report, { errors = [], derived = null }, prepareBuildGate
   }
 
   for (const cliStage of NEXT_STAGE_ORDER) {
-    // A first local preview may carry missing Polish forward. A theme waiver
-    // or prior capture makes the recorded Polish stage owed again.
+    // A local preview may carry missing Polish forward, an optional capture
+    // included. A theme waiver makes the recorded Polish stage owed again.
     if (cliStage === "polish" && polishCarriedForwardForLadder(report, polishGate)) continue;
     const reportKey = reportKeyForCliStage(cliStage);
     const stage = report.stages[reportKey];

@@ -5827,6 +5827,45 @@
         }
       ],
       "entry_sha256": "3653339677318dea8ee95b3a2ac97bab9ff6b403affc624323c4612466c28085"
+    },
+    {
+      "id": "RL-0372",
+      "sequence": 353,
+      "date": "2026-11-16",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.2+agent.5",
+      "changelog_sha256": "cad2d3afd3a58a68c327f5cf5c43a1c1b6d248faf98ef9baa7a1854ef41f03b4",
+      "agent_impact": "On the local preview, next carries a missing Polish forward to deploy and QA, and an optional polish capture no longer changes that: record deploy follows next instead of asking for record polish, and record polish leaves the deploy recorded for the same build alone. When stages.deploy is required after a rebuild, next's Owed stages line names deploy. spec derive and after-edit read a page's frontmatter written as a JSON object, so an entry page served at the campaign root by its permalink is not read as moved, and a copy or style edit there shows no CampaignSpec derive preview.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "record deploy follows next past a local-preview Polish whether or not polish capture ran; derive reads a permalink from frontmatter written as a JSON object."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "next's Owed stages line names deploy when stages.deploy is required."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/ci.mjs",
+          "surface_entry": null,
+          "summary": "The shared evidence lines can name a required deploy beside owed Polish and QA."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/next-step.mjs",
+          "surface_entry": null,
+          "summary": "Comment only: an optional capture no longer ends the local-preview Polish carry."
+        }
+      ],
+      "entry_sha256": "edbfc5c3bd5c984b6c11805c4bc0b2408388214926e737439f71fa92a1eb867a"
     }
   ]
 }
