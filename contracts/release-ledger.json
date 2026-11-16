@@ -5827,6 +5827,45 @@
         }
       ],
       "entry_sha256": "3653339677318dea8ee95b3a2ac97bab9ff6b403affc624323c4612466c28085"
+    },
+    {
+      "id": "RL-0373",
+      "sequence": 353,
+      "date": "2026-11-16",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.2+agent.6",
+      "changelog_sha256": "a580f11ae26352cf4c5071358ea2f349069484008aec8e304e7b201f9aa53b1b",
+      "agent_impact": "record build and next name the way through output_unchanged_after_input_change; spec derive removes a handed-off page a recorded rebuild removed and after-edit no longer calls a spec with an unbuilt page current; browser-sdk-debugger waits for the overlay; findings on pages a page-only change did not touch read unknown/page_not_in_change; low_contrast names the failing CTA; record deploy retries a reset asset request and names a recurring reset.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "spec derive passes the built pages recorded rebuilds removed, so a handed-off page with no projection is removed."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": null,
+          "summary": "assembly.output_unchanged_after_input_change names both ways through, from one shared text."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/next-step.mjs",
+          "surface_entry": null,
+          "summary": "next's build reason for output_unchanged_after_input_change carries that text after the code."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Adds cause_reason page_not_in_change."
+        }
+      ],
+      "entry_sha256": "56ec5f0a0713252a2ca0be36adec717490952859c5b67fb0bc0c4f1fcf19b60c"
     }
   ]
 }

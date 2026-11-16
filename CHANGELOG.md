@@ -2,6 +2,17 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.71.2+agent.6] - 2026-11-16
+
+### Fixed
+
+- `record build` and `next`, when the build is owed as `output_unchanged_after_input_change`, now say how to get through instead of printing only the code. Rebuilding to the same output does not clear it. If the change should alter the pages, edit the page sources, rebuild and record build again. If the pages already carry the change (they were rebuilt and recorded before `record spec` or `record brief` ran) or it needs no page change, tell the operator, and only on their decision record build with `--deviation-reason "<the operator's reason>"`. Doctor's `assembly.output_unchanged_after_input_change` warning reads the same.
+- After handoff, `spec derive` removes a spec page whose built page a recorded rebuild removed, even when no page-kit projection names its file (a page built from the starter template), so `after-edit` previews the removal and binds it with `record spec` instead of reporting "Spec is current". When derive still finds a spec page with no page file, `after-edit` lists it as a possibly stale spec, and derive's `page_file_not_found` row on a handed-off campaign says how to remove the page by hand.
+- `browser-sdk-debugger:<page>` waits for the debugger overlay and its selectors up to the SDK display-ready deadline (15 s) before reading the page, so an overlay that mounts after network idle no longer reads "debugger overlay incomplete". The evidence adds `observation.overlay_wait_ms`.
+- When QA is owed only for a page-only change to the build, a new finding on a page that change did not touch reads `unknown` with cause reason `page_not_in_change`, not `caused_by_change`.
+- `browser-primary-cta:<page>` `low_contrast` now names the CTA whose measured text is below its requirement, with its ratio, for example `low_contrast ("No thanks" button.decline: 3.54:1, needs 4.5:1)`. The first CTA listed in the evidence can be another one on a gradient background, which is only reviewed.
+- `record deploy` retries once a served asset request the server reset (ECONNRESET). When the reset recurs, it says the server dropped the request rather than "is not serving the recorded build".
+
 ## [1.71.2+agent.1] - 2026-11-16
 
 ### Removed
