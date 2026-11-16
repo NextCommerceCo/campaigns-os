@@ -5563,6 +5563,33 @@
         }
       ],
       "entry_sha256": "b34b02e961b50f0de36229497cfb3362a234f990b59f3cc3b0f3d9644f705818"
+    },
+    {
+      "id": "RL-0363",
+      "sequence": 347,
+      "date": "2026-11-16",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.1+agent.2",
+      "changelog_sha256": "5c61c05a1c3233269d48abc6fe4d2fee7040526e030c5de7e6b02bbde8905bfe",
+      "agent_impact": "next no longer emits a qa_run_bump action: when the checkout QA drives declares an order bump, qa_run's command already carries --cart <base>:1,<bump>:1, and qa resolve's Next expected proof prints the same --cart. next no longer puts currency_commands on qa_run: it lists one qa_run_currency action per currency still owed (the qa_run command plus --currency <code>), at the QA stage and also after QA is done when the current build has no test order in a listed currency; done stays done. The browser-test-order:currency-coverage warn row counts created test orders from every QA run the QA stage recorded against the current build fingerprint, not only this run's, so one run per currency clears it. Agents that read currency_commands or qa_run_bump must read qa_run_currency actions and qa_run's command instead.",
+      "compatibility": "compatible",
+      "migration": "A reader of next --json that took qa_run.currency_commands reads the qa_run_currency actions instead, and one that ran qa_run_bump runs qa_run, whose command now carries the --cart. Bundled skills read neither field.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "next: qa_run carries the order-bump --cart and qa_run_bump is removed; qa_run_currency actions replace qa_run.currency_commands and also appear after QA is done for currencies the current build has no test order in."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Documents the --cart in the first proof command, qa_run_currency, and build-wide currency coverage."
+        }
+      ],
+      "entry_sha256": "362460ef994d258a1a66b08edd667d9b3c3cce2c0dacb488ee84fce6c27e0417"
     }
   ]
 }

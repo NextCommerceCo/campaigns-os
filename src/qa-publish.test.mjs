@@ -34,6 +34,20 @@ test("qa resolve names the next proof command when a base URL is known", () => {
   assert.match(lines[2], /publishes to the portal by default/);
 });
 
+// One run proves the add-on: the first proof command carries the --cart the
+// order-bump-coverage row would otherwise ask for in a second full run.
+test("qa resolve puts a declared checkout order bump in the proof command's cart", () => {
+  const base = "http://localhost:4173/demo";
+  const funnels = (packages) => [{ pages: [
+    { page_id: "checkout", page_type: "checkout", is_entry: true, url: `${base}/checkout/`, expected_next_url: `${base}/receipt/`, packages },
+    { page_id: "receipt", page_type: "thankyou", url: `${base}/receipt/` },
+  ] }];
+  const proof = (packages) => qaResolveNextProofLines({ map_id: "demo-map", packet_path: "/tmp/campaign-runtime.build.json", base_url: `${base}/`, entry_urls: [], funnels: funnels(packages) })[0];
+
+  assert.match(proof([{ ref_id: "2", qty: 1, is_order_bump: true }, { ref_id: "1", qty: 1 }]), / --browser --test-order common --cart 1:1,2:1$/);
+  assert.match(proof([{ ref_id: "1", qty: 1 }]), / --browser --test-order common$/, "no bump, no --cart");
+});
+
 test("qa resolve asks for a tested URL before browser and typed-card proof", () => {
   const lines = qaResolveNextProofLines({
     map_id: "shw-round-2",

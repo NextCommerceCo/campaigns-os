@@ -2,6 +2,14 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.71.1+agent.2] - 2026-11-16
+
+### Fixed
+
+- `browser-test-order:currency-coverage` judges the build, not one run. A currency counts as covered when a created test order in it exists for the current build, in this run or in an earlier QA run the QA stage recorded against the same build fingerprint. Before, each `qa run --currency <code>` replaced the stored verdict with a run that warned about every other currency, so following the row's advice never cleared it.
+- `next` lists the currency runs still owed as `qa_run_currency` actions, one per currency, each the `qa_run` command plus `--currency <code>`. At the QA stage they cover every listed currency other than `campaign.currency`; once QA is done they name each listed currency this build has no test order in, so a change that rebuilds the campaign no longer ends at `done` with only one currency proved. QA stays done. The `currency_commands` field on `qa_run` is gone; read the actions instead.
+- When the checkout QA drives declares an order bump, the first proof command carries `--cart <base>:1,<bump>:1`: `next`'s `qa_run` action, its "Next expected proof" line, the QA stage prompt, and `qa resolve`'s "Next expected proof". One run now proves the charged add-on, so the separate `qa_run_bump` action is gone.
+
 ## [1.71.1+agent.1] - 2026-11-16
 
 ### Fixed
