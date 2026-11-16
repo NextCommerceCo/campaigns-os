@@ -5542,6 +5542,27 @@
         }
       ],
       "entry_sha256": "f947a03b8e98366eae2493605c397ea51ef523118657364796e67d44d22234cc"
+    },
+    {
+      "id": "RL-0366",
+      "sequence": 346,
+      "date": "2026-11-16",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.1+agent.5",
+      "changelog_sha256": "ad3874d89ed7e6b626c36ea96816c1ef7c4c40382689c604ab800a2e6c899ef8",
+      "agent_impact": "Documentation only. browser-test-order:tier-coverage appears only on a --test-order tiers, tiers:common or tiers:full run and lists checkout tiers (package rows and offer-only quantity tiers) with no order in that run. Its absence on a common or full run proves nothing about other tiers, and upsell tiers are never listed; under qa run --browser each rendered upsell tier price is compared with that tier's calculated total instead.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "States the scope of browser-test-order:tier-coverage: tiers runs only, checkout tiers only, upsell tiers not listed."
+        }
+      ],
+      "entry_sha256": "195cb16446fec83dd90938e9b7321a1e8e9036aae294d0058219bec43cf92c6f"
     }
   ]
 }

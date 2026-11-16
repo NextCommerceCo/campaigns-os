@@ -2063,6 +2063,18 @@ spec declares neither selector tiers nor an enabled offer code — use
 CampaignSpec, `tiers` needs a packet/spec-driven run; non-packet `--site`
 runs have no declared tiers to iterate.
 
+The warn row `browser-test-order:tier-coverage` belongs to this mode. It
+appears only on a `--test-order tiers`, `tiers:common` or `tiers:full` run, and
+it names the checkout tiers that run placed no order for: package rows on the
+checkout, plus quantity tiers that only an offer declares. A `common` or `full`
+run orders the default tier and never carries the row, so its absence there
+says nothing about the other tiers. Upsell and downsell tiers (an upsell's 1x,
+2x and 3x bundle cards) are not checkout tiers: no mode plans one order per
+upsell tier, and the row never lists them. Under `qa run --browser` the price
+check compares each rendered upsell tier with what calculate charges for that
+tier, so a wrong tier price still reads `mismatch` without an order; ordering a
+tier other than the one the accept path takes is a manual step.
+
 **Multi-funnel specs are covered in one run**: every funnel's checkout page
 contributes plans, and each plan is driven against the checkout page that
 declares its tier or coupon (strict-selecting a ref on a checkout that does
