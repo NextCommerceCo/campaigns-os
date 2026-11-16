@@ -1317,6 +1317,14 @@ async function sdkDebuggerAssertions(context, page, args) {
     const postSettleStarted = performance.now();
     await debugPage.waitForTimeout(1000).catch(() => {});
     observation.post_settle_ms = elapsedMilliseconds(postSettleStarted);
+    // The overlay mounts after the SDK is ready, which can be after network
+    // idle: wait for it up to the SDK display-ready deadline, as the other
+    // SDK reads do, and read what is there when the deadline passes.
+    const overlayStarted = performance.now();
+    await debugPage.waitForFunction(() => document.documentElement.classList.contains("next-display-ready")
+      && ["#next-debug-overlay-host", "#debug-selectors-container", "#debug-currency-selector", "#debug-country-selector", "#debug-locale-selector"].every((selector) => document.querySelector(selector)),
+    null, { timeout: SDK_DISPLAY_READY_TIMEOUT_MS, polling: 100 }).catch(() => {});
+    observation.overlay_wait_ms = elapsedMilliseconds(overlayStarted);
     const evidence = await debugPage.evaluate(() => ({
       url: location.href,
       displayReady: document.documentElement.classList.contains("next-display-ready"),
