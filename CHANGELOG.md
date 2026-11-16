@@ -2,6 +2,13 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.71.1+agent.3] - 2026-11-16
+
+### Fixed
+
+- One answer to whether Polish is owed: the evidence debt `after-edit` computes. After a page-only rebuild, `record build` keeps the Polish record that reviewed the earlier build instead of writing `stages.polish.status = required`, so `readback`, doctor, `next` and `record deploy` all read Polish as advisory, and an optional `polish capture` records its evidence without sending `next` back to Polish. On a campaign whose every mapped page is template stock, `record build` records Polish as skipped (`template_stock`) for the build, as `polish capture` does, so doctor and `readback` no longer say Polish is owed while `next` skips it. `readback` says "advisory" on an advisory Polish's evidence-debt line, and on the local preview `record build` says next carries a missing Polish forward beside the required status (F-157, F-211).
+- `spec derive` and `after-edit` never write an `interval` or `interval_count` for a package the campaign marks `is_recurring: false`; the campaign states a cadence on one-time packages too. `after-edit` shows a CampaignSpec derive preview only when the edit changed a field the spec derives from the repo (the SDK pin, page routes or analytics ids), so a copy, markup or style edit no longer offers a rewrite of the offer and package fields; `spec derive` still refreshes those on its own (F-214).
+
 ## [1.71.1] - 2026-11-15
 
 This release packages the twelve `1.71.0+agent` sections below, the fixes from the fifth simulated build batch. For a campaign, what changes is that QA results stop reading as more proof than they hold and stop failing correct pages: a test order that bought the wrong upsell fails, a correct tiered upsell or an SDK address block no longer reads as a mismatch or a missing field, and new warn rows name the currencies, tiers and add-ons no test order covered. `next`, `after-edit`, `record build` and `record deploy` agree on what an edit owes, a starter used as-is closes Polish and theme with a stated reason, and `record build` writes `adapter_decisions.template_files_copied` itself. Agent wording treats the supplied design and content as final. No command, flag, schema or contract changes, so nothing a consumer reads breaks. To take it, pin `@nextcommerce/campaigns-os@1.71.1` and refresh the installed skills to `1.71.1+skills.1`.

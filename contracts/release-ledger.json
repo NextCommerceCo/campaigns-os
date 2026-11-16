@@ -5542,6 +5542,39 @@
         }
       ],
       "entry_sha256": "f947a03b8e98366eae2493605c397ea51ef523118657364796e67d44d22234cc"
+    },
+    {
+      "id": "RL-0364",
+      "sequence": 346,
+      "date": "2026-11-16",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.1+agent.3",
+      "changelog_sha256": "0a038267d618705b7137a214ecbda0ce6478c908deab425e75e962634ba4e2fd",
+      "agent_impact": "Whether Polish is owed has one answer, the evidence debt that after-edit and doctor --ci report. After a page-only rebuild, stages.polish keeps the record of the build it reviewed instead of reading required; treat Polish as advisory there and run QA on the changed pages. An optional polish capture no longer sends next back to Polish. On an all-template-stock campaign, record build records Polish skipped (template_stock), so do not ask the operator to approve skipping it. after-edit shows a CampaignSpec derive preview only when the edit changed a repo-derived field (SDK pin, page routes, analytics ids); use spec derive to refresh offer and package fields from the live campaign. A one-time package never gains an interval.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "record build keeps an advisory Polish record and records an all-template-stock Polish skipped; a non-recurring package mirrors no interval or interval_count."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/campaigns-os-build-flow.md",
+          "surface_entry": "docs/campaigns-os-build-flow.md",
+          "summary": "after-edit shows a derive preview only when the change touched a field the spec derives from the repo."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/effects.md",
+          "surface_entry": "docs/effects.md",
+          "summary": "after-edit's derive preview reads the live campaign only when the edit changed a repo-derived field; the CI assessment read is unchanged."
+        }
+      ],
+      "entry_sha256": "c5a56f3dbf4e4bcda06ff3b1945e9d38df6208ecb8b761383e7468f3071e9f67"
     }
   ]
 }

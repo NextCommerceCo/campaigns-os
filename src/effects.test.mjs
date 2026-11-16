@@ -396,7 +396,9 @@ function afterEditSucceeded({ yes = false, qa = false, noLiveRefs = false } = {}
     assert.equal(out.steps.find((step) => step.step === "record_build").status, "done", label);
     assert.deepEqual(receiver.hits, [
       { method: "GET", url: "/api/spec/synthetic-map" },
-      ...Array.from({ length: noLiveRefs ? 0 : yes ? 3 : 2 }, () => ({ method: "GET", url: "/api/campaign" })),
+      // A copy edit changes no repo-derived spec field, so only the CI
+      // assessment reads the campaign; a new page adds the preview and write.
+      ...Array.from({ length: noLiveRefs ? 0 : yes ? 3 : 1 }, () => ({ method: "GET", url: "/api/campaign" })),
       ...(qa && label.includes("[persisted_consent]") ? [{ method: "POST", url: "/api/qa/verdicts" }] : []),
       ...(qa ? [{ method: "GET", url: "/api/campaign" }] : []),
     ], `${label}: only conditional reads and the consented verdict publish are sent; no order or build request`);

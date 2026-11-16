@@ -122,10 +122,13 @@ CI assessment steps. When the saved-Map spec copy is missing, it sends one GET
 to `{proxy-base}/api/spec/{map-id}`, restores the copy and repairs the managed
 `.gitignore` block if needed. When current built output differs from its recorded
 fingerprint, it writes the Assembly Report through `record build` and stamps a
-retained doctor output stale. It never starts a build. The derive preview and CI
-assessment each read `{proxy-base}/api/campaign` when built output and a public
-Campaigns API key are available; `--no-live-refs` suppresses those reads, while
-still allowing the missing-spec fetch. `--proxy-base` chooses the proxy endpoint.
+retained doctor output stale. It never starts a build. The CI assessment reads
+`{proxy-base}/api/campaign` when built output and a public Campaigns API key are
+available. The derive preview reads it too, but only when the edit changed a
+field the spec derives from the repo (the SDK pin, page routes or analytics
+ids); otherwise it previews nothing from the live campaign, and `spec derive`
+refreshes those fields on its own. `--no-live-refs` suppresses those reads,
+while still allowing the missing-spec fetch. `--proxy-base` chooses the proxy endpoint.
 
 `--yes` permits a planned derive to write the spec and, when its next step is
 `record spec`, the existing spec refresh writes: the Build Context, Assembly

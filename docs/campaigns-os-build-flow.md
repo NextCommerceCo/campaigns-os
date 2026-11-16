@@ -24,7 +24,7 @@ Pause only for missing inputs, doctor blockers, blocked deploys, out-of-scope ru
 After any change to a handed-off funnel, build with Page Kit, run
 `campaigns-os after-edit --packet <packet>`, and commit the files it lists
 with the change. The command records the rebuilt output and reports what
-evidence is owed before showing any spec derivation preview. It never builds or places test orders.
+evidence is owed before showing any spec derivation preview. It shows that preview only when the change touched a field the spec derives from the repo (the SDK pin, page routes or analytics ids); a copy, markup or style change shows none, and `spec derive` refreshes the offer and package fields from the live campaign on its own. It never builds or places test orders.
 
 | Kind of change | What the command reports and what to do |
 |---|---|
