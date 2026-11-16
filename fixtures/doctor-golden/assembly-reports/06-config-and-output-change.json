@@ -1,5 +1,5 @@
 {
-  "base_sha": "d42bae9a9621a981916f47b2b97e9d5ce1c7c039",
+  "base_sha": "e1c5bc9c6dc2745d6f2bd54f37f89319ce7f915a",
   "step": "06-config-and-output-change",
   "description": "The campaign's _data/campaigns.json entry changed (sdk_version 0.4.41) together with a landing copy edit, then record build: campaign_config_changed.",
   "recorded_at": "2026-11-01T00:06:00.000Z",

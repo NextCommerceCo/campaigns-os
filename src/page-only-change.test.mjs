@@ -204,9 +204,7 @@ test("record build shares CI's advisory Polish and changed-page QA lines", (t) =
   assert.ok(result.ready.includes("Owed stages: qa (changed pages only)."));
   assert.ok(result.ready.some((line) => line.startsWith("Advisory polish:")));
   assert.ok(!result.ready.includes("stages.polish.status = required"), "advisory Polish is not presented as plain required");
-  // F-157: advisory Polish is never written as required; the reviewed record stays.
-  assert.equal(f.readReport().stages.polish.status, "completed");
-  assert.equal(f.readReport().stages.polish.source_build_fingerprint, f.original.fingerprint);
+  assert.equal(f.readReport().stages.polish.status, "required", "the report's stage value is kept");
   t.diagnostic(`Page-only record build:\n${resultTextLines(result).join("\n")}`);
 });
 
@@ -219,7 +217,7 @@ test("record build after Polish and before any QA still reads Polish as advisory
   const result = f.recordBuild();
   const { expected } = compareRecordedCi(f, result);
   assert.equal(expected.polish.advisory, true);
-  assert.equal(expected.polish.recorded_build_fingerprint, f.original.fingerprint, "the rebuild kept the Polish record bound to the build it reviewed");
+  assert.equal(expected.polish.recorded_build_fingerprint, null, "the rebuild kept the reviewed build as owed_since_build_fingerprint");
   assert.equal(expected.qa.status, "unknown");
   assert.ok(result.ready.includes("Change found: page-only. QA is unknown; Polish is advisory."));
   assert.ok(!result.ready.includes("stages.polish.status = required"), "advisory Polish is not presented as plain required");
@@ -305,8 +303,8 @@ test("a copy edit on one upsell page owes QA on that page and Polish is advisory
   const recorded = f.recordBuild();
   assert.ok(recorded.ready.some((line) => /this rebuild is page-only \(changed pages: upsell1\)/.test(line)), recorded.ready.join("\n"));
   const report = f.readReport();
-  assert.equal(report.stages.polish.status, "completed");
-  assert.equal(report.stages.polish.source_build_fingerprint, f.original.fingerprint);
+  assert.equal(report.stages.polish.status, "required");
+  assert.equal(report.stages.polish.owed_since_build_fingerprint, f.original.fingerprint);
   assert.deepEqual(report.stages.assembly.build_changes.map((entry) => [entry.from_build_fingerprint, entry.kind, entry.changed_pages.map((page) => page.page_id)]),
     [[f.original.fingerprint, "page_only", ["upsell1"]]]);
   const readback = runReadbackCommand({ _: ["readback", f.root], json: true });
@@ -317,7 +315,7 @@ test("a copy edit on one upsell page owes QA on that page and Polish is advisory
   assert.deepEqual(debt.qa.change.changed_pages, [{ page_id: "upsell1", built_path: "upsell1/index.html" }]);
   json = JSON.parse(ci(f, "--json").stdout).ci;
   assert.equal(json.status, "owed");
-  assert.equal(json.polish.reason, "build_fingerprint_changed");
+  assert.equal(json.polish.reason, "stage_required_by_build");
   assert.equal(json.polish.advisory, true);
   assert.deepEqual(json.qa.owed_pages.map((page) => page.page_id), ["upsell1"]);
   markdown = ci(f);

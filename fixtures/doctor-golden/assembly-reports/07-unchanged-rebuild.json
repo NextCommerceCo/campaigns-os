@@ -1,5 +1,5 @@
 {
-  "base_sha": "d42bae9a9621a981916f47b2b97e9d5ce1c7c039",
+  "base_sha": "e1c5bc9c6dc2745d6f2bd54f37f89319ce7f915a",
   "step": "07-unchanged-rebuild",
   "description": "record build with no output change: the signature is recomputed and build_changes is kept as it was.",
   "recorded_at": "2026-11-01T00:07:00.000Z",

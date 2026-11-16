@@ -5550,7 +5550,7 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.71.1+agent.3",
-      "changelog_sha256": "0a038267d618705b7137a214ecbda0ce6478c908deab425e75e962634ba4e2fd",
+      "changelog_sha256": "e38db4dfd01397f3bc048c78994b6321f734182fe4251adb02640055175c7f1b",
       "agent_impact": "Whether Polish is owed has one answer, the evidence debt that after-edit and doctor --ci report. After a page-only rebuild, stages.polish keeps the record of the build it reviewed instead of reading required; treat Polish as advisory there and run QA on the changed pages. An optional polish capture no longer sends next back to Polish. On an all-template-stock campaign, record build records Polish skipped (template_stock), so do not ask the operator to approve skipping it. after-edit shows a CampaignSpec derive preview only when the edit changed a repo-derived field (SDK pin, page routes, analytics ids); use spec derive to refresh offer and package fields from the live campaign. A one-time package never gains an interval.",
       "compatibility": "compatible",
       "migration": "none",
@@ -5574,7 +5574,7 @@
           "summary": "after-edit's derive preview reads the live campaign only when the edit changed a repo-derived field; the CI assessment read is unchanged."
         }
       ],
-      "entry_sha256": "c5a56f3dbf4e4bcda06ff3b1945e9d38df6208ecb8b761383e7468f3071e9f67"
+      "entry_sha256": "1da4e3ffa340b2025b0b44ff560ab736d97e1704aaa6c9bfefe6e0bd0036e15a"
     }
   ]
 }

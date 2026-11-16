@@ -30,7 +30,7 @@ import { recordStageCommand } from "./stage-record.mjs";
 // The commit the saved captures were taken from. A regeneration records the
 // commit it ran on, never this constant, so a reviewed regeneration must also
 // update this value and the README by hand.
-const BASE_SHA = "d42bae9a9621a981916f47b2b97e9d5ce1c7c039";
+const BASE_SHA = "e1c5bc9c6dc2745d6f2bd54f37f89319ce7f915a";
 const GOLDEN_DIR = fileURLToPath(new URL("../fixtures/doctor-golden/assembly-reports/", import.meta.url));
 const UPDATING = process.env.UPDATE_GOLDEN === "1";
 // A CI run that rewrote the captures would compare the tree with itself and pass.

@@ -1,5 +1,5 @@
 {
-  "base_sha": "d42bae9a9621a981916f47b2b97e9d5ce1c7c039",
+  "base_sha": "e1c5bc9c6dc2745d6f2bd54f37f89319ce7f915a",
   "step": "11-second-baseline-refused",
   "description": "A second record baseline on the same funnel: refused, a funnel gets one baseline, and the report is left byte for byte as it was.",
   "recorded_at": "2026-11-01T00:11:00.000Z",
@@ -8,7 +8,7 @@
     "schema_version": "campaign-runtime-assembly-report/v0",
     "run_id": "synthetic-run",
     "generated_at": "2026-10-23T00:00:00Z",
-    "status": "completed",
+    "status": "prepared",
     "identity": {
       "map_id": "synthetic-map",
       "public_route_slug": "synthetic-campaign",
@@ -35,9 +35,9 @@
     "blockers": [],
     "warnings": [],
     "next": {
-      "stage": "done",
-      "owner": "next-campaigns-os",
-      "action": "Every stage is terminal; run next to confirm the closeout actions."
+      "stage": "polish",
+      "owner": "next-campaigns-polish",
+      "action": "Run polish with this packet."
     },
     "stages": {
       "prepare_build": {
@@ -188,19 +188,12 @@
       },
       "polish": {
         "stage": "polish",
-        "status": "baseline_accepted",
-        "recorded_by": "campaigns-os record baseline",
+        "status": "required",
         "checked_at": "2026-11-01T00:09:00.000Z",
         "baseline_accepted_at": "2026-11-01T00:09:00.000Z",
-        "source_brief_material": {
-          "presentation": "absent",
-          "qa_policy": "absent"
-        },
-        "source_spec_material_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
         "blockers": [],
         "warnings": [],
         "outputs": [],
-        "source_build_fingerprint": "sha256:f5f81cc3e5403d908e71a96e91d1f9f8aeefeaf19d056f827ec08ef5108ee873",
         "history": [
           {
             "archived_at": "2026-11-01T00:09:00.000Z",
@@ -208,7 +201,12 @@
             "reason_code": "baseline_accepted",
             "status": "required"
           }
-        ]
+        ],
+        "required_by": "build",
+        "required_for": [
+          "qa"
+        ],
+        "owed_since_build_fingerprint": "sha256:f5f81cc3e5403d908e71a96e91d1f9f8aeefeaf19d056f827ec08ef5108ee873"
       },
       "deploy": {
         "stage": "deploy",
@@ -305,11 +303,16 @@
       }
     },
     "polish_owed_since": {
-      "anchor": null,
+      "anchor": "sha256:f5f81cc3e5403d908e71a96e91d1f9f8aeefeaf19d056f827ec08ef5108ee873",
       "result": {
-        "kind": "unknown",
-        "since_build_fingerprint": null,
-        "changed_pages": [],
+        "kind": "page_only",
+        "since_build_fingerprint": "sha256:f5f81cc3e5403d908e71a96e91d1f9f8aeefeaf19d056f827ec08ef5108ee873",
+        "changed_pages": [
+          {
+            "page_id": "landing",
+            "built_path": "landing/index.html"
+          }
+        ],
         "unmapped_files": [],
         "reasons": []
       }
@@ -333,10 +336,10 @@
   "readback_evidence_debt": {
     "polish": {
       "status": "owed",
-      "matches_current_build": false,
-      "recorded_build_fingerprint": "sha256:f5f81cc3e5403d908e71a96e91d1f9f8aeefeaf19d056f827ec08ef5108ee873",
+      "matches_current_build": null,
+      "recorded_build_fingerprint": null,
       "current_build_fingerprint": "sha256:3a6947db029c9e5da5e82e51c8435b9a0a0e128e48302580a8d44e4e49970744",
-      "reason": "build_fingerprint_changed",
+      "reason": "stage_required_by_build",
       "change": {
         "kind": "page_only",
         "since_build_fingerprint": "sha256:f5f81cc3e5403d908e71a96e91d1f9f8aeefeaf19d056f827ec08ef5108ee873",
@@ -438,11 +441,16 @@
         }
       },
       "polish_owed_since": {
-        "anchor": null,
+        "anchor": "sha256:f5f81cc3e5403d908e71a96e91d1f9f8aeefeaf19d056f827ec08ef5108ee873",
         "result": {
-          "kind": "unknown",
-          "since_build_fingerprint": null,
-          "changed_pages": [],
+          "kind": "page_only",
+          "since_build_fingerprint": "sha256:f5f81cc3e5403d908e71a96e91d1f9f8aeefeaf19d056f827ec08ef5108ee873",
+          "changed_pages": [
+            {
+              "page_id": "landing",
+              "built_path": "landing/index.html"
+            }
+          ],
           "unmapped_files": [],
           "reasons": []
         }

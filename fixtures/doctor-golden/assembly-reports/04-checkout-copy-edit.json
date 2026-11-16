@@ -1,5 +1,5 @@
 {
-  "base_sha": "d42bae9a9621a981916f47b2b97e9d5ce1c7c039",
+  "base_sha": "e1c5bc9c6dc2745d6f2bd54f37f89319ce7f915a",
   "step": "04-checkout-copy-edit",
   "description": "Copy-only edit to the checkout headline, then record build: a checkout page is commerce whatever its hash says.",
   "recorded_at": "2026-11-01T00:04:00.000Z",

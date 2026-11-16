@@ -1749,6 +1749,20 @@ test("record build on the local preview says next carries the required Polish fo
   });
 });
 
+// next stops at a required Polish that already carries a page-load capture
+// on the local preview, so record build adds no carried-forward note there.
+test("record build on the local preview omits the carried note once a capture is recorded", async () => {
+  await guardedLifecycle(async (f) => {
+    mutateJson(f.packetPath, (packet) => { packet.deploy.target = "local-serve"; });
+    recordThroughBuild(f);
+    await capture(f);
+    const build = recordOk(f, "build");
+    assert.equal(readJson(f.reportPath).stages.polish.status, "required");
+    assert.equal(build.next_stage, "polish");
+    assert.ok(build.ready.includes("stages.polish.status = required"), build.ready.join("\n"));
+  });
+});
+
 test("next names after-edit first on a handed-off funnel after a source change", async (t) => {
   await guardedLifecycle(async (f) => {
     await recordThroughPolish(f);
@@ -3517,6 +3531,24 @@ test("F2.2-B11: after F2.1-W24, record polish with the pre-change evidence file,
     const currency = inputCurrency(f);
     assert.equal(currency.stages.polish, "owed");
     assert.equal(currency.stages.assembly, "current", "the operator's --deviation-reason build is current (rule 5(ii))");
+  });
+});
+
+// A completed Polish whose capture predates a brief or spec change
+// (input_change) still owes the full stage after a later page-only rebuild:
+// record build writes it required rather than keeping it as advisory.
+test("a page-only rebuild over a Polish an input change superseded still writes Polish required", async () => {
+  await guardedLifecycle(async (f) => {
+    await presentationChangeAfterQa(f, () => {});
+    recordOk(f, "build", ["--deviation-reason", OPERATOR_DECISION]);
+    recordOk(f, "polish", ["--evidence", POLISH_EVIDENCE]);
+    assert.ok(Object.hasOwn(readJson(f.reportPath).stages.polish, "input_change"), "setup: Polish carries the input change");
+    assert.equal(inputCurrency(f).stages.polish, "owed", "setup: input currency owes Polish");
+    const page = join(f.target, "_site", f.slug, "landing/index.html");
+    writeFileSync(page, readFileSync(page, "utf8").replace("</h1>", " Revised copy</h1>"));
+    const build = recordOk(f, "build");
+    assert.ok(build.ready.some((line) => line.includes("this rebuild is page-only")), build.ready.join("\n"));
+    assert.equal(readJson(f.reportPath).stages.polish.status, "required");
   });
 });
 

@@ -1,5 +1,5 @@
 {
-  "base_sha": "d42bae9a9621a981916f47b2b97e9d5ce1c7c039",
+  "base_sha": "e1c5bc9c6dc2745d6f2bd54f37f89319ce7f915a",
   "step": "02-copy-only-landing",
   "description": "Copy-only edit to the landing headline, then record build: a page_only rebuild.",
   "recorded_at": "2026-11-01T00:02:00.000Z",
@@ -37,7 +37,7 @@
     "next": {
       "stage": "polish",
       "owner": "next-campaigns-polish",
-      "action": "Stage \"polish\" does not record which brief and CampaignSpec content it was made against; run polish again with this packet."
+      "action": "Run polish with this packet."
     },
     "stages": {
       "prepare_build": {
@@ -135,8 +135,12 @@
       },
       "polish": {
         "stage": "polish",
-        "status": "completed",
-        "source_build_fingerprint": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f"
+        "status": "required",
+        "required_by": "build",
+        "required_for": [
+          "qa"
+        ],
+        "owed_since_build_fingerprint": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f"
       },
       "deploy": {
         "stage": "deploy",
@@ -201,11 +205,16 @@
       }
     },
     "polish_owed_since": {
-      "anchor": null,
+      "anchor": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f",
       "result": {
-        "kind": "unknown",
-        "since_build_fingerprint": null,
-        "changed_pages": [],
+        "kind": "page_only",
+        "since_build_fingerprint": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f",
+        "changed_pages": [
+          {
+            "page_id": "landing",
+            "built_path": "landing/index.html"
+          }
+        ],
         "unmapped_files": [],
         "reasons": []
       }
@@ -229,10 +238,10 @@
   "readback_evidence_debt": {
     "polish": {
       "status": "owed",
-      "matches_current_build": false,
-      "recorded_build_fingerprint": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f",
+      "matches_current_build": null,
+      "recorded_build_fingerprint": null,
       "current_build_fingerprint": "sha256:a09cdade9cc1ed2567654b1baadc0d86aefce519c3453bd2b56ae63022f378b3",
-      "reason": "build_fingerprint_changed",
+      "reason": "stage_required_by_build",
       "change": {
         "kind": "page_only",
         "since_build_fingerprint": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f",
