@@ -531,8 +531,12 @@ function loadPriorDoctorFindings({ baseDir, runtimeRelPath = undefined, mapId = 
  * the packet directory (see loadPriorQaVerdict). Packet-less runs (`--site`,
  * raw map id) have no Run Record home, so they get `unknown` / `no_prior_run`
  * throughout — which is the truth, not a silence.
+ *
+ * `outsideChange(assertion)`, when the run follows a page-only change, is
+ * true for a finding on a page that change did not touch: such a finding
+ * reads `unknown` / `page_not_in_change`, never caused by the change.
  */
-export function annotateQaAssertionCauses(assertions, { baseDir = null, runtimeRelPath = undefined, targetRepo = null, mapId = null, localSpecId = null, currentRunId = null, isFinding } = {}) {
+export function annotateQaAssertionCauses(assertions, { baseDir = null, runtimeRelPath = undefined, targetRepo = null, mapId = null, localSpecId = null, currentRunId = null, isFinding, outsideChange = null } = {}) {
   const lookup = baseDir
     ? loadPriorQaVerdict({ baseDir, runtimeRelPath, targetRepo, mapId, localSpecId, currentRunId })
     : { verdict: null, record: null, path: null, reason: "no_prior_run" };
@@ -548,10 +552,14 @@ export function annotateQaAssertionCauses(assertions, { baseDir = null, runtimeR
     if (evaluatedPrior) usedEarlierEvaluation = true;
     if (evaluatedPrior === null) missingPriorEvaluation = true;
     if (evaluatedPrior || (evaluatedPrior === undefined && prior)) comparedWithAPrior = true;
-    const { cause, cause_reason } = classifyQaAssertion(assertion, {
+    const classified = classifyQaAssertion(assertion, {
       prior: evaluatedPrior === undefined ? prior : evaluatedPrior,
       noPriorReason: evaluatedPrior === null ? "no_prior_evaluation" : noPriorReason,
     });
+    // A page-only change cannot cause a finding on a page it did not touch.
+    const { cause, cause_reason } = classified.cause === CAUSE_CLASSES.CAUSED_BY_CHANGE && outsideChange?.(assertion)
+      ? { cause: CAUSE_CLASSES.UNKNOWN, cause_reason: "page_not_in_change" }
+      : classified;
     assertion.cause = cause;
     assertion.cause_reason = cause_reason;
     findings.push(assertion);

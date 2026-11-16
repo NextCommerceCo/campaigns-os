@@ -835,6 +835,7 @@ violations sharing a code are one finding to this comparison.
 | `prior_run_verdict_unlocated` | It references one as `external:qa_verdict`, but no verdict matching that reference could be located under the target repo's `qa-output/` — nothing there hashes to the recorded digest, the reference carries no digest, or no target repo was known to search. |
 | `prior_run_without_doctor_observations` | The previous Run Record carries no doctor observations. |
 | `no_prior_evaluation` | The previous QA run did not evaluate this row (a page-scoped run, or a skipped row), and no earlier recorded QA verdict that did evaluate it could be read. When one can be read, the row is compared with that verdict instead of the previous run. |
+| `page_not_in_change` | QA is owed for a page-only change to the build, and this finding, new or changed since its last evaluation, is on a page that change did not touch, so the change did not cause it. |
 
 Only the first of those means "run again and it will improve". The others
 say a previous Run Record **does** exist and its evidence is missing or
