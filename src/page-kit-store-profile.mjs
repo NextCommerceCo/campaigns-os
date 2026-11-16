@@ -158,7 +158,7 @@ export function storeProfileSpecValueProblem(field, value) {
 export function storeProfileUrlShape(field, value) {
   if (field !== "store_contact") return "takes an http(s) URL";
   const email = typeof value === "string" ? value.trim() : "";
-  return /^[^\s@:/]+@[^\s@:/]+\.[^\s@:/]+$/.test(email)
+  return /^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$/.test(email)
     ? `takes an http(s) URL or a mailto: address; write this email as ${JSON.stringify(`mailto:${email}`)}`
     : "takes an http(s) URL or a mailto: address";
 }

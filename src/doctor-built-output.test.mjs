@@ -471,6 +471,19 @@ test("F-238 copy checks: copy the built page renders still warns, named by its _
   });
 });
 
+test("F-238 copy checks: a public_route_slug that leaves _site/ is not a built root", () => {
+  withTempDir((dir) => {
+    const derived = builtCopyDirs(dir, { builtHtml: "<p>9,99 EUR, shipped by DHL</p>" });
+    for (const slug of ["..", "../..", "a/../.."]) {
+      const warnings = [];
+      validateMarketSensitiveCopy(EUR_DE_SPEC, warnings, [], derived, { campaign: { public_route_slug: slug } });
+      // The scan falls back to the source tree, so no message names a _site root.
+      for (const issue of warnings) assert.doesNotMatch(issue.message, /_site\//, slug);
+      assert.ok(codes(warnings).includes("copy.hardcoded_currency_symbol"), slug);
+    }
+  });
+});
+
 test("F-238 market scope: { code, label } shipping countries read as their codes", () => {
   withTempDir((dir) => {
     const derived = builtCopyDirs(dir, { builtHtml: "<p>Ships via USPS.</p>" });

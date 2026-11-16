@@ -3354,6 +3354,9 @@ export function validateMarketSensitiveCopy(spec, warnings, ready, derived, pack
 function builtCopyScanRoot(packet, derived) {
   const slug = normalizePublicRouteSlug(packet?.campaign?.public_route_slug);
   if (!slug || !isNonEmptyString(derived?.target_repo)) return null;
+  // A hand-edited slug of ".." would root the scan at the repo itself and
+  // read the starter includes again; such a slug falls back to the source read.
+  if (!slug.split("/").every((segment) => /^[A-Za-z0-9._-]+$/.test(segment) && segment !== "." && segment !== "..")) return null;
   const root = join(derived.target_repo, "_site", slug);
   return collectHtmlFiles(root).length ? { label: `_site/${slug}`, root } : null;
 }

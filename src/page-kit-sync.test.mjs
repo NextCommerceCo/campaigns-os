@@ -11,7 +11,7 @@ import { doctorPacket } from "./doctor/inspect.mjs";
 import { DOCTOR_SIDECAR_REL_PATH } from "./doctor-sidecar.mjs";
 import { evaluatePageKitSdkVersion, resolveSpecSdkPin, sdkPinWriteDecision } from "./page-kit-sdk-version.mjs";
 import { stageRealPackageInstall } from "./package-install-fixture.mjs";
-import { evaluatePageKitStoreProfile, PAGE_KIT_SYNC_COMMAND } from "./page-kit-store-profile.mjs";
+import { evaluatePageKitStoreProfile, PAGE_KIT_SYNC_COMMAND, storeProfileUrlShape } from "./page-kit-store-profile.mjs";
 import {
   applyPageKitSync,
   formatSyncValue,
@@ -1142,6 +1142,13 @@ test("a bare email in store_contact is refused with a remedy that names the mail
   // The mailto: form it names is accepted.
   const fixed = planPageKitSync({ spec: { ...spec, campaign: { ...spec.campaign, store_contact: "mailto:support@acmeglow.example" } }, entry: SCAFFOLD_ENTRY });
   assert.equal(fixed.not_synced.some((entry) => entry.field === "store_contact"), false);
+});
+
+test("store_contact names a mailto: form only for a plain email address", () => {
+  assert.match(storeProfileUrlShape("store_contact", "support@shop.example"), /"mailto:support@shop\.example"/);
+  for (const value of ["(support@shop.example)", "support@shop.example,", "<support@shop.example>", "support@shop"]) {
+    assert.equal(storeProfileUrlShape("store_contact", value), "takes an http(s) URL or a mailto: address", value);
+  }
 });
 
 test("page-kit sync rejects --dry-run with a value instead of writing", () => {
