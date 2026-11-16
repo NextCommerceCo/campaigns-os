@@ -5544,8 +5544,56 @@
       "entry_sha256": "f947a03b8e98366eae2493605c397ea51ef523118657364796e67d44d22234cc"
     },
     {
-      "id": "RL-0364",
+      "id": "RL-0362",
       "sequence": 346,
+      "date": "2026-11-16",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.1+agent.1",
+      "changelog_sha256": "46afff192ed6bd5b7107ad69a3eb8fdd65a9e2bfdbdbd7084cfe3918097e56b6",
+      "agent_impact": "QA's upsell, order-bump and checkout bundle price checks count the SDK's price displays whatever their case ([data-next-bundle-display*='price' i], and [data-next-display*='price' i] in the brand contract's price rows). An upsell whose only price is data-next-bundle-display=\"unitPrice\" or data-next-display=\"bundle.<id>.unitPrice\" now passes pricing.upsell_price_visible:<page> where it used to block with 0 visible price rows; do not add a price row the design does not have to clear it. Hidden, zero-size or empty bundle-display nodes still do not count.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "The upsell and checkout bundle price checks match the SDK's bundle-display and display price nodes case-insensitively, so unitPrice counts."
+        }
+      ],
+      "entry_sha256": "b34b02e961b50f0de36229497cfb3362a234f990b59f3cc3b0f3d9644f705818"
+    },
+    {
+      "id": "RL-0363",
+      "sequence": 347,
+      "date": "2026-11-16",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.1+agent.2",
+      "changelog_sha256": "5c61c05a1c3233269d48abc6fe4d2fee7040526e030c5de7e6b02bbde8905bfe",
+      "agent_impact": "next no longer emits a qa_run_bump action: when the checkout QA drives declares an order bump, qa_run's command already carries --cart <base>:1,<bump>:1, and qa resolve's Next expected proof prints the same --cart. next no longer puts currency_commands on qa_run: it lists one qa_run_currency action per currency still owed (the qa_run command plus --currency <code>), at the QA stage and also after QA is done when the current build has no test order in a listed currency; done stays done. The browser-test-order:currency-coverage warn row counts created test orders from every QA run the QA stage recorded against the current build fingerprint, not only this run's, so one run per currency clears it. Agents that read currency_commands or qa_run_bump must read qa_run_currency actions and qa_run's command instead.",
+      "compatibility": "compatible",
+      "migration": "A reader of next --json that took qa_run.currency_commands reads the qa_run_currency actions instead, and one that ran qa_run_bump runs qa_run, whose command now carries the --cart. Bundled skills read neither field.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "next: qa_run carries the order-bump --cart and qa_run_bump is removed; qa_run_currency actions replace qa_run.currency_commands and also appear after QA is done for currencies the current build has no test order in."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Documents the --cart in the first proof command, qa_run_currency, and build-wide currency coverage."
+        }
+      ],
+      "entry_sha256": "362460ef994d258a1a66b08edd667d9b3c3cce2c0dacb488ee84fce6c27e0417"
+    },
+    {
+      "id": "RL-0364",
+      "sequence": 348,
       "date": "2026-11-16",
       "kind": "release",
       "surface_version": null,
@@ -5574,7 +5622,7 @@
           "summary": "after-edit's derive preview reads the live campaign only when the edit changed a repo-derived field; the CI assessment read is unchanged."
         }
       ],
-      "entry_sha256": "1da4e3ffa340b2025b0b44ff560ab736d97e1704aaa6c9bfefe6e0bd0036e15a"
+      "entry_sha256": "36ef78ccf454b43116e3d3586cde12c472b0f0f2e998c54caebbbb5d0fab8db7"
     }
   ]
 }
