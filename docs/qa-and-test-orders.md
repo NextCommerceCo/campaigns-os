@@ -796,6 +796,11 @@ Compare each finding with its last recorded evaluation:
    run and then earlier matching runs, to the last attempt that evaluated it.
    Each finding uses one attempt; findings can use different attempts. If no
    earlier evaluation can be read, its reason is `no_prior_evaluation`.
+   A `qa run` outside any run session lands in no Run Record. When such a run
+   starts, the verdict the QA stage last recorded is compared first if it
+   completed after that record's last attempt: a QA run outside a session
+   before it is the previous evaluation, so a row it did not carry is
+   `caused_by_change`. The summary then reads `last_evaluation`.
    When that reference is `external:qa_verdict` — the record's spelling for a
    verdict written outside the packet directory, the ordinary case whenever
    `assembly.target_repo` is not the packet's own directory — the verdict is
@@ -856,8 +861,9 @@ meaningful.
   pass has no cause to explain.
   `prior_run_id` is the previous **Run Record's** id on both surfaces, so the
   two agree on which run was compared; the QA summary also carries
-  `prior_qa_attempt_run_id`, the final attempt within that record it actually
-  read, and its summary line says so.
+  `prior_qa_attempt_run_id`, the attempt it compared first (that record's
+  final attempt, or a later QA run outside any session), and its summary line
+  says so.
 - The committed QA verdict sidecar — both fields survive the projection, and
   so does `cause_summary`. They are a short enum and a reason code: no URL, no
   order reference, no capture body.
@@ -2399,7 +2405,10 @@ in it exists for the current build, whichever recorded QA run placed it (the
 QA stage's record and its history, each naming the build it judged and its
 verdict). At the QA stage the list leaves out `campaign.currency`, which
 `qa_run` proves; once QA is done it names every listed currency this build
-still has no order in. QA stays done either way.
+still has no order in. QA stays done either way, but while any is owed `next`
+at the done stage does not say "Pipeline complete.": its prompt opens with
+"Not complete:" and names each owed run, and its "Owed stages" line names the
+currencies.
 
 A run that created test orders also says what they did not cover, as warn
 rows: `browser-test-order:currency-coverage` names the listed currencies no

@@ -19,7 +19,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
-import { checkoutOrderBumpCart, nextStage, nextTinyPromptLines, recordQaStageOutcome } from "./cli.mjs";
+import { checkoutOrderBumpCart, nextStage, nextTinyPromptLines, recordQaStageOutcome, resultTextLines } from "./cli.mjs";
 import { doctorPacket } from "./doctor/inspect.mjs";
 import { testOrderCurrenciesForBuild } from "./qc-results.mjs";
 import { currentPacketInputs, inputStamps } from "./input-currency.mjs";
@@ -460,6 +460,45 @@ test("next names the --currency runs this build still owes after QA is done, and
   assert.deepEqual([...testOrderCurrenciesForBuild({ report, targetRepo: join(fixture.dir, "target-page-kit"), packetPath: fixture.packetPath, reportPath: fixture.reportPath })], []);
   report.stages.assembly.build_fingerprint = BUILD_FINGERPRINT;
   assert.deepEqual([...testOrderCurrenciesForBuild({ report, targetRepo: join(fixture.dir, "target-page-kit"), packetPath: fixture.packetPath, reportPath: fixture.reportPath })].sort(), ["EUR", "GBP", "USD"]);
+});
+
+// A change rebuilds and resets coverage, as intended. A USD-only rerun of the
+// new build then leaves EUR and GBP owed, and `next` used to close with
+// "Pipeline complete." and "Owed stages: none." beside the owed runs.
+test("after a change and a one-currency rerun, next owes the other currencies and nothing reads as complete", () => {
+  const fixture = target({
+    prefix: "closeout-evidence-currency-after-change-",
+    mutateSpec(spec) {
+      spec.campaign = { ...spec.campaign, currency: "USD", available_currencies: ["USD", "EUR", "GBP"] };
+    },
+  });
+  runProducer(fixture, { runId: "SYNTHRUN000000000000000001", completedAt: "2026-09-11T02:00:00.000Z", currency: "USD", inTarget: true });
+  runProducer(fixture, { runId: "SYNTHRUN000000000000000002", completedAt: "2026-09-11T03:00:00.000Z", currency: "EUR", inTarget: true });
+  runProducer(fixture, { runId: "SYNTHRUN000000000000000003", completedAt: "2026-09-11T04:00:00.000Z", currency: "GBP", inTarget: true });
+  const covered = runNext(fixture.packetPath);
+  assert.equal(action(covered, "qa_run_currency"), null);
+  assert.match(covered.prompt, /^Pipeline complete\./);
+
+  // The change: every run so far proved the build before it.
+  const report = readReport(fixture.reportPath);
+  for (const record of [report.stages.qa, ...report.stages.qa.history]) {
+    record.evidence.qc_build_fingerprint = `sha256:${"b".repeat(64)}`;
+    record.evidence.source_build_fingerprint = `sha256:${"b".repeat(64)}`;
+  }
+  writeFileSync(fixture.reportPath, JSON.stringify(report, null, 2));
+  runProducer(fixture, { runId: "SYNTHRUN000000000000000004", completedAt: "2026-09-11T05:00:00.000Z", currency: "USD", inTarget: true });
+
+  const result = runNext(fixture.packetPath);
+  assert.equal(result.stage, "done", "currency coverage never holds QA open");
+  const runs = result.next_actions.filter((entry) => entry.id === "qa_run_currency").map((entry) => entry.command);
+  assert.deepEqual(runs.map((command) => command.match(/--currency (\w+)$/)[1]), ["EUR", "GBP"]);
+  assert.doesNotMatch(result.prompt, /Pipeline complete/);
+  assert.match(result.prompt, /^Not complete: this build has no test order in EUR or GBP/);
+  for (const command of runs) assert.ok(result.prompt.includes(command), "the prompt names each owed run");
+  const text = resultTextLines(result).join("\n");
+  assert.doesNotMatch(text, /Owed stages: none/);
+  assert.doesNotMatch(text, /Pipeline complete/);
+  assert.match(text, /Owed stages: QA test orders in EUR and GBP\./);
 });
 
 // The two record shapes the coverage reader must still read: a record that

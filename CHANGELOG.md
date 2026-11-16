@@ -2,6 +2,13 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.71.2+agent.4] - 2026-11-16
+
+### Fixed
+
+- When the last QA verdict for the current build warns `browser-test-order:currency-coverage` (a change rebuilt the campaign and QA reran in one currency, say), `next` at the done stage no longer says "Pipeline complete." Its prompt opens with "Not complete:" and names each owed `qa_run_currency` run, and its "Owed stages" line names the currencies instead of "none". QA stays done, and the `qa_run_currency` actions are the same as before, so `next` says the same thing right after the run and in a fresh session.
+- A `qa run` outside any run session compares its findings with the QA run the QA stage last recorded when that run is later than the previous Run Record's final attempt. A row that run did not carry is now `caused_by_change` / `new_since_prior_run`, not `pre_existing` because a Run Record closed before the per-currency runs had it. The cause summary reads `last_evaluation` and `prior_qa_attempt_run_id` names that run. Inside a run session the comparison is unchanged.
+
 ## [1.71.2+agent.1] - 2026-11-16
 
 ### Removed
