@@ -5827,6 +5827,27 @@
         }
       ],
       "entry_sha256": "3653339677318dea8ee95b3a2ac97bab9ff6b403affc624323c4612466c28085"
+    },
+    {
+      "id": "RL-0369",
+      "sequence": 353,
+      "date": "2026-11-16",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.2+agent.2",
+      "changelog_sha256": "409581194d8745cb44e7fb2d29df611f6225fb00cb8383bb20090141fbbaf53a",
+      "agent_impact": "QA's pricing.upsell_price_visible:<page> re-reads the upsell's visible price rows until the count is non-zero and steady, for up to the 5-second settle window, instead of counting once. An upsell whose data-next-bundle-display prices the SDK fills a moment after it reports ready no longer blocks with 0 visible price rows on one run and passes on the next. Do not add data-next-await or an SDK modulepreload to pages to get past this row. An upsell that shows no price still fails at blocker severity when the window ends.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "The upsell price count waits for the SDK to fill bundle-display prices, up to the settle window, before it is read."
+        }
+      ],
+      "entry_sha256": "e8c547f8461331c4f5cc3d9b8bc276f1c979fd5034293b0787e1b5974df39990"
     }
   ]
 }

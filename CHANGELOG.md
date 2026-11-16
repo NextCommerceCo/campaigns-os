@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.71.2+agent.2] - 2026-11-16
+
+### Fixed
+
+- `pricing.upsell_price_visible:<page>` no longer blocks a correct upsell because QA read the page before the SDK filled its bundle prices. QA counted the price rows once, and a `data-next-bundle-display` price needs text to count, so an upsell whose prices arrived half a second after SDK readiness read "0 visible price row(s)" at blocker severity on one run and passed on the next with no source change. The count is now re-read until it is non-zero and steady, for up to the 5-second settle window. An upsell that shows no price still fails when the window ends. Do not add `data-next-await` or an SDK preload to pages just to get past this row.
+
 ## [1.71.2+agent.1] - 2026-11-16
 
 ### Removed

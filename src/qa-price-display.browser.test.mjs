@@ -156,3 +156,21 @@ test("an empty data-next-bundle-display price does not count through an overlapp
   assert.equal(filled.status, "pass");
   assert.equal(filled.evidence.visible_count, 1);
 });
+
+test("an upsell whose bundle-display price the SDK fills after the page is read still passes", async (t) => {
+  if (!await chromiumAvailable()) return t.skip("Chromium is unavailable; the browser CI lane runs this test");
+  // The SDK writes bundle prices a moment after it reports ready. A single
+  // read taken before that sees a sized but empty node and used to report 0
+  // visible price rows at blocker severity on a correct upsell.
+  const late = (ms, text) => `<span id="late" data-next-bundle-display="price" style="display:inline-block;min-width:100px;height:20px"></span>`
+    + `<script>setTimeout(() => { document.getElementById("late").textContent = ${JSON.stringify(text)}; }, ${ms});</script>`;
+  const row = await priceRow(late(600, "$29.00"));
+  assert.equal(row.status, "pass");
+  assert.equal(row.evidence.visible_count, 1);
+
+  // A price that never arrives still fails once the wait runs out.
+  const never = await priceRow(late(60000, "$29.00"));
+  assert.equal(never.status, "fail");
+  assert.equal(never.severity, "blocker");
+  assert.equal(never.evidence.visible_count, 0);
+});
