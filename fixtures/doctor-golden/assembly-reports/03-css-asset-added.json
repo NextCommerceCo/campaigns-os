@@ -1,5 +1,5 @@
 {
-  "base_sha": "e1c5bc9c6dc2745d6f2bd54f37f89319ce7f915a",
+  "base_sha": "d42bae9a9621a981916f47b2b97e9d5ce1c7c039",
   "step": "03-css-asset-added",
   "description": "A CSS file added at assets/site.css, then record build: an unmapped file, so commerce_affecting.",
   "recorded_at": "2026-11-01T00:03:00.000Z",
@@ -463,25 +463,13 @@
         }
       },
       "polish_owed_since": {
-        "anchor": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f",
+        "anchor": null,
         "result": {
-          "kind": "commerce_affecting",
-          "since_build_fingerprint": "sha256:64a64bd6af5c095ca0f13c281a4f5b7d81bdbcd2d7051541259a2a832783769f",
-          "changed_pages": [
-            {
-              "page_id": "landing",
-              "built_path": "landing/index.html"
-            }
-          ],
-          "unmapped_files": [
-            "assets/site.css"
-          ],
-          "reasons": [
-            {
-              "code": "unmapped_file",
-              "path": "assets/site.css"
-            }
-          ]
+          "kind": "unknown",
+          "since_build_fingerprint": null,
+          "changed_pages": [],
+          "unmapped_files": [],
+          "reasons": []
         }
       },
       "qa_evidence_build": {

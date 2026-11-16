@@ -1,5 +1,5 @@
 {
-  "base_sha": "e1c5bc9c6dc2745d6f2bd54f37f89319ce7f915a",
+  "base_sha": "d42bae9a9621a981916f47b2b97e9d5ce1c7c039",
   "step": "01-initial-record-build",
   "description": "First record build over the seeded campaign: the output equals the seeded manifest, so the signature is computed and no build_changes entry is added.",
   "recorded_at": "2026-11-01T00:01:00.000Z",

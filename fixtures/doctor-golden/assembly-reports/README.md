@@ -1,6 +1,6 @@
 # Saved Assembly Reports (pre-refactor, #730 milestone 1)
 
-These are captures from `campaigns-os` at base `e1c5bc9c6dc2745d6f2bd54f37f89319ce7f915a`, before the doctor shared-input refactor in #730. `src/change-scope-v1-reports.test.mjs` regenerates the same sequence in a temp dir and compares the result with these files.
+These are captures from `campaigns-os` at base `d42bae9a9621a981916f47b2b97e9d5ce1c7c039`. They were first taken at `e1c5bc9c6dc2745d6f2bd54f37f89319ce7f915a`, before the doctor shared-input refactor in #730, and regenerated once for a reviewed behavior change (F-157): after a page-only rebuild, `record build` keeps the Polish record that reviewed the earlier build instead of writing it `required` (steps 02, 03, 10 and 11). `src/change-scope-v1-reports.test.mjs` regenerates the same sequence in a temp dir and compares the result with these files.
 
 The fixture is the synthetic recorded campaign from `src/page-only-change.test.mjs`. The test drives the real `recordStageCommand` with a fixed clock (step N records at minute N of `2026-11-01T00:00Z`), so nothing in a capture is normalized. Each step runs on the state the previous step left:
 

@@ -1,5 +1,5 @@
 {
-  "base_sha": "e1c5bc9c6dc2745d6f2bd54f37f89319ce7f915a",
+  "base_sha": "d42bae9a9621a981916f47b2b97e9d5ce1c7c039",
   "step": "08-pre-1-62-rebuild",
   "description": "commerce_signature deleted from the report (a record from before Campaigns OS 1.62), a copy-only receipt edit, then record build: the rebuild is read without hashes and carries the pathless commerce_signature_unavailable reason.",
   "recorded_at": "2026-11-01T00:08:00.000Z",
