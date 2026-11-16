@@ -2,6 +2,21 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.71.2] - 2026-11-16
+
+This release packages the five `1.71.1+agent` sections below, the fixes from the sixth simulated build batch. For a campaign, what changes is that QA stops blocking a correct upsell whose prices the SDK renders as `unitPrice`, one QA run proves the checkout add-on, and currency coverage is judged across the build, so running once per currency clears it and `next` names the currencies a rebuilt campaign still owes. `record build`, `readback`, doctor and `next` agree that Polish is advisory after a page-only change. `after-edit` no longer proposes a subscription interval for one-time packages or a spec rewrite for a copy edit; a preview URL given at `start` no longer stalls `next`; and doctor's copy checks read the built pages. No command, flag, schema or contract changes. One output change for `next --json` readers: the `qa_run_bump` action and the `currency_commands` field on `qa_run` are gone. The add-on cart is now in `qa_run` itself, and owed currencies are `qa_run_currency` actions. To take it, pin `@nextcommerce/campaigns-os@1.71.2` and refresh the installed skills to `1.71.2+skills.1`.
+
+### Changed
+
+- Publishes `1.71.1+agent.5`: the QA docs say what `browser-test-order:tier-coverage` covers (`--test-order tiers` runs, checkout tiers only) (#787).
+
+### Fixed
+
+- Publishes `1.71.1+agent.1`: the upsell and checkout bundle price checks count the SDK's camelCase price displays (`unitPrice`) (#786).
+- Publishes `1.71.1+agent.2`: currency coverage is judged across the build's QA runs, `next` lists the owed `qa_run_currency` runs, and the first proof command carries the checkout add-on (#790).
+- Publishes `1.71.1+agent.3`: an advisory Polish is not written `required` after a page-only rebuild, an all-template-stock campaign records Polish skipped, and `after-edit` no longer proposes an `interval` for non-recurring packages or a spec rewrite for a copy edit (#789).
+- Publishes `1.71.1+agent.4`: `next` no longer reads a declared preview URL as a deploy, the `store_contact` remedy names the `mailto:` form, and doctor's copy checks read the built output (#788).
+
 ## [1.71.1+agent.5] - 2026-11-16
 
 ### Changed
