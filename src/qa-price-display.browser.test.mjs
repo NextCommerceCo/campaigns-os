@@ -77,11 +77,29 @@ test("a hidden or empty data-next-bundle-display price does not count as visible
     SIZED_EMPTY_PRICE_NODE,
   ]) {
     const row = await priceRow(priceNode);
-    assert.ok(row.evidence.selectors.includes("[data-next-bundle-display*='price']"), "the bundle-display price was probed");
+    assert.ok(row.evidence.selectors.includes("[data-next-bundle-display*='price' i]"), "the bundle-display price was probed");
     assert.equal(row.status, "fail", priceNode);
     assert.equal(row.severity, "blocker", priceNode);
     assert.equal(row.evidence.visible_count, 0, priceNode);
   }
+});
+
+test("an upsell whose tier cards show only unitPrice bundle displays passes the price visibility row", async (t) => {
+  if (!await chromiumAvailable()) return t.skip("Chromium is unavailable; the browser CI lane runs this test");
+  // The SDK names its bundle price fields in camelCase (unitPrice,
+  // originalUnitPrice). A design upsell built from tier cards shows no other
+  // price; the probe used to match "price" case-sensitively and read 0 rows.
+  const card = (quantity) => `<div data-next-bundle-card data-next-bundle-id="tier-${quantity}x" data-next-bundle-items='[{"packageId":3,"quantity":${quantity}}]'>`
+    + `<div class="tier-price"><span data-next-bundle-display="unitPrice">$${(30 - quantity * 2).toFixed(2)}</span></div>`
+    + '<div class="compare" data-next-bundle-display="hasDiscount"><span data-next-bundle-display="originalUnitPrice">$39.00</span></div></div>';
+  const row = await priceRow(`<div data-next-bundle-selector>${[1, 2, 3].map(card).join("")}</div>`);
+  assert.equal(row.status, "pass");
+  assert.equal(row.evidence.visible_count, 6);
+
+  // The remote binding spells the same fields in camelCase too.
+  const remote = await priceRow('<span data-next-display="bundle.upsell-tiers.unitPrice">$26.00</span>');
+  assert.equal(remote.status, "pass");
+  assert.equal(remote.evidence.visible_count, 1);
 });
 
 test("a checkout bundle card counts a filled data-next-bundle-display price and not a sized empty one", async (t) => {
@@ -94,7 +112,7 @@ test("a checkout bundle card counts a filled data-next-bundle-display price and 
   assert.equal(filled.evidence.visible_count, 1);
 
   const empty = await priceRow(SIZED_EMPTY_PRICE_NODE, checkoutPage);
-  assert.ok(empty.evidence.selectors.includes("[data-next-bundle-display*='price']"), "the bundle-display price was probed");
+  assert.ok(empty.evidence.selectors.includes("[data-next-bundle-display*='price' i]"), "the bundle-display price was probed");
   assert.equal(empty.evidence.visible_count, 0);
   assert.equal(empty.evidence.total_visible_count, 0);
   assert.equal(empty.status, "fail");
