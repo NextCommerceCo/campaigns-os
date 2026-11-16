@@ -5550,8 +5550,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.71.1+agent.1",
-      "changelog_sha256": "137c6885233040ad9c2b9c55c167ac6835e62e22c004540af3bdaa6d8ae7cef8",
-      "agent_impact": "QA's upsell and checkout bundle price checks count the SDK's bundle price displays whatever their case ([data-next-bundle-display*='price' i]). An upsell whose tier cards show only data-next-bundle-display=\"unitPrice\" now passes pricing.upsell_price_visible:<page> where it used to block with 0 visible price rows; do not add a price row the design does not have to clear it. Hidden, zero-size or empty bundle-display nodes still do not count.",
+      "changelog_sha256": "46afff192ed6bd5b7107ad69a3eb8fdd65a9e2bfdbdbd7084cfe3918097e56b6",
+      "agent_impact": "QA's upsell, order-bump and checkout bundle price checks count the SDK's price displays whatever their case ([data-next-bundle-display*='price' i], and [data-next-display*='price' i] in the brand contract's price rows). An upsell whose only price is data-next-bundle-display=\"unitPrice\" or data-next-display=\"bundle.<id>.unitPrice\" now passes pricing.upsell_price_visible:<page> where it used to block with 0 visible price rows; do not add a price row the design does not have to clear it. Hidden, zero-size or empty bundle-display nodes still do not count.",
       "compatibility": "compatible",
       "migration": "none",
       "changes": [
@@ -5559,10 +5559,10 @@
           "class": "named_surface",
           "path": "docs/qa-and-test-orders.md",
           "surface_entry": "docs/qa-and-test-orders.md",
-          "summary": "The upsell and checkout bundle price checks match the SDK's bundle-display price nodes case-insensitively, so unitPrice counts."
+          "summary": "The upsell and checkout bundle price checks match the SDK's bundle-display and display price nodes case-insensitively, so unitPrice counts."
         }
       ],
-      "entry_sha256": "99489d92f78d2137fc278281569e6c5d6f7e88174f5103bb176f35977f7008a2"
+      "entry_sha256": "b34b02e961b50f0de36229497cfb3362a234f990b59f3cc3b0f3d9644f705818"
     }
   ]
 }

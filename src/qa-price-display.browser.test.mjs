@@ -95,6 +95,11 @@ test("an upsell whose tier cards show only unitPrice bundle displays passes the 
   const row = await priceRow(`<div data-next-bundle-selector>${[1, 2, 3].map(card).join("")}</div>`);
   assert.equal(row.status, "pass");
   assert.equal(row.evidence.visible_count, 6);
+
+  // The remote binding spells the same fields in camelCase too.
+  const remote = await priceRow('<span data-next-display="bundle.upsell-tiers.unitPrice">$26.00</span>');
+  assert.equal(remote.status, "pass");
+  assert.equal(remote.evidence.visible_count, 1);
 });
 
 test("a checkout bundle card counts a filled data-next-bundle-display price and not a sized empty one", async (t) => {

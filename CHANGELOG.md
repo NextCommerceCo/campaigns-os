@@ -6,7 +6,7 @@ Notable supported-surface changes are recorded here.
 
 ### Fixed
 
-- QA's upsell and checkout bundle price checks match the SDK's bundle price displays whatever their case: `[data-next-bundle-display*='price' i]`. The SDK names its bundle prices in camelCase (`unitPrice`, `originalUnitPrice`), and the check matched `price` case-sensitively, so an upsell whose tier cards show only `unitPrice` read "0 visible price row(s)" and `pricing.upsell_price_visible:<page>` blocked a correct page with no waiver. The checkout bundle card check already ignored case. A hidden, zero-size or empty bundle-display node still does not count.
+- QA's upsell and checkout bundle price checks match the SDK's bundle price displays whatever their case: `[data-next-bundle-display*='price' i]`. The SDK names its bundle prices in camelCase (`unitPrice`, `originalUnitPrice`), and the check matched `price` case-sensitively, so an upsell whose tier cards show only `unitPrice` read "0 visible price row(s)" and `pricing.upsell_price_visible:<page>` blocked a correct page with no waiver. The same applies to the remote binding `data-next-display="bundle.<id>.unitPrice"`: the price rows the brand contract lists for the upsell, order bump and checkout bundle surfaces now match `[data-next-display*='price' i]`. The checkout bundle card check already ignored case. A hidden, zero-size or empty bundle-display node still does not count.
 
 ## [1.71.1] - 2026-11-15
 

@@ -137,15 +137,15 @@
     "surfaces": {
       "checkout_bundle": {
         "default_mode": "compare_at_current",
-        "price_row_selectors": [".price-wrapper", ".cart-price", "[data-next-bundle-display*='price' i]", "[data-next-display*='price']"]
+        "price_row_selectors": [".price-wrapper", ".cart-price", "[data-next-bundle-display*='price' i]", "[data-next-display*='price' i]"]
       },
       "bump": {
         "default_mode": "full_price",
-        "price_row_selectors": [".price-wrapper", ".cart-price", "[data-next-display*='price']"]
+        "price_row_selectors": [".price-wrapper", ".cart-price", "[data-next-display*='price' i]"]
       },
       "upsell": {
         "default_mode": "full_price",
-        "price_row_selectors": [".price-wrapper", ".price-display", ".summary_price", "[data-next-display*='price']"],
+        "price_row_selectors": [".price-wrapper", ".price-display", ".summary_price", "[data-next-display*='price' i]"],
         "visible_price_rows_by_mode": {
           "full_price": 1,
           "compare_at_current": 2,
