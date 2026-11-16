@@ -333,7 +333,7 @@ test("a copy edit shows no CampaignSpec rewrite for live campaign drift", async 
   const fetchImpl = async (url) => {
     requests.push(String(url));
     return new Response(JSON.stringify({ ok: true, status: 200, endpoint: "campaigns", data: {
-      ref_id: 1573, name: "Synthetic campaign", shipping_methods: [], offers: [],
+      ref_id: 424242, name: "Synthetic campaign", shipping_methods: [], offers: [],
       packages: [{ ref_id: 1, name: "Example bundle", price: "39.00", is_recurring: false, price_recurring: null, interval: "month", interval_count: 1 }],
     } }), { status: 200, headers: { "Content-Type": "application/json" } });
   };
