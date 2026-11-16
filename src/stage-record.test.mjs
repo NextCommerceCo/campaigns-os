@@ -3569,6 +3569,19 @@ test("F2.2-B20: with the spec edited and no record spec, record build over the b
   });
 });
 
+test("record build over the output an input change superseded names the way through, not only the reason code", async () => {
+  await guardedLifecycle(async (f) => {
+    await recordThroughPolish(f);
+    editSpec(f, bumpCheckoutQty);
+    const result = recordOk(f, "build");
+    assert.equal(result.next_stage, "build");
+    assert.match(result.next_stage_reason, /^output_unchanged_after_input_change: /);
+    assert.match(result.next_stage_reason, /rebuilding to the same output will not clear it/);
+    assert.match(result.next_stage_reason, /edit the page sources so it reaches them, rebuild/);
+    assert.match(result.next_stage_reason, /record build --packet <packet> --deviation-reason "<the operator's reason>"/);
+  });
+});
+
 test("F2.2-B21: as B20, Polish is required", async () => {
   await guardedLifecycle(async (f) => {
     await specEditReplaysBuild(f);
