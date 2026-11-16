@@ -1949,6 +1949,25 @@ test("planSpecDerive removes, after handoff, a page whose projected file is gone
   assert.throws(() => applySpecDerive(specFixture(), { changes: [{ field: "campaign", path: ["campaign"], op: "remove" }] }), /Refusing to remove "campaign"/);
 });
 
+test("planSpecDerive removes, after handoff, a page with no projection whose built page a recorded rebuild removed", () => {
+  const tree = TREE_WITH_LINKS
+    .filter((file) => file.basename !== "upsell")
+    .map((file) => (file.basename === "checkout" ? { ...file, next_url: "/runtime-packet-demo/receipt/" } : file));
+  // A template stock page: no projection names its file, so only the
+  // recorded rebuild that removed upsell/index.html says it was built.
+  const plan = planSpecDerive({ spec: specFixture(), entry: CONFIGURED_ENTRY, pageFiles: tree, packetBindings: new Map(), removedBuiltPaths: ["upsell/index.html"], publicRouteSlug: "runtime-packet-demo", handedOff: true });
+  assert.deepEqual(plan.page_scope.removed, [{ page_id: "upsell", file: "upsell/index.html" }]);
+  assert.deepEqual(plan.changes.filter((row) => row.op === "remove").map((row) => [row.field, row.source]), [["funnels[0].pages[2]", "upsell/index.html (removed from the build by a recorded rebuild)"]]);
+  assert.equal(plan.not_derived.some((row) => row.page_id === "upsell"), false, "a removed page is not also reported as not found");
+  assert.deepEqual(applySpecDerive(specFixture(), plan).funnels[0].pages.map((page) => page.id), ["landing", "checkout", "receipt"]);
+  // Before handoff, or with no recorded removal, the page is only not found.
+  for (const extra of [{ handedOff: false }, { removedBuiltPaths: [] }]) {
+    const kept = planSpecDerive({ spec: specFixture(), entry: CONFIGURED_ENTRY, pageFiles: tree, packetBindings: new Map(), removedBuiltPaths: ["upsell/index.html"], publicRouteSlug: "runtime-packet-demo", handedOff: true, ...extra });
+    assert.deepEqual(kept.page_scope.removed, []);
+    assert.deepEqual(kept.not_derived.filter((row) => row.page_id === "upsell").map((row) => row.reason), ["page_file_not_found"]);
+  }
+});
+
 test("planSpecDerive keeps a rooted routing hint rooted when it re-points the edge, and reports a hint an added page leaves stale", () => {
   const rooted = () => specFixture((draft) => { draft.funnels[0].pages[2].sdk_hints.meta_tags["next-upsell-accept-url"] = "/runtime-packet-demo/receipt/"; });
   const tree = [

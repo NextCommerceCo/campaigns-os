@@ -450,6 +450,21 @@ test("new page previews without yes, then writes and records spec with yes (e)",
   assert.match(step(applied, "spec_derive").detail, /record spec: Bound/);
 }));
 
+test("a page removed after handoff with no page-kit projection previews its removal from the spec, then binds it with yes", async (t) => withNetworkGuard(async () => {
+  const f = await fixture(t);
+  rmSync(join(f.root, "src", SLUG, "upsell.html"));
+  rmSync(join(f.output, "upsell"), { recursive: true });
+  const preview = await run(f);
+  output(t, "CASE (page removed)", preview);
+  assert.equal(preview.stopped_at, "spec_derive", afterEditTextLines(preview).join("\n"));
+  assert.match(step(preview, "spec_derive").detail, /upsell/);
+  assert.ok(json(f.specPath).funnels[0].pages.some((page) => page.id === "upsell"), "the preview writes nothing");
+  const applied = await run(f, { yes: true });
+  assert.equal(applied.stopped_at, null, afterEditTextLines(applied).join("\n"));
+  assert.deepEqual(json(f.specPath).funnels[0].pages.map((page) => page.id), ["landing", "checkout", "receipt"]);
+  assert.match(step(applied, "spec_derive").detail, /record spec: Bound/);
+}));
+
 test("package edit owes full Polish and QA with no network or orders (f)", async (t) => withNetworkGuard(async () => {
   const f = await fixture(t);
   f.page("upsell", PAGES.upsell.replace('data-next-package-id="12"', 'data-next-package-id="13"'));

@@ -4209,7 +4209,14 @@ export function specDeriveCommand(args, { store: storeRead = null, liveCampaign 
   }
   // After handoff the page tree also says which pages exist (#721).
   const handedOff = campaignHandedOff(report);
-  const plan = planSpecDerive({ spec, entry, pageFiles, packetBindings, waivedGates, waiversUnknown, publicRouteSlug, mapPublicRouteSlug: effectiveMapPublicRouteSlug(packet), handedOff });
+  // The built pages recorded rebuilds removed: a page with no projection (a
+  // template stock page) is removed on that record, not on its file alone.
+  const buildChanges = report?.stages?.assembly?.build_changes;
+  const removedBuiltPaths = (Array.isArray(buildChanges) ? buildChanges : [])
+    .flatMap((entry) => (Array.isArray(entry?.reasons) ? entry.reasons : []))
+    .filter((reason) => reason?.code === "page_removed" && typeof reason.path === "string")
+    .map((reason) => reason.path);
+  const plan = planSpecDerive({ spec, entry, pageFiles, packetBindings, removedBuiltPaths, waivedGates, waiversUnknown, publicRouteSlug, mapPublicRouteSlug: effectiveMapPublicRouteSlug(packet), handedOff });
   result.page_scope = plan.page_scope;
   // The mirrored offer and package fields, from the live campaign read
   // (#721). A read that did not happen leaves them as they are and says why.

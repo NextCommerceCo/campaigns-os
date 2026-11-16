@@ -33,6 +33,7 @@ import { PAGE_KIT_CAMPAIGNS_REL_PATH } from "./page-kit-campaign-config.mjs";
 import { PAGE_KIT_STORE_PROFILE_FIELDS } from "./page-kit-store-profile.mjs";
 import { compareReleasedSdkVersions, entryInScaffoldState, resolveSpecSdkPin } from "./page-kit-sdk-version.mjs";
 import { effectiveMapPublicRouteSlug, isAbsoluteHttpUrl, normalizePageKitRoute, runtimeRelativeRouteForSpecValue, stripPublicRoutePrefix } from "./route-identity.mjs";
+import { cmd } from "./install-invocation.mjs";
 import { cpkPageTypeForSpecType, publicRouteForPage } from "./source-html-intake.mjs";
 import { MIRRORED_OFFER_FIELDS, MIRRORED_PACKAGE_FIELDS, MIRRORED_PAGE_OFFER_FIELDS } from "./spec-derive-campaign.mjs";
 
@@ -426,9 +427,12 @@ const PAGE_ID_SHAPE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 //     name, its type follows page_type, its route is the route the file
 //     builds to, and it is appended to the funnel's pages;
 //   - removed: a page whose file the packet's projection named
-//     (source_html.pages[].page_kit.target_path) and the tree no longer has.
-//     A page the build never wrote stays "not found" unless the package
-//     binding pass identifies the file that sells exactly its packages;
+//     (source_html.pages[].page_kit.target_path) and the tree no longer has,
+//     or whose built page a recorded rebuild removed (a page_removed reason
+//     in stages.assembly.build_changes, `removedBuiltPaths`), as a template
+//     stock page that has no projection is. A page the build never wrote
+//     stays "not found" unless the package binding pass identifies the file
+//     that sells exactly its packages;
 //   - routing: the added page's own frontmatter links set its routing fields,
 //     and a kept page whose link now names an added page, or whose routing
 //     named a removed one, is re-pointed at the page its link names.
@@ -436,7 +440,7 @@ const PAGE_ID_SHAPE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 // and where the funnel's pages carry an `order` the new page's is reported
 // as not derived. Before handoff nothing is added or removed; the files no
 // page binds are listed as unclaimed.
-function planPageScope({ spec, activePages, pageFiles, packetBindings, boundFiles, ambiguousFiles, notFound, derivedRouteByPageId, publicRouteSlug, mapPublicRouteSlug, handedOff }) {
+function planPageScope({ spec, activePages, pageFiles, packetBindings, removedBuiltPaths = [], boundFiles, ambiguousFiles, notFound, derivedRouteByPageId, publicRouteSlug, mapPublicRouteSlug, handedOff }) {
   const scope = { handed_off: Boolean(handedOff), added: [], removed: [], unclaimed: [], changes: [], not_derived: [] };
   const unbound = pageFiles.filter((file) => !boundFiles.has(file.path) && !ambiguousFiles.has(file.path) && file.route !== null && !file.problem && isNonEmptyString(file.page_type));
   if (!handedOff) {
@@ -444,7 +448,12 @@ function planPageScope({ spec, activePages, pageFiles, packetBindings, boundFile
     return scope;
   }
   const bindings = packetBindings instanceof Map ? packetBindings : new Map();
-  const gone = notFound.filter(({ page }) => isNonEmptyString(bindings.get(page.id)));
+  const removedBuilt = new Set(removedBuiltPaths);
+  const builtPathOf = (page) => `${mapPublicRouteSlug ? stripPublicRoutePrefix(publicRouteForPage(page), publicRouteSlug, mapPublicRouteSlug) : publicRouteForPage(page)}index.html`;
+  // The file a gone page had: its projected file, or the built page a
+  // recorded rebuild removed.
+  const goneFile = (page) => (isNonEmptyString(bindings.get(page.id)) ? bindings.get(page.id).replace(/^\/+/, "") : builtPathOf(page));
+  const gone = notFound.filter(({ page }) => isNonEmptyString(bindings.get(page.id)) || removedBuilt.has(builtPathOf(page)));
   const funnels = Array.isArray(spec?.funnels) ? spec.funnels : null;
   const container = funnels
     ? (funnels.length === 1 && Array.isArray(funnels[0]?.pages) ? ["funnels", 0, "pages"] : null)
@@ -496,11 +505,11 @@ function planPageScope({ spec, activePages, pageFiles, packetBindings, boundFile
   for (const { page, path } of gone) {
     const kitType = cpkPageTypeForSpecType(page.type);
     if (held(kitType)) {
-      scope.not_derived.push({ field: pathLabel(path), page_id: page.id, reason: "page_renamed", detail: `the file of page "${page.id}" (${bindings.get(page.id).replace(/^\/+/, "")}) is gone and the tree has a new page_type ${kitType} page file, which reads as a rename; derive did not remove the page. See the page_renamed row for the new file.` });
+      scope.not_derived.push({ field: pathLabel(path), page_id: page.id, reason: "page_renamed", detail: `the file of page "${page.id}" (${goneFile(page)}) is gone and the tree has a new page_type ${kitType} page file, which reads as a rename; derive did not remove the page. See the page_renamed row for the new file.` });
       continue;
     }
-    scope.removed.push({ page_id: page.id, file: bindings.get(page.id).replace(/^\/+/, "") });
-    scope.changes.push({ field: pathLabel(path), page_id: page.id, path, op: "remove", before: page, after: undefined, source: `${bindings.get(page.id).replace(/^\/+/, "")} (no longer in the page tree)` });
+    scope.removed.push({ page_id: page.id, file: goneFile(page) });
+    scope.changes.push({ field: pathLabel(path), page_id: page.id, path, op: "remove", before: page, after: undefined, source: `${goneFile(page)} (${isNonEmptyString(bindings.get(page.id)) ? "no longer in the page tree" : "removed from the build by a recorded rebuild"})` });
     const at = mirrorIndexOf(page.id);
     if (at !== -1) scope.changes.push({ field: `funnel_pages[${at}]`, page_id: page.id, path: ["funnel_pages", at], op: "remove", before: mirror[at], after: undefined, source: `mirror of ${pathLabel(path)}` });
   }
@@ -611,9 +620,10 @@ function planPageScope({ spec, activePages, pageFiles, packetBindings, boundFile
 // page file under the campaign's source directory, including literal
 // `package_refs` from its markup (null when the directory
 // does not exist); `packetBindings` as a Map of page id -> target file path
-// from the packet's page-kit projection; `waivedGates` as the checkpoint
+// from the packet's page-kit projection; `removedBuiltPaths` as the built
+// page paths (under the campaign's built route) recorded rebuilds removed; `waivedGates` as the checkpoint
 // gates an active named-human waiver currently covers.
-export function planSpecDerive({ spec, entry, pageFiles = null, packetBindings = new Map(), waivedGates = [], waiversUnknown = false, publicRouteSlug = "", mapPublicRouteSlug = null, handedOff = false } = {}) {
+export function planSpecDerive({ spec, entry, pageFiles = null, packetBindings = new Map(), removedBuiltPaths = [], waivedGates = [], waiversUnknown = false, publicRouteSlug = "", mapPublicRouteSlug = null, handedOff = false } = {}) {
   mapPublicRouteSlug = effectiveMapPublicRouteSlug({ campaign: { public_route_slug: publicRouteSlug, map_public_route_slug: mapPublicRouteSlug } });
   const target = isPlainObject(entry) ? entry : {};
   const changes = [];
@@ -733,7 +743,7 @@ export function planSpecDerive({ spec, entry, pageFiles = null, packetBindings =
       if (stale.length) {
         // Ask the existing scope planner which files would be added. Its
         // rename hold and all add eligibility rules take precedence here.
-        const addable = new Set(planPageScope({ spec, activePages, pageFiles, packetBindings, boundFiles, ambiguousFiles, notFound, derivedRouteByPageId, publicRouteSlug, mapPublicRouteSlug, handedOff }).added.map((row) => row.file));
+        const addable = new Set(planPageScope({ spec, activePages, pageFiles, packetBindings, removedBuiltPaths, boundFiles, ambiguousFiles, notFound, derivedRouteByPageId, publicRouteSlug, mapPublicRouteSlug, handedOff }).added.map((row) => row.file));
         const pairs = [];
         for (const file of pageFiles.filter((entry) => addable.has(entry.path))) {
           const refs = new Set(file.package_refs || []);
@@ -772,7 +782,7 @@ export function planSpecDerive({ spec, entry, pageFiles = null, packetBindings =
           for (const candidate of binding.candidates) ambiguousFiles.add(candidate);
           notDerived.push({ field, page_id: page.id, reason: "page_file_ambiguous", detail: `more than one page file could be page "${page.id}" (${binding.candidates.join(", ")}); add a permalink or rename so one file carries the route, then derive again.` });
         } else {
-          const row = { field, page_id: page.id, reason: "page_file_not_found", detail: `no page file in the page tree binds to page "${page.id}" (by the packet's page-kit projection, the page's current route ${JSON.stringify(publicRouteForPage(page))}, or a file named after the page id); the page has not been built, or was renamed past recognition. Build it, or name the file after the page, then derive again.` };
+          const row = { field, page_id: page.id, reason: "page_file_not_found", detail: `no page file in the page tree binds to page "${page.id}" (by the packet's page-kit projection, the page's current route ${JSON.stringify(publicRouteForPage(page))}, or a file named after the page id); the page has not been built, or was renamed past recognition. Build it, or name the file after the page, then derive again.${handedOff ? ` If the page was removed from the funnel, delete it from the CampaignSpec's pages, point the routing that names it at the page that follows, then run ${cmd("record")} spec.` : ""}` };
           notDerived.push(row);
         }
         continue;
@@ -826,7 +836,7 @@ export function planSpecDerive({ spec, entry, pageFiles = null, packetBindings =
       }
     }
     // The pages the tree adds or removes (#721), matched by id.
-    pageScope = planPageScope({ spec, activePages, pageFiles, packetBindings, boundFiles, ambiguousFiles, notFound, derivedRouteByPageId, publicRouteSlug, mapPublicRouteSlug, handedOff });
+    pageScope = planPageScope({ spec, activePages, pageFiles, packetBindings, removedBuiltPaths, boundFiles, ambiguousFiles, notFound, derivedRouteByPageId, publicRouteSlug, mapPublicRouteSlug, handedOff });
     changes.push(...pageScope.changes);
     notDerived.push(...pageScope.not_derived);
 
