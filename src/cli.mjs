@@ -270,7 +270,7 @@ import {
   readStoreProfile,
 } from "./spec-derive-store.mjs";
 import { ROOT, cmd, asInvocation } from "./install-invocation.mjs";
-import { hostedTemplateNeedsPreviewUrl, hostedTemplateNeedsUsablePreview } from "./local-preview-policy.mjs";
+import { hostedTemplateNeedsUsablePreview } from "./local-preview-policy.mjs";
 import {
   requireArg,
   isObject,
@@ -4762,11 +4762,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
   // participate in divergence detection or override prepare-only recovery.
   const divergences = prepareBuildGate?.binding_failure
     ? []
-    : detectLedgerDivergence(report, packet, targetRepo, {
-      allowUnrecordedHostedPreview: polishGate?.result === "excluded" && polishGate?.reason_code === "template_stock"
-        || polishCheckpointGate?.carried_forward?.policy === "hosted_template_preview"
-        || hostedTemplateNeedsPreviewUrl(packet, polishCheckpointGate),
-    });
+    : detectLedgerDivergence(report, packet, targetRepo);
   // Every return path runs through this finalizer so the machine-readable
   // contract is uniform: `gates` (pass/blocked/waived/not_applicable per
   // gate) and `next_actions` (exact commands — not prose) are always present,
@@ -5861,9 +5857,12 @@ function qaVerdictArtifactsForCampaign(packet, targetRepo) {
 // cwd dependence, no clock, no mtimes. Exactly three signals, per the
 // ratified packet scope:
 //   1. built output present while stages.assembly.status is "pending";
-//   2. a deploy URL present (report.stages.deploy.outputs — the same scan
-//      deploySatisfied uses — or packet.deploy.preview_url/production_url)
-//      while stages.deploy.status is "pending";
+//   2. a deploy URL in report.stages.deploy.outputs (the same scan
+//      deploySatisfied uses) while stages.deploy.status is "pending". The
+//      packet's deploy.preview_url and deploy.production_url are not read:
+//      start and qa policy set write them as the operator's declared
+//      targets before anything is deployed, so a URL there says where the
+//      campaign will be served, not that deploy ran (F-236);
 //   3. a QA verdict artifact for this campaign present while
 //      stages.qa.status is "pending".
 //
@@ -5871,7 +5870,7 @@ function qaVerdictArtifactsForCampaign(packet, targetRepo) {
 // Presence-based only: a stale built output still diverges from a pending
 // ledger, and the entry says the two disagree — it never asserts the stage
 // is complete or the artifact current. This function writes nothing.
-export function detectLedgerDivergence(report, packet, targetRepo, { allowUnrecordedHostedPreview = false } = {}) {
+export function detectLedgerDivergence(report, packet, targetRepo) {
   const divergences = [];
   const stages = report?.stages;
   if (!isObject(stages) || !isNonEmptyString(targetRepo)) return divergences;
@@ -5900,22 +5899,14 @@ export function detectLedgerDivergence(report, packet, targetRepo, { allowUnreco
   }
 
   if (stagePending("deploy")) {
-    const reportUrl = deployUrlFromReportOutputs(report);
-    const packetPreviewUrl = optionalString(packet?.deploy?.preview_url);
-    const packetProductionUrl = optionalString(packet?.deploy?.production_url);
-    const url = reportUrl || packetPreviewUrl || packetProductionUrl;
-    if (url && !(allowUnrecordedHostedPreview && !reportUrl)) {
-      const source = reportUrl
-        ? "report.stages.deploy.outputs"
-        : packetPreviewUrl
-          ? "packet.deploy.preview_url"
-          : "packet.deploy.production_url";
+    const url = deployUrlFromReportOutputs(report);
+    if (url) {
       divergences.push({
         code: "divergence.deploy.url_present",
         stage: "deploy",
         ledger_claim: 'stages.deploy.status = "pending"',
-        artifact_evidence: `Deploy URL "${url}" is recorded in ${source}.`,
-        message: `The ledger claims deploy has not run, but a deploy URL ("${url}") is recorded in ${source}. The ledger and artifacts disagree; inspect both before acting. A recorded URL is not proof the stage is complete or that the deployed output is current.`,
+        artifact_evidence: `Deploy URL "${url}" is recorded in report.stages.deploy.outputs.`,
+        message: `The ledger claims deploy has not run, but a deploy URL ("${url}") is recorded in report.stages.deploy.outputs. The ledger and artifacts disagree; inspect both before acting. A recorded URL is not proof the stage is complete or that the deployed output is current.`,
       });
     }
   }

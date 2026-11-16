@@ -5623,6 +5623,33 @@
         }
       ],
       "entry_sha256": "36ef78ccf454b43116e3d3586cde12c472b0f0f2e998c54caebbbb5d0fab8db7"
+    },
+    {
+      "id": "RL-0365",
+      "sequence": 349,
+      "date": "2026-11-16",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.1+agent.4",
+      "changelog_sha256": "c9e666e02481477236522a1942015e1c474ac725227f22a5ddee505dd95a3b52",
+      "agent_impact": "next no longer reports divergence.deploy.url_present from the Build Packet's deploy.preview_url or deploy.production_url: start and qa policy set write those as declared targets before anything is deployed, so a fresh intake with --preview-url gets the normal action list. Only a URL in the Assembly Report's stages.deploy.outputs counts as deploy evidence while deploy is pending; do not hand-edit the packet to clear a divergence. A bare email in campaign.store_contact still blocks page_kit.store_profile, and the remedy now says to write it as mailto:<address>. Once _site/<public_route_slug>/ holds built HTML, doctor's copy.hardcoded_currency_symbol, market_copy.us_specific_claims and copy.hardcoded_phone read only the built output, so starter includes no page renders no longer warn, and { code, label } shipping countries read as their codes instead of [object Object].",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "next's deploy divergence reads only report.stages.deploy.outputs, not the packet's declared preview or production URL."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": null,
+          "summary": "The market and currency copy checks read only _site/<slug>/ once it holds built HTML, and shipping-country objects read as their codes."
+        }
+      ],
+      "entry_sha256": "b4bb9238a26c3dc1f6356aa717c2aae85a1dae18b3e8a8dfec5f184e9fdb46ff"
     }
   ]
 }

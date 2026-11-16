@@ -329,6 +329,22 @@ test("partial divergence (deploy URL only) points forward to QA, not re-setup", 
   rmSync(dir, { recursive: true, force: true });
 });
 
+// F-236: `start --preview-url` and `qa policy set --preview-url` write the
+// operator's declared targets into packet.deploy before anything is deployed.
+// A declared URL is not deploy evidence, so a fresh intake must not open in
+// divergence (the only escape agents found was hand-editing the packet).
+test("a preview/production URL declared on the packet is not deploy evidence", () => {
+  const { dir, packetPath } = selfTargetFixture();
+  const packet = JSON.parse(readFileSync(packetPath, "utf8"));
+  packet.deploy.preview_url = "http://localhost:5420/runtime-packet-demo/";
+  packet.deploy.production_url = "https://shop.example.test/runtime-packet-demo/";
+  writeFileSync(packetPath, JSON.stringify(packet, null, 2));
+  const result = runNext(packetPath);
+  assert.equal("divergences" in result, false, JSON.stringify(result.divergences));
+  assert.ok(!(result.next_actions || []).some((action) => action.id === "divergence_inspect"));
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test("the inspection action shell-quotes a packet path that contains a space", () => {
   const { dir } = doctorGreenFixture();
   const spaced = mkdtempSync(join(tmpdir(), "next divergence spaced "));
