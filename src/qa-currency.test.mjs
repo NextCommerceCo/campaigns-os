@@ -831,7 +831,7 @@ test("a spec listing three currencies with every order in one gets one warn row 
   assert.equal(rows[0].id, "browser-test-order:currency-coverage");
   assert.equal(rows[0].status, "warn");
   assert.equal(rows[0].severity, "warn");
-  assert.match(rows[0].actual, /^no test order in this run was placed in EUR or GBP\. Run .* qa run once per currency, with --currency EUR and with --currency GBP, in place of any --currency given here\.$/);
+  assert.match(rows[0].actual, /^no test order for this build was placed in EUR or GBP\. Run .* qa run once per currency, with --currency EUR and with --currency GBP, in place of any --currency given here; orders this build already has count\.$/);
   assert.deepEqual(rows[0].evidence, { listed: ["USD", "EUR", "GBP"], tested: ["USD"], untested: ["EUR", "GBP"] });
 
   // An order with no recorded currency counts in the run currency.
@@ -840,4 +840,18 @@ test("a spec listing three currencies with every order in one gets one warn row 
 
   assert.deepEqual(testOrderCoverageExceptions({ spec: spec(["USD"]), topologies: topologies(), testOrders: orders }), []);
   assert.deepEqual(testOrderCoverageExceptions({ spec: spec(["USD", "EUR", "GBP"]), topologies: topologies(), testOrders: [] }), [], "no order, no claim about coverage");
+});
+
+// Each per-currency run is its own verdict. The row counts the orders the
+// build's earlier recorded runs placed, so following its advice (one run per
+// currency) clears it on the last run instead of warning on every one.
+test("the currency-coverage row counts orders earlier runs of the same build placed", () => {
+  const { testOrderCoverageExceptions } = __qaNodeTestHooks;
+  const spec = { campaign: { currency: "USD", available_currencies: ["USD", "EUR", "GBP"] } };
+  const gbp = [{ ok: true, verification: { currency: "GBP" } }];
+
+  const [row] = testOrderCoverageExceptions({ spec, topologies: topologies(), testOrders: gbp, buildCurrencies: new Set(["USD"]) });
+  assert.deepEqual(row.evidence, { listed: ["USD", "EUR", "GBP"], tested: ["GBP", "USD"], untested: ["EUR"] });
+  assert.deepEqual(testOrderCoverageExceptions({ spec, topologies: topologies(), testOrders: gbp, buildCurrencies: new Set(["USD", "EUR"]) }), [], "every listed currency has an order for this build");
+  assert.deepEqual(testOrderCoverageExceptions({ spec, topologies: topologies(), testOrders: [], buildCurrencies: new Set(["USD"]) }), [], "still no row without an order in this run");
 });

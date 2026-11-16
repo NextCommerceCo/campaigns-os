@@ -21,6 +21,7 @@ import { test } from "node:test";
 
 import { checkoutOrderBumpCart, nextStage, nextTinyPromptLines, recordQaStageOutcome } from "./cli.mjs";
 import { doctorPacket } from "./doctor/inspect.mjs";
+import { testOrderCurrenciesForBuild } from "./qc-results.mjs";
 import { currentPacketInputs, inputStamps } from "./input-currency.mjs";
 import { buildPageLoadCapture } from "./polish-capture.mjs";
 import { buildPolishPageLoadEvidence } from "./polish-page-load.mjs";
@@ -133,7 +134,7 @@ function target({ prefix = "closeout-evidence-", orderPathDepth = "common", muta
 
 // A synthesized verdict. Not copied from any run: no merchant, campaign, order
 // or customer value appears anywhere in this repository.
-function verdict({ runId, completedAt, orders = 1, assertions = [], disposition = "ready", exceptions = [] }) {
+function verdict({ runId, completedAt, orders = 1, assertions = [], disposition = "ready", exceptions = [], currency = null }) {
   return {
     schema_version: "1.0",
     run_id: runId,
@@ -152,19 +153,21 @@ function verdict({ runId, completedAt, orders = 1, assertions = [], disposition 
       qa_email: "qa@example.invalid",
       is_test: true,
       checkout_url: "https://example.invalid/checkout",
-      verification: { verified: true },
+      verification: { verified: true, ...(currency ? { currency } : {}) },
     })),
   };
 }
 
 // The producer, writing real files exactly as `qa run` does.
-function runProducer({ dir, packetPath }, { runId, completedAt, orders = 1, assertions = [], disposition = "ready", exceptions = [] }) {
-  const built = verdict({ runId, completedAt, orders, assertions, disposition, exceptions });
+// `inTarget` writes the verdict under the target repo's qa-output/, where
+// readers that follow the QA record's outputs[] look for it.
+function runProducer({ dir, packetPath }, { runId, completedAt, orders = 1, assertions = [], disposition = "ready", exceptions = [], currency = null, inTarget = false }) {
+  const built = verdict({ runId, completedAt, orders, assertions, disposition, exceptions, currency });
   // What qa run records at run start: the spec material and the brief material.
   const inputs = currentPacketInputs({ packet: JSON.parse(readFileSync(packetPath, "utf8")), packetPath });
   built.spec_hash = inputs.specMaterial;
   built.source_brief_material = inputs.briefMaterial;
-  const localDir = join(dir, "qa-output", MAP_ID);
+  const localDir = join(dir, ...(inTarget ? ["target-page-kit"] : []), "qa-output", MAP_ID);
   mkdirSync(localDir, { recursive: true });
   const localPath = join(localDir, `${runId}.json`);
   writeFileSync(localPath, JSON.stringify(built, null, 2));
@@ -379,14 +382,13 @@ test("a --test-order off run cannot carry a declared common depth to done", () =
 
 // `qa run --test-order common` never puts a checkout order bump in a test
 // order: the tier planner skips bump rows by design and bump coverage comes
-// from --cart. Newcomer sessions ran the one command `next` handed them and
-// got a ready verdict with the add-on never charged, so a spec that declares a
-// bump now gets a second QA command with the bump in the cart.
-test("a checkout order bump gets its own QA command with the bump in the cart", () => {
+// from --cart. Newcomer sessions ran the one command `next` handed them, got
+// order-bump-coverage, and paid for a second full run with the bump in the
+// cart, so a spec that declares a bump gets the cart in its first QA command.
+test("a declared checkout order bump is in the cart of the first QA command", () => {
   const plain = runNext(target().packetPath);
   assert.equal(plain.stage, "qa");
-  assert.equal(action(plain, "qa_run_bump"), null, "no declared bump, no second QA run");
-  assert.doesNotMatch(plain.prompt, /Order bump QA command/);
+  assert.doesNotMatch(action(plain, "qa_run").command, / --cart /, "no declared bump, no --cart");
 
   const fixture = target({
     prefix: "closeout-evidence-bump-",
@@ -399,20 +401,17 @@ test("a checkout order bump gets its own QA command with the bump in the cart", 
   const result = runNext(fixture.packetPath);
   assert.equal(result.stage, "qa");
   const qaRun = action(result, "qa_run");
-  const bumpRun = action(result, "qa_run_bump");
-  assert.ok(qaRun, "the default QA command stays");
-  assert.ok(bumpRun, "a declared checkout bump gets its own QA command");
-  assert.equal(bumpRun.kind, "command");
-  assert.equal(bumpRun.command, `${qaRun.command} --cart 1:1,2:1`, "same run, base tier plus the bump in the cart");
-  assert.match(bumpRun.description, /charged add-on/);
-  assert.match(bumpRun.description, /order bump 2/);
-  assert.ok(result.prompt.includes(`Order bump QA command (proves the charged add-on):\n${bumpRun.command}\n`), "the QA stage prompt names it too");
-  assert.ok(nextTinyPromptLines(result).some((line) => line.endsWith(bumpRun.command)), "and so does the human next output");
+  assert.match(qaRun.command, / --browser --test-order common --cart 1:1,2:1$/, "the default run, base tier plus the bump in the cart");
+  assert.match(qaRun.description, /charged add-on/);
+  assert.match(qaRun.description, /order bump 2/);
+  assert.equal(action(result, "qa_run_bump"), null, "no second QA run");
+  assert.ok(result.prompt.includes(`Node QA command:\n${qaRun.command}\n`), "the QA stage prompt names the same command");
+  assert.ok(nextTinyPromptLines(result).some((line) => line.startsWith("Next expected proof:") && line.endsWith(qaRun.command)), "and so does the human next output's expected proof");
 });
 
-test("a spec listing more currencies gets one --currency QA command per other currency", () => {
+test("a spec listing more currencies gets one --currency QA action per other currency", () => {
   const plain = runNext(target().packetPath);
-  assert.equal(action(plain, "qa_run").currency_commands, undefined, "one currency, no extra runs");
+  assert.equal(action(plain, "qa_run_currency"), null, "one currency, no extra runs");
 
   const fixture = target({
     prefix: "closeout-evidence-currencies-",
@@ -423,13 +422,67 @@ test("a spec listing more currencies gets one --currency QA command per other cu
   const result = runNext(fixture.packetPath);
   assert.equal(result.stage, "qa");
   const qaRun = action(result, "qa_run");
-  assert.deepEqual(qaRun.currency_commands, [`${qaRun.command} --currency EUR`, `${qaRun.command} --currency GBP`]);
+  const currencyRuns = result.next_actions.filter((entry) => entry.id === "qa_run_currency").map((entry) => entry.command);
+  assert.deepEqual(currencyRuns, [`${qaRun.command} --currency EUR`, `${qaRun.command} --currency GBP`], "listed actions, not a field of qa_run");
   assert.ok(result.prompt.includes(`${qaRun.command} --currency EUR\n${qaRun.command} --currency GBP`), "the QA stage prompt names them");
   const lines = nextTinyPromptLines(result);
-  for (const command of qaRun.currency_commands) assert.ok(lines.includes(`  - ${command}`), "and so does the human next output");
+  for (const command of currencyRuns) assert.ok(lines.includes(`  - ${command}`), "and so does the human next output");
 });
 
-test("a bump marked is_order_bump alone also gets the bump-cart QA command", () => {
+// A currency counts as covered when a test order in it exists for the same
+// build, whichever recorded QA run placed it. Following the coverage row's
+// advice (one run per currency) used to leave QA done with EUR and GBP never
+// named again; `next` now names each currency this build still owes.
+test("next names the --currency runs this build still owes after QA is done, and none once each has an order", () => {
+  const fixture = target({
+    prefix: "closeout-evidence-currency-owed-",
+    mutateSpec(spec) {
+      spec.campaign = { ...spec.campaign, currency: "USD", available_currencies: ["USD", "EUR", "GBP"] };
+    },
+  });
+  const owed = () => {
+    const result = runNext(fixture.packetPath);
+    assert.equal(result.stage, "done", "currency coverage never holds QA open");
+    return { result, codes: result.next_actions.filter((entry) => entry.id === "qa_run_currency").map((entry) => entry.command.match(/--currency (\w+)$/)[1]) };
+  };
+  runProducer(fixture, { runId: "SYNTHRUN000000000000000001", completedAt: "2026-09-11T02:00:00.000Z", orders: 2, currency: "USD", inTarget: true });
+  const first = owed();
+  assert.deepEqual(first.codes, ["EUR", "GBP"]);
+  assert.ok(nextTinyPromptLines(first.result).some((line) => line.startsWith("QA is done, but this build has no test order in every currency")));
+  runProducer(fixture, { runId: "SYNTHRUN000000000000000002", completedAt: "2026-09-11T03:00:00.000Z", currency: "EUR", inTarget: true });
+  assert.deepEqual(owed().codes, ["GBP"], "the USD order of the earlier run still counts");
+  runProducer(fixture, { runId: "SYNTHRUN000000000000000003", completedAt: "2026-09-11T04:00:00.000Z", currency: "GBP", inTarget: true });
+  assert.deepEqual(owed().codes, []);
+
+  // Records of another build name orders that prove nothing about this one.
+  const report = readReport(fixture.reportPath);
+  report.stages.assembly.build_fingerprint = `sha256:${"b".repeat(64)}`;
+  assert.deepEqual([...testOrderCurrenciesForBuild({ report, targetRepo: join(fixture.dir, "target-page-kit"), packetPath: fixture.packetPath, reportPath: fixture.reportPath })], []);
+  report.stages.assembly.build_fingerprint = BUILD_FINGERPRINT;
+  assert.deepEqual([...testOrderCurrenciesForBuild({ report, targetRepo: join(fixture.dir, "target-page-kit"), packetPath: fixture.packetPath, reportPath: fixture.reportPath })].sort(), ["EUR", "GBP", "USD"]);
+});
+
+// The two record shapes the coverage reader must still read: a record that
+// names its build only as evidence.source_build_fingerprint (written before
+// qc_build_fingerprint existed), and an order whose body echoed no currency,
+// which counts in its run's currency as the current run's orders do.
+test("build currencies read a record bound by source_build_fingerprint and an order counted in its run currency", () => {
+  const fixture = target({ prefix: "closeout-evidence-currency-shapes-" });
+  const targetRepo = join(fixture.dir, "target-page-kit");
+  runProducer(fixture, { runId: "SYNTHRUN000000000000000001", completedAt: "2026-09-11T02:00:00.000Z", currency: "USD", inTarget: true });
+  runProducer(fixture, {
+    runId: "SYNTHRUN000000000000000002",
+    completedAt: "2026-09-11T03:00:00.000Z",
+    inTarget: true,
+    assertions: [{ id: "browser-order-currency:accept", family: "browser-test-order", page: "checkout", status: "fail", severity: "blocker", evidence: { requested: "EUR", order_currency: null } }],
+  });
+  const report = readReport(fixture.reportPath);
+  const [older] = report.stages.qa.history;
+  older.evidence = { source_build_fingerprint: older.evidence.qc_build_fingerprint };
+  assert.deepEqual([...testOrderCurrenciesForBuild({ report, targetRepo, packetPath: fixture.packetPath, reportPath: fixture.reportPath })].sort(), ["EUR", "USD"]);
+});
+
+test("a bump marked is_order_bump alone is also in the first QA command's cart", () => {
   const fixture = target({
     prefix: "closeout-evidence-order-bump-",
     mutateSpec(spec) {
@@ -438,9 +491,7 @@ test("a bump marked is_order_bump alone also gets the bump-cart QA command", () 
     },
   });
   const result = runNext(fixture.packetPath);
-  const bumpRun = action(result, "qa_run_bump");
-  assert.ok(bumpRun, "an is_order_bump row is the documented bump marker");
-  assert.equal(bumpRun.command, `${action(result, "qa_run").command} --cart 1:1,2:1`);
+  assert.match(action(result, "qa_run").command, / --cart 1:1,2:1$/, "an is_order_bump row is the documented bump marker");
 });
 
 // An unreadable CampaignSpec leaves next unable to tell whether the checkout
@@ -452,7 +503,7 @@ test("next warns when the spec it reads for the order-bump command does not pars
   const warning = (result.warnings || []).find((entry) => entry.code === "next.order_bump_spec_unreadable");
   assert.ok(warning, "the suppressed order-bump command is reported");
   assert.match(warning.message, /could not be read/);
-  assert.equal(action(result, "qa_run_bump"), null);
+  assert.equal((result.next_actions || []).some((entry) => entry.command?.includes(" --cart ")), false);
 });
 
 // QA's test orders run on one checkout, findPage(topologies, "checkout"): the

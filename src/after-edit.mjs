@@ -156,7 +156,11 @@ export async function afterEditCommand(args, { specFetch, specDerive, specDerive
   let deriveDetail = "";
   let deriveCommand = deriveNext;
   try {
-    const plan = await specDerive({ ...deriveArgs, "dry-run": true }, { fetchImpl });
+    // The live campaign's offer and package fields join the preview only when
+    // the edit changed a field the spec derives from the repo (SDK pin, page
+    // routes, analytics ids); otherwise spec derive refreshes them on its own.
+    const repoPlan = await specDerive({ ...deriveArgs, "no-live-refs": true, "dry-run": true }, { fetchImpl });
+    const plan = !repoPlan.ok || !repoPlan.changes.length || args["no-live-refs"] ? repoPlan : await specDerive({ ...deriveArgs, "dry-run": true }, { fetchImpl });
     if (!plan.ok) return stop("spec_derive", specDeriveTextLines(plan).join("\n"), deriveNext);
     if (!plan.changes.length) add("spec_derive", "not_needed", "Spec is current.");
     else {

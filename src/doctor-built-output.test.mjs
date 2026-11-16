@@ -435,6 +435,69 @@ test("R2-B2 currency: still warns when the built output itself has hardcoded $",
   });
 });
 
+// F-238: once _site/<slug>/ is built, the copy checks read what the pages
+// render, not starter _includes in the Page Kit tree that no page renders.
+function builtCopyDirs(dir, { builtHtml }) {
+  const target = join(dir, "src", SLUG);
+  mkdirSync(join(target, "_includes"), { recursive: true });
+  writeFileSync(join(target, "index.html"), "<p>{{ price }}</p>");
+  writeFileSync(join(target, "_includes", "bump-check02.html"), "<p>Only $1.99 more. Ships via USPS.</p>");
+  if (builtHtml != null) {
+    mkdirSync(join(dir, "_site", SLUG), { recursive: true });
+    writeFileSync(join(dir, "_site", SLUG, "index.html"), builtHtml);
+  }
+  return { target_repo: dir, target_output_dir: target };
+}
+
+const EUR_DE_SPEC = { campaign: { currency: "EUR", available_shipping_countries: [{ code: "DE", label: "Germany" }] } };
+
+test("F-238 copy checks: an include no built page renders does not warn once _site is built", () => {
+  withTempDir((dir) => {
+    const derived = builtCopyDirs(dir, { builtHtml: "<p>9,99 EUR, shipped by DHL</p>" });
+    const warnings = [];
+    const ready = [];
+    validateMarketSensitiveCopy(EUR_DE_SPEC, warnings, ready, derived, PACKET);
+    assert.deepEqual(codes(warnings), []);
+  });
+});
+
+test("F-238 copy checks: copy the built page renders still warns, named by its _site path", () => {
+  withTempDir((dir) => {
+    const derived = builtCopyDirs(dir, { builtHtml: "<p>Only $1.99 more. Ships via USPS.</p>" });
+    const warnings = [];
+    validateMarketSensitiveCopy(EUR_DE_SPEC, warnings, [], derived, PACKET);
+    assert.deepEqual(codes(warnings).sort(), ["copy.hardcoded_currency_symbol", "market_copy.us_specific_claims"]);
+    for (const issue of warnings) assert.match(issue.message, new RegExp(`_site/${SLUG}:index\\.html`));
+  });
+});
+
+test("F-238 copy checks: a public_route_slug that leaves _site/ is not a built root", () => {
+  withTempDir((dir) => {
+    const derived = builtCopyDirs(dir, { builtHtml: "<p>9,99 EUR, shipped by DHL</p>" });
+    for (const slug of ["..", "../..", "a/../.."]) {
+      const warnings = [];
+      validateMarketSensitiveCopy(EUR_DE_SPEC, warnings, [], derived, { campaign: { public_route_slug: slug } });
+      // The scan falls back to the source tree, so no message names a _site root.
+      for (const issue of warnings) assert.doesNotMatch(issue.message, /_site\//, slug);
+      assert.ok(codes(warnings).includes("copy.hardcoded_currency_symbol"), slug);
+    }
+  });
+});
+
+test("F-238 market scope: { code, label } shipping countries read as their codes", () => {
+  withTempDir((dir) => {
+    const derived = builtCopyDirs(dir, { builtHtml: "<p>Ships via USPS.</p>" });
+    const warnings = [];
+    validateMarketSensitiveCopy(EUR_DE_SPEC, warnings, [], derived, PACKET);
+    const market = warnings.find((issue) => issue.code === "market_copy.us_specific_claims");
+    assert.match(market.message, /non-US shipping countries: DE\b/);
+    assert.doesNotMatch(market.message, /\[object Object\]/);
+    const usOnly = [];
+    validateMarketSensitiveCopy({ campaign: { currency: "USD", available_shipping_countries: [{ code: "US", label: "United States" }] } }, usOnly, [], derived, PACKET);
+    assert.deepEqual(codes(usOnly), [], "a US-only campaign needs no market copy review");
+  });
+});
+
 // --- H3.1: doctor warns on literal placeholder TEXT in built output ---
 
 const TEXT_RESIDUE_CONTRACT = {

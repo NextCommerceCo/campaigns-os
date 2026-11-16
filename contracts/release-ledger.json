@@ -5544,8 +5544,116 @@
       "entry_sha256": "f947a03b8e98366eae2493605c397ea51ef523118657364796e67d44d22234cc"
     },
     {
-      "id": "RL-0366",
+      "id": "RL-0362",
       "sequence": 346,
+      "date": "2026-11-16",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.1+agent.1",
+      "changelog_sha256": "46afff192ed6bd5b7107ad69a3eb8fdd65a9e2bfdbdbd7084cfe3918097e56b6",
+      "agent_impact": "QA's upsell, order-bump and checkout bundle price checks count the SDK's price displays whatever their case ([data-next-bundle-display*='price' i], and [data-next-display*='price' i] in the brand contract's price rows). An upsell whose only price is data-next-bundle-display=\"unitPrice\" or data-next-display=\"bundle.<id>.unitPrice\" now passes pricing.upsell_price_visible:<page> where it used to block with 0 visible price rows; do not add a price row the design does not have to clear it. Hidden, zero-size or empty bundle-display nodes still do not count.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "The upsell and checkout bundle price checks match the SDK's bundle-display and display price nodes case-insensitively, so unitPrice counts."
+        }
+      ],
+      "entry_sha256": "b34b02e961b50f0de36229497cfb3362a234f990b59f3cc3b0f3d9644f705818"
+    },
+    {
+      "id": "RL-0363",
+      "sequence": 347,
+      "date": "2026-11-16",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.1+agent.2",
+      "changelog_sha256": "5c61c05a1c3233269d48abc6fe4d2fee7040526e030c5de7e6b02bbde8905bfe",
+      "agent_impact": "next no longer emits a qa_run_bump action: when the checkout QA drives declares an order bump, qa_run's command already carries --cart <base>:1,<bump>:1, and qa resolve's Next expected proof prints the same --cart. next no longer puts currency_commands on qa_run: it lists one qa_run_currency action per currency still owed (the qa_run command plus --currency <code>), at the QA stage and also after QA is done when the current build has no test order in a listed currency; done stays done. The browser-test-order:currency-coverage warn row counts created test orders from every QA run the QA stage recorded against the current build fingerprint, not only this run's, so one run per currency clears it. Agents that read currency_commands or qa_run_bump must read qa_run_currency actions and qa_run's command instead.",
+      "compatibility": "compatible",
+      "migration": "A reader of next --json that took qa_run.currency_commands reads the qa_run_currency actions instead, and one that ran qa_run_bump runs qa_run, whose command now carries the --cart. Bundled skills read neither field.",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "next: qa_run carries the order-bump --cart and qa_run_bump is removed; qa_run_currency actions replace qa_run.currency_commands and also appear after QA is done for currencies the current build has no test order in."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Documents the --cart in the first proof command, qa_run_currency, and build-wide currency coverage."
+        }
+      ],
+      "entry_sha256": "362460ef994d258a1a66b08edd667d9b3c3cce2c0dacb488ee84fce6c27e0417"
+    },
+    {
+      "id": "RL-0364",
+      "sequence": 348,
+      "date": "2026-11-16",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.1+agent.3",
+      "changelog_sha256": "e38db4dfd01397f3bc048c78994b6321f734182fe4251adb02640055175c7f1b",
+      "agent_impact": "Whether Polish is owed has one answer, the evidence debt that after-edit and doctor --ci report. After a page-only rebuild, stages.polish keeps the record of the build it reviewed instead of reading required; treat Polish as advisory there and run QA on the changed pages. An optional polish capture no longer sends next back to Polish. On an all-template-stock campaign, record build records Polish skipped (template_stock), so do not ask the operator to approve skipping it. after-edit shows a CampaignSpec derive preview only when the edit changed a repo-derived field (SDK pin, page routes, analytics ids); use spec derive to refresh offer and package fields from the live campaign. A one-time package never gains an interval.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "record build keeps an advisory Polish record and records an all-template-stock Polish skipped; a non-recurring package mirrors no interval or interval_count."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/campaigns-os-build-flow.md",
+          "surface_entry": "docs/campaigns-os-build-flow.md",
+          "summary": "after-edit shows a derive preview only when the change touched a field the spec derives from the repo."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/effects.md",
+          "surface_entry": "docs/effects.md",
+          "summary": "after-edit's derive preview reads the live campaign only when the edit changed a repo-derived field; the CI assessment read is unchanged."
+        }
+      ],
+      "entry_sha256": "36ef78ccf454b43116e3d3586cde12c472b0f0f2e998c54caebbbb5d0fab8db7"
+    },
+    {
+      "id": "RL-0365",
+      "sequence": 349,
+      "date": "2026-11-16",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.1+agent.4",
+      "changelog_sha256": "c9e666e02481477236522a1942015e1c474ac725227f22a5ddee505dd95a3b52",
+      "agent_impact": "next no longer reports divergence.deploy.url_present from the Build Packet's deploy.preview_url or deploy.production_url: start and qa policy set write those as declared targets before anything is deployed, so a fresh intake with --preview-url gets the normal action list. Only a URL in the Assembly Report's stages.deploy.outputs counts as deploy evidence while deploy is pending; do not hand-edit the packet to clear a divergence. A bare email in campaign.store_contact still blocks page_kit.store_profile, and the remedy now says to write it as mailto:<address>. Once _site/<public_route_slug>/ holds built HTML, doctor's copy.hardcoded_currency_symbol, market_copy.us_specific_claims and copy.hardcoded_phone read only the built output, so starter includes no page renders no longer warn, and { code, label } shipping countries read as their codes instead of [object Object].",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "next's deploy divergence reads only report.stages.deploy.outputs, not the packet's declared preview or production URL."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": null,
+          "summary": "The market and currency copy checks read only _site/<slug>/ once it holds built HTML, and shipping-country objects read as their codes."
+        }
+      ],
+      "entry_sha256": "b4bb9238a26c3dc1f6356aa717c2aae85a1dae18b3e8a8dfec5f184e9fdb46ff"
+    },
+    {
+      "id": "RL-0366",
+      "sequence": 350,
       "date": "2026-11-16",
       "kind": "release",
       "surface_version": null,
@@ -5562,7 +5670,7 @@
           "summary": "States the scope of browser-test-order:tier-coverage: tiers runs only, checkout tiers only, upsell tiers not listed."
         }
       ],
-      "entry_sha256": "195cb16446fec83dd90938e9b7321a1e8e9036aae294d0058219bec43cf92c6f"
+      "entry_sha256": "11c676eff1909ac1e9b9f2d1cbf34fa0fd3bcc4d5878dbc870d2163e136a85f3"
     }
   ]
 }

@@ -83,7 +83,7 @@ import {
 import { markDoctorSidecarStale, writeDoctorSidecar, writeJsonAtomic } from "./doctor-sidecar.mjs";
 import { QcAcceptRefusal, buildQcHandoff, parseQcResultRef, planQcAccepts, projectQcAccept, qcAcceptAttribution, qcHandoffTextLines } from "./qc-accept.mjs";
 import { loadQcRederivers } from "./qc-check-registry.mjs";
-import { fingerprint12, readCurrentQcResults } from "./qc-results.mjs";
+import { fingerprint12, readCurrentQcResults, testOrderCurrenciesForBuild } from "./qc-results.mjs";
 import {
   DEFAULT_PACKET_FILENAME,
   RUNTIME_DIR_REL_PATH,
@@ -270,7 +270,7 @@ import {
   readStoreProfile,
 } from "./spec-derive-store.mjs";
 import { ROOT, cmd, asInvocation } from "./install-invocation.mjs";
-import { hostedTemplateNeedsPreviewUrl, hostedTemplateNeedsUsablePreview } from "./local-preview-policy.mjs";
+import { hostedTemplateNeedsUsablePreview } from "./local-preview-policy.mjs";
 import {
   requireArg,
   isObject,
@@ -4762,11 +4762,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
   // participate in divergence detection or override prepare-only recovery.
   const divergences = prepareBuildGate?.binding_failure
     ? []
-    : detectLedgerDivergence(report, packet, targetRepo, {
-      allowUnrecordedHostedPreview: polishGate?.result === "excluded" && polishGate?.reason_code === "template_stock"
-        || polishCheckpointGate?.carried_forward?.policy === "hosted_template_preview"
-        || hostedTemplateNeedsPreviewUrl(packet, polishCheckpointGate),
-    });
+    : detectLedgerDivergence(report, packet, targetRepo);
   // Every return path runs through this finalizer so the machine-readable
   // contract is uniform: `gates` (pass/blocked/waived/not_applicable per
   // gate) and `next_actions` (exact commands — not prose) are always present,
@@ -4786,6 +4782,10 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
   // keep working when the records directory is absent (the normal case — it is
   // machine-local and git-ignored) or unreadable.
   const purchaseProof = assessPurchaseProofCoverage({ packet, report });
+  // Read once, and only when a QA command needs it: the currencies this
+  // build's recorded QA runs placed test orders in.
+  let buildCurrencies = null;
+  const qaBuildCurrencies = () => (buildCurrencies ??= testOrderCurrenciesForBuild({ report, targetRepo, packetPath, reportPath }));
   let runRecordCloseout = null;
   try {
     runRecordCloseout = assessRunRecordCloseout({
@@ -4810,7 +4810,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
     if (divergences.length) result.divergences = divergences;
     result.gates = buildNextGates({ doctor, report, themeGate, polishGate, prepareBuildGate, packetPath });
     if (doctor.derived?.input_currency) result.input_currency = doctor.derived.input_currency;
-    result.next_actions = buildNextActions({ result, packetPath, packet, themeGate, polishGate, polishCheckpointGate, prepareBuildGate, ambient, runRecordCloseout, purchaseProof, debt, brandContract: doctor.derived?.brand_contract || null, context: readJsonIfExists(contextPath), targetRepo, spec });
+    result.next_actions = buildNextActions({ result, packetPath, packet, themeGate, polishGate, polishCheckpointGate, prepareBuildGate, ambient, runRecordCloseout, purchaseProof, debt, brandContract: doctor.derived?.brand_contract || null, context: readJsonIfExists(contextPath), targetRepo, spec, qaBuildCurrencies });
     // The QC handoff: read from data already loaded plus the
     // full QA verdict the QA stage names. It adds nothing to errors[],
     // warnings[] or ready[], and `status` above never reads it. Its accept
@@ -4933,7 +4933,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
     addPolishGateErrors(errors, polishGate, "qa");
     addPolishCheckpointGateErrors(errors, polishCheckpointGate, "qa");
     addThemeGateErrors(errors, themeGate, "qa");
-    prompt = debt?.qa.scope === "pages" ? ciEvidence.join("\n") : qaPrompt(packetPath, reportPath, packet, spec, intentSummary, polishCheckpointGate);
+    prompt = debt?.qa.scope === "pages" ? ciEvidence.join("\n") : qaPrompt(packetPath, reportPath, packet, spec, intentSummary, polishCheckpointGate, qaBuildCurrencies);
   }
   const status = errors.length ? "blocked" : readinessStatus(warnings, doctor.derived);
   const result = {
@@ -5195,7 +5195,7 @@ function divergenceInspectAction(divergences, packetPath, { packet = null, polis
 
 // Executable next actions: exact commands (or explicitly-manual steps), never
 // prose-only guidance. Ordering is the execution order an agent should follow.
-export function buildNextActions({ result, packetPath, packet, themeGate, polishGate, polishCheckpointGate, prepareBuildGate, ambient, runRecordCloseout = null, purchaseProof = null, debt = null, brandContract = null, context = null, targetRepo = null, spec = null }) {
+export function buildNextActions({ result, packetPath, packet, themeGate, polishGate, polishCheckpointGate, prepareBuildGate, ambient, runRecordCloseout = null, purchaseProof = null, debt = null, brandContract = null, context = null, targetRepo = null, spec = null, qaBuildCurrencies = () => new Set() }) {
   const actions = [];
   const push = (id, kind, command, description, extras = {}) => actions.push({ id, kind, command, description, stage: result.stage, ...extras });
   const pushPolishCheckpointActions = () => {
@@ -5366,12 +5366,14 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
     const url = packet.deploy?.preview_url || packet.deploy?.production_url || "<preview-url>";
     push("install_browser", "command", `${cmd("qa")} install-browser`, "Install the Playwright browser once after install/update (npm run qa:install-browser from a checkout).");
     // A page-scoped QA places no test orders, so it carries neither the
-    // per-currency runs nor the add-on run; a full QA carries both.
-    const pageScoped = debt?.qa.scope === "pages";
-    const currencyRuns = pageScoped ? [] : otherCurrencyQaRuns(spec, packetPath, url);
-    push("qa_run", "command", pageScoped ? `${cmd("qa")} run --packet ${shellToken(packetPath)}${debt.qa.owed_pages.map((page) => ` --page ${shellToken(page.page_id)}`).join("")}${debt.qa.browser_pages?.length ? " --browser" : ""}` : qaRunCommand(packetPath, url), pageScoped ? "Run QA on the changed pages; no test orders." : "Run browser + typed-card QA and publish the verdict.", currencyRuns.length ? { currency_commands: currencyRuns } : {});
-    const bumpCart = pageScoped ? null : checkoutOrderBumpCart(spec);
-    if (bumpCart) push("qa_run_bump", "command", qaRunCommand(packetPath, url, bumpCart), `Prove the charged add-on. ${orderBumpRunReason(bumpCart)}`);
+    // per-currency runs nor the add-on; a full QA carries both.
+    if (debt?.qa.scope === "pages") {
+      push("qa_run", "command", `${cmd("qa")} run --packet ${shellToken(packetPath)}${debt.qa.owed_pages.map((page) => ` --page ${shellToken(page.page_id)}`).join("")}${debt.qa.browser_pages?.length ? " --browser" : ""}`, "Run QA on the changed pages; no test orders.");
+    } else {
+      const qa = qaStageCommands({ spec, packetPath, url, buildCurrencies: qaBuildCurrencies });
+      push("qa_run", "command", qa.command, `Run browser + typed-card QA and publish the verdict.${qa.bumpCart ? ` ${orderBumpRunReason(qa.bumpCart)}` : ""}`);
+      for (const run of qa.currencyRuns) push("qa_run_currency", "command", run.command, `Then prove ${run.code}: one run proves one currency, and no test order for this build was placed in ${run.code} yet.`);
+    }
   } else if (result.stage === "done") {
     // #171: run-record closeout is a REQUIRED terminal action, not an
     // optional nicety — the dogfood run ended at a terminal stage with the
@@ -5444,6 +5446,12 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
           `Purchase-proof coverage is unknown for this run: ${purchaseProof.reason || "the QA stage records no purchase-proof summary."} ${describeDeclaredDepth(purchaseProof)}; re-run \`${cmd("qa")} run --test-order <depth>\` if that depth still has to be proved.`,
         );
       }
+    }
+    // A finished build keeps the currency-coverage warning until each listed
+    // currency has a test order for this build: name the runs still owed.
+    const url = packet.deploy?.preview_url || packet.deploy?.production_url || "<preview-url>";
+    for (const run of qaStageCommands({ spec, packetPath, url, buildCurrencies: qaBuildCurrencies, afterProof: true }).currencyRuns) {
+      push("qa_run_currency", "command", run.command, `Prove ${run.code}: the CampaignSpec lists it and no test order for this build was placed in it. QA stays done; the verdict keeps browser-test-order:currency-coverage until then.`);
     }
   }
   return actions;
@@ -5720,13 +5728,12 @@ After deploy succeeds:
 If the deploy is blocked (non-localhost allowed-domain not yet added, CI permission missing, host-side outage), set stages.deploy.status to "blocked" with a clear reason in outputs so the orchestration loop surfaces it rather than skipping past.`;
 }
 
-// The QA command the QA stage hands over. Given a bump cart it is the
-// order-bump run: the same command with --cart selecting the base tier and
-// toggling each declared bump.
+// The cart that puts a declared checkout order bump in the QA stage's command:
+// --cart selecting the base tier and toggling each declared bump.
 // `qa run --test-order common` never puts a checkout order bump in a test
 // order: the tier planner skips bump rows by design and bump coverage comes
-// from --cart. So when the spec declares one, `next` names a second run with
-// the bump in the cart. It reads the one checkout path QA drives, with QA's own
+// from --cart. So when the spec declares one, `next`'s QA command carries
+// the bump in its cart. It reads the one checkout path QA drives, with QA's own
 // row classifiers: QA's test orders run on the Checkout (the page that takes
 // payment) of the first entry path of the first funnel that has one, each
 // funnel's pages filtered to enabled and sorted by `order || 0`
@@ -5762,33 +5769,42 @@ export function checkoutOrderBumpCart(spec) {
   return null;
 }
 
-// One QA command per currency the CampaignSpec lists beside campaign.currency,
-// which the default run uses: one run proves one currency.
-function otherCurrencyQaRuns(spec, packetPath, url) {
+// The QA stage's commands. The full run puts the checkout's order bump in the
+// cart beside the base tier when the checkout QA drives declares one, so the
+// one run proves the charged add-on. Each --currency run is that command in a
+// currency the CampaignSpec lists and no test order for this build was placed
+// in (`buildCurrencies`, the set qa run's currency-coverage row reads), other
+// than campaign.currency, which the full run itself proves. After a QA proof
+// (`afterProof`) every listed currency counts, and only once this build has a
+// test order at all.
+function qaStageCommands({ spec, packetPath, url, buildCurrencies = () => new Set(), afterProof = false }) {
+  const bumpCart = checkoutOrderBumpCart(spec);
+  const command = qaRunCommand(packetPath, url, bumpCart);
   const listed = Array.isArray(spec?.campaign?.available_currencies) ? spec.campaign.available_currencies : [];
-  const base = String(spec?.campaign?.currency || "").toUpperCase();
   const codes = [...new Set(listed.filter((code) => typeof code === "string" && /^[A-Za-z]{3}$/.test(code)).map((code) => code.toUpperCase()))];
-  return codes.length > 1 ? codes.filter((code) => code !== base).map((code) => `${qaRunCommand(packetPath, url)} --currency ${code}`) : [];
+  if (codes.length < 2) return { bumpCart, command, currencyRuns: [] };
+  const covered = buildCurrencies();
+  if (afterProof && !covered.size) return { bumpCart, command, currencyRuns: [] };
+  const base = afterProof ? null : String(spec?.campaign?.currency || "").toUpperCase();
+  const currencyRuns = codes.filter((code) => code !== base && !covered.has(code)).map((code) => ({ code, command: `${command} --currency ${code}` }));
+  return { bumpCart, command, currencyRuns };
 }
 
-// Why the order-bump run exists, as one sentence for the action and the prompt.
+// Why the QA command carries --cart, as one sentence for the action and the prompt.
 function orderBumpRunReason(bumpCart) {
   const cart = bumpCart.base ? `base tier ${bumpCart.base} plus the bump` : "the bump";
-  return `The checkout declares order bump ${bumpCart.bumps.join(", ")} (is_order_bump or is_upsell), and the default run never puts it in a test order. This run repeats QA with ${cart} in the cart.`;
+  return `The checkout declares order bump ${bumpCart.bumps.join(", ")} (is_order_bump or is_upsell), so --cart puts ${cart} in the cart and the same run proves the charged add-on.`;
 }
 
-function qaPrompt(packetPath, reportPath, packet, spec = null, intent, polishCheckpointGate = null) {
+function qaPrompt(packetPath, reportPath, packet, spec = null, intent, polishCheckpointGate = null, qaBuildCurrencies = () => new Set()) {
   if (hostedTemplateNeedsUsablePreview(packet, polishCheckpointGate)) {
     return `Every mapped page is template stock, and QA needs a hosted preview URL that differs from the production URL. Run \`${cmd("qa")} policy set --packet ${shellToken(packetPath)} --preview-url <url>\`, then \`${cmd("next")} --packet ${shellToken(packetPath)}\`.`;
   }
   const url = packet.deploy?.preview_url || packet.deploy?.production_url || "<preview-url>";
   const briefPath = packet.build_brief?.normalized_path || "(missing)";
-  const bumpCart = checkoutOrderBumpCart(spec);
-  const currencyRuns = otherCurrencyQaRuns(spec, packetPath, url);
-  const bumpCommand = (bumpCart
-    ? `\n\nOrder bump QA command (proves the charged add-on):\n${qaRunCommand(packetPath, url, bumpCart)}\n${orderBumpRunReason(bumpCart)}`
-    : "") + (currencyRuns.length
-    ? `\n\nCurrency QA commands (the CampaignSpec lists more currencies; one run proves one):\n${currencyRuns.join("\n")}`
+  const qa = qaStageCommands({ spec, packetPath, url, buildCurrencies: qaBuildCurrencies });
+  const bumpCommand = (qa.bumpCart ? `\n${orderBumpRunReason(qa.bumpCart)}` : "") + (qa.currencyRuns.length
+    ? `\n\nCurrency QA commands (the CampaignSpec lists more currencies, this build has no test order in these yet, and one run proves one):\n${qa.currencyRuns.map((run) => run.command).join("\n")}`
     : "");
   return `${campaignIntentPromptHeader(intent)}Use next-campaigns-qa for this deployed campaign.
 
@@ -5801,7 +5817,7 @@ Browser install command:
 ${cmd("qa")} install-browser
 
 Node QA command:
-${qaRunCommand(packetPath, url)}${bumpCommand}
+${qa.command}${bumpCommand}
 
 Run the browser install once after install/update before --browser or --test-order. Test-order proof must exercise the campaign through the Campaign Cart SDK with the browser typed-card flow. Do not create hand-built backend API orders as launch proof. Compare visible placeholders, payment methods and template trust badges, variant media, the template's own promo placeholders (demo timers, promo banners, placeholder voucher codes, exit-pop offers), and pricing presentation against the Campaign Build Brief. Do not flag the source design's own proof, urgency or guarantee elements: they are the merchant's content. Test Orders use global test cards that bypass the payment gateway and create no transactions, but each creates a real order record on the store. Unless the operator has already said test orders are fine for this campaign, ask once, up front, before placing test orders; then proceed. No permission flag, packet policy, or merchant setup is required. Localhost on any port is a globally allowed Development domain for SDK initialization and suppresses Campaigns analytics events; non-localhost preview/production origins still need the SDK origin allowlist. Use --test-order common for the default depth: every actual terminal path when they fit under the flood cap, otherwise checkout, first-offer accept/decline and a deduplicated shortest real receipt path plus the shortest path that clicks the decline on each offer or downsell page not yet declined, up to the cap (the verdict row browser-test-order:upsell-action-coverage warns naming each offer page whose decline no order clicked); use an explicit path such as accept-decline-accept for a targeted matrix; or use --test-order full for every actual terminal path in the selected checkout topology. Cycles, missing routes, and reachable nonterminals block exhaustive proof before browser launch. The default accidental-flood cap is 6, and an overflow names the exact explicit --max-test-orders raise. That cap bounds planned paths; --max-order-creations bounds actual order creations and is reserved before each submit click, defaulting to the planned path count. A path whose failure is classified as created (the order is already placed) is inspected read-only and never resubmitted. A not_created failure may be re-run once, if the creation budget has a slot no still-unrun planned path needs; an ambiguous failure stops that path with an explicit operator check instead of buying again. Read evidence.recovery to tell a recovered pass from a first-attempt pass. Click rendered SDK upsell accept/decline controls for upsell proof. For multi-tier package selectors, drive a specific card with --select-package <ref[:qty],...> (strict: the path fails if the requested card cannot be found or selected, unlike best-effort --cart), or use --test-order tiers / tiers:common / tiers:full to drive every selector tier the CampaignSpec declares on the checkout page in one run (order-bump rows marked is_order_bump or is_upsell are add-ons, not tiers; --select-package narrows a tiers run to the listed tiers); prove coupon-bearing orders with --apply-coupon <code> (typed into the rendered promo input, verified against the persisted-order voucher read-back). Reuse one test customer email via --test-email or CAMPAIGNS_OS_QA_TEST_EMAIL (a real monitored inbox in internal runs) so repeated QA does not litter the customer list.
 
@@ -5841,9 +5857,12 @@ function qaVerdictArtifactsForCampaign(packet, targetRepo) {
 // cwd dependence, no clock, no mtimes. Exactly three signals, per the
 // ratified packet scope:
 //   1. built output present while stages.assembly.status is "pending";
-//   2. a deploy URL present (report.stages.deploy.outputs — the same scan
-//      deploySatisfied uses — or packet.deploy.preview_url/production_url)
-//      while stages.deploy.status is "pending";
+//   2. a deploy URL in report.stages.deploy.outputs (the same scan
+//      deploySatisfied uses) while stages.deploy.status is "pending". The
+//      packet's deploy.preview_url and deploy.production_url are not read:
+//      start and qa policy set write them as the operator's declared
+//      targets before anything is deployed, so a URL there says where the
+//      campaign will be served, not that deploy ran (F-236);
 //   3. a QA verdict artifact for this campaign present while
 //      stages.qa.status is "pending".
 //
@@ -5851,7 +5870,7 @@ function qaVerdictArtifactsForCampaign(packet, targetRepo) {
 // Presence-based only: a stale built output still diverges from a pending
 // ledger, and the entry says the two disagree — it never asserts the stage
 // is complete or the artifact current. This function writes nothing.
-export function detectLedgerDivergence(report, packet, targetRepo, { allowUnrecordedHostedPreview = false } = {}) {
+export function detectLedgerDivergence(report, packet, targetRepo) {
   const divergences = [];
   const stages = report?.stages;
   if (!isObject(stages) || !isNonEmptyString(targetRepo)) return divergences;
@@ -5880,22 +5899,14 @@ export function detectLedgerDivergence(report, packet, targetRepo, { allowUnreco
   }
 
   if (stagePending("deploy")) {
-    const reportUrl = deployUrlFromReportOutputs(report);
-    const packetPreviewUrl = optionalString(packet?.deploy?.preview_url);
-    const packetProductionUrl = optionalString(packet?.deploy?.production_url);
-    const url = reportUrl || packetPreviewUrl || packetProductionUrl;
-    if (url && !(allowUnrecordedHostedPreview && !reportUrl)) {
-      const source = reportUrl
-        ? "report.stages.deploy.outputs"
-        : packetPreviewUrl
-          ? "packet.deploy.preview_url"
-          : "packet.deploy.production_url";
+    const url = deployUrlFromReportOutputs(report);
+    if (url) {
       divergences.push({
         code: "divergence.deploy.url_present",
         stage: "deploy",
         ledger_claim: 'stages.deploy.status = "pending"',
-        artifact_evidence: `Deploy URL "${url}" is recorded in ${source}.`,
-        message: `The ledger claims deploy has not run, but a deploy URL ("${url}") is recorded in ${source}. The ledger and artifacts disagree; inspect both before acting. A recorded URL is not proof the stage is complete or that the deployed output is current.`,
+        artifact_evidence: `Deploy URL "${url}" is recorded in report.stages.deploy.outputs.`,
+        message: `The ledger claims deploy has not run, but a deploy URL ("${url}") is recorded in report.stages.deploy.outputs. The ledger and artifacts disagree; inspect both before acting. A recorded URL is not proof the stage is complete or that the deployed output is current.`,
       });
     }
   }
@@ -8892,13 +8903,16 @@ export function nextTinyPromptLines(result) {
     lines.push("", "Theme gate passes with no brand layer, and browser QA will BLOCK on the starter palette:");
     lines.push(`  - ${starterPalette.description}`);
   }
+  const currencyRuns = actions.filter((action) => action.id === "qa_run_currency").map((action) => `  - ${action.command}`);
+  if (result.stage === "done" && currencyRuns.length) {
+    lines.push("", "QA is done, but this build has no test order in every currency the CampaignSpec lists. Prove each remaining currency with:", ...currencyRuns);
+  }
   if (result.stage !== "qa") return lines;
-  const qaRun = actions.find((action) => action.id === "qa_run" && action.command?.includes(" --page "));
-  lines.push("", `Next expected proof: ${qaRun ? qaRun.description : "browser QA + typed-card proof."} Run: ${qaRun?.command || `${cmd("qa")} run --packet <packet> --base-url <url> --browser --test-order common`}`);
-  const bumpRun = (result.next_actions || []).find((action) => action?.id === "qa_run_bump");
-  if (bumpRun) lines.push(`That run never orders the checkout order bump. Prove the charged add-on with: ${bumpRun.command}`);
-  const currencyRuns = (result.next_actions || []).find((action) => action?.id === "qa_run")?.currency_commands || [];
-  if (currencyRuns.length) lines.push("That run proves one currency. Prove each other currency the CampaignSpec lists with:", ...currencyRuns.map((command) => `  - ${command}`));
+  const qaRun = actions.find((action) => action.id === "qa_run");
+  const pageScoped = qaRun?.command?.includes(" --page ");
+  lines.push("", `Next expected proof: ${pageScoped ? qaRun.description : "browser QA + typed-card proof."} Run: ${qaRun?.command || `${cmd("qa")} run --packet <packet> --base-url <url> --browser --test-order common`}`);
+  if (!pageScoped && qaRun?.command?.includes(" --cart ")) lines.push("Its --cart puts the checkout order bump in the cart, so the same run proves the charged add-on.");
+  if (currencyRuns.length) lines.push("That run proves one currency. Prove each other currency the CampaignSpec lists with:", ...currencyRuns);
   lines.push("Localhost on any port is a Development domain (SDK allowed, analytics suppressed). Non-localhost origins still need SDK allowlist confirmation.");
   lines.push(`Build/polish done but no QA verdict yet is a Completeness Signal, not a build failure: ${cmd("findings")} add --stage qa --kind missing_prompt --summary "..."`);
   return lines;
