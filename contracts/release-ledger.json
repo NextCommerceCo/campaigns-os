@@ -5827,6 +5827,27 @@
         }
       ],
       "entry_sha256": "3653339677318dea8ee95b3a2ac97bab9ff6b403affc624323c4612466c28085"
+    },
+    {
+      "id": "RL-0370",
+      "sequence": 353,
+      "date": "2026-11-16",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.2+agent.3",
+      "changelog_sha256": "e978c76e2f94d21f9c8bb046b5fea355d17b759b308e83ea4a2b4f6a3e2a5ce9",
+      "agent_impact": "qa run --browser --test-order with a non-US --test-country fills the province select only when the checkout shows it, enabled, once the country is chosen, and otherwise skips it (customer_fields_filled field status unusable). The Campaign Cart SDK drops or hides that select for countries such as GB and DE, where the step used to time out or fail with Missing checkout select: province. --test-province is not needed for those countries. A US address still requires the province select and still fails by name without it.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "The province select is required for a US address only; for other countries it is filled when shown and skipped otherwise, and the UK example drops --test-province."
+        }
+      ],
+      "entry_sha256": "885998a1256bac9b67f3b4a3264fbda1bf579772a2e43fa9328501893049f529"
     }
   ]
 }

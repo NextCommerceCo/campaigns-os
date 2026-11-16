@@ -5820,7 +5820,8 @@ async function fillCheckoutFields(page, args, email, options = {}) {
   await settleAddressAutocomplete(page);
   await revealProgressiveLocationFields(page, address.address1);
   await fill("city", address.city);
-  await select("province", address.province);
+  if (await provinceShownForCountry(page, address.country)) await select("province", address.province);
+  else await track("province", "select", async () => false, { optional: true });
   await fill("postal", address.postal);
   await closeAddressAutocomplete(page);
 
@@ -7976,6 +7977,16 @@ async function fieldUsable(locator, options = {}) {
   if (options.onlyVisible) return locator.isVisible().catch(() => false);
   await locator.waitFor({ state: "visible", timeout: 10000 }).catch(() => {});
   return locator.isVisible().catch(() => false);
+}
+
+// The Campaign Cart SDK drops or hides the state select for a country that has
+// none (GB, DE). A US address keeps the required wait-and-fail; any other
+// country fills the select only when it is shown and enabled once the country
+// is chosen, and skips it otherwise.
+async function provinceShownForCountry(page, country) {
+  if (String(country).toUpperCase() === "US") return true;
+  const locator = page.locator(checkoutFieldSelector("province")).first();
+  return await fieldUsable(locator, { onlyVisible: true }) && locator.isEnabled().catch(() => false);
 }
 
 async function billingFieldsCollapsed(page) {

@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.71.2+agent.3] - 2026-11-16
+
+### Fixed
+
+- QA test orders can use an address outside the US where the checkout has no state field. The Campaign Cart SDK drops or hides the province select for countries such as GB and DE, and the test-order form fill used to wait for it anyway, so `qa run --test-country GB` (or `DE`) timed out or failed at `customer_fields_filled` with `Missing checkout select: province` and no order was placed. With a non-US `--test-country`, the runner now fills the province select only when the checkout shows it, enabled, once the country is chosen, and otherwise skips it (field status `unusable`); `--test-province` is then not needed. A US address still requires the province select and still fails by name when it is missing.
+
 ## [1.71.2+agent.1] - 2026-11-16
 
 ### Removed

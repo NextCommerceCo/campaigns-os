@@ -2250,13 +2250,16 @@ currency. A UK run looks like this:
 npm run campaigns-os -- qa run --packet campaign-runtime.build.json \
   --currency GBP --browser --test-order common \
   --test-country GB --test-address1 "<street>" --test-city "<city>" \
-  --test-province "<option from the province select>" --test-postal "<postcode>"
+  --test-postal "<postcode>"
 ```
 
-The province select is a required step. A checkout that shows no province
-select for the chosen country fails the path at that field
-(`Missing checkout select: province`); place those orders by hand on the
-market-pinned page (`?currency=<code>&country=<code>`).
+For a US address the province select is a required step: a checkout that
+does not show one fails the path at that field
+(`Missing checkout select: province`). For any other country the runner fills
+the province select only when the checkout shows it, enabled, once the country
+is chosen; the Campaign Cart SDK drops or hides it for countries without one,
+such as GB and DE, and the runner then skips it (field status `unusable`) and
+needs no `--test-province`.
 
 The browser driver intentionally behaves like a user:
 
