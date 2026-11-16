@@ -697,7 +697,7 @@ list does not name, such as a hosted payment field class. `evidence.behaviour` r
 the three checks and each `evidence.checks[]` entry carries `kind`
 (`family_shell` or `sdk_wiring`).
 The upsell and checkout bundle price checks count the SDK's
-`[data-next-bundle-display*='price']` alongside the contract's price rows; a
+`[data-next-bundle-display*='price' i]` alongside the contract's price rows; a
 hidden, zero-size or empty bundle-display node does not count. A checkout that
 shows no price because QA opened it directly, with an empty SDK cart and no
 package selection of its own, is `skipped` rather than failed:
@@ -2372,24 +2372,34 @@ use the declared topology instead of a single happy path:
 5. Use `full` when you want every actual terminal path, raising the flood cap to
    the exact planned count when necessary.
 
-`next` names step 4 at the QA stage. When the checkout page the default run
-drives declares an order bump (`is_order_bump: true` or `is_upsell: true` rows), it lists a second QA
-command, `qa_run_bump`, beside `qa_run`: the same `--test-order common` run
+`next` folds step 4 into the first QA command. When the checkout page the
+default run drives declares an order bump (`is_order_bump: true` or
+`is_upsell: true` rows), the `qa_run` command is the `--test-order common` run
 with `--cart <base>:1,<bump>:1`, where the base is the first selector tier the
-checkout declares. The QA stage prompt and the human `next` output carry the
-same command. When `campaign.available_currencies` lists more than one
-currency, the `qa_run` action carries `currency_commands`: the same run with
-`--currency <code>` for each listed currency other than `campaign.currency`,
-printed in the prompt and the human output too.
+checkout declares, so one run proves the charged add-on. `qa resolve` prints
+the same `--cart` in its "Next expected proof" command, and the QA stage prompt
+and the human `next` output carry it too.
+
+When `campaign.available_currencies` lists more than one currency, `next`
+lists one `qa_run_currency` action per currency still owed: the `qa_run`
+command with `--currency <code>`. A currency is owed until a created test order
+in it exists for the current build, whichever recorded QA run placed it (the
+QA stage's record and its history, each naming the build it judged and its
+verdict). At the QA stage the list leaves out `campaign.currency`, which
+`qa_run` proves; once QA is done it names every listed currency this build
+still has no order in. QA stays done either way.
 
 A run that created test orders also says what they did not cover, as warn
-rows judged on that run's orders only: `browser-test-order:currency-coverage`
-names the listed currencies no order was placed in, and
-`browser-test-order:order-bump-coverage` names a checkout order bump no order
-was shown to contain (an order whose display-parity row passed with the bump in
-its summary contains it; a run with no comparable cart summary gets no row).
-Each row says what to run: one run per missing currency, and the `--cart` to
-add (the bump alone on a run that selects its own package or tiers).
+rows: `browser-test-order:currency-coverage` names the listed currencies no
+order for this build was placed in (this run's orders plus those of the
+build's earlier recorded runs), and `browser-test-order:order-bump-coverage`
+names a checkout order bump no order of this run was shown to contain (an
+order whose display-parity row passed with the bump in its summary contains
+it; a run with no comparable cart summary gets no row). Each row says what to
+run: one run per missing currency, and the `--cart` to add (the bump alone on a
+run that selects its own package or tiers). The QA stage history keeps the last
+five replaced records, so a build re-run more often than that can owe a
+currency again.
 
 Record order numbers, `ref_id` values, and expected line-item shapes in the
 handoff. If the browser console shows an SDK module-load error but the SDK

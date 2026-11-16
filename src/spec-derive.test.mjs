@@ -30,7 +30,7 @@ import {
   SPEC_DERIVE_FIELDS,
   staleRoutingHints,
 } from "./spec-derive.mjs";
-import { planCampaignMirrorDerive } from "./spec-derive-campaign.mjs";
+import { campaignMirrorDrift, planCampaignMirrorDerive } from "./spec-derive-campaign.mjs";
 import { extractRenderedPackageRefs } from "./live-campaign-refs.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -2115,6 +2115,25 @@ test("planCampaignMirrorDerive mirrors a subscription package's recurring price 
   // A one-time package the spec never marked recurring gains no empty keys.
   const plain = planCampaignMirrorDerive({ spec, campaign: { ...live, packages: [{ ...live.packages[0], is_recurring: false, price_recurring: null, product_variant_attribute_values: [] }] } });
   assert.equal(plain.changes.some((row) => /is_recurring|price_recurring|variant_attributes/.test(row.field)), false);
+});
+
+// F-214: the campaign states interval "month" and interval_count 1 on a
+// one-time package too (is_recurring false, price_recurring null). That
+// cadence is not a term of the package, so derive never writes it, and a spec
+// that still carries one from a subscription past has it cleared.
+test("planCampaignMirrorDerive derives no interval for a package the campaign marks non-recurring", () => {
+  const spec = specFixture();
+  const live = liveCampaignBody().data;
+  const oneTime = { ...live, packages: [{ ...live.packages[0], is_recurring: false, price_recurring: null, interval: "month", interval_count: 1 }] };
+  const plan = planCampaignMirrorDerive({ spec, campaign: oneTime });
+  assert.equal(plan.changes.some((row) => /\.(interval|interval_count|is_recurring|price_recurring)$/.test(row.field)), false, plan.changes.map((row) => row.field).join("\n"));
+  const stated = specFixture();
+  Object.assign(stated.funnels[0].pages[1].packages[0], { is_recurring: true, interval: "month", interval_count: 1 });
+  const cleared = planCampaignMirrorDerive({ spec: stated, campaign: oneTime }).changes.filter((row) => row.field.startsWith("funnels[0].pages[1].packages[0]."));
+  assert.deepEqual(cleared.filter((row) => /\.(interval|interval_count|is_recurring)$/.test(row.field)).map((row) => [row.field.split(".").at(-1), row.after]), [
+    ["is_recurring", false], ["interval", null], ["interval_count", null],
+  ]);
+  assert.equal(campaignMirrorDrift({ spec, campaign: oneTime }).counts.recurring, 0, "doctor counts no recurring drift either");
 });
 
 test("spec derive reads the live campaign when the built site exists, names the changed offer and price in its diff, and --no-live-refs sends nothing", async () => {

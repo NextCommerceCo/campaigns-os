@@ -1,4 +1,4 @@
-import { QC_QA_ASSERTION_STATUS } from "./qc-results.mjs";
+import { QC_QA_ASSERTION_STATUS, testOrderCurrenciesForBuild } from "./qc-results.mjs";
 import { starterUsedAsIs, starterPaletteIsExpected, STARTER_PALETTE_REASON, STARTER_PLACEHOLDER_WARNING } from "./content-residue.mjs";
 import { campaignSpecIdentity, resolveCampaignIdentity, campaignIdentitiesMatch } from "./spec-source-identity.mjs";
 import { applyLocalPreviewToCheckpoint, applyLocalPreviewToPolishGate, applyPageOnlyChangeToCheckpoint, applyPageOnlyChangeToPolishGate, carriedForwardMessage, CARRIED_FORWARD, ensureUrlTrailingSlash, isPageOnlyCarry, normalizeQaBaseUrl, starterResidueIsExpected } from "./local-preview-policy.mjs";
@@ -616,6 +616,8 @@ async function resolveQaInputs(args, {
     // whose default it may or may not be: what the printed remediation names.
     reportPath: checkpointPreflight?.reportPath || null,
     targetRepo: checkpointPreflight?.targetRepo || null,
+    // The report those gates read, whose QA records name this build's earlier runs.
+    runtimeReport: checkpointPreflight?.runtimeReport || null,
   };
 }
 
@@ -820,6 +822,7 @@ function resolvedFromBlockedCheckpointPreflight(preflight, args) {
     checkpointGates: preflight.checkpointGates,
     reportPath: preflight.reportPath || null,
     targetRepo: preflight.targetRepo || null,
+    runtimeReport: preflight.runtimeReport || null,
   };
 }
 
@@ -2718,7 +2721,15 @@ async function runResolvedQa(args, resolvedInputs, { runSessionActive = false, l
   }
 
   const testOrders = await runAnalyticsOrderSequence({ args, resolved, runId, assertions, qcResults });
-  assertions.push(...testOrderCoverageExceptions({ spec: resolved.rawSpec || resolved.spec, topologies: resolved.topologies, testOrders, args }));
+  assertions.push(...testOrderCoverageExceptions({
+    spec: resolved.rawSpec || resolved.spec,
+    topologies: resolved.topologies,
+    testOrders,
+    args,
+    buildCurrencies: resolved.packetPath
+      ? testOrderCurrenciesForBuild({ report: resolved.runtimeReport, targetRepo: resolved.targetRepo, packetPath: resolved.packetPath, reportPath: resolved.reportPath })
+      : [],
+  }));
   if (vendorBeacons) assertions.push(vendorBeaconAssertion(vendorBeacons));
   const remainingAssertionBudget = Math.max(0, QA_VERDICT_ASSERTION_LIMIT - assertions.length);
   let commercialResult;
@@ -3510,19 +3521,34 @@ function liveCampaignRefAssertions({ pages, spec, liveCampaign }) {
   return out;
 }
 
-// What this run's test orders did not cover, as warn rows: currencies the
-// CampaignSpec lists that no order was placed in, and a checkout order bump no
-// order is shown to contain (an order whose display check passed with the
-// bump in its summary contains it; with no comparable display check there is
-// no row). Judged on this run's orders only: an
-// earlier run's orders are not part of this verdict. No row without a created order.
-function testOrderCoverageExceptions({ spec, topologies = [], testOrders = [], args = {} }) {
+// The checkout the test orders run on, the pages of the path the run drives
+// to it (as `next` reads them), and the order bumps that path declares.
+function checkoutOrderBumpPlan(topologies = []) {
+  const checkout = findPaymentPage(topologies);
+  const pathPages = checkoutPathPages((topologies || []).find((topology) => topology?.pages?.includes(checkout)), checkout);
+  return { checkout, pathPages, bumps: [...new Set(pathPages.flatMap((page) => declaredOrderBumps(page)))] };
+}
+
+// The --cart value that adds `bumps` to the first selector tier those pages
+// declare (the bumps alone when they declare none).
+function orderBumpCart(pathPages, bumps) {
+  const base = pathPages.map((page) => declaredSelectorTiers(page)[0]?.ref).find(Boolean);
+  return [base, ...bumps].filter(Boolean).map((ref) => `${ref}:1`).join(",");
+}
+
+// What the test orders did not cover, as warn rows: currencies the
+// CampaignSpec lists that no order was placed in, this run's or an earlier
+// run's of the same build (`buildCurrencies`, testOrderCurrenciesForBuild),
+// and a checkout order bump no order of this run is shown to contain (an order
+// whose display check passed with the bump in its summary contains it; with no
+// comparable display check there is no row). No row without a created order.
+function testOrderCoverageExceptions({ spec, topologies = [], testOrders = [], args = {}, buildCurrencies = [] }) {
   const created = (testOrders || []).filter((order) => order?.ok === true);
   if (!created.length) return [];
   const rows = [];
   const listed = [...new Set((Array.isArray(spec?.campaign?.available_currencies) ? spec.campaign.available_currencies : [])
     .filter((code) => typeof code === "string" && code.trim()).map((code) => code.trim().toUpperCase()))];
-  const tested = new Set(created.map((order) => stringArg(order?.verification?.currency)?.toUpperCase() || args[QA_RUN_CURRENCY]).filter(Boolean));
+  const tested = new Set([...created.map((order) => stringArg(order?.verification?.currency)?.toUpperCase() || args[QA_RUN_CURRENCY]), ...buildCurrencies].filter(Boolean));
   const untested = listed.filter((code) => !tested.has(code));
   if (listed.length > 1 && tested.size && untested.length) {
     rows.push(assertion({
@@ -3532,14 +3558,11 @@ function testOrderCoverageExceptions({ spec, topologies = [], testOrders = [], a
       status: STATUS.WARN,
       severity: SEVERITY.WARN,
       expected: `a test order in each currency the CampaignSpec lists (${listed.join(", ")})`,
-      actual: `no test order in this run was placed in ${untested.join(" or ")}. Run ${cmd("qa")} run once per currency, ${untested.map((code) => `with --currency ${code}`).join(" and ")}, in place of any --currency given here.`,
+      actual: `no test order for this build was placed in ${untested.join(" or ")}. Run ${cmd("qa")} run once per currency, ${untested.map((code) => `with --currency ${code}`).join(" and ")}, in place of any --currency given here; orders this build already has count.`,
       evidence: { listed, tested: [...tested], untested },
     }));
   }
-  const checkout = findPaymentPage(topologies);
-  // The pages of the path the run drives to that Checkout, as `next` reads them.
-  const pathPages = checkoutPathPages((topologies || []).find((topology) => topology?.pages?.includes(checkout)), checkout);
-  const bumps = [...new Set(pathPages.flatMap((page) => declaredOrderBumps(page)))];
+  const { checkout, pathPages, bumps } = checkoutOrderBumpPlan(topologies);
   // Only a comparable display check says what an order held; a run with none
   // makes no claim about the bump either way.
   const shown = created.map((order) => order?.verification?.display_reconciliation).filter((entry) => entry?.comparable);
@@ -3548,8 +3571,7 @@ function testOrderCoverageExceptions({ spec, topologies = [], testOrders = [], a
   if (missing.length) {
     // A run that selects its own package or tiers needs only the bump added.
     const selects = stringArg(args["select-package"]) || /^tiers/i.test(String(args["test-order"] || ""));
-    const base = selects ? null : pathPages.map((page) => declaredSelectorTiers(page)[0]?.ref).find(Boolean);
-    const cart = [base, ...missing].filter(Boolean).map((ref) => `${ref}:1`).join(",");
+    const cart = orderBumpCart(selects ? [] : pathPages, missing);
     rows.push(assertion({
       id: "browser-test-order:order-bump-coverage",
       family: "browser-test-order",
@@ -4233,16 +4255,21 @@ function formatEntryUrlsForProof(entryUrls) {
   return entryUrls.map((entry) => entry.url).filter(Boolean).join(", ") || "(none)";
 }
 
+// When the checkout the run drives declares an order bump, the proof command
+// puts it in the cart beside the first selector tier, so one run proves the
+// charged add-on (the cart the order-bump-coverage row would ask for).
 function qaRunCommandFromResolve(value) {
   const base = shellToken(value.base_url);
   const proxy = value.proxy_base ? ` --proxy-base ${shellToken(value.proxy_base)}` : "";
+  const { pathPages, bumps } = checkoutOrderBumpPlan(value.funnels);
+  const flags = `${proxy} --base-url ${base} --browser --test-order common${bumps.length ? ` --cart ${shellToken(orderBumpCart(pathPages, bumps))}` : ""}`;
   if (value.packet_path) {
-    return `${cmd("qa")} run --packet ${shellToken(value.packet_path)}${proxy} --base-url ${base} --browser --test-order common`;
+    return `${cmd("qa")} run --packet ${shellToken(value.packet_path)}${flags}`;
   }
   if (isLocalFilePath(value.spec_source)) {
-    return `${cmd("qa")} run ${shellToken(value.map_id)} --spec ${shellToken(value.spec_source)}${proxy} --base-url ${base} --browser --test-order common`;
+    return `${cmd("qa")} run ${shellToken(value.map_id)} --spec ${shellToken(value.spec_source)}${flags}`;
   }
-  return `${cmd("qa")} run ${shellToken(value.map_id)}${proxy} --base-url ${base} --browser --test-order common`;
+  return `${cmd("qa")} run ${shellToken(value.map_id)}${flags}`;
 }
 
 function isLocalFilePath(value) {

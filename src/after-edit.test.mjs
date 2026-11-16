@@ -32,7 +32,7 @@ const json = (path) => JSON.parse(readFileSync(path, "utf8"));
 function write(path, body) { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, body); }
 const writeJson = (path, body) => write(path, `${JSON.stringify(body, null, 2)}\n`);
 
-async function fixture(t, { savedMap = false } = {}) {
+async function fixture(t, { savedMap = false, live = false } = {}) {
   const root = mkdtempSync(join(tmpdir(), "after-edit-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const output = join(root, "_site", SLUG);
@@ -45,6 +45,10 @@ async function fixture(t, { savedMap = false } = {}) {
     campaign: { slug: SLUG, name: "Synthetic campaign" }, global_config: { sdk_version: "0.4.40" },
     funnels: [{ id: "main", pages: Object.keys(PAGES).map((id, index) => ({ id, type: id === "receipt" ? "thankyou" : id, page_url: `${id}/`, order: index + 1 })) }],
   };
+  if (live) {
+    spec.campaign.campaigns_api_key = "fixture-campaigns-key";
+    spec.funnels[0].pages[0].packages = [{ ref_id: 1, name: "Example bundle", price: "49.00" }];
+  }
   writeJson(specPath, spec);
   writeJson(packetPath, {
     schema_version: "campaign-runtime-build-packet/v0", campaign: { public_route_slug: SLUG },
@@ -317,6 +321,50 @@ test("page-only edit reports current debt before a material derive preview and i
   const applied = await run(f, { yes: true });
   assert.equal(afterEditExitCode(applied), 3);
   assert.match(afterEditTextLines(applied).join("\n"), /It owes the full Polish and QA/);
+}));
+
+// F-214: the live campaign states a cadence on a one-time package and a new
+// price. A copy edit changes nothing the spec derives from the repo, so
+// after-edit shows no CampaignSpec rewrite; an edit to a repo-derived field
+// shows the whole derive preview, live rows included, without the cadence.
+test("a copy edit shows no CampaignSpec rewrite for live campaign drift", async (t) => withNetworkGuard(async () => {
+  const f = await fixture(t, { live: true });
+  const requests = [];
+  const fetchImpl = async (url) => {
+    requests.push(String(url));
+    return new Response(JSON.stringify({ ok: true, status: 200, endpoint: "campaigns", data: {
+      ref_id: 424242, name: "Synthetic campaign", shipping_methods: [], offers: [],
+      packages: [{ ref_id: 1, name: "Example bundle", price: "39.00", is_recurring: false, price_recurring: null, interval: "month", interval_count: 1 }],
+    } }), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+  const edit = (flags = {}) => afterEditCommand({ _: ["after-edit"], packet: f.packetPath, "proxy-base": "https://proxy.example.invalid", ...flags }, {
+    specFetch: specFetchCommand, specDerive: specDeriveWithMapWriteback, specDeriveTextLines, recordQaStageOutcome, fetchImpl,
+  });
+  f.page("landing", PAGES.landing.replace("Example headline", "Revised headline"));
+  const before = readFileSync(f.specPath, "utf8");
+  const copy = await edit();
+  const text = afterEditTextLines(copy).join("\n");
+  t.diagnostic(text);
+  assert.equal(copy.stopped_at, null, text);
+  assert.equal(step(copy, "spec_derive").status, "not_needed");
+  assert.doesNotMatch(text, /packages\[0\]/);
+  assert.match(text, /Owed stages: qa \(changed pages only\)/);
+  assert.equal(readFileSync(f.specPath, "utf8"), before);
+  assert.ok(requests.length > 0, "doctor still read the live campaign");
+
+  const configPath = join(f.root, "_data", "campaigns.json");
+  const config = json(configPath);
+  config[SLUG].ga4_id = "G-AB12CD34EF";
+  writeJson(configPath, config);
+  utimesSync(configPath, 1_000, 1_000);
+  await recordCommand({ _: ["record", "build"], packet: f.packetPath });
+  const derived = await edit();
+  const preview = afterEditTextLines(derived).join("\n");
+  t.diagnostic(preview);
+  assert.equal(derived.stopped_at, "spec_derive");
+  assert.match(preview, /packages\[0\]\.price: "49\.00" -> "39\.00"/);
+  assert.doesNotMatch(preview, /interval/);
+  assert.equal(readFileSync(f.specPath, "utf8"), before);
 }));
 
 test("unchanged recorded funnel writes nothing, every step is not_needed (b)", async (t) => withNetworkGuard(async () => {

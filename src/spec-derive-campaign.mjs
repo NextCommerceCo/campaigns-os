@@ -149,7 +149,10 @@ export function planCampaignMirrorDerive({ spec, campaign, campaignRef = null } 
         return;
       }
       summary.packages_checked += 1;
-      const rows = mirrorRows({ record: pkg, live, fields: MIRRORED_PACKAGE_FIELDS, path: pkgPath, source, pageId: page.id });
+      // The campaign states a cadence on a one-time package too; it is not a
+      // term of that package, so it is read as none.
+      const terms = live.is_recurring === false ? { ...live, interval: null, interval_count: null } : live;
+      const rows = mirrorRows({ record: pkg, live: terms, fields: MIRRORED_PACKAGE_FIELDS, path: pkgPath, source, pageId: page.id });
       changes.push(...rows.changes);
       unchanged.push(...rows.unchanged);
     });

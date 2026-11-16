@@ -64,9 +64,9 @@ test('projection separates saved Map hash, raw bytes, semantic local and output 
  input.report.identity.map_id='other-map';assert.ok(projectProgressObservation(input).stages.every(stage=>stage.status==='unknown'));
 }));
 
-test('the order-bump QA run is a QA run on the wire, never an unknown action that blocks',scratch(async dir=>{
+test('a per-currency QA run is a QA run on the wire, never an unknown action that blocks',scratch(async dir=>{
  const input=setup(dir);
- input.continuation={...input.continuation,next_actions:[{id:'install_browser',command:'secret'},{id:'qa_run',command:'secret'},{id:'qa_run_bump',command:'secret'}]};
+ input.continuation={...input.continuation,next_actions:[{id:'install_browser',command:'secret'},{id:'qa_run',command:'secret'},{id:'qa_run_currency',command:'secret'},{id:'qa_run_currency',command:'secret'}]};
  const s=projectProgressObservation(input);
  assert.deepEqual(s.continuation.action_ids,['install_browser','qa_run']);
  assert.equal(s.continuation.blocked,false);
