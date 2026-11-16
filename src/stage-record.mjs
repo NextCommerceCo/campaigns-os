@@ -921,9 +921,18 @@ async function readCapped(response, limit) {
   return { bytes: Buffer.concat(chunks) };
 }
 
+// A connection the server reset (a single-threaded static server can drop
+// concurrent requests): retried once, and named as the cause if it recurs.
+const CONNECTION_RESET = "ECONNRESET";
+
 // One served asset, compared by bytes: it must answer 200, following
 // redirects only within the preview's own origin as a page request does.
 async function probeAsset(asset, fetchImpl) {
+  const first = await probeAssetOnce(asset, fetchImpl);
+  return first.error === CONNECTION_RESET ? probeAssetOnce(asset, fetchImpl) : first;
+}
+
+async function probeAssetOnce(asset, fetchImpl) {
   let current = asset.url;
   try {
     for (let hop = 0; hop <= PROBE_MAX_REDIRECTS; hop += 1) {
@@ -1020,7 +1029,9 @@ export async function probeLocalPreview({ packetPath, baseUrl, fetchImpl = globa
       ...differing.map((asset) => (asset.served
         ? `${asset.url}: served bytes (${asset.served}) differ from ${relative(targetRepo, asset.file)} (${asset.sha256}).`
         : `${asset.url}: ${asset.error}; ${relative(targetRepo, asset.file)} is in the build output.`)),
-      `The preview at ${url} is not serving the recorded build. Deploy the current _site/ build, then run ${cmd("record")} deploy again.`,
+      differing.every((asset) => asset.error === CONNECTION_RESET)
+        ? `The server at ${url} reset the connection (${CONNECTION_RESET}) on ${differing.length === 1 ? "that request" : "those requests"}, also on a retry, so the served bytes could not be compared; this is the server dropping requests, not other output. Serve the current _site/ build with a server that answers concurrent requests, then run ${cmd("record")} deploy again.`
+        : `The preview at ${url} is not serving the recorded build. Deploy the current _site/ build, then run ${cmd("record")} deploy again.`,
     ]);
   }
   return { url, routes, buildFingerprint, assets: assets.map(({ url: assetUrl, file, sha256 }) => ({ url: assetUrl, file, sha256 })) };

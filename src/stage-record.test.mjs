@@ -761,6 +761,32 @@ test("record deploy stops reading a served asset larger than the built file, by 
   });
 });
 
+test("record deploy retries an asset request the server reset once, and names a reset that recurs instead of a different build", async () => {
+  await withLifecycle(async (f) => {
+    await hostedDeployReady(f);
+    const url = `${HOSTED_ORIGIN}/${f.slug}/`;
+    const css = `/${f.slug}/css/campaign.css`;
+    const reset = () => Object.assign(new TypeError("fetch failed"), { cause: { code: "ECONNRESET" } });
+    const resetting = (times) => {
+      let left = times;
+      return async (target) => {
+        if (new URL(target).pathname === css && left > 0) { left -= 1; throw reset(); }
+        return hostedFetch(f).fetchImpl(target);
+      };
+    };
+    const before = [readFileSync(f.packetPath, "utf8"), readFileSync(f.reportPath, "utf8")];
+    await assert.rejects(recordCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": url }, { fetchImpl: resetting(2) }), (error) => {
+      assert.match(error.message, new RegExp(`${HOSTED_ORIGIN}${css}: ECONNRESET`));
+      assert.match(error.message, /reset the connection \(ECONNRESET\) on that request, also on a retry/);
+      assert.doesNotMatch(error.message, /is not serving the recorded build/);
+      return true;
+    });
+    assert.deepEqual([readFileSync(f.packetPath, "utf8"), readFileSync(f.reportPath, "utf8")], before);
+    await recordCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": url }, { fetchImpl: resetting(1) });
+    assert.equal(readJson(f.reportPath).stages.deploy.status, "completed", "one reset is retried");
+  });
+});
+
 test("record deploy refuses a served asset with no readable body as a transport failure, not a byte mismatch", async () => {
   await withLifecycle(async (f) => {
     await hostedDeployReady(f);
