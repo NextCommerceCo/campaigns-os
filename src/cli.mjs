@@ -4211,11 +4211,14 @@ export function specDeriveCommand(args, { store: storeRead = null, liveCampaign 
   const handedOff = campaignHandedOff(report);
   // The built pages recorded rebuilds removed: a page with no projection (a
   // template stock page) is removed on that record, not on its file alone.
+  // Entries run oldest to newest; a path counts only while its latest event
+  // is a removal.
   const buildChanges = report?.stages?.assembly?.build_changes;
-  const removedBuiltPaths = (Array.isArray(buildChanges) ? buildChanges : [])
-    .flatMap((entry) => (Array.isArray(entry?.reasons) ? entry.reasons : []))
-    .filter((reason) => reason?.code === "page_removed" && typeof reason.path === "string")
-    .map((reason) => reason.path);
+  const builtPathRemoved = new Map();
+  for (const reason of (Array.isArray(buildChanges) ? buildChanges : []).flatMap((entry) => (Array.isArray(entry?.reasons) ? entry.reasons : []))) {
+    if ((reason?.code === "page_removed" || reason?.code === "page_added") && typeof reason.path === "string") builtPathRemoved.set(reason.path, reason.code === "page_removed");
+  }
+  const removedBuiltPaths = [...builtPathRemoved].filter(([, removed]) => removed).map(([path]) => path);
   const plan = planSpecDerive({ spec, entry, pageFiles, packetBindings, removedBuiltPaths, waivedGates, waiversUnknown, publicRouteSlug, mapPublicRouteSlug: effectiveMapPublicRouteSlug(packet), handedOff });
   result.page_scope = plan.page_scope;
   // The mirrored offer and package fields, from the live campaign read

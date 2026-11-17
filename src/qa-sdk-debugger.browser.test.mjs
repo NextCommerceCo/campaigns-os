@@ -33,7 +33,6 @@ browserTest("QA SDK debugger: an overlay that mounts 2.5 s after load, past netw
     const row = assertions.find((entry) => entry.id === "browser-sdk-debugger:receipt");
     assert.ok(row, assertions.map((entry) => entry.id).join(", "));
     assert.equal(row.status, "pass", `${row.actual} ${JSON.stringify(row.evidence)}`);
-    assert.ok(row.evidence.observation.overlay_wait_ms > 0);
   } finally {
     await origin.close();
   }

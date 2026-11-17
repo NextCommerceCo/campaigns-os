@@ -34,9 +34,7 @@ more, once, for the card iframe to attach and `next-loading-spreedly` to clear
 before it measures the fields.
 
 Debugger evidence carries policy `networkidle-plus-1000ms-v1`: navigation, network
-idle wait, and post-settle wait durations, then `overlay_wait_ms`, the wait of up
-to 15 s (the SDK display-ready deadline) for the debugger overlay and its
-selectors to mount, plus `errors_sampled_after_ms`, measured
+idle wait, and post-settle wait durations plus `errors_sampled_after_ms`, measured
 from just before debugger navigation. These relative timings use a monotonic clock,
 rounded to milliseconds. They do not contain URLs, wall-clock dates, credentials,
 or a new guarantee about errors that occur after sampling. Failure paths include

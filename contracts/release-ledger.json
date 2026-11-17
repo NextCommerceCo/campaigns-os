@@ -5835,7 +5835,7 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.71.2+agent.6",
-      "changelog_sha256": "a580f11ae26352cf4c5071358ea2f349069484008aec8e304e7b201f9aa53b1b",
+      "changelog_sha256": "b3ce54dce62110f6b1ce694452e22a8c5a034e64f8f21da7bf8c18fdf096ec80",
       "agent_impact": "record build and next name the way through output_unchanged_after_input_change; spec derive removes a handed-off page a recorded rebuild removed and after-edit no longer calls a spec with an unbuilt page current; browser-sdk-debugger waits for the overlay; findings on pages a page-only change did not touch read unknown/page_not_in_change; low_contrast names the failing CTA; record deploy retries a reset asset request and names a recurring reset.",
       "compatibility": "compatible",
       "migration": "none",
@@ -5865,7 +5865,7 @@
           "summary": "Adds cause_reason page_not_in_change."
         }
       ],
-      "entry_sha256": "56ec5f0a0713252a2ca0be36adec717490952859c5b67fb0bc0c4f1fcf19b60c"
+      "entry_sha256": "2abbfe29e9e49f67135da9df54e6ce49f1b332fd28a8fa102d3b9adcea2dd89c"
     }
   ]
 }

@@ -449,7 +449,7 @@ function planPageScope({ spec, activePages, pageFiles, packetBindings, removedBu
   }
   const bindings = packetBindings instanceof Map ? packetBindings : new Map();
   const removedBuilt = new Set(removedBuiltPaths);
-  const builtPathOf = (page) => `${mapPublicRouteSlug ? stripPublicRoutePrefix(publicRouteForPage(page), publicRouteSlug, mapPublicRouteSlug) : publicRouteForPage(page)}index.html`;
+  const builtPathOf = (page) => `${stripPublicRoutePrefix(publicRouteForPage(page), publicRouteSlug, mapPublicRouteSlug)}index.html`;
   // The file a gone page had: its projected file, or the built page a
   // recorded rebuild removed.
   const goneFile = (page) => (isNonEmptyString(bindings.get(page.id)) ? bindings.get(page.id).replace(/^\/+/, "") : builtPathOf(page));
