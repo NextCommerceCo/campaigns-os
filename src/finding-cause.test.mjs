@@ -59,6 +59,29 @@ test("a full QA compares findings against their last evaluation before a page-sc
   ]);
 });
 
+test("after a page-only change, a new finding on a page the change did not touch is not caused by it", () => {
+  const base = scratch();
+  writePriorRun(base, { runId: "run_1757000000000_aaaaaaaa", mapId: "map-1", verdict: { run_id: "qa_full", assertions: [] } });
+  const touched = finding({ id: "browser-sdk-debugger:landing", family: "browser-runtime", page: "landing", status: "warn", severity: "warn" });
+  const untouched = finding({ id: "browser-sdk-debugger:receipt", family: "browser-runtime", page: "receipt", status: "warn", severity: "warn" });
+  const assertions = [{ ...touched }, { ...untouched }];
+  annotateQaAssertionCauses(assertions, { baseDir: base, mapId: "map-1", isFinding: isFindingAssertion, outsideChange: (assertion) => assertion.page !== "landing" });
+  assert.deepEqual(assertions.map((assertion) => [assertion.cause, assertion.cause_reason]), [
+    [CAUSE_CLASSES.CAUSED_BY_CHANGE, "new_since_prior_run"],
+    [CAUSE_CLASSES.UNKNOWN, "page_not_in_change"],
+  ]);
+});
+
+test("qa run reads a page-only change owed by the build as the pages it touched, and any other debt as no page scope", async () => {
+  const { pageOnlyQaChange } = await import("./qa-node.mjs");
+  const qa = (fields) => ({ qa: { status: "owed", reason: "build_fingerprint_changed", change: { kind: "page_only", changed_pages: [{ page_id: "landing", built_path: "index.html" }] }, ...fields } });
+  assert.deepEqual(pageOnlyQaChange(qa({})), ["landing"]);
+  assert.equal(pageOnlyQaChange(qa({ reason: "stage_required_by_spec" })), null, "a CampaignSpec change can reach any page");
+  assert.equal(pageOnlyQaChange(qa({ change: { kind: "commerce_affecting", changed_pages: [] } })), null);
+  assert.equal(pageOnlyQaChange(qa({ status: "current" })), null);
+  assert.equal(pageOnlyQaChange(null), null);
+});
+
 test("QA cause summary explains findings with no prior evaluation", () => {
   const base = scratch();
   writePriorRun(base, {

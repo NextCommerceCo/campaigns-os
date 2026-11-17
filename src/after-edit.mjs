@@ -162,7 +162,10 @@ export async function afterEditCommand(args, { specFetch, specDerive, specDerive
     const repoPlan = await specDerive({ ...deriveArgs, "no-live-refs": true, "dry-run": true }, { fetchImpl });
     const plan = !repoPlan.ok || !repoPlan.changes.length || args["no-live-refs"] ? repoPlan : await specDerive({ ...deriveArgs, "dry-run": true }, { fetchImpl });
     if (!plan.ok) return stop("spec_derive", specDeriveTextLines(plan).join("\n"), deriveNext);
-    if (!plan.changes.length) add("spec_derive", "not_needed", "Spec is current.");
+    // A spec page with no page file is not a current spec, whatever else
+    // derive found: say which, and how it is resolved.
+    const unbound = plan.not_derived.filter((row) => row.reason === "page_file_not_found");
+    if (!plan.changes.length) add("spec_derive", "not_needed", unbound.length ? `No derived field changed, but the CampaignSpec lists ${unbound.length === 1 ? "a page" : "pages"} with no page file, so the spec may be stale:\n${unbound.map((row) => `- ${row.page_id}: ${row.detail}`).join("\n")}` : "Spec is current.");
     else {
       deriveDetail = specDeriveTextLines({ ...plan, warnings: plan.warnings.filter((issue) => issue.code !== "spec.derive.build_stale") }).join("\n");
       if (!args.yes) {

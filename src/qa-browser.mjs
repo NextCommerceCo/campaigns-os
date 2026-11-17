@@ -1319,6 +1319,12 @@ async function sdkDebuggerAssertions(context, page, args) {
     const postSettleStarted = performance.now();
     await debugPage.waitForTimeout(1000).catch(() => {});
     observation.post_settle_ms = elapsedMilliseconds(postSettleStarted);
+    // The overlay mounts after the SDK is ready, which can be after network
+    // idle: wait for it up to the SDK display-ready deadline, as the other
+    // SDK reads do, and read what is there when the deadline passes.
+    await debugPage.waitForFunction(() => document.documentElement.classList.contains("next-display-ready")
+      && ["#next-debug-overlay-host", "#debug-selectors-container", "#debug-currency-selector", "#debug-country-selector", "#debug-locale-selector"].every((selector) => document.querySelector(selector)),
+    null, { timeout: SDK_DISPLAY_READY_TIMEOUT_MS, polling: 100 }).catch(() => {});
     const evidence = await debugPage.evaluate(() => ({
       url: location.href,
       displayReady: document.documentElement.classList.contains("next-display-ready"),
@@ -1696,7 +1702,16 @@ function primaryCtaAssertionFromEvidence(page, evidence) {
   // spelled with an undeclared route attribute is still one an operator
   // should re-spell before the fallback that carried it changes.
   const ignoredHint = ignored.length ? ` (page carries route-shaped attributes the runner does not consult: ${ignored.join(", ")})` : "";
-  const reason = (evidence?.reason || "unknown") + ignoredHint;
+  // low_contrast names the CTA whose measured text is below its requirement:
+  // the first candidate listed can be another one, on a gradient or image
+  // background its contrast is not compared on (a review member).
+  const low = evidence?.reason === "low_contrast"
+    ? (Array.isArray(evidence.candidates) ? evidence.candidates : []).flatMap((candidate) => (candidate?.route_matches && !candidate.disabled && Array.isArray(candidate.elements) ? candidate.elements : [])
+      .filter((element) => element?.review_reason === null && typeof element.contrast_ratio_exact === "number" && element.contrast_ratio_exact < element.required_ratio)
+      .map((element) => ({ candidate, element })))[0]
+    : null;
+  const lowHint = low ? ` (${JSON.stringify(low.candidate.text || "")} ${low.candidate.selector}: ${Math.round(low.element.contrast_ratio_exact * 100) / 100}:1, needs ${low.element.required_ratio}:1)` : "";
+  const reason = (evidence?.reason || "unknown") + lowHint + ignoredHint;
   return assertion({
     id: `browser-primary-cta:${page.page_id}`,
     family: "browser-runtime",

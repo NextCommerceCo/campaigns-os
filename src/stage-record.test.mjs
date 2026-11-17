@@ -761,6 +761,32 @@ test("record deploy stops reading a served asset larger than the built file, by 
   });
 });
 
+test("record deploy retries an asset request the server reset once, and names a reset that recurs instead of a different build", async () => {
+  await withLifecycle(async (f) => {
+    await hostedDeployReady(f);
+    const url = `${HOSTED_ORIGIN}/${f.slug}/`;
+    const css = `/${f.slug}/css/campaign.css`;
+    const reset = () => Object.assign(new TypeError("fetch failed"), { cause: { code: "ECONNRESET" } });
+    const resetting = (times) => {
+      let left = times;
+      return async (target) => {
+        if (new URL(target).pathname === css && left > 0) { left -= 1; throw reset(); }
+        return hostedFetch(f).fetchImpl(target);
+      };
+    };
+    const before = [readFileSync(f.packetPath, "utf8"), readFileSync(f.reportPath, "utf8")];
+    await assert.rejects(recordCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": url }, { fetchImpl: resetting(2) }), (error) => {
+      assert.match(error.message, new RegExp(`${HOSTED_ORIGIN}${css}: ECONNRESET`));
+      assert.match(error.message, /reset the connection \(ECONNRESET\) on that request, also on a retry/);
+      assert.doesNotMatch(error.message, /is not serving the recorded build/);
+      return true;
+    });
+    assert.deepEqual([readFileSync(f.packetPath, "utf8"), readFileSync(f.reportPath, "utf8")], before);
+    await recordCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": url }, { fetchImpl: resetting(1) });
+    assert.equal(readJson(f.reportPath).stages.deploy.status, "completed", "one reset is retried");
+  });
+});
+
 test("record deploy refuses a served asset with no readable body as a transport failure, not a byte mismatch", async () => {
   await withLifecycle(async (f) => {
     await hostedDeployReady(f);
@@ -3588,6 +3614,19 @@ test("F2.2-B20: with the spec edited and no record spec, record build over the b
     const currency = inputCurrency(f);
     assert.equal(currency.reasons.assembly, "output_unchanged_after_input_change");
     assert.equal(currency.stages.assembly, "owed", "a replay over the byte-identical output leaves the build owed (rule 5)");
+  });
+});
+
+test("record build over the output an input change superseded names the way through, not only the reason code", async () => {
+  await guardedLifecycle(async (f) => {
+    await recordThroughPolish(f);
+    editSpec(f, bumpCheckoutQty);
+    const result = recordOk(f, "build");
+    assert.equal(result.next_stage, "build");
+    assert.match(result.next_stage_reason, /^output_unchanged_after_input_change: /);
+    assert.match(result.next_stage_reason, /rebuilding to the same output will not clear it/);
+    assert.match(result.next_stage_reason, /edit the page sources so it reaches them, rebuild/);
+    assert.match(result.next_stage_reason, /record build --packet <packet> --deviation-reason "<the operator's reason>"/);
   });
 });
 

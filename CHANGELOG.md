@@ -2,6 +2,13 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.71.2+agent.6] - 2026-11-16
+
+### Fixed
+
+- `record build` and `next` name the way past `output_unchanged_after_input_change`, `spec derive` drops a page a rebuild removed, the SDK debugger check waits for its overlay and stops blaming untouched pages on a change, `low_contrast` names the failing button, and `record deploy` retries a reset request (#796).
+
+
 ## [1.71.2+agent.5] - 2026-11-16
 
 ### Fixed

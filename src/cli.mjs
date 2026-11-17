@@ -4209,7 +4209,20 @@ export function specDeriveCommand(args, { store: storeRead = null, liveCampaign 
   }
   // After handoff the page tree also says which pages exist (#721).
   const handedOff = campaignHandedOff(report);
-  const plan = planSpecDerive({ spec, entry, pageFiles, packetBindings, waivedGates, waiversUnknown, publicRouteSlug, mapPublicRouteSlug: effectiveMapPublicRouteSlug(packet), handedOff });
+  // The built pages recorded rebuilds removed: a page with no projection (a
+  // template stock page) is removed on that record, not on its file alone.
+  // Entries run oldest to newest; a path counts only while its latest event
+  // is a removal and the current build's page signatures do not list it (an
+  // entry's reasons are capped, so a re-add can go unrecorded).
+  const assembly = report?.stages?.assembly;
+  const buildChanges = assembly?.build_changes;
+  const currentPages = assembly?.commerce_signature?.pages || {};
+  const builtPathRemoved = new Map();
+  for (const reason of (Array.isArray(buildChanges) ? buildChanges : []).flatMap((entry) => (Array.isArray(entry?.reasons) ? entry.reasons : []))) {
+    if ((reason?.code === "page_removed" || reason?.code === "page_added") && typeof reason.path === "string") builtPathRemoved.set(reason.path, reason.code === "page_removed");
+  }
+  const removedBuiltPaths = [...builtPathRemoved].filter(([path, removed]) => removed && !Object.hasOwn(currentPages, path)).map(([path]) => path);
+  const plan = planSpecDerive({ spec, entry, pageFiles, packetBindings, removedBuiltPaths, waivedGates, waiversUnknown, publicRouteSlug, mapPublicRouteSlug: effectiveMapPublicRouteSlug(packet), handedOff });
   result.page_scope = plan.page_scope;
   // The mirrored offer and package fields, from the live campaign read
   // (#721). A read that did not happen leaves them as they are and says why.

@@ -1052,12 +1052,19 @@ function validateInputCurrency({ packet, packetPath, spec, report, warnings, der
     }
   }
   if (currency.reasons.assembly === "output_unchanged_after_input_change") {
-    addIssue(warnings, "assembly.output_unchanged_after_input_change", `The build output is unchanged since the brief or CampaignSpec change was recorded, so the change has not reached the pages and build is owed again. Rebuild, or, only on the operator's explicit decision that the change needs no output change, record build with --deviation-reason "<the operator's reason>".`);
+    addIssue(warnings, "assembly.output_unchanged_after_input_change", outputUnchangedAfterInputChangeText());
   }
   const keptReason = report.stages.assembly?.unchanged_output_reason;
   if (currency.stages.assembly === "current" && isObject(keptReason) && typeof keptReason.text === "string") {
     addIssue(warnings, "assembly.output_unchanged_by_operator_decision", `The build output was kept unchanged after an input change by the operator's recorded decision: "${keptReason.text}".`, { reason: keptReason.text });
   }
+}
+
+// The way through an assembly owed as output_unchanged_after_input_change,
+// for the doctor warning and the stage `next` names (record build prints it).
+// Rebuilding to the same output never clears it, so both ways are named.
+export function outputUnchangedAfterInputChangeText() {
+  return `The build output is the build recorded before the brief or CampaignSpec change was recorded, so build is owed again, and rebuilding to the same output will not clear it. If the change should alter the pages, edit the page sources so it reaches them, rebuild, then run ${cmd("record")} build --packet <packet>. If the pages already carry it (they were rebuilt and recorded before ${cmd("record")} spec or ${cmd("record")} brief ran) or it needs no page change, say so to the operator, and only on their decision run ${cmd("record")} build --packet <packet> --deviation-reason "<the operator's reason>".`;
 }
 
 function validateProofPolicyObject(policy, location, warnings, ready, { requireBrowserQa = false } = {}) {

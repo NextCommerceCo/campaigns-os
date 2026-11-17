@@ -639,6 +639,34 @@ test("spec derive is partial, not blocked, when a page cannot be bound, and stil
   }
 });
 
+test("spec derive removes a page only while its latest recorded rebuild event is a removal", () => {
+  const { dir, packetPath, reportPath } = fixture({ tree: ["landing", "checkout", "receipt"] });
+  try {
+    const packet = readJson(packetPath);
+    packet.source_html.pages = packet.source_html.pages.filter((page) => page.page_id !== "upsell");
+    writeJson(packetPath, packet);
+    const rebuild = (code) => ({ reasons: [{ code, path: "upsell/index.html" }] });
+    const derive = (buildChanges) => {
+      const report = readJson(reportPath);
+      report.stages.deploy.status = "completed";
+      report.stages.assembly.build_changes = buildChanges;
+      writeJson(reportPath, report);
+      return specDeriveCommand({ _: ["spec", "derive"], packet: packetPath, "dry-run": true }).page_scope.removed.map((row) => row.page_id);
+    };
+    assert.deepEqual(derive([rebuild("page_removed")]), ["upsell"]);
+    assert.deepEqual(derive([rebuild("page_removed"), rebuild("page_added")]), [], "a later rebuild re-added it");
+    assert.deepEqual(derive([rebuild("page_added"), rebuild("page_removed")]), ["upsell"]);
+    // A capped entry can drop the re-add; the current build's page signatures
+    // still list the page, so it is not removed.
+    const report = readJson(reportPath);
+    report.stages.assembly.commerce_signature = { pages: { "upsell/index.html": "x" } };
+    writeJson(reportPath, report);
+    assert.deepEqual(derive([rebuild("page_removed")]), [], "the current build still holds it");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("spec derive reports a missing page tree per page and a scaffold's seeded pin, and writes the ids it can", () => {
   const { dir, packetPath, pageTree, specPath } = fixture({ entry: { ...SCAFFOLD_ENTRY, gtm_id: "GTM-ABC1234" } });
   try {
@@ -1951,6 +1979,28 @@ test("planSpecDerive removes, after handoff, a page whose projected file is gone
   assert.deepEqual(unbuilt.not_derived.filter((row) => row.page_id === "upsell").map((row) => row.reason), ["page_file_not_found"]);
   // The guard: a page op only ever touches a page list.
   assert.throws(() => applySpecDerive(specFixture(), { changes: [{ field: "campaign", path: ["campaign"], op: "remove" }] }), /Refusing to remove "campaign"/);
+});
+
+test("planSpecDerive removes, after handoff, a page with no projection whose built page a recorded rebuild removed", () => {
+  const tree = TREE_WITH_LINKS
+    .filter((file) => file.basename !== "upsell")
+    .map((file) => (file.basename === "checkout" ? { ...file, next_url: "/runtime-packet-demo/receipt/" } : file));
+  // A template stock page: no projection names its file, so only the
+  // recorded rebuild that removed upsell/index.html says it was built.
+  const plan = planSpecDerive({ spec: specFixture(), entry: CONFIGURED_ENTRY, pageFiles: tree, packetBindings: new Map(), removedBuiltPaths: ["upsell/index.html"], publicRouteSlug: "runtime-packet-demo", handedOff: true });
+  assert.deepEqual(plan.page_scope.removed, [{ page_id: "upsell", file: "upsell/index.html" }]);
+  assert.deepEqual(plan.changes.filter((row) => row.op === "remove").map((row) => [row.field, row.source]), [["funnels[0].pages[2]", "upsell/index.html (removed from the build by a recorded rebuild)"]]);
+  assert.equal(plan.not_derived.some((row) => row.page_id === "upsell"), false, "a removed page is not also reported as not found");
+  assert.deepEqual(applySpecDerive(specFixture(), plan).funnels[0].pages.map((page) => page.id), ["landing", "checkout", "receipt"]);
+  // A page_url that carries the served slug names the same built page.
+  const slugged = specFixture((draft) => { draft.funnels[0].pages[2].page_url = "/runtime-packet-demo/upsell/"; });
+  assert.deepEqual(planSpecDerive({ spec: slugged, entry: CONFIGURED_ENTRY, pageFiles: tree, packetBindings: new Map(), removedBuiltPaths: ["upsell/index.html"], publicRouteSlug: "runtime-packet-demo", handedOff: true }).page_scope.removed, [{ page_id: "upsell", file: "upsell/index.html" }]);
+  // Before handoff, or with no recorded removal, the page is only not found.
+  for (const extra of [{ handedOff: false }, { removedBuiltPaths: [] }]) {
+    const kept = planSpecDerive({ spec: specFixture(), entry: CONFIGURED_ENTRY, pageFiles: tree, packetBindings: new Map(), removedBuiltPaths: ["upsell/index.html"], publicRouteSlug: "runtime-packet-demo", handedOff: true, ...extra });
+    assert.deepEqual(kept.page_scope.removed, []);
+    assert.deepEqual(kept.not_derived.filter((row) => row.page_id === "upsell").map((row) => row.reason), ["page_file_not_found"]);
+  }
 });
 
 test("planSpecDerive keeps a rooted routing hint rooted when it re-points the edge, and reports a hint an added page leaves stale", () => {

@@ -1157,6 +1157,18 @@ test("primary CTA assertion soft-fails unreadable route-driving controls", () =>
   assert.match(result.actual, /low_contrast/);
 });
 
+test("primary CTA low_contrast names the measured CTA below its requirement, not a first-listed gradient CTA that is only reviewed", () => {
+  const { primaryCtaAssertionFromEvidence } = __qaBrowserTestHooks;
+  const row = (selector, text, element) => ({ selector, text, href: "https://example.test/receipt/", route_matches: true, width: 680, height: 48, size_ok: true, disabled: false, text_rendered: true, control_loading: false, elements: [element] });
+  const gradient = row("button.accept", "Yes, add to my order", { selector_path: "button:nth-of-type(1)", contrast_ratio_exact: 1, required_ratio: 4.5, size_class: "normal", review_reason: "background_gradient" });
+  const decline = row("button.decline", "No thanks", { selector_path: "button:nth-of-type(2)", contrast_ratio_exact: 3.5448862152994005, required_ratio: 4.5, size_class: "normal", review_reason: null });
+  const result = primaryCtaAssertionFromEvidence({ page_id: "upsell", page_type: "upsell" }, {
+    ok: false, reason: "low_contrast", expected_url: "https://example.test/receipt/", primary: gradient, candidates: [gradient, decline], ignored_attributes: [],
+  });
+  assert.equal(result.status, "fail");
+  assert.equal(result.actual, 'low_contrast ("No thanks" button.decline: 3.54:1, needs 4.5:1)');
+});
+
 test("primary CTA assertion passes readable route-driving controls", () => {
   const { primaryCtaAssertionFromEvidence } = __qaBrowserTestHooks;
   const result = primaryCtaAssertionFromEvidence({ page_id: "landing", page_type: "landing" }, {

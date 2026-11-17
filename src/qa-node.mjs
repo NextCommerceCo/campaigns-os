@@ -619,7 +619,19 @@ async function resolveQaInputs(args, {
     targetRepo: checkpointPreflight?.targetRepo || null,
     // The report those gates read, whose QA records name this build's earlier runs.
     runtimeReport: checkpointPreflight?.runtimeReport || null,
+    // The page ids a page-only change since QA touched, or null: a finding
+    // on any other page is not caused by that change.
+    pageOnlyChange: pageOnlyQaChange(checkpointPreflight?.evidenceDebt),
   };
+}
+
+// A page-only change since the build QA last checked, which only the build
+// owes QA for (no brief or CampaignSpec change): its changed page ids.
+export function pageOnlyQaChange(debt) {
+  const qa = debt?.qa;
+  if (qa?.status !== "owed" || !["build_fingerprint_changed", "stage_required_by_build"].includes(qa.reason)) return null;
+  if (qa.change?.kind !== "page_only" || !Array.isArray(qa.change.changed_pages)) return null;
+  return qa.change.changed_pages.map((page) => String(page.page_id));
 }
 
 function resolvePacketCheckpointPreflight(args, {
@@ -3003,6 +3015,12 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
     laterQaVerdict: resolved.packetPath && !runSessionActive ? stageQaVerdict(resolved) : null,
     runSessionActive,
     isFinding: isFindingAssertion,
+    outsideChange: resolved.pageOnlyChange
+      ? (assertion) => {
+        const ids = [assertion.page, assertion.url && resolved.baseUrl ? routePageIdForUrl(assertion.url, resolved.baseUrl) : null].filter(Boolean).map(String);
+        return ids.length > 0 && !ids.includes("campaign") && !ids.some((id) => resolved.pageOnlyChange.includes(id));
+      }
+      : null,
   });
   // The verdict as it is persisted: the local file, the committed sidecar and
   // the published copy all read this one projection (no URL query in any

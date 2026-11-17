@@ -21,7 +21,7 @@ import { effectiveStageStatus, effectiveStatusIsTerminal } from "../input-curren
 import { cmd } from "../install-invocation.mjs";
 import { shellToken } from "../shell-token.mjs";
 import { isObject, isNonEmptyString, optionalString, resolveFromFile, addIssue, filesystemPathsMatch } from "../cli-helpers.mjs";
-import { orderPathDepthDrift } from "./checks.mjs";
+import { orderPathDepthDrift, outputUnchangedAfterInputChangeText } from "./checks.mjs";
 import { designSourceReferenceMismatches, readRecordedDesignSourcePackage } from "../design-source-publication.mjs";
 
 // The orchestration stage contract lives in orchestration-stage-contract.mjs so
@@ -444,9 +444,10 @@ function pickNextStage(report, { errors = [], derived = null }, prepareBuildGate
   // inputs cannot be confirmed, is owed before anything downstream of it.
   const inputCurrency = derived?.input_currency || null;
   if (["owed", "unknown"].includes(inputCurrency?.stages?.assembly)) {
+    const code = inputCurrency.reasons?.assembly || "input_binding_unknown";
     return {
       stage: "build",
-      reason: inputCurrency.reasons?.assembly || "input_binding_unknown",
+      reason: code === "output_unchanged_after_input_change" ? `${code}: ${outputUnchangedAfterInputChangeText()}` : code,
     };
   }
 
