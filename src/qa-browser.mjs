@@ -3186,10 +3186,12 @@ async function pricingVisibilityAssertions(browserPage, page, options = {}) {
     // by construction, so the total is still checked; only the bundle count
     // is skipped.
     const totalSelectors = checkoutTotalSelectors();
-    const [visibleCount, totalVisibleCount] = await Promise.all([
-      selectors.length ? settledVisiblePriceRows(browserPage, selectors, settle) : 0,
-      countVisiblePriceRows(browserPage, totalSelectors),
-    ]);
+    // A visible total already passes the row, so the bundle count waits for
+    // late SDK prices only when nothing priced shows yet.
+    const totalVisibleCount = await countVisiblePriceRows(browserPage, totalSelectors);
+    const visibleCount = !selectors.length ? 0
+      : totalVisibleCount ? await countVisiblePriceRows(browserPage, selectors)
+      : await settledVisiblePriceRows(browserPage, selectors, settle);
     // Nothing priced is visible. When the checkout also has no package
     // selection of its own and the SDK reports an empty cart, the cart is
     // filled on an earlier page (a landing link carrying forcePackageId), and
