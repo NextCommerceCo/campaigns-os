@@ -2245,8 +2245,9 @@ and each has a flag:
 | `--test-postal` | `94043` | postal code |
 
 The billing fields get the same values when the checkout shows them. To order
-in another market, pass `--test-country` and all four address flags for a real
-address in that country, since the address defaults are a US one, and pass
+in another market, pass `--test-country` and the address flags the checkout
+asks for in that country, for a real address there, since the address defaults
+are a US one, and pass
 `--currency` for that market's currency: the country flag does not change the
 currency. A UK run looks like this:
 
@@ -2254,13 +2255,16 @@ currency. A UK run looks like this:
 npm run campaigns-os -- qa run --packet campaign-runtime.build.json \
   --currency GBP --browser --test-order common \
   --test-country GB --test-address1 "<street>" --test-city "<city>" \
-  --test-province "<option from the province select>" --test-postal "<postcode>"
+  --test-postal "<postcode>"
 ```
 
-The province select is a required step. A checkout that shows no province
-select for the chosen country fails the path at that field
-(`Missing checkout select: province`); place those orders by hand on the
-market-pinned page (`?currency=<code>&country=<code>`).
+For a US address the province select is a required step: a checkout that
+does not show one fails the path at that field
+(`Missing checkout select: province`). For any other country the runner fills
+the province select only when the checkout shows it, enabled, once the country
+is chosen; the Campaign Cart SDK drops or hides it for countries without one,
+such as GB and DE, and the runner then skips it (field status `unusable`) and
+needs no `--test-province`.
 
 The browser driver intentionally behaves like a user:
 

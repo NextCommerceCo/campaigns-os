@@ -2,6 +2,13 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.71.2+agent.3] - 2026-11-16
+
+### Fixed
+
+- QA test orders with a non-US `--test-country` fill the province select when the checkout shows it, waiting briefly for the SDK to re-render it after the country change, and skip it where the Campaign Cart SDK drops or hides it (GB, DE) instead of failing with `Missing checkout select: province`, while a US address, read from the checkout's selected country, still requires it (#795).
+
+
 ## [1.71.2+agent.2] - 2026-11-16
 
 ### Fixed

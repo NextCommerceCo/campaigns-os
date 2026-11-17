@@ -285,7 +285,8 @@ Options:
   --test-address1 <line>          Street address. Default: 1600 Amphitheatre Pkwy.
   --test-city <city>              City. Default: Mountain View.
   --test-province <code>          State, province or region, as the province select's option value or label.
-                                  Default: CA. The checkout must show a province select for the country.
+                                  Default: CA. Outside the US it is skipped when the checkout shows no province
+                                  select for --test-country.
   --test-postal <code>            Postal code. Default: 94043.
   --legacy-api-test-order <off|accept|decline|both>
                                   Diagnostic-only direct Campaigns API order creation; bypasses deployed checkout.
