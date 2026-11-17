@@ -5982,8 +5982,8 @@
       "kind": "release",
       "surface_version": "1.71.3",
       "changelog_section": "1.71.3",
-      "changelog_sha256": "d3ff2730135bd2de274706a08fc8a120344e1e6ef75d0d8ed2487c931e1b87d6",
-      "agent_impact": "The 1.71.3 package publishes the six changes since 1.71.2 (1.71.2+agent.1 to agent.6). telemetry list no longer takes --trusted and prints no trusted/anon column; --trusted is refused before any request (the receiver already answered trusted= with 400 trusted_filter_removed), and a record's trust stamp stays on GET /api/runs/:run_id. QA's upsell and checkout price checks wait up to the 5-second settle window for the SDK to fill its prices, so do not add a price row or re-run to get a pass. QA test orders with a non-US --test-country fill the province select only where the checkout shows it; a US address still requires it. At the done stage next opens with Not complete: and names each owed --currency run while the current build lacks a test order in a listed currency. On the local preview next, record build and record deploy carry a missing Polish forward to deploy whether or not polish capture ran. spec derive and after-edit read page frontmatter as YAML, so a root-served entry page is not read as moved. record build and next name the way past output_unchanged_after_input_change, spec derive drops a page a rebuild removed, the SDK debugger check waits for its overlay, low_contrast names the failing button, and record deploy retries a reset request. Refresh skills to 1.71.3+skills.1 (a revision restamp; the skill text is otherwise as in 1.71.2+skills.1).",
+      "changelog_sha256": "e9ff692693e940480d68f4bff33d550702086e059ea3fe15336d48f8541f003d",
+      "agent_impact": "The 1.71.3 package publishes the six changes since 1.71.2 (1.71.2+agent.1 to agent.6). telemetry list no longer takes --trusted and prints no trusted/anon column; --trusted is refused before any request (the receiver already answered trusted= with 400 trusted_filter_removed), and a record's trust stamp stays on GET /api/runs/:run_id. QA's upsell and checkout price checks wait up to the 5-second settle window for the SDK to fill its prices, so do not add a price row or re-run to get a pass. QA test orders with a non-US --test-country fill the province select only where the checkout shows it; a US address still requires it. At the done stage next opens with Not complete: and names each owed --currency run while the current build lacks a test order in a listed currency. On the local preview next, record build and record deploy carry a missing Polish forward to deploy whether or not polish capture ran. spec derive and after-edit read page frontmatter as YAML, so a root-served entry page is not read as moved. record build and next name the way past output_unchanged_after_input_change, spec derive drops a page a rebuild removed, the SDK debugger check waits for its overlay and reads findings on pages a page-only change did not touch as cause_reason page_not_in_change, low_contrast names the failing button, and record deploy retries a reset request. Refresh skills to 1.71.3+skills.1 (a revision restamp; the skill text is otherwise as in 1.71.2+skills.1).",
       "compatibility": "breaking",
       "migration": "From the published 1.71.2, drop --trusted from any telemetry list call (it now exits non-zero) and read a record's trust stamp from GET /api/runs/:run_id if needed. Update the pinned package to 1.71.3 and run install-skills to get 1.71.3+skills.1 before starting a fresh session.",
       "changes": [
@@ -6102,7 +6102,7 @@
           "summary": "One patch higher, stamped with bundle 1.71.3+skills.1."
         }
       ],
-      "entry_sha256": "f1e6206f77a04eecf649dfa34cb40dfb7fed0c3947ee1b504209a829575c3218"
+      "entry_sha256": "c5edfb4dcde36ba172b8a26f0159b90b62223022467de100381b31dba4c873cd"
     }
   ]
 }
