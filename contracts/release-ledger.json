@@ -5974,6 +5974,135 @@
         }
       ],
       "entry_sha256": "a7b63417ef7675b524eaf8068d7f52679d91bfc789a8818ee3258a66c32107e0"
+    },
+    {
+      "id": "RL-0374",
+      "sequence": 358,
+      "date": "2026-11-17",
+      "kind": "release",
+      "surface_version": "1.71.3",
+      "changelog_section": "1.71.3",
+      "changelog_sha256": "d3ff2730135bd2de274706a08fc8a120344e1e6ef75d0d8ed2487c931e1b87d6",
+      "agent_impact": "The 1.71.3 package publishes the six changes since 1.71.2 (1.71.2+agent.1 to agent.6). telemetry list no longer takes --trusted and prints no trusted/anon column; --trusted is refused before any request (the receiver already answered trusted= with 400 trusted_filter_removed), and a record's trust stamp stays on GET /api/runs/:run_id. QA's upsell and checkout price checks wait up to the 5-second settle window for the SDK to fill its prices, so do not add a price row or re-run to get a pass. QA test orders with a non-US --test-country fill the province select only where the checkout shows it; a US address still requires it. At the done stage next opens with Not complete: and names each owed --currency run while the current build lacks a test order in a listed currency. On the local preview next, record build and record deploy carry a missing Polish forward to deploy whether or not polish capture ran. spec derive and after-edit read page frontmatter as YAML, so a root-served entry page is not read as moved. record build and next name the way past output_unchanged_after_input_change, spec derive drops a page a rebuild removed, the SDK debugger check waits for its overlay, low_contrast names the failing button, and record deploy retries a reset request. Refresh skills to 1.71.3+skills.1 (a revision restamp; the skill text is otherwise as in 1.71.2+skills.1).",
+      "compatibility": "breaking",
+      "migration": "From the published 1.71.2, drop --trusted from any telemetry list call (it now exits non-zero) and read a record's trust stamp from GET /api/runs/:run_id if needed. Update the pinned package to 1.71.3 and run install-skills to get 1.71.3+skills.1 before starting a fresh session.",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "compatibility.json",
+          "surface_entry": "compatibility.json",
+          "summary": "Version advances to 1.71.3."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "surface_version advances to 1.71.3 for the package release."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Install pins @nextcommerce/campaigns-os@1.71.3."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerated at surface 1.71.3."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerated at surface 1.71.3."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Examples name 1.71.3+skills.1."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Both package version stamps advance to 1.71.3."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Package version advances to 1.71.3."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Bundle advances to 1.71.3+skills.1 and each bundled skill one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.71.3+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.71.3+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.71.3+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.71.3+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.71.3+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.71.3+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.71.3+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.71.3+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.71.3+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-sdk-bump/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.71.3+skills.1."
+        }
+      ],
+      "entry_sha256": "f1e6206f77a04eecf649dfa34cb40dfb7fed0c3947ee1b504209a829575c3218"
     }
   ]
 }
