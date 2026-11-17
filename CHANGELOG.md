@@ -8,6 +8,13 @@ Notable supported-surface changes are recorded here.
 
 - QA test orders with a non-US `--test-country` fill the province select when the checkout shows it, waiting briefly for the SDK to re-render it after the country change, and skip it where the Campaign Cart SDK drops or hides it (GB, DE) instead of failing with `Missing checkout select: province`, while a US address, read from the checkout's selected country, still requires it (#795).
 
+
+## [1.71.2+agent.2] - 2026-11-16
+
+### Fixed
+
+- QA's upsell and checkout price checks wait up to the 5-second settle window for the SDK to fill its bundle prices, so a correct page no longer reads "0 visible price row(s)" on one run and passes on the next (#793).
+
 ## [1.71.2+agent.1] - 2026-11-16
 
 ### Removed
