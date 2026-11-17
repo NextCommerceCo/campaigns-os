@@ -2,6 +2,22 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.71.3] - 2026-11-17
+
+This release packages the six `1.71.2+agent` sections below, the fixes from the seventh simulated build batch plus one telemetry change. For a campaign, QA's upsell and checkout price checks wait for the SDK to fill its prices instead of failing a correct page on one run and passing it on the next, and QA test orders to a non-US country fill the province field only when the checkout shows one. `next` no longer says "Pipeline complete." while a currency the CampaignSpec lists has no test order in the current build; on the local preview `next`, `record build` and `record deploy` give one answer on Polish; and `spec derive` and `after-edit` read page frontmatter as YAML, as page-kit does. Five message and noise fixes: `record build` and `next` name the way past `output_unchanged_after_input_change`, `spec derive` drops a removed page, the SDK debugger check waits for its overlay and no longer blames pages a change did not touch (`cause_reason: page_not_in_change`), `low_contrast` names the failing button, and `record deploy` retries a reset request. One breaking change: `telemetry list` no longer takes `--trusted` and its table drops the trusted/anon column. The receiver already refuses a `trusted=` query, so the flag no longer worked; drop it from any `telemetry list` call. No schema or contract changes. To take it, pin `@nextcommerce/campaigns-os@1.71.3` and refresh the installed skills to `1.71.3+skills.1`.
+
+### Removed
+
+- Publishes `1.71.2+agent.1`: `telemetry list` drops `--trusted` and the trusted/anon column, and refuses `--trusted` before any request (#792).
+
+### Fixed
+
+- Publishes `1.71.2+agent.2`: QA's upsell and checkout price checks wait up to the 5-second settle window for the SDK to fill its prices (#793).
+- Publishes `1.71.2+agent.3`: QA test orders with a non-US `--test-country` skip the province select where the checkout does not show it, and still require it for a US address (#795).
+- Publishes `1.71.2+agent.4`: `next` opens with "Not complete:" and names each owed `--currency` run while the current build lacks a test order in a listed currency, and a `qa run` outside a run session compares against the QA stage's last recorded run when that run is later than the previous Run Record's final attempt, so a row it lacked reads `caused_by_change` rather than `pre_existing` (#794).
+- Publishes `1.71.2+agent.5`: on the local preview, `next`, `record build` and `record deploy` carry a missing Polish forward to deploy whether or not an optional `polish capture` ran, `next` names a required deploy on its "Owed stages" line, and `spec derive` and `after-edit` read page frontmatter as YAML (#797).
+- Publishes `1.71.2+agent.6`: messages for `output_unchanged_after_input_change`, a removed page in `spec derive`, the SDK debugger overlay wait, SDK debugger findings on pages a page-only change did not touch reading `cause_reason: page_not_in_change`, `low_contrast` naming the failing button, and a `record deploy` retry on a reset request (#796).
+
 ## [1.71.2+agent.6] - 2026-11-16
 
 ### Fixed
