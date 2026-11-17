@@ -652,6 +652,12 @@ test("spec derive removes a page only while its latest recorded rebuild event is
     assert.deepEqual(derive([rebuild("page_removed")]), ["upsell"]);
     assert.deepEqual(derive([rebuild("page_removed"), rebuild("page_added")]), [], "a later rebuild re-added it");
     assert.deepEqual(derive([rebuild("page_added"), rebuild("page_removed")]), ["upsell"]);
+    // A capped entry can drop the re-add; the current build's page signatures
+    // still list the page, so it is not removed.
+    const report = readJson(reportPath);
+    report.stages.assembly.commerce_signature = { pages: { "upsell/index.html": "x" } };
+    writeJson(reportPath, report);
+    assert.deepEqual(derive([rebuild("page_removed")]), [], "the current build still holds it");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
