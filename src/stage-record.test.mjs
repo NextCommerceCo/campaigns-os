@@ -1671,7 +1671,7 @@ test("page-only rebuild shares debt across after-edit, next and local deploy aft
     t.diagnostic(`PAGE ONLY | next\n${nextText}`);
     assert.doesNotMatch(nextText, /^- - /m);
     assert.equal(next.stage, "deploy");
-    assert.match(nextText, /Owed stages: qa \(changed pages only\)/);
+    assert.match(nextText, /Owed stages: deploy, qa \(changed pages only\)/);
     assert.ok(!next.ready.some((line) => line.startsWith("Owed stages:")), "ready[] carries no change-debt line");
     const args = { _: ["record", "deploy"], packet: f.packetPath, "base-url": `http://127.0.0.1:4173/${f.slug}/` };
     t.diagnostic(`PAGE ONLY | record deploy\n${resultTextLines(await recordCommand(args, DEPLOY_FETCH)).join("\n")}`);
@@ -1688,15 +1688,15 @@ test("page-only rebuild shares debt across after-edit, next and local deploy aft
     t.diagnostic(`CHECKOUT | record build\n${resultTextLines(checkoutBuild).join("\n")}`);
     t.diagnostic(`CHECKOUT | after-edit\n${runCli(["after-edit", "--packet", f.packetPath, "--no-live-refs"], f.dir).stdout}`);
     t.diagnostic(`CHECKOUT | next\n${runCli(["next", "--packet", f.packetPath, "--no-write"], f.dir).stdout}`);
-    await assert.rejects(recordCommand(args, DEPLOY_FETCH), (error) => {
-      t.diagnostic(`CHECKOUT | record deploy\n${error.message}`);
-      return /polish/i.test(error.message);
-    });
     const full = runJson(["after-edit", "--packet", f.packetPath, "--no-live-refs"], f.dir).json;
     assert.equal(full.ci.qa.scope, "full");
     assert.equal(full.ci.polish.advisory, false);
-    const nextFull = nextOk(f);
-    assert.equal(nextFull.stage, "polish");
+    // The local preview carries the owed Polish forward (F-157): next goes on
+    // to deploy, record deploy follows it, and QA reports Polish missing.
+    assert.equal(nextOk(f).stage, "deploy");
+    assert.match(runCli(["next", "--packet", f.packetPath, "--no-write"], f.dir).stdout, /Owed stages: polish, deploy, qa/);
+    t.diagnostic(`CHECKOUT | record deploy\n${resultTextLines(await recordCommand(args, DEPLOY_FETCH)).join("\n")}`);
+    assert.equal(nextOk(f).stage, "qa");
     assert.match(runCli(["next", "--packet", f.packetPath, "--no-write"], f.dir).stdout, /Owed stages: polish, qa/);
   });
 });
@@ -1723,6 +1723,9 @@ test("page-only rebuild keeps the reviewed Polish, and an optional capture reope
     const ci = runJson(["doctor", "--packet", f.packetPath, "--ci", "--no-live-refs"], f.dir).json.ci;
     assert.deepEqual([ci.polish.status, ci.polish.advisory, ci.polish.reason], ["owed", true, "build_fingerprint_changed"]);
     assert.equal(nextStage(f).stage, "deploy");
+    // next's owed line names the deploy readback reads required (F-157).
+    assert.match(readback, /^ {2}deploy {9}required/m);
+    assert.match(runCli(["next", "--packet", f.packetPath, "--no-write"], f.dir).stdout, /^- Owed stages: deploy, qa \(changed pages only\)\.$/m);
     await recordCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": `http://127.0.0.1:4173/${f.slug}/` }, DEPLOY_FETCH);
     assert.equal(nextStage(f).stage, "qa");
     await capture(f);
@@ -1775,17 +1778,34 @@ test("record build on the local preview says next carries the required Polish fo
   });
 });
 
-// next stops at a required Polish that already carries a page-load capture
-// on the local preview, so record build adds no carried-forward note there.
-test("record build on the local preview omits the carried note once a capture is recorded", async () => {
+// F-157: on the local preview next goes on to deploy without Polish, and an
+// optional capture does not change that answer. record build, next, record
+// deploy and readback read Polish one way through a capture and a rebuild,
+// and record polish leaves the deploy recorded for the same build alone.
+test("on the local preview an optional capture keeps Polish carried, so record deploy follows next and record polish reopens nothing", async (t) => {
   await guardedLifecycle(async (f) => {
     mutateJson(f.packetPath, (packet) => { packet.deploy.target = "local-serve"; });
     recordThroughBuild(f);
+    assert.equal(nextStage(f).stage, "deploy");
     await capture(f);
+    assert.equal(nextStage(f).stage, "deploy", "the capture does not send next back to Polish");
+    await recordCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": `http://127.0.0.1:4173/${f.slug}/` }, DEPLOY_FETCH);
+    assert.equal(readJson(f.reportPath).stages.deploy.status, "completed");
+    buildSite(f, " revised");
     const build = recordOk(f, "build");
-    assert.equal(readJson(f.reportPath).stages.polish.status, "required");
-    assert.equal(build.next_stage, "polish");
-    assert.ok(build.ready.includes("stages.polish.status = required"), build.ready.join("\n"));
+    assert.equal(build.next_stage, "deploy");
+    assert.ok(build.ready.includes("stages.polish.status = required (carried forward on the local preview: next goes on without it, and QA reports the evidence missing, not passed)"), build.ready.join("\n"));
+    await recordCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": `http://127.0.0.1:4173/${f.slug}/` }, DEPLOY_FETCH);
+    const deployed = readJson(f.reportPath).stages.deploy;
+    assert.equal(deployed.status, "completed", "record deploy does not refuse for the carried Polish");
+    assert.equal(nextStage(f).stage, "qa");
+    await capture(f);
+    recordOk(f, "polish", ["--evidence", POLISH_EVIDENCE]);
+    assert.deepEqual(readJson(f.reportPath).stages.deploy, deployed, "record polish leaves the deploy of this build as recorded");
+    assert.equal(nextStage(f).stage, "qa");
+    const readback = runCli(["readback", f.target], f.dir).stdout;
+    t.diagnostic(readback.split("\n").filter((line) => /^\s+(polish|deploy|qa)\b/.test(line)).join("\n"));
+    assert.match(readback, /^ {2}deploy {9}completed/m);
   });
 });
 
@@ -1951,7 +1971,9 @@ test("record build of different output with Polish recorded makes deploy require
     assert.equal(stages.deploy.history[0].completed_at, deployA.completed_at);
     assert.deepEqual(stages.deploy.history[0].outputs, deployA.outputs);
     assert.deepEqual(stages.deploy.history[0].evidence, deployA.evidence);
-    assert.equal(nextStage(f).stage, "polish", "the ladder reaches deploy again after Polish");
+    // The local preview carries the owed Polish forward, as it did before any
+    // capture: the capture of build A is no capture of build B (F-157).
+    assert.equal(nextStage(f).stage, "deploy", "the ladder goes on to the owed deploy");
   });
 });
 

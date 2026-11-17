@@ -5829,8 +5829,116 @@
       "entry_sha256": "3653339677318dea8ee95b3a2ac97bab9ff6b403affc624323c4612466c28085"
     },
     {
-      "id": "RL-0373",
+      "id": "RL-0369",
       "sequence": 353,
+      "date": "2026-11-16",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.2+agent.2",
+      "changelog_sha256": "000e30feaa0508fdb75a741c07e92455f5812357e69b93a1f0686e5d11dadf6b",
+      "agent_impact": "QA's pricing.upsell_price_visible:<page> and pricing.checkout_price_visible re-read the bundle price rows until the count is non-zero and steady, for up to the 5-second settle window, instead of counting once. A page whose data-next-bundle-display prices the SDK fills a moment after it reports ready no longer reads 0 visible price rows on one run and passes on the next. Do not add data-next-await or an SDK modulepreload to pages to get past these rows. An upsell that shows no price still fails at blocker severity when the window ends.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "The upsell and checkout bundle price counts wait for the SDK to fill bundle-display prices, up to the settle window, before they are read."
+        }
+      ],
+      "entry_sha256": "adfac584ccebc8f03a93f3bedf9a2861a5758c7809a26836b2d2ca362d163064"
+    },
+    {
+      "id": "RL-0370",
+      "sequence": 354,
+      "date": "2026-11-16",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.2+agent.3",
+      "changelog_sha256": "721d42580422f6666e505aa09fa6711860f16ce2e5ac9e0237982a63cd05678c",
+      "agent_impact": "qa run --browser --test-order with a non-US --test-country fills the province select only when the checkout shows it, enabled, once the country is chosen, and otherwise skips it (customer_fields_filled field status unusable). The Campaign Cart SDK drops or hides that select for countries such as GB and DE, where the step used to time out or fail with Missing checkout select: province. --test-province is not needed for those countries. A US address still requires the province select and still fails by name without it.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "The province select is required for a US address only; for other countries it is filled when shown and skipped otherwise, and the UK example drops --test-province."
+        }
+      ],
+      "entry_sha256": "d9c7217f55c3a5f8128457bc5523ff818e9269f5cbf58b3890016bcfb067d312"
+    },
+    {
+      "id": "RL-0371",
+      "sequence": 355,
+      "date": "2026-11-16",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.2+agent.4",
+      "changelog_sha256": "e302682bd20d49e65dc59630a814e5784165190630c3c1559c732907d40df5f9",
+      "agent_impact": "When the current build has no test order in a currency the CampaignSpec lists, next at the done stage no longer prints \"Pipeline complete.\" or \"Owed stages: none.\": its prompt opens with \"Not complete:\" and names each owed qa_run_currency run, and the Owed stages line names the currencies. QA stays done and the qa_run_currency actions are unchanged. A qa run outside any run session compares findings with the QA run the QA stage last recorded when it is later than the previous Run Record's final attempt, so a row that run lacked is caused_by_change, not pre_existing; the cause summary then reads last_evaluation.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "next's done prompt and Owed stages line name the currencies still owed instead of saying the pipeline is complete."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Says next at the done stage names owed currencies instead of \"Pipeline complete.\", and that a later QA run outside any session is the first prior evaluation for cause labels."
+        }
+      ],
+      "entry_sha256": "3cbda314afb17894bba8ba644f29c20fb4f76d95312a86eaa0a82a02c8d3f975"
+    },
+    {
+      "id": "RL-0372",
+      "sequence": 356,
+      "date": "2026-11-16",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.2+agent.5",
+      "changelog_sha256": "23209c284c7eb21e2745e1967ef2dfb9dbccab1684de41be9e0fb14c6da2386d",
+      "agent_impact": "On the local preview, next carries a missing Polish forward to deploy and QA, and an optional polish capture no longer changes that: record deploy follows next instead of asking for record polish, and record polish leaves the deploy recorded for the same build alone. When stages.deploy is required after a rebuild, next's Owed stages line names deploy. spec derive and after-edit read a page's frontmatter as YAML, as page-kit does (flow mappings and JSON included), so an entry page served at the campaign root by its permalink is not read as moved, and a copy or style edit there shows no CampaignSpec derive preview.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "record deploy follows next past a local-preview Polish whether or not polish capture ran; derive reads a permalink from frontmatter as YAML, flow mappings and JSON included."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "next's Owed stages line names deploy when stages.deploy is required."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/ci.mjs",
+          "surface_entry": null,
+          "summary": "The shared evidence lines can name a required deploy beside owed Polish and QA."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/next-step.mjs",
+          "surface_entry": null,
+          "summary": "Comment only: an optional capture no longer ends the local-preview Polish carry."
+        }
+      ],
+      "entry_sha256": "e5677806ac2a508d4833801b1f7378b7473c3e65d7cde9c1b21ae604a22c7a7c"
+    },
+    {
+      "id": "RL-0373",
+      "sequence": 357,
       "date": "2026-11-16",
       "kind": "release",
       "surface_version": null,
@@ -5865,7 +5973,7 @@
           "summary": "Adds cause_reason page_not_in_change."
         }
       ],
-      "entry_sha256": "2abbfe29e9e49f67135da9df54e6ce49f1b332fd28a8fa102d3b9adcea2dd89c"
+      "entry_sha256": "a7b63417ef7675b524eaf8068d7f52679d91bfc789a8818ee3258a66c32107e0"
     }
   ]
 }

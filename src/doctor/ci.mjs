@@ -122,7 +122,9 @@ export async function withDoctorCiReport(args, invoke) {
 }
 
 // Shared with post-write stage records: the same debt, in CI's words.
-export function doctorCiEvidenceLines(ci, encode = code) {
+// `deployOwed`: next also owes a deploy a rebuild made required, so its owed
+// line names it with Polish and QA, as readback and the picker do.
+export function doctorCiEvidenceLines(ci, encode = code, { deployOwed = false } = {}) {
   const lines = [];
   const advisory = ["polish", "qa"].filter((stage) => ci[stage].status === "owed" && ci[stage].advisory);
   const owed = ["polish", "qa"].filter((stage) => ci[stage].status === "owed" && !ci[stage].advisory);
@@ -145,7 +147,10 @@ export function doctorCiEvidenceLines(ci, encode = code) {
       : owed[0] === "polish" ? "the full Polish" : qaPages || "a full QA run";
     lines.push(`Change found: ${found}${reasons.length ? ` (${reasons.join("; ")})` : ""}. It owes ${owes}${owed.includes("qa") ? inBrowser : ""}${advisory.includes("polish") ? "; Polish is advisory" : ""}.`);
   }
-  lines.push(`Owed stages: ${owed.length ? owed.map((stage) => stage === "qa" && ci.qa.scope === "pages" ? "qa (changed pages only)" : stage).join(", ") : "none"}.`);
+  const owedNames = [...owed.filter((stage) => stage === "polish"), ...(deployOwed ? ["deploy"] : []), ...owed.filter((stage) => stage === "qa")]
+    .map((stage) => stage === "qa" && ci.qa.scope === "pages" ? "qa (changed pages only)" : stage);
+  lines.push(`Owed stages: ${owedNames.length ? owedNames.join(", ") : "none"}.`);
+  if (deployOwed) lines.push("- Owed deploy: stages.deploy is required; record deploy against the served current build.");
   for (const stage of owed) {
     const reason = ci[stage].reason === "build_fingerprint_changed"
       ? "the recorded build fingerprint differs from the current build"

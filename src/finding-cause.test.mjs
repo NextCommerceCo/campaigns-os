@@ -16,6 +16,7 @@ import {
   findPriorRunRecord,
   formatCauseBasisLine,
   formatCauseSummaryLine,
+  priorQaVerdict,
   formatCauseTag,
   loadPriorQaVerdict,
   priorSetFromEntries,
@@ -102,6 +103,48 @@ test("QA cause summary describes a mix of compared and unevaluated findings", ()
   });
   const summary = annotateQaAssertionCauses([{ ...current }, finding({ id: "http:checkout" })], { baseDir: base, mapId: "map-1", isFinding: isFindingAssertion });
   assert.match(formatCauseSummaryLine(summary), /compared per finding with its last recorded QA evaluation; findings without a readable evaluation are unknown/);
+});
+
+// A simulated three-currency build: the Run Record closed on a USD run that
+// warned currency-coverage, then QA ran per currency outside any run session
+// and the GBP run cleared the row. A change, a USD rerun, and the row is back:
+// new since the GBP run, not pre-existing because the closed record had it.
+test("a later QA run outside any session is the prior evaluation: a row it lacked is new", () => {
+  const base = scratch();
+  const coverage = finding({ id: "browser-test-order:currency-coverage", family: "browser-test-order", page: "campaign", status: "warn", severity: "warn" });
+  const steady = finding({ id: "contrast:checkout", family: "readability", status: "warn", severity: "warn" });
+  writePriorRun(base, {
+    runId: "run_1757000000000_aaaaaaaa", mapId: "map-1",
+    verdict: { run_id: "qa_usd", completed_at: "2026-09-11T01:00:00.000Z", assertions: [coverage, steady] },
+  });
+  const gbp = { run_id: "qa_gbp", completed_at: "2026-09-11T03:00:00.000Z", assertions: [steady] };
+
+  const assertions = [{ ...coverage }, { ...steady }];
+  const summary = annotateQaAssertionCauses(assertions, { baseDir: base, mapId: "map-1", currentRunId: "qa_rerun", laterQaVerdict: gbp, isFinding: isFindingAssertion });
+  assert.deepEqual(assertions.map((assertion) => [assertion.cause, assertion.cause_reason]), [
+    [CAUSE_CLASSES.CAUSED_BY_CHANGE, "new_since_prior_run"],
+    [CAUSE_CLASSES.PRE_EXISTING, "same_status_in_prior_run"],
+  ]);
+  assert.equal(summary.prior_run_id, "run_1757000000000_aaaaaaaa");
+  assert.equal(summary.prior_qa_attempt_run_id, "qa_gbp");
+  assert.match(formatCauseSummaryLine(summary), /compared per finding with its last recorded QA evaluation/);
+
+  // A QA verdict older than the record's final attempt changes nothing.
+  const older = [{ ...coverage }];
+  const olderSummary = annotateQaAssertionCauses(older, { baseDir: base, mapId: "map-1", laterQaVerdict: { ...gbp, completed_at: "2026-09-11T00:00:00.000Z" }, isFinding: isFindingAssertion });
+  assert.equal(older[0].cause, CAUSE_CLASSES.PRE_EXISTING);
+  assert.equal(olderSummary.comparison, "prior_run");
+  assert.equal(olderSummary.prior_qa_attempt_run_id, "qa_usd");
+});
+
+test("priorQaVerdict picks the stage verdict only outside a session and only when it is later", () => {
+  const record = { run_id: "qa_usd", completed_at: "2026-09-11T01:00:00.000Z", assertions: [] };
+  const newer = { run_id: "qa_gbp", completed_at: "2026-09-11T03:00:00.000Z", assertions: [] };
+  const older = { ...newer, completed_at: "2026-09-11T00:00:00.000Z" };
+  assert.equal(priorQaVerdict(record, newer, { runSessionActive: true }), record);
+  assert.equal(priorQaVerdict(record, newer, { runSessionActive: false }), newer);
+  assert.equal(priorQaVerdict(record, older, { runSessionActive: false }), record);
+  assert.equal(priorQaVerdict(record, null, { runSessionActive: false }), record);
 });
 
 /**

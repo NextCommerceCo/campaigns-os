@@ -243,6 +243,7 @@ const FIELD_SELECTOR = (field) => checkoutFieldSelector(field);
 // visible and accepts input.
 function fakePage(fields = {}, extras = {}) {
   const calls = [];
+  const selected = new Map();
   const configFor = (selector) => {
     const entry = Object.entries(fields).find(([field]) => selector === FIELD_SELECTOR(field));
     if (entry) return entry[1];
@@ -277,7 +278,9 @@ function fakePage(fields = {}, extras = {}) {
       selectOption: async (value) => {
         calls.push(`select:${selector}:${value}`);
         if (cfg.selectError) throw new Error(cfg.selectError);
+        selected.set(selector, value);
       },
+      inputValue: async () => selected.get(selector) ?? "",
       pressSequentially: async (value) => {
         calls.push(`pressSequentially:${selector}:${value}`);
         if (cfg.onPressSequentially) cfg.onPressSequentially();

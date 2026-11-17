@@ -163,6 +163,89 @@ browserTest("SDK 0.5: a required country select that never mounts still fails by
   }
 });
 
+// Country-dependent state select. The Campaign Cart SDK drops the state select
+// for a country without one (GB) and hides it for another (DE); it keeps it
+// for US and IT. The stand-in adds the countries and mirrors that on change.
+const COUNTRY_STATE = `const country = document.querySelector('[data-next-field="country"]');
+const state = document.querySelector('[data-next-field="state"]');
+const slot = state.parentNode;
+const anchor = state.nextSibling;
+for (const [value, label] of [["GB", "United Kingdom"], ["DE", "Germany"], ["IT", "Italy"]]) country.add(new Option(label, value));
+state.add(new Option("Milano", "MI"));
+country.addEventListener("change", () => {
+  state.style.display = country.value === "DE" ? "none" : "";
+  if (country.value === "GB") state.remove();
+  else if (!state.isConnected) slot.insertBefore(state, anchor);
+});
+${READY}`;
+
+for (const [country, how] of [["GB", "drops"], ["DE", "hides"]]) {
+  browserTest(`SDK 0.5: a ${country} test order skips the state select the SDK ${how} for that country`, async () => {
+    const { context, page } = await open("/checkout/", withSdk(fixture("checkout"), COUNTRY_STATE));
+    try {
+      await hooks.waitForSdkDisplayReady(page);
+      const trace = hooks.createFieldTrace();
+      const started = Date.now();
+      await hooks.fillCheckoutFields(page, { "test-country": country, "test-city": "Town", "test-postal": "10117" }, "qa@example.test", { trace, actionTimeoutMs: 5000 });
+      assert.ok(Date.now() - started < 6000, `took ${Date.now() - started}ms`);
+      assert.equal(await page.locator('[data-next-field="country"]').inputValue(), country);
+      assert.equal(await page.locator('[data-next-field="postcode"]').inputValue(), "10117");
+      assert.equal(trace.fields.find((entry) => entry.field === "province").status, "unusable");
+    } finally {
+      await context.close();
+    }
+  });
+}
+
+browserTest("SDK 0.5: a non-US test order still fills a visible state select, by name", async () => {
+  const { context, page } = await open("/checkout/", withSdk(fixture("checkout"), COUNTRY_STATE));
+  try {
+    await hooks.waitForSdkDisplayReady(page);
+    await hooks.fillCheckoutFields(page, { "test-country": "IT", "test-province": "MI" }, "qa@example.test", { actionTimeoutMs: 5000 });
+    assert.equal(await page.locator('[data-next-field="state"]').inputValue(), "MI");
+  } finally {
+    await context.close();
+  }
+});
+
+// The SDK re-renders the state select after a country change: hidden and
+// disabled for a moment, then shown again. The fill waits for it.
+browserTest("SDK 0.5: a non-US test order fills a state select the SDK shows a moment after the country change", async () => {
+  const LATE_STATE = `const country = document.querySelector('[data-next-field="country"]');
+const state = document.querySelector('[data-next-field="state"]');
+country.add(new Option("Italy", "IT"));
+state.add(new Option("Milano", "MI"));
+country.addEventListener("change", () => {
+  state.style.display = "none";
+  state.disabled = true;
+  setTimeout(() => { state.style.display = ""; state.disabled = false; }, 1500);
+});
+${READY}`;
+  const { context, page } = await open("/checkout/", withSdk(fixture("checkout"), LATE_STATE));
+  try {
+    await hooks.waitForSdkDisplayReady(page);
+    await hooks.fillCheckoutFields(page, { "test-country": "IT", "test-province": "MI" }, "qa@example.test", { actionTimeoutMs: 5000 });
+    assert.equal(await page.locator('[data-next-field="state"]').inputValue(), "MI");
+  } finally {
+    await context.close();
+  }
+});
+
+for (const testCountry of [undefined, "United States"]) {
+  browserTest(`SDK 0.5: a US test order (--test-country ${testCountry ?? "default"}) still fails by name when the state select is missing`, async () => {
+    const { context, page } = await open("/checkout/", withSdk(fixture("checkout"), `document.querySelector('[data-next-field="state"]').remove();\n${READY}`));
+    try {
+      await hooks.waitForSdkDisplayReady(page);
+      await assert.rejects(
+        () => hooks.fillCheckoutFields(page, testCountry ? { "test-country": testCountry } : {}, "qa@example.test", { actionTimeoutMs: 3000 }),
+        /^Error: Missing checkout select: province$/,
+      );
+    } finally {
+      await context.close();
+    }
+  });
+}
+
 const UPSELL_SDK = `document.documentElement.setAttribute("data-next-ready", "");
 document.querySelector('[data-next-action="acceptUpsell"]').addEventListener("click", async () => {
   await fetch("/api/v1/orders/${REF}/upsells/", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });

@@ -32,7 +32,7 @@ const json = (path) => JSON.parse(readFileSync(path, "utf8"));
 function write(path, body) { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, body); }
 const writeJson = (path, body) => write(path, `${JSON.stringify(body, null, 2)}\n`);
 
-async function fixture(t, { savedMap = false, live = false } = {}) {
+async function fixture(t, { savedMap = false, live = false, jsonEntry = false } = {}) {
   const root = mkdtempSync(join(tmpdir(), "after-edit-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const output = join(root, "_site", SLUG);
@@ -45,6 +45,9 @@ async function fixture(t, { savedMap = false, live = false } = {}) {
     campaign: { slug: SLUG, name: "Synthetic campaign" }, global_config: { sdk_version: "0.4.40" },
     funnels: [{ id: "main", pages: Object.keys(PAGES).map((id, index) => ({ id, type: id === "receipt" ? "thankyou" : id, page_url: `${id}/`, order: index + 1 })) }],
   };
+  // The entry page's source states its frontmatter as a JSON object, which
+  // page-kit reads as YAML, permalink included.
+  if (jsonEntry) Object.assign(spec.funnels[0].pages[0], { page_url: "", is_entry: true });
   if (live) {
     spec.campaign.campaigns_api_key = "fixture-campaigns-key";
     spec.funnels[0].pages[0].packages = [{ ref_id: 1, name: "Example bundle", price: "49.00" }];
@@ -57,11 +60,15 @@ async function fixture(t, { savedMap = false, live = false } = {}) {
   });
   writeJson(join(root, "_data", "campaigns.json"), { [SLUG]: { sdk_version: "0.4.40", store_name: "Synthetic Store" } });
   const page = (id, html) => {
-    write(join(root, "src", SLUG, `${id}.html`), `---\npage_type: ${id === "landing" || !(id in PAGES) ? "product" : id}\n---\n${html}`);
-    write(join(output, id, "index.html"), html);
+    const entry = jsonEntry && id === "landing";
+    const pageType = id === "landing" || !(id in PAGES) ? "product" : id;
+    const frontmatter = entry ? JSON.stringify({ page_type: pageType, permalink: `/${SLUG}/` }, null, 2) : `page_type: ${pageType}`;
+    const built = entry ? join(output, "index.html") : join(output, id, "index.html");
+    write(join(root, "src", SLUG, `${id}.html`), `---\n${frontmatter}\n---\n${html}`);
+    write(built, html);
     // Deterministic ordering on filesystems with coarse timestamp precision.
     utimesSync(join(root, "src", SLUG, `${id}.html`), 1_000, 1_000);
-    utimesSync(join(output, id, "index.html"), 2_000, 2_000);
+    utimesSync(built, 2_000, 2_000);
   };
   for (const [id, html] of Object.entries(PAGES)) page(id, html);
   utimesSync(join(root, "_data", "campaigns.json"), 1_000, 1_000);
@@ -321,6 +328,31 @@ test("page-only edit reports current debt before a material derive preview and i
   const applied = await run(f, { yes: true });
   assert.equal(afterEditExitCode(applied), 3);
   assert.match(afterEditTextLines(applied).join("\n"), /It owes the full Polish and QA/);
+}));
+
+// F-214: an entry page whose frontmatter is a JSON object is served at the
+// campaign root by its permalink. A copy edit on it changes no field the spec
+// derives from the repo, so after-edit shows no derive preview, never moves
+// the entry route to the file name, and so never offers the live campaign's
+// offer rows either.
+test("a copy edit on an entry page with JSON frontmatter shows no CampaignSpec rewrite", async (t) => withNetworkGuard(async () => {
+  const f = await fixture(t, { live: true, jsonEntry: true });
+  const fetchImpl = async () => new Response(JSON.stringify({ ok: true, status: 200, endpoint: "campaigns", data: {
+    ref_id: 424242, name: "Synthetic campaign", shipping_methods: [],
+    offers: [{ ref_id: 7, name: "Example duo", type: "offer", condition: { type: "count", value: 2 }, benefit: { type: "package_percentage", value: "20.00" }, packages: [1] }],
+    packages: [{ ref_id: 1, name: "Example bundle", price: "49.00", is_recurring: false }],
+  } }), { status: 200, headers: { "Content-Type": "application/json" } });
+  f.page("landing", PAGES.landing.replace("Example headline", "Revised headline"));
+  const before = readFileSync(f.specPath, "utf8");
+  const result = await afterEditCommand({ _: ["after-edit"], packet: f.packetPath, "proxy-base": "https://proxy.example.invalid" }, {
+    specFetch: specFetchCommand, specDerive: specDeriveWithMapWriteback, specDeriveTextLines, recordQaStageOutcome, fetchImpl,
+  });
+  const text = afterEditTextLines(result).join("\n");
+  t.diagnostic(text);
+  assert.equal(result.stopped_at, null, text);
+  assert.equal(step(result, "spec_derive").status, "not_needed");
+  assert.doesNotMatch(text, /page_url|offers\[|Applying this preview/);
+  assert.equal(readFileSync(f.specPath, "utf8"), before);
 }));
 
 // F-214: the live campaign states a cadence on a one-time package and a new

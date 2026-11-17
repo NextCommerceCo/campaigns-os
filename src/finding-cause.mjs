@@ -487,9 +487,12 @@ function qaRowWasSkipped(verdict, assertion) {
   return verdict.assertions.some((row) => text(row?.id).startsWith("page-scope:") && row.status === "skipped");
 }
 
-function lastEvaluatedQaPrior(assertion, lookup, options, isFinding) {
-  if (!lookup.verdict || !qaRowWasSkipped(lookup.verdict, assertion)) return undefined;
-  let first = true;
+// `verdict` is the evaluation compared first. When it is the previous record's
+// final attempt the walk starts below it; when it is a later QA run (`later`)
+// the walk starts at that final attempt.
+function lastEvaluatedQaPrior(assertion, verdict, options, isFinding, later = false) {
+  if (!verdict || !qaRowWasSkipped(verdict, assertion)) return undefined;
+  let first = !later;
   for (const record of priorRunRecords(options)) {
     const refs = (Array.isArray(record.artifacts) ? record.artifacts : []).filter((ref) => ref?.kind === "qa_verdict");
     for (const ref of refs.reverse()) {
@@ -521,6 +524,18 @@ function loadPriorDoctorFindings({ baseDir, runtimeRelPath = undefined, mapId = 
 // the report leads with.
 // ---------------------------------------------------------------------------
 
+// The QA evaluation a run compares with first. A QA run outside any run
+// session lands in no Run Record. When this run is outside a session and the
+// QA stage's recorded verdict (`stageVerdict`) completed after the previous
+// record's final attempt (`recordVerdict`), it is the previous evaluation: a
+// row it did not carry is new, not pre-existing. Otherwise the record's.
+export function priorQaVerdict(recordVerdict, stageVerdict, { runSessionActive = false, currentRunId = null } = {}) {
+  const later = !runSessionActive && recordVerdict && stageVerdict && Array.isArray(stageVerdict.assertions)
+    && text(stageVerdict.run_id) && stageVerdict.run_id !== recordVerdict.run_id && stageVerdict.run_id !== currentRunId
+    && Date.parse(stageVerdict.completed_at) > Date.parse(recordVerdict.completed_at);
+  return later ? stageVerdict : recordVerdict;
+}
+
 /**
  * Stamp `cause` and `cause_reason` onto every FINDING assertion in `assertions`
  * (passes are left alone — a passing assertion has no cause to explain), and
@@ -536,11 +551,13 @@ function loadPriorDoctorFindings({ baseDir, runtimeRelPath = undefined, mapId = 
  * true for a finding on a page that change did not touch: such a finding
  * reads `unknown` / `page_not_in_change`, never caused by the change.
  */
-export function annotateQaAssertionCauses(assertions, { baseDir = null, runtimeRelPath = undefined, targetRepo = null, mapId = null, localSpecId = null, currentRunId = null, isFinding, outsideChange = null } = {}) {
+export function annotateQaAssertionCauses(assertions, { baseDir = null, runtimeRelPath = undefined, targetRepo = null, mapId = null, localSpecId = null, currentRunId = null, laterQaVerdict = null, runSessionActive = false, isFinding, outsideChange = null } = {}) {
   const lookup = baseDir
     ? loadPriorQaVerdict({ baseDir, runtimeRelPath, targetRepo, mapId, localSpecId, currentRunId })
     : { verdict: null, record: null, path: null, reason: "no_prior_run" };
-  const prior = lookup.verdict ? priorSetFromVerdict(lookup.verdict, { isFinding }) : null;
+  const compared = priorQaVerdict(lookup.verdict, laterQaVerdict, { runSessionActive, currentRunId });
+  const later = compared && compared !== lookup.verdict ? compared : null;
+  const prior = compared ? priorSetFromVerdict(compared, { isFinding }) : null;
   const noPriorReason = lookup.reason || "no_prior_run";
   const findings = [];
   let usedEarlierEvaluation = false;
@@ -548,7 +565,7 @@ export function annotateQaAssertionCauses(assertions, { baseDir = null, runtimeR
   let comparedWithAPrior = false;
   for (const assertion of Array.isArray(assertions) ? assertions : []) {
     if (!assertion || typeof assertion !== "object" || !isFinding(assertion)) continue;
-    const evaluatedPrior = lastEvaluatedQaPrior(assertion, lookup, { baseDir, runtimeRelPath, targetRepo, mapId, localSpecId, currentRunId }, isFinding);
+    const evaluatedPrior = lastEvaluatedQaPrior(assertion, compared, { baseDir, runtimeRelPath, targetRepo, mapId, localSpecId, currentRunId }, isFinding, Boolean(later));
     if (evaluatedPrior) usedEarlierEvaluation = true;
     if (evaluatedPrior === null) missingPriorEvaluation = true;
     if (evaluatedPrior || (evaluatedPrior === undefined && prior)) comparedWithAPrior = true;
@@ -570,15 +587,16 @@ export function annotateQaAssertionCauses(assertions, { baseDir = null, runtimeR
     surface: "qa",
     total,
     counts,
-    // The immediately previous record and its final attempt identify where
-    // the search began; a skipped row can use an earlier evaluation.
+    // The immediately previous record and the attempt compared first (its
+    // final attempt, or a later QA run outside any session) identify where the
+    // search began; a skipped row can use an earlier evaluation.
     prior_run_id: text(lookup.record?.run_id) || null,
-    prior_qa_attempt_run_id: text(lookup.verdict?.run_id) || null,
+    prior_qa_attempt_run_id: text(compared?.run_id) || null,
     // No finding was compared with any earlier evaluation (some are decided
     // before a prior is consulted, such as a test-environment cause).
     comparison: missingPriorEvaluation && !comparedWithAPrior
       ? "no_prior_evaluation"
-      : usedEarlierEvaluation || missingPriorEvaluation ? "last_evaluation"
+      : later || usedEarlierEvaluation || missingPriorEvaluation ? "last_evaluation"
       : lookup.verdict ? "prior_run" : noPriorReason,
   };
 }
