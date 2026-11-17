@@ -1,4 +1,4 @@
-import { QC_QA_ASSERTION_STATUS, testOrderCurrenciesForBuild } from "./qc-results.mjs";
+import { QC_QA_ASSERTION_STATUS, readQaFullVerdict, testOrderCurrenciesForBuild } from "./qc-results.mjs";
 import { starterUsedAsIs, starterPaletteIsExpected, STARTER_PALETTE_REASON, STARTER_PLACEHOLDER_WARNING } from "./content-residue.mjs";
 import { campaignSpecIdentity, resolveCampaignIdentity, campaignIdentitiesMatch } from "./spec-source-identity.mjs";
 import { applyLocalPreviewToCheckpoint, applyLocalPreviewToPolishGate, applyPageOnlyChangeToCheckpoint, applyPageOnlyChangeToPolishGate, carriedForwardMessage, CARRIED_FORWARD, ensureUrlTrailingSlash, isPageOnlyCarry, normalizeQaBaseUrl, starterResidueIsExpected } from "./local-preview-policy.mjs";
@@ -2968,6 +2968,15 @@ function applyLocalServeAnalyticsReview(assertions, localServe, buildEnvironment
   }
 }
 
+// The verdict the QA stage last recorded, as the report stood when this run
+// started, read back only under the run id its record names.
+function stageQaVerdict(resolved) {
+  const stage = resolved.runtimeReport?.stages?.qa;
+  if (!stage?.verdict_run_id) return null;
+  const verdict = readQaFullVerdict({ stage, targetRepo: targetRepoFor(resolved.packetPath, resolved.packet), packetPath: resolved.packetPath, reportPath: resolved.reportPath });
+  return verdict?.run_id === stage.verdict_run_id ? verdict : null;
+}
+
 async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, testOrders, commercial = null, runSessionActive = false, browser = null, qcResults = [] }) {
   const entryUrls = deriveEntryUrls(resolved.topologies);
   const pageUrls = derivePageUrls(resolved.topologies);
@@ -2988,6 +2997,11 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
     mapId: resolved.mapId,
     localSpecId: resolved.localSpecId,
     currentRunId: runId,
+    // Outside a run session this run lands in no Run Record, and neither did
+    // the QA run before it: priorQaVerdict compares with that run's verdict
+    // when it is later.
+    laterQaVerdict: resolved.packetPath && !runSessionActive ? stageQaVerdict(resolved) : null,
+    runSessionActive,
     isFinding: isFindingAssertion,
   });
   // The verdict as it is persisted: the local file, the committed sidecar and

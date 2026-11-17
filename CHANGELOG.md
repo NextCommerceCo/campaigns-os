@@ -2,6 +2,13 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.71.2+agent.4] - 2026-11-16
+
+### Fixed
+
+- When the current build has no test order in a currency the CampaignSpec lists, `next` at the done stage opens with "Not complete:" and names each owed `--currency` run instead of "Pipeline complete." and "Owed stages: none.", and a `qa run` outside any run session compares its findings with the QA stage's last recorded run when that run is later than the previous Run Record's final attempt, so a row it lacked reads `caused_by_change` rather than `pre_existing` (#794).
+
+
 ## [1.71.2+agent.3] - 2026-11-16
 
 ### Fixed
