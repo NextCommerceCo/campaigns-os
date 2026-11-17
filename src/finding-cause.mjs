@@ -524,6 +524,18 @@ function loadPriorDoctorFindings({ baseDir, runtimeRelPath = undefined, mapId = 
 // the report leads with.
 // ---------------------------------------------------------------------------
 
+// The QA evaluation a run compares with first. A QA run outside any run
+// session lands in no Run Record. When this run is outside a session and the
+// QA stage's recorded verdict (`stageVerdict`) completed after the previous
+// record's final attempt (`recordVerdict`), it is the previous evaluation: a
+// row it did not carry is new, not pre-existing. Otherwise the record's.
+export function priorQaVerdict(recordVerdict, stageVerdict, { runSessionActive = false, currentRunId = null } = {}) {
+  const later = !runSessionActive && recordVerdict && stageVerdict && Array.isArray(stageVerdict.assertions)
+    && text(stageVerdict.run_id) && stageVerdict.run_id !== recordVerdict.run_id && stageVerdict.run_id !== currentRunId
+    && Date.parse(stageVerdict.completed_at) > Date.parse(recordVerdict.completed_at);
+  return later ? stageVerdict : recordVerdict;
+}
+
 /**
  * Stamp `cause` and `cause_reason` onto every FINDING assertion in `assertions`
  * (passes are left alone — a passing assertion has no cause to explain), and
@@ -535,20 +547,12 @@ function loadPriorDoctorFindings({ baseDir, runtimeRelPath = undefined, mapId = 
  * raw map id) have no Run Record home, so they get `unknown` / `no_prior_run`
  * throughout — which is the truth, not a silence.
  */
-export function annotateQaAssertionCauses(assertions, { baseDir = null, runtimeRelPath = undefined, targetRepo = null, mapId = null, localSpecId = null, currentRunId = null, laterQaVerdict = null, isFinding } = {}) {
+export function annotateQaAssertionCauses(assertions, { baseDir = null, runtimeRelPath = undefined, targetRepo = null, mapId = null, localSpecId = null, currentRunId = null, laterQaVerdict = null, runSessionActive = false, isFinding } = {}) {
   const lookup = baseDir
     ? loadPriorQaVerdict({ baseDir, runtimeRelPath, targetRepo, mapId, localSpecId, currentRunId })
     : { verdict: null, record: null, path: null, reason: "no_prior_run" };
-  // A QA run outside any run session lands in no Run Record. When the caller
-  // hands the last such run (`laterQaVerdict`, the verdict the QA stage
-  // recorded) and it completed after the previous record's final attempt, it
-  // is the previous evaluation: a row it did not carry is new, not
-  // pre-existing.
-  const later = lookup.verdict && laterQaVerdict && Array.isArray(laterQaVerdict.assertions)
-    && text(laterQaVerdict.run_id) && laterQaVerdict.run_id !== lookup.verdict.run_id && laterQaVerdict.run_id !== currentRunId
-    && Date.parse(laterQaVerdict.completed_at) > Date.parse(lookup.verdict.completed_at)
-    ? laterQaVerdict : null;
-  const compared = later || lookup.verdict;
+  const compared = priorQaVerdict(lookup.verdict, laterQaVerdict, { runSessionActive, currentRunId });
+  const later = compared && compared !== lookup.verdict ? compared : null;
   const prior = compared ? priorSetFromVerdict(compared, { isFinding }) : null;
   const noPriorReason = lookup.reason || "no_prior_run";
   const findings = [];

@@ -493,12 +493,12 @@ test("after a change and a one-currency rerun, next owes the other currencies an
   const runs = result.next_actions.filter((entry) => entry.id === "qa_run_currency").map((entry) => entry.command);
   assert.deepEqual(runs.map((command) => command.match(/--currency (\w+)$/)[1]), ["EUR", "GBP"]);
   assert.doesNotMatch(result.prompt, /Pipeline complete/);
-  assert.match(result.prompt, /^Not complete: this build has no test order in EUR or GBP/);
+  assert.ok(result.prompt.startsWith("Not complete: this build has no test order in EUR or GBP, which the CampaignSpec lists, so these runs are owed. Run each of these, then call "), result.prompt);
   for (const command of runs) assert.ok(result.prompt.includes(command), "the prompt names each owed run");
   const text = resultTextLines(result).join("\n");
   assert.doesNotMatch(text, /Owed stages: none/);
   assert.doesNotMatch(text, /Pipeline complete/);
-  assert.match(text, /Owed stages: QA test orders in EUR and GBP\./);
+  assert.ok(text.includes("Owed stages: QA test orders in EUR and GBP. Every stage is recorded, and this build has no test order in those currencies."), text);
 });
 
 // The two record shapes the coverage reader must still read: a record that

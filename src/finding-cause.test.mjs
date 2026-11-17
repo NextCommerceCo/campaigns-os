@@ -16,6 +16,7 @@ import {
   findPriorRunRecord,
   formatCauseBasisLine,
   formatCauseSummaryLine,
+  priorQaVerdict,
   formatCauseTag,
   loadPriorQaVerdict,
   priorSetFromEntries,
@@ -111,6 +112,16 @@ test("a later QA run outside any session is the prior evaluation: a row it lacke
   assert.equal(older[0].cause, CAUSE_CLASSES.PRE_EXISTING);
   assert.equal(olderSummary.comparison, "prior_run");
   assert.equal(olderSummary.prior_qa_attempt_run_id, "qa_usd");
+});
+
+test("priorQaVerdict picks the stage verdict only outside a session and only when it is later", () => {
+  const record = { run_id: "qa_usd", completed_at: "2026-09-11T01:00:00.000Z", assertions: [] };
+  const newer = { run_id: "qa_gbp", completed_at: "2026-09-11T03:00:00.000Z", assertions: [] };
+  const older = { ...newer, completed_at: "2026-09-11T00:00:00.000Z" };
+  assert.equal(priorQaVerdict(record, newer, { runSessionActive: true }), record);
+  assert.equal(priorQaVerdict(record, newer, { runSessionActive: false }), newer);
+  assert.equal(priorQaVerdict(record, older, { runSessionActive: false }), record);
+  assert.equal(priorQaVerdict(record, null, { runSessionActive: false }), record);
 });
 
 /**

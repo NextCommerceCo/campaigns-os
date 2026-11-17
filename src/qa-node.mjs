@@ -2997,8 +2997,10 @@ async function finalizeQaRun({ args, resolved, runId, startedAt, assertions, tes
     localSpecId: resolved.localSpecId,
     currentRunId: runId,
     // Outside a run session this run lands in no Run Record, and neither did
-    // the QA run before it: compare with that run's verdict when it is later.
+    // the QA run before it: priorQaVerdict compares with that run's verdict
+    // when it is later.
     laterQaVerdict: resolved.packetPath && !runSessionActive ? stageQaVerdict(resolved) : null,
+    runSessionActive,
     isFinding: isFindingAssertion,
   });
   // The verdict as it is persisted: the local file, the committed sidecar and
