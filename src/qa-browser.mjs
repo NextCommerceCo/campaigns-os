@@ -93,6 +93,8 @@ const DEFAULT_SETTLE_TIMEOUT_MS = 5000;
 // faults the page does not have (0 px card fields, sdk_not_ready, a missing
 // country select, a CTA still hidden under data-next-await).
 const SDK_DISPLAY_READY_TIMEOUT_MS = 15000;
+// How often a bounded wait re-reads the page (a data layer push, a price row).
+const PAGE_READ_POLL_MS = 100;
 const DEFAULT_STEP_TIMEOUT_MS = 45000;
 const DEFAULT_ORDER_TIMEOUT_MS = 240000;
 // Grace on the outer race so per-step timeouts get first chance to record cleanly.
@@ -3166,10 +3168,11 @@ async function pricingVisibilityAssertions(browserPage, page, options = {}) {
   const surfaces = options.brandContract?.pricing_surfaces?.surfaces;
   if (!surfaces) return [];
   const pageType = contractPageType(page);
+  const settle = { timeoutMs: options.priceSettleTimeoutMs };
   if (["upsell", "downsell"].includes(pageType)) {
     const selectors = withSdkPriceDisplaySelectors(surfaces.upsell?.price_row_selectors);
     if (!selectors.length) return [];
-    const visibleCount = await countVisiblePriceRows(browserPage, selectors);
+    const visibleCount = await settledVisiblePriceRows(browserPage, selectors, settle);
     return [upsellPriceVisibilityAssertion({ page, selectors, visibleCount })];
   }
   if (pageType === "checkout") {
@@ -3183,10 +3186,12 @@ async function pricingVisibilityAssertions(browserPage, page, options = {}) {
     // by construction, so the total is still checked; only the bundle count
     // is skipped.
     const totalSelectors = checkoutTotalSelectors();
-    const [visibleCount, totalVisibleCount] = await Promise.all([
-      selectors.length ? countVisiblePriceRows(browserPage, selectors) : 0,
-      countVisiblePriceRows(browserPage, totalSelectors),
-    ]);
+    // A visible total already passes the row, so the bundle count waits for
+    // late SDK prices only when nothing priced shows yet.
+    const totalVisibleCount = await countVisiblePriceRows(browserPage, totalSelectors);
+    const visibleCount = !selectors.length ? 0
+      : totalVisibleCount ? await countVisiblePriceRows(browserPage, selectors)
+      : await settledVisiblePriceRows(browserPage, selectors, settle);
     // Nothing priced is visible. When the checkout also has no package
     // selection of its own and the SDK reports an empty cart, the cart is
     // filled on an earlier page (a landing link carrying forcePackageId), and
@@ -3321,6 +3326,25 @@ async function countVisiblePriceRows(browserPage, selectors) {
     }
     return count;
   }, { targets: selectors, bundlePriceSelector: SDK_BUNDLE_PRICE_DISPLAY_SELECTOR }).catch(() => 0);
+}
+
+// The SDK fills bundle-display prices a moment after it reports ready, so a
+// single read can land between the two and count a correct upsell's price as
+// empty. Read until the count is non-zero and the same twice running, or the
+// settle window (the same bound the rendered package-price read uses) runs
+// out; a page that never shows a price still reads 0 at the deadline.
+async function settledVisiblePriceRows(browserPage, selectors, {
+  timeoutMs = DEFAULT_SETTLE_TIMEOUT_MS,
+  wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+} = {}) {
+  const until = Date.now() + timeoutMs;
+  let previous = null;
+  for (;;) {
+    const count = await countVisiblePriceRows(browserPage, selectors);
+    if ((count > 0 && count === previous) || Date.now() >= until) return count;
+    previous = count;
+    await wait(Math.min(PAGE_READ_POLL_MS, Math.max(0, until - Date.now())));
+  }
 }
 
 // Page-scoped like every other per-page row (`template-residue:<page>:…`,
@@ -3863,7 +3887,6 @@ function skipRemainingSteps(ladder, stepNames, reason) {
 // lets a second push — the double count #302 describes — land before the
 // count is taken, instead of the read racing the duplicate and passing it.
 const PURCHASE_DATA_LAYER_DUPLICATE_GRACE_MS = 1000;
-const PURCHASE_DATA_LAYER_POLL_MS = 100;
 
 async function waitForPurchaseDataLayer({
   read,
@@ -3876,7 +3899,7 @@ async function waitForPurchaseDataLayer({
   const until = Math.min(now() + settle, deadline);
   const seen = () => purchaseDataLayerProbe(read()).purchases.length > 0;
   while (!seen() && now() < until) {
-    await wait(Math.min(PURCHASE_DATA_LAYER_POLL_MS, Math.max(0, until - now())));
+    await wait(Math.min(PAGE_READ_POLL_MS, Math.max(0, until - now())));
   }
   if (seen()) {
     // The settle window bounds how long to wait for the FIRST sighting; the

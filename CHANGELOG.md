@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.71.2+agent.2] - 2026-11-16
+
+### Fixed
+
+- QA's upsell and checkout price checks wait up to the 5-second settle window for the SDK to fill its bundle prices, so a correct page no longer reads "0 visible price row(s)" on one run and passes on the next (#793).
+
 ## [1.71.2+agent.1] - 2026-11-16
 
 ### Removed
