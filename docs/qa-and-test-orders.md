@@ -2241,8 +2241,9 @@ and each has a flag:
 | `--test-postal` | `94043` | postal code |
 
 The billing fields get the same values when the checkout shows them. To order
-in another market, pass `--test-country` and all four address flags for a real
-address in that country, since the address defaults are a US one, and pass
+in another market, pass `--test-country` and the address flags the checkout
+asks for in that country, for a real address there, since the address defaults
+are a US one, and pass
 `--currency` for that market's currency: the country flag does not change the
 currency. A UK run looks like this:
 

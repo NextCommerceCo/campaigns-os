@@ -7980,13 +7980,16 @@ async function fieldUsable(locator, options = {}) {
 }
 
 // The Campaign Cart SDK drops or hides the state select for a country that has
-// none (GB, DE). A US address keeps the required wait-and-fail; any other
-// country fills the select only when it is shown and enabled once the country
-// is chosen, and skips it otherwise.
+// none (GB, DE). A US address (the ISO code the checkout's country select holds,
+// or --test-country when that cannot be read) keeps the required wait-and-fail;
+// any other country fills the select once it is shown and enabled, waiting the
+// optional-field 3 s for the SDK's re-render after the country change, and
+// skips it otherwise.
 async function provinceShownForCountry(page, country) {
-  if (String(country).toUpperCase() === "US") return true;
-  const locator = page.locator(checkoutFieldSelector("province")).first();
-  return await fieldUsable(locator, { onlyVisible: true }) && locator.isEnabled().catch(() => false);
+  const selected = await page.locator(checkoutFieldSelector("country")).first().inputValue({ timeout: 3000 }).catch(() => "");
+  if (String(selected || country).toUpperCase() === "US") return true;
+  return page.locator(checkoutFieldSelector("province")).first().and(page.locator(":enabled"))
+    .waitFor({ state: "visible", timeout: 3000 }).then(() => true, () => false);
 }
 
 async function billingFieldsCollapsed(page) {
