@@ -700,8 +700,9 @@ The upsell and checkout bundle price checks count the SDK's
 `[data-next-bundle-display*='price' i]` alongside the contract's price rows; a
 hidden, zero-size or empty bundle-display node does not count. The SDK fills
 those prices a moment after it reports ready, so both counts are re-read
-until each is non-zero and steady, for up to the 5-second settle window; an
-upsell that shows no price still fails when the window ends. A checkout that
+until each is non-zero and steady, for up to the 5-second settle window (the
+checkout's only when no cart-summary total shows, since a visible total already
+passes); an upsell that shows no price still fails when the window ends. A checkout that
 shows no price because QA opened it directly, with an empty SDK cart and no
 package selection of its own, is `skipped` rather than failed:
 `pricing.checkout_price_visible` records `cart_count` and
