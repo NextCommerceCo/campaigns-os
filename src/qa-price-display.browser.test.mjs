@@ -48,12 +48,16 @@ async function chromiumAvailable() {
   }
 }
 
-async function priceRow(priceNode = PRICE_NODE, pageDescriptor = upsellPage) {
+// The probe waits up to 5 s for a late SDK price; a row that should read 0
+// does not need the whole window to prove it.
+const SHORT_SETTLE = { priceSettleTimeoutMs: 300 };
+
+async function priceRow(priceNode = PRICE_NODE, pageDescriptor = upsellPage, settle = {}) {
   const html = (await readFile(FIXTURE, "utf8")).replace(PRICE_NODE, priceNode);
   const page = await (await sharedBrowser()).newPage();
   try {
     await page.setContent(html, { waitUntil: "load" });
-    const [row] = await pricingVisibilityAssertions(page, pageDescriptor, { brandContract });
+    const [row] = await pricingVisibilityAssertions(page, pageDescriptor, { brandContract, ...settle });
     return row;
   } finally {
     await page.close();
@@ -76,7 +80,7 @@ test("a hidden or empty data-next-bundle-display price does not count as visible
     '<span data-next-bundle-display="price"></span>',
     SIZED_EMPTY_PRICE_NODE,
   ]) {
-    const row = await priceRow(priceNode);
+    const row = await priceRow(priceNode, upsellPage, SHORT_SETTLE);
     assert.ok(row.evidence.selectors.includes("[data-next-bundle-display*='price' i]"), "the bundle-display price was probed");
     assert.equal(row.status, "fail", priceNode);
     assert.equal(row.severity, "blocker", priceNode);
@@ -111,7 +115,7 @@ test("a checkout bundle card counts a filled data-next-bundle-display price and 
   assert.equal(filled.status, "pass");
   assert.equal(filled.evidence.visible_count, 1);
 
-  const empty = await priceRow(SIZED_EMPTY_PRICE_NODE, checkoutPage);
+  const empty = await priceRow(SIZED_EMPTY_PRICE_NODE, checkoutPage, SHORT_SETTLE);
   assert.ok(empty.evidence.selectors.includes("[data-next-bundle-display*='price' i]"), "the bundle-display price was probed");
   assert.equal(empty.evidence.visible_count, 0);
   assert.equal(empty.evidence.total_visible_count, 0);
@@ -125,17 +129,17 @@ test("a checkout opened with an empty cart and no package selection of its own i
   // the cart is empty.
   const sdkCart = (count) => `<script>window.next = { getCartCount: () => ${count} };</script>`;
   const hiddenSummary = '<div data-next-cart-summary style="display:none"></div>';
-  const upstream = await priceRow(`${sdkCart(0)}${hiddenSummary}`, checkoutPage);
+  const upstream = await priceRow(`${sdkCart(0)}${hiddenSummary}`, checkoutPage, SHORT_SETTLE);
   assert.equal(upstream.status, "skipped");
   assert.equal(upstream.severity, undefined);
   assert.equal(upstream.evidence.cart_count, 0);
   assert.equal(upstream.evidence.checkout_selection_surface.count, 0);
 
   // A checkout with its own package selection still fails when no price shows.
-  const selector = await priceRow(`${sdkCart(0)}<div data-next-bundle-selector><div data-next-bundle-card data-next-package-id="1"></div></div>`, checkoutPage);
+  const selector = await priceRow(`${sdkCart(0)}<div data-next-bundle-selector><div data-next-bundle-card data-next-package-id="1"></div></div>`, checkoutPage, SHORT_SETTLE);
   assert.equal(selector.status, "fail");
   // So does a filled cart whose prices are hidden, without the probe values.
-  const filledCart = await priceRow(`${sdkCart(1)}${hiddenSummary}`, checkoutPage);
+  const filledCart = await priceRow(`${sdkCart(1)}${hiddenSummary}`, checkoutPage, SHORT_SETTLE);
   assert.equal(filledCart.status, "fail");
   assert.equal(filledCart.evidence.cart_count, undefined);
 });
@@ -146,7 +150,7 @@ test("an empty data-next-bundle-display price does not count through an overlapp
   // the node before the bundle-display selector does.
   const overlap = '<span class="price-wrapper" data-next-bundle-display="price" style="display:inline-block;width:100px;height:20px"></span>';
   for (const pageDescriptor of [upsellPage, checkoutPage]) {
-    const row = await priceRow(overlap, pageDescriptor);
+    const row = await priceRow(overlap, pageDescriptor, SHORT_SETTLE);
     assert.equal(row.evidence.selectors[0], ".price-wrapper", pageDescriptor.page_id);
     assert.equal(row.evidence.visible_count, 0, pageDescriptor.page_id);
     assert.equal(row.status, "fail", pageDescriptor.page_id);
@@ -155,4 +159,24 @@ test("an empty data-next-bundle-display price does not count through an overlapp
   const filled = await priceRow('<span class="price-wrapper" data-next-bundle-display="price">$29.00</span>');
   assert.equal(filled.status, "pass");
   assert.equal(filled.evidence.visible_count, 1);
+});
+
+test("an upsell or checkout whose bundle-display price the SDK fills after the page is read still passes", async (t) => {
+  if (!await chromiumAvailable()) return t.skip("Chromium is unavailable; the browser CI lane runs this test");
+  // The SDK writes bundle prices a moment after it reports ready. A single
+  // read taken before that sees a sized but empty node and used to report 0
+  // visible price rows on a correct page.
+  const late = (ms, text) => `<span id="late" data-next-bundle-display="price" style="display:inline-block;min-width:100px;height:20px"></span>`
+    + `<script>setTimeout(() => { document.getElementById("late").textContent = ${JSON.stringify(text)}; }, ${ms});</script>`;
+  for (const pageDescriptor of [upsellPage, checkoutPage]) {
+    const row = await priceRow(late(600, "$29.00"), pageDescriptor);
+    assert.equal(row.status, "pass", pageDescriptor.page_id);
+    assert.equal(row.evidence.visible_count, 1, pageDescriptor.page_id);
+  }
+
+  // A price that never arrives still fails once the wait runs out.
+  const never = await priceRow(late(60000, "$29.00"), upsellPage, SHORT_SETTLE);
+  assert.equal(never.status, "fail");
+  assert.equal(never.severity, "blocker");
+  assert.equal(never.evidence.visible_count, 0);
 });

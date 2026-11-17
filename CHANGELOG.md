@@ -8,6 +8,27 @@ Notable supported-surface changes are recorded here.
 
 - On the local preview, `next`, `record deploy` and `record build` carry a missing Polish forward to deploy whether or not an optional `polish capture` ran, and `next` names a required deploy on its "Owed stages" line (F-157); `spec derive` and `after-edit` read page frontmatter as YAML, as page-kit does, so an entry page served at the campaign root by its permalink is no longer read as moved and a copy edit there proposes no CampaignSpec rewrite (F-214) (#797).
 
+
+## [1.71.2+agent.4] - 2026-11-16
+
+### Fixed
+
+- When the current build has no test order in a currency the CampaignSpec lists, `next` at the done stage opens with "Not complete:" and names each owed `--currency` run instead of "Pipeline complete." and "Owed stages: none.", and a `qa run` outside any run session compares its findings with the QA stage's last recorded run when that run is later than the previous Run Record's final attempt, so a row it lacked reads `caused_by_change` rather than `pre_existing` (#794).
+
+
+## [1.71.2+agent.3] - 2026-11-16
+
+### Fixed
+
+- QA test orders with a non-US `--test-country` fill the province select when the checkout shows it, waiting briefly for the SDK to re-render it after the country change, and skip it where the Campaign Cart SDK drops or hides it (GB, DE) instead of failing with `Missing checkout select: province`, while a US address, read from the checkout's selected country, still requires it (#795).
+
+
+## [1.71.2+agent.2] - 2026-11-16
+
+### Fixed
+
+- QA's upsell and checkout price checks wait up to the 5-second settle window for the SDK to fill its bundle prices, so a correct page no longer reads "0 visible price row(s)" on one run and passes on the next (#793).
+
 ## [1.71.2+agent.1] - 2026-11-16
 
 ### Removed
