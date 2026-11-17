@@ -21,9 +21,10 @@ import {
   applySpecDerive,
   derivedRouteProblem,
   formatDeriveValue,
+  frontmatterPermalink,
+  frontmatterScalars,
   isPageTreeIgnoredDir,
   isPageTreeIgnoredPath,
-  normalizePermalinkValue,
   pageRouteForFile,
   permalinkRoute,
   planSpecDerive,
@@ -384,15 +385,18 @@ test("pageRouteForFile follows page-kit's basename rule, permalinkRoute accepts 
   assert.match(permalinkRoute("/acme/upsell-1/index.html", "acme").problem, /not a page-kit route/);
   assert.match(permalinkRoute("/acme/../x/", "acme").problem, /not a page-kit route/);
   assert.match(permalinkRoute("/acme/a\u001b/", "acme").problem, /control characters/);
-  assert.equal(normalizePermalinkValue("false"), null);
-  assert.equal(normalizePermalinkValue("~"), null);
-  assert.equal(normalizePermalinkValue("null"), null);
-  assert.equal(normalizePermalinkValue("/acme/x/ # moved"), "/acme/x/");
-  assert.equal(normalizePermalinkValue("\"/acme/x/\""), "/acme/x/");
-  assert.equal(normalizePermalinkValue("\"false\""), "false");
-  assert.equal(normalizePermalinkValue("\"/acme/checkout/\" # checkout route"), "/acme/checkout/");
-  assert.equal(normalizePermalinkValue("'/acme/x/'"), "/acme/x/");
-  assert.equal(normalizePermalinkValue(""), null);
+  const permalinkOf = (value) => frontmatterPermalink(`---\npermalink: ${value}\n---\n`);
+  assert.equal(permalinkOf("false"), null);
+  assert.equal(permalinkOf("~"), null);
+  assert.equal(permalinkOf("null"), null);
+  assert.equal(permalinkOf("/acme/x/ # moved"), "/acme/x/");
+  assert.equal(permalinkOf("\"/acme/x/\""), "/acme/x/");
+  assert.equal(permalinkOf("\"false\""), "false");
+  assert.equal(permalinkOf("\"/acme/checkout/\" # checkout route"), "/acme/checkout/");
+  assert.equal(permalinkOf("'/acme/x/'"), "/acme/x/");
+  assert.equal(permalinkOf(""), null);
+  // page-kit reads frontmatter as YAML, so a flow mapping states its keys too.
+  assert.deepEqual(frontmatterScalars("---\n{permalink: /slug/, page_type: upsell}\n---\n", ["permalink", "page_type"]), { permalink: "/slug/", page_type: "upsell" });
 });
 
 // A campaign folder with a target page-kit repo whose page tree carries the

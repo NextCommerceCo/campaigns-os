@@ -6,8 +6,7 @@ Notable supported-surface changes are recorded here.
 
 ### Fixed
 
-- On the local preview, Polish has one answer: `next` goes on to deploy without it, and an optional `polish capture` no longer changes that, before or after a rebuild. `record deploy` follows `next` instead of refusing with "run record polish first", `record build` keeps saying Polish is carried forward, and a later `record polish` leaves the deploy recorded for the same build as it was. When a rebuild made the recorded deploy required, `next` now lists `deploy` on its "Owed stages" line, as `readback` shows it (F-157).
-- `spec derive` and `after-edit` read a page file's frontmatter written as a JSON object, as page-kit does, so an entry page whose permalink serves it at the campaign root is no longer read as moved to its file name. A copy or style edit on such a campaign no longer shows a CampaignSpec derive preview proposing that move and the live campaign's offer rows with it (F-214).
+- On the local preview, `next`, `record deploy` and `record build` carry a missing Polish forward to deploy whether or not an optional `polish capture` ran, and `next` names a required deploy on its "Owed stages" line (F-157); `spec derive` and `after-edit` read page frontmatter as YAML, as page-kit does, so an entry page served at the campaign root by its permalink is no longer read as moved and a copy edit there proposes no CampaignSpec rewrite (F-214) (#797).
 
 ## [1.71.2+agent.1] - 2026-11-16
 
