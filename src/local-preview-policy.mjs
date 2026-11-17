@@ -32,9 +32,9 @@ export const CARRIED_FORWARD = "carried_forward";
 // The checks carried forward, one by one. Each is evidence the campaign does
 // not have yet, not evidence that something is wrong:
 // - polish was never recorded for this build;
-// - no page-load capture exists, either because polish capture never ran or
-//   because every mapped page is template stock and there is no design route
-//   to capture.
+// - no page-load capture exists for this build, either because polish
+//   capture never ran, or ran on an earlier build, or because every mapped
+//   page is template stock and there is no design route to capture.
 const CARRIED_POLISH_CODES = Object.freeze(new Set([
   "polish.report_missing",
   "polish.evidence_missing",
@@ -44,6 +44,7 @@ export function polishGateCanCarryPreview(gate) {
 }
 export const NO_CAPTURABLE_ROUTES_CODE = "polish.hidden_eager_media.no_capturable_routes";
 const MISSING_CAPTURE_CODE = "polish.hidden_eager_media.capture_malformed";
+const STALE_CAPTURE_CODE = "polish.hidden_eager_media.capture_stale";
 
 // With no generatable brand theme the starter template is the design, so its
 // palette and chrome are expected on the local preview: residue findings are
@@ -151,27 +152,28 @@ export function applyLocalPreviewToCheckpoint(gate, { packet, report, baseUrl = 
     return carried(gate, HOSTED_TEMPLATE_PREVIEW_POLICY, packet);
   }
   if (!isLocalPreview(packet, { baseUrl })) return gate;
-  const missing = gate.code === NO_CAPTURABLE_ROUTES_CODE
+  // A capture of an earlier build is no capture of this one: missing too.
+  const missing = gate.code === NO_CAPTURABLE_ROUTES_CODE || gate.code === STALE_CAPTURE_CODE
     || (gate.code === MISSING_CAPTURE_CODE && !pageLoadRecorded(report));
   return missing ? carried(gate) : gate;
 }
 
 // The polish gate folds the checkpoint in, so it is carried forward only when
 // whatever it owns from the checkpoint was carried forward too. Advisory
-// Polish for a page-only change is never a ladder step.
+// Polish for a page-only change is never a ladder step. An optional capture
+// does not change the answer: next, record deploy and record build's note
+// read Polish the same way before and after one, until record polish.
 export function polishCarriedForwardForLadder(report, gate) {
   if (gate?.status === "not_applicable" && gate?.result === "excluded" && gate?.reason_code === "template_stock") return true;
   if (gate?.status === CARRIED_FORWARD && gate.carried_forward?.policy === PAGE_ONLY_CHANGE_POLICY) return true;
-  return gate?.status === CARRIED_FORWARD
-    && !report?.theme?.waiver
-    && !report?.stages?.polish?.evidence?.visual_review?.page_load;
+  return gate?.status === CARRIED_FORWARD && !report?.theme?.waiver;
 }
 
 // The Polish gate codes and checkpoint codes that mean "evidence for an older
 // build": the only blocks a page-only change carries. A Polish recorded as
 // blocked, self-certified or incomplete stays a block.
 const PAGE_ONLY_POLISH_CODES = Object.freeze(new Set(["polish.evidence_missing", "polish.stale", "polish.output_drift"]));
-const PAGE_ONLY_CHECKPOINT_CODES = Object.freeze(new Set(["polish.hidden_eager_media.capture_stale"]));
+const PAGE_ONLY_CHECKPOINT_CODES = Object.freeze(new Set([STALE_CAPTURE_CODE]));
 
 export function isPageOnlyCarry(gate) {
   return gate?.status === CARRIED_FORWARD && gate.carried_forward?.policy === PAGE_ONLY_CHANGE_POLICY;

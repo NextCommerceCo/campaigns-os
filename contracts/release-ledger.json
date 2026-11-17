@@ -5896,6 +5896,45 @@
         }
       ],
       "entry_sha256": "3cbda314afb17894bba8ba644f29c20fb4f76d95312a86eaa0a82a02c8d3f975"
+    },
+    {
+      "id": "RL-0372",
+      "sequence": 356,
+      "date": "2026-11-16",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.2+agent.5",
+      "changelog_sha256": "23209c284c7eb21e2745e1967ef2dfb9dbccab1684de41be9e0fb14c6da2386d",
+      "agent_impact": "On the local preview, next carries a missing Polish forward to deploy and QA, and an optional polish capture no longer changes that: record deploy follows next instead of asking for record polish, and record polish leaves the deploy recorded for the same build alone. When stages.deploy is required after a rebuild, next's Owed stages line names deploy. spec derive and after-edit read a page's frontmatter as YAML, as page-kit does (flow mappings and JSON included), so an entry page served at the campaign root by its permalink is not read as moved, and a copy or style edit there shows no CampaignSpec derive preview.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "record deploy follows next past a local-preview Polish whether or not polish capture ran; derive reads a permalink from frontmatter as YAML, flow mappings and JSON included."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "next's Owed stages line names deploy when stages.deploy is required."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/ci.mjs",
+          "surface_entry": null,
+          "summary": "The shared evidence lines can name a required deploy beside owed Polish and QA."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/next-step.mjs",
+          "surface_entry": null,
+          "summary": "Comment only: an optional capture no longer ends the local-preview Polish carry."
+        }
+      ],
+      "entry_sha256": "e5677806ac2a508d4833801b1f7378b7473c3e65d7cde9c1b21ae604a22c7a7c"
     }
   ]
 }

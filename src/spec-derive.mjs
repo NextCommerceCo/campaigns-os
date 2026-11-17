@@ -28,6 +28,7 @@
 //
 // This module is pure: the CLI reads the packet, the spec, the entry and the
 // page tree, and does the writing and the printing.
+import { parse as parseYaml } from "yaml";
 import { ANALYTICS_VENDORS, isPlaceholderVendorId, isReleasedSdkVersion } from "../campaign-spec/dist/index.js";
 import { PAGE_KIT_CAMPAIGNS_REL_PATH } from "./page-kit-campaign-config.mjs";
 import { PAGE_KIT_STORE_PROFILE_FIELDS } from "./page-kit-store-profile.mjs";
@@ -228,25 +229,8 @@ export function derivedRouteProblem(route) {
   return null;
 }
 
-// The read side of the walker's permalink: YAML idioms page-kit's own
-// frontmatter reader (gray-matter) understands. `false`, `null` and `~` mean
-// no permalink; a trailing `# comment` on an unquoted value is not part of
-// it; surrounding quotes are dropped.
-export function normalizePermalinkValue(value) {
-  if (typeof value !== "string") return null;
-  const text = value.trim();
-  // A quoted scalar ends at its closing quote; whatever follows (a comment)
-  // is not part of it. An unquoted scalar ends at ` #`.
-  const quoted = text.match(/^(["'])(.*?)\1(?:\s+#.*)?$/);
-  if (quoted) return quoted[2] || null;
-  const bare = text.replace(/\s+#.*$/, "").trim();
-  if (!bare || ["false", "null", "~"].includes(bare)) return null;
-  return bare;
-}
-
-// The raw `permalink:` scalar of a page file's frontmatter (the first line
-// of the block that declares it), quoting and comment intact, or null when
-// the block or the key is absent. A BOM and CRLF are read as page-kit's
+// The `permalink:` scalar of a page file's frontmatter, or null when the
+// block or the key is absent. A BOM and CRLF are read as page-kit's
 // frontmatter reader reads them.
 export function frontmatterPermalink(text) {
   return frontmatterScalars(text, ["permalink"]).permalink;
@@ -257,18 +241,23 @@ export function frontmatterPermalink(text) {
 // prepare-build projects between pages (next_url, decline_url, next_step).
 export const PAGE_FILE_FRONTMATTER_KEYS = Object.freeze(["permalink", "page_type", "next_url", "decline_url", "next_step", "step_number"]);
 
-// The raw scalar of each named key in a page file's frontmatter (the first
-// line of the block that declares it), read as frontmatterPermalink reads a
-// permalink; a key absent from the block, or a file with no block, is null.
+// The scalar of each named key in a page file's frontmatter, read as YAML the
+// way page-kit's frontmatter reader (gray-matter) reads it, flow mappings and
+// JSON included. `false`, `null` and `~` mean no value, a number reads as its
+// text; a key absent from the block, a file with no block, or a block that is
+// not a YAML mapping is null.
 export function frontmatterScalars(text, keys = PAGE_FILE_FRONTMATTER_KEYS) {
   const values = Object.fromEntries(keys.map((key) => [key, null]));
   const normalized = String(text ?? "").replace(/^\uFEFF/, "").replace(/\r\n/g, "\n");
   const block = normalized.match(/^---\n([\s\S]*?)\n---/);
   if (!block) return values;
-  for (const line of block[1].split("\n")) {
-    const match = line.match(/^([A-Za-z_][A-Za-z0-9_]*):\s*(.*?)\s*$/);
-    if (!match || !Object.hasOwn(values, match[1]) || values[match[1]] !== null) continue;
-    values[match[1]] = normalizePermalinkValue(match[2]);
+  let object;
+  try { object = parseYaml(block[1]); } catch { return values; }
+  if (!isPlainObject(object)) return values;
+  for (const key of keys) {
+    const value = object[key];
+    if (typeof value === "string") values[key] = value.trim() || null;
+    else if (typeof value === "number" || value === true) values[key] = String(value);
   }
   return values;
 }
