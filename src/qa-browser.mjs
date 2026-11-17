@@ -3168,10 +3168,11 @@ async function pricingVisibilityAssertions(browserPage, page, options = {}) {
   const surfaces = options.brandContract?.pricing_surfaces?.surfaces;
   if (!surfaces) return [];
   const pageType = contractPageType(page);
+  const settle = { timeoutMs: options.priceSettleTimeoutMs };
   if (["upsell", "downsell"].includes(pageType)) {
     const selectors = withSdkPriceDisplaySelectors(surfaces.upsell?.price_row_selectors);
     if (!selectors.length) return [];
-    const visibleCount = await settledVisiblePriceRows(browserPage, selectors);
+    const visibleCount = await settledVisiblePriceRows(browserPage, selectors, settle);
     return [upsellPriceVisibilityAssertion({ page, selectors, visibleCount })];
   }
   if (pageType === "checkout") {
@@ -3186,7 +3187,7 @@ async function pricingVisibilityAssertions(browserPage, page, options = {}) {
     // is skipped.
     const totalSelectors = checkoutTotalSelectors();
     const [visibleCount, totalVisibleCount] = await Promise.all([
-      selectors.length ? countVisiblePriceRows(browserPage, selectors) : 0,
+      selectors.length ? settledVisiblePriceRows(browserPage, selectors, settle) : 0,
       countVisiblePriceRows(browserPage, totalSelectors),
     ]);
     // Nothing priced is visible. When the checkout also has no package
