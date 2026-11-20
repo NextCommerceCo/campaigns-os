@@ -4813,7 +4813,9 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
     // unconditional required action. Fail toward demanding the record.
     runRecordCloseout = null;
   }
-  const finalize = (result) => {
+  // owedCurrencyRuns: the per-currency QA runs the done path found owed. The
+  // stage, reason, prompt and qa_run_currency actions all read this one list.
+  const finalize = (result, { owedCurrencyRuns = [] } = {}) => {
     const builtFirst = doctor.warnings.find((issue) => issue.code === "design_source.built_first");
     if (builtFirst && result.prompt) result.prompt += `\n${builtFirst.message}`;
     Object.defineProperty(result, PROGRESS_OBSERVATION, { value: {
@@ -4823,7 +4825,7 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
     if (divergences.length) result.divergences = divergences;
     result.gates = buildNextGates({ doctor, report, themeGate, polishGate, prepareBuildGate, packetPath });
     if (doctor.derived?.input_currency) result.input_currency = doctor.derived.input_currency;
-    result.next_actions = buildNextActions({ result, packetPath, packet, themeGate, polishGate, polishCheckpointGate, prepareBuildGate, ambient, runRecordCloseout, purchaseProof, debt, brandContract: doctor.derived?.brand_contract || null, context: readJsonIfExists(contextPath), targetRepo, spec, qaBuildCurrencies });
+    result.next_actions = buildNextActions({ result, packetPath, packet, themeGate, polishGate, polishCheckpointGate, prepareBuildGate, ambient, runRecordCloseout, purchaseProof, debt, brandContract: doctor.derived?.brand_contract || null, context: readJsonIfExists(contextPath), targetRepo, spec, qaBuildCurrencies, owedCurrencyRuns });
     // The QC handoff: read from data already loaded plus the
     // full QA verdict the QA stage names. It adds nothing to errors[],
     // warnings[] or ready[], and `status` above never reads it. Its accept
@@ -4896,9 +4898,10 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
       });
     }
     if (picked.stage === "done") {
-      // The currencies this build still owes a test order in: the
-      // qa_run_currency actions finalize lists. While any are owed, QA stays
-      // done but nothing here may read as finished.
+      // The currencies this build still owes a test order in. While any are
+      // owed, the recorded QA stage stays done, but next reports stage "qa"
+      // with those runs as its qa_run_currency actions, so neither the JSON
+      // nor the prose reads as finished.
       const url = packet.deploy?.preview_url || packet.deploy?.production_url || "<preview-url>";
       const owedRuns = qaStageCommands({ spec, packetPath, url, buildCurrencies: qaBuildCurrencies, afterProof: true }).currencyRuns;
       const owedCodes = owedRuns.map((run) => run.code);
@@ -4907,13 +4910,13 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
       return finalize({
         ok: true,
         status: readinessStatus(warnings, doctor.derived),
-        stage: "done",
-        reason: picked.reason,
+        stage: owedRuns.length ? "qa" : "done",
+        reason: owedRuns.length ? `Every stage is recorded, but this build has no test order in ${owedCodes.join(" or ")}, which the CampaignSpec lists, so QA owes those runs.` : picked.reason,
         errors,
         warnings,
         ready,
-        prompt: `${owedRuns.length ? `Not complete: this build has no test order in ${owedCodes.join(" or ")}, which the CampaignSpec lists, so these runs are owed. Run each of these, then call \`${cmd("next")}\` again: ${owedRuns.map((run) => run.command).join("; ")}. QA stays done meanwhile.` : "Pipeline complete."} All stages in the assembly report are in a terminal status. To repeat build work, do the work and run \`${cmd("record")} build --packet <path>\`; this makes downstream stages owed as needed. \`${cmd("record")} deploy\` records the served deploy, a loopback URL for a local-serve target or an https URL for a hosted one. Run \`${cmd("qa")} run\` for QA. Then call \`${cmd("next")}\` again. If a run session is active, finish it with \`${cmd("run")} end\` so the Run Record is assembled and the session closes.${report?.stages?.qa?.status === "completed_with_warnings" ? " QA passed with exceptions; report them to the operator without clearing or waiving them or changing markup just to make them pass." : ""}${(report?.stages?.qa?.warnings || []).filter((warning) => typeof warning === "string" && warning.startsWith(NARROWER_QA_PREFIX)).map((warning) => ` ${warning}`).join("")}${qaRestsOnBaseline(report) ? ` QA rests on a baseline ${report.commerce_baseline.accepted_by} accepted, not a test; say so when you report this campaign.` : ""}${warnings.some((issue) => issue.code === "built_output.absent") ? " The built output is not on this checkout, so these records were not compared with it; build before treating the campaign as current." : ""}`,
-      });
+        prompt: `${owedRuns.length ? `Not complete: this build has no test order in ${owedCodes.join(" or ")}, which the CampaignSpec lists, so these runs are owed. Run each of these, then call \`${cmd("next")}\` again: ${owedRuns.map((run) => run.command).join("; ")}. The recorded QA stage stays done meanwhile.` : "Pipeline complete."} All stages in the assembly report are in a terminal status. To repeat build work, do the work and run \`${cmd("record")} build --packet <path>\`; this makes downstream stages owed as needed. \`${cmd("record")} deploy\` records the served deploy, a loopback URL for a local-serve target or an https URL for a hosted one. Run \`${cmd("qa")} run\` for QA. Then call \`${cmd("next")}\` again. If a run session is active, finish it with \`${cmd("run")} end\` so the Run Record is assembled and the session closes.${report?.stages?.qa?.status === "completed_with_warnings" ? " QA passed with exceptions; report them to the operator without clearing or waiving them or changing markup just to make them pass." : ""}${(report?.stages?.qa?.warnings || []).filter((warning) => typeof warning === "string" && warning.startsWith(NARROWER_QA_PREFIX)).map((warning) => ` ${warning}`).join("")}${qaRestsOnBaseline(report) ? ` QA rests on a baseline ${report.commerce_baseline.accepted_by} accepted, not a test; say so when you report this campaign.` : ""}${warnings.some((issue) => issue.code === "built_output.absent") ? " The built output is not on this checkout, so these records were not compared with it; build before treating the campaign as current." : ""}`,
+      }, { owedCurrencyRuns: owedRuns });
     }
     stage = picked.stage;
   }
@@ -5216,7 +5219,7 @@ function divergenceInspectAction(divergences, packetPath, { packet = null, polis
 
 // Executable next actions: exact commands (or explicitly-manual steps), never
 // prose-only guidance. Ordering is the execution order an agent should follow.
-export function buildNextActions({ result, packetPath, packet, themeGate, polishGate, polishCheckpointGate, prepareBuildGate, ambient, runRecordCloseout = null, purchaseProof = null, debt = null, brandContract = null, context = null, targetRepo = null, spec = null, qaBuildCurrencies = () => new Set() }) {
+export function buildNextActions({ result, packetPath, packet, themeGate, polishGate, polishCheckpointGate, prepareBuildGate, ambient, runRecordCloseout = null, purchaseProof = null, debt = null, brandContract = null, context = null, targetRepo = null, spec = null, qaBuildCurrencies = () => new Set(), owedCurrencyRuns = [] }) {
   const actions = [];
   const push = (id, kind, command, description, extras = {}) => actions.push({ id, kind, command, description, stage: result.stage, ...extras });
   const pushPolishCheckpointActions = () => {
@@ -5383,6 +5386,12 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
       push("deploy", "manual", null, `Deploy _site/ output to ${packet.deploy?.target || "the deploy target"} with _site/ as the origin root, then run ${cmd("record")} deploy --packet ${shellToken(packetPath)} --base-url ${packet.deploy?.preview_url ? shellToken(packet.deploy.preview_url) : "<https preview url>"}: it checks every built page answers HTTP 200 and every script and stylesheet the pages load from that origin is served byte-identical to the build, and records deploy.preview_url and stages.deploy.`);
     }
     push("advance", "command", `${cmd("next")} --packet ${shellToken(packetPath)} --json`, "Advance to QA once the deploy URL is recorded.");
+  } else if (result.stage === "qa" && owedCurrencyRuns.length) {
+    // Every stage is recorded and only per-currency runs are owed: those runs
+    // are the whole of this stage. The Run Record closeout waits for done.
+    for (const run of owedCurrencyRuns) {
+      push("qa_run_currency", "command", run.command, `Prove ${run.code}: the CampaignSpec lists it and no test order for this build was placed in it. The recorded QA stage stays done; the verdict keeps browser-test-order:currency-coverage until then.`);
+    }
   } else if (result.stage === "qa") {
     const url = packet.deploy?.preview_url || packet.deploy?.production_url || "<preview-url>";
     push("install_browser", "command", `${cmd("qa")} install-browser`, "Install the Playwright browser once after install/update (npm run qa:install-browser from a checkout).");
@@ -5467,12 +5476,6 @@ export function buildNextActions({ result, packetPath, packet, themeGate, polish
           `Purchase-proof coverage is unknown for this run: ${purchaseProof.reason || "the QA stage records no purchase-proof summary."} ${describeDeclaredDepth(purchaseProof)}; re-run \`${cmd("qa")} run --test-order <depth>\` if that depth still has to be proved.`,
         );
       }
-    }
-    // A finished build keeps the currency-coverage warning until each listed
-    // currency has a test order for this build: name the runs still owed.
-    const url = packet.deploy?.preview_url || packet.deploy?.production_url || "<preview-url>";
-    for (const run of qaStageCommands({ spec, packetPath, url, buildCurrencies: qaBuildCurrencies, afterProof: true }).currencyRuns) {
-      push("qa_run_currency", "command", run.command, `Prove ${run.code}: the CampaignSpec lists it and no test order for this build was placed in it. QA stays done; the verdict keeps browser-test-order:currency-coverage until then.`);
     }
   }
   return actions;
@@ -8930,11 +8933,13 @@ export function nextTinyPromptLines(result) {
     lines.push(`  - ${starterPalette.description}`);
   }
   const currencyRuns = actions.filter((action) => action.id === "qa_run_currency").map((action) => `  - ${action.command}`);
-  if (result.stage === "done" && currencyRuns.length) {
-    lines.push("", "QA is done, but this build has no test order in every currency the CampaignSpec lists. Prove each remaining currency with:", ...currencyRuns);
-  }
   if (result.stage !== "qa") return lines;
   const qaRun = actions.find((action) => action.id === "qa_run");
+  // QA recorded, only the per-currency runs owed: no full QA run to name.
+  if (!qaRun && currencyRuns.length) {
+    lines.push("", "QA is done, but this build has no test order in every currency the CampaignSpec lists. Prove each remaining currency with:", ...currencyRuns);
+    return lines;
+  }
   const pageScoped = qaRun?.command?.includes(" --page ");
   lines.push("", `Next expected proof: ${pageScoped ? qaRun.description : "browser QA + typed-card proof."} Run: ${qaRun?.command || `${cmd("qa")} run --packet <packet> --base-url <url> --browser --test-order common`}`);
   if (!pageScoped && qaRun?.command?.includes(" --cart ")) lines.push("Its --cart puts the checkout order bump in the cart, so the same run proves the charged add-on.");

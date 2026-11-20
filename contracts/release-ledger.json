@@ -6103,6 +6103,39 @@
         }
       ],
       "entry_sha256": "c5edfb4dcde36ba172b8a26f0159b90b62223022467de100381b31dba4c873cd"
+    },
+    {
+      "id": "RL-0377",
+      "sequence": 359,
+      "date": "2026-11-20",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.3+agent.3",
+      "changelog_sha256": "4dc0707d40df0e012bd3caf3f1a0118aed23c4fe1fcc61496cdf01464ae38058",
+      "agent_impact": "While the current build has no test order in a currency the CampaignSpec lists, next --json returns stage \"qa\" (not \"done\"), a reason naming the owed currencies (not \"Pipeline is complete.\"), and the owed qa_run_currency runs as its only next_actions; the Run Record closeout actions wait until next reports done. Read stage: run each qa_run_currency command, then call next again. The prompt still opens with \"Not complete:\" and the recorded QA stage stays done. With every listed currency covered, next reports done as before.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "next reports stage qa with the owed qa_run_currency actions, and a reason that does not say the pipeline is complete, while a listed currency has no test order for the current build."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Says next --json reports stage qa with the owed qa_run_currency actions until every listed currency has an order for this build."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "The done stage description says no per-currency QA run is owed there."
+        }
+      ],
+      "entry_sha256": "ade8a5c06b7ff4107ea493b02c98b20a1a2fd35c99fdfbee98607682c95c9e83"
     }
   ]
 }
