@@ -1,5 +1,5 @@
 {
-  "base_sha": "22174f84fb41dcba53d76d108778a7bf210377f1",
+  "base_sha": "6da4f7ca707eef2baf41018dfe125286187afc38",
   "case": "cause-prior-run",
   "entry": "packet",
   "description": "causes: contracts/fixtures/sidecar-bundle/production-shaped with a prior Run Record, so cause, cause_reason and cause_summary compare against it",
@@ -342,7 +342,7 @@
     "ready": [
       "Build Packet schema campaign-runtime-build-packet/v0",
       "Template family \"olympus\" is certified (commerce catalog + brand contract)",
-      "Template family \"olympus\" certification is current: last verified against SDK 0.4.43 (2026-10-24), the current SDK recorded by the vendored contracts.",
+      "Template family \"olympus\" certification is current: last verified against SDK 0.4.43 (2026-11-20), the current SDK recorded by the vendored contracts.",
       "Commerce catalog resolved to the running toolkit's copy; the packet's recorded path ../contracts/commerce-surface-catalog.json does not exist here (it names the checkout that ran prepare-build). Re-run prepare-build to clear the machine-local path.",
       "Commerce catalog sharedFrontmatterVocabulary loaded",
       "Template agentContract loaded for olympus",
