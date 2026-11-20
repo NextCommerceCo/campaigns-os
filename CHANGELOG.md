@@ -9,6 +9,12 @@ Notable supported-surface changes are recorded here.
 - While the current build has no test order in a currency the CampaignSpec lists, `next --json` reports `stage: "qa"` instead of `stage: "done"`, its reason names the owed currencies instead of saying the pipeline is complete, and its `next_actions` are the owed `qa_run_currency` runs; the prose and the JSON read one list of owed runs. With every listed currency covered, `next` reports `done` as before (F-234).
 
 
+## [1.71.3+agent.1] - 2026-11-20
+
+### Changed
+
+The lockfile moves Playwright from 1.65.0 to 1.65.1 (campaigns-os#799), within the range `package.json` already declares, so an installed toolkit resolves the same version on a fresh install. Playwright drives `qa run --browser` and polish capture. parse5 stays exactly pinned at 8.0.1: 8.1.1 changes a saved `commerce-signature/v1` hash for a page with foreign elements, so moving it needs its own reviewed compatibility decision.
+
 ## [1.71.3] - 2026-11-17
 
 This release packages the six `1.71.2+agent` sections below, the fixes from the seventh simulated build batch plus one telemetry change. For a campaign, QA's upsell and checkout price checks wait for the SDK to fill its prices instead of failing a correct page on one run and passing it on the next, and QA test orders to a non-US country fill the province field only when the checkout shows one. `next` no longer says "Pipeline complete." while a currency the CampaignSpec lists has no test order in the current build; on the local preview `next`, `record build` and `record deploy` give one answer on Polish; and `spec derive` and `after-edit` read page frontmatter as YAML, as page-kit does. Five message and noise fixes: `record build` and `next` name the way past `output_unchanged_after_input_change`, `spec derive` drops a removed page, the SDK debugger check waits for its overlay and no longer blames pages a change did not touch (`cause_reason: page_not_in_change`), `low_contrast` names the failing button, and `record deploy` retries a reset request. One breaking change: `telemetry list` no longer takes `--trusted` and its table drops the trusted/anon column. The receiver already refuses a `trusted=` query, so the flag no longer worked; drop it from any `telemetry list` call. No schema or contract changes. To take it, pin `@nextcommerce/campaigns-os@1.71.3` and refresh the installed skills to `1.71.3+skills.1`.
