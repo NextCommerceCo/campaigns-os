@@ -380,6 +380,13 @@ test("a charged checkout bump tagged is_upsell passes when the summary read miss
   // The reporting tag does not change the answer.
   assert.equal(assess([main, { ...bump, is_upsell: false }, upsell]).status, "pass");
 
+  // The active toggle alone counts the bump line, with no --cart entry for it.
+  const toggleOnly = orderDisplayParityAssertion(page, "accept-accept", {
+    verification: { display_reconciliation: reconcileOrderAgainstDisplay({ lines: [main, bump, upsell], display, events, requested_cart: [requested_cart[0]] }) },
+  });
+  assert.equal(toggleOnly.status, "pass", toggleOnly.actual);
+  assert.equal(toggleOnly.evidence.order_bump_line_count, 1);
+
   // Control: an order without the bump line still fails, naming the package.
   const dropped = assess([main, upsell]);
   assert.equal(dropped.status, "fail");

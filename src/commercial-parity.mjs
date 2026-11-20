@@ -1131,25 +1131,29 @@ function assertionForFinding(finding, id) {
 }
 
 export function serializeCommercialFindings(findingsValue, options = {}) {
-  const findings = array(findingsValue);
+  const chargesFor = (finding) => (finding.type === "voucher-not-on-page" || finding.type === "price-claim-mismatch"
+    ? options.orderCharges?.get?.(String(finding.page_id)) : null);
+  // A finding a placed order's charge backs is a blocker (F-250), so, like the
+  // currency blocker, the assertion budget never hides it: it is serialized
+  // first and outside the budget.
+  const all = array(findingsValue);
+  const charged = all.filter((finding) => chargesFor(finding)?.length);
+  const findings = all.filter((finding) => !chargesFor(finding)?.length);
   const requestedAssertionLimit = Number(options.maxAssertions);
   const maxAssertions = Number.isInteger(requestedAssertionLimit) && requestedAssertionLimit >= 0
-    ? requestedAssertionLimit
+    ? Math.max(0, requestedAssertionLimit - charged.length)
     : Number.POSITIVE_INFINITY;
   const overflow = Math.max(0, findings.length - maxAssertions);
   const detailedFindingCount = overflow > 0 && maxAssertions > 0
     ? maxAssertions - 1
     : Math.min(findings.length, maxAssertions);
   const idCounts = new Map();
-  const assertions = findings.slice(0, detailedFindingCount).map((finding) => {
+  const assertions = [...charged, ...findings.slice(0, detailedFindingCount)].map((finding) => {
     const base = assertionBaseId(finding);
     const count = idCounts.get(base) || 0;
     idCounts.set(base, count + 1);
     const suffix = count === 0 ? "" : `:${count + 1}`;
-    const assertion = assertionForFinding(finding, `${base}${suffix}`);
-    return finding.type === "voucher-not-on-page" || finding.type === "price-claim-mismatch"
-      ? withOrderCharge(assertion, options.orderCharges?.get?.(String(finding.page_id)))
-      : assertion;
+    return withOrderCharge(assertionForFinding(finding, `${base}${suffix}`), chargesFor(finding));
   });
   const omittedFindingCount = findings.length - detailedFindingCount;
   if (omittedFindingCount > 0 && maxAssertions > 0) {
