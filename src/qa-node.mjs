@@ -2763,6 +2763,7 @@ async function runResolvedQa(args, resolvedInputs, { runSessionActive = false, l
       planning: commercialPlanning,
       maxAssertions: remainingAssertionBudget,
       currency,
+      testOrders,
     });
   } catch (error) {
     commercialResult = crashedCommercialResult();

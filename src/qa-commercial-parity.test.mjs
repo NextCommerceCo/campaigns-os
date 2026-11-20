@@ -1282,6 +1282,117 @@ test("a voucher the spec binds to an upsell page that carries no voucher is a pr
   assert.deepEqual(automatic.assertions, []);
 });
 
+test("a placed order that charged an upsell above the spec offer's price blocks; the page-only findings stay warnings (F-250)", async () => {
+  // A simulated build (c6-claude, c6-codex): the upsell page lacks the voucher
+  // the CampaignSpec binds to it and shows list price; the accepted upsell was
+  // charged list price, not the offer's voucher price.
+  const spec = {
+    schema_version: "4.3",
+    campaign: { campaigns_api_key: "campaign-secret", currency: "USD", offers: [{ ref_id: "o1", type: "voucher", code: "SAVE20" }] },
+    funnels: [{ id: "default", pages: [{
+      id: "upsell-1",
+      type: "upsell",
+      order: 2,
+      enabled: true,
+      packages: [{ ref_id: "3", qty: 1 }],
+      offers: [{ ref_id: "o1" }],
+    }] }],
+  };
+  const fetchImpl = async (_url, options) => {
+    const { scenario } = JSON.parse(options.body);
+    const voucher = (scenario.vouchers || []).includes("SAVE20");
+    const total = voucher ? "29.99" : "49.99";
+    return new Response(JSON.stringify({
+      ok: true,
+      status: 200,
+      data: {
+        lines: scenario.lines.map((line) => ({ package_id: line.package_id, quantity: line.quantity, discounts: [], subtotal: total, original_package_price: "49.99", total_discount: voucher ? "20.00" : "0.00", total })),
+        offer_discounts: [],
+        voucher_discounts: voucher ? [{ code: "SAVE20", amount: "20.00" }] : [],
+        subtotal: total,
+        total_discount: voucher ? "20.00" : "0.00",
+        total,
+        currency: "USD",
+      },
+      calculated_at: "2026-08-24T00:00:00.000Z",
+    }), { status: 200 });
+  };
+  const order = (charged) => ({
+    path: "accept-decline",
+    next_order_id: "1001",
+    verification: { currency: "USD" },
+    upsell_steps: [{
+      path: "accept",
+      offer_url: "https://shop.example.com/upsell-1/",
+      expected_items: [{ package_id: "3", quantity: 1 }],
+      verification: { accepted_upsell_match: {
+        ok: true,
+        expected_items: [{ package_id: "3", quantity: 1 }],
+        matched_lines: [{ title: "Travel case", quantity: 1, is_upsell: true, price_incl_tax: charged }],
+      } },
+    }],
+  });
+  // The browser pass reads the price the upsell renders: list price here.
+  const run = (html, testOrders, shown = "$49.99") => runCommercialParity({
+    resolved: { rawSpec: spec, spec, proxyBase: "https://proxy.example.test" },
+    captures: [{
+      ...captureCommercialClaims({ page_id: "upsell-1", page_type: "upsell", url: "https://shop.example.com/upsell-1/" }, html),
+      rendered_bundle_prices: [{ binding: "bundle.upsell-bundle-1x.price", package_id: 3, quantity: 1, filled: true, text: shown }],
+    }],
+    fetchImpl,
+    testOrders,
+  });
+  const verdictOf = (result) => createVerdict({
+    runId: "run",
+    mapId: "map",
+    specVersion: "4.3",
+    specHash: "hash",
+    startedAt: "2026-11-20T00:00:00.000Z",
+    completedAt: "2026-11-20T00:00:00.000Z",
+    runtime: "node",
+    assertions: result.assertions,
+    commercial: result.commercial,
+  });
+  const rows = (result) => result.assertions.map((entry) => [entry.id, entry.status, entry.severity]);
+  const unwired = '<div data-next-package-id="3">Add the travel case</div>';
+
+  const charged = await run(unwired, [order("49.99")]);
+  assert.deepEqual(rows(charged), [
+    ["price-claim-mismatch:upsell-1:bundle.upsell-bundle-1x.price", "fail", "blocker"],
+    ["voucher-not-on-page:upsell-1:SAVE20", "fail", "blocker"],
+  ]);
+  assert.match(charged.assertions[1].actual, /Test order 1001 \(accept-decline\) accepted package 3 on this page and was charged 49\.99; the CampaignSpec offer prices it at 29\.99\./);
+  assert.deepEqual(charged.assertions[1].evidence.order_charges, [{ order: "1001", path: "accept-decline", package_id: "3", quantity: 1, charged: "49.99", offer_price: "29.99" }]);
+  assert.equal(verdictOf(charged).disposition, "blocked");
+
+  // Control: the same page with the order charged the offer price keeps both
+  // page findings as warnings.
+  const correct = await run(unwired, [order("29.99")]);
+  assert.deepEqual(rows(correct), [
+    ["price-claim-mismatch:upsell-1:bundle.upsell-bundle-1x.price", "warn", "warn"],
+    ["voucher-not-on-page:upsell-1:SAVE20", "warn", "warn"],
+  ]);
+  assert.equal(verdictOf(correct).disposition, "ready_with_exceptions");
+
+  // Control: with no test order, the page-only findings stay warnings.
+  const pageOnly = await run(unwired, []);
+  assert.deepEqual(rows(pageOnly), rows(correct));
+  assert.equal(verdictOf(pageOnly).disposition, "ready_with_exceptions");
+
+  // Control: an order in another currency is not compared with USD prices.
+  const otherCurrency = { ...order("49.99"), verification: { currency: "EUR" } };
+  assert.deepEqual(rows(await run(unwired, [otherCurrency])), rows(correct));
+
+  // Control: a page that carries the voucher but shows another price, with the
+  // order charged the offer price, keeps its page-only price warning.
+  const shownWrong = await run('<div data-next-package-id="3" data-next-bundle-vouchers=\'["SAVE20"]\'>Add the travel case</div>', [order("29.99")]);
+  assert.deepEqual(rows(shownWrong), [["price-claim-mismatch:upsell-1:bundle.upsell-bundle-1x.price", "warn", "warn"]]);
+
+  // Control: a page that carries the voucher has no finding to raise.
+  const wired = await run('<div data-next-package-id="3" data-next-bundle-vouchers=\'["SAVE20"]\'>Add the travel case</div>', [order("29.99")], "$29.99");
+  assert.deepEqual(wired.assertions, []);
+});
+
 test("on a checkout, bundle-config and SDK 0.5 card vouchers are not voucher claims: prices compare as before", async () => {
   const spec = rawRecurringSpec();
   const fetchImpl = async (_url, options) => {

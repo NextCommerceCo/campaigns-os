@@ -357,6 +357,24 @@ test("commercial findings collapse deterministically to the remaining verdict as
   });
 });
 
+test("a full assertion budget never hides a charge-backed commercial blocker (F-250)", () => {
+  const findings = ["one", "two", "three"].map((suffix) => ({
+    type: "price-claim-mismatch",
+    page_id: suffix,
+    binding: `bundle.${suffix}.price`,
+    claimed: "10.01",
+    calculated: "10.00",
+  }));
+  const orderCharges = new Map([["three", [{ order: "T1", path: "upsell", package_id: "4", charged: "19.99", offer_price: "9.99" }]]]);
+  for (const maxAssertions of [0, 1]) {
+    const { assertions } = serializeCommercialFindings(findings, { maxAssertions, orderCharges });
+    const blocker = assertions.find((row) => row.page === "three");
+    assert.ok(blocker, `budget ${maxAssertions} kept the charged row`);
+    assert.equal(blocker.severity, "blocker");
+    assert.equal(blocker.status, "fail");
+  }
+});
+
 test("supported self-referencing commercial parity export resolves", async () => {
   const exported = await import("@nextcommerce/campaigns-os/commercial-parity");
   assert.equal(exported.extractCommercialClaims, extractCommercialClaims);

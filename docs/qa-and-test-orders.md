@@ -539,7 +539,12 @@ truth. Proven differences emit warn-severity `pricing` assertions named
 downsell page that the page does not carry (no `data-next-bundle-vouchers`,
 `data-next-bundles` bundle `vouchers` or `data-next-vouchers` naming it) is a
 `voucher-not-on-page` finding naming the page and the code: an order placed
-there will not get that offer. On upsell and downsell pages all three
+there will not get that offer. When a test order in the same run accepted
+that upsell or downsell and its order line was charged a price other than the
+CampaignSpec offer's calculated price for that package, the page's
+`voucher-not-on-page` and `price-claim-mismatch` rows become `fail` blockers
+naming the order and both prices, and the verdict is `blocked`. Without such an
+order they stay warnings. On upsell and downsell pages all three
 attributes are read as voucher claims; other pages read only
 `data-next-bundle-vouchers`, as before. Decorative claims are ignored, and ambiguous, stale,
 unresolved, or malformed claims never read as a mismatch: they leave the proof

@@ -747,6 +747,7 @@ export async function runCommercialParity({
   planning = null,
   maxAssertions = Number.POSITIVE_INFINITY,
   currency = null,
+  testOrders = [],
 } = {}) {
   const limits = {
     ...COMMERCIAL_QA_LIMITS,
@@ -847,6 +848,8 @@ export async function runCommercialParity({
   const parity = createCommercialParityReport(captures, parityJourney, {
     maxAssertions,
     countsOnly: aggregateClaimOverflow,
+    testOrders,
+    orderCurrency: present(currency) ? currency : sourceCurrency,
     ...(sourceNotInRunCurrency ? { unresolvedMoneyClaims: "static_source_not_in_run_currency" } : {}),
   });
   // Subscription packages a page renders with no recurring claim read for
