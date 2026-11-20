@@ -2,6 +2,13 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.71.3+agent.3] - 2026-11-20
+
+### Fixed
+
+- While the current build has no test order in a currency the CampaignSpec lists, `next --json` reports `stage: "qa"` instead of `stage: "done"`, its reason names the owed currencies instead of saying the pipeline is complete, and its `next_actions` are the owed `qa_run_currency` runs; the prose and the JSON read one list of owed runs. The doctor sidecar `next` writes says the same, and the prompt names `run end` only once nothing is owed. With every listed currency covered, `next` reports `done` as before (F-234).
+
+
 ## [1.71.3+agent.1] - 2026-11-20
 
 ### Changed
