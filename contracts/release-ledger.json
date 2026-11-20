@@ -6105,8 +6105,29 @@
       "entry_sha256": "c5edfb4dcde36ba172b8a26f0159b90b62223022467de100381b31dba4c873cd"
     },
     {
-      "id": "RL-0378",
+      "id": "RL-0375",
       "sequence": 359,
+      "date": "2026-11-20",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.3+agent.1",
+      "changelog_sha256": "973322c8afc130b99784e9626f1dae73ddebda6935856db24bed42e00b683ea8",
+      "agent_impact": "None expected: the lockfile resolves Playwright 1.65.1 within the range package.json already declares. Browser QA and polish capture run on Playwright 1.65.1; parse5 and commerce-signature/v1 hashes are unchanged.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Resolve Playwright 1.65.1."
+        }
+      ],
+      "entry_sha256": "4f854eac9465dfe49cdf500c93092101ce28df46ecb1ce781d8c37366b094c83"
+    },
+    {
+      "id": "RL-0378",
+      "sequence": 360,
       "date": "2026-11-20",
       "kind": "release",
       "surface_version": null,
@@ -6129,7 +6150,7 @@
           "summary": "next's deviation recommendation expects polish while Polish is advisory on the local preview; theme waive makes an advisory Polish required; the build prompt names the skipped record."
         }
       ],
-      "entry_sha256": "5093cf627192fbc897fe3826cbc2caf05727aa1d7059847989b30d67c3f6bdbb"
+      "entry_sha256": "6ec29ff4009198286b276faae94166fc1332cbbca055a3bf66a07482c4cc33e0"
     }
   ]
 }
