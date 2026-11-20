@@ -53,8 +53,11 @@ export function commandWord(command) {
   return stripped.match(/^campaigns-os\s+([a-z-]+)/)?.[1] || null;
 }
 
-export function expectedCommandsForStage(stage, requiredActions = []) {
-  const base = EXPECTED_COMMANDS_BY_STAGE[stage] || [];
+// `polishAdvisory`: Polish is advisory for this build (the local preview's
+// skipped record, F-157), so a capture or `record polish` after next has
+// gone past it is optional work, not a detour.
+export function expectedCommandsForStage(stage, requiredActions = [], { polishAdvisory = false } = {}) {
+  const base = [...(EXPECTED_COMMANDS_BY_STAGE[stage] || []), ...(polishAdvisory && ["deploy", "qa", "done"].includes(stage) ? ["polish"] : [])];
   // Gate required_actions name exact commands ("campaigns-os theme generate
   // ..."); their command words are expected too.
   const fromActions = requiredActions

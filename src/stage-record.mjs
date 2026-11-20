@@ -34,7 +34,7 @@ import { buildManifestEntries, computeBuildFingerprint, resolveBuiltSiteScope } 
 import { resolveCampaignWorkspace, targetRepoFor } from "./campaign-workspace.mjs";
 import { isObject, optionalString, portableArtifactPaths, readJsonIfExists, requireArg } from "./cli-helpers.mjs";
 import { LOCAL_PROOF_BUILD_ENVIRONMENT, LOCAL_PROOF_PRODUCTION_ENVIRONMENT, isLocalServePacket } from "./local-proof.mjs";
-import { applyPageOnlyChangeToCheckpoint, applyPageOnlyChangeToPolishGate, HOSTED_TEMPLATE_PREVIEW_POLICY, isPageOnlyCarry, LOCAL_PREVIEW_POLICY, polishCarriedForwardForLadder } from "./local-preview-policy.mjs";
+import { applyPageOnlyChangeToCheckpoint, applyPageOnlyChangeToPolishGate, isLocalPreviewPolish, isPageOnlyCarry, LOCAL_PREVIEW_POLISH_REASON, localPreviewPolishApplies, polishCarriedForwardForLadder } from "./local-preview-policy.mjs";
 import { isLoopbackHostname } from "./remit.mjs";
 import { campaignRouteRoot, normalizePublicRouteSlug } from "./route-identity.mjs";
 import { buildChangeEntry, buildCommerceSignature, nextBuildChanges, rebuiltFromBuildWithoutSignature } from "./change-scope.mjs";
@@ -431,7 +431,7 @@ function composeBuild(report, { now, recordedBy, fingerprint, manifest = null, b
     const cause = detected === "spec_material_changed" ? "spec" : "presentation";
     const demoted = demoteStages({ ...nextReport, stages: { ...nextReport.stages, assembly, ...deploy } }, { causes: [cause], now, by: "record build", only: ["polish", "qa"] });
     const kept = keptPolishFor(demoted.report.stages.polish, { assembly, fingerprint, sourcePackageFingerprint, stamps });
-    return withTemplateStockPolish({ report: kept ? { ...demoted.report, stages: { ...demoted.report.stages, polish: kept } } : demoted.report, context: null }, { packet, fingerprint, now });
+    return withLocalPreviewPolish(withTemplateStockPolish({ report: kept ? { ...demoted.report, stages: { ...demoted.report.stages, polish: kept } } : demoted.report, context: null }, { packet, fingerprint, now }), { packet, fingerprint, now });
   }
   const previousPolish = stageObject(report, "polish");
   // The usual #668 path: intake (prepare-build --force or record spec) already
@@ -461,7 +461,7 @@ function composeBuild(report, { now, recordedBy, fingerprint, manifest = null, b
         required_for: ["qa"],
         ...(reviewed ? { owed_since_build_fingerprint: reviewed } : {}),
       };
-  return withTemplateStockPolish({ report: { ...nextReport, stages: { ...nextReport.stages, assembly, polish, ...deploy } }, context: null }, { packet, fingerprint, now });
+  return withLocalPreviewPolish(withTemplateStockPolish({ report: { ...nextReport, stages: { ...nextReport.stages, assembly, polish, ...deploy } }, context: null }, { packet, fingerprint, now }), { packet, fingerprint, now });
 }
 
 // The evidence debt reads the kept Polish advisory, and the gate doctor
@@ -489,15 +489,30 @@ function withTemplateStockPolish(composed, { packet, fingerprint, now }) {
   return { ...composed, report: { ...report, stages: { ...report.stages, polish } } };
 }
 
-// A required Polish the preview policy carries forward: next goes on to
-// deploy without it, so the status line says why.
-function polishCarriedNote(report, gate) {
-  const policy = gate?.carried_forward?.policy;
-  // The same predicate next's stage picker reads, so the note never claims
-  // next goes on when it stops at Polish (a recorded capture, a theme waiver).
-  if (stageIsTerminal(String(report.stages?.polish?.status || "")) || ![LOCAL_PREVIEW_POLICY, HOSTED_TEMPLATE_PREVIEW_POLICY].includes(policy) || !polishCarriedForwardForLadder(report, gate)) return "";
-  const preview = policy === HOSTED_TEMPLATE_PREVIEW_POLICY ? "hosted" : "local";
-  return ` (carried forward on the ${preview} preview: next goes on without it, and QA reports the evidence missing, not passed)`;
+// F-157: on the local preview Polish is advisory, not required. A Polish
+// this build owes, or the advisory record of an earlier build, is written
+// skipped with LOCAL_PREVIEW_POLISH_REASON and bound to this build, as the
+// template-stock skip is, so next, readback and doctor --ci read the stored
+// record and nothing reads it owed. A Polish recorded for this build, one
+// kept for a page-only change, or one under a theme waiver is left alone.
+function withLocalPreviewPolish(composed, { packet, fingerprint, now }) {
+  const { report } = composed;
+  const polish = stageObject(report, "polish");
+  if (!localPreviewPolishApplies(packet, report)) return composed;
+  const refresh = isLocalPreviewPolish(polish) && optionalString(polish.source_build_fingerprint) !== fingerprint;
+  if (polish.status !== "required" && !refresh) return composed;
+  const advisory = {
+    // input_change stays: a later record polish still owes a capture that
+    // postdates the brief or spec change (input-currency.mjs).
+    ...withoutKeys(polish, ["required_by", "required_for", "owed_since_build_fingerprint"]),
+    stage: "polish",
+    status: "skipped",
+    skip_reason: LOCAL_PREVIEW_POLISH_REASON,
+    source_build_fingerprint: fingerprint,
+    completed_at: now,
+    blockers: [],
+  };
+  return { ...composed, report: { ...report, stages: { ...report.stages, polish: advisory } } };
 }
 
 // #668: the Polish a CampaignSpec change superseded comes back when the
@@ -1335,7 +1350,7 @@ export function recordStageCommand(args, { now = () => new Date(), beforeLock = 
     ...(stage === "build" && buildEnvironment ? [`stages.assembly.evidence.build_environment = ${buildEnvironment}`] : []),
     ...(stage === "build" && adapterDecisions ? Object.entries(adapterDecisions).map(([key, value]) => `report.adapter_decisions.${key} = ${value}`) : []),
     ...(stage === "build" ? buildChangeReadyLines(composed.report.stages.assembly).map((line) => singleLineFragment(line)) : []),
-    ...(stage === "build" && !(showCi && ci.polish.advisory) ? [`stages.polish.status = ${composed.report.stages.polish.status}${polishCarriedNote(composed.report, after?.derived?.polish_gate)}`] : []),
+    ...(stage === "build" && !(showCi && ci.polish.advisory) ? [`stages.polish.status = ${composed.report.stages.polish.status}${isLocalPreviewPolish(composed.report.stages.polish) ? ` (${LOCAL_PREVIEW_POLISH_REASON})` : ""}`] : []),
     ...(stage === "baseline" ? [`Polish and QA read baseline_accepted: ${baseline.acceptedBy} accepted build ${facts.fingerprint}. Nothing was tested, and no purchase is proven from here until a full ${cmd("qa")} run.`] : []),
     ...(stage === "build" && composed.report.stages.deploy?.required_by === "build" ? [`stages.deploy.status = ${composed.report.stages.deploy.status} (the recorded deploy probed other output; run ${cmd("record")} deploy again)`] : []),
     ...(composed.context ? ["Build Context scaffold.required = false"] : []),
