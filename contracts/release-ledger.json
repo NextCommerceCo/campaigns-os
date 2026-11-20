@@ -6103,6 +6103,27 @@
         }
       ],
       "entry_sha256": "c5edfb4dcde36ba172b8a26f0159b90b62223022467de100381b31dba4c873cd"
+    },
+    {
+      "id": "RL-0376",
+      "sequence": 359,
+      "date": "2026-11-20",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.3+agent.2",
+      "changelog_sha256": "5160acffcaecc62df6f4277ed678609dd9e265135169834e0cb04298a7364dce",
+      "agent_impact": "When a QA test order accepted an upsell or downsell and its order line was charged a price other than the CampaignSpec offer calculated for that package (for example list price because the page does not carry the offer voucher), that page voucher-not-on-page and price-claim-mismatch rows are fail/blocker and name the order and both prices, so the verdict is blocked. Fix the page (carry the voucher) and re-run; do not accept it as an exception. Without such an order those rows stay warnings. browser-order-display-parity counts an order line tagged is_upsell: true that resolves to a checkout bump the page displayed (summary row or active toggle) or --cart requested, so a charged bump no longer reads as the order carries no line for it. is_upsell on a checkout bump is the intended reporting tag: leave it as it is.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "A voucher-not-on-page or price-claim-mismatch row is a blocker when a test order on that page was charged a price other than the spec offer price."
+        }
+      ],
+      "entry_sha256": "3fe6287669948c4e6920a688d3e037a1a24228a1773954a3ee5204ccd508ddb0"
     }
   ]
 }
