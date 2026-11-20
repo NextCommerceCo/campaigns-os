@@ -3,7 +3,7 @@
   "purpose": "Bytes, SHA-256 and provenance of the public starter-family scripts doctor's family script divergence advisory compares a campaign's built copies against. Hashes establish equality; the blobs give line and hunk deltas. A filename or path match nominates a candidate; it does not prove the campaign copy descends from the family file.",
   "source": {
     "repo": "NextCommerceCo/campaign-cart-starter-templates",
-    "sha": "5711e22345756c655f41c0ae71444478e4a8999e",
+    "sha": "10237b6259259ff479c48d633ab6a331a654c9b9",
     "pin": "contracts/commerce-surface-catalog.json _synced_from_sha"
   },
   "generated_by": "scripts/refresh-family-script-reference.mjs",
@@ -32,9 +32,9 @@
         {
           "built_path": "js/axon.adapter.js",
           "source_path": "src/apollo/assets/js/axon.adapter.js",
-          "sha256": "a47cd7d594c5a9772144bc0953ef4bb284dec16d0aa8f076e5e8c9391ce5df78",
-          "bytes": 5646,
-          "lines": 120
+          "sha256": "839bfa673bc6d8bd90330112784431117a859cdf3d816b70776fcfc725a0fedf",
+          "bytes": 11444,
+          "lines": 217
         },
         {
           "built_path": "js/checkout-apollo.js",
@@ -65,6 +65,13 @@
           "lines": 326
         },
         {
+          "built_path": "js/meta.adapter.js",
+          "source_path": "src/apollo/assets/js/meta.adapter.js",
+          "sha256": "6cda236202e48f8960f630448425181c4ac9b2e24880cb5faa756b9937d1eb0e",
+          "bytes": 15871,
+          "lines": 301
+        },
+        {
           "built_path": "js/next-forwarder-core.js",
           "source_path": "src/apollo/assets/js/next-forwarder-core.js",
           "sha256": "4566e8ae67b5a22b540f8196c74f3011d6fa1f7ab7d1d89909dd769706d902f9",
@@ -81,9 +88,9 @@
         {
           "built_path": "js/payment-logos.js",
           "source_path": "src/apollo/assets/js/payment-logos.js",
-          "sha256": "7aab3cd8e8163e3837d6b11820d5afa1065b893d7da295f6d0b40f83eb8ee7ed",
-          "bytes": 2206,
-          "lines": 36
+          "sha256": "350bdd0d323e99e0555d8c42aa692169ca37af0cfaa8a1b6c7a19ef7c453cf98",
+          "bytes": 2641,
+          "lines": 41
         },
         {
           "built_path": "js/pinterest.adapter.js",
@@ -137,9 +144,9 @@
         {
           "built_path": "js/upsells.js",
           "source_path": "src/apollo/assets/js/upsells.js",
-          "sha256": "8a5883415cc9ed47a97517f9e1d76982513e010507035bc6c26d6cc7079cf9f7",
-          "bytes": 5994,
-          "lines": 126
+          "sha256": "81211e71a597f45d02fd6f784223521a2231b48a41863fd04e4723eda5922f46",
+          "bytes": 6341,
+          "lines": 130
         }
       ]
     },
@@ -149,9 +156,9 @@
         {
           "built_path": "js/axon.adapter.js",
           "source_path": "src/apollo-mv-single-step/assets/js/axon.adapter.js",
-          "sha256": "a47cd7d594c5a9772144bc0953ef4bb284dec16d0aa8f076e5e8c9391ce5df78",
-          "bytes": 5646,
-          "lines": 120
+          "sha256": "839bfa673bc6d8bd90330112784431117a859cdf3d816b70776fcfc725a0fedf",
+          "bytes": 11444,
+          "lines": 217
         },
         {
           "built_path": "js/checkout-apollo-mv-full.js",
@@ -182,6 +189,13 @@
           "lines": 326
         },
         {
+          "built_path": "js/meta.adapter.js",
+          "source_path": "src/apollo-mv-single-step/assets/js/meta.adapter.js",
+          "sha256": "6cda236202e48f8960f630448425181c4ac9b2e24880cb5faa756b9937d1eb0e",
+          "bytes": 15871,
+          "lines": 301
+        },
+        {
           "built_path": "js/next-forwarder-core.js",
           "source_path": "src/apollo-mv-single-step/assets/js/next-forwarder-core.js",
           "sha256": "4566e8ae67b5a22b540f8196c74f3011d6fa1f7ab7d1d89909dd769706d902f9",
@@ -198,9 +212,9 @@
         {
           "built_path": "js/payment-logos.js",
           "source_path": "src/apollo-mv-single-step/assets/js/payment-logos.js",
-          "sha256": "7aab3cd8e8163e3837d6b11820d5afa1065b893d7da295f6d0b40f83eb8ee7ed",
-          "bytes": 2206,
-          "lines": 36
+          "sha256": "350bdd0d323e99e0555d8c42aa692169ca37af0cfaa8a1b6c7a19ef7c453cf98",
+          "bytes": 2641,
+          "lines": 41
         },
         {
           "built_path": "js/pinterest.adapter.js",
@@ -254,16 +268,16 @@
         {
           "built_path": "js/upsells-mv.js",
           "source_path": "src/apollo-mv-single-step/assets/js/upsells-mv.js",
-          "sha256": "b8a6fcfa8349e3749c3afe914f0e3272dfc7e29cf081a80cda67a45915001733",
-          "bytes": 12108,
-          "lines": 295
+          "sha256": "56511e7bb88781b37a4e868fc7ebaa76c5245662529daf7fd5825d54e87b7760",
+          "bytes": 12474,
+          "lines": 300
         },
         {
           "built_path": "js/upsells.js",
           "source_path": "src/apollo-mv-single-step/assets/js/upsells.js",
-          "sha256": "8a5883415cc9ed47a97517f9e1d76982513e010507035bc6c26d6cc7079cf9f7",
-          "bytes": 5994,
-          "lines": 126
+          "sha256": "81211e71a597f45d02fd6f784223521a2231b48a41863fd04e4723eda5922f46",
+          "bytes": 6341,
+          "lines": 130
         },
         {
           "built_path": "js/variant-picker-fixture.js",
@@ -287,9 +301,9 @@
         {
           "built_path": "js/axon.adapter.js",
           "source_path": "src/demeter/assets/js/axon.adapter.js",
-          "sha256": "a47cd7d594c5a9772144bc0953ef4bb284dec16d0aa8f076e5e8c9391ce5df78",
-          "bytes": 5646,
-          "lines": 120
+          "sha256": "839bfa673bc6d8bd90330112784431117a859cdf3d816b70776fcfc725a0fedf",
+          "bytes": 11444,
+          "lines": 217
         },
         {
           "built_path": "js/checkout-demeter.js",
@@ -320,6 +334,13 @@
           "lines": 326
         },
         {
+          "built_path": "js/meta.adapter.js",
+          "source_path": "src/demeter/assets/js/meta.adapter.js",
+          "sha256": "6cda236202e48f8960f630448425181c4ac9b2e24880cb5faa756b9937d1eb0e",
+          "bytes": 15871,
+          "lines": 301
+        },
+        {
           "built_path": "js/next-forwarder-core.js",
           "source_path": "src/demeter/assets/js/next-forwarder-core.js",
           "sha256": "4566e8ae67b5a22b540f8196c74f3011d6fa1f7ab7d1d89909dd769706d902f9",
@@ -336,9 +357,9 @@
         {
           "built_path": "js/payment-logos.js",
           "source_path": "src/demeter/assets/js/payment-logos.js",
-          "sha256": "7aab3cd8e8163e3837d6b11820d5afa1065b893d7da295f6d0b40f83eb8ee7ed",
-          "bytes": 2206,
-          "lines": 36
+          "sha256": "350bdd0d323e99e0555d8c42aa692169ca37af0cfaa8a1b6c7a19ef7c453cf98",
+          "bytes": 2641,
+          "lines": 41
         },
         {
           "built_path": "js/pinterest.adapter.js",
@@ -392,9 +413,9 @@
         {
           "built_path": "js/upsells.js",
           "source_path": "src/demeter/assets/js/upsells.js",
-          "sha256": "8a5883415cc9ed47a97517f9e1d76982513e010507035bc6c26d6cc7079cf9f7",
-          "bytes": 5994,
-          "lines": 126
+          "sha256": "81211e71a597f45d02fd6f784223521a2231b48a41863fd04e4723eda5922f46",
+          "bytes": 6341,
+          "lines": 130
         }
       ]
     },
@@ -404,9 +425,9 @@
         {
           "built_path": "js/axon.adapter.js",
           "source_path": "src/olympus/assets/js/axon.adapter.js",
-          "sha256": "a47cd7d594c5a9772144bc0953ef4bb284dec16d0aa8f076e5e8c9391ce5df78",
-          "bytes": 5646,
-          "lines": 120
+          "sha256": "839bfa673bc6d8bd90330112784431117a859cdf3d816b70776fcfc725a0fedf",
+          "bytes": 11444,
+          "lines": 217
         },
         {
           "built_path": "js/checkout-olympus.js",
@@ -437,6 +458,13 @@
           "lines": 326
         },
         {
+          "built_path": "js/meta.adapter.js",
+          "source_path": "src/olympus/assets/js/meta.adapter.js",
+          "sha256": "6cda236202e48f8960f630448425181c4ac9b2e24880cb5faa756b9937d1eb0e",
+          "bytes": 15871,
+          "lines": 301
+        },
+        {
           "built_path": "js/next-forwarder-core.js",
           "source_path": "src/olympus/assets/js/next-forwarder-core.js",
           "sha256": "4566e8ae67b5a22b540f8196c74f3011d6fa1f7ab7d1d89909dd769706d902f9",
@@ -453,9 +481,9 @@
         {
           "built_path": "js/payment-logos.js",
           "source_path": "src/olympus/assets/js/payment-logos.js",
-          "sha256": "7aab3cd8e8163e3837d6b11820d5afa1065b893d7da295f6d0b40f83eb8ee7ed",
-          "bytes": 2206,
-          "lines": 36
+          "sha256": "350bdd0d323e99e0555d8c42aa692169ca37af0cfaa8a1b6c7a19ef7c453cf98",
+          "bytes": 2641,
+          "lines": 41
         },
         {
           "built_path": "js/pinterest.adapter.js",
@@ -509,9 +537,9 @@
         {
           "built_path": "js/upsells.js",
           "source_path": "src/olympus/assets/js/upsells.js",
-          "sha256": "8a5883415cc9ed47a97517f9e1d76982513e010507035bc6c26d6cc7079cf9f7",
-          "bytes": 5994,
-          "lines": 126
+          "sha256": "81211e71a597f45d02fd6f784223521a2231b48a41863fd04e4723eda5922f46",
+          "bytes": 6341,
+          "lines": 130
         }
       ]
     },
@@ -521,9 +549,9 @@
         {
           "built_path": "js/axon.adapter.js",
           "source_path": "src/olympus-mv-single-step/assets/js/axon.adapter.js",
-          "sha256": "a47cd7d594c5a9772144bc0953ef4bb284dec16d0aa8f076e5e8c9391ce5df78",
-          "bytes": 5646,
-          "lines": 120
+          "sha256": "839bfa673bc6d8bd90330112784431117a859cdf3d816b70776fcfc725a0fedf",
+          "bytes": 11444,
+          "lines": 217
         },
         {
           "built_path": "js/checkout-olympus-mv-full.js",
@@ -554,6 +582,13 @@
           "lines": 326
         },
         {
+          "built_path": "js/meta.adapter.js",
+          "source_path": "src/olympus-mv-single-step/assets/js/meta.adapter.js",
+          "sha256": "6cda236202e48f8960f630448425181c4ac9b2e24880cb5faa756b9937d1eb0e",
+          "bytes": 15871,
+          "lines": 301
+        },
+        {
           "built_path": "js/next-forwarder-core.js",
           "source_path": "src/olympus-mv-single-step/assets/js/next-forwarder-core.js",
           "sha256": "4566e8ae67b5a22b540f8196c74f3011d6fa1f7ab7d1d89909dd769706d902f9",
@@ -570,9 +605,9 @@
         {
           "built_path": "js/payment-logos.js",
           "source_path": "src/olympus-mv-single-step/assets/js/payment-logos.js",
-          "sha256": "7aab3cd8e8163e3837d6b11820d5afa1065b893d7da295f6d0b40f83eb8ee7ed",
-          "bytes": 2206,
-          "lines": 36
+          "sha256": "350bdd0d323e99e0555d8c42aa692169ca37af0cfaa8a1b6c7a19ef7c453cf98",
+          "bytes": 2641,
+          "lines": 41
         },
         {
           "built_path": "js/pinterest.adapter.js",
@@ -626,16 +661,16 @@
         {
           "built_path": "js/upsells-mv.js",
           "source_path": "src/olympus-mv-single-step/assets/js/upsells-mv.js",
-          "sha256": "b8a6fcfa8349e3749c3afe914f0e3272dfc7e29cf081a80cda67a45915001733",
-          "bytes": 12108,
-          "lines": 295
+          "sha256": "56511e7bb88781b37a4e868fc7ebaa76c5245662529daf7fd5825d54e87b7760",
+          "bytes": 12474,
+          "lines": 300
         },
         {
           "built_path": "js/upsells.js",
           "source_path": "src/olympus-mv-single-step/assets/js/upsells.js",
-          "sha256": "8a5883415cc9ed47a97517f9e1d76982513e010507035bc6c26d6cc7079cf9f7",
-          "bytes": 5994,
-          "lines": 126
+          "sha256": "81211e71a597f45d02fd6f784223521a2231b48a41863fd04e4723eda5922f46",
+          "bytes": 6341,
+          "lines": 130
         },
         {
           "built_path": "js/variant-picker-fixture.js",
@@ -659,9 +694,9 @@
         {
           "built_path": "js/axon.adapter.js",
           "source_path": "src/olympus-mv-two-step/assets/js/axon.adapter.js",
-          "sha256": "a47cd7d594c5a9772144bc0953ef4bb284dec16d0aa8f076e5e8c9391ce5df78",
-          "bytes": 5646,
-          "lines": 120
+          "sha256": "839bfa673bc6d8bd90330112784431117a859cdf3d816b70776fcfc725a0fedf",
+          "bytes": 11444,
+          "lines": 217
         },
         {
           "built_path": "js/checkout-olympus-mv-full.js",
@@ -699,6 +734,13 @@
           "lines": 326
         },
         {
+          "built_path": "js/meta.adapter.js",
+          "source_path": "src/olympus-mv-two-step/assets/js/meta.adapter.js",
+          "sha256": "6cda236202e48f8960f630448425181c4ac9b2e24880cb5faa756b9937d1eb0e",
+          "bytes": 15871,
+          "lines": 301
+        },
+        {
           "built_path": "js/next-forwarder-core.js",
           "source_path": "src/olympus-mv-two-step/assets/js/next-forwarder-core.js",
           "sha256": "4566e8ae67b5a22b540f8196c74f3011d6fa1f7ab7d1d89909dd769706d902f9",
@@ -715,9 +757,9 @@
         {
           "built_path": "js/payment-logos.js",
           "source_path": "src/olympus-mv-two-step/assets/js/payment-logos.js",
-          "sha256": "7aab3cd8e8163e3837d6b11820d5afa1065b893d7da295f6d0b40f83eb8ee7ed",
-          "bytes": 2206,
-          "lines": 36
+          "sha256": "350bdd0d323e99e0555d8c42aa692169ca37af0cfaa8a1b6c7a19ef7c453cf98",
+          "bytes": 2641,
+          "lines": 41
         },
         {
           "built_path": "js/pinterest.adapter.js",
@@ -771,16 +813,16 @@
         {
           "built_path": "js/upsells-mv.js",
           "source_path": "src/olympus-mv-two-step/assets/js/upsells-mv.js",
-          "sha256": "b8a6fcfa8349e3749c3afe914f0e3272dfc7e29cf081a80cda67a45915001733",
-          "bytes": 12108,
-          "lines": 295
+          "sha256": "56511e7bb88781b37a4e868fc7ebaa76c5245662529daf7fd5825d54e87b7760",
+          "bytes": 12474,
+          "lines": 300
         },
         {
           "built_path": "js/upsells.js",
           "source_path": "src/olympus-mv-two-step/assets/js/upsells.js",
-          "sha256": "8a5883415cc9ed47a97517f9e1d76982513e010507035bc6c26d6cc7079cf9f7",
-          "bytes": 5994,
-          "lines": 126
+          "sha256": "81211e71a597f45d02fd6f784223521a2231b48a41863fd04e4723eda5922f46",
+          "bytes": 6341,
+          "lines": 130
         },
         {
           "built_path": "js/variant-picker-fixture.js",
@@ -804,9 +846,9 @@
         {
           "built_path": "js/axon.adapter.js",
           "source_path": "src/shop-single-step/assets/js/axon.adapter.js",
-          "sha256": "a47cd7d594c5a9772144bc0953ef4bb284dec16d0aa8f076e5e8c9391ce5df78",
-          "bytes": 5646,
-          "lines": 120
+          "sha256": "839bfa673bc6d8bd90330112784431117a859cdf3d816b70776fcfc725a0fedf",
+          "bytes": 11444,
+          "lines": 217
         },
         {
           "built_path": "js/checkout.js",
@@ -830,6 +872,13 @@
           "lines": 326
         },
         {
+          "built_path": "js/meta.adapter.js",
+          "source_path": "src/shop-single-step/assets/js/meta.adapter.js",
+          "sha256": "6cda236202e48f8960f630448425181c4ac9b2e24880cb5faa756b9937d1eb0e",
+          "bytes": 15871,
+          "lines": 301
+        },
+        {
           "built_path": "js/next-forwarder-core.js",
           "source_path": "src/shop-single-step/assets/js/next-forwarder-core.js",
           "sha256": "4566e8ae67b5a22b540f8196c74f3011d6fa1f7ab7d1d89909dd769706d902f9",
@@ -846,9 +895,9 @@
         {
           "built_path": "js/payment-logos.js",
           "source_path": "src/shop-single-step/assets/js/payment-logos.js",
-          "sha256": "7aab3cd8e8163e3837d6b11820d5afa1065b893d7da295f6d0b40f83eb8ee7ed",
-          "bytes": 2206,
-          "lines": 36
+          "sha256": "350bdd0d323e99e0555d8c42aa692169ca37af0cfaa8a1b6c7a19ef7c453cf98",
+          "bytes": 2641,
+          "lines": 41
         },
         {
           "built_path": "js/pinterest.adapter.js",
@@ -902,9 +951,9 @@
         {
           "built_path": "js/upsells.js",
           "source_path": "src/shop-single-step/assets/js/upsells.js",
-          "sha256": "8a5883415cc9ed47a97517f9e1d76982513e010507035bc6c26d6cc7079cf9f7",
-          "bytes": 5994,
-          "lines": 126
+          "sha256": "81211e71a597f45d02fd6f784223521a2231b48a41863fd04e4723eda5922f46",
+          "bytes": 6341,
+          "lines": 130
         }
       ]
     },
@@ -914,9 +963,9 @@
         {
           "built_path": "js/axon.adapter.js",
           "source_path": "src/shop-three-step/assets/js/axon.adapter.js",
-          "sha256": "a47cd7d594c5a9772144bc0953ef4bb284dec16d0aa8f076e5e8c9391ce5df78",
-          "bytes": 5646,
-          "lines": 120
+          "sha256": "839bfa673bc6d8bd90330112784431117a859cdf3d816b70776fcfc725a0fedf",
+          "bytes": 11444,
+          "lines": 217
         },
         {
           "built_path": "js/checkout-shop-three-billing.js",
@@ -954,6 +1003,13 @@
           "lines": 326
         },
         {
+          "built_path": "js/meta.adapter.js",
+          "source_path": "src/shop-three-step/assets/js/meta.adapter.js",
+          "sha256": "6cda236202e48f8960f630448425181c4ac9b2e24880cb5faa756b9937d1eb0e",
+          "bytes": 15871,
+          "lines": 301
+        },
+        {
           "built_path": "js/next-forwarder-core.js",
           "source_path": "src/shop-three-step/assets/js/next-forwarder-core.js",
           "sha256": "4566e8ae67b5a22b540f8196c74f3011d6fa1f7ab7d1d89909dd769706d902f9",
@@ -970,9 +1026,9 @@
         {
           "built_path": "js/payment-logos.js",
           "source_path": "src/shop-three-step/assets/js/payment-logos.js",
-          "sha256": "7aab3cd8e8163e3837d6b11820d5afa1065b893d7da295f6d0b40f83eb8ee7ed",
-          "bytes": 2206,
-          "lines": 36
+          "sha256": "350bdd0d323e99e0555d8c42aa692169ca37af0cfaa8a1b6c7a19ef7c453cf98",
+          "bytes": 2641,
+          "lines": 41
         },
         {
           "built_path": "js/pinterest.adapter.js",
@@ -1026,9 +1082,9 @@
         {
           "built_path": "js/upsells.js",
           "source_path": "src/shop-three-step/assets/js/upsells.js",
-          "sha256": "8a5883415cc9ed47a97517f9e1d76982513e010507035bc6c26d6cc7079cf9f7",
-          "bytes": 5994,
-          "lines": 126
+          "sha256": "81211e71a597f45d02fd6f784223521a2231b48a41863fd04e4723eda5922f46",
+          "bytes": 6341,
+          "lines": 130
         }
       ]
     }

@@ -122,5 +122,9 @@ function initSwiperGalleries(thumbsPerView = 6) {
     onReady();
   }
   // Hidden bundle cards exist at parse time, but wait for the SDK so the first programmatic click lands.
-  window.addEventListener('next:initialized', function () { initBundleQtyToggle(); });
+  // Queue on window.nextReady, not a next:initialized listener: this script is deferred, and when the
+  // SDK boots first (cached campaign data, a fast API) that event has already fired and a listener never runs.
+  // nextReady runs the callback once either way: from the queue at boot, or immediately once the SDK is up.
+  window.nextReady = window.nextReady || [];
+  window.nextReady.push(function () { initBundleQtyToggle(); });
 })();

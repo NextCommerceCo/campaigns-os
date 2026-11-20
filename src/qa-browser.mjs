@@ -6653,9 +6653,12 @@ function reconcileOrderAgainstDisplay({ lines = [], display = null, events = nul
   const matchedQuantities = [];
   const quantityMismatches = [];
   // A checkout order bump persists with is_upsell: true (the platform's
-  // reporting tag), yet the checkout summary displays it. Such a line charges
-  // a displayed row; an is_upsell line the summary does not show is a
-  // post-purchase upsell, out of scope here, never a stray charge.
+  // reporting tag, intended on a bump), yet the checkout displays it. Such a
+  // line charges the bump whether the summary shows its row, only its active
+  // toggle shows, or --cart asked for it (F-251: a summary read that missed
+  // the bump row must not turn the charged bump into "no line for it"). An
+  // is_upsell line for a package the checkout neither displayed nor was asked
+  // for is a post-purchase upsell, out of scope here, never a stray charge.
   let bumpLineCount = 0;
   for (const line of (lines || []).filter((entry) => entry?.is_upsell)) {
     const resolution = events ? campaignPackageResolutionForLine(events, line, {
@@ -6663,8 +6666,8 @@ function reconcileOrderAgainstDisplay({ lines = [], display = null, events = nul
       preferred_refs: resolved.summary_package_ids,
     }) : null;
     const ref = resolution?.pkg?.ref_id == null ? null : String(resolution.pkg.ref_id);
-    if (ref && summaryIds.has(ref)) {
-      matchedSummaryIds.add(ref);
+    if (ref && (displayed.has(ref) || requestedCartByRef.has(ref))) {
+      if (summaryIds.has(ref)) matchedSummaryIds.add(ref);
       bumpLineCount += 1;
       if (requestedCartByRef.has(ref)) {
         answeredCartRefs.add(ref);

@@ -992,6 +992,91 @@ function assertionBaseId(finding) {
   throw new TypeError(`Unknown commercial parity finding type: ${String(finding?.type)}`);
 }
 
+// The page's URL as a test order's upsell step records it: origin and path,
+// without a trailing slash, query or hash.
+function pageUrlKey(value) {
+  if (!present(value)) return null;
+  try {
+    const url = new URL(String(value));
+    return `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Accepted upsell lines on placed test orders that charged a price other than
+ * the CampaignSpec offer's (F-250), by page id. A step is tied to a page by its
+ * offer URL, and each matched line to its expected package by position (the
+ * accepted-upsell proof matches them in that order). The offer's price is the
+ * page's one Exact calculated row for that package and quantity; with none, or
+ * an order in another currency, nothing is claimed. A persisted line price is
+ * read as the line total or the unit price, and only a price neither reading
+ * matches is a mismatch.
+ */
+function orderChargeMismatchesByPage(testOrdersValue, captureMatches, { currency = null } = {}) {
+  const pagesByUrl = new Map();
+  captureMatches.forEach(({ capture, page }) => {
+    const key = pageUrlKey(capture?.url);
+    if (key && page && (page.page_type === "upsell" || page.page_type === "downsell")) pagesByUrl.set(key, page);
+  });
+  const byPage = new Map();
+  if (!pagesByUrl.size) return byPage;
+  array(testOrdersValue).forEach((order) => {
+    const orderCurrency = order?.verification?.currency;
+    if (present(currency) && present(orderCurrency) && String(currency).toUpperCase() !== String(orderCurrency).toUpperCase()) return;
+    array(order?.upsell_steps).forEach((step) => {
+      if (step?.path !== "accept") return;
+      const page = pagesByUrl.get(pageUrlKey(step.offer_url));
+      const match = step?.verification?.accepted_upsell_match;
+      if (!page || match?.ok !== true) return;
+      const items = array(match.expected_items);
+      const lines = array(match.matched_lines);
+      if (!items.length || items.length !== lines.length) return;
+      items.forEach((item, index) => {
+        const quantity = Number(item?.quantity || 1);
+        const rows = array(page.rows).filter((row) => row?.state === PricingState.Exact
+          && String(row.package_id) === String(item?.package_id)
+          && Number(row.quantity) === quantity);
+        const truth = rows.length === 1 ? exactMoneyFact(rows[0].final) : null;
+        const line = lines[index];
+        const raw = line?.price_incl_tax ?? line?.price;
+        const charged = present(raw) ? normalizeMoney(String(raw)) : null;
+        if (!truth || !charged) return;
+        const chargedCents = moneyToCents(charged);
+        if (chargedCents === truth.cents || chargedCents * quantity === truth.cents) return;
+        const pageId = String(page.page_id);
+        if (!byPage.has(pageId)) byPage.set(pageId, []);
+        byPage.get(pageId).push({
+          order: order?.next_order_id ?? order?.ref_id ?? null,
+          path: order?.path ?? null,
+          package_id: String(item.package_id),
+          quantity,
+          charged,
+          offer_price: truth.value,
+        });
+      });
+    });
+  });
+  return byPage;
+}
+
+// A page-side voucher or price finding is a blocker when a placed order on
+// that page was charged a price other than the spec offer's (F-250); on its
+// own it stays a warning, so a page priced by a live voucher is unaffected.
+function withOrderCharge(assertion, charges) {
+  if (!charges?.length) return assertion;
+  const charge = charges[0];
+  const said = assertion.evidence?.type === "price-claim-mismatch" ? `page shows ${assertion.actual}` : assertion.actual;
+  return {
+    ...assertion,
+    status: "fail",
+    severity: "blocker",
+    actual: `${said.replace(/\.$/, "")}. Test order ${charge.order ?? "(no id)"} (${charge.path ?? "path unknown"}) accepted package ${charge.package_id} on this page and was charged ${charge.charged}; the CampaignSpec offer prices it at ${charge.offer_price}.`,
+    evidence: { ...assertion.evidence, order_charges: charges },
+  };
+}
+
 function assertionForFinding(finding, id) {
   const common = {
     id,
@@ -1046,22 +1131,29 @@ function assertionForFinding(finding, id) {
 }
 
 export function serializeCommercialFindings(findingsValue, options = {}) {
-  const findings = array(findingsValue);
+  const chargesFor = (finding) => (finding.type === "voucher-not-on-page" || finding.type === "price-claim-mismatch"
+    ? options.orderCharges?.get?.(String(finding.page_id)) : null);
+  // A finding a placed order's charge backs is a blocker (F-250), so, like the
+  // currency blocker, the assertion budget never hides it: it is serialized
+  // first and outside the budget.
+  const all = array(findingsValue);
+  const charged = all.filter((finding) => chargesFor(finding)?.length);
+  const findings = all.filter((finding) => !chargesFor(finding)?.length);
   const requestedAssertionLimit = Number(options.maxAssertions);
   const maxAssertions = Number.isInteger(requestedAssertionLimit) && requestedAssertionLimit >= 0
-    ? requestedAssertionLimit
+    ? Math.max(0, requestedAssertionLimit - charged.length)
     : Number.POSITIVE_INFINITY;
   const overflow = Math.max(0, findings.length - maxAssertions);
   const detailedFindingCount = overflow > 0 && maxAssertions > 0
     ? maxAssertions - 1
     : Math.min(findings.length, maxAssertions);
   const idCounts = new Map();
-  const assertions = findings.slice(0, detailedFindingCount).map((finding) => {
+  const assertions = [...charged, ...findings.slice(0, detailedFindingCount)].map((finding) => {
     const base = assertionBaseId(finding);
     const count = idCounts.get(base) || 0;
     idCounts.set(base, count + 1);
     const suffix = count === 0 ? "" : `:${count + 1}`;
-    return assertionForFinding(finding, `${base}${suffix}`);
+    return withOrderCharge(assertionForFinding(finding, `${base}${suffix}`), chargesFor(finding));
   });
   const omittedFindingCount = findings.length - detailedFindingCount;
   if (omittedFindingCount > 0 && maxAssertions > 0) {
@@ -1137,10 +1229,11 @@ export function createCommercialParityReport(capturesValue, journey, options = {
   const moneyReason = present(options.unresolvedMoneyClaims) ? String(options.unresolvedMoneyClaims) : null;
   const { valid: captures, invalid: invalidCaptures } = partitionCaptures(capturesValue, { countsOnly });
   const findings = countsOnly ? [] : diffCommercialParity(captures, journey, { unresolvedMoneyClaims: moneyReason });
+  const captureMatches = captures.map((capture) => ({ capture, page: pageForCapture(capture, journey) }));
+  const orderCharges = countsOnly ? new Map() : orderChargeMismatchesByPage(options.testOrders, captureMatches, { currency: options.orderCurrency });
   const { assertions, omittedFindingCount } = countsOnly
     ? { assertions: [], omittedFindingCount: 0 }
-    : serializeCommercialFindings(findings, options);
-  const captureMatches = captures.map((capture) => ({ capture, page: pageForCapture(capture, journey) }));
+    : serializeCommercialFindings(findings, { ...options, orderCharges });
   const matched = captureMatches.filter((entry) => entry.page);
   const unmatchedPages = captureMatches.filter((entry) => !entry.page)
     .map(({ capture }) => ({

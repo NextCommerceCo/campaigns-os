@@ -6126,13 +6126,67 @@
       "entry_sha256": "4f854eac9465dfe49cdf500c93092101ce28df46ecb1ce781d8c37366b094c83"
     },
     {
-      "id": "RL-0378",
+      "id": "RL-0377",
       "sequence": 360,
       "date": "2026-11-20",
       "kind": "release",
       "surface_version": null,
+      "changelog_section": "1.71.3+agent.3",
+      "changelog_sha256": "2c11486dbf58b20381fb8013571c030716b0b899b8e5d9770eca6e5a019ff437",
+      "agent_impact": "While the current build has no test order in a currency the CampaignSpec lists, next --json returns stage \"qa\" (not \"done\"), a reason naming the owed currencies (not \"Pipeline is complete.\"), and the owed qa_run_currency runs as its only next_actions; the Run Record closeout actions wait until next reports done. Read stage: run each qa_run_currency command, then call next again. The prompt still opens with \"Not complete:\", names run end only once nothing is owed, and the recorded QA stage stays done; the doctor sidecar next writes in that call reports the same stage qa and reason. With every listed currency covered, next reports done as before.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "next reports stage qa with the owed qa_run_currency actions, and a reason that does not say the pipeline is complete, while a listed currency has no test order for the current build."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Says next --json reports stage qa with the owed qa_run_currency actions until every listed currency has an order for this build."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "The done stage description says no per-currency QA run is owed there."
+        }
+      ],
+      "entry_sha256": "61baa51cb89ed6fc3de5bbd6ccf1372134196e4c558705f321f130f75ad701aa"
+    },
+    {
+      "id": "RL-0376",
+      "sequence": 361,
+      "date": "2026-11-20",
+      "kind": "release",
+      "surface_version": null,
       "changelog_section": "1.71.3+agent.4",
-      "changelog_sha256": "791fc6a5eebd97927522d611e77026bfc2e069b5cef57969f2b6e58db2469208",
+      "changelog_sha256": "f6a2d8393e1f01bab12078587c1b7c99ef6df64ae3304ff3292d701f3756477d",
+      "agent_impact": "When a QA test order accepted an upsell or downsell and its order line was charged a price other than the CampaignSpec offer calculated for that package (for example list price because the page does not carry the offer voucher), that page voucher-not-on-page and price-claim-mismatch rows are fail/blocker and name the order and both prices, so the verdict is blocked. Fix the page (carry the voucher) and re-run; do not accept it as an exception. Without such an order those rows stay warnings. browser-order-display-parity counts an order line tagged is_upsell: true that resolves to a checkout bump the page displayed (summary row or active toggle) or --cart requested, so a charged bump no longer reads as the order carries no line for it. is_upsell on a checkout bump is the intended reporting tag: leave it as it is.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "A voucher-not-on-page or price-claim-mismatch row is a blocker when a test order on that page was charged a price other than the spec offer price."
+        }
+      ],
+      "entry_sha256": "798d35d5543258b4481cff6dc7e76333baf0365381af7761035d64429449fa36"
+    },
+    {
+      "id": "RL-0378",
+      "sequence": 362,
+      "date": "2026-11-20",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.3+agent.5",
+      "changelog_sha256": "9134bc8f441845079c631b9762d2a1e9ca0bf4b3706c064cb5659753a2f0e79b",
       "agent_impact": "On the local preview record build records Polish skipped with a skip_reason saying it is advisory there, instead of required and carried forward. A fresh session's next on the unchanged build reads nothing owed (no \"Change found: not classified\", no \"Owed stages: polish\" beside \"Pipeline complete\"), readback and doctor --ci read the same record, and polish capture or record polish after next has gone past Polish is not logged as a deviation. QA still reports the Polish evidence missing as a warning, and production QA still requires it. theme waive makes that advisory Polish required again; a brief or spec change recorded with record spec makes it required until the next record build, which records it advisory again and keeps input_change. Off the local preview, or under a theme waiver, record build writes Polish required as before.",
       "compatibility": "compatible",
       "migration": "none",
@@ -6150,7 +6204,7 @@
           "summary": "next's deviation recommendation expects polish while Polish is advisory on the local preview; theme waive makes an advisory Polish required; the build prompt names the skipped record."
         }
       ],
-      "entry_sha256": "ae1dfd2cea8be55118c033b37cac41da7723fba18459686a3b0878e8a0e7be55"
+      "entry_sha256": "a9e61c0a6440ff4c623b897dd299ae25557427839f48f2a9f4f1f0ed69d35982"
     }
   ]
 }

@@ -1,5 +1,5 @@
 {
-  "base_sha": "22174f84fb41dcba53d76d108778a7bf210377f1",
+  "base_sha": "6da4f7ca707eef2baf41018dfe125286187afc38",
   "case": "certified-demeter",
   "entry": "built",
   "description": "certified family demeter rendered fixture, read in place with --family demeter",
@@ -31,7 +31,7 @@
       "SDK markup: 3 data-next-* name(s) not in the Campaign Cart 0.4.43 attribute index (advisory; the SDK does not read them): data-next-catalog-component, data-next-content, data-next-skeleton",
       "SDK markup checks passed on 9 built page(s)",
       "All 8 campaign-owned script(s) loaded by built pages parse",
-      "Family scripts compared with demeter at NextCommerceCo/campaign-cart-starter-templates@5711e22 (SDK 0.4.43) (advisory): 7 candidate family script(s), 7 identical, 0 diverged; generated configuration not compared: _site/demeter/config.js.",
+      "Family scripts compared with demeter at NextCommerceCo/campaign-cart-starter-templates@10237b6 (SDK 0.4.43) (advisory): 7 candidate family script(s), 7 identical, 0 diverged; generated configuration not compared: _site/demeter/config.js.",
       "Cart placeholder check on 9 built page(s): 9 page(s) pass, 0 warning or review result(s)"
     ],
     "derived": {
@@ -3002,9 +3002,9 @@
         "reference": {
           "kind": "bundled",
           "repo": "NextCommerceCo/campaign-cart-starter-templates",
-          "sha": "5711e22345756c655f41c0ae71444478e4a8999e",
+          "sha": "10237b6259259ff479c48d633ab6a331a654c9b9",
           "sdk_version": "0.4.43",
-          "label": "NextCommerceCo/campaign-cart-starter-templates@5711e22 (SDK 0.4.43)"
+          "label": "NextCommerceCo/campaign-cart-starter-templates@10237b6 (SDK 0.4.43)"
         },
         "status": "compared",
         "reason": null,

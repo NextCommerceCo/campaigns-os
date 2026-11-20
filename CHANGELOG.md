@@ -2,11 +2,26 @@
 
 Notable supported-surface changes are recorded here.
 
-## [1.71.3+agent.4] - 2026-11-20
+## [1.71.3+agent.5] - 2026-11-20
 
 ### Fixed
 
 - On the local preview `record build` records Polish advisory, `skipped` with a `skip_reason` saying so, instead of `required` and carried forward, so a fresh session's `next` on the unchanged build no longer reads "Change found: not classified. It owes the full Polish." or prints "Owed stages: polish." beside "Pipeline complete.", and a `polish capture` after `next` has gone past Polish is not logged as a deviation. `theme waive` makes that Polish required again. A brief or spec change recorded with `record spec` makes it required until the next `record build`, which records it advisory again and keeps the `input_change`. QA still reports the Polish evidence missing, and production QA still requires it.
+
+
+## [1.71.3+agent.4] - 2026-11-20
+
+### Fixed
+
+- QA blocks when a test order's accepted upsell was charged a price other than the CampaignSpec offer's (its `voucher-not-on-page` and `price-claim-mismatch` rows become blockers; page-only findings stay warnings), and `browser-order-display-parity` counts a charged checkout bump tagged `is_upsell` even when the summary read missed its row (F-250, F-251) (#802).
+
+
+## [1.71.3+agent.3] - 2026-11-20
+
+### Fixed
+
+- While the current build has no test order in a currency the CampaignSpec lists, `next --json` reports `stage: "qa"` instead of `stage: "done"`, its reason names the owed currencies instead of saying the pipeline is complete, and its `next_actions` are the owed `qa_run_currency` runs; the prose and the JSON read one list of owed runs. The doctor sidecar `next` writes says the same, and the prompt names `run end` only once nothing is owed. With every listed currency covered, `next` reports `done` as before (F-234).
+
 
 ## [1.71.3+agent.1] - 2026-11-20
 
