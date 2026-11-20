@@ -2419,10 +2419,12 @@ in it exists for the current build, whichever recorded QA run placed it (the
 QA stage's record and its history, each naming the build it judged and its
 verdict). At the QA stage the list leaves out `campaign.currency`, which
 `qa_run` proves; once QA is done it names every listed currency this build
-still has no order in. QA stays done either way, but while any is owed `next`
-at the done stage does not say "Pipeline complete.": its prompt opens with
-"Not complete:" and names each owed run, and its "Owed stages" line names the
-currencies.
+still has no order in. The recorded QA stage stays done either way, but while
+any is owed `next` does not report done: `next --json` returns `stage: "qa"`,
+a reason naming the owed currencies, and those `qa_run_currency` actions as its
+only `next_actions`. Its prompt opens with "Not complete:" and names each owed
+run, and its "Owed stages" line names the currencies. Once every listed
+currency has an order for this build, `next` reports `stage: "done"`.
 
 A run that created test orders also says what they did not cover, as warn
 rows: `browser-test-order:currency-coverage` names the listed currencies no

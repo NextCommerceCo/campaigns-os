@@ -858,8 +858,8 @@
       },
       "verification": {
         "sdk_version": "0.4.43",
-        "verified_at": "2026-10-24T04:58:52Z",
-        "evidence": "sdk-0.4.43-2026-10-24",
+        "verified_at": "2026-11-20T03:53:53Z",
+        "evidence": "sdk-0.4.43-2026-11-20",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -1290,8 +1290,8 @@
       },
       "verification": {
         "sdk_version": "0.4.43",
-        "verified_at": "2026-10-24T04:58:52Z",
-        "evidence": "sdk-0.4.43-2026-10-24",
+        "verified_at": "2026-11-20T03:53:53Z",
+        "evidence": "sdk-0.4.43-2026-11-20",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -1609,8 +1609,8 @@
       },
       "verification": {
         "sdk_version": "0.4.43",
-        "verified_at": "2026-10-24T04:58:52Z",
-        "evidence": "sdk-0.4.43-2026-10-24",
+        "verified_at": "2026-11-20T03:53:53Z",
+        "evidence": "sdk-0.4.43-2026-11-20",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -1919,8 +1919,8 @@
       },
       "verification": {
         "sdk_version": "0.4.43",
-        "verified_at": "2026-10-24T04:58:52Z",
-        "evidence": "sdk-0.4.43-2026-10-24",
+        "verified_at": "2026-11-20T03:53:53Z",
+        "evidence": "sdk-0.4.43-2026-11-20",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -2268,8 +2268,8 @@
       },
       "verification": {
         "sdk_version": "0.4.43",
-        "verified_at": "2026-10-24T04:58:52Z",
-        "evidence": "sdk-0.4.43-2026-10-24",
+        "verified_at": "2026-11-20T03:53:53Z",
+        "evidence": "sdk-0.4.43-2026-11-20",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -2715,8 +2715,8 @@
       },
       "verification": {
         "sdk_version": "0.4.43",
-        "verified_at": "2026-10-24T04:58:52Z",
-        "evidence": "sdk-0.4.43-2026-10-24",
+        "verified_at": "2026-11-20T03:53:53Z",
+        "evidence": "sdk-0.4.43-2026-11-20",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -3079,8 +3079,8 @@
       },
       "verification": {
         "sdk_version": "0.4.43",
-        "verified_at": "2026-10-24T04:58:52Z",
-        "evidence": "sdk-0.4.43-2026-10-24",
+        "verified_at": "2026-11-20T03:53:53Z",
+        "evidence": "sdk-0.4.43-2026-11-20",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -3369,8 +3369,8 @@
       },
       "verification": {
         "sdk_version": "0.4.43",
-        "verified_at": "2026-10-24T04:58:52Z",
-        "evidence": "sdk-0.4.43-2026-10-24",
+        "verified_at": "2026-11-20T03:53:53Z",
+        "evidence": "sdk-0.4.43-2026-11-20",
         "status": "certified",
         "source": "template-verification.json"
       }
@@ -3560,5 +3560,5 @@
   },
   "_synced_from_repo": "NextCommerceCo/campaign-cart-starter-templates",
   "_synced_from_ref": "main",
-  "_synced_from_sha": "5711e22345756c655f41c0ae71444478e4a8999e"
+  "_synced_from_sha": "10237b6259259ff479c48d633ab6a331a654c9b9"
 }

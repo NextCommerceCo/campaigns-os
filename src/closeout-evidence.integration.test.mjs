@@ -15,7 +15,7 @@ import { currentBuildFingerprint } from "./polish-gate.mjs";
 import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
@@ -442,13 +442,19 @@ test("next names the --currency runs this build still owes after QA is done, and
   });
   const owed = () => {
     const result = runNext(fixture.packetPath);
-    assert.equal(result.stage, "done", "currency coverage never holds QA open");
-    return { result, codes: result.next_actions.filter((entry) => entry.id === "qa_run_currency").map((entry) => entry.command.match(/--currency (\w+)$/)[1]) };
+    const codes = result.next_actions.filter((entry) => entry.id === "qa_run_currency").map((entry) => entry.command.match(/--currency (\w+)$/)[1]);
+    // One decision: the stage is qa exactly while a currency run is owed, and
+    // then the currency runs are its only actions.
+    assert.equal(result.stage, codes.length ? "qa" : "done", result.reason);
+    if (codes.length) assert.deepEqual(result.next_actions.map((entry) => entry.id), codes.map(() => "qa_run_currency"));
+    return { result, codes };
   };
   runProducer(fixture, { runId: "SYNTHRUN000000000000000001", completedAt: "2026-09-11T02:00:00.000Z", orders: 2, currency: "USD", inTarget: true });
   const first = owed();
   assert.deepEqual(first.codes, ["EUR", "GBP"]);
-  assert.ok(nextTinyPromptLines(first.result).some((line) => line.startsWith("QA is done, but this build has no test order in every currency")));
+  const firstLines = nextTinyPromptLines(first.result);
+  assert.ok(firstLines.some((line) => line.startsWith("QA is done, but this build has no test order in every currency")), firstLines.join("\n"));
+  assert.ok(!firstLines.some((line) => line.startsWith("Next expected proof")), "no full QA run is owed, only the currency runs");
   runProducer(fixture, { runId: "SYNTHRUN000000000000000002", completedAt: "2026-09-11T03:00:00.000Z", currency: "EUR", inTarget: true });
   assert.deepEqual(owed().codes, ["GBP"], "the USD order of the earlier run still counts");
   runProducer(fixture, { runId: "SYNTHRUN000000000000000003", completedAt: "2026-09-11T04:00:00.000Z", currency: "GBP", inTarget: true });
@@ -476,6 +482,8 @@ test("after a change and a one-currency rerun, next owes the other currencies an
   runProducer(fixture, { runId: "SYNTHRUN000000000000000002", completedAt: "2026-09-11T03:00:00.000Z", currency: "EUR", inTarget: true });
   runProducer(fixture, { runId: "SYNTHRUN000000000000000003", completedAt: "2026-09-11T04:00:00.000Z", currency: "GBP", inTarget: true });
   const covered = runNext(fixture.packetPath);
+  assert.equal(covered.stage, "done", "with every currency covered, next still reports done");
+  assert.match(covered.reason, /Pipeline is complete\./);
   assert.equal(action(covered, "qa_run_currency"), null);
   assert.match(covered.prompt, /^Pipeline complete\./);
 
@@ -488,10 +496,15 @@ test("after a change and a one-currency rerun, next owes the other currencies an
   writeFileSync(fixture.reportPath, JSON.stringify(report, null, 2));
   runProducer(fixture, { runId: "SYNTHRUN000000000000000004", completedAt: "2026-09-11T05:00:00.000Z", currency: "USD", inTarget: true });
 
+  // `next --json` reads the same as the prose: QA, not done, while the
+  // EUR and GBP runs are owed, with those runs as its actions.
   const result = runNext(fixture.packetPath);
-  assert.equal(result.stage, "done", "currency coverage never holds QA open");
+  assert.equal(result.stage, "qa", "an owed currency run keeps next at QA");
+  assert.doesNotMatch(result.reason, /complete/i);
+  assert.equal(result.reason, "Every stage is recorded, but this build has no test order in EUR or GBP, which the CampaignSpec lists, so QA owes those runs.");
   const runs = result.next_actions.filter((entry) => entry.id === "qa_run_currency").map((entry) => entry.command);
   assert.deepEqual(runs.map((command) => command.match(/--currency (\w+)$/)[1]), ["EUR", "GBP"]);
+  assert.deepEqual(result.next_actions.map((entry) => entry.id), ["qa_run_currency", "qa_run_currency"]);
   assert.doesNotMatch(result.prompt, /Pipeline complete/);
   assert.ok(result.prompt.startsWith("Not complete: this build has no test order in EUR or GBP, which the CampaignSpec lists, so these runs are owed. Run each of these, then call "), result.prompt);
   for (const command of runs) assert.ok(result.prompt.includes(command), "the prompt names each owed run");
@@ -499,6 +512,16 @@ test("after a change and a one-currency rerun, next owes the other currencies an
   assert.doesNotMatch(text, /Owed stages: none/);
   assert.doesNotMatch(text, /Pipeline complete/);
   assert.ok(text.includes("Owed stages: QA test orders in EUR and GBP. Every stage is recorded, and this build has no test order in those currencies."), text);
+  // The run session stays open until the owed runs are placed: no `run end`.
+  assert.doesNotMatch(result.prompt, /run end/);
+  // The doctor sidecar this call writes says what next says.
+  const doctorOut = join(dirname(fixture.reportPath), "doctor-output.json");
+  const written = nextStage(null, { packet: fixture.packetPath, _: [], "no-remit": true });
+  assert.equal(written.stage, "qa");
+  const sidecar = JSON.parse(readFileSync(doctorOut, "utf8"));
+  assert.equal(sidecar.next.stage, "qa", "the persisted doctor next agrees with next");
+  assert.equal(sidecar.next.reason, written.reason);
+  assert.doesNotMatch(JSON.stringify(sidecar.next), /Pipeline is complete/);
 });
 
 // The two record shapes the coverage reader must still read: a record that

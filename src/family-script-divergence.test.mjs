@@ -150,7 +150,7 @@ test("an edited family copy warns with the reference, line delta and hunks; a re
     const [warning, ...rest] = advisoryWarnings(result);
     assert.deepEqual(rest, []);
     assert.equal(warning.code, FAMILY_SCRIPT_DIVERGED);
-    assert.match(warning.message, /^_site\/apollo-mv-single-step\/js\/upsells-mv\.js differs from the apollo-mv-single-step family file js\/upsells-mv\.js \(candidate by same built path; ancestry is not recorded\) at NextCommerceCo\/campaign-cart-starter-templates@[0-9a-f]{7} \(SDK 0\.4\.43\), src\/apollo-mv-single-step\/assets\/js\/upsells-mv\.js: 296 line\(s\) against 295 \(\+1\), 1 hunk\(s\) adding 2 and removing 1 line\(s\), the first at line 41\./);
+    assert.match(warning.message, /^_site\/apollo-mv-single-step\/js\/upsells-mv\.js differs from the apollo-mv-single-step family file js\/upsells-mv\.js \(candidate by same built path; ancestry is not recorded\) at NextCommerceCo\/campaign-cart-starter-templates@[0-9a-f]{7} \(SDK 0\.4\.43\), src\/apollo-mv-single-step\/assets\/js\/upsells-mv\.js: 301 line\(s\) against 300 \(\+1\), 1 hunk\(s\) adding 2 and removing 1 line\(s\), the first at line 41\./);
     assert.deepEqual(warning.detail.finding.diff.hunks.first, [{ local_start: 41, local_lines: 2, reference_start: 41, reference_lines: 1 }]);
     const renamed = result.derived.family_script_divergence.scripts.find((entry) => entry.file.endsWith("checkout-copy.js"));
     assert.deepEqual({ match: renamed.match, result: renamed.result, reference_path: renamed.reference_path }, { match: "content", result: "identical", reference_path: "js/checkout.js" });

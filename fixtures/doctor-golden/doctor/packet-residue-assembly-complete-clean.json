@@ -1,5 +1,5 @@
 {
-  "base_sha": "22174f84fb41dcba53d76d108778a7bf210377f1",
+  "base_sha": "6da4f7ca707eef2baf41018dfe125286187afc38",
   "case": "residue-assembly-complete-clean",
   "entry": "packet",
   "description": "content residue: assembly completed, the good built site carries no residue",
@@ -835,7 +835,7 @@
     "ready": [
       "Build Packet schema campaign-runtime-build-packet/v0",
       "Template family \"olympus\" is certified (commerce catalog + brand contract)",
-      "Template family \"olympus\" certification is current: last verified against SDK 0.4.43 (2026-10-24), the current SDK recorded by the vendored contracts.",
+      "Template family \"olympus\" certification is current: last verified against SDK 0.4.43 (2026-11-20), the current SDK recorded by the vendored contracts.",
       "Target campaign output directory exists",
       "Target page-kit dependency 0.3.0",
       "Local CampaignSpec parsed",
