@@ -6,7 +6,7 @@ Notable supported-surface changes are recorded here.
 
 ### Fixed
 
-- QA blocks when a test order's accepted upsell was charged a price other than the CampaignSpec offer's (its `voucher-not-on-page` and `price-claim-mismatch` rows become blockers; page-only findings stay warnings), and `browser-order-display-parity` counts a charged checkout bump tagged `is_upsell` even when the summary read missed its row (F-250, F-251).
+- QA blocks when a test order's accepted upsell was charged a price other than the CampaignSpec offer's (its `voucher-not-on-page` and `price-claim-mismatch` rows become blockers; page-only findings stay warnings), and `browser-order-display-parity` counts a charged checkout bump tagged `is_upsell` even when the summary read missed its row (F-250, F-251) (#802).
 
 
 ## [1.71.3] - 2026-11-17
