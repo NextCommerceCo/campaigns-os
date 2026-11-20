@@ -345,6 +345,48 @@ test("a checkout order bump the summary displays is charged, though the order ta
   assert.equal(result.evidence.order_bump_line_count, 1);
 });
 
+test("a charged checkout bump tagged is_upsell passes when the summary read missed its row (F-251)", () => {
+  const { reconcileOrderAgainstDisplay, orderDisplayParityAssertion } = __qaBrowserTestHooks;
+  // A simulated build on the unmodified starter checkout (c4-claude): --cart
+  // 1:1,4:1, bump 4's toggle active, but on two of five paths the summary read
+  // held only the main package's rows. Every order carried the bump, tagged
+  // is_upsell: true, the intended reporting tag for a checkout bump.
+  const events = { responses: [{ body: { packages: [
+    { ref_id: 1, qty: 1, product_sku: "DEMO-SCANNER", product_id: 101 },
+    { ref_id: 4, qty: 1, product_sku: "DEMO-TESTER", product_id: 104 },
+    { ref_id: 6, qty: 1, product_sku: "DEMO-JUMPER", product_id: 106 },
+  ] } }] };
+  const display = {
+    summary_present: true,
+    summary_rows: [{ package_id: "1", text: "1 Demo Scanner $49.99" }, { package_id: "1", text: "1 Demo Scanner $49.99" }],
+    selected_bundle_package_ids: [],
+    selected_bundle_items: [],
+    active_toggle_package_ids: ["4"],
+    total_text: "$69.98",
+  };
+  const requested_cart = [{ packageId: "1", quantity: 1, quantityExplicit: true }, { packageId: "4", quantity: 1, quantityExplicit: true }];
+  const main = { title: "Demo Scanner", quantity: 1, sku: "DEMO-SCANNER", product_id: 101, is_upsell: false };
+  const bump = { title: "Demo Tester", quantity: 1, sku: "DEMO-TESTER", product_id: 104, is_upsell: true };
+  const upsell = { title: "Demo Jumper", quantity: 1, sku: "DEMO-JUMPER", product_id: 106, is_upsell: true };
+  const assess = (lines) => orderDisplayParityAssertion(page, "accept-accept", {
+    verification: { display_reconciliation: reconcileOrderAgainstDisplay({ lines, display, events, requested_cart }) },
+  });
+
+  const tagged = assess([main, bump, upsell]);
+  assert.equal(tagged.status, "pass", tagged.actual);
+  assert.equal(tagged.evidence.order_bump_line_count, 1);
+  assert.equal(tagged.evidence.quantity_mismatches, undefined);
+
+  // The reporting tag does not change the answer.
+  assert.equal(assess([main, { ...bump, is_upsell: false }, upsell]).status, "pass");
+
+  // Control: an order without the bump line still fails, naming the package.
+  const dropped = assess([main, upsell]);
+  assert.equal(dropped.status, "fail");
+  assert.match(dropped.actual, /package 4 requested 1 unit\(s\) \(1 per package × 1\) but the order carries no line for it/);
+  assert.doesNotMatch(dropped.actual, /is_upsell/);
+});
+
 test("a summary whose rows carry no package id is reported not-comparable, never guessed at", () => {
   const { orderDisplayParityAssertion } = __qaBrowserTestHooks;
   const order = orderFrom({
