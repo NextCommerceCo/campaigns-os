@@ -45,7 +45,9 @@ function getUpsellColorSwatch(value) {
   return s;
 }
 
-function setupBundleSlotVariantDropdowns() {
+function setupBundleSlotVariantDropdowns(sdk) {
+  // A queued nextReady callback runs before the SDK assigns window.next, so prefer the instance it passes.
+  var nextApi = sdk || window.next;
   var stage = document.getElementById('bundle-slots-stage');
   if (!stage) return;
 
@@ -280,8 +282,8 @@ function setupBundleSlotVariantDropdowns() {
 
   scheduleRender();
 
-  if (window.next && typeof window.next.on === 'function') {
-    window.next.on('bundle:selection-changed', function () {
+  if (nextApi && typeof nextApi.on === 'function') {
+    nextApi.on('bundle:selection-changed', function () {
       scheduleRender();
       setTimeout(scheduleRender, 250);
       setTimeout(scheduleRender, 500);
@@ -290,6 +292,9 @@ function setupBundleSlotVariantDropdowns() {
 }
 
 
-window.addEventListener('next:initialized', function () {
-  setupBundleSlotVariantDropdowns(); // comment out to use barebones native <select> UI instead
+// window.nextReady, not a next:initialized listener: this script is deferred, and if the SDK booted first the
+// event is gone and the dropdowns never build. nextReady runs the callback once either way.
+window.nextReady = window.nextReady || [];
+window.nextReady.push(function (sdk) {
+  setupBundleSlotVariantDropdowns(sdk); // comment out to use barebones native <select> UI instead
 });

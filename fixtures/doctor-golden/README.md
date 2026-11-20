@@ -16,6 +16,10 @@ Regenerations since, each a separately reviewed behavior change:
   `built_output.script_observations.sdk_prefixed_storage` warnings in
   `built-certified-shop-three-step.json`; every other case changed only its
   `base_sha`.
+- Starter catalog refresh to `10237b6` (the upsell `nextReady` fix): cases
+  that name the starter pin changed its sha and label, and cases that print
+  olympus's certification date changed that date; nothing else changed
+  beyond `base_sha`.
 
 ## Rules for refactor changes
 
