@@ -6132,8 +6132,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.71.3+agent.3",
-      "changelog_sha256": "4dc0707d40df0e012bd3caf3f1a0118aed23c4fe1fcc61496cdf01464ae38058",
-      "agent_impact": "While the current build has no test order in a currency the CampaignSpec lists, next --json returns stage \"qa\" (not \"done\"), a reason naming the owed currencies (not \"Pipeline is complete.\"), and the owed qa_run_currency runs as its only next_actions; the Run Record closeout actions wait until next reports done. Read stage: run each qa_run_currency command, then call next again. The prompt still opens with \"Not complete:\" and the recorded QA stage stays done. With every listed currency covered, next reports done as before.",
+      "changelog_sha256": "2c11486dbf58b20381fb8013571c030716b0b899b8e5d9770eca6e5a019ff437",
+      "agent_impact": "While the current build has no test order in a currency the CampaignSpec lists, next --json returns stage \"qa\" (not \"done\"), a reason naming the owed currencies (not \"Pipeline is complete.\"), and the owed qa_run_currency runs as its only next_actions; the Run Record closeout actions wait until next reports done. Read stage: run each qa_run_currency command, then call next again. The prompt still opens with \"Not complete:\", names run end only once nothing is owed, and the recorded QA stage stays done; the doctor sidecar next writes in that call reports the same stage qa and reason. With every listed currency covered, next reports done as before.",
       "compatibility": "compatible",
       "migration": "none",
       "changes": [
@@ -6156,7 +6156,7 @@
           "summary": "The done stage description says no per-currency QA run is owed there."
         }
       ],
-      "entry_sha256": "e7e751ac5af064323552a5658e0ecb84a5cd739827bd0e4d1dff100a17966de1"
+      "entry_sha256": "61baa51cb89ed6fc3de5bbd6ccf1372134196e4c558705f321f130f75ad701aa"
     }
   ]
 }

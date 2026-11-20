@@ -15,7 +15,7 @@ import { currentBuildFingerprint } from "./polish-gate.mjs";
 import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
@@ -512,6 +512,16 @@ test("after a change and a one-currency rerun, next owes the other currencies an
   assert.doesNotMatch(text, /Owed stages: none/);
   assert.doesNotMatch(text, /Pipeline complete/);
   assert.ok(text.includes("Owed stages: QA test orders in EUR and GBP. Every stage is recorded, and this build has no test order in those currencies."), text);
+  // The run session stays open until the owed runs are placed: no `run end`.
+  assert.doesNotMatch(result.prompt, /run end/);
+  // The doctor sidecar this call writes says what next says.
+  const doctorOut = join(dirname(fixture.reportPath), "doctor-output.json");
+  const written = nextStage(null, { packet: fixture.packetPath, _: [], "no-remit": true });
+  assert.equal(written.stage, "qa");
+  const sidecar = JSON.parse(readFileSync(doctorOut, "utf8"));
+  assert.equal(sidecar.next.stage, "qa", "the persisted doctor next agrees with next");
+  assert.equal(sidecar.next.reason, written.reason);
+  assert.doesNotMatch(JSON.stringify(sidecar.next), /Pipeline is complete/);
 });
 
 // The two record shapes the coverage reader must still read: a record that

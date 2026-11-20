@@ -210,6 +210,7 @@ import {
 import {
   ASSEMBLY_REPORT_STAGE_KEYS,
   NEXT_STAGE_ORDER,
+  NEXT_STAGE_OWNERS,
   stageIsTerminal,
 } from "./orchestration-stage-contract.mjs";
 import { currentBuildFingerprint, templateStockPolishStage, TEMPLATE_STOCK_POLISH_REASON } from "./polish-gate.mjs";
@@ -4907,15 +4908,37 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
       const owedCodes = owedRuns.map((run) => run.code);
       const noneOwed = ciEvidence.indexOf("Owed stages: none.");
       if (owedRuns.length && noneOwed >= 0) ciEvidence[noneOwed] = `Owed stages: QA test orders in ${owedCodes.join(" and ")}. Every stage is recorded, and this build has no test order in those currencies.`;
+      const owedReason = `Every stage is recorded, but this build has no test order in ${owedCodes.join(" or ")}, which the CampaignSpec lists, so QA owes those runs.`;
+      if (owedRuns.length && doctor.next) {
+        // The picker knows nothing of per-currency coverage, so restate the
+        // doctor's next block this call already persisted: the sidecar must
+        // say what next says, never "Pipeline is complete." while runs are owed.
+        doctor.next = {
+          ...doctor.next,
+          stage: "qa",
+          owner: NEXT_STAGE_OWNERS.qa.owner,
+          default_skill: NEXT_STAGE_OWNERS.qa.default_skill,
+          command: owedRuns[0].command,
+          reason: owedReason,
+          actions: owedRuns.map((run) => `Run ${run.command}.`),
+        };
+        if (args["no-write"] !== true) {
+          try {
+            writeDoctorSidecar(doctorOutPath, doctor, { command: NEXT_PRODUCER, targetRepo });
+          } catch {
+            // best-effort, as above
+          }
+        }
+      }
       return finalize({
         ok: true,
         status: readinessStatus(warnings, doctor.derived),
         stage: owedRuns.length ? "qa" : "done",
-        reason: owedRuns.length ? `Every stage is recorded, but this build has no test order in ${owedCodes.join(" or ")}, which the CampaignSpec lists, so QA owes those runs.` : picked.reason,
+        reason: owedRuns.length ? owedReason : picked.reason,
         errors,
         warnings,
         ready,
-        prompt: `${owedRuns.length ? `Not complete: this build has no test order in ${owedCodes.join(" or ")}, which the CampaignSpec lists, so these runs are owed. Run each of these, then call \`${cmd("next")}\` again: ${owedRuns.map((run) => run.command).join("; ")}. The recorded QA stage stays done meanwhile.` : "Pipeline complete."} All stages in the assembly report are in a terminal status. To repeat build work, do the work and run \`${cmd("record")} build --packet <path>\`; this makes downstream stages owed as needed. \`${cmd("record")} deploy\` records the served deploy, a loopback URL for a local-serve target or an https URL for a hosted one. Run \`${cmd("qa")} run\` for QA. Then call \`${cmd("next")}\` again. If a run session is active, finish it with \`${cmd("run")} end\` so the Run Record is assembled and the session closes.${report?.stages?.qa?.status === "completed_with_warnings" ? " QA passed with exceptions; report them to the operator without clearing or waiving them or changing markup just to make them pass." : ""}${(report?.stages?.qa?.warnings || []).filter((warning) => typeof warning === "string" && warning.startsWith(NARROWER_QA_PREFIX)).map((warning) => ` ${warning}`).join("")}${qaRestsOnBaseline(report) ? ` QA rests on a baseline ${report.commerce_baseline.accepted_by} accepted, not a test; say so when you report this campaign.` : ""}${warnings.some((issue) => issue.code === "built_output.absent") ? " The built output is not on this checkout, so these records were not compared with it; build before treating the campaign as current." : ""}`,
+        prompt: `${owedRuns.length ? `Not complete: this build has no test order in ${owedCodes.join(" or ")}, which the CampaignSpec lists, so these runs are owed. Run each of these, then call \`${cmd("next")}\` again: ${owedRuns.map((run) => run.command).join("; ")}. The recorded QA stage stays done meanwhile.` : "Pipeline complete."} All stages in the assembly report are in a terminal status. To repeat build work, do the work and run \`${cmd("record")} build --packet <path>\`; this makes downstream stages owed as needed. \`${cmd("record")} deploy\` records the served deploy, a loopback URL for a local-serve target or an https URL for a hosted one. Run \`${cmd("qa")} run\` for QA. Then call \`${cmd("next")}\` again.${owedRuns.length ? "" : ` If a run session is active, finish it with \`${cmd("run")} end\` so the Run Record is assembled and the session closes.`}${report?.stages?.qa?.status === "completed_with_warnings" ? " QA passed with exceptions; report them to the operator without clearing or waiving them or changing markup just to make them pass." : ""}${(report?.stages?.qa?.warnings || []).filter((warning) => typeof warning === "string" && warning.startsWith(NARROWER_QA_PREFIX)).map((warning) => ` ${warning}`).join("")}${qaRestsOnBaseline(report) ? ` QA rests on a baseline ${report.commerce_baseline.accepted_by} accepted, not a test; say so when you report this campaign.` : ""}${warnings.some((issue) => issue.code === "built_output.absent") ? " The built output is not on this checkout, so these records were not compared with it; build before treating the campaign as current." : ""}`,
       }, { owedCurrencyRuns: owedRuns });
     }
     stage = picked.stage;
