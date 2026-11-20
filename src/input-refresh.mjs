@@ -49,6 +49,7 @@ import {
   wellFormedBriefMaterial,
 } from "./input-currency.mjs";
 import { cmd } from "./install-invocation.mjs";
+import { isLocalPreviewPolish } from "./local-preview-policy.mjs";
 import { campaignRouteRoot, effectiveMapPublicRouteSlug, intakeRouteRoot, normalizePublicRouteSlug, specPublicRouteSlug, routeSlugIdentity } from "./route-identity.mjs";
 import { projectPageKitTargets, publicRouteForPage } from "./source-html-intake.mjs";
 import { staleRoutingHints } from "./spec-derive.mjs";
@@ -157,13 +158,22 @@ export function demoteStages(report, { causes, now, by, only = null }) {
   for (const key of STAMPED_STAGES) {
     if (!owed.has(key) || (only && !only.includes(key))) continue;
     const previous = isObject(stages[key]) ? stages[key] : { stage: key };
-    if (previous.status === "skipped") continue;
+    // A skip stands, except the local preview's advisory Polish (F-157),
+    // which an input change makes required again like a recorded one.
+    const advisory = isLocalPreviewPolish(previous);
+    if (previous.status === "skipped" && !advisory) continue;
     const requirement = INPUT_DEPENDENCY_MAP[winner]?.stages?.[key] || owed.get(key);
     let next = { ...previous, input_change: inputChangeFor(key, previous, { at: now, reason }) };
     if (COMPLETED_STATUSES.includes(previous.status)) {
       next = archiveSupersededRecord(next, previous, { by, reason, at: now });
       for (const field of ["completed_at", "recorded_by", "performed_by", "unchanged_output_reason", "source_brief_material", "source_spec_material_hash"]) delete next[field];
       if (key === "qa") for (const field of ["verdict_run_id", "evidence", "purchase_proof"]) delete next[field];
+      next.status = "required";
+      next.required_by = requirement.required_by;
+      next.required_for = [...requirement.required_for];
+      demoted.push(key);
+    } else if (advisory) {
+      for (const field of ["skip_reason", "completed_at", "source_build_fingerprint"]) delete next[field];
       next.status = "required";
       next.required_by = requirement.required_by;
       next.required_for = [...requirement.required_for];

@@ -158,6 +158,23 @@ export function applyLocalPreviewToCheckpoint(gate, { packet, report, baseUrl = 
   return missing ? carried(gate) : gate;
 }
 
+// F-157: on the local preview `record build` writes Polish advisory, as a
+// skipped stage with this reason bound to the build, instead of required and
+// carried forward. next, readback and doctor --ci then read one stored record:
+// a fresh session has nothing to reclassify, and `polish capture` or `record
+// polish` stay open. The polish gate still reads the evidence missing, so QA
+// reports it as a warning, and production QA requires it. A theme waiver
+// makes Polish owed again, so it is not advisory.
+export const LOCAL_PREVIEW_POLISH_REASON = "Advisory on the local preview: Polish was not run for this build. next goes on without it, and QA reports the evidence missing, not passed; production QA requires it.";
+
+export function isLocalPreviewPolish(polish) {
+  return polish?.status === "skipped" && polish?.skip_reason === LOCAL_PREVIEW_POLISH_REASON;
+}
+
+export function localPreviewPolishApplies(packet, report) {
+  return isLocalPreview(packet) && !report?.theme?.waiver;
+}
+
 // The polish gate folds the checkpoint in, so it is carried forward only when
 // whatever it owns from the checkpoint was carried forward too. Advisory
 // Polish for a page-only change is never a ladder step. An optional capture

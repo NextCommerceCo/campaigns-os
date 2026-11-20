@@ -133,7 +133,7 @@ browserTest("copy edit with the real page QA browser lane ends QA is current", {
     assert.equal(posts, 0, "no order or publish request");
     assert.ok(loads.length >= 2, "static and browser QA both requested the changed page");
     assert.equal(result.ci.status, "current");
-    assert.match(afterEditTextLines(result).join("\n"), /Owed after QA:\n[\s\S]*QA is current/);
+    assert.match(afterEditTextLines(result).join("\n"), /Owed after QA:\n## Campaign evidence: current \(exit 0\)\n\nOwed stages: none\./);
   } finally {
     await new Promise((resolve) => server.close(resolve));
     rmSync(root, { recursive: true, force: true });

@@ -17,6 +17,7 @@ import { computeBuildFingerprint } from "./built-site-scope.mjs";
 import { parseArgs, polishCaptureCommand, formatPolishCaptureText, recordQaStageOutcome, resultTextLines } from "./cli.mjs";
 import { currentPacketInputs } from "./input-currency.mjs";
 import { evaluateRecordedHiddenEagerMediaCheckpoint } from "./polish-node.mjs";
+import { LOCAL_PREVIEW_POLISH_REASON } from "./local-preview-policy.mjs";
 import { resolveInvocationPolicy } from "./invocation.mjs";
 import { buildReadabilityRecord } from "./polish-readability.mjs";
 import { recordCommand, recordStageCommand } from "./stage-record.mjs";
@@ -1684,20 +1685,22 @@ test("page-only rebuild shares debt across after-edit, next and local deploy aft
     const checkout = join(f.target, "_site", f.slug, "checkout/index.html");
     writeFileSync(checkout, readFileSync(checkout, "utf8").replace("</h1>", " Revised checkout</h1>"));
     const checkoutBuild = recordOk(f, "build");
-    assert.ok(checkoutBuild.ready.includes("Owed stages: polish, qa."));
+    // On the local preview Polish is advisory (F-157): record build records
+    // it skipped for this build, so only QA is owed.
+    assert.ok(checkoutBuild.ready.includes("Owed stages: qa."), checkoutBuild.ready.join("\n"));
     t.diagnostic(`CHECKOUT | record build\n${resultTextLines(checkoutBuild).join("\n")}`);
     t.diagnostic(`CHECKOUT | after-edit\n${runCli(["after-edit", "--packet", f.packetPath, "--no-live-refs"], f.dir).stdout}`);
     t.diagnostic(`CHECKOUT | next\n${runCli(["next", "--packet", f.packetPath, "--no-write"], f.dir).stdout}`);
     const full = runJson(["after-edit", "--packet", f.packetPath, "--no-live-refs"], f.dir).json;
     assert.equal(full.ci.qa.scope, "full");
     assert.equal(full.ci.polish.advisory, false);
-    // The local preview carries the owed Polish forward (F-157): next goes on
-    // to deploy, record deploy follows it, and QA reports Polish missing.
+    // Polish is advisory on the local preview (F-157): next goes on to
+    // deploy, record deploy follows it, and QA reports Polish missing.
     assert.equal(nextOk(f).stage, "deploy");
-    assert.match(runCli(["next", "--packet", f.packetPath, "--no-write"], f.dir).stdout, /Owed stages: polish, deploy, qa/);
+    assert.match(runCli(["next", "--packet", f.packetPath, "--no-write"], f.dir).stdout, /Owed stages: deploy, qa\./);
     t.diagnostic(`CHECKOUT | record deploy\n${resultTextLines(await recordCommand(args, DEPLOY_FETCH)).join("\n")}`);
     assert.equal(nextOk(f).stage, "qa");
-    assert.match(runCli(["next", "--packet", f.packetPath, "--no-write"], f.dir).stdout, /Owed stages: polish, qa/);
+    assert.match(runCli(["next", "--packet", f.packetPath, "--no-write"], f.dir).stdout, /Owed stages: qa\./);
   });
 });
 
@@ -1763,18 +1766,18 @@ test("record build on an all-template-stock packet records Polish skipped, as ne
   });
 });
 
-// The local preview carries a missing Polish forward and next goes to deploy:
-// record build says so beside the required status it writes.
-test("record build on the local preview says next carries the required Polish forward", () => {
+// On the local preview Polish is advisory and next goes to deploy: record
+// build records it skipped for this build and says why (F-157).
+test("record build on the local preview records Polish advisory and says why", () => {
   withLifecycle((f) => {
     mutateJson(f.packetPath, (packet) => { packet.deploy.target = "local-serve"; });
     scaffold(f);
     recordOk(f, "setup");
     buildSite(f);
     const build = recordOk(f, "build");
-    assert.equal(readJson(f.reportPath).stages.polish.status, "required");
+    assert.equal(readJson(f.reportPath).stages.polish.status, "skipped");
     assert.equal(build.next_stage, "deploy");
-    assert.ok(build.ready.includes("stages.polish.status = required (carried forward on the local preview: next goes on without it, and QA reports the evidence missing, not passed)"), build.ready.join("\n"));
+    assert.ok(build.ready.includes(`stages.polish.status = skipped (${LOCAL_PREVIEW_POLISH_REASON})`), build.ready.join("\n"));
   });
 });
 
@@ -1794,7 +1797,7 @@ test("on the local preview an optional capture keeps Polish carried, so record d
     buildSite(f, " revised");
     const build = recordOk(f, "build");
     assert.equal(build.next_stage, "deploy");
-    assert.ok(build.ready.includes("stages.polish.status = required (carried forward on the local preview: next goes on without it, and QA reports the evidence missing, not passed)"), build.ready.join("\n"));
+    assert.ok(build.ready.includes(`stages.polish.status = skipped (${LOCAL_PREVIEW_POLISH_REASON})`), build.ready.join("\n"));
     await recordCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": `http://127.0.0.1:4173/${f.slug}/` }, DEPLOY_FETCH);
     const deployed = readJson(f.reportPath).stages.deploy;
     assert.equal(deployed.status, "completed", "record deploy does not refuse for the carried Polish");
@@ -1806,6 +1809,33 @@ test("on the local preview an optional capture keeps Polish carried, so record d
     const readback = runCli(["readback", f.target], f.dir).stdout;
     t.diagnostic(readback.split("\n").filter((line) => /^\s+(polish|deploy|qa)\b/.test(line)).join("\n"));
     assert.match(readback, /^ {2}deploy {9}completed/m);
+  });
+});
+
+// F-157 third round: on the local preview record build writes Polish
+// advisory, so a fresh session's next on the unchanged build finds nothing
+// to reclassify, and a polish capture under a deploy answer is no detour.
+test("on the local preview a fresh next after QA reads Polish advisory, not owed, and a capture is no deviation", async (t) => {
+  await guardedLifecycle(async (f) => {
+    mutateJson(f.packetPath, (packet) => { packet.deploy.target = "local-serve"; });
+    recordThroughBuild(f);
+    const built = readJson(f.reportPath).stages.polish;
+    assert.notEqual(built.status, "required", "record build does not write a required Polish on the local preview");
+    const started = runJson(["run", "start", "--packet", f.packetPath], f.dir);
+    assert.equal(started.status, 0, `setup: run start opened a session: ${started.stderr.slice(0, 400)}`);
+    assert.equal(nextOk(f, []).stage, "deploy");
+    const { detectDeviation } = await import("./deviation.mjs");
+    const { last_recommendation: recommendation } = readJson(join(f.target, ".campaign-runtime/run-session.json"));
+    assert.equal(recommendation.stage, "deploy");
+    assert.equal(detectDeviation({ lastRecommendation: recommendation, command: "polish", subcommand: "capture" }), null, "a polish capture under the deploy answer is not a deviation");
+    await recordDeploy(f);
+    await recordQa(f);
+    const next = runCli(["next", "--packet", f.packetPath, "--no-write"], f.dir).stdout;
+    t.diagnostic(next.split("\n").filter((line) => /Change found|Owed stages|Pipeline complete/.test(line)).join("\n"));
+    assert.equal(nextOk(f).stage, "done");
+    assert.doesNotMatch(next, /not classified/);
+    assert.doesNotMatch(next, /Owed stages: [^\n]*polish/);
+    assert.equal(readJson(f.reportPath).stages.polish.status, built.status, "next and readback read the stored record");
   });
 });
 
@@ -1875,14 +1905,14 @@ test("on the local preview, record deploy follows next past a polish it carries 
     recordOk(f, "setup");
     buildSite(f);
     recordOk(f, "build");
-    assert.equal(readJson(f.reportPath).stages.polish.status, "required");
+    assert.equal(readJson(f.reportPath).stages.polish.status, "skipped", "Polish is advisory on the local preview (F-157)");
     assert.equal(doctor(f).derived.polish_gate.status, "carried_forward");
     assert.equal(nextStage(f).stage, "deploy", "next carries the missing polish forward");
     const site = await serveSite(f);
     try {
       const result = await recordCommand({ _: ["record", "deploy"], packet: f.packetPath, "base-url": site.url });
       assert.equal(readJson(f.reportPath).stages.deploy.status, "completed", JSON.stringify(result));
-      assert.equal(readJson(f.reportPath).stages.polish.status, "required", "polish stays owed; nothing recorded it");
+      assert.equal(readJson(f.reportPath).stages.polish.skip_reason, LOCAL_PREVIEW_POLISH_REASON, "Polish stays advisory; nothing recorded it");
     } finally {
       await site.close();
     }
@@ -1963,7 +1993,7 @@ test("record build of different output with Polish recorded makes deploy require
     buildSite(f, " (build B)");
     recordOk(f, "build");
     const stages = readJson(f.reportPath).stages;
-    assert.equal(stages.polish.status, "required");
+    assert.equal(stages.polish.status, "skipped", "Polish is advisory on the local preview (F-157)");
     assert.equal(stages.deploy.status, "required");
     assert.equal(Object.hasOwn(stages.deploy, "outputs"), false, "the stale preview URL is not on the live stage");
     assert.equal(Object.hasOwn(stages.deploy, "evidence"), false);
@@ -3583,9 +3613,10 @@ test("F2.2-B11: after F2.1-W24, record polish with the pre-change evidence file,
 });
 
 // A completed Polish whose capture predates a brief or spec change
-// (input_change) still owes the full stage after a later page-only rebuild:
-// record build writes it required rather than keeping it as advisory.
-test("a page-only rebuild over a Polish an input change superseded still writes Polish required", async () => {
+// (input_change) is not kept as reviewed after a later page-only rebuild. On
+// the local preview record build writes it advisory (F-157), keeping the
+// input change so a later record polish still owes a fresh capture.
+test("a page-only rebuild over a Polish an input change superseded does not keep it as reviewed", async () => {
   await guardedLifecycle(async (f) => {
     await presentationChangeAfterQa(f, () => {});
     recordOk(f, "build", ["--deviation-reason", OPERATOR_DECISION]);
@@ -3596,7 +3627,9 @@ test("a page-only rebuild over a Polish an input change superseded still writes 
     writeFileSync(page, readFileSync(page, "utf8").replace("</h1>", " Revised copy</h1>"));
     const build = recordOk(f, "build");
     assert.ok(build.ready.some((line) => line.includes("this rebuild is page-only")), build.ready.join("\n"));
-    assert.equal(readJson(f.reportPath).stages.polish.status, "required");
+    const polish = readJson(f.reportPath).stages.polish;
+    assert.equal(polish.skip_reason, LOCAL_PREVIEW_POLISH_REASON);
+    assert.ok(Object.hasOwn(polish, "input_change"), "the input change stays on the advisory record");
   });
 });
 
