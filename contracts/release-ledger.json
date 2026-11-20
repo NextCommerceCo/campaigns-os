@@ -6103,6 +6103,27 @@
         }
       ],
       "entry_sha256": "c5edfb4dcde36ba172b8a26f0159b90b62223022467de100381b31dba4c873cd"
+    },
+    {
+      "id": "RL-0375",
+      "sequence": 359,
+      "date": "2026-11-20",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.3+agent.1",
+      "changelog_sha256": "973322c8afc130b99784e9626f1dae73ddebda6935856db24bed42e00b683ea8",
+      "agent_impact": "None expected: the lockfile resolves Playwright 1.65.1 within the range package.json already declares. Browser QA and polish capture run on Playwright 1.65.1; parse5 and commerce-signature/v1 hashes are unchanged.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Resolve Playwright 1.65.1."
+        }
+      ],
+      "entry_sha256": "4f854eac9465dfe49cdf500c93092101ce28df46ecb1ce781d8c37366b094c83"
     }
   ]
 }
