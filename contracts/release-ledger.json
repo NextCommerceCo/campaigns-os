@@ -6132,8 +6132,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.71.3+agent.4",
-      "changelog_sha256": "05691ff98baa943e44b6615cb3c44b9e97c93835cb196c0048f2a2327e1c1068",
-      "agent_impact": "On the local preview record build records Polish skipped with a skip_reason saying it is advisory there, instead of required and carried forward. A fresh session's next on the unchanged build reads nothing owed (no \"Change found: not classified\", no \"Owed stages: polish\" beside \"Pipeline complete\"), readback and doctor --ci read the same record, and polish capture or record polish after next has gone past Polish is not logged as a deviation. QA still reports the Polish evidence missing as a warning, and production QA still requires it. theme waive and a brief or spec change (record spec, or record build detecting one) make that advisory Polish required again, keeping input_change. Off the local preview, or under a theme waiver, record build writes Polish required as before.",
+      "changelog_sha256": "791fc6a5eebd97927522d611e77026bfc2e069b5cef57969f2b6e58db2469208",
+      "agent_impact": "On the local preview record build records Polish skipped with a skip_reason saying it is advisory there, instead of required and carried forward. A fresh session's next on the unchanged build reads nothing owed (no \"Change found: not classified\", no \"Owed stages: polish\" beside \"Pipeline complete\"), readback and doctor --ci read the same record, and polish capture or record polish after next has gone past Polish is not logged as a deviation. QA still reports the Polish evidence missing as a warning, and production QA still requires it. theme waive makes that advisory Polish required again; a brief or spec change recorded with record spec makes it required until the next record build, which records it advisory again and keeps input_change. Off the local preview, or under a theme waiver, record build writes Polish required as before.",
       "compatibility": "compatible",
       "migration": "none",
       "changes": [
@@ -6150,7 +6150,7 @@
           "summary": "next's deviation recommendation expects polish while Polish is advisory on the local preview; theme waive makes an advisory Polish required; the build prompt names the skipped record."
         }
       ],
-      "entry_sha256": "6ec29ff4009198286b276faae94166fc1332cbbca055a3bf66a07482c4cc33e0"
+      "entry_sha256": "ae1dfd2cea8be55118c033b37cac41da7723fba18459686a3b0878e8a0e7be55"
     }
   ]
 }

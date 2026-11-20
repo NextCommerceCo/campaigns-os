@@ -2485,10 +2485,9 @@ hand-editing `.campaign-runtime/` JSON:
 Each command also refuses a stage `next` has not reached: while doctor's
 prepare-build gate is set (`next` answers prepare-build) or while an earlier
 stage in the order below is not terminal. The exception is the one `next`
-makes: on the local preview, a polish doctor carries forward (never recorded
-for this build, whether or not `polish capture` ran) does not hold `record deploy`
-back, as it does not hold `next`; `record build` records that Polish advisory
-(`skipped` with its `skip_reason`) and QA reports the evidence missing. When every mapped page is template stock
+makes: on the local preview with no theme waiver, Polish is advisory. `record
+build` records it `skipped` with its `skip_reason`, so it does not hold `record
+deploy` back, as it does not hold `next`, and QA reports the evidence missing. When every mapped page is template stock
 (`skip_reason`), Polish is not applicable on any target: `polish capture` and
 `record polish` record `skipped` with evidence `result: "excluded"`,
 `reason_code: "template_stock"` and the reason that there is no design route to
