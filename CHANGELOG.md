@@ -2,6 +2,13 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.71.3+agent.6] - 2026-11-21
+
+### Added
+
+- `qa run` enters a funnel whose select page writes the cart with its own script and then links to checkout, through a control the page marks `data-qa-cart-entry`, which the SDK never reads, including when the configurator and the checkout are one page; the cart is whatever the page wrote, and a missing marker still fails by name (#804).
+
+
 ## [1.71.3+agent.5] - 2026-11-20
 
 ### Fixed

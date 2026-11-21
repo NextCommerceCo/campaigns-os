@@ -505,6 +505,34 @@ test("control choice prefers a visible SDK control, then a visible checkout link
   assert.match(chooseCartEntryControl([]).reason, /no add-to-cart control, forcePackageId checkout link, or bundle cards with a checkout button/);
 });
 
+// campaigns-os#804: a control the page marked data-qa-cart-entry, on a page
+// whose own script writes the cart. It is the page's declaration, so it wins
+// over every other kind; it carries no package, so --select-package is
+// refused rather than satisfied by some other control.
+const scriptControl = { index: 0, kind: "script_cart", visible: true, text: "Continue", package_id: null, quantity: null, next_url: "/checkout/" };
+
+test("a data-qa-cart-entry control wins when no package is requested, and --select-package is refused on it", () => {
+  assert.equal(chooseCartEntryControl([visibleAction, link, scriptControl]).control, scriptControl);
+  const hiddenScript = { ...scriptControl, index: 1, visible: false };
+  assert.equal(chooseCartEntryControl([hiddenScript, scriptControl]).control, scriptControl);
+  const refused = chooseCartEntryControl([scriptControl], [{ packageId: "31", quantity: 1 }]);
+  assert.equal(refused.control, null);
+  assert.match(refused.reason, /--select-package 31: no cart-entry control on the entry page carries package 31/);
+  assert.match(chooseCartEntryControl([]).reason, /no control marked data-qa-cart-entry/);
+});
+
+test("a hidden data-qa-cart-entry control never outranks a visible control, and --select-package goes to a control carrying the ref", () => {
+  const hiddenScript = { ...scriptControl, visible: false };
+  assert.equal(chooseCartEntryControl([hiddenScript, visibleAction]).control, visibleAction);
+  assert.equal(chooseCartEntryControl([hiddenScript, checkoutButton]).control, checkoutButton);
+  // Nothing visible of any kind: the hidden-only rule picks the declared marker.
+  assert.equal(chooseCartEntryControl([hiddenAction, hiddenScript]).control, hiddenScript);
+  assert.equal(chooseCartEntryControl([hiddenScript]).control, hiddenScript);
+  // The marker carries no package; a control carrying the requested ref is used.
+  assert.equal(chooseCartEntryControl([scriptControl, link], [{ packageId: "3", quantity: 1 }]).control, link);
+  assert.match(chooseCartEntryControl([scriptControl, link], [{ packageId: "9", quantity: 1 }]).reason, /--select-package 9: no cart-entry control on the entry page carries package 9/);
+});
+
 // A select page (#641): bundle cards plus a checkout button. The button carries
 // no package; --select-package names the bundle card the runner clicks first.
 const checkoutButton = { kind: "checkout_button", index: 0, visible: true, text: "Checkout", package_id: null, bundle_package_ids: ["10", "11"], quantity: 1 };
@@ -755,6 +783,28 @@ test("a multi-path plan on a landing-entry family probes once; later paths go st
   assert.equal(secondRun.entry.evidence.selection_surface_probe, "reused");
   assert.deepEqual(first.loads, [checkout.url, landing.url]);
   assert.deepEqual(second.loads, [landing.url], "no checkout load at all on the second path");
+});
+
+// campaigns-os#804, same page: a selector-less checkout that carries its own
+// data-qa-cart-entry control is entered there. The probe's load is the only
+// checkout load on the first path; a later path that reuses the probe answer
+// opens the checkout once, for entry, and opened_checkout keeps it.
+test("a same-page script-cart checkout is entered where it is loaded, once per path, and never re-opened", async () => {
+  const MARKED = [{ kind: "script_cart", index: 0, text: "Use this size", package_id: null, visible: true, quantity: null }];
+  const selectorProbeCache = createSelectorProbeCache();
+  const first = fakePage({ surface: NO_SURFACE, controls: MARKED });
+  const second = fakePage({ surface: NO_SURFACE, controls: MARKED });
+  const firstRun = await runEntryAndOpen(first, { entryPage: null, selectorProbeCache });
+  const secondRun = await runEntryAndOpen(second, { entryPage: null, selectorProbeCache });
+  for (const run of [firstRun, secondRun]) {
+    assert.equal(run.entry.entered, true);
+    assert.equal(run.entry.same_page, true);
+    assert.equal(run.entry.evidence.landing_resolution, "same_page");
+    assert.equal(run.opened, "cart written on the checkout page itself; not re-opened");
+  }
+  assert.equal(secondRun.entry.evidence.selection_surface_probe, "reused");
+  assert.deepEqual(first.loads, [checkout.url]);
+  assert.deepEqual(second.loads, [checkout.url]);
 });
 
 test("a probe whose page-side read failed is tagged as failed, not read as an empty checkout, and is not remembered", async () => {

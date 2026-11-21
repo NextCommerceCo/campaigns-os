@@ -1799,7 +1799,36 @@ button: the SDK's `[data-next-action="checkout"]` or a plain link into the
 checkout URL. There the swap-mode selector already wrote the cart and the SDK
 persists it, so the runner keeps the pre-selected card, or with
 `--select-package <ref>` clicks the bundle card carrying that ref first,
-strictly, before the button. A control
+strictly, before the button. A page that writes the cart with its own
+script (`next.swapCart`, as a made-to-measure configurator does when the
+package depends on the options, a surcharge quantity is computed, and lines
+carry properties) and then follows a plain link or its own navigation marks
+that control `data-qa-cart-entry`. The SDK reads no `data-qa-*` attribute, so
+the marker attaches no SDK handler and leaves the SDK's query-parameter
+transfer on the link intact; a page should not carry
+`data-next-action="add-to-cart"` and then neutralise it for QA. When no
+package is requested, a visible marked control is chosen ahead of every other
+kind (a hidden one only when no control of any kind is visible); the runner clicks it, lets the
+page write the cart and navigate, and reads the SDK cart on arrival
+(`cart_after_entry`). The cart is whatever the page wrote: the empty-cart guard
+checks it before submit and the order is reconciled against the checkout
+display, as on every other shape. Such a control carries no package, so
+under `--select-package` only another control carrying that ref can be used,
+and a page offering none is refused by name. When the configurator and the
+checkout are one page, the marked control sits on the checkout itself: the
+probe that found no selection surface also reads the checkout's
+`data-qa-cart-entry` controls, and when there is one the runner clicks it there
+(visible first, by the same rule), lets the page write the cart, and stays on
+the checkout (a navigation the click causes is followed while it stays on the
+checkout URL; leaving it is `cart_entry_no_navigation`). The step is recorded
+as a `script_cart` entry with `landing_resolution: same_page` and the same
+`cart_after_entry` read, `opened_checkout` keeps the page (`cart written on the
+checkout page itself; not re-opened`), and the empty-cart guard and display
+reconciliation check the cart as before. The checkout's own marker is used
+ahead of an upstream entry page, except under `--select-package` when an
+upstream page exists, since a marked control carries no package. Without a
+marker, a selector-less checkout with no page before it still fails with
+`cart_entry_unresolved`. A control
 spelled any other way is not a cart entry, so a page that offers nothing else
 fails the step by name (`cart_entry_control_missing`) rather than clicking a
 control the SDK never wired and waiting out the navigation budget. A visible
@@ -1817,10 +1846,14 @@ cart away. `opened_checkout` then records the arrival instead of re-opening.
 
 Evidence: `landing_url`, `landing_page_id`, `landing_page_type`,
 `landing_resolution` (`routes_into_checkout`, `entry_page_fallback`,
-`first_page_fallback`), `control_text`, `control_kind` (`add_to_cart`,
-`checkout_link`, or `checkout_button`), `package_id`, `bundle_card_selection`
+`first_page_fallback`, or `same_page` for a marked control on the checkout itself), `control_text`, `control_kind` (`add_to_cart`,
+`checkout_link`, `checkout_button`, or `script_cart`), `package_id`, `bundle_card_selection`
 when `--select-package` clicked a bundle card, `variant_selections` when the
-runner chose slot variants (below), `sdk_ready`, `arrived_url`, the
+runner chose slot variants (below), `cart_after_entry` for a `script_cart` entry (the SDK cart read on
+arrival, after waiting for the SDK: `readable`, `source`, `count`,
+`line_count`, `package_ids`; `line_count` and `package_ids` are filled only
+when the debugger cart store is present, and an unreadable read is
+`readable: false`, with `error` when the read itself threw), `sdk_ready`, `arrived_url`, the
 `checkout_selection_surface` probe result, `selection_surface_probe`
 (`loaded`, `reused`, or `failed`), and `selection_surface_probe_error` when it
 failed. The failure codes are

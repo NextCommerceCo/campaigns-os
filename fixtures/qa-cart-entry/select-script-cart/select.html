@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Configure your blind</title>
+<style>body{font-family:sans-serif;margin:24px} label{display:block;margin:8px 0} iframe{width:200px;height:32px;border:1px solid #ccc}</style>
+</head>
+<body data-fixture-reset-cart>
+<main>
+  <h1>Configure your blind</h1>
+  <!-- A made-to-measure configurator: the package depends on the option, a
+       surcharge line's quantity is computed from the typed width, and each
+       line carries properties. No SDK cart-entry attribute anywhere: the
+       page writes the cart with next.swapCart and the plain link moves on. -->
+  <label>Fabric
+    <select id="fabric"><option value="31">Linen</option><option value="33">Blackout</option></select>
+  </label>
+  <label>Width (cm) <input id="width" type="number" value="180"></label>
+  <a href="/x/checkout/?utm_source=fixture" data-qa-cart-entry>Continue</a>
+</main>
+<script src="/sdk-shim.js"></script>
+<script>
+  document.querySelector("[data-qa-cart-entry]").addEventListener("click", function (event) {
+    event.preventDefault();
+    var link = event.currentTarget;
+    var width = Number(document.getElementById("width").value) || 0;
+    var surcharge = Math.max(0, Math.ceil((width - 100) / 30));
+    var props = { width_cm: String(width) };
+    window.next.swapCart([
+      { packageId: document.getElementById("fabric").value, quantity: 1, properties: props },
+      { packageId: "32", quantity: surcharge, properties: props },
+    ]).then(function () { location.href = link.href; });
+  });
+</script>
+</body>
+</html>

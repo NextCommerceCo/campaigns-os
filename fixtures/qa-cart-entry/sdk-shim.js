@@ -25,6 +25,8 @@
 //      `data-fixture-step-requires` are filled (the SDK's step validation),
 //      and `body[data-fixture-main-package]` fills an empty cart the way a
 //      step page's main package does.
+//   7. `window.next.swapCart(items)` replaces the cart with the page's own
+//      lines (campaigns-os#804).
 //
 // The cart persists in localStorage so it survives the SDK-driven navigation.
 (function () {
@@ -100,9 +102,18 @@
   // `getCartCount()` is the store's totalQuantity. `getCartData().cartLines`
   // is deliberately not provided: on the real SDK it is always [] and the
   // runner must never read it (campaign-cart#36).
+  //
+  // `swapCart(items)` replaces the cart with the page's own lines, the way a
+  // configurator page writes a cart no SDK control can express.
   window.next = {
     getCartCount: function () {
       return read().reduce(function (sum, item) { return sum + (Number(item.quantity) || 0); }, 0);
+    },
+    swapCart: function (items) {
+      write((items || []).filter(function (item) { return Number(item.quantity) > 0; }).map(function (item) {
+        return { packageId: String(item.packageId), quantity: Number(item.quantity), properties: item.properties || null };
+      }));
+      return Promise.resolve();
     },
   };
   // The debugger's cart store, the only public place line items are readable.
