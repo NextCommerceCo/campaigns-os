@@ -1814,7 +1814,21 @@ page write the cart and navigate, and reads the SDK cart on arrival
 checks it before submit and the order is reconciled against the checkout
 display, as on every other shape. Such a control carries no package, so
 under `--select-package` only another control carrying that ref can be used,
-and a page offering none is refused by name. A control
+and a page offering none is refused by name. When the configurator and the
+checkout are one page, the marked control sits on the checkout itself: the
+probe that found no selection surface also reads the checkout's
+`data-qa-cart-entry` controls, and when there is one the runner clicks it there
+(visible first, by the same rule), lets the page write the cart, and stays on
+the checkout (a navigation the click causes is followed while it stays on the
+checkout URL; leaving it is `cart_entry_no_navigation`). The step is recorded
+as a `script_cart` entry with `landing_resolution: same_page` and the same
+`cart_after_entry` read, `opened_checkout` keeps the page (`cart written on the
+checkout page itself; not re-opened`), and the empty-cart guard and display
+reconciliation check the cart as before. The checkout's own marker is used
+ahead of an upstream entry page, except under `--select-package` when an
+upstream page exists, since a marked control carries no package. Without a
+marker, a selector-less checkout with no page before it still fails with
+`cart_entry_unresolved`. A control
 spelled any other way is not a cart entry, so a page that offers nothing else
 fails the step by name (`cart_entry_control_missing`) rather than clicking a
 control the SDK never wired and waiting out the navigation budget. A visible
@@ -1832,7 +1846,7 @@ cart away. `opened_checkout` then records the arrival instead of re-opening.
 
 Evidence: `landing_url`, `landing_page_id`, `landing_page_type`,
 `landing_resolution` (`routes_into_checkout`, `entry_page_fallback`,
-`first_page_fallback`), `control_text`, `control_kind` (`add_to_cart`,
+`first_page_fallback`, or `same_page` for a marked control on the checkout itself), `control_text`, `control_kind` (`add_to_cart`,
 `checkout_link`, `checkout_button`, or `script_cart`), `package_id`, `bundle_card_selection`
 when `--select-package` clicked a bundle card, `variant_selections` when the
 runner chose slot variants (below), `cart_after_entry` for a `script_cart` entry (the SDK cart read on

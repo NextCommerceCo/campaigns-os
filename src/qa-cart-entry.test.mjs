@@ -785,6 +785,28 @@ test("a multi-path plan on a landing-entry family probes once; later paths go st
   assert.deepEqual(second.loads, [landing.url], "no checkout load at all on the second path");
 });
 
+// campaigns-os#804, same page: a selector-less checkout that carries its own
+// data-qa-cart-entry control is entered there. The probe's load is the only
+// checkout load on the first path; a later path that reuses the probe answer
+// opens the checkout once, for entry, and opened_checkout keeps it.
+test("a same-page script-cart checkout is entered where it is loaded, once per path, and never re-opened", async () => {
+  const MARKED = [{ kind: "script_cart", index: 0, text: "Use this size", package_id: null, visible: true, quantity: null }];
+  const selectorProbeCache = createSelectorProbeCache();
+  const first = fakePage({ surface: NO_SURFACE, controls: MARKED });
+  const second = fakePage({ surface: NO_SURFACE, controls: MARKED });
+  const firstRun = await runEntryAndOpen(first, { entryPage: null, selectorProbeCache });
+  const secondRun = await runEntryAndOpen(second, { entryPage: null, selectorProbeCache });
+  for (const run of [firstRun, secondRun]) {
+    assert.equal(run.entry.entered, true);
+    assert.equal(run.entry.same_page, true);
+    assert.equal(run.entry.evidence.landing_resolution, "same_page");
+    assert.equal(run.opened, "cart written on the checkout page itself; not re-opened");
+  }
+  assert.equal(secondRun.entry.evidence.selection_surface_probe, "reused");
+  assert.deepEqual(first.loads, [checkout.url]);
+  assert.deepEqual(second.loads, [checkout.url]);
+});
+
 test("a probe whose page-side read failed is tagged as failed, not read as an empty checkout, and is not remembered", async () => {
   const selectorProbeCache = createSelectorProbeCache();
   const broken = fakePage({ surface: NO_SURFACE, controls: ADD_TO_CART });

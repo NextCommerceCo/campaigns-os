@@ -194,8 +194,9 @@ test("the landing entry load carries ?currency=<CODE>: from the tagged entry URL
   const taggedLanding = "https://shop.example.com/offer/?utm_source=newsletter&utm_campaign=spring+sale&currency=GBP";
   assert.equal(entryPage.url, taggedLanding);
 
-  // Probe loaded (first load, carries it), then the entry page as tagged.
-  const page = fakeRunnerPage([NO_SURFACE, []]);
+  // Probe loaded (first load, carries it), then the entry page as tagged. The
+  // fresh probe also reads the checkout's data-qa-cart-entry controls (none).
+  const page = fakeRunnerPage([NO_SURFACE, [], []]);
   const outcome = await enterCart({ page, args: runArgs("GBP"), entryPage, currencyLoad: pathCurrencyLoad(runArgs("GBP")) });
   assert.equal(outcome.error?.code, "cart_entry_control_missing");
   assert.deepEqual(page.loads, [`${CHECKOUT_URL}?currency=GBP`, taggedLanding]);
@@ -209,7 +210,7 @@ test("the landing entry load carries ?currency=<CODE>: from the tagged entry URL
   assert.deepEqual(reused.loads, ["https://shop.example.com/offer/?utm_source=newsletter&utm_campaign=spring+sale&currency=GBP"]);
 
   // Without --currency the same two paths load the resolved URLs.
-  const plain = fakeRunnerPage([NO_SURFACE, []]);
+  const plain = fakeRunnerPage([NO_SURFACE, [], []]);
   await enterCart({ page: plain, args: { "browser-timeout": 1000 }, entryPage: { page_id: "landing", url: LANDING_URL }, currencyLoad: pathCurrencyLoad({ "browser-timeout": 1000 }) });
   assert.deepEqual(plain.loads, [CHECKOUT_URL, LANDING_URL]);
 });

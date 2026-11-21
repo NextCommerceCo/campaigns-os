@@ -4515,9 +4515,14 @@ function checkoutUrlPredicate(checkoutUrl) {
 // failed says nothing about the page and must not decide the later paths.
 function createSelectorProbeCache() {
   const surfaces = new Map();
+  // The data-qa-cart-entry controls a selector-less checkout renders itself
+  // (campaigns-os#804, same page), read on the same probe load.
+  const markers = new Map();
   return {
     get: (checkoutUrl) => surfaces.get(canonicalHttpUrl(String(checkoutUrl))) || null,
     set: (checkoutUrl, surface) => { surfaces.set(canonicalHttpUrl(String(checkoutUrl)), surface); },
+    getMarkers: (checkoutUrl) => markers.get(canonicalHttpUrl(String(checkoutUrl))) || null,
+    setMarkers: (checkoutUrl, controls) => { markers.set(canonicalHttpUrl(String(checkoutUrl)), controls); },
   };
 }
 
@@ -4534,7 +4539,9 @@ async function openCheckoutForPath({ page, checkoutPage, entry, args, budget = n
   if (enteredViaLanding) {
     await page.waitForLoadState("networkidle", { timeout: DEFAULT_SETTLE_TIMEOUT_MS }).catch(() => {});
     await waitForSdkDisplayReady(page, stepLeft ? stepLeft() : null);
-    return "arrived from the entry page via SDK navigation; not re-opened";
+    return entry.same_page
+      ? "cart written on the checkout page itself; not re-opened"
+      : "arrived from the entry page via SDK navigation; not re-opened";
   }
   if (checkoutUrlPredicate(checkoutPage.url)(safePageUrl(page))) {
     return "already on checkout from the selector probe; not re-opened";
@@ -4584,6 +4591,27 @@ async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPack
       skip: `checkout carries its own package selection surface (${summarizeSelectionSurface(surface)}); cart is entered on checkout${cached ? " (probe answer reused from an earlier path of this run)" : ""}`,
       evidence: { checkout_selection_surface: surface, ...probeEvidence },
     };
+  }
+  // Same-page entry (campaigns-os#804): the checkout itself carries the
+  // control its own script writes the cart from, marked data-qa-cart-entry.
+  // The page declared it, so it is used ahead of an upstream entry page,
+  // except that a --select-package ref goes to an upstream page's controls
+  // when there is one (a marked control carries no package).
+  const readCheckoutControls = () => page.evaluate(cartEntryControlsScript(), {
+    selector: CART_ENTRY_CONTROL_SELECTOR,
+    checkoutUrl: checkoutPage.url,
+    scriptControlSelector: CART_ENTRY_SCRIPT_CONTROL_SELECTOR,
+  }).then((controls) => (Array.isArray(controls) ? controls.filter((control) => control.kind === "script_cart") : []), () => []);
+  let samePageMarkers = cached ? selectorProbeCache?.getMarkers?.(checkoutPage.url) || [] : await readCheckoutControls();
+  if (!cached && probe === "loaded") selectorProbeCache?.setMarkers?.(checkoutPage.url, samePageMarkers);
+  if (samePageMarkers.length && !(selectedPackages.length && entryPage?.url)) {
+    if (cached) {
+      // This path skipped the probe load; the checkout opens here, once, and
+      // is not re-opened by opened_checkout.
+      await gotoAndSettle(page, checkoutPage.url, args, tracking, currencyLoad, stepLeft);
+      samePageMarkers = await readCheckoutControls();
+    }
+    return enterOnCheckoutPage({ page, checkoutPage, controls: samePageMarkers, selectedPackages, stepLeft, surface, probeEvidence, tracking });
   }
   if (!entryPage?.url && startsOnCheckoutStep) {
     // A path that begins on its first checkout_step has no page before it to
@@ -4671,18 +4699,8 @@ async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPack
   await page.waitForLoadState("networkidle", { timeout: DEFAULT_SETTLE_TIMEOUT_MS }).catch(() => {});
   await page.waitForTimeout(750);
 
-  // A page that wrote its own cart (campaigns-os#804) names no package in
-  // advance: the expected cart is what the page wrote, read here on arrival
-  // with the same read the submit guard uses.
-  // Like the submit guard, the read waits (bounded) for the arrival page's
-  // SDK, so a slow boot is not recorded as an unreadable or empty cart. The
-  // control still carries no package: one cart line is not proof of what was
-  // entered (it may be a surcharge), so the ids stay in cart_after_entry only.
   const scripted = control.kind === "script_cart";
-  if (scripted) await waitForSdkReady(page, Math.max(0, Math.min(stepLeft(), DEFAULT_SETTLE_TIMEOUT_MS)));
-  const cartAfterEntry = scripted
-    ? await page.evaluate(sdkCartSnapshotScript()).catch((error) => ({ readable: false, error: error?.message || String(error) }))
-    : null;
+  const cartAfterEntry = scripted ? await scriptCartAfterEntry(page, stepLeft) : null;
   const handOff = scripted ? "the page's own script wrote the cart and navigated to checkout" : "SDK navigated to checkout";
 
   return {
@@ -4703,6 +4721,66 @@ async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPack
       ...(cardSelection ? { bundle_card_selection: cardSelection } : {}),
       ...(variantSelections.length ? { variant_selections: variantSelections } : {}),
       ...(cartAfterEntry ? { cart_after_entry: cartAfterEntry } : {}),
+      sdk_ready: sdkReady,
+      arrived_url: redactUrlQuery(safePageUrl(page)),
+      checkout_selection_surface: surface,
+      ...probeEvidence,
+    },
+  };
+}
+
+// A page that wrote its own cart (campaigns-os#804) names no package in
+// advance: the expected cart is what the page wrote, read once the click has
+// settled with the same read the submit guard uses. Like the guard, the read
+// waits (bounded) for the page's SDK, so a slow boot is not recorded as an
+// unreadable or empty cart. The control still carries no package: one cart
+// line is not proof of what was entered (it may be a surcharge), so the ids
+// stay in cart_after_entry only.
+async function scriptCartAfterEntry(page, stepLeft) {
+  await waitForSdkReady(page, Math.max(0, Math.min(stepLeft(), DEFAULT_SETTLE_TIMEOUT_MS)));
+  return page.evaluate(sdkCartSnapshotScript()).catch((error) => ({ readable: false, error: error?.message || String(error) }));
+}
+
+// Same-page entry body: click the checkout's own data-qa-cart-entry control
+// (visible first, by chooseCartEntryControl), let the page's script write the
+// cart, and stay on the checkout. A navigation the click causes is followed
+// as long as it lands on the checkout URL; anywhere else is a named failure,
+// since the checkout form the ladder drives is no longer there.
+async function enterOnCheckoutPage({ page, checkoutPage, controls, selectedPackages, stepLeft, surface, probeEvidence, tracking }) {
+  const choice = chooseCartEntryControl(controls, selectedPackages);
+  if (!choice.control) {
+    throw codedError(CART_ENTRY_CODES.ENTRY_CONTROL_MISSING, `${choice.reason} (checkout ${redactUrlQuery(checkoutPage.url)})`);
+  }
+  const control = choice.control;
+  const sdkReady = await waitForSdkReady(page, Math.max(0, Math.min(stepLeft(), DEFAULT_SETTLE_TIMEOUT_MS)));
+  await tracking?.readDocument(page);
+  const target = page.locator(CART_ENTRY_SCRIPT_CONTROL_SELECTOR).nth(control.index);
+  const perpetual = await scrollControlIntoView(target);
+  await clickControl(target, { timeout: 8000, perpetual });
+  await page.waitForLoadState("networkidle", { timeout: DEFAULT_SETTLE_TIMEOUT_MS }).catch(() => {});
+  await page.waitForTimeout(750);
+  if (!checkoutUrlPredicate(checkoutPage.url)(safePageUrl(page))) {
+    throw codedError(
+      CART_ENTRY_CODES.ENTRY_NO_NAVIGATION,
+      `clicked "${control.text || "(no text)"}" on the checkout page but the page left ${redactUrlQuery(checkoutPage.url)} (now at ${redactUrlQuery(safePageUrl(page)) || "(unknown)"})`,
+    );
+  }
+  const cartAfterEntry = await scriptCartAfterEntry(page, stepLeft);
+  return {
+    entered: true,
+    same_page: true,
+    package_id: null,
+    selected_cards: [],
+    detail: `entered on the checkout page itself: clicked "${control.text || "(no text)"}", the page's own script wrote the cart on the same page`,
+    evidence: {
+      landing_url: redactUrlQuery(checkoutPage.url),
+      landing_page_id: checkoutPage.page_id || null,
+      landing_page_type: checkoutPage.page_type || null,
+      landing_resolution: "same_page",
+      control_text: control.text || null,
+      control_kind: control.kind,
+      package_id: null,
+      cart_after_entry: cartAfterEntry,
       sdk_ready: sdkReady,
       arrived_url: redactUrlQuery(safePageUrl(page)),
       checkout_selection_surface: surface,

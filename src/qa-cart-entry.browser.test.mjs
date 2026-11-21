@@ -738,3 +738,37 @@ browserTest("select → checkout with a script-written cart and --select-package
   assert.match(byName.entered_via_landing.error, /^cart_entry_control_missing: --select-package 31: no cart-entry control on the entry page carries package 31/);
   assert.equal(server.orders.length, 0);
 });
+
+// campaigns-os#804, same page: the configurator and the checkout form are one
+// page and no page precedes it. The marker on the checkout itself is the cart
+// entry: the runner clicks it there, the page writes the cart and stays, and
+// the ladder continues on the same page without re-opening it.
+browserTest("same-page script cart: the data-qa-cart-entry control on the checkout is clicked there, and the page's own cart reaches the order", async () => {
+  const { steps, assertion, server } = await runFixture("checkout-script-cart", { withLanding: false });
+  const byName = stepsByName(steps);
+  assert.equal(byName.entered_via_landing.status, "ok", byName.entered_via_landing.error);
+  assert.equal(byName.entered_via_landing.evidence.control_kind, "script_cart");
+  assert.equal(byName.entered_via_landing.evidence.landing_resolution, "same_page");
+  assert.equal(byName.entered_via_landing.evidence.landing_page_type, "checkout");
+  assert.equal(byName.entered_via_landing.evidence.package_id, null);
+  assert.match(byName.entered_via_landing.detail, /entered on the checkout page itself: clicked "Use this size", the page's own script wrote the cart on the same page/);
+  assert.deepEqual(byName.entered_via_landing.evidence.cart_after_entry, {
+    readable: true, source: "window.next", count: 4, line_count: 2, package_ids: ["31", "32"],
+  });
+  assert.equal(byName.opened_checkout.status, "ok");
+  assert.match(byName.opened_checkout.detail, /cart written on the checkout page itself; not re-opened/);
+  assert.equal(server.pageLoads.checkout, 1, "the probe's load is the only checkout load: nothing re-opened it after the cart was written");
+  assert.equal(byName.order_submitted.status, "ok", byName.order_submitted.error);
+  assert.deepEqual(byName.order_submitted.evidence.cart_before_submit.package_ids, ["31", "32"]);
+  assert.equal(server.orders.length, 1);
+  assert.deepEqual(server.orders[0].lines.map((line) => [line.product_title, line.quantity]), [["Package 31", 1], ["Package 32", 3]]);
+  assert.equal(assertion.status, "pass", assertion.actual);
+});
+
+browserTest("same-page script cart without the marker: still a named failure at the entry step, nothing submitted", async () => {
+  const { steps, server } = await runFixture("checkout-script-cart-unmarked", { withLanding: false });
+  const byName = stepsByName(steps);
+  assert.equal(byName.entered_via_landing.status, "failed");
+  assert.match(byName.entered_via_landing.error, /^cart_entry_unresolved: /);
+  assert.equal(server.orders.length, 0);
+});
