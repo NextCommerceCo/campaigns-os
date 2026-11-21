@@ -6226,6 +6226,135 @@
         }
       ],
       "entry_sha256": "d7af21743d4b0fc3a7a0568cce50b2a4480cd8e0acbc4e733d9bb13859431e18"
+    },
+    {
+      "id": "RL-0380",
+      "sequence": 364,
+      "date": "2026-11-21",
+      "kind": "release",
+      "surface_version": "1.71.4",
+      "changelog_section": "1.71.4",
+      "changelog_sha256": "8b001b7ae662cbb2a0e44c3089e2d0a71004e469a19aeb60fadb02f5ebb94cc3",
+      "agent_impact": "The 1.71.4 package publishes the changes since 1.71.3 (1.71.3+agent.1 and agent.3 to agent.6; there is no agent.2). qa run --test-order enters a funnel whose select page writes the cart with its own script when the page marks that control data-qa-cart-entry, including when the configurator and the checkout are one page; remove any data-next-action=\"add-to-cart\" a page carried only for QA and mark the control data-qa-cart-entry instead. QA blocks when a test order's accepted upsell was charged a price other than the CampaignSpec offer's: fix the page (carry the voucher) and re-run. browser-order-display-parity counts a charged checkout bump tagged is_upsell. While the current build lacks a test order in a listed currency, next --json reports stage \"qa\" with the owed qa_run_currency runs as its next_actions: run them, then call next again. On the local preview record build records Polish skipped with a skip_reason (advisory), so next on an unchanged build reads nothing owed; theme waive or record spec make it required again. Browser QA and polish capture run on Playwright 1.65.1. Refresh skills to 1.71.4+skills.1 (a revision restamp; the skill text is otherwise as in 1.71.3+skills.1).",
+      "compatibility": "compatible",
+      "migration": "Update the pinned package to 1.71.4 and run install-skills to get 1.71.4+skills.1 before starting a fresh session.",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "compatibility.json",
+          "surface_entry": "compatibility.json",
+          "summary": "Version advances to 1.71.4."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "surface_version advances to 1.71.4 for the package release."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Install pins @nextcommerce/campaigns-os@1.71.4."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerated at surface 1.71.4."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerated at surface 1.71.4."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Examples name 1.71.4+skills.1."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Both package version stamps advance to 1.71.4."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Package version advances to 1.71.4."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Bundle advances to 1.71.4+skills.1 and each bundled skill one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.71.4+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.71.4+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.71.4+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.71.4+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.71.4+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.71.4+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.71.4+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.71.4+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.71.4+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-sdk-bump/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.71.4+skills.1."
+        }
+      ],
+      "entry_sha256": "c2874e841a91f3c12106bb754baf3d59abc9b6ebc3346a0fd9eb5e04398e5155"
     }
   ]
 }
