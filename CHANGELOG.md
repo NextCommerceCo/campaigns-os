@@ -2,6 +2,24 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.71.4] - 2026-11-21
+
+This release packages the five `1.71.3+agent` sections below (there is no `agent.2`), the fixes from the eighth simulated build batch, one reported QA gap and a Playwright patch. For a campaign, `qa run --test-order` can now enter a funnel whose select page writes the cart with its own script, through a control the page marks `data-qa-cart-entry`, including when the configurator and the checkout are one page. QA blocks when a test order's accepted upsell was charged a price other than the CampaignSpec offer's, and counts a charged checkout bump tagged `is_upsell`. While a listed currency still owes a test order, `next --json` reports `stage: "qa"` and the owed runs instead of `done`. On the local preview `record build` records Polish as advisory (`skipped` with a `skip_reason`), so a fresh session's `next` on an unchanged build no longer says Polish is owed. The lockfile moves Playwright to 1.65.1. No breaking changes and no schema or contract changes. To take it, pin `@nextcommerce/campaigns-os@1.71.4` and refresh the installed skills to `1.71.4+skills.1`.
+
+### Added
+
+- Publishes `1.71.3+agent.6`: `qa run` enters a funnel whose select page writes the cart with its own script and then links to checkout, through a control marked `data-qa-cart-entry`, including when the configurator and the checkout are one page (#804, #805).
+
+### Changed
+
+- Publishes `1.71.3+agent.1`: the lockfile moves Playwright from 1.65.0 to 1.65.1, within the declared range; parse5 stays pinned at 8.0.1 (#799).
+
+### Fixed
+
+- Publishes `1.71.3+agent.3`: while the current build has no test order in a listed currency, `next --json` reports `stage: "qa"`, a reason naming the owed currencies and the owed `qa_run_currency` runs as its `next_actions` (#801).
+- Publishes `1.71.3+agent.4`: QA blocks when a test order's accepted upsell was charged a price other than the CampaignSpec offer's, and `browser-order-display-parity` counts a charged checkout bump tagged `is_upsell` (#802).
+- Publishes `1.71.3+agent.5`: on the local preview `record build` records Polish advisory, `skipped` with a `skip_reason`, so `next` on an unchanged build no longer reports Polish owed; `theme waive` and `record spec` make it required again (#803).
+
 ## [1.71.3+agent.6] - 2026-11-21
 
 ### Added
