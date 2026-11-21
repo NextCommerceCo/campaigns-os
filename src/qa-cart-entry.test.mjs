@@ -521,6 +521,18 @@ test("a data-qa-cart-entry control wins when no package is requested, and --sele
   assert.match(chooseCartEntryControl([]).reason, /no control marked data-qa-cart-entry/);
 });
 
+test("a hidden data-qa-cart-entry control never outranks a visible control, and --select-package goes to a control carrying the ref", () => {
+  const hiddenScript = { ...scriptControl, visible: false };
+  assert.equal(chooseCartEntryControl([hiddenScript, visibleAction]).control, visibleAction);
+  assert.equal(chooseCartEntryControl([hiddenScript, checkoutButton]).control, checkoutButton);
+  // Nothing visible of any kind: the hidden-only rule picks the declared marker.
+  assert.equal(chooseCartEntryControl([hiddenAction, hiddenScript]).control, hiddenScript);
+  assert.equal(chooseCartEntryControl([hiddenScript]).control, hiddenScript);
+  // The marker carries no package; a control carrying the requested ref is used.
+  assert.equal(chooseCartEntryControl([scriptControl, link], [{ packageId: "3", quantity: 1 }]).control, link);
+  assert.match(chooseCartEntryControl([scriptControl, link], [{ packageId: "9", quantity: 1 }]).reason, /--select-package 9: no cart-entry control on the entry page carries package 9/);
+});
+
 // A select page (#641): bundle cards plus a checkout button. The button carries
 // no package; --select-package names the bundle card the runner clicks first.
 const checkoutButton = { kind: "checkout_button", index: 0, visible: true, text: "Checkout", package_id: null, bundle_package_ids: ["10", "11"], quantity: 1 };

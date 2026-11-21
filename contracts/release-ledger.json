@@ -6214,7 +6214,7 @@
       "surface_version": null,
       "changelog_section": "1.71.3+agent.6",
       "changelog_sha256": "c9c96eee541b804a9314cfb1e2f629ce3e2bf478fcc8d987881f3c11ad3e2a54",
-      "agent_impact": "qa run --test-order enters a funnel whose select or landing page writes the cart with its own script (for example next.swapCart with an option-dependent package, a computed surcharge quantity and line properties) and then follows a plain link or its own navigation to checkout, when the page marks that control data-qa-cart-entry. The SDK reads no data-qa-* attribute, so the marker attaches no SDK handler and the SDK query-parameter transfer on the link is kept. Remove any data-next-action=\"add-to-cart\" that a page carried only for QA and then neutralised, and mark the control data-qa-cart-entry instead. A marked control is chosen ahead of every other cart-entry kind; entered_via_landing records control_kind script_cart and cart_after_entry (the SDK cart read on arrival). The cart is whatever the page wrote: the empty-cart guard and the checkout-display reconciliation check it as on every other shape. --select-package is refused on such a control with cart_entry_control_missing, since the page decides the package. A page with no recognised control and no marker still fails with cart_entry_control_missing.",
+      "agent_impact": "qa run --test-order enters a funnel whose select or landing page writes the cart with its own script (for example next.swapCart with an option-dependent package, a computed surcharge quantity and line properties) and then follows a plain link or its own navigation to checkout, when the page marks that control data-qa-cart-entry. The SDK reads no data-qa-* attribute, so the marker attaches no SDK handler and the SDK query-parameter transfer on the link is kept. Remove any data-next-action=\"add-to-cart\" that a page carried only for QA and then neutralised, and mark the control data-qa-cart-entry instead. When no package is requested, a visible marked control is chosen ahead of every other cart-entry kind (a hidden one only when no control of any kind is visible); entered_via_landing records control_kind script_cart and cart_after_entry (the SDK cart read on arrival, after waiting for the SDK; package_id stays null). The cart is whatever the page wrote: the empty-cart guard and the checkout-display reconciliation check it as on every other shape. A marked control carries no package, so under --select-package only another control carrying that ref can be used, and a page offering none is refused with cart_entry_control_missing. A page with no recognised control and no marker still fails with cart_entry_control_missing.",
       "compatibility": "compatible",
       "migration": "none",
       "changes": [
@@ -6225,7 +6225,7 @@
           "summary": "The cart-entry step recognises a control marked data-qa-cart-entry on a page whose own script writes the cart (control_kind script_cart, cart_after_entry evidence)."
         }
       ],
-      "entry_sha256": "4d69713e877af3af483aa747e36a461c41a9659fd1e2def9d03df1dd25057fde"
+      "entry_sha256": "09cef92fde1403d59ebdd304ac8a9860d68962208f4c5b7f6a354ee7df6fe1f8"
     }
   ]
 }

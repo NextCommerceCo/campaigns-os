@@ -1806,13 +1806,15 @@ carry properties) and then follows a plain link or its own navigation marks
 that control `data-qa-cart-entry`. The SDK reads no `data-qa-*` attribute, so
 the marker attaches no SDK handler and leaves the SDK's query-parameter
 transfer on the link intact; a page should not carry
-`data-next-action="add-to-cart"` and then neutralise it for QA. A marked
-control is chosen ahead of every other kind; the runner clicks it, lets the
+`data-next-action="add-to-cart"` and then neutralise it for QA. When no
+package is requested, a visible marked control is chosen ahead of every other
+kind (a hidden one only when no control of any kind is visible); the runner clicks it, lets the
 page write the cart and navigate, and reads the SDK cart on arrival
 (`cart_after_entry`). The cart is whatever the page wrote: the empty-cart guard
 checks it before submit and the order is reconciled against the checkout
 display, as on every other shape. Such a control carries no package, so
-`--select-package` is refused there by name. A control
+under `--select-package` only another control carrying that ref can be used,
+and a page offering none is refused by name. A control
 spelled any other way is not a cart entry, so a page that offers nothing else
 fails the step by name (`cart_entry_control_missing`) rather than clicking a
 control the SDK never wired and waiting out the navigation budget. A visible
@@ -1833,8 +1835,11 @@ Evidence: `landing_url`, `landing_page_id`, `landing_page_type`,
 `first_page_fallback`), `control_text`, `control_kind` (`add_to_cart`,
 `checkout_link`, `checkout_button`, or `script_cart`), `package_id`, `bundle_card_selection`
 when `--select-package` clicked a bundle card, `variant_selections` when the
-runner chose slot variants (below), `cart_after_entry` (the SDK cart read on
-arrival: `count`, `line_count`, `package_ids`) for a `script_cart` entry, `sdk_ready`, `arrived_url`, the
+runner chose slot variants (below), `cart_after_entry` for a `script_cart` entry (the SDK cart read on
+arrival, after waiting for the SDK: `readable`, `source`, `count`,
+`line_count`, `package_ids`; `line_count` and `package_ids` are filled only
+when the debugger cart store is present, and an unreadable read is
+`readable: false`, with `error` when the read itself threw), `sdk_ready`, `arrived_url`, the
 `checkout_selection_surface` probe result, `selection_surface_probe`
 (`loaded`, `reused`, or `failed`), and `selection_surface_probe_error` when it
 failed. The failure codes are

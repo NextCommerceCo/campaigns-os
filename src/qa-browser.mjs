@@ -4674,11 +4674,15 @@ async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPack
   // A page that wrote its own cart (campaigns-os#804) names no package in
   // advance: the expected cart is what the page wrote, read here on arrival
   // with the same read the submit guard uses.
+  // Like the submit guard, the read waits (bounded) for the arrival page's
+  // SDK, so a slow boot is not recorded as an unreadable or empty cart. The
+  // control still carries no package: one cart line is not proof of what was
+  // entered (it may be a surcharge), so the ids stay in cart_after_entry only.
   const scripted = control.kind === "script_cart";
+  if (scripted) await waitForSdkReady(page, Math.max(0, Math.min(stepLeft(), DEFAULT_SETTLE_TIMEOUT_MS)));
   const cartAfterEntry = scripted
     ? await page.evaluate(sdkCartSnapshotScript()).catch((error) => ({ readable: false, error: error?.message || String(error) }))
     : null;
-  if (scripted && cartAfterEntry?.package_ids?.length === 1) control.package_id = cartAfterEntry.package_ids[0];
   const handOff = scripted ? "the page's own script wrote the cart and navigated to checkout" : "SDK navigated to checkout";
 
   return {

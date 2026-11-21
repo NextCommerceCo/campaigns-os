@@ -712,6 +712,7 @@ browserTest("select → checkout with a script-written cart: the data-qa-cart-en
   assert.equal(byName.entered_via_landing.status, "ok", byName.entered_via_landing.error);
   assert.equal(byName.entered_via_landing.evidence.control_kind, "script_cart");
   assert.equal(byName.entered_via_landing.evidence.control_text, "Continue");
+  assert.equal(byName.entered_via_landing.evidence.package_id, null, "the page decides the cart; the control carries no package");
   assert.match(byName.entered_via_landing.detail, /clicked "Continue", the page's own script wrote the cart and navigated to checkout/);
   assert.deepEqual(byName.entered_via_landing.evidence.cart_after_entry, {
     readable: true, source: "window.next", count: 4, line_count: 2, package_ids: ["31", "32"],

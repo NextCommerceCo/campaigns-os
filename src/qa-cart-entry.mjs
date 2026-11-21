@@ -400,16 +400,40 @@ export function cartEntryControlsScript() {
 }
 
 // Pick the control to click. A requested --select-package ref must match the
-// control's package id (strict, like selectPackageCard); otherwise a control
-// the page marked data-qa-cart-entry wins (the page declared it), then the
-// first visible SDK control, then the first visible checkout link, and a
-// hidden control is only used when nothing is visible.
+// control's package id (strict, like selectPackageCard); otherwise a visible
+// control the page marked data-qa-cart-entry wins (the page declared it),
+// then the first visible SDK control, then the first visible checkout link,
+// and a hidden control is only used when nothing is visible. A marked control
+// carries no package, so with --select-package only the other kinds can
+// satisfy the ref.
 export function chooseCartEntryControl(controls = [], requested = []) {
+  const list = Array.isArray(controls) ? controls : [];
+  const scripted = list.filter((control) => control.kind === "script_cart");
+  if (!scripted.length) return chooseUnmarkedControl(list, requested);
+  const wanted = Array.isArray(requested) ? requested.filter((item) => item?.packageId) : [];
+  const visibleScripted = scripted.find((control) => control.visible);
+  if (visibleScripted && !wanted.length) return { control: visibleScripted, reason: null };
+  const others = list.filter((control) => control.kind !== "script_cart");
+  if (others.length) {
+    const choice = chooseUnmarkedControl(others, requested);
+    // Every other kind is hidden: the hidden-only rule then applies across
+    // kinds, and the marked control the page declared is the one used.
+    if (choice.control && !choice.control.visible && !wanted.length) return { control: scripted[0], reason: null };
+    if (choice.control || wanted.length) return choice;
+  }
+  if (wanted.length) {
+    return {
+      control: null,
+      reason: `--select-package ${wanted[0].packageId}: no cart-entry control on the entry page carries package ${wanted[0].packageId} (the data-qa-cart-entry control's page writes its own cart and carries no package)`,
+    };
+  }
+  return { control: scripted[0], reason: null };
+}
+
+function chooseUnmarkedControl(controls = [], requested = []) {
   const list = Array.isArray(controls) ? controls : [];
   if (!list.length) return { control: null, reason: "no add-to-cart control, forcePackageId checkout link, or bundle cards with a checkout button rendered on the entry page, and no control marked data-qa-cart-entry" };
   const wanted = Array.isArray(requested) ? requested.filter((item) => item?.packageId) : [];
-  const scripted = list.filter((control) => control.kind === "script_cart");
-  if (scripted.length && !wanted.length) return { control: scripted.find((control) => control.visible) || scripted[0], reason: null };
   if (wanted.length > 1) {
     return {
       control: null,
