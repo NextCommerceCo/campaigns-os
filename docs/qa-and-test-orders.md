@@ -1799,7 +1799,20 @@ button: the SDK's `[data-next-action="checkout"]` or a plain link into the
 checkout URL. There the swap-mode selector already wrote the cart and the SDK
 persists it, so the runner keeps the pre-selected card, or with
 `--select-package <ref>` clicks the bundle card carrying that ref first,
-strictly, before the button. A control
+strictly, before the button. A page that writes the cart with its own
+script (`next.swapCart`, as a made-to-measure configurator does when the
+package depends on the options, a surcharge quantity is computed, and lines
+carry properties) and then follows a plain link or its own navigation marks
+that control `data-qa-cart-entry`. The SDK reads no `data-qa-*` attribute, so
+the marker attaches no SDK handler and leaves the SDK's query-parameter
+transfer on the link intact; a page should not carry
+`data-next-action="add-to-cart"` and then neutralise it for QA. A marked
+control is chosen ahead of every other kind; the runner clicks it, lets the
+page write the cart and navigate, and reads the SDK cart on arrival
+(`cart_after_entry`). The cart is whatever the page wrote: the empty-cart guard
+checks it before submit and the order is reconciled against the checkout
+display, as on every other shape. Such a control carries no package, so
+`--select-package` is refused there by name. A control
 spelled any other way is not a cart entry, so a page that offers nothing else
 fails the step by name (`cart_entry_control_missing`) rather than clicking a
 control the SDK never wired and waiting out the navigation budget. A visible
@@ -1818,9 +1831,10 @@ cart away. `opened_checkout` then records the arrival instead of re-opening.
 Evidence: `landing_url`, `landing_page_id`, `landing_page_type`,
 `landing_resolution` (`routes_into_checkout`, `entry_page_fallback`,
 `first_page_fallback`), `control_text`, `control_kind` (`add_to_cart`,
-`checkout_link`, or `checkout_button`), `package_id`, `bundle_card_selection`
+`checkout_link`, `checkout_button`, or `script_cart`), `package_id`, `bundle_card_selection`
 when `--select-package` clicked a bundle card, `variant_selections` when the
-runner chose slot variants (below), `sdk_ready`, `arrived_url`, the
+runner chose slot variants (below), `cart_after_entry` (the SDK cart read on
+arrival: `count`, `line_count`, `package_ids`) for a `script_cart` entry, `sdk_ready`, `arrived_url`, the
 `checkout_selection_surface` probe result, `selection_surface_probe`
 (`loaded`, `reused`, or `failed`), and `selection_surface_probe_error` when it
 failed. The failure codes are

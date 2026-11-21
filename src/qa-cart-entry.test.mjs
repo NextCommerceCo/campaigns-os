@@ -505,6 +505,22 @@ test("control choice prefers a visible SDK control, then a visible checkout link
   assert.match(chooseCartEntryControl([]).reason, /no add-to-cart control, forcePackageId checkout link, or bundle cards with a checkout button/);
 });
 
+// campaigns-os#804: a control the page marked data-qa-cart-entry, on a page
+// whose own script writes the cart. It is the page's declaration, so it wins
+// over every other kind; it carries no package, so --select-package is
+// refused rather than satisfied by some other control.
+const scriptControl = { index: 0, kind: "script_cart", visible: true, text: "Continue", package_id: null, quantity: null, next_url: "/checkout/" };
+
+test("a data-qa-cart-entry control wins when no package is requested, and --select-package is refused on it", () => {
+  assert.equal(chooseCartEntryControl([visibleAction, link, scriptControl]).control, scriptControl);
+  const hiddenScript = { ...scriptControl, index: 1, visible: false };
+  assert.equal(chooseCartEntryControl([hiddenScript, scriptControl]).control, scriptControl);
+  const refused = chooseCartEntryControl([scriptControl], [{ packageId: "31", quantity: 1 }]);
+  assert.equal(refused.control, null);
+  assert.match(refused.reason, /--select-package 31: no cart-entry control on the entry page carries package 31/);
+  assert.match(chooseCartEntryControl([]).reason, /no control marked data-qa-cart-entry/);
+});
+
 // A select page (#641): bundle cards plus a checkout button. The button carries
 // no package; --select-package names the bundle card the runner clicks first.
 const checkoutButton = { kind: "checkout_button", index: 0, visible: true, text: "Checkout", package_id: null, bundle_package_ids: ["10", "11"], quantity: 1 };

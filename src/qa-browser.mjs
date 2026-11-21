@@ -44,6 +44,7 @@ import {
   CART_ENTRY_CONTROL_SELECTOR,
   cartEntryHrefFor,
   CART_ENTRY_ROUTE_ATTRIBUTE,
+  CART_ENTRY_SCRIPT_CONTROL_SELECTOR,
   CART_ENTRY_STEP,
   assessCartBeforeSubmit,
   cartEmptyMessage,
@@ -4608,6 +4609,7 @@ async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPack
     checkoutUrl: checkoutPage.url,
     checkoutButtonSelector: CART_ENTRY_CHECKOUT_BUTTON_SELECTOR,
     bundleCardSelector: CART_ENTRY_BUNDLE_CARD_SELECTOR,
+    scriptControlSelector: CART_ENTRY_SCRIPT_CONTROL_SELECTOR,
   }).catch(() => []);
   let controls = await readControls();
   // A two-step select page can hold its checkout button in a second step that
@@ -4646,9 +4648,11 @@ async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPack
   const variantSelections = control.kind === "checkout_button" ? await fillSlotVariants(page) : [];
   // The index is the control's position among what its own locator matches,
   // so it replays with nth(); no selector is rebuilt from an attribute value.
-  const controlSelector = control.kind === "add_to_cart"
-    ? CART_ENTRY_CONTROL_SELECTOR
-    : control.kind === "checkout_button" ? CART_ENTRY_CHECKOUT_BUTTON_SELECTOR : "a[href]";
+  const controlSelector = {
+    add_to_cart: CART_ENTRY_CONTROL_SELECTOR,
+    checkout_button: CART_ENTRY_CHECKOUT_BUTTON_SELECTOR,
+    script_cart: CART_ENTRY_SCRIPT_CONTROL_SELECTOR,
+  }[control.kind] || "a[href]";
   const target = page.locator(controlSelector).nth(control.index);
   const perpetual = await scrollControlIntoView(target);
   await clickControl(target, { timeout: 8000, perpetual });
@@ -4667,13 +4671,23 @@ async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPack
   await page.waitForLoadState("networkidle", { timeout: DEFAULT_SETTLE_TIMEOUT_MS }).catch(() => {});
   await page.waitForTimeout(750);
 
+  // A page that wrote its own cart (campaigns-os#804) names no package in
+  // advance: the expected cart is what the page wrote, read here on arrival
+  // with the same read the submit guard uses.
+  const scripted = control.kind === "script_cart";
+  const cartAfterEntry = scripted
+    ? await page.evaluate(sdkCartSnapshotScript()).catch((error) => ({ readable: false, error: error?.message || String(error) }))
+    : null;
+  if (scripted && cartAfterEntry?.package_ids?.length === 1) control.package_id = cartAfterEntry.package_ids[0];
+  const handOff = scripted ? "the page's own script wrote the cart and navigated to checkout" : "SDK navigated to checkout";
+
   return {
     entered: true,
     package_id: control.package_id || null,
     // The card --select-package chose here, for the order check on checkout,
     // which renders no selector. Not recorded in the step.
     selected_cards: selectedCards,
-    detail: `entered via ${entryPage.page_type || "entry"} page: clicked "${control.text || "(no text)"}"${control.package_id ? ` (package ${control.package_id})` : ""}, SDK navigated to checkout`,
+    detail: `entered via ${entryPage.page_type || "entry"} page: clicked "${control.text || "(no text)"}"${control.package_id ? ` (package ${control.package_id})` : ""}, ${handOff}`,
     evidence: {
       landing_url: redactUrlQuery(entryPage.url),
       landing_page_id: entryPage.page_id,
@@ -4684,6 +4698,7 @@ async function enterCartViaLanding({ page, checkoutPage, entryPage, selectedPack
       package_id: control.package_id || null,
       ...(cardSelection ? { bundle_card_selection: cardSelection } : {}),
       ...(variantSelections.length ? { variant_selections: variantSelections } : {}),
+      ...(cartAfterEntry ? { cart_after_entry: cartAfterEntry } : {}),
       sdk_ready: sdkReady,
       arrived_url: redactUrlQuery(safePageUrl(page)),
       checkout_selection_surface: surface,

@@ -142,6 +142,19 @@ export const CART_ENTRY_CHECKOUT_BUTTON_SELECTOR = '[data-next-action="checkout"
 // The bundle cards a select page renders, outside the cart summary.
 export const CART_ENTRY_BUNDLE_CARD_SELECTOR = "[data-next-bundle-card]";
 
+// A page that writes the cart with its own script (`next.swapCart`: a
+// configurator whose package depends on the options chosen, a computed
+// surcharge quantity, line properties) and then moves on by a plain link or
+// its own navigation has no SDK control the runner can recognise
+// (campaigns-os#804). It marks that control with this attribute. The SDK
+// reads no `data-qa-*` attribute, so the marker attaches no SDK handler and
+// leaves the SDK's query-parameter transfer on the link alone. The runner
+// clicks it, the page writes the cart and navigates, and the cart is
+// whatever the page wrote: read on arrival, guarded at submit, and
+// reconciled against the order from the checkout display, as on every
+// other shape.
+export const CART_ENTRY_SCRIPT_CONTROL_SELECTOR = "[data-qa-cart-entry]";
+
 // Route-shaped spellings the runner used to consult and no longer does,
 // because the SDK never declares them. They are not routes, but a page that
 // carries one is reported so an operator can tell "the runner narrowed its
@@ -251,7 +264,7 @@ export function summarizeSelectionSurface(surface) {
   return parts.length ? parts.join(", ") : "none";
 }
 
-// evaluate() body: the cart-entry controls the entry page renders. Three kinds:
+// evaluate() body: the cart-entry controls the entry page renders. Four kinds:
 //   add_to_cart     the SDK action controls (CART_ENTRY_CONTROL_SELECTOR); the
 //                   SDK adds the package and navigates via data-next-url;
 //   checkout_link   a plain link into the checkout URL carrying
@@ -261,12 +274,16 @@ export function summarizeSelectionSurface(surface) {
 //   checkout_button on a page with bundle cards only: the SDK checkout action
 //                   or a plain link into the checkout URL. The selected card
 //                   is the cart; `bundle_package_ids` lists what the cards
-//                   carry so --select-package can name one (campaigns-os#641).
+//                   carry so --select-package can name one (campaigns-os#641);
+//   script_cart     a control marked CART_ENTRY_SCRIPT_CONTROL_SELECTOR on a
+//                   page whose own script writes the cart before it navigates
+//                   (campaigns-os#804). It carries no package: the page decides
+//                   the cart, so --select-package cannot name one.
 // Each control reports its visibility, text, and the package id it carries
 // (own attribute, nearest card, or the forcePackageId ref), so the caller can
 // prefer a visible SDK control and honour --select-package in one round trip.
 export function cartEntryControlsScript() {
-  return ({ selector, checkoutUrl, checkoutButtonSelector = null, bundleCardSelector = null }) => {
+  return ({ selector, checkoutUrl, checkoutButtonSelector = null, bundleCardSelector = null, scriptControlSelector = null }) => {
     const clean = (value) => String(value || "").replace(/\s+/g, " ").trim();
     const isVisible = (element) => {
       const rect = element.getBoundingClientRect();
@@ -366,18 +383,33 @@ export function cartEntryControlsScript() {
         }];
       })
       : [];
-    return [...actions, ...links, ...buttons];
+    const scripted = scriptControlSelector
+      ? Array.from(document.querySelectorAll(scriptControlSelector)).map((element, index) => ({
+        kind: "script_cart",
+        index,
+        visible: isVisible(element),
+        text: label(element),
+        package_id: null,
+        quantity: null,
+        next_url: element.getAttribute("href"),
+        tag: element.tagName.toLowerCase(),
+      }))
+      : [];
+    return [...actions, ...links, ...buttons, ...scripted];
   };
 }
 
 // Pick the control to click. A requested --select-package ref must match the
-// control's package id (strict, like selectPackageCard); otherwise the first
-// visible SDK control wins, then the first visible checkout link, and a hidden
-// control is only used when nothing is visible.
+// control's package id (strict, like selectPackageCard); otherwise a control
+// the page marked data-qa-cart-entry wins (the page declared it), then the
+// first visible SDK control, then the first visible checkout link, and a
+// hidden control is only used when nothing is visible.
 export function chooseCartEntryControl(controls = [], requested = []) {
   const list = Array.isArray(controls) ? controls : [];
-  if (!list.length) return { control: null, reason: "no add-to-cart control, forcePackageId checkout link, or bundle cards with a checkout button rendered on the entry page" };
+  if (!list.length) return { control: null, reason: "no add-to-cart control, forcePackageId checkout link, or bundle cards with a checkout button rendered on the entry page, and no control marked data-qa-cart-entry" };
   const wanted = Array.isArray(requested) ? requested.filter((item) => item?.packageId) : [];
+  const scripted = list.filter((control) => control.kind === "script_cart");
+  if (scripted.length && !wanted.length) return { control: scripted.find((control) => control.visible) || scripted[0], reason: null };
   if (wanted.length > 1) {
     return {
       control: null,
