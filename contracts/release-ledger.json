@@ -6363,7 +6363,7 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.71.4+agent.6",
-      "changelog_sha256": "63cb06efdd41c419d5a8be37ece3074fb70513baaf551ef380468c44553cd2ef",
+      "changelog_sha256": "c060f0e60acba1d0bddc05026b938a72f2c21b4993f9b858535345786c36d439",
       "agent_impact": "After record brief saves a change to the brief's presentation sections (brand, media, offer_presentation, promo_urgency, commerce_surfaces and the rest), build and Polish are owed again but QA is not: stages.qa keeps its verdict, and derived.input_currency.stages.qa compares only the qa_policy partition and the CampaignSpec. QA is then owed only by the rebuild, through evidence_debt: on the changed pages for a page-only rebuild, in full for a commerce-affecting one. An identical rebuild still reads assembly owed (output_unchanged_after_input_change) until record build --deviation-reason records the operator's decision; after that, QA on the same output reads current and no test orders are owed. record build over unchanged output no longer prints the previous rebuild's stages.assembly.build_changes line. A qa_policy change still demotes QA.",
       "compatibility": "compatible",
       "migration": "none",
@@ -6387,7 +6387,7 @@
           "summary": "Saving brief answers: a presentation change owes build and Polish again, and QA only when the rebuild changes the pages."
         }
       ],
-      "entry_sha256": "7e9e475355ed516f04b035f2c618a0b800cc5436101c573761e56d5b36f56fc5"
+      "entry_sha256": "721436e3bc4f741295bbef79dd447d9d75099332a4b6dfeb34fe86e697b61bb9"
     }
   ]
 }
