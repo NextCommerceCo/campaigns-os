@@ -260,7 +260,9 @@ test("record ready and text flatten control characters in recorded page ids and 
   compareRecordedCi(f, result);
   const safeId = "upsell\uFFFD[31m\uFFFD 1", safePath = "upsell1/\uFFFD\uFFFD index.html";
   assert.ok(result.ready.includes(`Changed page: ${safeId} (${safePath})`));
-  assert.ok(result.ready.some((line) => line.includes(`changed pages: ${safeId}`)));
+  // A record over the same output appended no rebuild entry, so it does not
+  // repeat the earlier entry's rebuild line (F-262).
+  assert.ok(!result.ready.some((line) => line.includes("changed pages:")));
   for (const line of [...result.ready, ...resultTextLines(result)]) assert.doesNotMatch(line, /[\u0000-\u001f\u007f-\u009f]/);
 });
 
