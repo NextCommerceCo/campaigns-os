@@ -1509,4 +1509,17 @@ test("each unresolved claim is named with its page, its binding and its text (F-
   assert.deepEqual(packageRow.evidence.claims, [
     { page_id: "page_mt104ehn_11", kind: "package_price", binding: "package.price", text: "$29.99", reason: "package_price_unresolved" },
   ]);
+  // Past the verdict's 50 listed claims the row keeps its whole count and says
+  // how many it could not name (Kilo on #810).
+  const many = Array.from({ length: 60 }, (_, index) => `<span data-next-display="bundle.b${index}.price" data-next-format="currency">$${index + 1}.99</span>`).join("");
+  const crowded = await runCommercialParity({
+    resolved,
+    captures: [captureCommercialClaims({ page_id: "page_mt104ehn_11" }, `${readable}${many}`)],
+    fetchImpl: priced,
+  });
+  assert.equal(crowded.commercial.unresolved_claims.length, 50);
+  const crowdedRow = crowded.assertions.find((entry) => entry.id === "commercial-parity:incomplete:commercial_claims_unresolved");
+  assert.match(crowdedRow.actual, /^60 claim\(s\)/);
+  assert.match(crowdedRow.actual, /; and 50 more \(10 not named: the verdict lists the first 50 claims of the run\)\. Fix:/);
+  assert.equal(crowdedRow.evidence.claims.length, 50);
 });

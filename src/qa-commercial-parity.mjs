@@ -18,6 +18,7 @@ import {
   packagePriceClaimCount,
   recurringClaimAbsences,
   recurringClaimAbsentAssertions,
+  UNRESOLVED_CLAIMS_LISTED,
 } from "./commercial-parity.mjs";
 import { extractRenderedPackageRefs } from "./live-campaign-refs.mjs";
 
@@ -480,8 +481,10 @@ function cause(code, summary, fix, count = 1, claims = []) {
   return { code, count, summary, fix, ...(claims.length ? { claims } : {}) };
 }
 
-// How many named claims one human line carries before "and N more"; the
-// JSON (verdict.commercial.unresolved_claims and the row's evidence) has them all.
+// How many named claims one human line carries before "and N more". The JSON
+// (verdict.commercial.unresolved_claims and the row's evidence) carries the
+// row's claims among the first UNRESOLVED_CLAIMS_LISTED of the run; the row's
+// count stays whole.
 const CLAIMS_NAMED_IN_LINE = 10;
 
 const CLAIM_REASONS = Object.freeze({
@@ -510,10 +513,15 @@ function claimLabel(claim) {
   return `${claim.page_id} ${node}${scope}${text}: ${CLAIM_REASONS[claim.reason] || claim.reason}`;
 }
 
-function namedClaims(claims) {
-  const listed = claims.slice(0, CLAIMS_NAMED_IN_LINE).map(claimLabel).join("; ");
-  const more = claims.length > CLAIMS_NAMED_IN_LINE ? `; and ${claims.length - CLAIMS_NAMED_IN_LINE} more` : "";
-  return claims.length ? ` Claims: ${listed}${more}.` : "";
+// `count` is the row's whole count; `claims` are the ones the verdict lists,
+// which can be fewer when the run has more than UNRESOLVED_CLAIMS_LISTED.
+function namedClaims(claims, count = claims.length) {
+  const shown = claims.slice(0, CLAIMS_NAMED_IN_LINE);
+  const more = Math.max(0, count - shown.length);
+  const unlisted = Math.max(0, count - claims.length);
+  const beyond = unlisted ? ` (${unlisted} not named: the verdict lists the first ${UNRESOLVED_CLAIMS_LISTED} claims of the run)` : "";
+  if (!shown.length) return more ? ` None named${beyond}.` : "";
+  return ` Claims: ${shown.map(claimLabel).join("; ")}${more ? `; and ${more} more${beyond}` : ""}.`;
 }
 
 // Why a page was not read, in words, from the code the capture carried.
@@ -524,6 +532,9 @@ const UNREAD_REASONS = Object.freeze({
   commercial_html_unavailable: "the page was not fetched",
   commercial_html_extraction_error: "its HTML could not be parsed",
   commercial_html_claims_limit: "over the per-page claim limit",
+  commercial_html_bytes_limit: "its HTML is over the per-page size limit",
+  commercial_html_nodes_limit: "its HTML has more elements than the per-page limit",
+  commercial_html_depth_limit: "its HTML nests deeper than the per-page limit",
   unreadable_claims: "its claims did not have the expected shape",
   not_captured: "no served page was read for it in this run",
 });
@@ -598,7 +609,7 @@ function incompleteCauses(stopped, commercial, journey) {
   const packagePrices = Object.entries(commercial.package_price_claims?.unresolved || {});
   packagePrices.forEach(([code, count]) => {
     const named = claims.filter((claim) => claim.kind === "package_price" && claim.reason === code);
-    causes.push(cause(code, `${PACKAGE_PRICE_CAUSES[code].summary(count)}${namedClaims(named)}`, PACKAGE_PRICE_CAUSES[code].fix, count, named));
+    causes.push(cause(code, `${PACKAGE_PRICE_CAUSES[code].summary(count)}${namedClaims(named, count)}`, PACKAGE_PRICE_CAUSES[code].fix, count, named));
   });
   const unresolvedPrices = commercial.unresolved_price_claims - packagePrices.reduce((sum, [, count]) => sum + count, 0);
   const unresolved = unresolvedPrices + commercial.unresolved_recurrence_claims + commercial.unresolved_voucher_claims;
@@ -606,7 +617,7 @@ function incompleteCauses(stopped, commercial, journey) {
     const named = claims.filter((claim) => claim.kind !== "package_price");
     causes.push(cause(
       "commercial_claims_unresolved",
-      `${unresolved} claim(s) could not be tied to one calculated value (${unresolvedPrices} price, ${commercial.unresolved_recurrence_claims} recurring, ${commercial.unresolved_voucher_claims} voucher).${namedClaims(named)}`,
+      `${unresolved} claim(s) could not be tied to one calculated value (${unresolvedPrices} price, ${commercial.unresolved_recurrence_claims} recurring, ${commercial.unresolved_voucher_claims} voucher).${namedClaims(named, unresolved)}`,
       "A page with more than one bound bundle price, or a voucher the plan cannot price, stays uncompared: check these by hand, or declare the voucher in the spec.",
       unresolved,
       named,
