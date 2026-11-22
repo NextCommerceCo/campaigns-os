@@ -6373,9 +6373,15 @@
           "path": "docs/qa-and-test-orders.md",
           "surface_entry": "docs/qa-and-test-orders.md",
           "summary": "Automatic commercial parity holds promo discount-percentage claims against the CampaignSpec's largest percentage discount and reports a claim above it as a discount-claim-above-offer fail row (severity warn)."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": null,
+          "summary": "doctor's template_contract.discount_claim_residue reads its claims and CampaignSpec maximum from the module QA commercial parity now shares; its findings and messages are unchanged."
         }
       ],
-      "entry_sha256": "d4a22b16f11135a12841d9e6b7da570e6a5129c1aac02a624c919e041ff0ba6a"
+      "entry_sha256": "bbd8cb493c8d0517f0ee6255c25a7887e56f5152128b09388109b0870e4e63f1"
     }
   ]
 }
