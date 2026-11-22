@@ -6,7 +6,7 @@ Notable supported-surface changes are recorded here.
 
 ### Fixed
 
-- `qa run` commercial parity holds each page's promo discount claims ("Save N%", "N% off", "N% discount") against the largest percentage discount the CampaignSpec declares, the maximum doctor's `template_contract.discount_claim_residue` reads, so a landing page claiming "60% Off" against a 44.45% top offer is a `discount-claim-above-offer` finding (a `fail` row, severity warn) and `commercial.status` reads `mismatch` instead of `pass`; claims at or below the maximum still pass.
+- `qa run` commercial parity holds each page's promo discount claims ("Save N%", "N% off", "N% discount") against the largest percentage discount the CampaignSpec declares, the maximum doctor's `template_contract.discount_claim_residue` reads, so a landing page claiming "60% Off" against a 44.45% top offer is a `discount-claim-above-offer` finding (a `fail` row, severity warn) and `commercial.status` reads `mismatch` instead of `pass`; claims at or below the maximum still pass (#808).
 
 ## [1.71.4] - 2026-11-21
 
