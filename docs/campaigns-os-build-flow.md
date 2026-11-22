@@ -190,7 +190,9 @@ proof stops counting. After that:
 - A page-only change owes QA on that page only. A passing `qa run --page` leaves
   QA at `baseline_accepted`, because it proved those pages and not the funnel.
 - A commerce-affecting change owes the full Polish and QA.
-- A CampaignSpec or brief change owes the stages again.
+- A CampaignSpec change owes the stages again. A brief change owes build and
+  Polish (a presentation change) or QA (a `qa_policy` change); the rebuild a
+  presentation change leads to owes QA only if it changes the output.
 - Doctor warns `qa.baseline_accepted`, and `doctor --ci`, readback and `next` all
   say QA rests on a baseline and no purchase has been tested since.
 - A completed full `qa run` ends it. A blocked one leaves the baseline in place.

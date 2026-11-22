@@ -331,11 +331,11 @@ test("record polish over a completed_partial Polish stamped against an earlier b
 test("a fresh QA verdict stamped against the current inputs omits input_change, even when the same write detects the previous stamps changed", () => {
   const report = {
     stages: {
-      qa: { stage: "qa", status: "completed", verdict_run_id: "qa-old", checked_at: "2026-10-01T00:00:00.000Z", source_brief_material: { presentation: fp("7"), qa_policy: fp("b") }, source_spec_material_hash: SPEC },
+      qa: { stage: "qa", status: "completed", verdict_run_id: "qa-old", checked_at: "2026-10-01T00:00:00.000Z", source_brief_material: { presentation: fp("a"), qa_policy: fp("7") }, source_spec_material_hash: SPEC },
     },
   };
   const inputs = {
-    detectChange: (record) => detectedStageChange("qa", record, { briefMaterial: BRIEF, specMaterial: SPEC }) ? "brief_presentation_changed" : null,
+    detectChange: (record) => detectedStageChange("qa", record, { briefMaterial: BRIEF, specMaterial: SPEC }) ? "brief_qa_policy_changed" : null,
     stampsCurrent: (record) => assessStageCurrency("qa", { ...record, status: "completed" }, CURRENT).currency === "current",
   };
   const updated = recordProducerStageOutcome(report, {
@@ -343,19 +343,19 @@ test("a fresh QA verdict stamped against the current inputs omits input_change, 
     identity: { verdict_run_id: "qa-new" }, stamps: { source_brief_material: clone(BRIEF), source_spec_material_hash: SPEC }, inputs,
   });
   assert.equal(Object.hasOwn(updated.stages.qa, "input_change"), false, "the fresh verdict clears input_change");
-  assert.equal(updated.stages.qa.history?.at(-1)?.reason_code, "brief_presentation_changed", "the superseded verdict is archived with the detected reason");
+  assert.equal(updated.stages.qa.history?.at(-1)?.reason_code, "brief_qa_policy_changed", "the superseded verdict is archived with the detected reason");
   assert.equal(assessStageCurrency("qa", updated.stages.qa, CURRENT).currency, "current");
 });
 
 test("a QA verdict stamped against earlier inputs records the detected input_change", () => {
-  const report = { stages: { qa: { stage: "qa", status: "completed", verdict_run_id: "qa-old", source_brief_material: { presentation: fp("7"), qa_policy: fp("b") }, source_spec_material_hash: SPEC } } };
+  const report = { stages: { qa: { stage: "qa", status: "completed", verdict_run_id: "qa-old", source_brief_material: { presentation: fp("a"), qa_policy: fp("7") }, source_spec_material_hash: SPEC } } };
   const inputs = {
-    detectChange: (record) => detectedStageChange("qa", record, { briefMaterial: BRIEF, specMaterial: SPEC }) ? "brief_presentation_changed" : null,
+    detectChange: (record) => detectedStageChange("qa", record, { briefMaterial: BRIEF, specMaterial: SPEC }) ? "brief_qa_policy_changed" : null,
     stampsCurrent: () => false,
   };
   const updated = recordProducerStageOutcome(report, {
     stage: "qa", disposition: "ready", timestamp: "2026-10-05T00:00:00.000Z", identity: { verdict_run_id: "qa-new" },
-    stamps: { source_brief_material: { presentation: fp("7"), qa_policy: fp("b") }, source_spec_material_hash: SPEC }, inputs,
+    stamps: { source_brief_material: { presentation: fp("a"), qa_policy: fp("7") }, source_spec_material_hash: SPEC }, inputs,
   });
-  assert.equal(updated.stages.qa.input_change?.reason, "brief_presentation_changed");
+  assert.equal(updated.stages.qa.input_change?.reason, "brief_qa_policy_changed");
 });

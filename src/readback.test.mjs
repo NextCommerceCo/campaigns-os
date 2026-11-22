@@ -566,11 +566,13 @@ for (const cause of ["brief", "spec"]) {
       saved = recordSpec({ packetPath: f.packetPath });
       assert.equal(saved.input_change.reason, "spec_material_changed");
     }
-    assert.ok(saved.demoted.includes("polish"));
-    assert.ok(saved.demoted.includes("qa"));
+    // A brief presentation change leaves QA to the rebuild (F-262).
+    const owed = cause === "brief" ? ["polish"] : ["polish", "qa"];
+    assert.deepEqual(["polish", "qa"].filter((name) => saved.demoted.includes(name)), owed);
     const report = JSON.parse(readFileSync(f.reportPath, "utf8"));
     const debt = evidenceDebtPayload(f.root).evidence_debt;
-    for (const name of ["polish", "qa"]) {
+    if (cause === "brief") assert.equal(debt.qa.status, "current", "QA checked the same output and reads no presentation section");
+    for (const name of owed) {
       assert.equal(report.stages[name].required_by, cause);
       assert.equal(debt[name].status, "owed");
       assert.equal(debt[name].reason, `stage_required_by_${cause}`);

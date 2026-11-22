@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.71.4+agent.6] - 2026-11-22
+
+### Fixed
+
+- A `record brief` save that changes only the brief's presentation sections no longer makes QA owed: QA reads none of them and its verdict is bound to the build it checked, so QA follows the rebuild. A rebuild that changes the pages owes QA as any rebuild does (in full for a commerce-affecting change), and a build the operator keeps unchanged with `record build --deviation-reason` leaves the QA verdict current, with no new test orders. A `record build` over output that has not changed no longer repeats the earlier rebuild's change line as "this rebuild is commerce-affecting". Build and Polish are still owed after a presentation save, and a `qa_policy` change still owes QA (#812).
+
 ## [1.71.4+agent.5] - 2026-11-22
 
 ### Fixed
