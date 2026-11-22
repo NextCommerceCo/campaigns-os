@@ -6363,7 +6363,7 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.71.4+agent.4",
-      "changelog_sha256": "040f0d34dd596b0bf172225987932b317592a30456cf2d71f426af63a1aab491",
+      "changelog_sha256": "3a603d4440b339b4855c2526f7c393d568542124a2106bdbba7bbba1a19ee2a9",
       "agent_impact": "In an active run session, a stage record that writes (record deploy, record polish, record build, record setup, record theme, record baseline) replaces the session's stored recommendation with the stage it prints as Next stage (last_recommendation.issued_by names the record; status is null). Deviation telemetry then compares later commands with that stage instead of the recommendation next stored before the record, so qa run right after record deploy printed Next stage: qa is not logged as a deviation with deviation_reason null. A command that differs from the current next stage, such as qa run while deploy is still next, is still logged. A dry run keeps the stored recommendation. Agents no longer need to explain a deviation entry naming a stage the record had already moved past.",
       "compatibility": "compatible",
       "migration": "none",
@@ -6381,7 +6381,7 @@
           "summary": "A stage record that writes, in an active run session, stores the stage it prints as Next stage as the session's last_recommendation (issued_by record <stage>), so deviation telemetry compares later commands with it."
         }
       ],
-      "entry_sha256": "861340588c1414d3192b6c0d4f79a20dd1ad9376f52c52be7f294f60ff4ccab4"
+      "entry_sha256": "2965aa068dd2c2500a3a2cff9481884881aa7addb47d40977cb23e4259d610b3"
     }
   ]
 }

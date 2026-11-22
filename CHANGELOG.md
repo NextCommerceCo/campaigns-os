@@ -6,7 +6,7 @@ Notable supported-surface changes are recorded here.
 
 ### Fixed
 
-- In a run session, a stage record that writes (`record deploy`, `record polish`, `record build` and the rest) replaces the session's stored recommendation with the stage it prints as `Next stage`, so deviation telemetry no longer logs a `qa run` right after `record deploy` printed `Next stage: qa` against the `next` recommendation stored before the record. A command that differs from the current next stage is still logged.
+- In a run session, a stage record that writes (`record deploy`, `record polish`, `record build` and the rest) replaces the session's stored recommendation with the stage it prints as `Next stage`, so deviation telemetry no longer logs a `qa run` right after `record deploy` printed `Next stage: qa` against the `next` recommendation stored before the record. A command that differs from the current next stage is still logged (#809).
 
 
 ## [1.71.4] - 2026-11-21
