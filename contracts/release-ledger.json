@@ -6367,8 +6367,27 @@
       "agent_impact": "After record brief saves a change to the brief's presentation sections (brand, media, offer_presentation, promo_urgency, commerce_surfaces and the rest), build and Polish are owed again but QA is not: stages.qa keeps its verdict, and derived.input_currency.stages.qa compares only the qa_policy partition and the CampaignSpec. QA is then owed only by the rebuild, through evidence_debt: on the changed pages for a page-only rebuild, in full for a commerce-affecting one. An identical rebuild still reads assembly owed (output_unchanged_after_input_change) until record build --deviation-reason records the operator's decision; after that, QA on the same output reads current and no test orders are owed. record build over unchanged output no longer prints the previous rebuild's stages.assembly.build_changes line. A qa_policy change still demotes QA.",
       "compatibility": "compatible",
       "migration": "none",
-      "changes": [],
-      "entry_sha256": "faace9402d8064567c6449d070423cd3376b8c7df51acdac33387d3bcf915fc0"
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "The record brief summary: a presentation change owes build and Polish again; QA follows the rebuild, owed when the pages change and kept when they do not."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/campaign-build-brief.md",
+          "surface_entry": "docs/campaign-build-brief.md",
+          "summary": "Saving Answers: a presentation save keeps the QA verdict; a page-changing rebuild owes QA by its change scope, a build kept unchanged with --deviation-reason leaves QA current, and a record over unchanged output names no rebuild change."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/effects.md",
+          "surface_entry": "docs/effects.md",
+          "summary": "Saving brief answers: a presentation change owes build and Polish again, and QA only when the rebuild changes the pages."
+        }
+      ],
+      "entry_sha256": "7e9e475355ed516f04b035f2c618a0b800cc5436101c573761e56d5b36f56fc5"
     }
   ]
 }
