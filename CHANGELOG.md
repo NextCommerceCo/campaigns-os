@@ -2,6 +2,23 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.71.5] - 2026-11-22
+
+This release packages the six `1.71.4+agent` sections below, the fixes from the ninth simulated build batch. `qa run` no longer blocks on an upsell opened without a `ref_id` whose prices stay hidden until an order exists, flags a promo discount claim above the CampaignSpec's largest offer discount, and names each commercial claim it could not compare. Voucher codes in `data-next-bundle-vouchers` are read as the SDK reads them. `record build` and `after-edit` print the owed stages `next` would name, including deploy and owed currencies. Deviation telemetry stops comparing a command with a `next` recommendation a later record superseded. A `record brief` save that changes only the presentation sections leaves QA to the rebuild, and the `record brief` row of `contracts/effects.v1.json` and the `next-campaigns-os` skill now say so. No breaking changes and no schema or command changes. To take it, pin `@nextcommerce/campaigns-os@1.71.5` and refresh the installed skills to `1.71.5+skills.1`.
+
+### Changed
+
+- The `record brief` row of `contracts/effects.v1.json` (its `notes` and the `saved_with_invalidation` write) and the `record brief` sentence in the `next-campaigns-os` skill and its `references/session-intake.md` state the rule `1.71.4+agent.6` shipped: a presentation change owes build and Polish, and QA only when the rebuild changes the pages; a `qa_policy` change owes QA alone.
+
+### Fixed
+
+- Publishes `1.71.4+agent.1`: `qa run` skips `pricing.upsell_price_visible:<page>` with a named reason when it opens an upsell without a `ref_id` and the offer's price rows are `next-hidden` until an order exists (#807).
+- Publishes `1.71.4+agent.2`: `record build` and `after-edit` print their "Owed stages" line from the decision `next` makes, naming a required deploy and the currencies still owed a test order (#811).
+- Publishes `1.71.4+agent.3`: commercial parity flags a promo discount claim above the largest percentage discount the CampaignSpec declares as `discount-claim-above-offer` (#808).
+- Publishes `1.71.4+agent.4`: deviation telemetry no longer compares a command with a `next` recommendation that a later stage record superseded (#809).
+- Publishes `1.71.4+agent.5`: commercial parity reads `data-next-bundle-vouchers` as the SDK does, and names every unread page and uncompared claim (#810).
+- Publishes `1.71.4+agent.6`: a `record brief` save that changes only the presentation sections no longer makes QA owed; QA follows the rebuild (#812).
+
 ## [1.71.4+agent.6] - 2026-11-22
 
 ### Fixed

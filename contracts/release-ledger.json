@@ -6529,6 +6529,147 @@
         }
       ],
       "entry_sha256": "bfb483f42fa6355889529a84e53bf1da6a95d640d35ff4e513b5ec9942efbff1"
+    },
+    {
+      "id": "RL-0387",
+      "sequence": 371,
+      "date": "2026-11-22",
+      "kind": "release",
+      "surface_version": "1.71.5",
+      "changelog_section": "1.71.5",
+      "changelog_sha256": "b6222e7242de58e0ca5012141d5111e044072e096f3426a3ac3b6f32f7ecb925",
+      "agent_impact": "The 1.71.5 package publishes the changes since 1.71.4 (1.71.4+agent.1 to agent.6). qa run skips pricing.upsell_price_visible with a named reason on an upsell opened without a ref_id whose price rows are next-hidden; open it with a ref_id to check the price. Commercial parity flags a promo discount claim above the CampaignSpec's largest percentage discount as discount-claim-above-offer: fix the claim or the offer. data-next-bundle-vouchers is read as the SDK reads it, and verdict.commercial.unresolved_claims names each claim QA could not compare. record build and after-edit print the owed stages next would name, including deploy and owed currencies; follow next. Deviation telemetry skips a next recommendation that a later record superseded. A record brief save that changes only the presentation sections owes build and Polish and leaves QA to the rebuild; a qa_policy change still owes QA. contracts/effects.v1.json's record brief row and the next-campaigns-os skill now state that rule. Refresh skills to 1.71.5+skills.1.",
+      "compatibility": "compatible",
+      "migration": "Update the pinned package to 1.71.5 and run install-skills to get 1.71.5+skills.1 before starting a fresh session.",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "compatibility.json",
+          "surface_entry": "compatibility.json",
+          "summary": "Version advances to 1.71.5."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/effects.v1.json",
+          "surface_entry": "contracts/effects.v1.json",
+          "summary": "The record brief row's notes and saved_with_invalidation write say a presentation change owes build and Polish, and QA only when the rebuild changes the pages; a qa_policy change owes QA alone."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "surface_version advances to 1.71.5 for the package release."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Install pins @nextcommerce/campaigns-os@1.71.5."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerated at surface 1.71.5."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerated at surface 1.71.5."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Examples name 1.71.5+skills.1."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Both package version stamps advance to 1.71.5."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Package version advances to 1.71.5."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Bundle advances to 1.71.5+skills.1 and each bundled skill one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.71.5+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.71.5+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.71.5+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.71.5+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.71.5+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.71.5+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.71.5+skills.1; the record brief sentence says a presentation change owes build and Polish, and QA only when the rebuild changes the pages."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/references/session-intake.md",
+          "surface_entry": null,
+          "summary": "The record brief sentence says a presentation change owes build and Polish, and QA only when the rebuild changes the pages; a qa_policy change owes QA alone."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.71.5+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.71.5+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-sdk-bump/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.71.5+skills.1."
+        }
+      ],
+      "entry_sha256": "b4cd574d21a6726635858fc1bd891b28fd3325d08850e3c70e586e520dad1afc"
     }
   ]
 }

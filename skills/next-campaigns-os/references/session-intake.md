@@ -33,7 +33,7 @@ Ask only for the fields needed by the selected mode. Do not force a full-funnel
 build prompt when the user only needs QA, a partial page update, or repair from
 an existing verdict.
 
-Save the operator's brief answers with `npx --no-install campaigns-os record brief --packet <packet>` (tier `C`: when the brief changes it rewrites the Build Packet's brief binding, the normalized brief, the Build Context and the assembly report and stamps the doctor output stale, and a material change makes build, Polish and QA owed again; `--dry-run` is tier `none`). Ask the operator before saving brief answers. Put the answers in the brief file as `docs/campaign-build-brief.md` describes, then run `record brief`; do not re-run `start` or `prepare-build` to save them.
+Save the operator's brief answers with `npx --no-install campaigns-os record brief --packet <packet>` (tier `C`: when the brief changes it rewrites the Build Packet's brief binding, the normalized brief, the Build Context and the assembly report and stamps the doctor output stale, and a material change makes stages owed again: a presentation change owes build and Polish, and QA only when the rebuild changes the pages, and a `qa_policy` change owes QA alone; `--dry-run` is tier `none`). Ask the operator before saving brief answers. Put the answers in the brief file as `docs/campaign-build-brief.md` describes, then run `record brief`; do not re-run `start` or `prepare-build` to save them.
 
 ## Starting Paths
 
