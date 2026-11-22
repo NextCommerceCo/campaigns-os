@@ -2,6 +2,13 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.71.4+agent.4] - 2026-11-22
+
+### Fixed
+
+- In a run session, deviation telemetry no longer compares a command with a `next` recommendation that a later stage record (`record deploy`, `record polish`, `record build` and the rest) has superseded, so a `qa run` right after `record deploy` printed `Next stage: qa` is no longer logged against the `deploy` recommendation stored before the record. It reads the session's lifecycle journal and writes nothing new; comparison resumes once `next` runs again, and a command that differs from a current recommendation is still logged (#809).
+
+
 ## [1.71.4+agent.3] - 2026-11-22
 
 ### Fixed

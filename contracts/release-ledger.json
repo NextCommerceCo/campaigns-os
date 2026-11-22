@@ -6442,6 +6442,33 @@
         }
       ],
       "entry_sha256": "24a8509e3df92b05e16e853fb528cf6400cab3de90d2e8457b11b38657ed79ef"
+    },
+    {
+      "id": "RL-0384",
+      "sequence": 368,
+      "date": "2026-11-22",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.4+agent.4",
+      "changelog_sha256": "34ecda9fcc66e0f008ca3b89b2e2e80eabca30e473504f07f9d7e7143d4f957c",
+      "agent_impact": "In a run session, deviation telemetry no longer compares a command with a next recommendation that a later successful stage record has superseded (found as a newer record entry in the session's lifecycle journal), so a qa run right after record deploy printed Next stage: qa is not logged against the deploy recommendation stored before it. Comparison resumes when next runs again; a command that differs from a current recommendation is still logged. No new write, field or effect.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Recording stage completion: a record that writes supersedes the recommendation next stored before it; deviation telemetry compares nothing with it until next runs again."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "Deviation telemetry skips a stored next recommendation older than a successful non-dry-run record entry in the session's lifecycle journal."
+        }
+      ],
+      "entry_sha256": "0a011d8c0e58502fbbde412b325e58af91b36004c243bd5f54f52d636aad28f0"
     }
   ]
 }

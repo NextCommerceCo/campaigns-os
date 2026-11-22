@@ -551,6 +551,57 @@ test("record deploy records the served local preview on the packet and stages.de
   });
 });
 
+// The CLI without blocking this process, so an in-process server can answer it.
+function runCliAsync(args, cwd) {
+  return new Promise((done, fail) => {
+    const child = spawn(process.execPath, [CLI, ...args], { cwd, env: { ...process.env, CAMPAIGNS_OS_TELEMETRY: "off" } });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => { stdout += chunk; });
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.on("error", fail);
+    child.on("close", (status) => done({ status, stdout, stderr }));
+  });
+}
+
+// F-259: a stage record supersedes the recommendation next stored before it,
+// so a qa run after record deploy is not logged against next's "deploy".
+test("deviation telemetry after record deploy compares qa with the stage the record printed, and a qa run before it still deviates", async () => {
+  await withLifecycle(async (f) => {
+    await deployReady(f);
+    const started = runJson(["run", "start", "--packet", f.packetPath], f.dir);
+    assert.equal(started.status, 0, `setup: run start opened a session: ${started.stderr.slice(0, 400)}`);
+    assert.equal(nextOk(f, []).stage, "deploy", "setup: next stores a deploy recommendation");
+    const sessionPath = join(f.target, ".campaign-runtime/run-session.json");
+    const journal = join(f.target, ".campaign-runtime/agent-deviations.jsonl");
+    const deviations = () => (existsSync(journal) ? readFileSync(journal, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line)) : []);
+    const qaRun = () => runCli(["qa", "run", "--packet", f.packetPath, "--base-url", `http://127.0.0.1:9/${f.slug}/`, "--no-post-verdict", "--no-remit", "--json"], f.dir);
+
+    const early = qaRun();
+    assert.match(early.stderr, /deviation recorded: `qa` ran while next recommended stage "deploy"/, "a qa run while deploy is current is a deviation");
+    assert.equal(deviations().length, 1);
+
+    const site = await serveSite(f);
+    let deployed;
+    try {
+      deployed = await runCliAsync(["record", "deploy", "--packet", f.packetPath, "--base-url", site.url], f.dir);
+    } finally {
+      await site.close();
+    }
+    assert.equal(deployed.status, 0, deployed.stderr);
+    assert.match(deployed.stdout, /^Next stage: qa/m);
+
+    const after = qaRun();
+    assert.doesNotMatch(after.stderr, /deviation recorded/, "qa after record deploy is what the record said comes next");
+    assert.equal(deviations().length, 1, "no deviation against the stale deploy recommendation");
+    assert.equal(deviations()[0].recommended_stage, "deploy");
+
+    // Once next runs again its recommendation is current and compared again.
+    assert.equal(nextOk(f, []).stage, "qa");
+    assert.equal(readJson(sessionPath).last_recommendation.stage, "qa");
+  });
+});
+
 test("persisted paths remain private through polish, deploy and QA, and next finds the current verdict from another cwd", async () => {
   await withLifecycle(async (f) => {
     const externalBrief = join(f.dir, "brief.json");
