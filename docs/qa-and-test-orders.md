@@ -2465,7 +2465,8 @@ still has no order in. The recorded QA stage stays done either way, but while
 any is owed `next` does not report done: `next --json` returns `stage: "qa"`,
 a reason naming the owed currencies, and those `qa_run_currency` actions as its
 only `next_actions`. Its prompt opens with "Not complete:" and names each owed
-run, and its "Owed stages" line names the currencies. Once every listed
+run, and its "Owed stages" line names the currencies, as the same line from
+`record build` and `after-edit` does. Once every listed
 currency has an order for this build, `next` reports `stage: "done"`.
 
 A run that created test orders also says what they did not cover, as warn
