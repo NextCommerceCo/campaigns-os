@@ -19,6 +19,7 @@ import {
   recurringClaimAbsences,
   recurringClaimAbsentAssertions,
 } from "./commercial-parity.mjs";
+import { maxSpecDiscountPercent } from "./discount-claims.mjs";
 import { extractRenderedPackageRefs } from "./live-campaign-refs.mjs";
 
 export const COMMERCIAL_QA_LIMITS = Object.freeze({
@@ -850,6 +851,7 @@ export async function runCommercialParity({
     countsOnly: aggregateClaimOverflow,
     testOrders,
     orderCurrency: present(currency) ? currency : sourceCurrency,
+    maxDiscountPercent: maxSpecDiscountPercent(planningSpec),
     ...(sourceNotInRunCurrency ? { unresolvedMoneyClaims: "static_source_not_in_run_currency" } : {}),
   });
   // Subscription packages a page renders with no recurring claim read for

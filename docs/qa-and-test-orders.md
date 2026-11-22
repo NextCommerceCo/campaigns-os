@@ -559,6 +559,17 @@ and findings; the same findings are serialized deterministically into the flat
 verdict at `ready_with_exceptions` even when the flat assertion budget retains
 the finding only under `verdict.commercial`.
 
+Promo discount copy is checked too. Each page's source is read for "Save N%",
+"N% off" and "N% discount" claims, the same reading doctor's
+`template_contract.discount_claim_residue` uses, and each distinct percentage
+above the largest percentage discount the CampaignSpec declares (offer and
+voucher benefits, discount-percent fields) is a `discount-claim-above-offer`
+finding. Its `pricing` row, `discount-claim-above-offer:<page>:<percent>`, has
+status `fail` and severity `warn`: it names the claim, how often the page repeats
+it and the maximum, and makes `commercial.status` a `mismatch`. A claim at or
+below that maximum passes, and a CampaignSpec with no percentage discount checks
+no claim.
+
 ### Committed verdict sidecar (`.campaign-runtime/qa-verdict.json`)
 
 Packet-based `qa run` also writes a committed sidecar beside the Build Packet

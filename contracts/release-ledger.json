@@ -6415,6 +6415,33 @@
         }
       ],
       "entry_sha256": "40094541cbedf766ea79000bfcf6d2b5039b2d48ca7eddb85a3ad893cfbb5d0e"
+    },
+    {
+      "id": "RL-0383",
+      "sequence": 367,
+      "date": "2026-11-22",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.4+agent.3",
+      "changelog_sha256": "b7c7192a56a9087e8fe1471213988ff14007acf926682ce31ad3dd0a13b226b3",
+      "agent_impact": "qa run commercial parity now reads promo discount claims (\"Save N%\", \"N% off\", \"N% discount\") from each commercial page's source and compares each distinct percentage with the largest percentage discount the CampaignSpec declares (offer and voucher benefits, discount-percent fields), the same maximum doctor's template_contract.discount_claim_residue uses. A claim above it is a discount-claim-above-offer finding: a pricing row discount-claim-above-offer:<page>:<percent> with status fail and severity warn, naming the claim, how often the page repeats it and the maximum, and commercial.status reads mismatch instead of pass. The disposition stays ready_with_exceptions (warn severity). Correct the figure to the campaign's actual offers, rebuild and re-run qa run; do not reword copy that is at or below the maximum. A CampaignSpec with no percentage discount checks no claim here (doctor's discount_claim_unverified still applies).",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Automatic commercial parity holds promo discount-percentage claims against the CampaignSpec's largest percentage discount and reports a claim above it as a discount-claim-above-offer fail row (severity warn)."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": null,
+          "summary": "doctor's template_contract.discount_claim_residue reads its claims and CampaignSpec maximum from the module QA commercial parity now shares; its findings and messages are unchanged."
+        }
+      ],
+      "entry_sha256": "24a8509e3df92b05e16e853fb528cf6400cab3de90d2e8457b11b38657ed79ef"
     }
   ]
 }
