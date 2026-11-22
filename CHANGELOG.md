@@ -6,7 +6,7 @@ Notable supported-surface changes are recorded here.
 
 ### Fixed
 
-- `qa run` skips `pricing.upsell_price_visible:<page>` with a named reason, instead of blocking, when it opens an upsell without a `ref_id` and the offer's price rows are `next-hidden` until an order exists; an upsell opened with a `ref_id`, or with prices hidden any other way, still fails (#PR).
+- `qa run` skips `pricing.upsell_price_visible:<page>` with a named reason, instead of blocking, when it opens an upsell without a `ref_id` and the offer's price rows are `next-hidden` until an order exists; an upsell opened with a `ref_id`, or with prices hidden any other way, still fails (#807).
 
 ## [1.71.4] - 2026-11-21
 
