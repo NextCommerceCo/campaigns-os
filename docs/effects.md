@@ -115,13 +115,6 @@ sends nothing and writes no fetched-spec cache. Without `--emit-packet`,
 because it replaces the live Polish and QA records, so any purchase proof they
 held stops counting. History keeps them.
 
-Inside an active run session, `record setup`, `build`, `polish`, `theme`,
-`deploy` and `baseline` also write `{target}/.campaign-runtime/run-session.json`
-when they record: the session's recommendation becomes the stage the record
-prints as `Next stage`, with the commands its blocked gates require, so a
-later command is compared with what the record said comes next. A dry run
-leaves the session untouched.
-
 ### `after-edit`
 
 `after-edit --packet <packet>` composes the existing fetch, record, derive and

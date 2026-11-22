@@ -5557,7 +5557,7 @@ function recordStageRecordRecommendation(ambient, result) {
         ...buildRecommendation({
           stage: result.next_stage,
           status: null,
-          expectedCommands: expectedCommandsForStage(result.next_stage, result.next_required_actions || [], { polishAdvisory: isLocalPreviewPolish(polish) }),
+          expectedCommands: expectedCommandsForStage(result.next_stage, [], { polishAdvisory: isLocalPreviewPolish(polish) }),
           now,
         }),
         issued_by: `record ${result.stage}`,

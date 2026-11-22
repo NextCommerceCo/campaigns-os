@@ -6805,13 +6805,6 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/run-session.json",
-          "when": "a stage record writes inside an active run session: it stores the stage it prints as the session's recommendation",
-          "observed_in": [
-            "ambient_session"
-          ]
-        },
-        {
           "path": "{lifecycle-journal}",
           "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
           "observed_in": [
@@ -6991,13 +6984,6 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/run-session.json",
-          "when": "a stage record writes inside an active run session: it stores the stage it prints as the session's recommendation",
-          "observed_in": [
-            "ambient_session"
-          ]
-        },
-        {
           "path": "{lifecycle-journal}",
           "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
           "observed_in": [
@@ -7062,13 +7048,6 @@
             "stale_session",
             "lifecycle_log",
             "persisted_consent"
-          ]
-        },
-        {
-          "path": "{target}/.campaign-runtime/run-session.json",
-          "when": "a stage record writes inside an active run session: it stores the stage it prints as the session's recommendation",
-          "observed_in": [
-            "ambient_session"
           ]
         },
         {
@@ -7139,13 +7118,6 @@
           ]
         },
         {
-          "path": "{target}/.campaign-runtime/run-session.json",
-          "when": "a stage record writes inside an active run session: it stores the stage it prints as the session's recommendation",
-          "observed_in": [
-            "ambient_session"
-          ]
-        },
-        {
           "path": "{lifecycle-journal}",
           "when": "a lifecycle journal is selected for the invocation — an active run session, --lifecycle-journal, or CAMPAIGNS_OS_LIFECYCLE_LOG",
           "observed_in": [
@@ -7210,13 +7182,6 @@
             "stale_session",
             "lifecycle_log",
             "persisted_consent"
-          ]
-        },
-        {
-          "path": "{target}/.campaign-runtime/run-session.json",
-          "when": "a stage record writes inside an active run session: it stores the stage it prints as the session's recommendation",
-          "observed_in": [
-            "ambient_session"
           ]
         },
         {
@@ -7295,13 +7260,6 @@
             "stale_session",
             "lifecycle_log",
             "persisted_consent"
-          ]
-        },
-        {
-          "path": "{target}/.campaign-runtime/run-session.json",
-          "when": "a stage record writes inside an active run session: it stores the stage it prints as the session's recommendation",
-          "observed_in": [
-            "ambient_session"
           ]
         },
         {
