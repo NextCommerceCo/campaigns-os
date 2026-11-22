@@ -35,14 +35,28 @@ export function owedCurrencyReason(codes) {
 // The same decision for a caller holding only the packet and the doctor read
 // over it (record build, after-edit); `report` is the composed report when it
 // is not the one on disk (a dry run). Best-effort: an unreadable report or
-// spec owes nothing extra here, and doctor reports either one itself.
+// spec owes nothing extra here, and doctor reports either one itself. An
+// unreadable spec drops only the currencies: the deploy reads the report
+// alone, as next's does.
 export function readOwedStages({ picked, packetPath, specPath = null, report: composed = null }) {
+  let workspace;
+  let report;
   try {
-    const { targetRepo, reportPath } = resolveCampaignWorkspace(packetPath, { followContextPointer: true });
-    const report = composed ?? readJsonIfExists(reportPath);
-    const spec = specPath ? readJsonIfExists(specPath) : null;
+    workspace = resolveCampaignWorkspace(packetPath, { followContextPointer: true });
+    report = composed ?? readJsonIfExists(workspace.reportPath);
+  } catch {
+    return { deploy: composed?.stages?.deploy?.status === "required", currencies: [] };
+  }
+  let spec = null;
+  try {
+    spec = specPath ? readJsonIfExists(specPath) : null;
+  } catch {
+    spec = null;
+  }
+  const { targetRepo, reportPath } = workspace;
+  try {
     return owedStages({ picked, report, spec, buildCurrencies: () => testOrderCurrenciesForBuild({ report, targetRepo, packetPath, reportPath }) });
   } catch {
-    return { deploy: false, currencies: [] };
+    return { deploy: report?.stages?.deploy?.status === "required", currencies: [] };
   }
 }

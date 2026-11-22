@@ -1699,6 +1699,9 @@ test("page-only rebuild shares debt across after-edit, next and local deploy aft
     const after = runJson(["after-edit", "--packet", f.packetPath, "--no-live-refs"], f.dir).json;
     assert.equal(after.ci.polish.advisory, true);
     assert.deepEqual(after.ci.qa.owed_pages.map((page) => page.page_id), ["landing"]);
+    // The required deploy comes before the page QA run, as next picks it, so
+    // after-edit hands off to next rather than to qa run --page.
+    assert.match(after.next, /next --packet /, after.next);
     const inspected = doctorOk(f);
     t.diagnostic(`PAGE ONLY | record build\n${resultTextLines(build).join("\n")}`);
     t.diagnostic(`PAGE ONLY | after-edit\n${runCli(["after-edit", "--packet", f.packetPath, "--no-live-refs"], f.dir).stdout}`);

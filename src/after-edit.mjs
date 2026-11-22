@@ -146,6 +146,9 @@ export async function afterEditCommand(args, { specFetch, specDerive, specDerive
     assessment.ok = Boolean(ci);
     if (ci?.status !== "current") {
       if (ci?.polish.status === "owed" && !ci.polish.advisory) assessment.next = `${cmd("polish")} capture ${packetFlag} --base-url <served-current-build-url>`;
+      // A rebuild that made deploy required owes it before any QA, as next
+      // picks it; next names the deploy command.
+      else if (ci && owedStages(doctor).deploy) assessment.next = `${cmd("next")} ${packetFlag}`;
       else if (ci?.qa.status === "owed") assessment.next = `${cmd("qa")} run ${packetFlag}${ci.qa.scope === "pages" ? ci.qa.owed_pages.map((page) => ` --page ${shellToken(page.page_id)}`).join("") : ""}${ci.qa.browser_pages?.length ? " --browser" : ""}`;
       else assessment.next = `${cmd("doctor")} ${packetFlag} --ci --no-live-refs`;
     } else if (owedStages(doctor).deploy || owedStages(doctor).currencies.length) {
