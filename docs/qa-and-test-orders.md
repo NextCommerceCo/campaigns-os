@@ -546,9 +546,19 @@ CampaignSpec offer's calculated price for that package, the page's
 naming the order and both prices, and the verdict is `blocked`. Without such an
 order they stay warnings. On upsell and downsell pages all three
 attributes are read as voucher claims; other pages read only
-`data-next-bundle-vouchers`, as before. Decorative claims are ignored, and ambiguous, stale,
+`data-next-bundle-vouchers`, as before. `data-next-bundle-vouchers` is read as
+the SDK reads it: a JSON list when the value starts with `[`, otherwise
+comma-separated codes (`data-next-bundle-vouchers="FIRE"`). Decorative claims are ignored, and ambiguous, stale,
 unresolved, or malformed claims never read as a mismatch: they leave the proof
-incomplete, as above. A page showing a voucher the normalized plan cannot price
+incomplete, as above. Each claim left uncompared is named in
+`verdict.commercial.unresolved_claims` (first 50) with its page, kind, binding
+(the `data-next-display` path that locates its node), package and quantity when
+known, the text it showed, and a reason code; the `commercial_claims_unresolved`
+and `package_price_*` rows keep their whole count, list the first ten in their
+line, and carry in `evidence.claims` those among the verdict's first 50; a line
+says how many it could not name. A `commercial_pages_unread` row names each page
+with why it was not read (a fetch failure, a named malformed attribute, a size,
+element, depth or claim limit, or no served page read for it), and `invalid_captures[].reason` carries the code. A page showing a voucher the normalized plan cannot price
 (no calculated pair for its code, for example a live voucher on an upsell)
 leaves that page's price claims unresolved: the plan's only Exact truth for
 the page is then the list price, which a voucher-priced page is expected to
@@ -558,6 +568,17 @@ and findings; the same findings are serialized deterministically into the flat
 `assertions` array consumed by existing QA tooling. A proven mismatch keeps the
 verdict at `ready_with_exceptions` even when the flat assertion budget retains
 the finding only under `verdict.commercial`.
+
+Promo discount copy is checked too. Each page's source is read for "Save N%",
+"N% off" and "N% discount" claims, the same reading doctor's
+`template_contract.discount_claim_residue` uses, and each distinct percentage
+above the largest percentage discount the CampaignSpec declares (offer and
+voucher benefits, discount-percent fields) is a `discount-claim-above-offer`
+finding. Its `pricing` row, `discount-claim-above-offer:<page>:<percent>`, has
+status `fail` and severity `warn`: it names the claim, how often the page repeats
+it and the maximum, and makes `commercial.status` a `mismatch`. A claim at or
+below that maximum passes, and a CampaignSpec with no percentage discount checks
+no claim.
 
 ### Committed verdict sidecar (`.campaign-runtime/qa-verdict.json`)
 
@@ -716,6 +737,15 @@ an earlier page, for example by a landing link carrying `forcePackageId`, and
 the test order enters it from there. A checkout with its own package
 selection, or a filled cart, still fails when no price shows. If the cart
 probe itself fails, the row stays failed and records `empty_cart_probe_error`.
+The upsell row follows the same rule for a missing order. QA opens an upsell
+URL without the `ref_id` a buyer always arrives with, and the SDK keeps an
+upsell offer `next-hidden` until an order exists. When no price row is
+visible, the opened URL has no `ref_id`, and every price row sits inside a
+`next-hidden` container, `pricing.upsell_price_visible:<page>` is `skipped`,
+records `next_hidden_price_rows` and says so. An upsell opened with a `ref_id`,
+or with any price row hidden another way, still fails; an upsell that shows
+its prices without an order is still checked. If that probe fails, the row
+stays failed and records `orderless_probe_error`.
 Promoted template families must also have
 `contracts/template-brand-contract.<family>.v0.json`; QA emits a blocker if the
 selected family is missing its brand/residue/pricing contract instead of
@@ -2456,7 +2486,8 @@ still has no order in. The recorded QA stage stays done either way, but while
 any is owed `next` does not report done: `next --json` returns `stage: "qa"`,
 a reason naming the owed currencies, and those `qa_run_currency` actions as its
 only `next_actions`. Its prompt opens with "Not complete:" and names each owed
-run, and its "Owed stages" line names the currencies. Once every listed
+run, and its "Owed stages" line names the currencies, as the same line from
+`record build` and `after-edit` does. Once every listed
 currency has an order for this build, `next` reports `stage: "done"`.
 
 A run that created test orders also says what they did not cover, as warn

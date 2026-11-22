@@ -853,7 +853,7 @@ test("compact verdict evidence preserves sanitized missing, unmatched, invalid, 
   delete spec.campaign.campaigns_api_key;
   const invalid = captureCommercialClaims(
     { page_id: "page_mt104ehn_11", url: "https://preview.example.test/checkout/" },
-    `<div data-next-bundle-vouchers='not-json'></div>`,
+    `<div data-next-bundle-vouchers='[not-json'></div>`,
   );
   const unmatched = captureCommercialClaims({ page_id: "other-page" }, "<main></main>");
   const result = await runCommercialParity({
@@ -865,6 +865,7 @@ test("compact verdict evidence preserves sanitized missing, unmatched, invalid, 
     index: 0,
     page_id: "page_mt104ehn_11",
     url: "https://preview.example.test/checkout/",
+    reason: "malformed-voucher-json",
   }]);
   assert.deepEqual(result.commercial.unmatched_pages, [{ page_id: "other-page" }]);
   assert.deepEqual(result.commercial.missing_pages, [{ page_id: "page_mt104ehn_11" }]);
@@ -1413,4 +1414,174 @@ test("on a checkout, bundle-config and SDK 0.5 card vouchers are not voucher cla
     assert.equal(result.commercial.extracted_voucher_claims, 0, carried);
     assert.equal(result.commercial.compared_recurrence_claims, 1, carried);
   }
+});
+
+test("an upsell carrying a plain data-next-bundle-vouchers code is read, as the SDK reads it, and an unread page names why (F-261)", async () => {
+  // c6-claude MWR7UYAG: both upsells answered 200 with data-next-bundle-vouchers="FIRE"
+  // and were reported unread, with a fix pointing at fetch failures.
+  const spec = {
+    schema_version: "4.3",
+    campaign: { campaigns_api_key: "campaign-secret", currency: "USD", offers: [{ ref_id: "o1", type: "voucher", code: "SAVE20" }] },
+    funnels: [{ id: "default", pages: [{
+      id: "upsell-1", type: "upsell", order: 2, enabled: true,
+      packages: [{ ref_id: "3", qty: 1 }], offers: [{ ref_id: "o1" }],
+    }] }],
+  };
+  const fetchImpl = async (_url, options) => {
+    const { scenario } = JSON.parse(options.body);
+    const voucher = (scenario.vouchers || []).includes("SAVE20");
+    const total = voucher ? "29.99" : "49.99";
+    return new Response(JSON.stringify({
+      ok: true,
+      status: 200,
+      data: {
+        lines: scenario.lines.map((line) => ({ package_id: line.package_id, quantity: line.quantity, discounts: [], subtotal: total, original_package_price: "49.99", total_discount: voucher ? "20.00" : "0.00", total })),
+        offer_discounts: [],
+        voucher_discounts: voucher ? [{ code: "SAVE20", amount: "20.00" }] : [],
+        subtotal: total,
+        total_discount: voucher ? "20.00" : "0.00",
+        total,
+        currency: "USD",
+      },
+      calculated_at: "2026-08-24T00:00:00.000Z",
+    }), { status: 200 });
+  };
+  const resolved = { rawSpec: spec, spec, proxyBase: "https://proxy.example.test" };
+  const run = (html) => runCommercialParity({
+    resolved,
+    captures: [captureCommercialClaims({ page_id: "upsell-1", page_type: "upsell", url: "https://shop.example.com/upsell-1/" }, html)],
+    fetchImpl,
+  });
+
+  for (const value of ["SAVE20", " SAVE20 ", "SAVE20,"]) {
+    const plain = await run(`<div data-next-package-id="3" data-next-bundle-vouchers="${value}">Add the travel case</div>`);
+    assert.deepEqual(incompleteIds(plain), [], value);
+    assert.equal(plain.commercial.invalid_capture_count, 0, value);
+    assert.equal(plain.commercial.status, "pass", value);
+    assert.equal(plain.commercial.compared_voucher_claims, 1, value);
+  }
+
+  // A list that does not parse is still unread, and the line says which attribute.
+  const broken = await run('<div data-next-package-id="3" data-next-bundle-vouchers="[SAVE20">Add the travel case</div>');
+  assert.deepEqual(incompleteIds(broken), ["commercial-parity:incomplete:commercial_pages_unread"]);
+  assert.match(broken.assertions.at(-1).actual, /upsell-1 \(data-next-bundle-vouchers starts a JSON list that does not parse\)/);
+  assert.deepEqual(broken.commercial.invalid_captures.map((entry) => entry.reason), ["malformed-voucher-json"]);
+
+  // A planned page no served page was read for says that, not "fetch failure".
+  const notRead = await runCommercialParity({ resolved, captures: [], fetchImpl });
+  assert.match(notRead.assertions.at(-1).actual, /upsell-1 \(no served page was read for it in this run\)/);
+});
+
+test("each unresolved claim is named with its page, its binding and its text (F-260)", async () => {
+  const priced = async (_url, options) => new Response(JSON.stringify(calculateBody(JSON.parse(options.body).scenario)), { status: 200 });
+  const spec = rawRecurringSpec();
+  const resolved = { rawSpec: spec, spec, proxyBase: "https://proxy.example.test" };
+  const readable = '<div data-next-package-toggle><strong data-next-package-id="5">Game Club</strong> then $29.99 every 30 days</div>';
+
+  // c1-claude-opus / c2-codex: "2 claim(s) could not be tied …" and nothing else.
+  const twoBindings = await runCommercialParity({
+    resolved,
+    captures: [captureCommercialClaims({ page_id: "page_mt104ehn_11" }, `${readable}
+      <span data-next-display="bundle.a.price" data-next-format="currency">$29.99</span>
+      <span data-next-display="bundle.b.price" data-next-format="currency">$19.99</span>`)],
+    fetchImpl: priced,
+  });
+  assert.deepEqual(twoBindings.commercial.unresolved_claims, [
+    { page_id: "page_mt104ehn_11", kind: "price", binding: "bundle.a.price", text: "29.99", reason: "more_than_one_price_binding" },
+    { page_id: "page_mt104ehn_11", kind: "price", binding: "bundle.b.price", text: "19.99", reason: "more_than_one_price_binding" },
+  ]);
+  const row = twoBindings.assertions.find((entry) => entry.id === "commercial-parity:incomplete:commercial_claims_unresolved");
+  assert.match(row.actual, /Claims: page_mt104ehn_11 bundle\.a\.price "29\.99": one of several bound prices on the page; page_mt104ehn_11 bundle\.b\.price "19\.99"/);
+  assert.equal(row.evidence.claims.length, 2);
+
+  // c2-claude-opus: package_price_unresolved said only "page: campaign".
+  const source = captureCommercialClaims({ page_id: "page_mt104ehn_11" }, `
+    <div data-next-package-toggle data-next-package-id="5">
+      <span data-next-display="package.price" data-next-format="currency">$9.99</span> then $29.99 every 30 days
+    </div>`);
+  const noScope = await runCommercialParity({
+    resolved,
+    captures: [{ ...source, rendered_package_prices: [{ binding: "package.price", package_id: null, filled: true, text: "$29.99" }] }],
+    fetchImpl: priced,
+  });
+  const packageRow = noScope.assertions.find((entry) => entry.id === "commercial-parity:incomplete:package_price_unresolved");
+  assert.match(packageRow.actual, /Claims: page_mt104ehn_11 package\.price "\$29\.99": no package id or no single exact row for it\./);
+  assert.deepEqual(packageRow.evidence.claims, [
+    { page_id: "page_mt104ehn_11", kind: "package_price", binding: "package.price", text: "$29.99", reason: "package_price_unresolved" },
+  ]);
+  // Past the verdict's 50 listed claims the row keeps its whole count and says
+  // how many it could not name (Kilo on #810).
+  const many = Array.from({ length: 60 }, (_, index) => `<span data-next-display="bundle.b${index}.price" data-next-format="currency">$${index + 1}.99</span>`).join("");
+  const crowded = await runCommercialParity({
+    resolved,
+    captures: [captureCommercialClaims({ page_id: "page_mt104ehn_11" }, `${readable}${many}`)],
+    fetchImpl: priced,
+  });
+  assert.equal(crowded.commercial.unresolved_claims.length, 50);
+  const crowdedRow = crowded.assertions.find((entry) => entry.id === "commercial-parity:incomplete:commercial_claims_unresolved");
+  assert.match(crowdedRow.actual, /^60 claim\(s\)/);
+  assert.match(crowdedRow.actual, /; and 50 more \(10 not named: the verdict lists the first 50 claims of the run\)\. Fix:/);
+  assert.equal(crowdedRow.evidence.claims.length, 50);
+});
+
+// F-258: the c5-claude landing page said "Claim Your 60% Discount" nine times
+// and "60% Off Limited Time" against offers of 33.34%, 38.89% and 44.45%, and
+// commercial parity passed it. Doctor's discount_claim_residue reads the same
+// CampaignSpec maximum.
+function tieredDiscountSpec() {
+  const spec = rawRecurringSpec();
+  spec.offers = ["33.34", "38.89", "44.45"].map((value, index) => ({
+    ref_id: index + 1,
+    type: "offer",
+    condition: { type: "count", value: index + 1 },
+    benefit: { type: "package_percentage", value },
+  }));
+  return spec;
+}
+
+async function runDiscountPage(html) {
+  const spec = tieredDiscountSpec();
+  return runCommercialParity({
+    resolved: { rawSpec: spec, spec, proxyBase: "https://proxy.example.test" },
+    captures: [captureCommercialClaims({ page_id: "page_mt104ehn_11" }, `<div data-next-package-toggle><strong data-next-package-id="5">Game Club</strong> then $29.99 every 30 days</div>${html}`)],
+    fetchImpl: async (_url, options) => {
+      const { scenario } = JSON.parse(options.body);
+      return new Response(JSON.stringify(calculateBody(scenario)), { status: 200 });
+    },
+  });
+}
+
+test("a landing claim above the CampaignSpec's largest percentage discount is a commercial mismatch (F-258)", async () => {
+  const result = await runDiscountPage(`
+    <span class="badge">60% Off Limited Time</span>
+    ${'<a class="cta">Claim Your 60% Discount</a>'.repeat(9)}
+    <p>Save up to 44% today</p>
+  `);
+  assert.equal(result.commercial.status, "mismatch");
+  assert.deepEqual(result.commercial.finding_counts, { "discount-claim-above-offer": 1 });
+  const row = result.assertions.find((entry) => entry.id === "discount-claim-above-offer:page_mt104ehn_11:60");
+  assert.ok(row, JSON.stringify(result.assertions));
+  assert.equal(row.status, "fail");
+  assert.equal(row.family, "pricing");
+  assert.match(row.expected, /at or below 44\.45%/);
+  assert.match(row.actual, /claims 60% \("60% Off", 10 times\)/);
+  assert.deepEqual(row.evidence, { type: "discount-claim-above-offer", claimed: "60%", max_spec_percent: "44.45%", occurrences: 10 });
+});
+
+test("discount claims at or below the CampaignSpec maximum, and specs with no percentage discount, stay a pass (F-258)", async () => {
+  const correct = await runDiscountPage("<p>Save up to 44.45% today</p><p>33% off one unit</p><p>100% Encrypted &amp; Secure Checkout</p>");
+  assert.equal(correct.commercial.status, "pass");
+  assert.deepEqual(correct.assertions, []);
+
+  const spec = rawRecurringSpec();
+  const unpriced = await runCommercialParity({
+    resolved: { rawSpec: spec, spec, proxyBase: "https://proxy.example.test" },
+    captures: [captureCommercialClaims({ page_id: "page_mt104ehn_11" }, '<div data-next-package-toggle><strong data-next-package-id="5">Game Club</strong> then $29.99 every 30 days</div><p>60% Off Limited Time</p>')],
+    fetchImpl: async (_url, options) => {
+      const { scenario } = JSON.parse(options.body);
+      return new Response(JSON.stringify(calculateBody(scenario)), { status: 200 });
+    },
+  });
+  assert.equal(unpriced.commercial.status, "pass");
+  assert.deepEqual(unpriced.assertions, []);
 });

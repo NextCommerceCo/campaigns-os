@@ -2497,6 +2497,18 @@ and QA does not warn about missing Polish evidence. Run
 `campaigns-os next --packet <p>` for the next stage. A mapped design page keeps
 the existing Polish requirements.
 
+In an active run session, a successful `record` supersedes the
+recommendation `next` stored before it: deviation telemetry compares no
+command with that recommendation until `next` runs again. It finds the
+record's entry, newer than the recommendation, in the lifecycle journal: the
+session's own, and the one `--lifecycle-journal` or
+`CAMPAIGNS_OS_LIFECYCLE_LOG` selects. A `qa run` right after `record deploy`
+printed `Next stage: qa` is not logged as a deviation; one while `next`'s
+current recommendation is still deploy is. The journal does not store the
+subcommand, so `record brief` and `record spec` count too, even when they save
+nothing new; that only pauses the comparison until `next` runs. A dry run
+supersedes nothing.
+
 Each command reads the same packet, Build Context and Assembly Report `next`
 reads (`--context` / `--report` override them the same way), validates what it
 would write against `schemas/campaign-runtime-build-context.v0.schema.json` and

@@ -2,6 +2,7 @@
 import { campaignSpecIdentity, resolveCampaignIdentity, campaignIdentitiesMatch } from "../spec-source-identity.mjs";
 import { withHtmlScanSnapshot, readHtmlScanBytes, readHtmlScanText, htmlScanDocuments, htmlScanMemo } from "../html-scan.mjs";
 import { createHash } from "node:crypto";
+import { discountClaimAboveMax, discountClaimsInText, formatDiscountPercent as formatPercent, maxSpecDiscountPercent } from "../discount-claims.mjs";
 import { accessSync, constants as fsConstants, existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { describeSdkIgnoredMetaTags, isSdkIgnoredMetaTag } from "../sdk-meta-tags.mjs";
@@ -312,7 +313,6 @@ function collectHtmlFiles(root) {
 
 const BUILT_TEXT_EXTENSIONS = new Set([".html", ".css", ".js", ".mjs", ".json"]);
 const BUILT_TEXT_SCAN_IGNORED_DIRS = new Set(["node_modules", ".git", "_includes", "_layouts"]);
-const DISCOUNT_CLAIM_TOLERANCE = 0.01;
 
 function collectBuiltTextFiles(root) {
   const files = [];
@@ -5034,75 +5034,18 @@ function collectPatternMatches(root, patterns) {
   return matches;
 }
 
-function maxSpecDiscountPercent(spec) {
-  if (!spec || typeof spec !== "object") return null;
-  const values = [];
-
-  function visit(value, key = "") {
-    if (Array.isArray(value)) {
-      for (const entry of value) visit(entry, key);
-      return;
-    }
-    if (!value || typeof value !== "object") return;
-
-    if (isPercentDiscountBenefit(value, key)) {
-      addPercentValue(values, value.value);
-    }
-
-    for (const [entryKey, entryValue] of Object.entries(value)) {
-      if (isDiscountPercentKey(entryKey)) addPercentValue(values, entryValue);
-      visit(entryValue, entryKey);
-    }
-  }
-
-  visit(spec);
-  return values.length ? Math.max(...values) : null;
-}
-
-function isPercentDiscountBenefit(value, key) {
-  if (!isObject(value) || !Object.hasOwn(value, "value")) return false;
-  const type = normalizeSpecKey(value.type || "");
-  if (!/(?:^|_)(?:percent|percentage)(?:_|$)/.test(type)) return false;
-  const context = normalizeSpecKey(key);
-  if (context === "benefit") return true;
-  return /(?:^|_)(?:discount|saving|savings|save|off|offer|promo|coupon|voucher|package)(?:_|$)/.test(type);
-}
-
-function isDiscountPercentKey(key) {
-  const normalized = normalizeSpecKey(key);
-  const mentionsPercent = /(?:^|_)(?:percent|percentage)(?:_|$)/.test(normalized);
-  const mentionsOffer = /(?:^|_)(?:discount|saving|savings|save|off|offer|promo|coupon|voucher)(?:_|$)/.test(normalized);
-  return mentionsPercent && mentionsOffer;
-}
-
-function normalizeSpecKey(value) {
-  return String(value || "")
-    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
-    .replace(/[^a-z0-9]+/gi, "_")
-    .replace(/^_+|_+$/g, "")
-    .toLowerCase();
-}
-
-function addPercentValue(values, value) {
-  const parsed = Number.parseFloat(String(value ?? "").replace("%", "").trim());
-  if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 100) values.push(parsed);
-}
-
 function collectDiscountClaimMatches(root) {
-  const claimPattern = /\b(?:save(?:\s+up\s+to)?\s+(\d{1,3}(?:\.\d+)?)\s*(?:%|\bpercent\b)|(\d{1,3}(?:\.\d+)?)\s*(?:%|\bpercent\b)\s*(?:off|discount)\b)/gi;
   const matches = [];
   for (const file of collectBuiltTextFiles(root)) {
     const content = readHtmlScanText(join(root, file.path));
-    for (const match of content.matchAll(claimPattern)) {
-      const claimed = Number.parseFloat(match[1] || match[2]);
-      if (!Number.isFinite(claimed)) continue;
+    for (const claim of discountClaimsInText(content)) {
       matches.push({
         surface: "target",
         path: file.path,
-        line: lineNumberAt(content, match.index || 0),
-        label: `${formatPercent(claimed)} claim`,
-        text: match[0],
-        claimed_percent: claimed,
+        line: lineNumberAt(content, claim.index),
+        label: `${formatPercent(claim.claimed_percent)} claim`,
+        text: claim.text,
+        claimed_percent: claim.claimed_percent,
       });
     }
   }
@@ -5111,13 +5054,8 @@ function collectDiscountClaimMatches(root) {
 
 function collectOverstatedDiscountClaimMatches(root, maxDiscount) {
   return collectDiscountClaimMatches(root)
-    .filter((match) => match.claimed_percent > maxDiscount + DISCOUNT_CLAIM_TOLERANCE)
+    .filter((match) => discountClaimAboveMax(match.claimed_percent, maxDiscount))
     .map((match) => ({ ...match, max_spec_percent: maxDiscount }));
-}
-
-function formatPercent(value) {
-  const rounded = Math.round(value * 100) / 100;
-  return `${Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(2)}%`;
 }
 
 function contractMentionsShipping(contract) {
