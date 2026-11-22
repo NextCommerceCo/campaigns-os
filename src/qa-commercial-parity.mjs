@@ -476,8 +476,61 @@ function captureIssues(captures) {
 // One reason a run's commercial proof stopped short: what was not compared and
 // what to do about it, for an agent that reads only the exceptions list. Text
 // only, never a key or a URL: it is persisted.
-function cause(code, summary, fix, count = 1) {
-  return { code, count, summary, fix };
+function cause(code, summary, fix, count = 1, claims = []) {
+  return { code, count, summary, fix, ...(claims.length ? { claims } : {}) };
+}
+
+// How many named claims one human line carries before "and N more"; the
+// JSON (verdict.commercial.unresolved_claims and the row's evidence) has them all.
+const CLAIMS_NAMED_IN_LINE = 10;
+
+const CLAIM_REASONS = Object.freeze({
+  [PACKAGE_PRICE_NOT_RENDERED]: "not read from a rendered page",
+  [PACKAGE_PRICE_NOT_FILLED]: "never filled by the SDK",
+  [PACKAGE_PRICE_UNRESOLVED]: "no package id or no single exact row for it",
+  voucher_unpriced: "a voucher on the page the plan cannot price",
+  page_total_not_exact: "no exact total for the page",
+  more_than_one_price_binding: "one of several bound prices on the page",
+  not_the_page_price_binding: "not the page's declared price binding",
+  no_single_exact_row: "no single exact row for its package and quantity",
+  text_not_money: "its text is not a money amount",
+  no_exact_recurrence: "no exact rebill for its package",
+  more_than_one_recurrence: "more than one rebill for its package",
+  voucher_not_calculated: "no calculated pair for the code",
+});
+
+// One claim as a person can find it: page, the node's binding, what it showed.
+function claimLabel(claim) {
+  const node = claim.binding
+    ?? (claim.kind === "voucher" ? "voucher"
+      : claim.kind === "recurring" ? `package ${claim.package_id ?? "(no id)"} rebill` : claim.kind);
+  const scope = claim.binding && claim.package_id
+    ? ` (package ${claim.package_id}${claim.quantity ? ` x${claim.quantity}` : ""})` : "";
+  const text = claim.text ? ` "${claim.text}"` : "";
+  return `${claim.page_id} ${node}${scope}${text}: ${CLAIM_REASONS[claim.reason] || claim.reason}`;
+}
+
+function namedClaims(claims) {
+  const listed = claims.slice(0, CLAIMS_NAMED_IN_LINE).map(claimLabel).join("; ");
+  const more = claims.length > CLAIMS_NAMED_IN_LINE ? `; and ${claims.length - CLAIMS_NAMED_IN_LINE} more` : "";
+  return claims.length ? ` Claims: ${listed}${more}.` : "";
+}
+
+// Why a page was not read, in words, from the code the capture carried.
+const UNREAD_REASONS = Object.freeze({
+  "malformed-voucher-json": "data-next-bundle-vouchers starts a JSON list that does not parse",
+  "malformed-voucher-shape": "data-next-bundle-vouchers lists something other than codes",
+  "malformed-package-id": "a data-next-package-id is not a positive whole number",
+  commercial_html_unavailable: "the page was not fetched",
+  commercial_html_extraction_error: "its HTML could not be parsed",
+  commercial_html_claims_limit: "over the per-page claim limit",
+  unreadable_claims: "its claims did not have the expected shape",
+  not_captured: "no served page was read for it in this run",
+});
+
+function unreadLabel(page) {
+  const reason = page.reason || "not_captured";
+  return `${page.page_id ?? "(no id)"} (${UNREAD_REASONS[reason] || reason})`;
 }
 
 // What each reason a package.price went uncompared means for the operator.
@@ -515,8 +568,8 @@ function incompleteCauses(stopped, commercial, journey) {
   if (unread.length) {
     causes.push(cause(
       "commercial_pages_unread",
-      `${unread.length} page(s) could not be read for commercial claims: ${unread.map((page) => page.page_id ?? "(no id)").join(", ")}.`,
-      "Fix the page's fetch failure, its URL in the spec or its malformed markup, then re-run qa run. A page over the claim limit needs its prices checked by hand.",
+      `${unread.length} page(s) could not be read for commercial claims: ${unread.map(unreadLabel).join(", ")}.`,
+      "Repair what each page's reason names (the fetch, the page's URL in the spec, or the named attribute), then re-run qa run. A page over the claim limit needs its prices checked by hand.",
       unread.length,
     ));
   }
@@ -541,18 +594,22 @@ function incompleteCauses(stopped, commercial, journey) {
       count,
     )];
   }
+  const claims = array(commercial.unresolved_claims);
   const packagePrices = Object.entries(commercial.package_price_claims?.unresolved || {});
   packagePrices.forEach(([code, count]) => {
-    causes.push(cause(code, PACKAGE_PRICE_CAUSES[code].summary(count), PACKAGE_PRICE_CAUSES[code].fix, count));
+    const named = claims.filter((claim) => claim.kind === "package_price" && claim.reason === code);
+    causes.push(cause(code, `${PACKAGE_PRICE_CAUSES[code].summary(count)}${namedClaims(named)}`, PACKAGE_PRICE_CAUSES[code].fix, count, named));
   });
   const unresolvedPrices = commercial.unresolved_price_claims - packagePrices.reduce((sum, [, count]) => sum + count, 0);
   const unresolved = unresolvedPrices + commercial.unresolved_recurrence_claims + commercial.unresolved_voucher_claims;
   if (unresolved > 0) {
+    const named = claims.filter((claim) => claim.kind !== "package_price");
     causes.push(cause(
       "commercial_claims_unresolved",
-      `${unresolved} claim(s) could not be tied to one calculated value (${unresolvedPrices} price, ${commercial.unresolved_recurrence_claims} recurring, ${commercial.unresolved_voucher_claims} voucher).`,
+      `${unresolved} claim(s) could not be tied to one calculated value (${unresolvedPrices} price, ${commercial.unresolved_recurrence_claims} recurring, ${commercial.unresolved_voucher_claims} voucher).${namedClaims(named)}`,
       "A page with more than one bound bundle price, or a voucher the plan cannot price, stays uncompared: check these by hand, or declare the voucher in the spec.",
       unresolved,
+      named,
     ));
   }
   return causes;
@@ -571,6 +628,7 @@ function commercialIncompleteAssertions(reasons) {
     evidence: {
       code: entry.code,
       count: entry.count,
+      ...(entry.claims?.length ? { claims: entry.claims } : {}),
     },
   }));
 }
@@ -614,6 +672,7 @@ function compactReport(report, journey, plan, executed, issues, observedClaims, 
     extracted_voucher_claims: report.extracted_voucher_claims,
     compared_voucher_claims: report.compared_voucher_claims,
     unresolved_voucher_claims: report.unresolved_voucher_claims,
+    unresolved_claims: array(report.unresolved_claims),
     ...(present(report.unresolved_money_claims_reason)
       ? { unresolved_money_claims_reason: report.unresolved_money_claims_reason }
       : {}),
@@ -685,6 +744,7 @@ export function unavailableCommercialReport(code, { status = "not_run" } = {}) {
     extracted_voucher_claims: 0,
     compared_voucher_claims: 0,
     unresolved_voucher_claims: 0,
+    unresolved_claims: [],
     serialized_assertion_count: 0,
     omitted_assertion_count: 0,
     recurring_claim_absences: [],

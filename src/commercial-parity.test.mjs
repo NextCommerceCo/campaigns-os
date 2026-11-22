@@ -105,7 +105,7 @@ test("ambiguous price bindings stay unresolved instead of creating precision fal
 
 test("malformed vouchers and unlabeled multi-page captures are explicit incomplete evidence", () => {
   const malformed = extractCommercialClaims(
-    `<div data-next-bundle-vouchers='not-json'></div>`,
+    `<div data-next-bundle-vouchers='[not-json'></div>`,
     { pageId: "checkout" },
   );
   const unlabeled = extractCommercialClaims(
@@ -122,7 +122,7 @@ test("malformed vouchers and unlabeled multi-page captures are explicit incomple
   const report = createCommercialParityReport([malformed, unlabeled], journey);
 
   assert.equal(report.invalid_capture_count, 1);
-  assert.deepEqual(report.invalid_captures, [{ index: 0, page_id: "checkout" }]);
+  assert.deepEqual(report.invalid_captures, [{ index: 0, page_id: "checkout", reason: "malformed-voucher-json" }]);
   assert.equal(report.unmatched_page_count, 1);
   assert.equal(report.missing_page_count, 2);
   assert.equal(report.coverage_complete, false);
@@ -542,4 +542,13 @@ test("a malformed rendered price invalidates the capture instead of reading as c
   const report = createCommercialParityReport([renderedCapture([{ binding: "bundle.main.price", package_id: 3, filled: true, text: "$1.00" }])], { pages: [packagePricePage()] });
   assert.equal(report.invalid_capture_count, 1);
   assert.equal(report.coverage_complete, false);
+});
+
+test("data-next-bundle-vouchers is read as the SDK reads it: a JSON list, or comma-separated codes (F-261)", () => {
+  const plain = extractCommercialClaims('<div data-next-bundle-vouchers="FIRE"></div>', { pageId: "upsell-1", pageType: "upsell" });
+  assert.deepEqual(plain.vouchers, [{ code: "FIRE" }]);
+  assert.equal(plain.extraction_errors, undefined);
+  assert.deepEqual(extractCommercialClaims('<div data-next-bundle-vouchers="FIRE, SOLAR"></div>').vouchers, [{ code: "FIRE" }, { code: "SOLAR" }]);
+  assert.deepEqual(extractCommercialClaims(`<div data-next-bundle-vouchers=' ["UP50"] '></div>`).vouchers, [{ code: "UP50" }]);
+  assert.deepEqual(extractCommercialClaims('<div data-next-bundle-vouchers="[UP50"></div>').extraction_errors, [{ type: "malformed-voucher-json" }]);
 });
