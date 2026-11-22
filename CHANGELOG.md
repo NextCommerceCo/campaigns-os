@@ -2,6 +2,13 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.71.4+agent.4] - 2026-11-22
+
+### Fixed
+
+- In a run session, a stage record that writes (`record deploy`, `record polish`, `record build` and the rest) replaces the session's stored recommendation with the stage it prints as `Next stage`, so deviation telemetry no longer logs a `qa run` right after `record deploy` printed `Next stage: qa` against the `next` recommendation stored before the record. A command that differs from the current next stage is still logged.
+
+
 ## [1.71.4] - 2026-11-21
 
 This release packages the five `1.71.3+agent` sections below (there is no `agent.2`), the fixes from the eighth simulated build batch, one reported QA gap and a Playwright patch. For a campaign, `qa run --test-order` can now enter a funnel whose select page writes the cart with its own script, through a control the page marks `data-qa-cart-entry`, including when the configurator and the checkout are one page. QA blocks when a test order's accepted upsell was charged a price other than the CampaignSpec offer's, and counts a charged checkout bump tagged `is_upsell`. While a listed currency still owes a test order, `next --json` reports `stage: "qa"` and the owed runs instead of `done`. On the local preview `record build` records Polish as advisory (`skipped` with a `skip_reason`), so a fresh session's `next` on an unchanged build no longer says Polish is owed. The lockfile moves Playwright to 1.65.1. No breaking changes and no schema or contract changes. To take it, pin `@nextcommerce/campaigns-os@1.71.4` and refresh the installed skills to `1.71.4+skills.1`.

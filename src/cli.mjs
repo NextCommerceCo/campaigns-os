@@ -1280,7 +1280,9 @@ async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = nul
 
   if (command === "record") {
     const { recordCommand } = await import("./stage-record.mjs");
-    writeResult(await recordCommand(args), args, 0);
+    const result = await recordCommand(args);
+    recordStageRecordRecommendation(sessionHolder?.current || ambient, result);
+    writeResult(result, args, 0);
     return;
   }
 
@@ -5533,6 +5535,38 @@ function recordNextRecommendation(ambient, result, { polishAdvisory = false } = 
     ambient.session = session;
   } catch {
     // non-fatal
+  }
+}
+
+// A stage record moves the pipeline, so the recommendation `next` stored
+// before it no longer says what comes next (F-259): `record deploy` printed
+// "Next stage: qa" while the session still held next's "deploy", and the qa
+// run that followed was logged as a deviation. Store the stage the record's
+// own post-write doctor read picked, as `next` would for that stage, so the
+// deviation check compares later commands with the recommendation current at
+// their time. A dry run writes nothing and keeps the stored recommendation.
+function recordStageRecordRecommendation(ambient, result) {
+  if (!ambient || result?.status !== "recorded" || !isNonEmptyString(result.next_stage)) return;
+  try {
+    const polish = readJsonIfExists(result.report_path)?.stages?.polish;
+    const now = new Date();
+    const session = {
+      ...ambient.session,
+      updated_at: now.toISOString(),
+      last_recommendation: {
+        ...buildRecommendation({
+          stage: result.next_stage,
+          status: null,
+          expectedCommands: expectedCommandsForStage(result.next_stage, [], { polishAdvisory: isLocalPreviewPolish(polish) }),
+          now,
+        }),
+        issued_by: `record ${result.stage}`,
+      },
+    };
+    writeRunSession(ambient.dir, session);
+    ambient.session = session;
+  } catch {
+    // non-fatal: telemetry never blocks a record
   }
 }
 
