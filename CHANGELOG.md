@@ -6,7 +6,7 @@ Notable supported-surface changes are recorded here.
 
 ### Fixed
 
-- Commercial parity reads `data-next-bundle-vouchers="CODE"` (comma-separated codes) as the SDK does, so an upsell carrying one is no longer reported `commercial_pages_unread`; an unread page now names why, and each uncompared claim is named with its page, binding and text in `verdict.commercial.unresolved_claims` and in the `commercial_claims_unresolved` and `package_price_*` lines.
+- Commercial parity reads `data-next-bundle-vouchers="CODE"` (comma-separated codes) as the SDK does, so an upsell carrying one is no longer reported `commercial_pages_unread`; an unread page now names why, and each uncompared claim is named with its page, binding and text in `verdict.commercial.unresolved_claims` and in the `commercial_claims_unresolved` and `package_price_*` lines (#810).
 
 ## [1.71.4] - 2026-11-21
 
