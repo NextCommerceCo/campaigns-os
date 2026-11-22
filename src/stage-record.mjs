@@ -1376,7 +1376,7 @@ export function recordStageCommand(args, { now = () => new Date(), beforeLock = 
     ...(stage === "build" ? { polish: composed.report.stages.polish } : {}),
     ...(composed.context ? { scaffold: composed.context.scaffold } : {}),
     ...(stage === "polish" && input.hasRepairLoopDefect ? { repair_loop_defect: input.repairLoopDefect } : {}),
-    ...(after ? { next_stage: after.next?.stage || null, next_stage_reason: after.next?.reason || null } : {}),
+    ...(after ? { next_stage: after.next?.stage || null, next_stage_reason: after.next?.reason || null, next_required_actions: blockedGateCommands(after) } : {}),
     ...(ci ? { ci } : {}),
     ready,
     note: dryRun
@@ -1472,4 +1472,26 @@ function recordUnderLock({ stage, packetPath, sidecars, lockedTarget, input, dry
   });
   const after = dryRun ? null : doctorPacket(packetPath, sidecars);
   return { composed, facts, layer, reportPath, contextPath, after };
+}
+
+// The exact commands the post-write doctor read's blocked gates require
+// ("campaigns-os theme generate …", "campaigns-os polish capture …"), the
+// same gate actions `next` lists. The run session's recommendation expects
+// them too, so following one after a record is not a deviation (F-259).
+function blockedGateCommands(doctor) {
+  const derived = doctor?.derived || {};
+  const gates = [
+    ...(Array.isArray(derived.checkpoint_gates) ? derived.checkpoint_gates : []),
+    derived.polish_checkpoint_gate,
+    derived.theme_gate,
+    derived.polish_gate,
+  ];
+  const commands = [];
+  for (const gate of gates) {
+    if (gate?.status !== "blocked") continue;
+    for (const action of gate.required_actions || []) {
+      if (typeof action?.command === "string" && action.command) commands.push({ command: action.command });
+    }
+  }
+  return commands;
 }
