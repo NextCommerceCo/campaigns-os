@@ -6355,6 +6355,45 @@
         }
       ],
       "entry_sha256": "c2874e841a91f3c12106bb754baf3d59abc9b6ebc3346a0fd9eb5e04398e5155"
+    },
+    {
+      "id": "RL-0382",
+      "sequence": 365,
+      "date": "2026-11-22",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.4+agent.2",
+      "changelog_sha256": "68148097e09997320c1759fb98abd895cc130f7897d6e7f3489736abf1dfb8f2",
+      "agent_impact": "record build and after-edit print their Owed stages line from the same decision next makes. After a rebuild that made stages.deploy required, the line names deploy (for example \"Owed stages: deploy, qa (changed pages only).\") instead of leaving it out. Once every stage is recorded but the current build has no test order in a currency the CampaignSpec lists, the line reads \"Owed stages: QA test orders in EUR. Every stage is recorded, and this build has no test order in that currency.\" instead of \"Owed stages: none.\", record build reports next_stage \"qa\" with next's reason, and after-edit's next is campaigns-os next, which returns the qa_run_currency runs. Do not report a campaign finished while either is owed: run the deploy or the named currency runs, then call next again. doctor --ci and record baseline keep their Polish and QA line, and exit codes are unchanged.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/campaigns-os-build-flow.md",
+          "surface_entry": "docs/campaigns-os-build-flow.md",
+          "summary": "record build, after-edit and next print one owed line: deploy when required, and the currencies still owed a test order once every stage is recorded."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "The owed currencies appear in the Owed stages line of record build and after-edit as in next's."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "next reads its owed deploy and owed currency runs from the shared owed-stages decision, and prints its Owed stages line from it instead of rewriting the line afterwards."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/ci.mjs",
+          "surface_entry": null,
+          "summary": "The owed-stages line takes next's owed decision: deploy when required, and \"QA test orders in <codes>\" while currencies are owed; doctor --ci passes none and is unchanged."
+        }
+      ],
+      "entry_sha256": "f717c25c592c11350dfd65da95fe1e1c9ed62b1f7d5ef0cf47924def0afb5868"
     }
   ]
 }

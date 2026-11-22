@@ -6,6 +6,7 @@ import { computeBuildFingerprint } from "./built-site-scope.mjs";
 import { doctorCommand, readDoctorLiveCampaign } from "./doctor/inspect.mjs";
 import { ciChangeScope, doctorCiFailure, formatDoctorCi } from "./doctor/ci.mjs";
 import { recordCommand } from "./stage-record.mjs";
+import { readOwedStages } from "./owed-stages.mjs";
 import { PAGE_KIT_BUILD_SUMMARY_CAPTURE_COMMAND } from "./page-kit-build-summary.mjs";
 import { normalizePublicRouteSlug } from "./route-identity.mjs";
 import { cmd } from "./install-invocation.mjs";
@@ -147,9 +148,22 @@ export async function afterEditCommand(args, { specFetch, specDerive, specDerive
       if (ci?.polish.status === "owed" && !ci.polish.advisory) assessment.next = `${cmd("polish")} capture ${packetFlag} --base-url <served-current-build-url>`;
       else if (ci?.qa.status === "owed") assessment.next = `${cmd("qa")} run ${packetFlag}${ci.qa.scope === "pages" ? ci.qa.owed_pages.map((page) => ` --page ${shellToken(page.page_id)}`).join("") : ""}${ci.qa.browser_pages?.length ? " --browser" : ""}`;
       else assessment.next = `${cmd("doctor")} ${packetFlag} --ci --no-live-refs`;
+    } else if (owedStages(doctor).deploy || owedStages(doctor).currencies.length) {
+      // The evidence is current, but next still owes a deploy or a test order
+      // in a currency the CampaignSpec lists; next names each command.
+      assessment.next = `${cmd("next")} ${packetFlag}`;
     }
     return doctor;
   };
+  // What next owes beyond the CI debt (a required deploy, currencies still
+  // owed a test order), read once per assessment, for its owed line.
+  const owedRead = new WeakMap();
+  function owedStages(doctor) {
+    if (!doctor.ci) return null;
+    if (!owedRead.has(doctor)) owedRead.set(doctor, readOwedStages({ picked: doctor.next, packetPath, specPath: doctor.derived?.spec_path || null }));
+    return owedRead.get(doctor);
+  }
+  const owedText = (doctor) => formatDoctorCi(doctor, { owed: owedStages(doctor) });
 
   const deriveArgs = { _: ["spec", "derive"], ...live };
   const deriveNext = `${cmd("spec")} derive ${packetFlag}${args["no-live-refs"] ? " --no-live-refs" : ""}${args["proxy-base"] ? ` --proxy-base ${shellToken(args["proxy-base"])}` : ""}`;
@@ -169,7 +183,7 @@ export async function afterEditCommand(args, { specFetch, specDerive, specDerive
     else {
       deriveDetail = specDeriveTextLines({ ...plan, warnings: plan.warnings.filter((issue) => issue.code !== "spec.derive.build_stale") }).join("\n");
       if (!args.yes) {
-        const owed = formatDoctorCi(await assess({}));
+        const owed = owedText(await assess({}));
         const preview = stop("spec_derive", `${deriveDetail}\nApplying this preview with --yes changes the CampaignSpec and will owe Polish and QA again.\nRe-run with --yes to write the derived spec.`, `${rerun} --yes`);
         // Text-only assessment: the unapplied preview keeps JSON steps unchanged.
         Object.defineProperty(preview, "preview_owed", { value: owed });
@@ -192,10 +206,10 @@ export async function afterEditCommand(args, { specFetch, specDerive, specDerive
   }
 
   const doctor = await assess();
-  add("owed", result.ci?.status === "current" ? "not_needed" : "done", formatDoctorCi(doctor));
+  add("owed", result.ci?.status === "current" ? "not_needed" : "done", owedText(doctor));
   if (args["run-qa"]) {
     const ci = result.ci;
-    if (!ci || ci.status === "unknown") return stop("run_qa", formatDoctorCi(doctor), result.next);
+    if (!ci || ci.status === "unknown") return stop("run_qa", owedText(doctor), result.next);
     if (ci.status === "current") {
       add("run_qa", "not_needed", "QA is current.");
       return finish();
@@ -227,7 +241,7 @@ export async function afterEditCommand(args, { specFetch, specDerive, specDerive
       ...(qa.verdict?.assertions || []).filter((row) => row.status === "fail").map((row) => `${row.id}: ${row.actual}`),
       ...(qa.local_path ? [`Local copy: ${qa.local_path}`] : []),
     ].join("\n") : failure;
-    const detail = `${summary}${failure && qa ? `\n${failure}` : ""}\nOwed after QA:\n${formatDoctorCi(after)}`;
+    const detail = `${summary}${failure && qa ? `\n${failure}` : ""}\nOwed after QA:\n${owedText(after)}`;
     if (failure || !qa?.ok || result.ci?.status !== "current") return stop("run_qa", detail, qaCommand);
     add("run_qa", "done", detail);
   }

@@ -89,6 +89,13 @@ record command, which exits 0. When either stage has a recorded build fingerprin
 or a baseline, the text introduces plain-text evidence lines with
 `doctor --ci reads this build as: <status>`, without an exit label, and includes
 `Owed stages: none.` when nothing is owed.
+`record build`, `after-edit` and `next` print that owed line from one decision:
+it names `deploy` when a rebuild made `stages.deploy` required, and, once
+every stage is recorded, the currencies the CampaignSpec lists that this build
+has no test order in (`Owed stages: QA test orders in EUR. ...`), the runs
+`next` returns as `qa_run_currency` actions. `record build` then reports next
+stage `qa`, as `next` does, and `after-edit` hands over to `next`. `record
+baseline` and `doctor --ci` keep the Polish and QA line alone.
 Advisory Polish is reported as advisory even when the report's stored
 stage status is `required`. QA names the changed pages or owes a full run.
 The stored stage values do not change to match this presentation.
