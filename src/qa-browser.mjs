@@ -3196,17 +3196,21 @@ async function pricingVisibilityAssertions(browserPage, page, options = {}) {
     // page shows a state no buyer reaches.
     const orderlessEntry = visibleCount === 0 && !refIdFromUrl(browserPage.url())
       ? await browserPage.evaluate(({ targets }) => {
-        const hidden = new Set();
+        const matched = new Set();
         for (const selector of targets) {
           try {
-            for (const element of document.querySelectorAll(selector)) {
-              if (element.closest(".next-hidden")) hidden.add(element);
-            }
+            for (const element of document.querySelectorAll(selector)) matched.add(element);
           } catch {
             // invalid selector: contract bug surfaced elsewhere
           }
         }
-        return { next_hidden_price_rows: hidden.size };
+        // One price row per outermost match: a bundle-display node nested in
+        // a matched price wrapper is the same row.
+        const rows = [...matched].filter((element) => ![...matched].some((other) => other !== element && other.contains(element)));
+        return {
+          price_rows: rows.length,
+          next_hidden_price_rows: rows.filter((element) => element.closest(".next-hidden")).length,
+        };
       }, { targets: selectors }).catch((error) => ({ probe_error: trim(error?.message || String(error)).slice(0, 200) }))
       : null;
     return [upsellPriceVisibilityAssertion({ page, selectors, visibleCount, orderlessEntry })];
@@ -3387,16 +3391,18 @@ async function settledVisiblePriceRows(browserPage, selectors, {
 // `meta:<page>:…`): a funnel with two upsells emits two of these, and a
 // consumer keying on the id must be able to tell them apart.
 //
-// `orderlessEntry` ({ next_hidden_price_rows }, or { probe_error }) is read
+// `orderlessEntry` ({ price_rows, next_hidden_price_rows }, or { probe_error }) is read
 // only when no price row is visible and the opened URL has no ref_id. Price
 // rows inside a `next-hidden` container on an upsell opened without an order
 // reference are the SDK holding the offer until an order exists, not a price
-// the buyer fails to see: the row is skipped with that reason, as the
-// checkout row is for an empty cart. With a ref_id, or with prices hidden any
-// other way, the row still fails.
+// the buyer fails to see: when every price row on the page sits inside one,
+// the row is skipped with that reason, as the checkout row is for an empty
+// cart. With a ref_id, or with any price row hidden another way, it still
+// fails.
 function upsellPriceVisibilityAssertion({ page, selectors, visibleCount, orderlessEntry = null }) {
   const ok = visibleCount >= 1;
-  const heldForOrder = !ok && orderlessEntry?.next_hidden_price_rows > 0;
+  const heldForOrder = !ok && orderlessEntry?.next_hidden_price_rows > 0
+    && orderlessEntry.next_hidden_price_rows === orderlessEntry.price_rows;
   return assertion({
     id: `pricing.upsell_price_visible:${page.page_id}`,
     family: "pricing",

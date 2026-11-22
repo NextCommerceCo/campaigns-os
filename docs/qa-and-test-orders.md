@@ -719,10 +719,10 @@ probe itself fails, the row stays failed and records `empty_cart_probe_error`.
 The upsell row follows the same rule for a missing order. QA opens an upsell
 URL without the `ref_id` a buyer always arrives with, and the SDK keeps an
 upsell offer `next-hidden` until an order exists. When no price row is
-visible, the opened URL has no `ref_id`, and the price rows sit inside a
+visible, the opened URL has no `ref_id`, and every price row sits inside a
 `next-hidden` container, `pricing.upsell_price_visible:<page>` is `skipped`,
 records `next_hidden_price_rows` and says so. An upsell opened with a `ref_id`,
-or whose prices are hidden any other way, still fails; an upsell that shows
+or with any price row hidden another way, still fails; an upsell that shows
 its prices without an order is still checked. If that probe fails, the row
 stays failed and records `orderless_probe_error`.
 Promoted template families must also have

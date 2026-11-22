@@ -185,6 +185,18 @@ test("an upsell whose offer is next-hidden until an order exists is skipped when
   assert.equal(cssHidden.status, "fail");
   assert.equal(cssHidden.severity, "blocker");
 
+  // A held offer beside a second price row hidden by CSS still fails: only a
+  // page whose every price row is next-hidden is held for an order.
+  const mixed = await priceRowAt("https://shop.example.com/upsell/", `${heldOffer}<span class="price-wrapper" style="display:none">$29.99</span>`);
+  assert.equal(mixed.status, "fail");
+  assert.equal(mixed.severity, "blocker");
+
+  // A price wrapper and its nested bundle-display node are one row.
+  const nested = await priceRowAt("https://shop.example.com/upsell/", '<style>.next-hidden{display:none}</style><div data-next-upsell="offer" class="next-hidden">'
+    + '<span class="price-wrapper"><span data-next-bundle-display="price">$29.99</span></span></div>');
+  assert.equal(nested.status, "skipped");
+  assert.equal(nested.evidence.next_hidden_price_rows, 1);
+
   // Prices visible without an order are still checked and pass.
   const visible = await priceRowAt("https://shop.example.com/upsell/", PRICE_NODE);
   assert.equal(visible.status, "pass");
