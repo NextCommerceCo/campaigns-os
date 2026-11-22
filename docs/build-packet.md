@@ -1623,8 +1623,9 @@ draft at `.campaign-runtime/input/campaign-build-brief.normalized.json`.
 A brief file is guided unless it sets `"brief_mode": "prepared"` (a campaign
 whose Assembly Report already records a prepared brief stays prepared). Save
 answers later with `record brief`, which keeps stage evidence unless the brief's
-material content changes; a presentation change makes build, Polish and QA
-owed again, and a `qa_policy` change makes QA alone owed again. See
+material content changes; a presentation change makes build and Polish owed
+again (QA follows the rebuild: owed when the pages change, kept when they do
+not), and a `qa_policy` change makes QA alone owed again. See
 [Campaign Build Brief](./campaign-build-brief.md) for the schema, the mode
 rule and the stage map.
 

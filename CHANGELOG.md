@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.71.4+agent.6] - 2026-11-22
+
+### Fixed
+
+- A `record brief` save that changes only the brief's presentation sections no longer makes QA owed: QA reads none of them and its verdict is bound to the build it checked, so QA follows the rebuild. A rebuild that changes the pages owes QA as any rebuild does (in full for a commerce-affecting change), and a build the operator keeps unchanged with `record build --deviation-reason` leaves the QA verdict current, with no new test orders. A `record build` over output that has not changed no longer repeats the earlier rebuild's change line as "this rebuild is commerce-affecting". Build and Polish are still owed after a presentation save, and a `qa_policy` change still owes QA.
+
 ## [1.71.4] - 2026-11-21
 
 This release packages the five `1.71.3+agent` sections below (there is no `agent.2`), the fixes from the eighth simulated build batch, one reported QA gap and a Playwright patch. For a campaign, `qa run --test-order` can now enter a funnel whose select page writes the cart with its own script, through a control the page marks `data-qa-cart-entry`, including when the configurator and the checkout are one page. QA blocks when a test order's accepted upsell was charged a price other than the CampaignSpec offer's, and counts a charged checkout bump tagged `is_upsell`. While a listed currency still owes a test order, `next --json` reports `stage: "qa"` and the owed runs instead of `done`. On the local preview `record build` records Polish as advisory (`skipped` with a `skip_reason`), so a fresh session's `next` on an unchanged build no longer says Polish is owed. The lockfile moves Playwright to 1.65.1. No breaking changes and no schema or contract changes. To take it, pin `@nextcommerce/campaigns-os@1.71.4` and refresh the installed skills to `1.71.4+skills.1`.

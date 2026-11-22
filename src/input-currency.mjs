@@ -24,8 +24,12 @@ const NOT_APPLICABLE_STATUSES = Object.freeze(["pending", "blocked", "required",
 const TERMINAL_EFFECTIVE_STATUSES = Object.freeze([...COMPLETED_STATUSES, "skipped"]);
 
 // The stages that carry input stamps, and the inputs each one depends on.
+// QA reads no presentation section: its verdict is bound to the build it
+// checked, so a presentation change that reaches the pages owes QA through
+// the rebuild (evidence-debt.mjs, page-only or commerce-affecting), and one
+// that reaches no page leaves the verdict proving the same output (F-262).
 export const STAMPED_STAGES = Object.freeze(["assembly", "polish", "qa"]);
-const APPLICABLE_BRIEF_PARTITIONS = Object.freeze({ assembly: ["presentation"], polish: ["presentation"], qa: ["presentation", "qa_policy"] });
+const APPLICABLE_BRIEF_PARTITIONS = Object.freeze({ assembly: ["presentation"], polish: ["presentation"], qa: ["qa_policy"] });
 
 export const INPUT_CHANGE_REASONS = Object.freeze(["brief_presentation_changed", "brief_qa_policy_changed", "spec_material_changed"]);
 
@@ -39,7 +43,6 @@ export const INPUT_DEPENDENCY_MAP = Object.freeze({
     stages: Object.freeze({
       assembly: Object.freeze({ required_by: "brief", required_for: Object.freeze(["polish", "qa"]) }),
       polish: Object.freeze({ required_by: "brief", required_for: Object.freeze(["qa"]) }),
-      qa: Object.freeze({ required_by: "brief", required_for: Object.freeze([]) }),
     }),
   }),
   qa_policy: Object.freeze({

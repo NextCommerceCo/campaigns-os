@@ -2494,10 +2494,10 @@ async function presentationChangeAfterQa(f, beforeSave = () => {}) {
   saveBrief(f, brief);
 }
 
-test("F2.1-W5: a material presentation change saved with record brief makes build, Polish and QA owed and keeps setup and deploy", async () => {
+test("F2.1-W5: a material presentation change saved with record brief makes build and Polish owed and keeps setup, deploy and QA", async () => {
   await guardedLifecycle(async (f) => {
     await presentationChangeAfterQa(f);
-    assert.deepEqual(stageStatuses(f, ["setup", "assembly", "polish", "deploy", "qa"]), { setup: "completed", assembly: "required", polish: "required", deploy: "completed", qa: "required" });
+    assert.deepEqual(stageStatuses(f, ["setup", "assembly", "polish", "deploy", "qa"]), { setup: "completed", assembly: "required", polish: "required", deploy: "completed", qa: "completed" });
   });
 });
 
@@ -2512,10 +2512,14 @@ test("F2.1-W9: after the W5 save, stages.assembly.history[-1].reason_code is bri
 
 test("F2.1-W17: the superseded QA record in history keeps the pre-save purchase_proof", async () => {
   await guardedLifecycle(async (f) => {
-    let before = null;
-    await presentationChangeAfterQa(f, (report) => {
-      before = report.stages.qa.purchase_proof;
-    });
+    // A qa_policy change: the brief change that owes QA itself (F-262).
+    await completeBriefThroughPolish(f);
+    await recordDeploy(f);
+    await recordQa(f);
+    const before = readJson(f.reportPath).stages.qa.purchase_proof;
+    const brief = readJson(briefFileOf(f));
+    brief.qa_policy.require_checkout_flow = !brief.qa_policy.require_checkout_flow;
+    saveBrief(f, brief);
     assert.ok(before && typeof before === "object" && before.order_paths_executed === 1, "setup: stages.qa.purchase_proof is set before the save");
     const history = readJson(f.reportPath).stages.qa.history;
     assert.ok(Array.isArray(history) && history.length > 0, "stages.qa.history[] holds the superseded record");
@@ -2565,6 +2569,44 @@ test("F2.1-W24: after W5, record build --deviation-reason over the unchanged _si
   await guardedLifecycle(async (f) => {
     await operatorKeepsOutput(f);
     assert.equal(inputCurrency(f).stages.assembly, "current");
+  });
+});
+
+// F-262: a brief answer that reaches no page. QA reads nothing in the brief's
+// presentation sections and its verdict is bound to the build it checked, so
+// the save leaves QA standing; the identical rebuild the operator keeps finds
+// QA current, owes no test orders, and is not called a commerce-affecting
+// rebuild.
+test("F-262: record brief, an identical rebuild and record build --deviation-reason leave QA current and name no rebuild change", async () => {
+  await guardedLifecycle(async (f) => {
+    await presentationChangeAfterQa(f);
+    assert.equal(readJson(f.reportPath).stages.qa.status, "completed", "a presentation save leaves the QA verdict standing");
+    buildSite(f);
+    const replay = recordOk(f, "build");
+    assert.equal(inputCurrency(f).stages.assembly, "owed", "setup: the operator still decides an unchanged build (F2.1-B10)");
+    assert.doesNotMatch(resultTextLines(replay).join("\n"), /this rebuild is/, "a record over the same output names no rebuild change");
+    const kept = recordOk(f, "build", ["--deviation-reason", OPERATOR_DECISION]);
+    const text = resultTextLines(kept).join("\n");
+    assert.doesNotMatch(text, /commerce-affecting|this rebuild is/, text);
+    assert.doesNotMatch(text, /Owed stages: [^\n]*qa/, text);
+    const currency = inputCurrency(f);
+    assert.equal(currency.stages.assembly, "current");
+    assert.equal(currency.stages.qa, "current", "QA checked this exact output against the same spec and qa_policy");
+    const ci = runJson(["doctor", "--packet", f.packetPath, "--ci", "--no-live-refs"], f.dir).json.ci;
+    assert.equal(ci.qa.status, "current", "no QA run, so no test orders, is owed");
+  });
+});
+
+test("F-262: a brief answer that does change the pages still owes QA through the rebuild, in full for a checkout change", async () => {
+  await guardedLifecycle(async (f) => {
+    await presentationChangeAfterQa(f);
+    buildSite(f, " solid accent pill");
+    const rebuilt = recordOk(f, "build");
+    assert.equal(inputCurrency(f).stages.assembly, "current", "the change reached the pages");
+    assert.match(resultTextLines(rebuilt).join("\n"), /this rebuild is commerce-affecting/);
+    const ci = runJson(["doctor", "--packet", f.packetPath, "--ci", "--no-live-refs"], f.dir).json.ci;
+    assert.equal(ci.qa.status, "owed");
+    assert.equal(ci.qa.scope, "full", "a checkout change owes the full QA run");
   });
 });
 
@@ -4047,19 +4089,16 @@ test("a changed build re-owes QA even when its old stage status remains complete
   });
 });
 
-test("a presentation change saved with record brief after a QA verdict demotes QA as well as build and Polish", async () => {
+test("a presentation change saved with record brief after a QA verdict demotes build and Polish and keeps the QA verdict (F-262)", async () => {
   await guardedLifecycle(async (f) => {
     await recordThroughQa(f);
     const before = readJson(f.reportPath);
     const saved = saveBrief(f, answeredDraft(f));
     const after = readJson(f.reportPath);
     assert.equal(saved.input_change?.reason, "brief_presentation_changed", "setup: the save is a presentation change");
-    assert.equal(after.build_brief.material.qa_policy, before.build_brief.material.qa_policy, "setup: qa_policy is unchanged, so only presentation reaches QA");
-    assert.deepEqual([...saved.demoted].sort(), ["assembly", "polish", "qa"]);
-    assert.equal(after.stages.qa.status, "required");
-    assert.equal(after.stages.qa.required_by, "brief");
-    assert.equal(after.stages.qa.history?.at(-1)?.reason_code, "brief_presentation_changed");
-    assert.equal(after.stages.qa.history.at(-1).verdict_run_id, before.stages.qa.verdict_run_id);
+    assert.equal(after.build_brief.material.qa_policy, before.build_brief.material.qa_policy, "setup: qa_policy is unchanged, so only presentation changed");
+    assert.deepEqual([...saved.demoted].sort(), ["assembly", "polish"]);
+    assert.deepEqual(after.stages.qa, before.stages.qa, "QA reads no presentation section; the rebuild decides whether it is owed");
   });
 });
 

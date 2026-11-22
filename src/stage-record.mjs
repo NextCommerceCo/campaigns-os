@@ -1388,7 +1388,9 @@ export function recordStageCommand(args, { now = () => new Date(), beforeLock = 
 // One line for the rebuild this record kept, when it replaced another build.
 function buildChangeReadyLines(assembly) {
   const latest = Array.isArray(assembly.build_changes) ? assembly.build_changes.at(-1) : null;
-  if (!latest || latest.build_fingerprint !== assembly.build_fingerprint) return [];
+  // Only an entry this record appended: a record over the same output keeps
+  // the earlier rebuild's entry, which describes that rebuild, not this one.
+  if (!latest || latest.build_fingerprint !== assembly.build_fingerprint || latest.recorded_at !== assembly.completed_at) return [];
   const pages = latest.changed_pages.map((page) => page.page_id).join(", ") || "none";
   const linked = (Array.isArray(latest.linked_assets) ? latest.linked_assets : [])
     .map((asset) => `${asset.path} (linked by ${(asset.pages || []).join(", ")})`);
