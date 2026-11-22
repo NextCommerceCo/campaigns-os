@@ -6379,9 +6379,21 @@
           "path": "src/cli.mjs",
           "surface_entry": null,
           "summary": "A stage record that writes, in an active run session, stores the stage it prints as Next stage as the session's last_recommendation (issued_by record <stage>), so deviation telemetry compares later commands with it."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/effects.v1.json",
+          "surface_entry": "contracts/effects.v1.json",
+          "summary": "record setup, build, polish, theme, deploy and baseline declare the run-session.json write they make inside an active run session (observed_in ambient_session)."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/effects.md",
+          "surface_entry": "docs/effects.md",
+          "summary": "A stage record inside an active run session writes run-session.json: the recommendation becomes the printed Next stage with its blocked gates' required commands."
         }
       ],
-      "entry_sha256": "2965aa068dd2c2500a3a2cff9481884881aa7addb47d40977cb23e4259d610b3"
+      "entry_sha256": "36d21b0b1178e0dec595f2962e7935e0a299abb37511aa6a639a2abfe4da029c"
     }
   ]
 }
