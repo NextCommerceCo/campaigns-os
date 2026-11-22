@@ -144,6 +144,53 @@ test("a checkout opened with an empty cart and no package selection of its own i
   assert.equal(filledCart.evidence.cart_count, undefined);
 });
 
+// Opens the fixture at a real URL so the page's own address can carry (or
+// lack) the order reference QA reads.
+async function priceRowAt(url, priceNode, pageDescriptor = upsellPage, settle = SHORT_SETTLE) {
+  const html = (await readFile(FIXTURE, "utf8")).replace(PRICE_NODE, priceNode);
+  const page = await (await sharedBrowser()).newPage();
+  try {
+    await page.route("https://shop.example.com/**", (handler) => handler.fulfill({ contentType: "text/html", body: html }));
+    await page.goto(url, { waitUntil: "load" });
+    const [row] = await pricingVisibilityAssertions(page, pageDescriptor, { brandContract, ...settle });
+    return row;
+  } finally {
+    await page.close();
+  }
+}
+
+test("an upsell whose offer is next-hidden until an order exists is skipped when opened without a ref_id", async (t) => {
+  if (!await chromiumAvailable()) return t.skip("Chromium is unavailable; the browser CI lane runs this test");
+  // The SDK marks [data-next-upsell="offer"] next-hidden (display:none) when
+  // the page has no order. A buyer always arrives with ?ref_id=, and then the
+  // offer and its prices show (F-241, batch-9 N1).
+  const heldOffer = '<style>.next-hidden{display:none}</style><div data-next-upsell="offer" class="next-hidden">'
+    + '<span data-next-bundle-display="price">$29.99</span></div>';
+  const orderless = await priceRowAt("https://shop.example.com/upsell/", heldOffer);
+  assert.equal(orderless.id, "pricing.upsell_price_visible:upsell-1");
+  assert.equal(orderless.status, "skipped");
+  assert.equal(orderless.severity, undefined);
+  assert.equal(orderless.evidence.visible_count, 0);
+  assert.equal(orderless.evidence.next_hidden_price_rows, 1);
+  assert.match(orderless.actual, /no ref_id/);
+
+  // With an order reference the same hidden offer is a real failure.
+  const withOrder = await priceRowAt("https://shop.example.com/upsell/?ref_id=ABC123", heldOffer);
+  assert.equal(withOrder.status, "fail");
+  assert.equal(withOrder.severity, "blocker");
+  assert.equal(withOrder.evidence.next_hidden_price_rows, undefined);
+
+  // Prices hidden some other way without an order still fail.
+  const cssHidden = await priceRowAt("https://shop.example.com/upsell/", '<span data-next-bundle-display="price" style="display:none">$29.99</span>');
+  assert.equal(cssHidden.status, "fail");
+  assert.equal(cssHidden.severity, "blocker");
+
+  // Prices visible without an order are still checked and pass.
+  const visible = await priceRowAt("https://shop.example.com/upsell/", PRICE_NODE);
+  assert.equal(visible.status, "pass");
+  assert.equal(visible.evidence.visible_count, 1);
+});
+
 test("an empty data-next-bundle-display price does not count through an overlapping .price-wrapper selector", async (t) => {
   if (!await chromiumAvailable()) return t.skip("Chromium is unavailable; the browser CI lane runs this test");
   // .price-wrapper comes first in both surfaces' selector lists, so it reaches
