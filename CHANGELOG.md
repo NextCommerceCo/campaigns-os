@@ -9,6 +9,24 @@ Notable supported-surface changes are recorded here.
 - In a run session, deviation telemetry no longer compares a command with a `next` recommendation that a later stage record (`record deploy`, `record polish`, `record build` and the rest) has superseded, so a `qa run` right after `record deploy` printed `Next stage: qa` is no longer logged against the `deploy` recommendation stored before the record. It reads the session's lifecycle journal and writes nothing new; comparison resumes once `next` runs again, and a command that differs from a current recommendation is still logged (#809).
 
 
+## [1.71.4+agent.3] - 2026-11-22
+
+### Fixed
+
+- `qa run` commercial parity holds each page's promo discount claims ("Save N%", "N% off", "N% discount") against the largest percentage discount the CampaignSpec declares, the maximum doctor's `template_contract.discount_claim_residue` reads, so a landing page claiming "60% Off" against a 44.45% top offer is a `discount-claim-above-offer` finding (a `fail` row, severity warn) and `commercial.status` reads `mismatch` instead of `pass`; claims at or below the maximum still pass (#808).
+
+## [1.71.4+agent.2] - 2026-11-22
+
+### Fixed
+
+- `record build` and `after-edit` print their "Owed stages" line from the decision `next` makes: it names `deploy` when a rebuild made `stages.deploy` required, and the currencies still owed a test order once every stage is recorded, instead of `Owed stages: none.`; `record build` then reports next stage `qa`, and `after-edit` hands over to `next` (#811).
+
+## [1.71.4+agent.1] - 2026-11-22
+
+### Fixed
+
+- `qa run` skips `pricing.upsell_price_visible:<page>` with a named reason, instead of blocking, when it opens an upsell without a `ref_id` and the offer's price rows are `next-hidden` until an order exists; an upsell opened with a `ref_id`, or with prices hidden any other way, still fails (#807).
+
 ## [1.71.4] - 2026-11-21
 
 This release packages the five `1.71.3+agent` sections below (there is no `agent.2`), the fixes from the eighth simulated build batch, one reported QA gap and a Playwright patch. For a campaign, `qa run --test-order` can now enter a funnel whose select page writes the cart with its own script, through a control the page marks `data-qa-cart-entry`, including when the configurator and the checkout are one page. QA blocks when a test order's accepted upsell was charged a price other than the CampaignSpec offer's, and counts a charged checkout bump tagged `is_upsell`. While a listed currency still owes a test order, `next --json` reports `stage: "qa"` and the owed runs instead of `done`. On the local preview `record build` records Polish as advisory (`skipped` with a `skip_reason`), so a fresh session's `next` on an unchanged build no longer says Polish is owed. The lockfile moves Playwright to 1.65.1. No breaking changes and no schema or contract changes. To take it, pin `@nextcommerce/campaigns-os@1.71.4` and refresh the installed skills to `1.71.4+skills.1`.

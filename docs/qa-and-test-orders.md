@@ -559,6 +559,17 @@ and findings; the same findings are serialized deterministically into the flat
 verdict at `ready_with_exceptions` even when the flat assertion budget retains
 the finding only under `verdict.commercial`.
 
+Promo discount copy is checked too. Each page's source is read for "Save N%",
+"N% off" and "N% discount" claims, the same reading doctor's
+`template_contract.discount_claim_residue` uses, and each distinct percentage
+above the largest percentage discount the CampaignSpec declares (offer and
+voucher benefits, discount-percent fields) is a `discount-claim-above-offer`
+finding. Its `pricing` row, `discount-claim-above-offer:<page>:<percent>`, has
+status `fail` and severity `warn`: it names the claim, how often the page repeats
+it and the maximum, and makes `commercial.status` a `mismatch`. A claim at or
+below that maximum passes, and a CampaignSpec with no percentage discount checks
+no claim.
+
 ### Committed verdict sidecar (`.campaign-runtime/qa-verdict.json`)
 
 Packet-based `qa run` also writes a committed sidecar beside the Build Packet
@@ -716,6 +727,15 @@ an earlier page, for example by a landing link carrying `forcePackageId`, and
 the test order enters it from there. A checkout with its own package
 selection, or a filled cart, still fails when no price shows. If the cart
 probe itself fails, the row stays failed and records `empty_cart_probe_error`.
+The upsell row follows the same rule for a missing order. QA opens an upsell
+URL without the `ref_id` a buyer always arrives with, and the SDK keeps an
+upsell offer `next-hidden` until an order exists. When no price row is
+visible, the opened URL has no `ref_id`, and every price row sits inside a
+`next-hidden` container, `pricing.upsell_price_visible:<page>` is `skipped`,
+records `next_hidden_price_rows` and says so. An upsell opened with a `ref_id`,
+or with any price row hidden another way, still fails; an upsell that shows
+its prices without an order is still checked. If that probe fails, the row
+stays failed and records `orderless_probe_error`.
 Promoted template families must also have
 `contracts/template-brand-contract.<family>.v0.json`; QA emits a blocker if the
 selected family is missing its brand/residue/pricing contract instead of
@@ -2456,7 +2476,8 @@ still has no order in. The recorded QA stage stays done either way, but while
 any is owed `next` does not report done: `next --json` returns `stage: "qa"`,
 a reason naming the owed currencies, and those `qa_run_currency` actions as its
 only `next_actions`. Its prompt opens with "Not complete:" and names each owed
-run, and its "Owed stages" line names the currencies. Once every listed
+run, and its "Owed stages" line names the currencies, as the same line from
+`record build` and `after-edit` does. Once every listed
 currency has an order for this build, `next` reports `stage: "done"`.
 
 A run that created test orders also says what they did not cover, as warn

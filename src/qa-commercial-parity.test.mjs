@@ -1414,3 +1414,65 @@ test("on a checkout, bundle-config and SDK 0.5 card vouchers are not voucher cla
     assert.equal(result.commercial.compared_recurrence_claims, 1, carried);
   }
 });
+
+// F-258: the c5-claude landing page said "Claim Your 60% Discount" nine times
+// and "60% Off Limited Time" against offers of 33.34%, 38.89% and 44.45%, and
+// commercial parity passed it. Doctor's discount_claim_residue reads the same
+// CampaignSpec maximum.
+function tieredDiscountSpec() {
+  const spec = rawRecurringSpec();
+  spec.offers = ["33.34", "38.89", "44.45"].map((value, index) => ({
+    ref_id: index + 1,
+    type: "offer",
+    condition: { type: "count", value: index + 1 },
+    benefit: { type: "package_percentage", value },
+  }));
+  return spec;
+}
+
+async function runDiscountPage(html) {
+  const spec = tieredDiscountSpec();
+  return runCommercialParity({
+    resolved: { rawSpec: spec, spec, proxyBase: "https://proxy.example.test" },
+    captures: [captureCommercialClaims({ page_id: "page_mt104ehn_11" }, `<div data-next-package-toggle><strong data-next-package-id="5">Game Club</strong> then $29.99 every 30 days</div>${html}`)],
+    fetchImpl: async (_url, options) => {
+      const { scenario } = JSON.parse(options.body);
+      return new Response(JSON.stringify(calculateBody(scenario)), { status: 200 });
+    },
+  });
+}
+
+test("a landing claim above the CampaignSpec's largest percentage discount is a commercial mismatch (F-258)", async () => {
+  const result = await runDiscountPage(`
+    <span class="badge">60% Off Limited Time</span>
+    ${'<a class="cta">Claim Your 60% Discount</a>'.repeat(9)}
+    <p>Save up to 44% today</p>
+  `);
+  assert.equal(result.commercial.status, "mismatch");
+  assert.deepEqual(result.commercial.finding_counts, { "discount-claim-above-offer": 1 });
+  const row = result.assertions.find((entry) => entry.id === "discount-claim-above-offer:page_mt104ehn_11:60");
+  assert.ok(row, JSON.stringify(result.assertions));
+  assert.equal(row.status, "fail");
+  assert.equal(row.family, "pricing");
+  assert.match(row.expected, /at or below 44\.45%/);
+  assert.match(row.actual, /claims 60% \("60% Off", 10 times\)/);
+  assert.deepEqual(row.evidence, { type: "discount-claim-above-offer", claimed: "60%", max_spec_percent: "44.45%", occurrences: 10 });
+});
+
+test("discount claims at or below the CampaignSpec maximum, and specs with no percentage discount, stay a pass (F-258)", async () => {
+  const correct = await runDiscountPage("<p>Save up to 44.45% today</p><p>33% off one unit</p><p>100% Encrypted &amp; Secure Checkout</p>");
+  assert.equal(correct.commercial.status, "pass");
+  assert.deepEqual(correct.assertions, []);
+
+  const spec = rawRecurringSpec();
+  const unpriced = await runCommercialParity({
+    resolved: { rawSpec: spec, spec, proxyBase: "https://proxy.example.test" },
+    captures: [captureCommercialClaims({ page_id: "page_mt104ehn_11" }, '<div data-next-package-toggle><strong data-next-package-id="5">Game Club</strong> then $29.99 every 30 days</div><p>60% Off Limited Time</p>')],
+    fetchImpl: async (_url, options) => {
+      const { scenario } = JSON.parse(options.body);
+      return new Response(JSON.stringify(calculateBody(scenario)), { status: 200 });
+    },
+  });
+  assert.equal(unpriced.commercial.status, "pass");
+  assert.deepEqual(unpriced.assertions, []);
+});

@@ -1,6 +1,7 @@
 import { starterPaletteIsExpected } from "./content-residue.mjs";
 import { campaignSpecIdentity, resolveCampaignIdentity, campaignIdentitiesMatch, localSpecIdentityFields } from "./spec-source-identity.mjs";
 import { assessDoctorCi, doctorCiEvidenceLines, withDoctorCiReport } from "./doctor/ci.mjs";
+import { owedCurrencyReason, owedStages } from "./owed-stages.mjs";
 import { createHash, randomUUID } from "node:crypto";
 import { resolveDesignFileReferences } from "./design-file-reference.mjs";
 import { withDesignSourcePublication, readRecordedDesignSourcePackage } from "./design-source-publication.mjs";
@@ -4887,7 +4888,11 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
     });
   }
   const ci = debt ? assessDoctorCi(debt) : null;
-  const ciEvidence = ci && (polishReviewedBuild(report?.stages?.polish) || [ci.polish, ci.qa].some((assessment) => assessment.recorded_build_fingerprint || assessment.baseline)) ? doctorCiEvidenceLines(ci, singleLineFragment, { deployOwed: report?.stages?.deploy?.status === "required" }).map((line) => line.replace(/^- /, "")) : [];
+  // What next owes beyond the Polish and QA debt: a required deploy and the
+  // currencies still owed a test order. record build and after-edit print
+  // their owed line from the same decision (owed-stages.mjs).
+  const owed = owedStages({ picked: doctor.next, report, spec, buildCurrencies: qaBuildCurrencies });
+  const ciEvidence = ci && (polishReviewedBuild(report?.stages?.polish) || [ci.polish, ci.qa].some((assessment) => assessment.recorded_build_fingerprint || assessment.baseline)) ? doctorCiEvidenceLines(ci, singleLineFragment, { owed }).map((line) => line.replace(/^- /, "")) : [];
   // ready[] stays what doctor reports, whatever evidence the stages hold. The
   // change-debt lines ride on the array, non-enumerable, for the text output only.
   const ready = [...doctor.ready];
@@ -4940,11 +4945,10 @@ export function nextStage(stage, args, ambient = null, { qcStandIns = null, qcRe
       // with those runs as its qa_run_currency actions, so neither the JSON
       // nor the prose reads as finished.
       const url = packet.deploy?.preview_url || packet.deploy?.production_url || "<preview-url>";
-      const owedRuns = qaStageCommands({ spec, packetPath, url, buildCurrencies: qaBuildCurrencies, afterProof: true }).currencyRuns;
-      const owedCodes = owedRuns.map((run) => run.code);
-      const noneOwed = ciEvidence.indexOf("Owed stages: none.");
-      if (owedRuns.length && noneOwed >= 0) ciEvidence[noneOwed] = `Owed stages: QA test orders in ${owedCodes.join(" and ")}. Every stage is recorded, and this build has no test order in those currencies.`;
-      const owedReason = `Every stage is recorded, but this build has no test order in ${owedCodes.join(" or ")}, which the CampaignSpec lists, so QA owes those runs.`;
+      const qaCommand = qaStageCommands({ spec, packetPath, url }).command;
+      const owedRuns = owed.currencies.map((code) => ({ code, command: `${qaCommand} --currency ${code}` }));
+      const owedCodes = owed.currencies;
+      const owedReason = owedCurrencyReason(owedCodes);
       if (owedRuns.length && doctor.next) {
         // The picker knows nothing of per-currency coverage, so restate the
         // doctor's next block this call already persisted: the sidecar must
@@ -5858,17 +5862,15 @@ export function checkoutOrderBumpCart(spec) {
 // currency the CampaignSpec lists and no test order for this build was placed
 // in (`buildCurrencies`, the set qa run's currency-coverage row reads), other
 // than campaign.currency, which the full run itself proves. After a QA proof
-// (`afterProof`) every listed currency counts, and only once this build has a
-// test order at all.
-function qaStageCommands({ spec, packetPath, url, buildCurrencies = () => new Set(), afterProof = false }) {
+// the runs still owed come from owed-stages.mjs owedStages instead.
+function qaStageCommands({ spec, packetPath, url, buildCurrencies = () => new Set() }) {
   const bumpCart = checkoutOrderBumpCart(spec);
   const command = qaRunCommand(packetPath, url, bumpCart);
   const listed = Array.isArray(spec?.campaign?.available_currencies) ? spec.campaign.available_currencies : [];
   const codes = [...new Set(listed.filter((code) => typeof code === "string" && /^[A-Za-z]{3}$/.test(code)).map((code) => code.toUpperCase()))];
   if (codes.length < 2) return { bumpCart, command, currencyRuns: [] };
   const covered = buildCurrencies();
-  if (afterProof && !covered.size) return { bumpCart, command, currencyRuns: [] };
-  const base = afterProof ? null : String(spec?.campaign?.currency || "").toUpperCase();
+  const base = String(spec?.campaign?.currency || "").toUpperCase();
   const currencyRuns = codes.filter((code) => code !== base && !covered.has(code)).map((code) => ({ code, command: `${command} --currency ${code}` }));
   return { bumpCart, command, currencyRuns };
 }
