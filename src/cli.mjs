@@ -692,17 +692,17 @@ function persistLifecycleIfRequested(args, command, lifecycle, sessionHolder, th
     // is observable rather than fully silent. stderr never pollutes --json stdout.
     process.stderr.write(`[campaigns-os] lifecycle capture skipped: ${error.message}\n`);
   }
-  persistDeviationIfDetected(args, command, entry, ambient);
+  persistDeviationIfDetected(args, command, entry, ambient, journalPath);
 }
 
 // Deviation telemetry: compare every pipeline-advancing command against the
 // active session's last `next` recommendation. A mismatch appends one entry to
 // .campaign-runtime/agent-deviations.jsonl — measurement, not a block. An
 // intentional detour can carry --deviation-reason "<why>". Never throws.
-function persistDeviationIfDetected(args, command, lifecycle, ambient) {
+function persistDeviationIfDetected(args, command, lifecycle, ambient, journalPath = null) {
   if (!ambient?.session?.last_recommendation) return;
   if (isRunSessionTerminal(ambient.session) || hasDoneRecommendation(ambient.session) || isRunSessionStale(ambient.session)) return;
-  if (recommendationSupersededByRecord(ambient.session)) return;
+  if (recommendationSupersededByRecord(ambient.session, journalPath)) return;
   try {
     const entry = detectDeviation({
       lastRecommendation: ambient.session.last_recommendation,
@@ -726,24 +726,32 @@ function persistDeviationIfDetected(args, command, lifecycle, ambient) {
   }
 }
 
-// A stage record that landed after `next` stored its recommendation moved the
+// A record that landed after `next` stored its recommendation moved the
 // pipeline, so that recommendation no longer says what comes next (F-259):
 // `record deploy` printed "Next stage: qa" while the session still held
 // next's "deploy", and the qa run that followed was logged as a deviation.
-// The session's lifecycle journal already holds every command's entry, so a
-// completed, non-dry-run `record` there newer than the recommendation marks
-// it stale, and nothing is compared until `next` runs again.
-function recommendationSupersededByRecord(session) {
+// Every command's entry is already in the lifecycle journal, so a completed,
+// non-dry-run `record` there newer than the recommendation marks it stale,
+// and nothing is compared until `next` runs again. The journal stores no
+// subcommand, so a `record brief` or `record spec` counts too: when it saves a
+// change it makes stages owed again, which moves next as well; an unchanged
+// save only pauses the comparison until `next` runs. Both the journal this
+// invocation writes to (--lifecycle-journal, CAMPAIGNS_OS_LIFECYCLE_LOG) and
+// the session's own are read.
+function recommendationSupersededByRecord(session, journalPath = null) {
   const issuedAt = Date.parse(session?.last_recommendation?.issued_at || "");
-  if (!Number.isFinite(issuedAt) || !isNonEmptyString(session?.lifecycle_journal)) return false;
-  try {
-    return readLifecycleJournal(session.lifecycle_journal).entries.some((entry) => entry?.command === "record"
-      && entry.exit_status === 0
-      && !(entry.argv_shape || []).includes("--dry-run")
-      && Date.parse(entry.started_at || "") > issuedAt);
-  } catch {
-    return false;
-  }
+  if (!Number.isFinite(issuedAt)) return false;
+  const journals = [...new Set([journalPath, session?.lifecycle_journal].filter(isNonEmptyString).map((path) => resolve(path)))];
+  return journals.some((journal) => {
+    try {
+      return readLifecycleJournal(journal).entries.some((entry) => entry?.command === "record"
+        && entry.exit_status === 0
+        && !(entry.argv_shape || []).includes("--dry-run")
+        && Date.parse(entry.started_at || "") > issuedAt);
+    } catch {
+      return false;
+    }
+  });
 }
 
 function hasDoneRecommendation(session) {
