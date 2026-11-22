@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.71.4+agent.3] - 2026-11-22
+
+### Fixed
+
+- `qa run` commercial parity holds each page's promo discount claims ("Save N%", "N% off", "N% discount") against the largest percentage discount the CampaignSpec declares, the maximum doctor's `template_contract.discount_claim_residue` reads, so a landing page claiming "60% Off" against a 44.45% top offer is a `discount-claim-above-offer` finding (a `fail` row, severity warn) and `commercial.status` reads `mismatch` instead of `pass`; claims at or below the maximum still pass.
+
 ## [1.71.4] - 2026-11-21
 
 This release packages the five `1.71.3+agent` sections below (there is no `agent.2`), the fixes from the eighth simulated build batch, one reported QA gap and a Playwright patch. For a campaign, `qa run --test-order` can now enter a funnel whose select page writes the cart with its own script, through a control the page marks `data-qa-cart-entry`, including when the configurator and the checkout are one page. QA blocks when a test order's accepted upsell was charged a price other than the CampaignSpec offer's, and counts a charged checkout bump tagged `is_upsell`. While a listed currency still owes a test order, `next --json` reports `stage: "qa"` and the owed runs instead of `done`. On the local preview `record build` records Polish as advisory (`skipped` with a `skip_reason`), so a fresh session's `next` on an unchanged build no longer says Polish is owed. The lockfile moves Playwright to 1.65.1. No breaking changes and no schema or contract changes. To take it, pin `@nextcommerce/campaigns-os@1.71.4` and refresh the installed skills to `1.71.4+skills.1`.
