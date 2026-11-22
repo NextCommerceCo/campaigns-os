@@ -551,6 +551,57 @@ test("record deploy records the served local preview on the packet and stages.de
   });
 });
 
+// The CLI without blocking this process, so an in-process server can answer it.
+function runCliAsync(args, cwd) {
+  return new Promise((done, fail) => {
+    const child = spawn(process.execPath, [CLI, ...args], { cwd, env: { ...process.env, CAMPAIGNS_OS_TELEMETRY: "off" } });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => { stdout += chunk; });
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.on("error", fail);
+    child.on("close", (status) => done({ status, stdout, stderr }));
+  });
+}
+
+// F-259: a stage record supersedes the recommendation next stored before it,
+// so a qa run after record deploy is not logged against next's "deploy".
+test("deviation telemetry after record deploy compares qa with the stage the record printed, and a qa run before it still deviates", async () => {
+  await withLifecycle(async (f) => {
+    await deployReady(f);
+    const started = runJson(["run", "start", "--packet", f.packetPath], f.dir);
+    assert.equal(started.status, 0, `setup: run start opened a session: ${started.stderr.slice(0, 400)}`);
+    assert.equal(nextOk(f, []).stage, "deploy", "setup: next stores a deploy recommendation");
+    const sessionPath = join(f.target, ".campaign-runtime/run-session.json");
+    const journal = join(f.target, ".campaign-runtime/agent-deviations.jsonl");
+    const deviations = () => (existsSync(journal) ? readFileSync(journal, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line)) : []);
+    const qaRun = () => runCli(["qa", "run", "--packet", f.packetPath, "--base-url", `http://127.0.0.1:9/${f.slug}/`, "--no-post-verdict", "--no-remit", "--json"], f.dir);
+
+    const early = qaRun();
+    assert.match(early.stderr, /deviation recorded: `qa` ran while next recommended stage "deploy"/, "a qa run while deploy is current is a deviation");
+    assert.equal(deviations().length, 1);
+
+    const site = await serveSite(f);
+    let deployed;
+    try {
+      deployed = await runCliAsync(["record", "deploy", "--packet", f.packetPath, "--base-url", site.url], f.dir);
+    } finally {
+      await site.close();
+    }
+    assert.equal(deployed.status, 0, deployed.stderr);
+    assert.match(deployed.stdout, /^Next stage: qa/m);
+
+    const after = qaRun();
+    assert.doesNotMatch(after.stderr, /deviation recorded/, "qa after record deploy is what the record said comes next");
+    assert.equal(deviations().length, 1, "no deviation against the stale deploy recommendation");
+    assert.equal(deviations()[0].recommended_stage, "deploy");
+
+    // Once next runs again its recommendation is current and compared again.
+    assert.equal(nextOk(f, []).stage, "qa");
+    assert.equal(readJson(sessionPath).last_recommendation.stage, "qa");
+  });
+});
+
 test("persisted paths remain private through polish, deploy and QA, and next finds the current verdict from another cwd", async () => {
   await withLifecycle(async (f) => {
     const externalBrief = join(f.dir, "brief.json");
@@ -1640,6 +1691,43 @@ test("record deploy accepts a hosted current Polish, then carries it forward aft
   });
 });
 
+// F-234, F-255: record build and after-edit print the owed line from next's
+// decision. Batch 9 saw "Owed stages: none." while next owed a currency run,
+// and an owed line without the deploy a rebuild made required.
+test("record build and after-edit name the currency runs and the required deploy next owes (F-234, F-255)", async (t) => {
+  await guardedLifecycle(async (f) => {
+    await recordThroughPolish(f);
+    await recordDeploy(f);
+    await recordQa(f, { currency: "USD" });
+    const next = nextOk(f);
+    assert.equal(next.stage, "qa", next.reason);
+    assert.deepEqual(next.next_actions.filter((action) => action.id === "qa_run_currency").map((action) => action.command.match(/--currency (\w+)$/)[1]), ["EUR"]);
+    const owedEur = "Owed stages: QA test orders in EUR. Every stage is recorded, and this build has no test order in that currency.";
+    const unchanged = recordOk(f, "build");
+    t.diagnostic(`ONE CURRENCY | record build\n${resultTextLines(unchanged).join("\n")}`);
+    assert.ok(unchanged.ready.includes(owedEur), unchanged.ready.join("\n"));
+    assert.deepEqual([unchanged.next_stage, unchanged.next_stage_reason], [next.stage, next.reason], "and its next stage is next's, not done");
+    const afterEdit = runCli(["after-edit", "--packet", f.packetPath, "--no-live-refs"], f.dir).stdout;
+    t.diagnostic(`ONE CURRENCY | after-edit\n${afterEdit}`);
+    assert.doesNotMatch(afterEdit, /Owed stages: none/);
+    assert.ok(afterEdit.includes(owedEur), afterEdit);
+    assert.ok(runCli(["next", "--packet", f.packetPath, "--no-write"], f.dir).stdout.includes(owedEur));
+
+    // A page-only rebuild makes the recorded deploy required.
+    const page = join(f.target, "_site", f.slug, "landing/index.html");
+    writeFileSync(page, readFileSync(page, "utf8").replace("</h1>", " Revised copy</h1>"));
+    const rebuilt = recordOk(f, "build");
+    assert.equal(readJson(f.reportPath).stages.deploy.status, "required");
+    assert.equal(nextOk(f).stage, "deploy");
+    const owedDeploy = "Owed stages: deploy, qa (changed pages only).";
+    assert.ok(rebuilt.ready.includes(owedDeploy), rebuilt.ready.join("\n"));
+    const afterRebuild = runCli(["after-edit", "--packet", f.packetPath, "--no-live-refs"], f.dir).stdout;
+    t.diagnostic(`PAGE ONLY | after-edit\n${afterRebuild}`);
+    assert.ok(afterRebuild.includes(owedDeploy), afterRebuild);
+    assert.match(runCli(["next", "--packet", f.packetPath, "--no-write"], f.dir).stdout, /^- Owed stages: deploy, qa \(changed pages only\)\.$/m);
+  }, { mutateSpec: (spec) => { spec.campaign = { ...spec.campaign, currency: "USD", available_currencies: ["USD", "EUR"] }; } });
+});
+
 test("page-only rebuild shares debt across after-edit, next and local deploy after handoff", async (t) => {
   await guardedLifecycle(async (f) => {
     await recordThroughPolish(f);
@@ -1658,10 +1746,13 @@ test("page-only rebuild shares debt across after-edit, next and local deploy aft
     const page = join(f.target, "_site", f.slug, "landing/index.html");
     writeFileSync(page, readFileSync(page, "utf8").replace("</h1>", " Revised copy</h1>"));
     const build = recordOk(f, "build");
-    assert.ok(build.ready.includes("Owed stages: qa (changed pages only)."));
+    assert.ok(build.ready.includes("Owed stages: deploy, qa (changed pages only)."));
     const after = runJson(["after-edit", "--packet", f.packetPath, "--no-live-refs"], f.dir).json;
     assert.equal(after.ci.polish.advisory, true);
     assert.deepEqual(after.ci.qa.owed_pages.map((page) => page.page_id), ["landing"]);
+    // The required deploy comes before the page QA run, as next picks it, so
+    // after-edit hands off to next rather than to qa run --page.
+    assert.match(after.next, /next --packet /, after.next);
     const inspected = doctorOk(f);
     t.diagnostic(`PAGE ONLY | record build\n${resultTextLines(build).join("\n")}`);
     t.diagnostic(`PAGE ONLY | after-edit\n${runCli(["after-edit", "--packet", f.packetPath, "--no-live-refs"], f.dir).stdout}`);
@@ -1687,7 +1778,7 @@ test("page-only rebuild shares debt across after-edit, next and local deploy aft
     const checkoutBuild = recordOk(f, "build");
     // On the local preview Polish is advisory (F-157): record build records
     // it skipped for this build, so only QA is owed.
-    assert.ok(checkoutBuild.ready.includes("Owed stages: qa."), checkoutBuild.ready.join("\n"));
+    assert.ok(checkoutBuild.ready.includes("Owed stages: deploy, qa."), checkoutBuild.ready.join("\n"));
     t.diagnostic(`CHECKOUT | record build\n${resultTextLines(checkoutBuild).join("\n")}`);
     t.diagnostic(`CHECKOUT | after-edit\n${runCli(["after-edit", "--packet", f.packetPath, "--no-live-refs"], f.dir).stdout}`);
     t.diagnostic(`CHECKOUT | next\n${runCli(["next", "--packet", f.packetPath, "--no-write"], f.dir).stdout}`);
@@ -1717,7 +1808,7 @@ test("page-only rebuild keeps the reviewed Polish, and an optional capture reope
     const page = join(f.target, "_site", f.slug, "landing/index.html");
     writeFileSync(page, readFileSync(page, "utf8").replace("</h1>", " Revised copy</h1>"));
     const build = recordOk(f, "build");
-    assert.ok(build.ready.includes("Owed stages: qa (changed pages only)."));
+    assert.ok(build.ready.includes("Owed stages: deploy, qa (changed pages only)."));
     assert.deepEqual(readJson(f.reportPath).stages.polish, reviewed, "the Polish record is kept as it was");
     const readback = runCli(["readback", f.target], f.dir).stdout;
     t.diagnostic(readback.split("\n").filter((line) => /^\s+(polish|deploy|qa)\b/.test(line)).join("\n"));
@@ -1879,7 +1970,7 @@ test("record deploy on the local preview keeps skipped Polish missing after page
     const page = join(f.target, "_site", f.slug, "landing/index.html");
     writeFileSync(page, readFileSync(page, "utf8").replace("</h1>", " Revised copy</h1>"));
     const built = recordOk(f, "build");
-    assert.ok(built.ready.includes("Owed stages: qa (changed pages only)."));
+    assert.ok(built.ready.includes("Owed stages: deploy, qa (changed pages only)."));
     const after = doctorOk(f).derived.polish_gate;
     const afterRow = __qaNodeTestHooks.polishGateAssertion(after);
     t.diagnostic(`After edit: ${afterRow.status}: ${afterRow.actual}`);
@@ -2378,7 +2469,7 @@ async function recordDeploy(f) {
 // one executed test order, `qcResults` and the verdict `assertions` they pair
 // with, all at `at`. `selfReferential` names the Assembly Report as the
 // stage's full verdict.
-async function recordQa(f, { runId = "qa-synthetic-run-0001", qcResults = [], assertions = [], at = new Date().toISOString(), briefMaterial, selfReferential = false } = {}) {
+async function recordQa(f, { runId = "qa-synthetic-run-0001", qcResults = [], assertions = [], at = new Date().toISOString(), briefMaterial, selfReferential = false, currency = null } = {}) {
   const { recordQaStageOutcome } = await import("./cli.mjs");
   const { specMaterialHash } = await import("./spec-identity.mjs");
   const { localQaIdentifier } = await import("./spec-source-identity.mjs");
@@ -2401,7 +2492,7 @@ async function recordQa(f, { runId = "qa-synthetic-run-0001", qcResults = [], as
     disposition: "ready",
     assertions,
     exceptions: [],
-    test_orders: [{ next_order_id: `${runId}-order-1`, is_test: true, verification: { verified: true } }],
+    test_orders: [{ next_order_id: `${runId}-order-1`, is_test: true, ...(currency ? { ok: true } : {}), verification: { verified: true, ...(currency ? { currency } : {}) } }],
   };
   const verdictPath = join(f.target, "qa-output", identifier, `${runId}.json`);
   writeJson(verdictPath, verdict);

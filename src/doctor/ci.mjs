@@ -122,9 +122,12 @@ export async function withDoctorCiReport(args, invoke) {
 }
 
 // Shared with post-write stage records: the same debt, in CI's words.
-// `deployOwed`: next also owes a deploy a rebuild made required, so its owed
-// line names it with Polish and QA, as readback and the picker do.
-export function doctorCiEvidenceLines(ci, encode = code, { deployOwed = false } = {}) {
+// `owed` (owed-stages.mjs owedStages): what next also owes, a deploy a rebuild
+// made required and the currencies still owed a test order, so next, record
+// build and after-edit print one owed line. doctor --ci alone passes none.
+export function doctorCiEvidenceLines(ci, encode = code, { owed: extra = null } = {}) {
+  const deployOwed = extra?.deploy === true;
+  const currencies = Array.isArray(extra?.currencies) ? extra.currencies : [];
   const lines = [];
   const advisory = ["polish", "qa"].filter((stage) => ci[stage].status === "owed" && ci[stage].advisory);
   const owed = ["polish", "qa"].filter((stage) => ci[stage].status === "owed" && !ci[stage].advisory);
@@ -149,8 +152,12 @@ export function doctorCiEvidenceLines(ci, encode = code, { deployOwed = false } 
   }
   const owedNames = [...owed.filter((stage) => stage === "polish"), ...(deployOwed ? ["deploy"] : []), ...owed.filter((stage) => stage === "qa")]
     .map((stage) => stage === "qa" && ci.qa.scope === "pages" ? "qa (changed pages only)" : stage);
-  lines.push(`Owed stages: ${owedNames.length ? owedNames.join(", ") : "none"}.`);
+  const testOrders = currencies.length ? `QA test orders in ${currencies.join(" and ")}` : null;
+  lines.push(!owedNames.length && testOrders
+    ? `Owed stages: ${testOrders}. Every stage is recorded, and this build has no test order in ${currencies.length > 1 ? "those currencies" : "that currency"}.`
+    : `Owed stages: ${[...owedNames, ...(testOrders ? [testOrders] : [])].join(", ") || "none"}.`);
   if (deployOwed) lines.push("- Owed deploy: stages.deploy is required; record deploy against the served current build.");
+  if (testOrders) lines.push(`- Owed QA test orders: one qa run --currency per currency (${currencies.join(", ")}); next names each command.`);
   for (const stage of owed) {
     const reason = ci[stage].reason === "build_fingerprint_changed"
       ? "the recorded build fingerprint differs from the current build"
@@ -198,7 +205,8 @@ export function doctorCiEvidenceLines(ci, encode = code, { deployOwed = false } 
   return lines;
 }
 
-export function formatDoctorCi(result) {
+// `owed`: as doctorCiEvidenceLines; after-edit passes next's owed decision.
+export function formatDoctorCi(result, { owed: extra = null } = {}) {
   const ci = result.ci;
   if (!ci) {
     return [
@@ -209,8 +217,8 @@ export function formatDoctorCi(result) {
         : "Remedy: correct the packet or inspection failure and re-run `campaigns-os doctor --packet <packet> --ci --no-live-refs`.",
     ].join("\n");
   }
-  const lines = [`## Campaign evidence: ${text(ci.status)} (exit ${ci.exit_code})`, "", ...doctorCiEvidenceLines(ci)];
-  const owed = ["polish", "qa"].filter((stage) => ci[stage].status === "owed" && !ci[stage].advisory);
+  const lines = [`## Campaign evidence: ${text(ci.status)} (exit ${ci.exit_code})`, "", ...doctorCiEvidenceLines(ci, code, { owed: extra })];
+  const owed =["polish", "qa"].filter((stage) => ci[stage].status === "owed" && !ci[stage].advisory);
   const pageScoped = ciChangeScope(ci).scope === "pages";
   const browserPages = ci.qa.status === "owed" && Array.isArray(ci.qa.browser_pages) ? ci.qa.browser_pages : [];
   if (ci.status === "owed" && pageScoped && owed.length) {

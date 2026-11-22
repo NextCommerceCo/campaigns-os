@@ -14,6 +14,7 @@ import {
   centsToUsd,
   moneyToCents,
 } from "./commercial-journey.mjs";
+import { discountClaimAboveMax, discountClaimsInText, formatDiscountPercent } from "./discount-claims.mjs";
 
 export const COMMERCIAL_PARITY_SCHEMA_VERSION = "campaigns-os-commercial-parity/v0";
 
@@ -576,6 +577,20 @@ function extractVouchers(nodeIndex, errors, consumeClaim, { offerPage = false } 
   return vouchers;
 }
 
+// Promo percentage copy ("Claim Your 60% Discount", "60% Off"), read from the
+// whole source the way doctor's built-output scan reads it, one entry per
+// distinct percentage with how often it appears. Held against the CampaignSpec
+// maximum discount (F-258); it is never a price claim.
+function extractDiscountClaims(html) {
+  const byPercent = new Map();
+  discountClaimsInText(html).forEach(({ text, claimed_percent: percent }) => {
+    const entry = byPercent.get(percent);
+    if (entry) entry.occurrences += 1;
+    else byPercent.set(percent, { claimed_percent: percent, text: text.replace(/\s+/g, " "), occurrences: 1 });
+  });
+  return [...byPercent.values()];
+}
+
 /**
  * Extract only contract-governed authored claims from one page's source HTML.
  */
@@ -595,12 +610,14 @@ export function extractCommercialClaims(html, options = {}) {
   const packagePriceClaims = extractPackagePrices(nodeIndex, consumeClaim);
   const recurrenceClaims = extractRecurrences(nodeIndex, extractionErrors, consumeClaim);
   const vouchers = extractVouchers(nodeIndex, extractionErrors, consumeClaim, { offerPage: options.pageType === "upsell" || options.pageType === "downsell" });
+  const discountClaims = extractDiscountClaims(html);
   return {
     page_id: present(options.pageId) ? String(options.pageId) : null,
     ...(present(options.url) ? { url: String(options.url) } : {}),
     price_claims: priceClaims,
     recurrence_claims: recurrenceClaims,
     vouchers,
+    ...(discountClaims.length ? { discount_claims: discountClaims } : {}),
     ...(packagePriceClaims.length ? { package_price_claims: packagePriceClaims } : {}),
     ...(extractionErrors.length ? { extraction_errors: extractionErrors } : {}),
   };
@@ -1000,6 +1017,26 @@ export function diffCommercialParity(capturesValue, journey, options = {}) {
       });
     }
 
+    // A promo percentage above every percentage discount the CampaignSpec
+    // declares is wrong copy whatever the prices are (F-258). Doctor's
+    // template_contract.discount_claim_residue reads the same maximum.
+    if (Number.isFinite(options.maxDiscountPercent)) {
+      array(capture.discount_claims)
+        .filter((claim) => Number.isFinite(claim?.claimed_percent)
+          && discountClaimAboveMax(claim.claimed_percent, options.maxDiscountPercent))
+        .forEach((claim) => {
+          findings.push({
+            type: "discount-claim-above-offer",
+            page_id: pageId,
+            ...source,
+            claimed: formatDiscountPercent(claim.claimed_percent),
+            calculated: formatDiscountPercent(options.maxDiscountPercent),
+            text: String(claim.text ?? ""),
+            occurrences: positiveInteger(claim.occurrences) ?? 1,
+          });
+        });
+    }
+
     voucherComparisonClaims(capture, page).compared.forEach(({ voucher, status }) => {
       if (status === "Applied") return;
       const code = voucher.code;
@@ -1035,6 +1072,9 @@ function assertionBaseId(finding) {
   }
   if (finding.type === "voucher-not-applied" || finding.type === "voucher-not-on-page") {
     return `${finding.type}:${component(finding.page_id)}:${component(finding.code)}`;
+  }
+  if (finding.type === "discount-claim-above-offer") {
+    return `${finding.type}:${component(finding.page_id)}:${component(String(finding.claimed).replace(/%$/, ""))}`;
   }
   throw new TypeError(`Unknown commercial parity finding type: ${String(finding?.type)}`);
 }
@@ -1174,6 +1214,16 @@ function assertionForFinding(finding, id) {
       evidence: { type: finding.type, code: finding.code },
     };
   }
+  if (finding.type === "discount-claim-above-offer") {
+    const times = finding.occurrences === 1 ? "once" : `${finding.occurrences} times`;
+    return {
+      ...common,
+      status: "fail",
+      expected: `discount claims at or below ${finding.calculated}, the largest percentage discount the CampaignSpec declares`,
+      actual: `page ${finding.page_id} claims ${finding.claimed} ("${finding.text}", ${times}). Correct the figure to the campaign's actual offers, rebuild and re-run qa run.`,
+      evidence: { type: finding.type, claimed: finding.claimed, max_spec_percent: finding.calculated, occurrences: finding.occurrences },
+    };
+  }
   throw new TypeError(`Unknown commercial parity finding type: ${String(finding?.type)}`);
 }
 
@@ -1279,7 +1329,10 @@ export function createCommercialParityReport(capturesValue, journey, options = {
   const countsOnly = options.countsOnly === true;
   const moneyReason = present(options.unresolvedMoneyClaims) ? String(options.unresolvedMoneyClaims) : null;
   const { valid: captures, invalid: invalidCaptures } = partitionCaptures(capturesValue, { countsOnly });
-  const findings = countsOnly ? [] : diffCommercialParity(captures, journey, { unresolvedMoneyClaims: moneyReason });
+  const findings = countsOnly ? [] : diffCommercialParity(captures, journey, {
+    unresolvedMoneyClaims: moneyReason,
+    maxDiscountPercent: options.maxDiscountPercent,
+  });
   const captureMatches = captures.map((capture) => ({ capture, page: pageForCapture(capture, journey) }));
   const orderCharges = countsOnly ? new Map() : orderChargeMismatchesByPage(options.testOrders, captureMatches, { currency: options.orderCurrency });
   const { assertions, omittedFindingCount } = countsOnly

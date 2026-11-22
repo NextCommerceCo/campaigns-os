@@ -6357,8 +6357,122 @@
       "entry_sha256": "c2874e841a91f3c12106bb754baf3d59abc9b6ebc3346a0fd9eb5e04398e5155"
     },
     {
-      "id": "RL-0385",
+      "id": "RL-0381",
       "sequence": 365,
+      "date": "2026-11-22",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.4+agent.1",
+      "changelog_sha256": "e36a799d8dc02e74affe32aed072c912623401c232c357cdf371fde208901419",
+      "agent_impact": "qa run no longer blocks on pricing.upsell_price_visible:<page> for an upsell whose design keeps the offer next-hidden until an order exists. QA opens upsell URLs without the ref_id a buyer always arrives with; when no price row is visible, the opened URL has no ref_id and the price rows sit inside a next-hidden container, the row is skipped (evidence next_hidden_price_rows) with that reason, as the checkout row already is for an empty cart. Do not add a price row outside the offer only to pass QA. An upsell opened with a ref_id, or whose prices are hidden any other way, still fails as a blocker; an upsell that shows its prices without an order is still checked. A failed probe leaves the row failed with orderless_probe_error.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "pricing.upsell_price_visible is skipped with a named reason (next_hidden_price_rows) when the upsell is opened without a ref_id and its price rows are next-hidden until an order exists."
+        }
+      ],
+      "entry_sha256": "b0a4680a3d335c2907b4a868dd0a2008c118bb2145bb6dc9512a8601de858b7d"
+    },
+    {
+      "id": "RL-0382",
+      "sequence": 366,
+      "date": "2026-11-22",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.4+agent.2",
+      "changelog_sha256": "225d9212b01097c7b691323dbf1447c812dc294c7e284e506fc778bba6f9366d",
+      "agent_impact": "record build and after-edit print their Owed stages line from the same decision next makes. After a rebuild that made stages.deploy required, the line names deploy (for example \"Owed stages: deploy, qa (changed pages only).\") instead of leaving it out. Once every stage is recorded but the current build has no test order in a currency the CampaignSpec lists, the line reads \"Owed stages: QA test orders in EUR. Every stage is recorded, and this build has no test order in that currency.\" instead of \"Owed stages: none.\", record build reports next_stage \"qa\" with next's reason, and after-edit's next is campaigns-os next, which returns the qa_run_currency runs. Do not report a campaign finished while either is owed: run the deploy or the named currency runs, then call next again. doctor --ci and record baseline keep their Polish and QA line, and exit codes are unchanged.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/campaigns-os-build-flow.md",
+          "surface_entry": "docs/campaigns-os-build-flow.md",
+          "summary": "record build, after-edit and next print one owed line: deploy when required, and the currencies still owed a test order once every stage is recorded."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "The owed currencies appear in the Owed stages line of record build and after-edit as in next's."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "next reads its owed deploy and owed currency runs from the shared owed-stages decision, and prints its Owed stages line from it instead of rewriting the line afterwards."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/ci.mjs",
+          "surface_entry": null,
+          "summary": "The owed-stages line takes next's owed decision: deploy when required, and \"QA test orders in <codes>\" while currencies are owed; doctor --ci passes none and is unchanged."
+        }
+      ],
+      "entry_sha256": "40094541cbedf766ea79000bfcf6d2b5039b2d48ca7eddb85a3ad893cfbb5d0e"
+    },
+    {
+      "id": "RL-0383",
+      "sequence": 367,
+      "date": "2026-11-22",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.4+agent.3",
+      "changelog_sha256": "b7c7192a56a9087e8fe1471213988ff14007acf926682ce31ad3dd0a13b226b3",
+      "agent_impact": "qa run commercial parity now reads promo discount claims (\"Save N%\", \"N% off\", \"N% discount\") from each commercial page's source and compares each distinct percentage with the largest percentage discount the CampaignSpec declares (offer and voucher benefits, discount-percent fields), the same maximum doctor's template_contract.discount_claim_residue uses. A claim above it is a discount-claim-above-offer finding: a pricing row discount-claim-above-offer:<page>:<percent> with status fail and severity warn, naming the claim, how often the page repeats it and the maximum, and commercial.status reads mismatch instead of pass. The disposition stays ready_with_exceptions (warn severity). Correct the figure to the campaign's actual offers, rebuild and re-run qa run; do not reword copy that is at or below the maximum. A CampaignSpec with no percentage discount checks no claim here (doctor's discount_claim_unverified still applies).",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "Automatic commercial parity holds promo discount-percentage claims against the CampaignSpec's largest percentage discount and reports a claim above it as a discount-claim-above-offer fail row (severity warn)."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/doctor/checks.mjs",
+          "surface_entry": null,
+          "summary": "doctor's template_contract.discount_claim_residue reads its claims and CampaignSpec maximum from the module QA commercial parity now shares; its findings and messages are unchanged."
+        }
+      ],
+      "entry_sha256": "24a8509e3df92b05e16e853fb528cf6400cab3de90d2e8457b11b38657ed79ef"
+    },
+    {
+      "id": "RL-0384",
+      "sequence": 368,
+      "date": "2026-11-22",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.4+agent.4",
+      "changelog_sha256": "34ecda9fcc66e0f008ca3b89b2e2e80eabca30e473504f07f9d7e7143d4f957c",
+      "agent_impact": "In a run session, deviation telemetry no longer compares a command with a next recommendation that a later successful stage record has superseded (found as a newer record entry in the session's lifecycle journal), so a qa run right after record deploy printed Next stage: qa is not logged against the deploy recommendation stored before it. Comparison resumes when next runs again; a command that differs from a current recommendation is still logged. No new write, field or effect.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "Recording stage completion: a record that writes supersedes the recommendation next stored before it; deviation telemetry compares nothing with it until next runs again."
+        },
+        {
+          "class": "cli_surface",
+          "path": "src/cli.mjs",
+          "surface_entry": null,
+          "summary": "Deviation telemetry skips a stored next recommendation older than a successful non-dry-run record entry in the session's lifecycle journal."
+        }
+      ],
+      "entry_sha256": "0a011d8c0e58502fbbde412b325e58af91b36004c243bd5f54f52d636aad28f0"
+    },
+    {
+      "id": "RL-0385",
+      "sequence": 369,
       "date": "2026-11-22",
       "kind": "release",
       "surface_version": null,
@@ -6375,7 +6489,7 @@
           "summary": "data-next-bundle-vouchers is read as JSON list or comma-separated codes; unread pages name their reason; uncompared claims are listed in verdict.commercial.unresolved_claims and the incomplete rows' evidence.claims."
         }
       ],
-      "entry_sha256": "824bf8c17ab82d3b78da258f0862eb3ac24c89a6fe5724c1cf2a93c58cb22dc6"
+      "entry_sha256": "522523386ddcf7e6d4563cadd7c7308576f258d6a753b20d67073557bebed700"
     }
   ]
 }

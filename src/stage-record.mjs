@@ -44,6 +44,7 @@ import { assessEvidenceDebt } from "./evidence-debt.mjs";
 import { writeJsonAtomic } from "./doctor-sidecar.mjs";
 import { doctorPacket } from "./doctor/inspect.mjs";
 import { assessDoctorCi, doctorCiEvidenceLines } from "./doctor/ci.mjs";
+import { owedCurrencyReason, readOwedStages } from "./owed-stages.mjs";
 import { validateAssemblyReport } from "./doctor/checks.mjs";
 import { cmd } from "./install-invocation.mjs";
 import { refused } from "./lifecycle.mjs";
@@ -1333,6 +1334,11 @@ export function recordStageCommand(args, { now = () => new Date(), beforeLock = 
   // not as its recorded fingerprint, so read that anchor too.
   const showCi = ci && (polishReviewedBuild(composed.report.stages?.polish)
     || [ci.polish, ci.qa].some((assessment) => assessment.recorded_build_fingerprint || assessment.baseline));
+  // next's owed decision (a required deploy, currencies still owed a test
+  // order): the owed line and the next stage read it as next does. Baseline
+  // keeps CI's line and names the deploy as the served-URL record instead.
+  const owed = ci && stage === "build" ? readOwedStages({ picked: after?.next, packetPath, specPath: after?.derived?.spec_path || null, report: composed.report }) : null;
+  const currenciesOwed = owed?.currencies.length > 0;
 
   const stageKey = stage === "build" ? "assembly" : stage === "baseline" ? "qa" : stage;
   const writes = [...(composed.context ? [contextPath] : []), ...(composed.packet ? [packetPath] : []), reportPath];
@@ -1356,7 +1362,7 @@ export function recordStageCommand(args, { now = () => new Date(), beforeLock = 
     ...(composed.context ? ["Build Context scaffold.required = false"] : []),
     ...(showCi ? [
       `doctor --ci reads this build as: ${ci.status}`,
-      ...doctorCiEvidenceLines(ci, singleLineFragment).map((line) => line.replace(/^- /, "")),
+      ...doctorCiEvidenceLines(ci, singleLineFragment, { owed }).map((line) => line.replace(/^- /, "")),
     ] : []),
     ...(stage === "baseline" && ci?.polish.status === "current" && ci?.qa.status === "current" && composed.report.stages.deploy?.status === "required"
       ? [`Served-URL record follows: deploy (run ${cmd("record")} deploy --packet <packet> --base-url <served-current-build-url>).`] : []),
@@ -1376,7 +1382,9 @@ export function recordStageCommand(args, { now = () => new Date(), beforeLock = 
     ...(stage === "build" ? { polish: composed.report.stages.polish } : {}),
     ...(composed.context ? { scaffold: composed.context.scaffold } : {}),
     ...(stage === "polish" && input.hasRepairLoopDefect ? { repair_loop_defect: input.repairLoopDefect } : {}),
-    ...(after ? { next_stage: after.next?.stage || null, next_stage_reason: after.next?.reason || null } : {}),
+    ...(after ? currenciesOwed
+      ? { next_stage: "qa", next_stage_reason: owedCurrencyReason(owed.currencies) }
+      : { next_stage: after.next?.stage || null, next_stage_reason: after.next?.reason || null } : {}),
     ...(ci ? { ci } : {}),
     ready,
     note: dryRun
