@@ -553,9 +553,16 @@ function extractVouchers(nodeIndex, errors, consumeClaim, { offerPage = false } 
     }
     if (offerPage && hasAttribute(node, "data-next-vouchers")) String(node.attrs["data-next-vouchers"]).split(",").forEach(add);
     if (!hasAttribute(node, "data-next-bundle-vouchers")) return;
+    // Read as the SDK reads it: a JSON list when the value starts with "[",
+    // otherwise comma-separated codes (`data-next-bundle-vouchers="FIRE"`).
+    const raw = String(node.attrs["data-next-bundle-vouchers"]).trim();
+    if (!raw.startsWith("[")) {
+      raw.split(",").forEach(add);
+      return;
+    }
     let parsed;
     try {
-      parsed = JSON.parse(node.attrs["data-next-bundle-vouchers"]);
+      parsed = JSON.parse(raw);
     } catch (_error) {
       errors.push({ type: "malformed-voucher-json" });
       return;
@@ -690,6 +697,13 @@ function captureCandidates(capturesValue) {
   return capturesValue === undefined || capturesValue === null ? [] : [capturesValue];
 }
 
+// Why a capture was refused, as a code the run can print: the first
+// extraction error the page reported, or the claims themselves failing shape.
+function invalidCaptureReason(capture) {
+  const type = record(capture) && Array.isArray(capture.extraction_errors) ? capture.extraction_errors[0]?.type : null;
+  return typeof type === "string" && /^[a-z0-9_-]{1,64}$/i.test(type) ? type : "unreadable_claims";
+}
+
 function partitionCaptures(capturesValue, { countsOnly = false } = {}) {
   const valid = [];
   const invalid = [];
@@ -702,6 +716,7 @@ function partitionCaptures(capturesValue, { countsOnly = false } = {}) {
       index,
       ...(record(capture) && present(capture.page_id) ? { page_id: String(capture.page_id) } : {}),
       ...(record(capture) && present(capture.url) ? { url: String(capture.url) } : {}),
+      reason: invalidCaptureReason(capture),
     });
   });
   return { valid, invalid };
@@ -716,17 +731,24 @@ function priceComparisonClaims(capture, page) {
   const claims = rendered.length ? rendered : array(capture?.price_claims);
   if (rendered.length) {
     const compared = [];
-    if (voucherComparisonClaims(capture, page).unresolved === 0) {
-      rendered.forEach((claim) => {
-        const rows = array(page?.rows).filter((row) => row.state === PricingState.Exact
-          && String(row.package_id) === String(claim.package_id)
-          && Number(row.quantity) === claim.quantity);
-        const truth = rows.length === 1 ? exactMoneyFact(rows[0].final) : null;
-        const value = claim.filled ? renderedMoney(claim.text) : null;
-        if (truth && value) compared.push({ binding: claim.binding, value, truth });
-      });
-    }
-    return { compared, unresolved: claims.length - compared.length };
+    const unresolvedClaims = [];
+    const voucherUnpriced = voucherComparisonClaims(capture, page).unresolved > 0;
+    rendered.forEach((claim) => {
+      const rows = array(page?.rows).filter((row) => row.state === PricingState.Exact
+        && String(row.package_id) === String(claim.package_id)
+        && Number(row.quantity) === claim.quantity);
+      const truth = rows.length === 1 ? exactMoneyFact(rows[0].final) : null;
+      const value = claim.filled ? renderedMoney(claim.text) : null;
+      if (!voucherUnpriced && truth && value) {
+        compared.push({ binding: claim.binding, value, truth });
+        return;
+      }
+      unresolvedClaims.push(namedClaim("price", claim, voucherUnpriced ? "voucher_unpriced"
+        : !claim.filled ? PACKAGE_PRICE_NOT_FILLED
+          : !value ? "text_not_money"
+            : "no_single_exact_row"));
+    });
+    return { compared, unresolved: unresolvedClaims.length, unresolvedClaims };
   }
   // A voucher on the page that the plan cannot price (no calculated pair for
   // its code) can move the shown price away from the planned total, so a
@@ -734,7 +756,8 @@ function priceComparisonClaims(capture, page) {
   // unresolved, which already keeps coverage incomplete, rather than being
   // reported as mismatches against the list-price total.
   if (!exactMoneyFact(page?.representative_total) || voucherComparisonClaims(capture, page).unresolved > 0) {
-    return { compared: [], unresolved: claims.length };
+    const reason = exactMoneyFact(page?.representative_total) ? "voucher_unpriced" : "page_total_not_exact";
+    return { compared: [], unresolved: claims.length, unresolvedClaims: claims.map((claim) => namedClaim("price", claim, reason)) };
   }
   const bindings = [...new Set(claims.map((claim) => String(claim.binding)))];
   const explicit = present(page?.representative_price_binding)
@@ -745,7 +768,24 @@ function priceComparisonClaims(capture, page) {
     : (bindings.length === 1 ? bindings[0] : null);
   const compared = binding ? claims.filter((claim) => String(claim.binding) === binding)
     .map((claim) => ({ ...claim, truth: exactMoneyFact(page.representative_total) })) : [];
-  return { compared, unresolved: claims.length - compared.length };
+  const unresolvedClaims = claims.filter((claim) => String(claim.binding) !== binding)
+    .map((claim) => namedClaim("price", claim, explicit ? "not_the_page_price_binding" : "more_than_one_price_binding"));
+  return { compared, unresolved: unresolvedClaims.length, unresolvedClaims };
+}
+
+// One uncompared claim as the run names it: the kind, the claim's binding (the
+// data-next-display path that locates its node on the page), the package and
+// quantity it was tied to, the text it showed, and why it was not compared.
+function namedClaim(kind, claim, reason) {
+  const text = claim?.text ?? claim?.value ?? null;
+  return {
+    kind,
+    ...(present(claim?.binding) ? { binding: String(claim.binding) } : {}),
+    ...(positiveInteger(claim?.package_id) !== null ? { package_id: positiveInteger(claim.package_id) } : {}),
+    ...(positiveInteger(claim?.quantity) !== null ? { quantity: positiveInteger(claim.quantity) } : {}),
+    ...(present(text) ? { text: String(text).slice(0, 80) } : {}),
+    reason,
+  };
 }
 
 // Printed money as the SDK formats it: a symbol or code around one amount. A
@@ -784,7 +824,7 @@ function packagePriceComparisonClaims(capture, page) {
   if (!rendered.length) {
     return {
       compared: [],
-      unresolved: array(capture?.package_price_claims).map(() => PACKAGE_PRICE_NOT_RENDERED),
+      unresolved: array(capture?.package_price_claims).map((claim) => namedClaim("package_price", claim, PACKAGE_PRICE_NOT_RENDERED)),
     };
   }
   const compared = [];
@@ -792,13 +832,13 @@ function packagePriceComparisonClaims(capture, page) {
   const voucherUnpriced = voucherComparisonClaims(capture, page).unresolved > 0;
   rendered.forEach((claim) => {
     if (!claim?.filled) {
-      unresolved.push(PACKAGE_PRICE_NOT_FILLED);
+      unresolved.push(namedClaim("package_price", claim, PACKAGE_PRICE_NOT_FILLED));
       return;
     }
     const value = renderedMoney(claim.text);
     const truth = claim.package_id === null || voucherUnpriced ? null : exactPackageUnitPrice(page, claim.package_id);
     if (!value || !truth) {
-      unresolved.push(PACKAGE_PRICE_UNRESOLVED);
+      unresolved.push(namedClaim("package_price", claim, PACKAGE_PRICE_UNRESOLVED));
       return;
     }
     compared.push({ package_id: claim.package_id, value, truth });
@@ -847,6 +887,7 @@ function recurrenceEquivalent(claim, truth) {
 
 function recurrenceComparisonClaims(capture, page) {
   const compared = [];
+  const unresolvedClaims = [];
   let unresolved = 0;
   array(capture?.recurrence_claims).forEach((claim) => {
     const packageId = positiveInteger(claim?.package_id);
@@ -861,15 +902,20 @@ function recurrenceComparisonClaims(capture, page) {
     });
     if (packageId === null || truths.length !== 1) {
       unresolved += 1;
+      unresolvedClaims.push(namedClaim("recurring", {
+        package_id: packageId,
+        text: `${claim?.amount} every ${claim?.interval_count} ${claim?.interval}`,
+      }, truths.length ? "more_than_one_recurrence" : "no_exact_recurrence"));
       return;
     }
     compared.push({ claim, truth: truths[0] });
   });
-  return { compared, unresolved };
+  return { compared, unresolved, unresolvedClaims };
 }
 
 function voucherComparisonClaims(capture, page) {
   const compared = [];
+  const unresolvedClaims = [];
   let unresolved = 0;
   array(capture?.vouchers).forEach((voucher) => {
     const code = String(voucher?.code || "").trim();
@@ -881,11 +927,12 @@ function voucherComparisonClaims(capture, page) {
       .map((offer) => offer.status))];
     if (!code || statuses.length !== 1) {
       unresolved += 1;
+      unresolvedClaims.push({ kind: "voucher", ...(code ? { text: code.slice(0, 80) } : {}), reason: "voucher_not_calculated" });
       return;
     }
     compared.push({ voucher: { code }, status: statuses[0] });
   });
-  return { compared, unresolved };
+  return { compared, unresolved, unresolvedClaims };
 }
 
 function findingPage(capture, page) {
@@ -1224,6 +1271,10 @@ export function serializeCommercialFindings(findingsValue, options = {}) {
   return { assertions, omittedFindingCount };
 }
 
+// How many uncompared claims the report names one by one; the counts stay
+// whole when a funnel has more.
+export const UNRESOLVED_CLAIMS_LISTED = 50;
+
 export const RECURRING_CLAIM_ABSENT_CODE = "commercial_parity.recurring_claim_absent";
 
 /**
@@ -1315,15 +1366,19 @@ export function createCommercialParityReport(capturesValue, journey, options = {
     compared: 0,
   };
   const packagePriceUnresolved = {};
+  const unresolvedClaims = [];
+  const nameOn = (capture, page) => (claim) => unresolvedClaims.push({ page_id: findingPage(capture, page), ...claim });
   const priceComparisonCounts = countsOnly || moneyReason
     ? { compared: 0, unresolved: extractedPriceClaims }
     : matched.reduce((counts, { capture, page }) => {
       const comparison = priceComparisonClaims(capture, page);
       const packagePrices = packagePriceComparisonClaims(capture, page);
       packagePriceCounts.compared += packagePrices.compared.length;
-      packagePrices.unresolved.forEach((code) => {
-        packagePriceUnresolved[code] = (packagePriceUnresolved[code] || 0) + 1;
+      packagePrices.unresolved.forEach((claim) => {
+        packagePriceUnresolved[claim.reason] = (packagePriceUnresolved[claim.reason] || 0) + 1;
       });
+      comparison.unresolvedClaims.forEach(nameOn(capture, page));
+      packagePrices.unresolved.forEach(nameOn(capture, page));
       counts.compared += comparison.compared.length + packagePrices.compared.length;
       counts.unresolved += comparison.unresolved + packagePrices.unresolved.length;
       return counts;
@@ -1332,6 +1387,7 @@ export function createCommercialParityReport(capturesValue, journey, options = {
     ? { compared: 0, unresolved: extractedRecurrenceClaims }
     : matched.reduce((counts, { capture, page }) => {
       const comparison = recurrenceComparisonClaims(capture, page);
+      comparison.unresolvedClaims.forEach(nameOn(capture, page));
       counts.compared += comparison.compared.length;
       counts.unresolved += comparison.unresolved;
       return counts;
@@ -1340,6 +1396,7 @@ export function createCommercialParityReport(capturesValue, journey, options = {
     ? { compared: 0, unresolved: extractedVoucherClaims }
     : matched.reduce((counts, { capture, page }) => {
       const comparison = voucherComparisonClaims(capture, page);
+      comparison.unresolvedClaims.forEach(nameOn(capture, page));
       counts.compared += comparison.compared.length;
       counts.unresolved += comparison.unresolved;
       return counts;
@@ -1371,6 +1428,7 @@ export function createCommercialParityReport(capturesValue, journey, options = {
     extracted_voucher_claims: extractedVoucherClaims,
     compared_voucher_claims: voucherComparisonCounts.compared,
     unresolved_voucher_claims: voucherComparisonCounts.unresolved,
+    unresolved_claims: unresolvedClaims.slice(0, UNRESOLVED_CLAIMS_LISTED),
     ...(moneyReason && extractedPriceClaims + extractedRecurrenceClaims > 0
       ? { unresolved_money_claims_reason: moneyReason }
       : {}),

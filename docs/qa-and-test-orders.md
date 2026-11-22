@@ -546,9 +546,19 @@ CampaignSpec offer's calculated price for that package, the page's
 naming the order and both prices, and the verdict is `blocked`. Without such an
 order they stay warnings. On upsell and downsell pages all three
 attributes are read as voucher claims; other pages read only
-`data-next-bundle-vouchers`, as before. Decorative claims are ignored, and ambiguous, stale,
+`data-next-bundle-vouchers`, as before. `data-next-bundle-vouchers` is read as
+the SDK reads it: a JSON list when the value starts with `[`, otherwise
+comma-separated codes (`data-next-bundle-vouchers="FIRE"`). Decorative claims are ignored, and ambiguous, stale,
 unresolved, or malformed claims never read as a mismatch: they leave the proof
-incomplete, as above. A page showing a voucher the normalized plan cannot price
+incomplete, as above. Each claim left uncompared is named in
+`verdict.commercial.unresolved_claims` (first 50) with its page, kind, binding
+(the `data-next-display` path that locates its node), package and quantity when
+known, the text it showed, and a reason code; the `commercial_claims_unresolved`
+and `package_price_*` rows keep their whole count, list the first ten in their
+line, and carry in `evidence.claims` those among the verdict's first 50; a line
+says how many it could not name. A `commercial_pages_unread` row names each page
+with why it was not read (a fetch failure, a named malformed attribute, a size,
+element, depth or claim limit, or no served page read for it), and `invalid_captures[].reason` carries the code. A page showing a voucher the normalized plan cannot price
 (no calculated pair for its code, for example a live voucher on an upsell)
 leaves that page's price claims unresolved: the plan's only Exact truth for
 the page is then the list price, which a voucher-priced page is expected to

@@ -6469,6 +6469,27 @@
         }
       ],
       "entry_sha256": "0a011d8c0e58502fbbde412b325e58af91b36004c243bd5f54f52d636aad28f0"
+    },
+    {
+      "id": "RL-0385",
+      "sequence": 369,
+      "date": "2026-11-22",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.4+agent.5",
+      "changelog_sha256": "13dd21dc142933e49b04b90f985e374bba2a7f17f53587716501542bbcd91692",
+      "agent_impact": "qa run's commercial parity reads data-next-bundle-vouchers as the SDK does: a JSON list when the value starts with \"[\", otherwise comma-separated codes, so an upsell or checkout card carrying data-next-bundle-vouchers=\"FIRE\" is read and its voucher compared instead of the page being reported commercial_pages_unread. A commercial_pages_unread line now names each page with why it was not read (the fetch, a named malformed attribute, the claim limit, or no served page read for it), and invalid_captures[].reason carries the code. Each claim left uncompared is listed in verdict.commercial.unresolved_claims (first 50) with page_id, kind (price, package_price, recurring, voucher), binding (the data-next-display path locating its node), package_id and quantity when known, the text it showed and a reason code; the commercial_claims_unresolved and package_price_* rows name the first ten in their line and carry all of them in evidence.claims. Check those claims by name instead of guessing which ones they are.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "data-next-bundle-vouchers is read as JSON list or comma-separated codes; unread pages name their reason; uncompared claims are listed in verdict.commercial.unresolved_claims and the incomplete rows' evidence.claims."
+        }
+      ],
+      "entry_sha256": "522523386ddcf7e6d4563cadd7c7308576f258d6a753b20d67073557bebed700"
     }
   ]
 }
