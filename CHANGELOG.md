@@ -6,7 +6,7 @@ Notable supported-surface changes are recorded here.
 
 ### Fixed
 
-- `record build` and `after-edit` print their "Owed stages" line from the decision `next` makes: it names `deploy` when a rebuild made `stages.deploy` required, and the currencies still owed a test order once every stage is recorded, instead of `Owed stages: none.`; `record build` then reports next stage `qa`, and `after-edit` hands over to `next`.
+- `record build` and `after-edit` print their "Owed stages" line from the decision `next` makes: it names `deploy` when a rebuild made `stages.deploy` required, and the currencies still owed a test order once every stage is recorded, instead of `Owed stages: none.`; `record build` then reports next stage `qa`, and `after-edit` hands over to `next` (#811).
 
 ## [1.71.4] - 2026-11-21
 

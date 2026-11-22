@@ -6363,7 +6363,7 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.71.4+agent.2",
-      "changelog_sha256": "68148097e09997320c1759fb98abd895cc130f7897d6e7f3489736abf1dfb8f2",
+      "changelog_sha256": "225d9212b01097c7b691323dbf1447c812dc294c7e284e506fc778bba6f9366d",
       "agent_impact": "record build and after-edit print their Owed stages line from the same decision next makes. After a rebuild that made stages.deploy required, the line names deploy (for example \"Owed stages: deploy, qa (changed pages only).\") instead of leaving it out. Once every stage is recorded but the current build has no test order in a currency the CampaignSpec lists, the line reads \"Owed stages: QA test orders in EUR. Every stage is recorded, and this build has no test order in that currency.\" instead of \"Owed stages: none.\", record build reports next_stage \"qa\" with next's reason, and after-edit's next is campaigns-os next, which returns the qa_run_currency runs. Do not report a campaign finished while either is owed: run the deploy or the named currency runs, then call next again. doctor --ci and record baseline keep their Polish and QA line, and exit codes are unchanged.",
       "compatibility": "compatible",
       "migration": "none",
@@ -6393,7 +6393,7 @@
           "summary": "The owed-stages line takes next's owed decision: deploy when required, and \"QA test orders in <codes>\" while currencies are owed; doctor --ci passes none and is unchanged."
         }
       ],
-      "entry_sha256": "f717c25c592c11350dfd65da95fe1e1c9ed62b1f7d5ef0cf47924def0afb5868"
+      "entry_sha256": "15eb7537102794bca48bc132276f200094b92d5a9be2f1bd7dcd954aab340174"
     }
   ]
 }
