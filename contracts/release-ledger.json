@@ -6355,6 +6355,27 @@
         }
       ],
       "entry_sha256": "c2874e841a91f3c12106bb754baf3d59abc9b6ebc3346a0fd9eb5e04398e5155"
+    },
+    {
+      "id": "RL-0381",
+      "sequence": 365,
+      "date": "2026-11-22",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.4+agent.1",
+      "changelog_sha256": "e36a799d8dc02e74affe32aed072c912623401c232c357cdf371fde208901419",
+      "agent_impact": "qa run no longer blocks on pricing.upsell_price_visible:<page> for an upsell whose design keeps the offer next-hidden until an order exists. QA opens upsell URLs without the ref_id a buyer always arrives with; when no price row is visible, the opened URL has no ref_id and the price rows sit inside a next-hidden container, the row is skipped (evidence next_hidden_price_rows) with that reason, as the checkout row already is for an empty cart. Do not add a price row outside the offer only to pass QA. An upsell opened with a ref_id, or whose prices are hidden any other way, still fails as a blocker; an upsell that shows its prices without an order is still checked. A failed probe leaves the row failed with orderless_probe_error.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "pricing.upsell_price_visible is skipped with a named reason (next_hidden_price_rows) when the upsell is opened without a ref_id and its price rows are next-hidden until an order exists."
+        }
+      ],
+      "entry_sha256": "b0a4680a3d335c2907b4a868dd0a2008c118bb2145bb6dc9512a8601de858b7d"
     }
   ]
 }
