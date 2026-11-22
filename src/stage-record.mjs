@@ -1349,7 +1349,7 @@ export function recordStageCommand(args, { now = () => new Date(), beforeLock = 
     ...(stage === "build" && Array.isArray(composed.report.stages.assembly.build_manifest) ? [`stages.assembly.build_manifest lists ${composed.report.stages.assembly.build_manifest.length} file(s), so a later fingerprint mismatch names the paths that differ`] : []),
     ...(stage === "build" && buildEnvironment ? [`stages.assembly.evidence.build_environment = ${buildEnvironment}`] : []),
     ...(stage === "build" && adapterDecisions ? Object.entries(adapterDecisions).map(([key, value]) => `report.adapter_decisions.${key} = ${value}`) : []),
-    ...(stage === "build" ? buildChangeReadyLines(composed.report.stages.assembly).map((line) => singleLineFragment(line)) : []),
+    ...(stage === "build" ? buildChangeReadyLines(composed.report.stages.assembly, facts.previousBuildFingerprint) : []),
     ...(stage === "build" && !(showCi && ci.polish.advisory) ? [`stages.polish.status = ${composed.report.stages.polish.status}${isLocalPreviewPolish(composed.report.stages.polish) ? ` (${LOCAL_PREVIEW_POLISH_REASON})` : ""}`] : []),
     ...(stage === "baseline" ? [`Polish and QA read baseline_accepted: ${baseline.acceptedBy} accepted build ${facts.fingerprint}. Nothing was tested, and no purchase is proven from here until a full ${cmd("qa")} run.`] : []),
     ...(stage === "build" && composed.report.stages.deploy?.required_by === "build" ? [`stages.deploy.status = ${composed.report.stages.deploy.status} (the recorded deploy probed other output; run ${cmd("record")} deploy again)`] : []),
@@ -1385,16 +1385,20 @@ export function recordStageCommand(args, { now = () => new Date(), beforeLock = 
   };
 }
 
-// One line for the rebuild this record kept, when it replaced another build.
-function buildChangeReadyLines(assembly) {
+// One line for the rebuild this record kept, when it replaced another build,
+// flattened to one line each (page ids and paths are operator data).
+// `previousFingerprint` is the build the record replaced: an entry is this
+// record's only when the output changed, which is when buildChangeFacts
+// appends one. A record over the same output keeps the earlier rebuild's
+// entry, which describes that rebuild, not this one (F-262).
+export function buildChangeReadyLines(assembly, previousFingerprint) {
   const latest = Array.isArray(assembly.build_changes) ? assembly.build_changes.at(-1) : null;
-  // Only an entry this record appended: a record over the same output keeps
-  // the earlier rebuild's entry, which describes that rebuild, not this one.
-  if (!latest || latest.build_fingerprint !== assembly.build_fingerprint || latest.recorded_at !== assembly.completed_at) return [];
+  const appended = Boolean(optionalString(previousFingerprint)) && previousFingerprint !== assembly.build_fingerprint;
+  if (!appended || !latest || latest.build_fingerprint !== assembly.build_fingerprint) return [];
   const pages = latest.changed_pages.map((page) => page.page_id).join(", ") || "none";
   const linked = (Array.isArray(latest.linked_assets) ? latest.linked_assets : [])
     .map((asset) => `${asset.path} (linked by ${(asset.pages || []).join(", ")})`);
-  return [`stages.assembly.build_changes: this rebuild is ${latest.kind.replace("_", "-")} (changed pages: ${pages}${linked.length ? `; linked assets: ${linked.join(", ")}` : ""}${latest.unmapped_file_count ? `; ${latest.unmapped_file_count} file(s) outside any page` : ""})`];
+  return [`stages.assembly.build_changes: this rebuild is ${latest.kind.replace("_", "-")} (changed pages: ${pages}${linked.length ? `; linked assets: ${linked.join(", ")}` : ""}${latest.unmapped_file_count ? `; ${latest.unmapped_file_count} file(s) outside any page` : ""})`].map((line) => singleLineFragment(line));
 }
 
 // Everything a record reads from the target, in order, all under the target
@@ -1438,7 +1442,7 @@ function recordUnderLock({ stage, packetPath, sidecars, lockedTarget, input, dry
     if (!inspected || resolve(inspected) !== resolve(reportPath)) {
       throw refuseRecord(stage, [`The Build Context rebound the Assembly Report while recording (this record read ${reportPath}, doctor now reads ${inspected || "no report"}); run ${cmd("record")} ${stage} again.`]);
     }
-    facts = doctorFacts(stage, doctor, report, packet);
+    facts = { ...doctorFacts(stage, doctor, report, packet), previousBuildFingerprint: optionalString(stageObject(report, "assembly").build_fingerprint) };
     if (typeof afterDoctorRead === "function") afterDoctorRead();
     if (stage === "theme") layer = brandLayerFacts(doctor, readJsonIfExists(contextPath), workspace.runtimeDir);
     if (stage === "deploy") deployFacts(doctor, packet, input, facts.fingerprint);
