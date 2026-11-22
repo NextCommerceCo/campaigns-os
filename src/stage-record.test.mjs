@@ -564,7 +564,7 @@ function runCliAsync(args, cwd) {
   });
 }
 
-// F-259: a stage record replaces the recommendation next stored before it,
+// F-259: a stage record supersedes the recommendation next stored before it,
 // so a qa run after record deploy is not logged against next's "deploy".
 test("deviation telemetry after record deploy compares qa with the stage the record printed, and a qa run before it still deviates", async () => {
   await withLifecycle(async (f) => {
@@ -595,9 +595,10 @@ test("deviation telemetry after record deploy compares qa with the stage the rec
     assert.doesNotMatch(after.stderr, /deviation recorded/, "qa after record deploy is what the record said comes next");
     assert.equal(deviations().length, 1, "no deviation against the stale deploy recommendation");
     assert.equal(deviations()[0].recommended_stage, "deploy");
-    const recommendation = readJson(sessionPath).last_recommendation;
-    assert.equal(recommendation.stage, "qa");
-    assert.equal(recommendation.issued_by, "record deploy");
+
+    // Once next runs again its recommendation is current and compared again.
+    assert.equal(nextOk(f, []).stage, "qa");
+    assert.equal(readJson(sessionPath).last_recommendation.stage, "qa");
   });
 });
 

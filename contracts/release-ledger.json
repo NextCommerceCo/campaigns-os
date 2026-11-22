@@ -6363,8 +6363,8 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.71.4+agent.4",
-      "changelog_sha256": "3a603d4440b339b4855c2526f7c393d568542124a2106bdbba7bbba1a19ee2a9",
-      "agent_impact": "In an active run session, a stage record that writes (record deploy, record polish, record build, record setup, record theme, record baseline) replaces the session's stored recommendation with the stage it prints as Next stage (last_recommendation.issued_by names the record; status is null). Deviation telemetry then compares later commands with that stage instead of the recommendation next stored before the record, so qa run right after record deploy printed Next stage: qa is not logged as a deviation with deviation_reason null. A command that differs from the current next stage, such as qa run while deploy is still next, is still logged. A dry run keeps the stored recommendation. Agents no longer need to explain a deviation entry naming a stage the record had already moved past.",
+      "changelog_sha256": "34ecda9fcc66e0f008ca3b89b2e2e80eabca30e473504f07f9d7e7143d4f957c",
+      "agent_impact": "In a run session, deviation telemetry no longer compares a command with a next recommendation that a later successful stage record has superseded (found as a newer record entry in the session's lifecycle journal), so a qa run right after record deploy printed Next stage: qa is not logged against the deploy recommendation stored before it. Comparison resumes when next runs again; a command that differs from a current recommendation is still logged. No new write, field or effect.",
       "compatibility": "compatible",
       "migration": "none",
       "changes": [
@@ -6372,16 +6372,16 @@
           "class": "named_surface",
           "path": "docs/build-packet.md",
           "surface_entry": "docs/build-packet.md",
-          "summary": "Recording stage completion: a record that writes replaces the run session's stored recommendation with the stage it prints as Next stage, so deviation telemetry compares later commands with it."
+          "summary": "Recording stage completion: a record that writes supersedes the recommendation next stored before it; deviation telemetry compares nothing with it until next runs again."
         },
         {
           "class": "cli_surface",
           "path": "src/cli.mjs",
           "surface_entry": null,
-          "summary": "A stage record that writes, in an active run session, stores the stage it prints as Next stage as the session's last_recommendation (issued_by record <stage>), so deviation telemetry compares later commands with it."
+          "summary": "Deviation telemetry skips a stored next recommendation older than a successful non-dry-run record entry in the session's lifecycle journal."
         }
       ],
-      "entry_sha256": "2965aa068dd2c2500a3a2cff9481884881aa7addb47d40977cb23e4259d610b3"
+      "entry_sha256": "59bef5b27d2756b12f46f0c293db320b9a03e3a7219c73ea6ee313e16cf8b6e6"
     }
   ]
 }

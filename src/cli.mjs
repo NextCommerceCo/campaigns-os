@@ -702,6 +702,7 @@ function persistLifecycleIfRequested(args, command, lifecycle, sessionHolder, th
 function persistDeviationIfDetected(args, command, lifecycle, ambient) {
   if (!ambient?.session?.last_recommendation) return;
   if (isRunSessionTerminal(ambient.session) || hasDoneRecommendation(ambient.session) || isRunSessionStale(ambient.session)) return;
+  if (recommendationSupersededByRecord(ambient.session)) return;
   try {
     const entry = detectDeviation({
       lastRecommendation: ambient.session.last_recommendation,
@@ -722,6 +723,26 @@ function persistDeviationIfDetected(args, command, lifecycle, ambient) {
     );
   } catch {
     // telemetry never blocks a command
+  }
+}
+
+// A stage record that landed after `next` stored its recommendation moved the
+// pipeline, so that recommendation no longer says what comes next (F-259):
+// `record deploy` printed "Next stage: qa" while the session still held
+// next's "deploy", and the qa run that followed was logged as a deviation.
+// The session's lifecycle journal already holds every command's entry, so a
+// completed, non-dry-run `record` there newer than the recommendation marks
+// it stale, and nothing is compared until `next` runs again.
+function recommendationSupersededByRecord(session) {
+  const issuedAt = Date.parse(session?.last_recommendation?.issued_at || "");
+  if (!Number.isFinite(issuedAt) || !isNonEmptyString(session?.lifecycle_journal)) return false;
+  try {
+    return readLifecycleJournal(session.lifecycle_journal).entries.some((entry) => entry?.command === "record"
+      && entry.exit_status === 0
+      && !(entry.argv_shape || []).includes("--dry-run")
+      && Date.parse(entry.started_at || "") > issuedAt);
+  } catch {
+    return false;
   }
 }
 
@@ -1280,9 +1301,7 @@ async function dispatch(command, args, { recorder = NOOP_RECORDER, ambient = nul
 
   if (command === "record") {
     const { recordCommand } = await import("./stage-record.mjs");
-    const result = await recordCommand(args);
-    recordStageRecordRecommendation(sessionHolder?.current || ambient, result);
-    writeResult(result, args, 0);
+    writeResult(await recordCommand(args), args, 0);
     return;
   }
 
@@ -5535,38 +5554,6 @@ function recordNextRecommendation(ambient, result, { polishAdvisory = false } = 
     ambient.session = session;
   } catch {
     // non-fatal
-  }
-}
-
-// A stage record moves the pipeline, so the recommendation `next` stored
-// before it no longer says what comes next (F-259): `record deploy` printed
-// "Next stage: qa" while the session still held next's "deploy", and the qa
-// run that followed was logged as a deviation. Store the stage the record's
-// own post-write doctor read picked, as `next` would for that stage, so the
-// deviation check compares later commands with the recommendation current at
-// their time. A dry run writes nothing and keeps the stored recommendation.
-function recordStageRecordRecommendation(ambient, result) {
-  if (!ambient || result?.status !== "recorded" || !isNonEmptyString(result.next_stage)) return;
-  try {
-    const polish = readJsonIfExists(result.report_path)?.stages?.polish;
-    const now = new Date();
-    const session = {
-      ...ambient.session,
-      updated_at: now.toISOString(),
-      last_recommendation: {
-        ...buildRecommendation({
-          stage: result.next_stage,
-          status: null,
-          expectedCommands: expectedCommandsForStage(result.next_stage, [], { polishAdvisory: isLocalPreviewPolish(polish) }),
-          now,
-        }),
-        issued_by: `record ${result.stage}`,
-      },
-    };
-    writeRunSession(ambient.dir, session);
-    ambient.session = session;
-  } catch {
-    // non-fatal: telemetry never blocks a record
   }
 }
 
