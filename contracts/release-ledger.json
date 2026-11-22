@@ -6385,9 +6385,15 @@
           "path": "docs/effects.md",
           "surface_entry": "docs/effects.md",
           "summary": "Saving brief answers: a presentation change owes build and Polish again, and QA only when the rebuild changes the pages."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/campaigns-os-build-flow.md",
+          "surface_entry": "docs/campaigns-os-build-flow.md",
+          "summary": "On a baseline, a brief change owes build and Polish (presentation) or QA (qa_policy); the rebuild a presentation change leads to owes QA only if it changes the output."
         }
       ],
-      "entry_sha256": "721436e3bc4f741295bbef79dd447d9d75099332a4b6dfeb34fe86e697b61bb9"
+      "entry_sha256": "5c18606df23341c04f77bf9e31aaa7877e5568eb7d7c08e6af8dbf07c32d0397"
     }
   ]
 }
