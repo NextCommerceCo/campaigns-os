@@ -6355,6 +6355,27 @@
         }
       ],
       "entry_sha256": "c2874e841a91f3c12106bb754baf3d59abc9b6ebc3346a0fd9eb5e04398e5155"
+    },
+    {
+      "id": "RL-0385",
+      "sequence": 365,
+      "date": "2026-11-22",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.71.4+agent.5",
+      "changelog_sha256": "878aa3dbfdc6ce8e4425c3e6e880d01ec5b6b496b1f135f086a329da3156a88d",
+      "agent_impact": "qa run's commercial parity reads data-next-bundle-vouchers as the SDK does: a JSON list when the value starts with \"[\", otherwise comma-separated codes, so an upsell or checkout card carrying data-next-bundle-vouchers=\"FIRE\" is read and its voucher compared instead of the page being reported commercial_pages_unread. A commercial_pages_unread line now names each page with why it was not read (the fetch, a named malformed attribute, the claim limit, or no served page read for it), and invalid_captures[].reason carries the code. Each claim left uncompared is listed in verdict.commercial.unresolved_claims (first 50) with page_id, kind (price, package_price, recurring, voucher), binding (the data-next-display path locating its node), package_id and quantity when known, the text it showed and a reason code; the commercial_claims_unresolved and package_price_* rows name the first ten in their line and carry all of them in evidence.claims. Check those claims by name instead of guessing which ones they are.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "named_surface",
+          "path": "docs/qa-and-test-orders.md",
+          "surface_entry": "docs/qa-and-test-orders.md",
+          "summary": "data-next-bundle-vouchers is read as JSON list or comma-separated codes; unread pages name their reason; uncompared claims are listed in verdict.commercial.unresolved_claims and the incomplete rows' evidence.claims."
+        }
+      ],
+      "entry_sha256": "ab3217fdeff692156db38a8098da5218924a66a4c1d86b1e8d73e335fe8da9c3"
     }
   ]
 }
