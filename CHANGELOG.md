@@ -13,7 +13,7 @@ This release certifies the `arjuna-pod` private family and lets a private family
 
 ### Changed
 
-- A private family's contract is read from an installed package of its private repository when `PRIVATE_TEMPLATE_SOURCES_ROOT` is unset; the allowlist entry's `package` names it, and the not-found error names the install command, the environment variable and the sibling checkout.
+- A private family's contract is read from an installed package of its private repository when `PRIVATE_TEMPLATE_SOURCES_ROOT` is unset; the allowlist entry's `package` names it. The package is used only when its `package.json` `repository` names the allowlisted repository and the lockfile does not record it as fetched from the public npm registry. The not-found error names each installed package it skipped and why, then the install command, the environment variable and the sibling checkout.
 
 ## [1.71.5] - 2026-11-22
 

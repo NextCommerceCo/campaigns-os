@@ -250,6 +250,10 @@ function writeJson(path, value) {
   writeFileSync(path, JSON.stringify(value, null, 2));
 }
 
+function writeInstalledPackage(packageDir, repo, extra = {}) {
+  writeJson(join(packageDir, "package.json"), { name: packageDir.split("/").pop(), version: "0.1.0", repository: `github:${repo}`, ...extra });
+}
+
 function fragmentFor(family) {
   return {
     schema_version: "private-template-source-fragment/v0",
@@ -271,6 +275,7 @@ test("resolvePrivateTemplateSourceFragment reads the private repo installed as a
     });
     const campaignRepo = join(dir, "campaign-repo");
     writeJson(join(campaignRepo, "node_modules", "acme-contracts", "contracts", "acme.json"), fragmentFor("acme"));
+    writeInstalledPackage(join(campaignRepo, "node_modules", "acme-contracts"), "some-org/acme-templates");
     const nested = join(campaignRepo, "src", "route");
     mkdirSync(nested, { recursive: true });
     inCampaignRepo(nested, () => {
@@ -318,6 +323,7 @@ test("the production allowlist certifies arjuna and arjuna-pod from an installed
     for (const family of ["arjuna", "arjuna-pod"]) {
       const entry = sources[family];
       writeJson(join(campaignRepo, "node_modules", entry.package, entry.contract_path), fragmentFor(family));
+      writeInstalledPackage(join(campaignRepo, "node_modules", entry.package), entry.repo);
     }
     inCampaignRepo(campaignRepo, () => {
       const catalog = resolveCommerceCatalog();
@@ -326,6 +332,65 @@ test("the production allowlist certifies arjuna and arjuna-pod from an installed
         assert.equal(resolveTemplateBrandContract(family).family, family);
         assert.ok(catalog.families[family]?.agentContract, `${family} carries an agentContract`);
       }
+    }, { allowlistPath });
+  });
+});
+
+test("an installed package is used only when it is the allowlisted repository and did not come from the public registry", () => {
+  withTempDir((dir) => {
+    const allowlistPath = join(dir, "private-template-sources.json");
+    writeJson(allowlistPath, {
+      schema_version: "private-template-source/v0",
+      sources: { acme: { repo: "some-org/acme-templates", package: "acme-contracts", contract_path: "contracts/acme.json" } },
+    });
+    const campaignRepo = join(dir, "campaign-repo");
+    const packageDir = join(campaignRepo, "node_modules", "acme-contracts");
+    writeJson(join(packageDir, "contracts", "acme.json"), fragmentFor("acme"));
+    const expectSkipped = (pattern) => inCampaignRepo(campaignRepo, () => {
+      assert.throws(() => resolvePrivateTemplateSourceFragment("acme"), (error) => {
+        assert.equal(error.code, "private_source_not_checked_out");
+        assert.match(error.message, /the installed acme-contracts package was not used/);
+        assert.match(error.message, pattern);
+        return true;
+      });
+    }, { allowlistPath });
+
+    writeInstalledPackage(packageDir, "someone-else/acme-contracts");
+    expectSkipped(/declares repository "someone-else\/acme-contracts", not some-org\/acme-templates/);
+
+    writeInstalledPackage(packageDir, "some-org/acme-templates");
+    writeJson(join(campaignRepo, "package-lock.json"), {
+      lockfileVersion: 3,
+      packages: { "node_modules/acme-contracts": { version: "0.1.0", resolved: "https://registry.npmjs.org/acme-contracts/-/acme-contracts-0.1.0.tgz" } },
+    });
+    expectSkipped(/was installed from the public registry/);
+
+    writeJson(join(campaignRepo, "package-lock.json"), {
+      lockfileVersion: 3,
+      packages: { "node_modules/acme-contracts": { version: "0.1.0", resolved: "git+ssh://git@github.com/some-org/acme-templates.git#0123abc" } },
+    });
+    inCampaignRepo(campaignRepo, () => {
+      assert.equal(resolvePrivateTemplateSourceFragment("acme").source, "installed_package");
+    }, { allowlistPath });
+
+    writeInstalledPackage(packageDir, "git+ssh://git@github.com/Some-Org/acme-templates.git");
+    inCampaignRepo(campaignRepo, () => {
+      assert.equal(resolvePrivateTemplateSourceFragment("acme").source, "installed_package", "a git URL repository on github.com matches, case-insensitively");
+    }, { allowlistPath });
+  });
+});
+
+test("the not-found error says an installed package is missing the contract rather than asking to install it", () => {
+  withTempDir((dir) => {
+    const allowlistPath = join(dir, "private-template-sources.json");
+    writeJson(allowlistPath, {
+      schema_version: "private-template-source/v0",
+      sources: { acme: { repo: "some-org/acme-templates", contract_path: "contracts/acme.json" } },
+    });
+    const campaignRepo = join(dir, "campaign-repo");
+    writeInstalledPackage(join(campaignRepo, "node_modules", "acme-templates"), "some-org/acme-templates");
+    inCampaignRepo(campaignRepo, () => {
+      assert.throws(() => resolvePrivateTemplateSourceFragment("acme"), /acme-templates has no contracts\/acme\.json/);
     }, { allowlistPath });
   });
 });

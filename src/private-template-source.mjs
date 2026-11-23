@@ -16,8 +16,11 @@
 //      directory or one of its parents (the campaign repo or workspace that
 //      runs campaigns-os), then the same walk from this toolkit's own
 //      install. The package is the allowlist entry's `package` (default: the
-//      repo name). Access is whoever can clone the private repo; the version
-//      is whatever the installing lockfile pins.
+//      repo name). It is used only when its package.json `repository` names
+//      the allowlisted repo and the installing lockfile does not record it as
+//      fetched from the public npm registry, so a same-named public package
+//      cannot stand in for the private one. The version is whatever the
+//      installing lockfile pins.
 //   3. A sibling checkout of the private repo next to this toolkit's source
 //      checkout (the source-checkout convention: sibling repos share a parent
 //      directory).
@@ -171,21 +174,100 @@ function fragmentCandidates(entry) {
   return candidates;
 }
 
+// "org/name" from a package.json `repository` (string or { url }): the
+// GitHub shorthand ("github:org/name", bare "org/name") or any git/https URL
+// on github.com. Lower-cased; null when it names no GitHub repository.
+function githubRepoSlug(repository) {
+  const raw = typeof repository === "string" ? repository : typeof repository?.url === "string" ? repository.url : "";
+  const value = raw.trim();
+  const match = /^(?:github:)?([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+?)(?:\.git)?(?:#.*)?$/.exec(value)
+    || /github\.com[:/]([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+?)(?:\.git)?(?:[#/?].*)?$/.exec(value);
+  return match ? match[1].toLowerCase() : null;
+}
+
+// How npm recorded where an installed package came from: the `resolved` of its
+// entry in the lockfile beside the node_modules that holds it, or null when
+// there is no lockfile or no entry.
+function lockfileResolved(packageDir, pkg) {
+  const suffix = join("node_modules", pkg);
+  if (!packageDir.endsWith(suffix)) return null;
+  const lockPath = join(packageDir.slice(0, -suffix.length), "package-lock.json");
+  if (!existsSync(lockPath)) return null;
+  try {
+    const lock = JSON.parse(readFileSync(lockPath, "utf8"));
+    const resolved = lock?.packages?.[`node_modules/${pkg}`]?.resolved;
+    return typeof resolved === "string" ? resolved : null;
+  } catch {
+    return null;
+  }
+}
+
+const PUBLIC_REGISTRY = /^https?:\/\/registry\.(?:npmjs\.org|yarnpkg\.com)\//i;
+
+// An installed package is trusted only when it says it is the allowlisted
+// private repository (package.json `repository`) and npm did not fetch it from
+// the public registry. A same-named public package, or an unrelated directory
+// that happens to sit at node_modules/<package>, is skipped with its reason.
+function installedPackageProvenance(dir, entry) {
+  const pkgJsonPath = join(dir, "package.json");
+  if (!existsSync(pkgJsonPath)) return { ok: false, reason: "has no package.json" };
+  let pkgJson;
+  try {
+    pkgJson = JSON.parse(readFileSync(pkgJsonPath, "utf8"));
+  } catch {
+    return { ok: false, reason: "has an unreadable package.json" };
+  }
+  const expected = String(entry.repo || "").trim().toLowerCase();
+  const declared = githubRepoSlug(pkgJson?.repository);
+  if (!declared || declared !== expected) {
+    return { ok: false, reason: `declares repository ${declared ? `"${declared}"` : "(none)"}, not ${entry.repo}` };
+  }
+  const resolved = lockfileResolved(dir, packageName(entry));
+  if (resolved && PUBLIC_REGISTRY.test(resolved)) {
+    return { ok: false, reason: `was installed from the public registry (${resolved})` };
+  }
+  return { ok: true };
+}
+
 // Allowlist miss -> null (family isn't private; caller falls through to its
 // own "unknown family" handling). Allowlist hit but no readable fragment ->
 // throws, deliberately: a private family must fail loudly and specifically
 // when it's actually needed, never silently read as "uncertified" — that's a
-// confusing dead end for whoever hits it.
+// confusing dead end for whoever hits it. The error names every installed
+// package it found and why it was not used (no contract at contract_path, or
+// provenance that does not match the allowlist).
 export function resolvePrivateTemplateSourceFragment(family) {
   const entry = loadPrivateTemplateSources()[family];
   if (!entry) return null;
-  const found = fragmentCandidates(entry).find((candidate) => existsSync(join(candidate.dir, candidate.contractPath)));
+  const skipped = [];
+  let found = null;
+  for (const candidate of fragmentCandidates(entry)) {
+    if (candidate.source === "installed_package") {
+      if (!existsSync(candidate.dir)) continue;
+      const provenance = installedPackageProvenance(candidate.dir, entry);
+      if (!provenance.ok) {
+        skipped.push(`${candidate.dir} ${provenance.reason}`);
+        continue;
+      }
+      if (!existsSync(join(candidate.dir, candidate.contractPath))) {
+        skipped.push(`${candidate.dir} has no ${candidate.contractPath} (installed from an older or differently packed release?)`);
+        continue;
+      }
+    } else if (!existsSync(join(candidate.dir, candidate.contractPath))) {
+      continue;
+    }
+    found = candidate;
+    break;
+  }
   if (!found) {
     const pkg = packageName(entry) || "(unresolved)";
     const explicitRoot = explicitPrivateTemplateSourcesRoot();
+    const installed = skipped.length
+      ? `the installed ${pkg} package was not used (${skipped.join("; ")})`
+      : `no installed ${pkg} package (node_modules/${pkg}) from ${process.cwd()} or from this toolkit`;
     const where = explicitRoot
       ? `no checkout was found under PRIVATE_TEMPLATE_SOURCES_ROOT (${explicitRoot}/${repoName(entry.repo) || "(unresolved)"})`
-      : `no checkout was found: no installed ${pkg} package (node_modules/${pkg}) from ${process.cwd()} or from this toolkit, and no sibling checkout at ${join(resolve(ROOT, ".."), repoName(entry.repo) || "(unresolved)")}`;
+      : `no checkout was found: ${installed}, and no sibling checkout at ${join(resolve(ROOT, ".."), repoName(entry.repo) || "(unresolved)")}`;
     throw privateTemplateSourceError(
       "private_source_not_checked_out",
       `Template family "${family}" is a private family sourced from ${entry.repo}, but ${where}. ` +

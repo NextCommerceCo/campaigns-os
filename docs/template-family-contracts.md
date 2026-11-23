@@ -68,10 +68,13 @@ A run finds the contract in the first of these places that has it:
    example `npm install --save-dev git+ssh://git@github.com/<org>/<repo>.git`
    in the campaign repository or the workspace that installs campaigns-os.
    campaigns-os looks for `node_modules/<package>/` from the working directory
-   upward, then from its own install. Anyone who can clone the private
-   repository can install it, and the installing lockfile pins the contract
-   version. The private repository's `package.json` should pack only its
-   contracts.
+   upward, then from its own install. The package is used only when its
+   `package.json` `repository` names the allowlisted repository and the
+   installing lockfile does not record it as fetched from the public npm
+   registry; otherwise it is skipped and the not-found error says why. The
+   installing lockfile pins the contract version. The private repository's
+   `package.json` should pack only its contracts and declare its
+   `repository`.
 3. A checkout of the private repository beside a source checkout of
    campaigns-os.
 
