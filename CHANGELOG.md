@@ -2,6 +2,19 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.72.0] - 2026-11-23
+
+This release certifies the `arjuna-pod` private family and lets a private family's contract reach a run that has no checkout of the private repository beside campaigns-os. A private family's contract is now also read from the private repository installed as a package (`node_modules/<package>/`, found from the working directory upward, then from the campaigns-os install), after `PRIVATE_TEMPLATE_SOURCES_ROOT` and before a sibling checkout, so `start --template-family arjuna` or `arjuna-pod` no longer needs `--allow-uncertified-template` or `PRIVATE_TEMPLATE_SOURCES_ROOT` once the package is installed. A brand contract can declare what a shared payment-chrome asset pictures with `default_residue.payment_chrome.asset_methods`, and residue QA and doctor's static scan attribute the asset to those methods only. The Build Packet schema's `assembly.template_family` gains `arjuna-pod`. Additive: no command or flag changes, and every public family behaves as before. To take it, pin `@nextcommerce/campaigns-os@1.72.0` and refresh the installed skills to `1.72.0+skills.1`.
+
+### Added
+
+- `arjuna-pod` is an allowlisted private family in `contracts/private-template-sources.json` and a Build Packet `assembly.template_family` value.
+- `default_residue.payment_chrome.asset_methods` in a template brand contract names the contract methods a chrome asset pictures; a malformed declaration fails the contract load with `payment_chrome_asset_methods_invalid`.
+
+### Changed
+
+- A private family's contract is read from an installed package of its private repository when `PRIVATE_TEMPLATE_SOURCES_ROOT` is unset; the allowlist entry's `package` names it. The package is used only when its `package.json` `repository` names the allowlisted repository and the lockfile does not record it as fetched from the public npm registry. The not-found error names each installed package it skipped and why, then the install command, the environment variable and the sibling checkout.
+
 ## [1.71.5] - 2026-11-22
 
 This release packages the six `1.71.4+agent` sections below, the fixes from the ninth simulated build batch. `qa run` no longer blocks on an upsell opened without a `ref_id` whose prices stay hidden until an order exists, flags a promo discount claim above the largest percentage discount the CampaignSpec declares, and names the commercial claims it could not compare (the first 50, with a count of the rest). Voucher codes in `data-next-bundle-vouchers` are read as the SDK reads them. `record build` and `after-edit` print the owed stages `next` would name, including deploy and owed currencies. Deviation telemetry stops comparing a command with a `next` recommendation a later record superseded. A `record brief` save that changes only the presentation sections leaves QA to the rebuild, and the `record brief` row of `contracts/effects.v1.json` and the `next-campaigns-os` skill now say so; the effects contract moves to `contract_version` 1.6.0 because that row's declared effect changed. No breaking changes and no schema or command changes. To take it, pin `@nextcommerce/campaigns-os@1.71.5` and refresh the installed skills to `1.71.5+skills.1`.

@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
 import {
@@ -9,6 +11,8 @@ import {
   loadTemplateBrandContract,
   normalizeCssColor,
   paymentChromeArtifacts,
+  paymentChromeAssetMethods,
+  resolveContractExtendsChain,
   paymentMethodMarkupMatches,
   paymentMethodStaticScanGaps,
   withoutHiddenPaymentLogos,
@@ -353,4 +357,39 @@ test("the starter's own icon-grid placeholders (Benefit one…four) are residue 
     );
   }
   assert.deepEqual(placeholderTextResidueMatches("Benefit once a month from free shipping", ["Benefit one"]), []);
+});
+
+// A private family's contract can say what a shared strip pictures. The
+// starter upsell-payment-logos.svg shows Visa, Mastercard, Amex, Discover and
+// PayPal: with asset_methods it is PayPal residue only, never Klarna residue,
+// which the file-name match alone could not tell.
+test("payment_chrome.asset_methods attributes a shared chrome asset to the methods it pictures", () => {
+  const shared = JSON.parse(readFileSync(new URL("../contracts/template-brand-contract.shared-commerce.v0.json", import.meta.url), "utf8")).default_residue.payment_chrome;
+  const strip = "images/upsell-payment-logos.svg";
+  assert.ok(paymentChromeArtifacts(shared, "klarna").assets.includes(strip), "undeclared: the strip is implied Klarna residue");
+  const declared = { ...shared, asset_methods: { [strip]: ["paypal"] } };
+  assert.ok(!paymentChromeArtifacts(declared, "klarna").assets.includes(strip), "declared PayPal-only: not Klarna residue");
+  assert.ok(paymentChromeArtifacts(declared, "paypal").assets.includes(strip), "declared PayPal: still PayPal residue");
+  const html = `<img src="/r/images/upsell-payment-logos.svg" alt="">`;
+  assert.deepEqual(paymentMethodMarkupMatches(html, "klarna", declared), []);
+  assert.deepEqual(paymentMethodMarkupMatches(html, "paypal", declared), ["upsell-payment-logos.svg"]);
+  assert.deepEqual(paymentMethodStaticScanGaps(declared, "paypal").shared_assets, []);
+  const none = { ...shared, asset_methods: { "upsell-payment-logos.svg": [] } };
+  assert.ok(!paymentChromeArtifacts(none, "paypal").assets.includes(strip), "an empty list pictures no contract method; keyed by basename");
+});
+
+test("payment_chrome.asset_methods is validated when a contract loads", () => {
+  const dir = join(fileURLToPath(new URL("..", import.meta.url)), "contracts");
+  const leaf = (asset_methods) => ({
+    schema_version: TEMPLATE_BRAND_CONTRACT_SCHEMA,
+    family: "fixture",
+    extends: "template-brand-contract.shared-commerce.v0.json",
+    default_residue: { payment_chrome: { asset_methods } },
+  });
+  const merged = resolveContractExtendsChain(leaf({ "images/upsell-payment-logos.svg": ["paypal"] }), { dir, label: "fixture" });
+  assert.deepEqual(paymentChromeAssetMethods(merged.default_residue.payment_chrome), { "images/upsell-payment-logos.svg": ["paypal"] });
+  assert.ok(merged.default_residue.payment_chrome.assets.length > 1, "the shared chrome list survives the merge");
+  for (const bad of [{ "images/not-listed.svg": ["paypal"] }, { "images/upsell-payment-logos.svg": ["visa"] }, { "images/upsell-payment-logos.svg": "paypal" }, ["paypal"]]) {
+    assert.throws(() => resolveContractExtendsChain(leaf(bad), { dir, label: "fixture" }), (error) => error.code === "payment_chrome_asset_methods_invalid");
+  }
 });

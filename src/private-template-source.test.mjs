@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
 import {
@@ -73,7 +74,7 @@ test("resolvePrivateTemplateSourceFragment throws loudly when allowlisted but no
       assert.throws(() => resolvePrivateTemplateSourceFragment("acme"), (error) => {
         assert.equal(error.code, "private_source_not_checked_out");
         assert.match(error.message, /no checkout was found/);
-        assert.match(error.message, /Set PRIVATE_TEMPLATE_SOURCES_ROOT.*installed package.*For a source checkout of campaigns-os.*sibling directory/);
+        assert.match(error.message, /npm install --save-dev git\+ssh:\/\/git@github\.com\/some-org\/acme-templates\.git.*set PRIVATE_TEMPLATE_SOURCES_ROOT.*installed package.*For a source checkout of campaigns-os.*sibling directory/);
         return true;
       });
     });
@@ -220,5 +221,190 @@ test("resolveTemplateBrandContract prefers an existing public contract over an a
       const contract = resolveTemplateBrandContract("olympus");
       assert.equal(contract.family, "olympus");
     });
+  });
+});
+
+// Runs `run` with the working directory at `cwd` and PRIVATE_TEMPLATE_SOURCES_ROOT
+// unset, so resolution falls through to the installed-package lookup.
+function inCampaignRepo(cwd, run, { allowlistPath } = {}) {
+  const prevCwd = process.cwd();
+  const prevRoot = process.env.PRIVATE_TEMPLATE_SOURCES_ROOT;
+  const prevPath = process.env.PRIVATE_TEMPLATE_SOURCES_PATH;
+  delete process.env.PRIVATE_TEMPLATE_SOURCES_ROOT;
+  if (allowlistPath) process.env.PRIVATE_TEMPLATE_SOURCES_PATH = allowlistPath;
+  else delete process.env.PRIVATE_TEMPLATE_SOURCES_PATH;
+  process.chdir(cwd);
+  try {
+    return run();
+  } finally {
+    process.chdir(prevCwd);
+    if (prevRoot === undefined) delete process.env.PRIVATE_TEMPLATE_SOURCES_ROOT;
+    else process.env.PRIVATE_TEMPLATE_SOURCES_ROOT = prevRoot;
+    if (prevPath === undefined) delete process.env.PRIVATE_TEMPLATE_SOURCES_PATH;
+    else process.env.PRIVATE_TEMPLATE_SOURCES_PATH = prevPath;
+  }
+}
+
+function writeJson(path, value) {
+  mkdirSync(join(path, ".."), { recursive: true });
+  writeFileSync(path, JSON.stringify(value, null, 2));
+}
+
+function writeInstalledPackage(packageDir, repo, extra = {}) {
+  // A bare "org/name" slug becomes the github: shorthand; any other value
+  // (a git or https URL) is written exactly as given.
+  const repository = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo) ? `github:${repo}` : repo;
+  writeJson(join(packageDir, "package.json"), { name: packageDir.split("/").pop(), version: "0.1.0", repository, ...extra });
+}
+
+function fragmentFor(family) {
+  return {
+    schema_version: "private-template-source-fragment/v0",
+    family,
+    catalog_family: { private: true, agentContract: { status: "agent-ready" } },
+    brand_contract: {
+      schema_version: "template-brand-contract/v0",
+      family,
+      extends: "template-brand-contract.shared-commerce.v0.json",
+    },
+  };
+}
+
+test("resolvePrivateTemplateSourceFragment reads the private repo installed as a package, found from the working directory upward", () => {
+  withTempDir((dir) => {
+    writeJson(join(dir, "private-template-sources.json"), {
+      schema_version: "private-template-source/v0",
+      sources: { acme: { repo: "some-org/acme-templates", package: "acme-contracts", contract_path: "contracts/acme.json" } },
+    });
+    const campaignRepo = join(dir, "campaign-repo");
+    writeJson(join(campaignRepo, "node_modules", "acme-contracts", "contracts", "acme.json"), fragmentFor("acme"));
+    writeInstalledPackage(join(campaignRepo, "node_modules", "acme-contracts"), "some-org/acme-templates");
+    const nested = join(campaignRepo, "src", "route");
+    mkdirSync(nested, { recursive: true });
+    inCampaignRepo(nested, () => {
+      const fragment = resolvePrivateTemplateSourceFragment("acme");
+      assert.equal(fragment.source, "installed_package");
+      assert.equal(fragment.catalogFamily.agentContract.status, "agent-ready");
+      assert.match(fragment.fragmentPath, /node_modules\/acme-contracts\/contracts\/acme\.json$/);
+      assert.equal(resolveTemplateBrandContract("acme").family, "acme");
+      assert.ok(resolveCommerceCatalog().families.acme, "the installed family joins the catalog");
+    }, { allowlistPath: join(dir, "private-template-sources.json") });
+  });
+});
+
+test("an explicit PRIVATE_TEMPLATE_SOURCES_ROOT is the only place looked at, even with the package installed", () => {
+  withTempDir((dir) => {
+    withFixtureSource(dir, {
+      sources: { acme: { repo: "some-org/acme-templates", contract_path: "contracts/acme.json" } },
+    }, () => {
+      const campaignRepo = join(dir, "campaign-repo");
+      writeJson(join(campaignRepo, "node_modules", "acme-templates", "contracts", "acme.json"), fragmentFor("acme"));
+      const prevCwd = process.cwd();
+      process.chdir(campaignRepo);
+      try {
+        assert.throws(() => resolvePrivateTemplateSourceFragment("acme"), /under PRIVATE_TEMPLATE_SOURCES_ROOT/);
+      } finally {
+        process.chdir(prevCwd);
+      }
+    });
+  });
+});
+
+// The production allowlist, not a fixture: both Arjuna families must be
+// certifiable from an installed package with no sibling checkout and no
+// PRIVATE_TEMPLATE_SOURCES_ROOT. Before arjuna-pod was allowlisted, and before
+// installed packages were read, this failed for both.
+test("the production allowlist certifies arjuna and arjuna-pod from an installed package", () => {
+  const allowlistPath = join(fileURLToPath(new URL("..", import.meta.url)), "contracts", "private-template-sources.json");
+  const sources = loadPrivateTemplateSources();
+  for (const family of ["arjuna", "arjuna-pod"]) {
+    assert.ok(sources[family], `${family} is allowlisted`);
+    assert.equal(sources[family].contract_path, `contracts/${family}.json`);
+  }
+  withTempDir((dir) => {
+    const campaignRepo = join(dir, "campaign-repo");
+    for (const family of ["arjuna", "arjuna-pod"]) {
+      const entry = sources[family];
+      writeJson(join(campaignRepo, "node_modules", entry.package, entry.contract_path), fragmentFor(family));
+      writeInstalledPackage(join(campaignRepo, "node_modules", entry.package), entry.repo);
+    }
+    inCampaignRepo(campaignRepo, () => {
+      const catalog = resolveCommerceCatalog();
+      for (const family of ["arjuna", "arjuna-pod"]) {
+        assert.equal(resolvePrivateTemplateSourceFragment(family).source, "installed_package");
+        assert.equal(resolveTemplateBrandContract(family).family, family);
+        assert.ok(catalog.families[family]?.agentContract, `${family} carries an agentContract`);
+      }
+    }, { allowlistPath });
+  });
+});
+
+test("an installed package is used only when it is the allowlisted repository and did not come from the public registry", () => {
+  withTempDir((dir) => {
+    const allowlistPath = join(dir, "private-template-sources.json");
+    writeJson(allowlistPath, {
+      schema_version: "private-template-source/v0",
+      sources: { acme: { repo: "some-org/acme-templates", package: "acme-contracts", contract_path: "contracts/acme.json" } },
+    });
+    const campaignRepo = join(dir, "campaign-repo");
+    const packageDir = join(campaignRepo, "node_modules", "acme-contracts");
+    writeJson(join(packageDir, "contracts", "acme.json"), fragmentFor("acme"));
+    const expectSkipped = (pattern) => inCampaignRepo(campaignRepo, () => {
+      assert.throws(() => resolvePrivateTemplateSourceFragment("acme"), (error) => {
+        assert.equal(error.code, "private_source_not_checked_out");
+        assert.match(error.message, /the installed acme-contracts package was not used/);
+        assert.match(error.message, pattern);
+        return true;
+      });
+    }, { allowlistPath });
+
+    writeInstalledPackage(packageDir, "someone-else/acme-contracts");
+    expectSkipped(/declares repository "someone-else\/acme-contracts", not some-org\/acme-templates/);
+
+    writeInstalledPackage(packageDir, "some-org/acme-templates");
+    writeJson(join(campaignRepo, "package-lock.json"), {
+      lockfileVersion: 3,
+      packages: { "node_modules/acme-contracts": { version: "0.1.0", resolved: "https://registry.npmjs.org/acme-contracts/-/acme-contracts-0.1.0.tgz" } },
+    });
+    expectSkipped(/was installed from the public registry/);
+
+    writeJson(join(campaignRepo, "package-lock.json"), {
+      lockfileVersion: 3,
+      packages: { "node_modules/acme-contracts": { version: "0.1.0", resolved: "git+ssh://git@github.com/some-org/acme-templates.git#0123abc" } },
+    });
+    inCampaignRepo(campaignRepo, () => {
+      assert.equal(resolvePrivateTemplateSourceFragment("acme").source, "installed_package");
+    }, { allowlistPath });
+
+    for (const repository of [
+      "git+ssh://git@github.com/Some-Org/acme-templates.git",
+      "https://github.com/some-org/acme-templates",
+      "git@github.com:some-org/acme-templates.git",
+    ]) {
+      writeInstalledPackage(packageDir, repository);
+      assert.equal(JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8")).repository, repository);
+      inCampaignRepo(campaignRepo, () => {
+        assert.equal(resolvePrivateTemplateSourceFragment("acme").source, "installed_package", `${repository} matches, case-insensitively`);
+      }, { allowlistPath });
+    }
+    for (const repository of ["github:git+ssh://git@github.com/some-org/acme-templates.git", "https://evil.example/github.com/some-org/acme-templates"]) {
+      writeInstalledPackage(packageDir, repository);
+      expectSkipped(/declares repository \(none\), not some-org\/acme-templates/);
+    }
+  });
+});
+
+test("the not-found error says an installed package is missing the contract rather than asking to install it", () => {
+  withTempDir((dir) => {
+    const allowlistPath = join(dir, "private-template-sources.json");
+    writeJson(allowlistPath, {
+      schema_version: "private-template-source/v0",
+      sources: { acme: { repo: "some-org/acme-templates", contract_path: "contracts/acme.json" } },
+    });
+    const campaignRepo = join(dir, "campaign-repo");
+    writeInstalledPackage(join(campaignRepo, "node_modules", "acme-templates"), "some-org/acme-templates");
+    inCampaignRepo(campaignRepo, () => {
+      assert.throws(() => resolvePrivateTemplateSourceFragment("acme"), /acme-templates has no contracts\/acme\.json/);
+    }, { allowlistPath });
   });
 });
