@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -251,7 +251,10 @@ function writeJson(path, value) {
 }
 
 function writeInstalledPackage(packageDir, repo, extra = {}) {
-  writeJson(join(packageDir, "package.json"), { name: packageDir.split("/").pop(), version: "0.1.0", repository: `github:${repo}`, ...extra });
+  // A bare "org/name" slug becomes the github: shorthand; any other value
+  // (a git or https URL) is written exactly as given.
+  const repository = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo) ? `github:${repo}` : repo;
+  writeJson(join(packageDir, "package.json"), { name: packageDir.split("/").pop(), version: "0.1.0", repository, ...extra });
 }
 
 function fragmentFor(family) {
@@ -373,10 +376,21 @@ test("an installed package is used only when it is the allowlisted repository an
       assert.equal(resolvePrivateTemplateSourceFragment("acme").source, "installed_package");
     }, { allowlistPath });
 
-    writeInstalledPackage(packageDir, "git+ssh://git@github.com/Some-Org/acme-templates.git");
-    inCampaignRepo(campaignRepo, () => {
-      assert.equal(resolvePrivateTemplateSourceFragment("acme").source, "installed_package", "a git URL repository on github.com matches, case-insensitively");
-    }, { allowlistPath });
+    for (const repository of [
+      "git+ssh://git@github.com/Some-Org/acme-templates.git",
+      "https://github.com/some-org/acme-templates",
+      "git@github.com:some-org/acme-templates.git",
+    ]) {
+      writeInstalledPackage(packageDir, repository);
+      assert.equal(JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8")).repository, repository);
+      inCampaignRepo(campaignRepo, () => {
+        assert.equal(resolvePrivateTemplateSourceFragment("acme").source, "installed_package", `${repository} matches, case-insensitively`);
+      }, { allowlistPath });
+    }
+    for (const repository of ["github:git+ssh://git@github.com/some-org/acme-templates.git", "https://evil.example/github.com/some-org/acme-templates"]) {
+      writeInstalledPackage(packageDir, repository);
+      expectSkipped(/declares repository \(none\), not some-org\/acme-templates/);
+    }
   });
 });
 

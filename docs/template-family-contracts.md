@@ -72,6 +72,9 @@ A run finds the contract in the first of these places that has it:
    `package.json` `repository` names the allowlisted repository and the
    installing lockfile does not record it as fetched from the public npm
    registry; otherwise it is skipped and the not-found error says why. The
+   check stops a same-named package from standing in by accident; it is not
+   a defence against the repository running campaigns-os, which owns its
+   `node_modules` and could write a matching `package.json` by hand. The
    installing lockfile pins the contract version. The private repository's
    `package.json` should pack only its contracts and declare its
    `repository`.

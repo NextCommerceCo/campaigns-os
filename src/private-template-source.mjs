@@ -181,7 +181,8 @@ function githubRepoSlug(repository) {
   const raw = typeof repository === "string" ? repository : typeof repository?.url === "string" ? repository.url : "";
   const value = raw.trim();
   const match = /^(?:github:)?([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+?)(?:\.git)?(?:#.*)?$/.exec(value)
-    || /github\.com[:/]([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+?)(?:\.git)?(?:[#/?].*)?$/.exec(value);
+    || /^(?:git\+)?(?:https?|ssh|git):\/\/(?:[^@/]+@)?github\.com[:/]([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+?)(?:\.git)?(?:[#?].*)?$/.exec(value)
+    || /^(?:[^@/:]+@)?github\.com:([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+?)(?:\.git)?(?:#.*)?$/.exec(value);
   return match ? match[1].toLowerCase() : null;
 }
 
@@ -204,10 +205,18 @@ function lockfileResolved(packageDir, pkg) {
 
 const PUBLIC_REGISTRY = /^https?:\/\/registry\.(?:npmjs\.org|yarnpkg\.com)\//i;
 
-// An installed package is trusted only when it says it is the allowlisted
-// private repository (package.json `repository`) and npm did not fetch it from
-// the public registry. A same-named public package, or an unrelated directory
-// that happens to sit at node_modules/<package>, is skipped with its reason.
+// An installed package is used only when it says it is the allowlisted
+// private repository (package.json `repository`) and npm did not record it as
+// fetched from the public registry. A same-named public package, or an
+// unrelated directory that happens to sit at node_modules/<package>, is
+// skipped with its reason.
+//
+// This guards against accidental shadowing, not against the repository that
+// runs campaigns-os: that repository owns its node_modules (campaigns-os
+// itself included), and a hand-written package.json passes this check. A
+// private family's contract is as trustworthy as the install that put it
+// there, which is the same trust the operator already extends to the
+// campaigns-os install and to --allow-uncertified-template.
 function installedPackageProvenance(dir, entry) {
   const pkgJsonPath = join(dir, "package.json");
   if (!existsSync(pkgJsonPath)) return { ok: false, reason: "has no package.json" };
