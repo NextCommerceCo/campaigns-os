@@ -101,7 +101,7 @@
   "dependencies": {
     "acorn": "^8.18.0",
     "ajv": "^8.20.0",
-    "entities": "8.1.0",
+    "entities": "9.0.0",
     "parse5": "8.0.1",
     "yaml": "^2.9.1"
   },
