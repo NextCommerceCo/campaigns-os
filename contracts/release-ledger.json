@@ -6670,6 +6670,141 @@
         }
       ],
       "entry_sha256": "92ee1e2a7419452977b98574ae50be53483961ebc4b12ea65477b8da959b57f9"
+    },
+    {
+      "id": "RL-0388",
+      "sequence": 372,
+      "date": "2026-11-23",
+      "kind": "release",
+      "surface_version": "1.72.0",
+      "changelog_section": "1.72.0",
+      "changelog_sha256": "478bbd2db1d6c00657fbbf6eee40d3d638292fcb3ec926172b74114b5fc8cc10",
+      "agent_impact": "A private template family is certified wherever its contract can be read, and 1.72.0 reads it from one more place: the private repository installed as a package. With PRIVATE_TEMPLATE_SOURCES_ROOT unset, campaigns-os looks for node_modules/<package>/<contract_path> (the allowlist entry's package, default the repository name) from the working directory upward, then from its own install, before the sibling checkout it read before. PRIVATE_TEMPLATE_SOURCES_ROOT, when set, is still the only place looked at. So start --template-family arjuna or arjuna-pod passes the certified-template gate without --allow-uncertified-template, and doctor no longer reports assembly.template_family or template_contract.agentContract for them, once the private repository is installed beside campaigns-os; without it the not-found error now names the install command. arjuna-pod is newly allowlisted and is a Build Packet assembly.template_family value. A brand contract may declare default_residue.payment_chrome.asset_methods ({asset path: [contract methods]}); a declared asset is residue only for the methods it lists, in browser QA and in doctor's static checkout scan, instead of every unsupported method when its file name names none, and a malformed declaration fails the contract load (payment_chrome_asset_methods_invalid). Public families declare none and behave as before.",
+      "compatibility": "additive",
+      "migration": "Update the pinned package to 1.72.0 and run install-skills to get 1.72.0+skills.1 before starting a fresh session. To certify a private family on a machine with no sibling checkout, install its repository as a dev dependency next to campaigns-os (npm install --save-dev git+ssh://git@github.com/<org>/<repo>.git).",
+      "changes": [
+        {
+          "class": "compatibility_policy",
+          "path": "compatibility.json",
+          "surface_entry": "compatibility.json",
+          "summary": "Version advances to 1.72.0."
+        },
+        {
+          "class": "compatibility_policy",
+          "path": "contracts/supported-surface.json",
+          "surface_entry": "contracts/supported-surface.json",
+          "summary": "surface_version advances to 1.72.0; the Build Packet schema hash is updated for the arjuna-pod family value."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/local-setup.md",
+          "surface_entry": "docs/local-setup.md",
+          "summary": "Install pins @nextcommerce/campaigns-os@1.72.0."
+        },
+        {
+          "class": "documentation",
+          "path": "docs/orientation-contract-reference.md",
+          "surface_entry": "docs/orientation-contract-reference.md",
+          "summary": "Regenerated at surface 1.72.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/runtime-readiness.md",
+          "surface_entry": "docs/runtime-readiness.md",
+          "summary": "Regenerated at surface 1.72.0."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Examples name 1.72.0+skills.1."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "package-lock.json",
+          "surface_entry": null,
+          "summary": "Both package version stamps advance to 1.72.0."
+        },
+        {
+          "class": "package_export",
+          "path": "package.json",
+          "surface_entry": null,
+          "summary": "Package version advances to 1.72.0."
+        },
+        {
+          "class": "schema",
+          "path": "schemas/campaign-runtime-build-packet.v0.schema.json",
+          "surface_entry": "schemas/campaign-runtime-build-packet.v0.schema.json",
+          "summary": "assembly.template_family accepts arjuna-pod."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "Bundle advances to 1.72.0+skills.1 and each bundled skill one patch."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.72.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.72.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.72.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.72.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.72.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.72.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.72.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.72.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.72.0+skills.1."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-sdk-bump/SKILL.md",
+          "surface_entry": null,
+          "summary": "One patch higher, stamped with bundle 1.72.0+skills.1. A private --family can also come from its repository installed as a package beside campaigns-os."
+        }
+      ],
+      "entry_sha256": "736748d0fd5fbb5b5778cb69f612f97a0074aac02860286c2de6c31cdac9750d"
     }
   ]
 }

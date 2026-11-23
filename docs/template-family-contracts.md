@@ -51,6 +51,43 @@ re-verification, not as currently certified against the SDK you are shipping.
 Families with no verification record on the snapshot (for example
 privately-sourced families) report freshness as unknown.
 
+## Private families
+
+A private family is certified the same way as a public one (a catalog entry
+plus a brand contract), but its contract does not live in this repository.
+`contracts/private-template-sources.json` names only the family, the private
+repository, the package name it installs under, and the contract file's path
+inside it. The family's description, selectors and rules stay in the private
+repository, and campaigns-os reads them at run time without copying them here.
+
+A run finds the contract in the first of these places that has it:
+
+1. `PRIVATE_TEMPLATE_SOURCES_ROOT`, when set: the parent directory of a
+   checkout of the private repository. Nothing else is tried.
+2. The private repository installed as a package next to campaigns-os, for
+   example `npm install --save-dev git+ssh://git@github.com/<org>/<repo>.git`
+   in the campaign repository or the workspace that installs campaigns-os.
+   campaigns-os looks for `node_modules/<package>/` from the working directory
+   upward, then from its own install. Anyone who can clone the private
+   repository can install it, and the installing lockfile pins the contract
+   version. The private repository's `package.json` should pack only its
+   contracts.
+3. A checkout of the private repository beside a source checkout of
+   campaigns-os.
+
+When none has it, `start` refuses the family as uncertified and doctor reports
+it as unknown, with a message naming all three. Hosted CI without access to the
+private repository cannot certify a private family; that is the intended
+boundary.
+
+A brand contract may declare what a shared payment-chrome asset pictures with
+`default_residue.payment_chrome.asset_methods`, keyed by the same paths as
+`assets[]`: `{"images/upsell-payment-logos.svg": ["paypal"]}` says the strip
+shows PayPal and no other contract method, so residue QA attributes it to
+PayPal only. An asset listed with `[]` pictures none of the contract's methods.
+Without an entry, an asset whose file name names no method counts as residue
+for every unsupported method.
+
 ## Page IDs and page types are different namespaces
 
 Two vocabularies in these contracts look identical and are not:

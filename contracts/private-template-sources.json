@@ -1,8 +1,9 @@
 {
   "schema_version": "private-template-source/v0",
   "sources": {
-    "arjuna": { "repo": "Sellmore-Co/adsbranded-templates", "contract_path": "contracts/arjuna.json" },
-    "karna": { "repo": "Sellmore-Co/adsbranded-templates", "contract_path": "contracts/karna.json" },
-    "limos": { "repo": "Sellmore-Co/adsbranded-templates", "contract_path": "contracts/limos.json" }
+    "arjuna": { "repo": "Sellmore-Co/adsbranded-templates", "package": "adsbranded-templates", "contract_path": "contracts/arjuna.json" },
+    "arjuna-pod": { "repo": "Sellmore-Co/adsbranded-templates", "package": "adsbranded-templates", "contract_path": "contracts/arjuna-pod.json" },
+    "karna": { "repo": "Sellmore-Co/adsbranded-templates", "package": "adsbranded-templates", "contract_path": "contracts/karna.json" },
+    "limos": { "repo": "Sellmore-Co/adsbranded-templates", "package": "adsbranded-templates", "contract_path": "contracts/limos.json" }
   }
 }

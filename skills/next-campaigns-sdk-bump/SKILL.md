@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-sdk-bump
-version: 1.0.26
+version: 1.0.27
 description: Bump a live campaign's Campaign Cart SDK from one 0.4.x release to a later 0.4.x, or from 0.4.x to 0.5.x, on a page-kit or static repo. Use for any request to bump, upgrade or move a campaign to SDK 0.4.x or 0.5.x, including when the repository has its own BUMP.md. Find every pin, check the release diff and storage against the campaign's own code, prove on a preview with approved test orders, and report what is not proven.
 ---
 
-Bundle revision: 1.71.5+skills.1
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.71.5+skills.1`
+Bundle revision: 1.72.0+skills.1
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.72.0+skills.1`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -323,10 +323,11 @@ received test-order events.
   funnel was built from, named as a template brand contract: a file
   `contracts/template-brand-contract.<family>.v0.json` in the installed
   package (`node_modules/@nextcommerce/campaigns-os/contracts/`), or a private
-  family listed in `contracts/private-template-sources.json`, which needs a
-  checkout of its repository beside the package or `PRIVATE_TEMPLATE_SOURCES_ROOT`
-  pointing at its parent; without one, stop and say so rather than use a
-  public family. If the
+  family listed in `contracts/private-template-sources.json`, which needs its
+  repository installed as a package (`node_modules/<package>/` in the repo or
+  beside campaigns-os), a checkout of it beside the package, or
+  `PRIVATE_TEMPLATE_SOURCES_ROOT` pointing at its parent; without one, stop and
+  say so rather than use a public family. If the
   repository's `CLAUDE.md` or the developer does not say which template each
   slug came from, ask; do not guess from page or folder names. Use a value only
   if it exactly matches one of those contract names, and a slug only if it

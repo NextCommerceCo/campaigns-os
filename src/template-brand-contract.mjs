@@ -73,7 +73,10 @@ export function resolveContractExtendsChain(contract, { dir, label = dir, seen =
     resolved = mergeContractObjects(loadTemplateBrandContractFile(parentPath, seen), contract);
     delete resolved.extends;
   }
-  if (outermost) paymentChromeAssetHashes(resolved.default_residue?.payment_chrome, { label });
+  if (outermost) {
+    paymentChromeAssetHashes(resolved.default_residue?.payment_chrome, { label });
+    paymentChromeAssetMethods(resolved.default_residue?.payment_chrome, { label });
+  }
   return resolved;
 }
 
@@ -272,17 +275,74 @@ const SIMPLE_CLASS_SELECTOR = /^\.([A-Za-z0-9_-]+)$/;
 // for any unsupported method per the contract rule. One partition for both
 // consumers: browser QA (visible selectors + fetched assets) and doctor's static
 // scan of the built checkout.
+//
+// A contract that knows what a shared asset pictures says so in
+// `payment_chrome.asset_methods` (keyed by the assets[] path or its basename,
+// value: the contract methods the asset shows). A declared asset belongs to
+// exactly those methods, whatever its file name says, so a cards-plus-PayPal
+// strip is PayPal residue and never Klarna residue.
 export function paymentChromeArtifacts(chrome, method) {
-  const compact = (value) => String(value || "").toLowerCase().replace(/[\s_-]+/g, "");
+  const compact = compactChromeToken;
   const token = compact(method);
   const methodTokens = (chrome?.methods || []).map(compact).filter(Boolean);
   const selectors = (chrome?.selectors || []).filter((selector) => compact(selector).includes(token));
   const assets = (chrome?.assets || []).filter((asset) => {
+    const declared = declaredAssetMethodTokens(chrome, asset);
+    if (declared) return declared.includes(token);
     const normalized = compact(asset);
     if (normalized.includes(token)) return true;
     return !methodTokens.some((candidate) => normalized.includes(candidate));
   });
   return { selectors, assets };
+}
+
+function compactChromeToken(value) {
+  return String(value || "").toLowerCase().replace(/[\s_-]+/g, "");
+}
+
+// The compact method tokens a contract declares for one chrome asset, or null
+// when it declares none. Looked up by the exact assets[] path, then by basename.
+function declaredAssetMethodTokens(chrome, asset) {
+  const map = chrome?.asset_methods;
+  if (!isPlainObject(map)) return null;
+  const path = String(asset || "");
+  const basename = path.split("/").pop();
+  let declared = Object.prototype.hasOwnProperty.call(map, path) ? map[path] : undefined;
+  if (declared === undefined) {
+    const key = Object.keys(map).find((candidate) => candidate.split("/").pop() === basename);
+    declared = key === undefined ? undefined : map[key];
+  }
+  return Array.isArray(declared) ? declared.map(compactChromeToken).filter(Boolean) : null;
+}
+
+// `payment_chrome.asset_methods`, checked at contract load like the hash map:
+// an object keyed by an asset assets[] lists, each value an array of the
+// contract's own methods. A typo would otherwise silently fall back to the
+// file-name match this declaration exists to replace.
+export function paymentChromeAssetMethods(chrome, { label = "template brand contract" } = {}) {
+  if (!isPlainObject(chrome) || chrome.asset_methods === undefined) return {};
+  const map = chrome.asset_methods;
+  if (!isPlainObject(map)) {
+    throw templateBrandContractError("payment_chrome_asset_methods_invalid", `${label}: default_residue.payment_chrome.asset_methods must be an object keyed by asset path.`);
+  }
+  const listed = new Set((Array.isArray(chrome.assets) ? chrome.assets : []).map((asset) => String(asset || "").split("/").pop()));
+  const methods = new Set((Array.isArray(chrome.methods) ? chrome.methods : []).map(compactChromeToken));
+  for (const [asset, declared] of Object.entries(map)) {
+    if (!listed.has(String(asset || "").split("/").pop())) {
+      throw templateBrandContractError(
+        "payment_chrome_asset_methods_invalid",
+        `${label}: default_residue.payment_chrome.asset_methods names "${asset}", which payment_chrome.assets does not list.`,
+      );
+    }
+    const unknown = Array.isArray(declared) ? declared.filter((method) => typeof method !== "string" || !methods.has(compactChromeToken(method))) : null;
+    if (!Array.isArray(declared) || unknown.length) {
+      throw templateBrandContractError(
+        "payment_chrome_asset_methods_invalid",
+        `${label}: default_residue.payment_chrome.asset_methods["${asset}"] must be an array of payment_chrome.methods (${[...(chrome.methods || [])].join(", ")})${unknown?.length ? `; unknown: ${unknown.map((m) => JSON.stringify(m)).join(", ")}` : ""}.`,
+      );
+    }
+  }
+  return map;
 }
 
 // The shipped bytes of each chrome asset, by basename: `payment_chrome.asset_sha256`
@@ -370,7 +430,7 @@ export function paymentMethodMarkupMatches(html, method, chrome = null) {
   const compact = (value) => String(value || "").toLowerCase().replace(/[\s_-]+/g, "");
   const token = compact(canonical);
   for (const asset of artifacts.assets) {
-    if (!compact(asset).includes(token)) continue;
+    if (!compact(asset).includes(token) && !declaredAssetMethodTokens(chrome, asset)) continue;
     const basename = asset.split("/").pop();
     if (basename && text.includes(basename)) matches.push(basename);
   }
@@ -389,7 +449,7 @@ export function paymentMethodStaticScanGaps(chrome, method) {
   const token = compact(canonical);
   return {
     compound_selectors: artifacts.selectors.filter((selector) => !SIMPLE_CLASS_SELECTOR.test(selector)),
-    shared_assets: artifacts.assets.filter((asset) => !compact(asset).includes(token)).map((asset) => asset.split("/").pop()).filter(Boolean),
+    shared_assets: artifacts.assets.filter((asset) => !compact(asset).includes(token) && !declaredAssetMethodTokens(chrome, asset)).map((asset) => asset.split("/").pop()).filter(Boolean),
   };
 }
 
