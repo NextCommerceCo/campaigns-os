@@ -20,6 +20,7 @@
   "private_families": {
     "families": [
       "arjuna",
+      "arjuna-pod",
       "karna",
       "limos"
     ],
