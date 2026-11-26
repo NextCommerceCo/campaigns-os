@@ -6813,7 +6813,7 @@
       "kind": "release",
       "surface_version": null,
       "changelog_section": "1.72.0+agent.1",
-      "changelog_sha256": "72ccb0f1ef24265e829ff50234fd710355d02b0c3aac853e74071c21550ff9c2",
+      "changelog_sha256": "8303d07cfd953475f501e4ec50acef3c1a2130e1f87802a64c04c145aaa17be2",
       "agent_impact": "On a CampaignSpec pinned to Campaign Cart SDK 0.5.1 or later, AnalyticsContractShape no longer warns blocked-events-ignored-sdk-05: 0.5.1 reads providers.<x>.blockedEvents again (deprecated). The warning stays for an exact 0.5.0 pin, and custom-provider-ignored-sdk-05 still fires on every 0.5 pin. A 0.5 pin that blocks dl_package_swapped gets the new warning blocked-event-not-sent-sdk-05. Filtering advice now names your own tag or next.analytics.on('*', fn); analytics.destinations only turns a destination on or off. An agent bumping a campaign to 0.5.1 removes fbq('track','PageView') from pixel base code. Bundled skills carry revision 1.72.0+skills.2: an agent that loaded an earlier revision should start a fresh session.",
       "compatibility": "compatible",
       "migration": "none",
@@ -6909,7 +6909,7 @@
           "summary": "Revision 1.72.0+skills.2; version one patch higher; text otherwise unchanged."
         }
       ],
-      "entry_sha256": "f5a1a8be3a7fd6fa7d88d8cc41f726bb2ca5516a4bf23df85c18b7a9e2e3deef"
+      "entry_sha256": "5387e30cd492c9fa02ca6dd10eae3458a0cbb5c763b099e0a9ae504e703f7774"
     }
   ]
 }

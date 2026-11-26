@@ -6,7 +6,7 @@ Notable supported-surface changes are recorded here.
 
 ### Fixed
 
-- Campaign Cart SDK 0.5.1 reads `providers.<x>.blockedEvents` again, so `AnalyticsContractShape` warns `blocked-events-ignored-sdk-05` on a 0.5.0 pin only, warns `blocked-event-not-sent-sdk-05` when a 0.5.1+ pin blocks `dl_package_swapped`, and the `next-campaigns-sdk-bump` skill and `docs/build-packet.md` stop pointing filtering at `analytics.destinations` and cover 0.5.1's Meta `PageView` (#PRNUM).
+- Campaign Cart SDK 0.5.1 reads `providers.<x>.blockedEvents` again, so `AnalyticsContractShape` warns `blocked-events-ignored-sdk-05` on a 0.5.0 pin only, warns `blocked-event-not-sent-sdk-05` when a 0.5.1+ pin blocks `dl_package_swapped`, and the `next-campaigns-sdk-bump` skill and `docs/build-packet.md` stop pointing filtering at `analytics.destinations` and cover 0.5.1's Meta `PageView` (#822).
 
 ## [1.72.0] - 2026-11-23
 
