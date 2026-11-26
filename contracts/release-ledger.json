@@ -6805,6 +6805,111 @@
         }
       ],
       "entry_sha256": "95eaf64cc350f8df6e84790db685016121bff4583bc5ca735e7a765be1fd1a45"
+    },
+    {
+      "id": "RL-0389",
+      "sequence": 373,
+      "date": "2026-11-26",
+      "kind": "release",
+      "surface_version": null,
+      "changelog_section": "1.72.0+agent.1",
+      "changelog_sha256": "72ccb0f1ef24265e829ff50234fd710355d02b0c3aac853e74071c21550ff9c2",
+      "agent_impact": "On a CampaignSpec pinned to Campaign Cart SDK 0.5.1 or later, AnalyticsContractShape no longer warns blocked-events-ignored-sdk-05: 0.5.1 reads providers.<x>.blockedEvents again (deprecated). The warning stays for an exact 0.5.0 pin, and custom-provider-ignored-sdk-05 still fires on every 0.5 pin. A 0.5 pin that blocks dl_package_swapped gets the new warning blocked-event-not-sent-sdk-05. Filtering advice now names your own tag or next.analytics.on('*', fn); analytics.destinations only turns a destination on or off. An agent bumping a campaign to 0.5.1 removes fbq('track','PageView') from pixel base code. Bundled skills carry revision 1.72.0+skills.2: an agent that loaded an earlier revision should start a fresh session.",
+      "compatibility": "compatible",
+      "migration": "none",
+      "changes": [
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/rules/analytics-contract-shape.ts",
+          "surface_entry": null,
+          "summary": "blocked-events-ignored-sdk-05 fires on an exact 0.5.0 pin only, its advice names your own tag or next.analytics.on('*', fn), a 0.5.1+ pin blocking dl_package_swapped warns blocked-event-not-sent-sdk-05, and the SDK identity-baseline message bounds stamping to 0.4.30 through 0.4.x."
+        },
+        {
+          "class": "generated_runtime",
+          "path": "campaign-spec/analytics-vocabulary.ts",
+          "surface_entry": null,
+          "summary": "dl_package_swapped is described as 0.4.x only, and the identity baseline comment says 0.5 does not stamp campaign_* identifiers on every dl_* event."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/build-packet.md",
+          "surface_entry": "docs/build-packet.md",
+          "summary": "The analytics vendors note says blockedEvents is ignored on 0.5.0 and read again (deprecated) on 0.5.1, custom is ignored on every 0.5 release, and filtering goes in your own tag or next.analytics.on('*', fn)."
+        },
+        {
+          "class": "named_surface",
+          "path": "docs/skills-revision.md",
+          "surface_entry": "docs/skills-revision.md",
+          "summary": "Examples name 1.72.0+skills.2."
+        },
+        {
+          "class": "skill",
+          "path": "skills.json",
+          "surface_entry": "skills.json",
+          "summary": "bundle_revision 1.72.0+skills.2; each skill one patch higher."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-sdk-bump/SKILL.md",
+          "surface_entry": null,
+          "summary": "Crossing to 0.5 separates 0.5.0 and 0.5.1 analytics, adds the Meta PageView removal, says no 0.5.x tag (checked to 0.5.1) ships a storage manifest, a 0.5.1 known-changes row covers Meta PageView, AddToCart and Purchase, and the market pin names data-currency=\"auto\"; revision 1.72.0+skills.2, version 1.0.28."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.72.0+skills.2; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-os-setup/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.72.0+skills.2; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-build/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.72.0+skills.2; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-polish/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.72.0+skills.2; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/next-campaigns-qa/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.72.0+skills.2; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-lifecycle-orientation/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.72.0+skills.2; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-run-evidence/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.72.0+skills.2; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/campaign-readback-classification/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.72.0+skills.2; version one patch higher; text otherwise unchanged."
+        },
+        {
+          "class": "skill",
+          "path": "skills/contribution-intake/SKILL.md",
+          "surface_entry": null,
+          "summary": "Revision 1.72.0+skills.2; version one patch higher; text otherwise unchanged."
+        }
+      ],
+      "entry_sha256": "f5a1a8be3a7fd6fa7d88d8cc41f726bb2ca5516a4bf23df85c18b7a9e2e3deef"
     }
   ]
 }

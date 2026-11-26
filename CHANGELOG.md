@@ -2,6 +2,12 @@
 
 Notable supported-surface changes are recorded here.
 
+## [1.72.0+agent.1] - 2026-11-26
+
+### Fixed
+
+- Campaign Cart SDK 0.5.1 reads `providers.<x>.blockedEvents` again, so `AnalyticsContractShape` warns `blocked-events-ignored-sdk-05` on a 0.5.0 pin only, warns `blocked-event-not-sent-sdk-05` when a 0.5.1+ pin blocks `dl_package_swapped`, and the `next-campaigns-sdk-bump` skill and `docs/build-packet.md` stop pointing filtering at `analytics.destinations` and cover 0.5.1's Meta `PageView` (#PRNUM).
+
 ## [1.72.0] - 2026-11-23
 
 This release certifies the `arjuna-pod` private family and lets a private family's contract reach a run that has no checkout of the private repository beside campaigns-os. A private family's contract is now also read from the private repository installed as a package (`node_modules/<package>/`, found from the working directory upward, then from the campaigns-os install), after `PRIVATE_TEMPLATE_SOURCES_ROOT` and before a sibling checkout, so `start --template-family arjuna` or `arjuna-pod` no longer needs `--allow-uncertified-template` or `PRIVATE_TEMPLATE_SOURCES_ROOT` once the package is installed. A brand contract can declare what a shared payment-chrome asset pictures with `default_residue.payment_chrome.asset_methods`, and residue QA and doctor's static scan attribute the asset to those methods only. The Build Packet schema's `assembly.template_family` gains `arjuna-pod`. Additive: no command or flag changes, and every public family behaves as before. To take it, pin `@nextcommerce/campaigns-os@1.72.0` and refresh the installed skills to `1.72.0+skills.1`.

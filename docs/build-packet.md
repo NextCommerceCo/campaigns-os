@@ -362,10 +362,12 @@ campaign's `_data/campaigns.json` entry (`ga4_id`, `axon_event_key`,
 means off. The adapter forwards the SDK's `dl_*` events to the vendor. These
 vendors are separate from the SDK providers in `analytics.providers` (GTM,
 Meta, RudderStack, a custom endpoint), which reach the page through
-`config.js`. On SDK 0.5.0 or later a provider's `blockedEvents` and the
-`custom` provider do nothing (0.5 reads only each provider's `enabled`), and
-the CampaignSpec rule warns on both; 0.5 filters per destination under
-`nextConfig.analytics.destinations`.
+`config.js`. On SDK 0.5.0 a provider's `blockedEvents` does nothing (0.5.0
+reads only each provider's `enabled`); 0.5.1 reads it again, deprecated. On
+any 0.5 release the `custom` provider does nothing. The CampaignSpec rule
+warns on both. `nextConfig.analytics.destinations` only turns a destination
+on or off, so to keep an event from one vendor on 0.5, filter it in your own
+tag or in a `next.analytics.on('*', fn)` listener.
 
 The CampaignSpec declares them under `analytics.vendors`, keyed by vendor,
 in the shape the Map Builder saves:
