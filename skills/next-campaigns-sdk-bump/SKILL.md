@@ -1,11 +1,11 @@
 ---
 name: next-campaigns-sdk-bump
-version: 1.0.27
+version: 1.0.28
 description: Bump a live campaign's Campaign Cart SDK from one 0.4.x release to a later 0.4.x, or from 0.4.x to 0.5.x, on a page-kit or static repo. Use for any request to bump, upgrade or move a campaign to SDK 0.4.x or 0.5.x, including when the repository has its own BUMP.md. Find every pin, check the release diff and storage against the campaign's own code, prove on a preview with approved test orders, and report what is not proven.
 ---
 
-Bundle revision: 1.72.0+skills.1
-Run `npx --no-install campaigns-os tooling status --skills-revision 1.72.0+skills.1`
+Bundle revision: 1.72.0+skills.2
+Run `npx --no-install campaigns-os tooling status --skills-revision 1.72.0+skills.2`
 from the campaign's Page Kit folder, where it runs the project's pinned copy and
 never installs one, at the start of each task. Start a fresh session if it
 reports `mismatch`: this text is already in your context and is never re-read
@@ -92,17 +92,23 @@ change for the page to load, and what no longer works, is this:
   `order:redirect-missing`, `address:messages-loaded`; `dl_package_swapped`;
   `next.fomo()`; `token` and `pmData` on `payment:tokenized`. As above, do not
   just delete a removed call: name what replaces it, or stop and ask.
-- **Analytics.** `providers.*.blockedEvents` and `providers.custom` do nothing
-  on 0.5 (it reads only each provider's `enabled`). Filter per destination in
-  `nextConfig.analytics.destinations`, and post to a custom endpoint from
-  `next.analytics.on('*', …)`. The CampaignSpec rule `AnalyticsContractShape`
-  warns on both.
+- **Analytics.** `providers.*.blockedEvents` does nothing on 0.5.0 (it reads
+  only each provider's `enabled`); 0.5.1 reads it again, deprecated, so target
+  0.5.1 or later when a campaign relies on it. `providers.custom` does nothing
+  on any 0.5 release: post to the endpoint from `next.analytics.on('*', …)`.
+  `nextConfig.analytics.destinations` only turns a destination on or off, so
+  any other filtering goes in your own tag or that listener. The CampaignSpec
+  rule `AnalyticsContractShape` warns on both.
+- **Meta PageView.** From 0.5.1 the SDK's Meta destination sends `PageView`
+  on every page load, as 0.4.x did. Remove `fbq('track', 'PageView')` from
+  any hand-written pixel base code on the funnel's pages, or Meta counts each
+  view twice.
 - **Page state.** 0.5 never sets `data-next-sdk-loading`. It sets
   `html[data-next-ready]` once values are written (and still adds
   `html.next-display-ready`), and `html[data-next-error="config|load|campaign"]`
   when it cannot start. Rewrite CSS or scripts that wait on
   `data-next-sdk-loading`.
-- **Open carts are lost.** The 0.5.0 tag ships no
+- **Open carts are lost.** No 0.5.x tag (checked to 0.5.1) ships
   `docs/compatibility/storage-migrations.v1.json`, so step 4 cannot run and
   0.5 does not read a 0.4 cart from storage. Tell the developer that shoppers
   mid-funnel at deploy lose their cart, and deploy in a quiet hour.
@@ -229,6 +235,7 @@ release notes:
 | 0.4.41 | The card fields are set up by NEXT's payment script (`payments.29next.com`), which loads Spreedly itself, with the campaign's `payment_env_key`. A `next-spreedly-key` meta tag is no longer read; it does no harm if it stays. | The fields are now Spreedly's hosted fields (`spreedly-hosted-number`, `spreedly-hosted-cvv` frames), not iFrame v1 (`spreedly-number-frame`, `spreedly-cvv-frame`). Confirm the campaign has a payment key. Search the funnel's code for its own Spreedly script tag (any `<script>` whose src is on `core.spreedly.com`; SDK 0.4.40 loaded `core.spreedly.com/iframe/iframe-v1.min.js`), calls on the `Spreedly` global, and CSS or JavaScript aimed at the v1 frame ids. Remove or port each one in the same commit that moves that page's pin to 0.4.41 or later, never before, since a page still below 0.4.41 needs them. Add both hosts to any Content-Security-Policy. Plan a 3-D Secure order and check the card fields' styling in step 6. |
 | 0.4.42 | `next:initialized` fires once and is not replayed. | Guard every listener, as above. |
 | 0.4.43 | Shop Pay in the express-checkout container. | Check whether the campaign's `expressCheckout.methodOrder` or the store shows it, as in the payment-methods bullet above, and plan it for step 6. |
+| 0.5.1 | Meta gets `PageView` from the SDK on every page load, `AddToCart` only for the first add of a session (GA4, RudderStack and `dl_add_to_cart` still get every add), and one `Purchase` per order, none for an accepted upsell. | Remove `fbq('track', 'PageView')` from the pixel base code. If the campaign counts accepted upsells in Meta, ask the developer how they should now be sent; do not add a second `Purchase` for the main order. In step 6, check Meta's test events show one `PageView` per page and one `Purchase` per order. |
 | Any, if a page has a hand-written `<link rel="modulepreload">` list of SDK files | The SDK's chunk file names change between versions. | Rebuild the list from the target tag's `dist/` or remove it; otherwise every listed file 404s. |
 
 ## 4. Storage check
@@ -281,7 +288,8 @@ without them a run from another country can check out in another currency and
 skip a currency-gated upsell. Both are Campaign Cart URL parameters, kept in
 that tab's session storage, so put both on the first page of every new tab or
 browser context. `?country=` applies only when the campaign's
-`currencyBehavior` is `auto`. Before each order, confirm the page shows
+`currencyBehavior` is `auto` (on 0.5.1 or later, the loader may instead carry
+`data-currency="auto"`). Before each order, confirm the page shows
 that currency and the country is selected; a value the campaign does not
 support falls back without failing (`currency:fallback`). On `qa run`, pass
 `--currency <main>`: it tags each funnel's entry page, records the currency in

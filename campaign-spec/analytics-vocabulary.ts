@@ -44,7 +44,9 @@ export const CAMPAIGN_CART_ANALYTICS_VOCABULARY_SDK_VERSION = '0.4.30'
 
 /**
  * First Campaign Cart SDK version that stamps campaign_* and ncsid-derived
- * campaign_session_id identifiers on every analytics event.
+ * campaign_session_id identifiers on every analytics event. 0.4.30 through
+ * 0.4.x stamp them; 0.5 does not put them on every dl_* event (its RudderStack
+ * destination calls still carry the campaign fields).
  */
 export const CAMPAIGN_CART_ANALYTICS_IDENTITY_MIN_SDK_VERSION = '0.4.30'
 
@@ -76,7 +78,7 @@ export const DL_EVENTS: readonly DlEventDefinition[] = [
   { name: 'dl_skipped_upsell', category: 'upsell', hasSchema: true, description: 'Upsell skipped' },
   { name: 'dl_upsell_purchase', category: 'upsell', hasSchema: true, description: 'Accepted upsell in GA4 purchase format' },
   { name: 'dl_cart_updated', category: 'cart', hasSchema: false, description: 'Cart contents changed' },
-  { name: 'dl_package_swapped', category: 'cart', hasSchema: false, description: 'Package variant swapped' },
+  { name: 'dl_package_swapped', category: 'cart', hasSchema: false, description: 'Package variant swapped (0.4.x only; 0.5 sends a remove and an add)' },
   { name: 'dl_page_view', category: 'navigation', hasSchema: false, description: 'SDK page view' },
   { name: 'dl_route_changed', category: 'navigation', hasSchema: false, description: 'Funnel route changed' },
   { name: 'dl_scroll_depth', category: 'engagement', hasSchema: false, description: 'Scroll-depth milestone reached' },

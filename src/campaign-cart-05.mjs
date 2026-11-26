@@ -2,7 +2,7 @@
 // tolerate a page pinned to 0.5.0 or later without changing how they judge a
 // 0.4.x page.
 //
-// Source: NextCommerceCo/campaign-cart at tag v0.5.0:
+// Source: NextCommerceCo/campaign-cart at tag v0.5.1 (rechecked from v0.5.0):
 //   docs/guides/migrating-from-0.4.md            (Removed, Deprecated)
 //   docs/architecture/parity-0.4.md              (every 0.4.43 name)
 //   docs/guides/attribute-reference/setup/loader-script.md, page-state.md
@@ -101,10 +101,11 @@ export const SDK_05_READY_ATTRIBUTE = "data-next-ready";
 export const SDK_05_ERROR_ATTRIBUTE = "data-next-error";
 export const SDK_05_ERROR_VALUES = Object.freeze(["config", "load", "campaign"]);
 
-// The data-next-* names the 0.5.0 source reads or writes, by the recipe that
-// built SDK_DATA_NEXT_ATTRIBUTES, run at v0.5.0, less the deprecated widget
-// names (accordion, timer, tooltip) the 0.4.x index already lists. A 0.5 page
-// reads these on top of the 0.4.x names its legacy layer keeps.
+// The data-next-* names the 0.5.x source reads or writes, by the recipe that
+// built SDK_DATA_NEXT_ATTRIBUTES, run at v0.5.1, less the deprecated names
+// (accordion, timer, tooltip, the tracking-tag meta) the 0.4.x index already
+// lists. v0.5.1 adds data-next-define to the v0.5.0 set. A 0.5 page reads
+// these on top of the 0.4.x names its legacy layer keeps.
 export const SDK_05_DATA_NEXT_ATTRIBUTES = Object.freeze([
   "data-next-action", "data-next-active", "data-next-address", "data-next-address-field",
   "data-next-address-row", "data-next-address-state", "data-next-bundle-card", "data-next-bundle-display",
@@ -113,7 +114,7 @@ export const SDK_05_DATA_NEXT_ATTRIBUTES = Object.freeze([
   "data-next-bundle-slots-for", "data-next-bundle-vouchers", "data-next-cart-items", "data-next-cart-summary",
   "data-next-checkout", "data-next-checkout-field", "data-next-checkout-review", "data-next-checkout-step",
   "data-next-checkout-submit", "data-next-clear-cart", "data-next-component", "data-next-component-location",
-  "data-next-coupon", "data-next-default-property", "data-next-defer", "data-next-disabled", "data-next-discounts",
+  "data-next-coupon", "data-next-default-property", "data-next-defer", "data-next-define", "data-next-disabled", "data-next-discounts",
   "data-next-display", "data-next-each", "data-next-empty", "data-next-error-for",
   "data-next-exclude-property", "data-next-express", "data-next-express-checkout", "data-next-fallback",
   "data-next-field", "data-next-for", "data-next-format", "data-next-go", "data-next-hide", "data-next-i18n",

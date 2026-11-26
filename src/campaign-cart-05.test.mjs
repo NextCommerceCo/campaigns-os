@@ -245,12 +245,23 @@ test("sdk repin treats a classic loader.min.js and a data-type=\"module\" loader
 
 // --- CampaignSpec analytics -------------------------------------------------------
 
-test("AnalyticsContractShape warns that providers blockedEvents and the custom provider do nothing on a 0.5 pin", () => {
-  const spec = (sdkVersion) => ({
+test("AnalyticsContractShape warns that blockedEvents does nothing on 0.5.0 only, and the custom provider on any 0.5 pin", () => {
+  const spec = (sdkVersion, blockedEvents = ["dl_purchase"]) => ({
     runtime: { sdk_version: sdkVersion },
-    analytics: { providers: { gtm: { enabled: true, containerId: "GTM-ABC", blockedEvents: ["dl_purchase"] }, custom: { enabled: true, endpoint: "https://collect.example.test" } } },
+    analytics: { providers: { gtm: { enabled: true, containerId: "GTM-ABC", blockedEvents }, custom: { enabled: true, endpoint: "https://collect.example.test" } } },
   });
-  const checks = (version) => AnalyticsContractShape.check(spec(version)).map((violation) => violation.data.check).sort();
+  const violations = (version, blocked) => AnalyticsContractShape.check(spec(version, blocked));
+  const checks = (version, blocked) => violations(version, blocked).map((violation) => violation.data.check).sort();
   assert.deepEqual(checks("0.5.0"), ["blocked-events-ignored-sdk-05", "custom-provider-ignored-sdk-05"]);
+  const ignored = violations("0.5.0").find((violation) => violation.data.check === "blocked-events-ignored-sdk-05");
+  assert.match(ignored.message, /next\.analytics\.on\('\*', fn\)/);
+  assert.doesNotMatch(ignored.message, /Filter events per destination/);
+  // 0.5.1 reads blockedEvents again (deprecated); custom stays unsupported.
+  assert.deepEqual(checks("0.5.1"), ["custom-provider-ignored-sdk-05"]);
+  assert.deepEqual(checks("0.6.0"), ["custom-provider-ignored-sdk-05"]);
   assert.deepEqual(checks("0.4.43"), []);
+  // dl_package_swapped is never sent on 0.5, so blocking it blocks nothing.
+  assert.deepEqual(checks("0.5.1", ["dl_package_swapped"]), ["blocked-event-not-sent-sdk-05", "custom-provider-ignored-sdk-05"]);
+  assert.deepEqual(checks("0.5.0", ["dl_package_swapped"]), ["blocked-events-ignored-sdk-05", "custom-provider-ignored-sdk-05"]);
+  assert.deepEqual(checks("0.4.43", ["dl_package_swapped"]), []);
 });

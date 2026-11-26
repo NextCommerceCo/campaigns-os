@@ -45,11 +45,17 @@
  *      id-format, placeholder and event-name checks for vendors live with the
  *      ops registry the Map Builder export gate composes on top of this rule,
  *      so they are not repeated here.
- *  10. On an SDK pin of 0.5.0 or later, `providers.*.blockedEvents` and an
- *      enabled `providers.custom` do nothing: 0.5 reads only each provider's
- *      `enabled` (src/compat/legacy/globals.ts) and lists `custom` as
- *      unsupported. Filter in `analytics.destinations`, and send to a custom
+ *  10. On an SDK pin of exactly 0.5.0, `providers.*.blockedEvents` does
+ *      nothing: 0.5.0 reads only each provider's `enabled`. 0.5.1 reads it
+ *      again, deprecated (src/compat/analytics/blocked.ts), so a pin of 0.5.1
+ *      or later is silent. `nextConfig.analytics.destinations` only switches a
+ *      destination on or off (and names the Meta store), so the advice is to
+ *      filter in your own tag or a `next.analytics.on('*', …)` listener. On
+ *      any 0.5 pin an enabled `providers.custom` does nothing: the SDK lists
+ *      `custom` as unsupported (src/compat/legacy/globals.ts); send to the
  *      endpoint from `next.analytics.on('*', …)` (0.5 migrating-from-0.4.md).
+ *      Where 0.5.1+ does read blockedEvents, naming a dl_* event 0.5 never
+ *      sends (`dl_package_swapped`) blocks nothing, and is warned.
  */
 
 import type { CampaignSpec, Rule, Violation } from '../types.ts'
@@ -63,7 +69,14 @@ const VALID_MODES = new Set(['auto', 'manual', 'disabled'])
 // The first SDK whose analytics config is `destinations`, reading only
 // `enabled` from the 0.4.x `providers` block.
 const SDK_05_ANALYTICS_VERSION = '0.5.0'
+// The first 0.5 release that reads `providers.<x>.blockedEvents` again.
+const SDK_05_BLOCKED_EVENTS_READ_AGAIN_VERSION = '0.5.1'
 const PURCHASE_EVENT = /^(?:dl_)?purchase$/i
+// dl_* events 0.5 never sends, so blocking one on a 0.5 pin blocks nothing.
+// A package change is a dl_remove_from_cart and a dl_add_to_cart from 0.5.0.
+const DL_EVENTS_NOT_SENT_FROM_SDK_05: Record<string, string> = {
+  dl_package_swapped: 'dl_remove_from_cart and dl_add_to_cart',
+}
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
@@ -177,7 +190,7 @@ export const AnalyticsContractShape: Rule = {
       const comparison = compareVersions(versionRef.version, CAMPAIGN_CART_ANALYTICS_IDENTITY_MIN_SDK_VERSION)
       if (comparison === null) {
         warn(
-          `analytics is declared, but Campaign Cart SDK version "${versionRef.version}" is not an exact released semver pin. Use a concrete release such as "${CAMPAIGN_CART_ANALYTICS_IDENTITY_MIN_SDK_VERSION}" so Campaigns OS can verify whether campaign_* identifiers and ncsid-backed campaign_session_id are stamped on every event.`,
+          `analytics is declared, but Campaign Cart SDK version "${versionRef.version}" is not an exact released semver pin. Use a concrete release such as "${CAMPAIGN_CART_ANALYTICS_IDENTITY_MIN_SDK_VERSION}" so Campaigns OS can verify whether campaign_* identifiers and ncsid-backed campaign_session_id are stamped on every event (${CAMPAIGN_CART_ANALYTICS_IDENTITY_MIN_SDK_VERSION} through 0.4.x).`,
           versionRef.path,
           'sdk-version-unparseable',
           {
@@ -188,7 +201,7 @@ export const AnalyticsContractShape: Rule = {
         )
       } else if (comparison < 0) {
         warn(
-          `analytics is declared, but Campaign Cart SDK ${versionRef.version} is below ${CAMPAIGN_CART_ANALYTICS_IDENTITY_MIN_SDK_VERSION}. campaign_* identifiers and ncsid-backed campaign_session_id are stamped on every event starting in ${CAMPAIGN_CART_ANALYTICS_IDENTITY_MIN_SDK_VERSION}; upgrade the SDK for analytics attribution/joinability or record the intentional pin.`,
+          `analytics is declared, but Campaign Cart SDK ${versionRef.version} is below ${CAMPAIGN_CART_ANALYTICS_IDENTITY_MIN_SDK_VERSION}. campaign_* identifiers and ncsid-backed campaign_session_id are stamped on every event from ${CAMPAIGN_CART_ANALYTICS_IDENTITY_MIN_SDK_VERSION} through 0.4.x; upgrade the SDK for analytics attribution/joinability or record the intentional pin.`,
           versionRef.path,
           'sdk-identity-baseline',
           {
@@ -211,6 +224,8 @@ export const AnalyticsContractShape: Rule = {
 
     // 2. providers
     const sdk05 = versionRef !== null && (compareVersions(versionRef.version, SDK_05_ANALYTICS_VERSION) ?? -1) >= 0
+    const blockedEventsIgnored =
+      sdk05 && (compareVersions(versionRef!.version, SDK_05_BLOCKED_EVENTS_READ_AGAIN_VERSION) ?? 1) < 0
     const providers = analytics.providers
     if (providers && typeof providers === 'object' && !Array.isArray(providers)) {
       for (const [kind, provider] of Object.entries(providers)) {
@@ -235,6 +250,8 @@ export const AnalyticsContractShape: Rule = {
           blocked.forEach((evt, i) => {
             if (!isKnownDlEvent(evt)) {
               warn(`analytics.providers.${kind}.blockedEvents[${i}] "${evt}" is not a known SDK dl_* event. blockedEvents matches by exact event name, so a misspelled or legacy name (e.g. "purchase" instead of "dl_purchase") blocks nothing.`, `${base}/blockedEvents/${i}`, 'blocked-event-unknown', { kind, event: evt })
+            } else if (sdk05 && !blockedEventsIgnored && Object.hasOwn(DL_EVENTS_NOT_SENT_FROM_SDK_05, evt)) {
+              warn(`analytics.providers.${kind}.blockedEvents[${i}] "${evt}" blocks nothing on Campaign Cart SDK ${versionRef!.version}: 0.5 never sends it. A package change arrives as ${DL_EVENTS_NOT_SENT_FROM_SDK_05[evt]}.`, `${base}/blockedEvents/${i}`, 'blocked-event-not-sent-sdk-05', { kind, event: evt, sdkVersion: versionRef!.version })
             }
           })
         }
@@ -244,9 +261,9 @@ export const AnalyticsContractShape: Rule = {
         if (enabled && kind === 'facebook' && !isNonEmptyString(provider.pixelId)) {
           warn(`analytics.providers.facebook is enabled but has no pixelId; doctor/QA bind to it.`, `${base}/pixelId`, 'facebook-pixel-missing', { kind })
         }
-        // 10. SDK 0.5 ignores both.
-        if (sdk05 && isStringArray(provider.blockedEvents) && (provider.blockedEvents as string[]).length) {
-          warn(`analytics.providers.${kind}.blockedEvents does nothing on Campaign Cart SDK ${versionRef!.version}: from ${SDK_05_ANALYTICS_VERSION} the SDK reads only each provider's enabled flag. Filter events per destination under nextConfig.analytics.destinations instead.`, `${base}/blockedEvents`, 'blocked-events-ignored-sdk-05', { kind, sdkVersion: versionRef!.version })
+        // 10. SDK 0.5.0 ignores blockedEvents (0.5.1 reads it again); every 0.5 pin ignores custom.
+        if (blockedEventsIgnored && isStringArray(provider.blockedEvents) && (provider.blockedEvents as string[]).length) {
+          warn(`analytics.providers.${kind}.blockedEvents does nothing on Campaign Cart SDK ${versionRef!.version}: ${SDK_05_ANALYTICS_VERSION} reads only each provider's enabled flag. Pin ${SDK_05_BLOCKED_EVENTS_READ_AGAIN_VERSION} or later, which reads blockedEvents again (deprecated), or filter the event in your own tag or a next.analytics.on('*', fn) listener. nextConfig.analytics.destinations only turns a destination on or off.`, `${base}/blockedEvents`, 'blocked-events-ignored-sdk-05', { kind, sdkVersion: versionRef!.version })
         }
         if (sdk05 && enabled && kind === 'custom') {
           warn(`analytics.providers.custom does nothing on Campaign Cart SDK ${versionRef!.version}: ${SDK_05_ANALYTICS_VERSION} dropped the custom provider. Send events to the endpoint from a listener, next.analytics.on('*', (event) => fetch(url, { method: 'POST', keepalive: true, body: JSON.stringify(event) })).`, base, 'custom-provider-ignored-sdk-05', { kind, sdkVersion: versionRef!.version })
